@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ACEF — SDLC &amp; Frameworks</title>
+    <meta name="description" content="How ACEF maps the software lifecycle and where BMAD, Kiro, spec-kit, GSD, and OpenSpec plug in." />
+    <link rel="stylesheet" href="./theme.css" />
+  </head>
+  <body>
+    <div class="wrap">
+      <aside>
+        <div class="logo"><b>A</b><div>ACEF<br/><small>developer guide</small></div></div>
+        <div class="pageswitch">
+          <a href="./index.html">📘 Overview</a>
+          <a class="active" href="./sdlc.html">🔄 SDLC &amp; frameworks</a>
+          <a href="./roles.html">👥 Roles</a>
+        </div>
+        <div class="navlabel">On this page</div>
+        <nav>
+          <a href="#shape"><span class="n">①</span> The shape</a>
+          <a href="#phases"><span class="n">②</span> The 8 phases</a>
+          <a href="#bmad"><span class="n">③</span> BMAD v2 in detail</a>
+          <a href="#frameworks"><span class="n">④</span> Where each plugs in</a>
+          <a href="#routes"><span class="n">⑤</span> Routes vs phases</a>
+          <a href="#route-drawings"><span class="n">⑥</span> Route drawings</a>
+        </nav>
+      </aside>
+
+      <main>
+        <p class="kicker">The process</p>
+        <h1>SDLC &amp; Frameworks</h1>
+        <p class="lede">ACEF doesn't invent a new lifecycle. It overlays the normal SDLC, then <em>orchestrates</em>
+          the frameworks you already use — BMAD v2, Kiro, spec-kit, GSD, OpenSpec — through your project's real
+          adapter, running only the phases a given request needs.</p>
+
+        <section id="shape"><h2><span class="ic" style="background:#e8f0ff">🗺️</span>The shape</h2>
+          <p>This guide starts at the first brief. Once the work is framed, ACEF routes into the SDLC phases below and
+            only runs the parts that matter for that request.</p>
+          <div class="flow">
+            <span class="step">1 Brief / Route</span><span class="arrow">→</span>
+            <span class="step">2 Requirements</span><span class="arrow">→</span>
+            <span class="step">3 Design</span><span class="arrow">→</span>
+            <span class="step">4 Planning</span><span class="arrow">→</span>
+            <span class="step">5 Implement</span><span class="arrow">→</span>
+            <span class="step">6 Review/Test/CI</span><span class="arrow">→</span>
+            <span class="step">7 Release</span><span class="arrow">→</span>
+            <span class="step">8 Feedback</span>
+          </div>
+          <div class="callout blue"><span class="em">ℹ️</span><div>Most requests touch only a few of these. A bug fix
+            skips 2–4 entirely; a small feature skips heavy requirements/design. The router decides which phases run.</div></div>
+        </section>
+
+        <section id="phases"><h2><span class="ic" style="background:#e3f7ec">🔢</span>The 8 phases</h2>
+          <div class="phase"><div class="pname">1 · Brief &amp; Route<small>entry</small></div><div>Take the brief, classify it into a route, and detect risk. Greenfield vs brownfield is a deterministic check, not a question.<div class="ext">Frameworks: ACEF router · BMAD scale levels (idea)</div></div></div>
+          <div class="phase"><div class="pname">2 · Requirements<small>what to build</small></div><div>User-facing behavior + acceptance criteria, with traceable IDs. Imported if a tool already produced them.<div class="ext">Frameworks: BMAD PRD · Kiro requirements (EARS) · spec-kit FR/US/SC IDs</div></div></div>
+          <div class="phase"><div class="pname">3 · Design<small>how to build it</small></div><div>Architecture, data flow, contracts, affected modules, risks.<div class="ext">Frameworks: BMAD architecture · Kiro design</div></div></div>
+          <div class="phase"><div class="pname">4 · Planning<small>break it down</small></div><div>Story map → epics → user stories → tasks, each traced back to a requirement.<div class="ext">Frameworks: BMAD stories/tasks · storymap · OpenSpec deltas (brownfield)</div></div></div>
+          <div class="phase"><div class="pname">5 · Implement<small>build</small></div><div>Follow the repo's golden neighbor — but ground it at the symbol level, not the file level: diff the target's real signatures and return shapes against the neighbor's before reusing, so a verbatim copy can't ship a type error. Minimal, code-grounded change per task.<div class="ext">Frameworks: your project's own build skills, via the adapter</div></div></div>
+          <div class="phase"><div class="pname">6 · Review / Test / CI<small>verify</small></div><div>Review against the repo's standard; bootstrap a test pattern if none exists; run the gate.<div class="ext">Frameworks: your test stack (detected) · review skills</div></div></div>
+          <div class="phase"><div class="pname">7 · Release / CD<small>ship</small></div><div>Readiness checklist, staged rollout, rollback — from the repo's real workflows.<div class="ext">Frameworks: your CI/CD, surfaced via the release adapter</div></div></div>
+          <div class="phase"><div class="pname">8 · Feedback<small>learn</small></div><div>What went wrong / what to change → update the rule or checklist. No metric ceremony unless asked.<div class="ext">Frameworks: lessons / retro</div></div></div>
+        </section>
+
+        <section id="bmad"><h2><span class="ic" style="background:#f0eaff">🅱️</span>BMAD v2 in detail</h2>
+          <p>BMAD v2 is itself a full pipeline (Analysis → Planning → Solutioning → Implementation) with agent personas.
+            ACEF does <strong>not</strong> run all of BMAD. It uses BMAD as the <strong>large-feature planning engine</strong>
+            and imports its output — it never regenerates what BMAD already produced.</p>
+          <table>
+            <tr><th>BMAD produces</th><th>ACEF maps it to</th></tr>
+            <tr><td>PRD (functional / non-functional requirements)</td><td><code>requirements.md</code></td></tr>
+            <tr><td>Architecture document</td><td><code>design.md</code></td></tr>
+            <tr><td>Epics / stories / tasks</td><td><code>tasks.md</code></td></tr>
+            <tr><td>Readiness report</td><td>Definition-of-Ready evidence</td></tr>
+          </table>
+          <div class="callout"><span class="em">⚠️</span><div>BMAD also has its own brief/research/analysis phase, which
+            <em>overlaps</em> ACEF's front. Rule of thumb: <strong>generate once.</strong> If BMAD already made the spec,
+            ACEF imports + enriches it (risk, DoR, test cases, golden neighbor, traceability) — it does not run a second
+            pipeline. On small or quick work, BMAD is skipped entirely.</div></div>
+        </section>
+
+        <section id="frameworks"><h2><span class="ic" style="background:#e8f0ff">🔌</span>Where each framework plugs in</h2>
+          <p>ACEF orchestrates; it doesn't force you to use all of these. You use what your project already has, and
+            ACEF imports the output through the adapter into one canonical format.</p>
+          <table>
+            <tr><th>Framework</th><th>Plugs into</th><th>What ACEF takes</th></tr>
+            <tr><td><strong>BMAD v2</strong></td><td>Phases 2–4 (large feature)</td><td>PRD→requirements, architecture→design, stories→tasks; import, don't regenerate</td></tr>
+            <tr><td><strong>Kiro</strong></td><td>Phases 2–4 (spec format)</td><td>the 3-file <code>requirements/design/tasks</code> shape + EARS acceptance criteria</td></tr>
+            <tr><td><strong>GitHub spec-kit</strong></td><td>Phases 2–4 (traceability)</td><td><code>FR-###</code>/<code>US#</code>/<code>SC-###</code> IDs + tasks tagged to stories</td></tr>
+            <tr><td><strong>OpenSpec</strong></td><td>Phase 4 (brownfield currency)</td><td>ADDED/MODIFIED/REMOVED deltas that keep living specs current</td></tr>
+            <tr><td><strong>GSD</strong></td><td>Phase 1 / onboarding</td><td>orientation + codebase mapping</td></tr>
+          </table>
+          <p class="muted">The differentiator vs any single tool: ACEF binds all of them to <em>your</em> extracted
+            adapter (per-repo, evidence-based) and runs them behind one agent — no ceremony, no double work.</p>
+        </section>
+
+        <section id="routes"><h2><span class="ic" style="background:#e3f7ec">🚦</span>Routes vs phases</h2>
+          <p>A route is just a subset of phases. This is why "every job goes through all 8 phases" is false.</p>
+          <table>
+            <tr><th>Route</th><th>Phases it runs</th></tr>
+            <tr><td>A · Small feature</td><td>1 → 5 → 6 (skip 2–4)</td></tr>
+            <tr><td>B · Large feature</td><td>1 → 2 → 3 → 4 → 5 → 6</td></tr>
+            <tr><td>C · Bug fix</td><td>1 → 5 → 6 (root-cause first)</td></tr>
+            <tr><td>D · Test cases</td><td>2 (flows→AC) → 6</td></tr>
+            <tr><td>E · Test automation</td><td>6 (bootstrap first)</td></tr>
+            <tr><td>F · Unit / integration</td><td>6</td></tr>
+          </table>
+        </section>
+
+        <section id="route-drawings"><h2><span class="ic" style="background:#fdf3dd">🧩</span>Route drawings</h2>
+          <p>Same routes, but spelled out. Each card shows the shortest useful path for that job.</p>
+          <div class="route-grid">
+            <article class="route-card a">
+              <h3>A · Small feature</h3>
+              <div class="route-path"><span>Brief / route</span><i>→</i><span>Golden neighbor</span><i>→</i><span>Implement</span><i>→</i><span>Review</span></div>
+              <p>Use this when the change is small, local, and already matches an existing pattern.</p>
+            </article>
+            <article class="route-card b">
+              <h3>B · Large feature</h3>
+              <div class="route-path"><span>Brief / route</span><i>→</i><span>Requirements</span><i>→</i><span>Design</span><i>→</i><span>Planning</span><i>→</i><span>Implement</span><i>→</i><span>Review</span></div>
+              <p>Use this when scope is larger, a new contract appears, or multiple modules are affected.</p>
+            </article>
+            <article class="route-card c">
+              <h3>C · Bug fix</h3>
+              <div class="route-path"><span>Brief / route</span><i>→</i><span>Reproduce</span><i>→</i><span>Root cause</span><i>→</i><span>Fix</span><i>→</i><span>Review</span></div>
+              <p>Use this when the job is about restoring behavior, not adding a new feature shape.</p>
+            </article>
+            <article class="route-card d">
+              <h3>D · Test cases</h3>
+              <div class="route-path"><span>Brief / route</span><i>→</i><span>Flows</span><i>→</i><span>Acceptance criteria</span><i>→</i><span>Test cases</span><i>→</i><span>Review</span></div>
+              <p>Use this when the output is a test plan or structured cases before automation.</p>
+            </article>
+            <article class="route-card e">
+              <h3>E · Test automation</h3>
+              <div class="route-path"><span>Brief / route</span><i>→</i><span>Detect stack</span><i>→</i><span>Bootstrap 1 test</span><i>→</i><span>Approve pattern</span><i>→</i><span>Expand</span></div>
+              <p>Use this when the project needs the first real test pattern before broader automation can scale.</p>
+            </article>
+            <article class="route-card f">
+              <h3>F · Unit / integration</h3>
+              <div class="route-path"><span>Brief / route</span><i>→</i><span>Detect stack</span><i>→</i><span>Unit / integration</span><i>→</i><span>Run gate</span></div>
+              <p>Use this when the job is about test coverage in the project’s actual framework and command set.</p>
+            </article>
+          </div>
+        </section>
+      </main>
+    </div>
+    <footer>ACEF — Ayyildiz Context Engineering Framework · SDLC &amp; frameworks.</footer>
+  </body>
+</html>

@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ACEF — Roles</title>
+    <meta name="description" content="What a developer, a project manager, and a test/QA engineer can each do with ACEF — the flows that concern each role." />
+    <link rel="stylesheet" href="./theme.css" />
+    <style>
+      .can{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:12px;margin:.7rem 0}
+      .can .c{border:1px solid var(--line);border-radius:13px;background:var(--panel);padding:14px 16px;border-top:4px solid var(--rc,#2f6fed);box-shadow:0 1px 2px rgba(20,30,60,.04)}
+      .can .c h4{margin:0 0 .35rem;font-size:1rem;display:flex;align-items:center;justify-content:space-between;gap:.5rem}
+      .can .c .rt{font-size:.66rem;font-weight:800;letter-spacing:.04em;color:#fff;background:var(--rc,#2f6fed);border-radius:6px;padding:.12em .5em}
+      .can .c p{margin:0;font-size:.9rem;color:#3a4555}
+      .lens{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:.6rem 0}
+      .lens .see{border-left:4px solid var(--green)} .lens .hide{border-left:4px solid var(--rose)}
+      .lens .h{font-weight:800;font-size:.72rem;letter-spacing:.05em;text-transform:uppercase;margin-bottom:.25rem}
+      @media(max-width:680px){.lens{grid-template-columns:1fr}}
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <aside>
+        <div class="logo"><b>A</b><div>ACEF<br/><small>developer guide</small></div></div>
+        <div class="pageswitch">
+          <a href="./index.html">📘 Overview</a>
+          <a href="./sdlc.html">🔄 SDLC &amp; frameworks</a>
+          <a class="active" href="./roles.html">👥 Roles</a>
+        </div>
+        <div class="navlabel">On this page</div>
+        <nav>
+          <a href="#idea"><span class="n">①</span> One framework, lenses</a>
+          <a href="#dev"><span class="n">②</span> Developer</a>
+          <a href="#pm"><span class="n">③</span> Project manager</a>
+          <a href="#qa"><span class="n">④</span> Test / QA</a>
+          <a href="#matrix"><span class="n">⑤</span> At a glance</a>
+        </nav>
+      </aside>
+
+      <main>
+        <p class="kicker">What each role can do</p>
+        <h1>ACEF for your role</h1>
+        <p class="lede">Everyone talks to the same <code>acef</code> agent in plain language. You never pick routes,
+          phases, or skills — you just describe what you want. This page shows <strong>what each role can do</strong>
+          and which flows concern them.</p>
+
+        <section id="idea"><h2><span class="ic" style="background:#e8f0ff">🔭</span>One framework, different lenses</h2>
+          <p>The engine is the same for everyone: it understands your project, routes the request, and runs only the
+            steps that matter. What changes per role is the <strong>lens</strong> — which flows are yours.</p>
+          <div class="lens">
+            <div class="card see"><div class="h" style="color:var(--green)">Developer</div>builds and fixes — features, bugs, tests in code.</div>
+            <div class="card see"><div class="h" style="color:var(--green)">PM / architect</div>frames, plans, and gates — scope, risk, go/kill.</div>
+            <div class="card see"><div class="h" style="color:var(--green)">Test / QA</div>turns behavior into checks — flows, cases, automation.</div>
+          </div>
+        </section>
+
+        <!-- ============ DEVELOPER ============ -->
+        <section id="dev"><h2><span class="ic" style="background:#e8f0ff">👩‍💻</span>Developer</h2>
+          <p>What you can do — describe the work in plain words; ACEF grounds it in your repo and reviews the result.</p>
+          <div class="can">
+            <div class="c" style="--rc:var(--blue)"><h4>Add a small feature <span class="rt">A</span></h4><p>ACEF copies the pattern your repo already uses for that kind of screen/endpoint, wires your change, and reviews it.</p></div>
+            <div class="c" style="--rc:var(--violet)"><h4>Build a large feature <span class="rt">B</span></h4><p>It turns the work into requirements, design, and tasks, then builds each task — pausing for approval on risky parts.</p></div>
+            <div class="c" style="--rc:var(--rose)"><h4>Fix a bug <span class="rt">C</span></h4><p>Give the symptom; it reproduces, finds the root cause, and makes the smallest fix that matches your code’s style.</p></div>
+            <div class="c" style="--rc:var(--green)"><h4>Add unit / integration tests <span class="rt">F</span></h4><p>It writes tests in your project’s real framework, around behavior — not implementation detail.</p></div>
+          </div>
+          <div class="lens">
+            <div class="card see"><div class="h" style="color:var(--green)">You see</div>the task · the real code to copy · files likely touched · the definition of done.</div>
+            <div class="card hide"><div class="h" style="color:var(--rose)">You don’t deal with</div>specs, planning, or risk dashboards — that’s handled around you.</div>
+          </div>
+          <div class="chat">
+            <div class="u"><div class="who">Developer</div>The avatar disappears after editing a profile.</div>
+            <div class="a"><div class="who">ACEF</div>Bug fix. I’ll reproduce on a fresh profile, find the root cause, and
+              fix it the way this repo handles image state — then add a regression test. Only after a refresh, or immediately?</div>
+          </div>
+        </section>
+
+        <!-- ============ PM ============ -->
+        <section id="pm"><h2><span class="ic" style="background:#f0eaff">🧭</span>Project manager / architect</h2>
+          <p>What you can do — shape and control the work without touching code.</p>
+          <div class="can">
+            <div class="c" style="--rc:var(--teal)"><h4>Frame a brief <span class="rt">Brief</span></h4><p>Turn a raw idea into a clear brief: the problem, who it’s for, success criteria, scope, and explicit non-goals.</p></div>
+            <div class="c" style="--rc:var(--violet)"><h4>Plan a feature <span class="rt">Planning</span></h4><p>Break it into a story map and traceable tasks — every task links back to a requirement, so scope is auditable.</p></div>
+            <div class="c" style="--rc:var(--amber)"><h4>Get a risk read <span class="rt">Risk</span></h4><p>See the risk class of any work and exactly which steps are guarded (auth, payment, migrations, multi-repo).</p></div>
+            <div class="c" style="--rc:var(--rose)"><h4>Gate the work <span class="rt">Go / Kill</span></h4><p>Approve, hold, or kill at the gate. Guarded work cannot merge without your sign-off.</p></div>
+            <div class="c" style="--rc:var(--blue)"><h4>Track status <span class="rt">Status</span></h4><p>See what’s queued, building, in review, blocked, or done across the work in flight.</p></div>
+          </div>
+          <div class="lens">
+            <div class="card see"><div class="h" style="color:var(--green)">You see</div>scope &amp; non-goals · the plan · risk · the go/kill gate · status.</div>
+            <div class="card hide"><div class="h" style="color:var(--rose)">You don’t deal with</div>code or implementation detail — unless you ask for it.</div>
+          </div>
+          <div class="chat">
+            <div class="u"><div class="who">PM</div>How big is team billing, and what’s the risk?</div>
+            <div class="a"><div class="who">ACEF</div>Large feature, high risk — it touches payment, adds a new contract,
+              and spans the API and dashboard. It needs a brief, a plan, and your approval before the payment step merges.
+              Want the brief drafted?</div>
+          </div>
+        </section>
+
+        <!-- ============ QA ============ -->
+        <section id="qa"><h2><span class="ic" style="background:#e3f7ec">🧪</span>Test engineer / QA</h2>
+          <p>What you can do — turn behavior into checks, in your project’s real test setup.</p>
+          <div class="can">
+            <div class="c" style="--rc:var(--teal)"><h4>Extract test cases <span class="rt">D</span></h4><p>Turn product flows into acceptance criteria and structured test cases — ready to review or automate.</p></div>
+            <div class="c" style="--rc:var(--green)"><h4>Write unit / integration tests <span class="rt">F</span></h4><p>Tests written in your project’s actual framework and command set, around real behavior.</p></div>
+            <div class="c" style="--rc:var(--amber)"><h4>Build test automation <span class="rt">E</span></h4><p>Automate the priority user flows end-to-end, on the stack your repo already uses.</p></div>
+            <div class="c" style="--rc:var(--blue)"><h4>Bootstrap the first test <span class="rt">E / F</span></h4><p>Zero tests in the repo? It sets up one approved example pattern that every later test follows.</p></div>
+            <div class="c" style="--rc:var(--violet)"><h4>Scale coverage by risk <span class="rt">All</span></h4><p>Happy path for low-risk flows; negative, edge, permission, session, and failure cases for guarded ones.</p></div>
+          </div>
+          <p>A flow becomes structured cases like this:</p>
+          <table>
+            <tr><th>Case</th><th>Precondition</th><th>Steps</th><th>Expected</th><th>Type</th></tr>
+            <tr><td>Login · happy</td><td>valid account</td><td>enter creds → submit</td><td>lands on dashboard</td><td>positive</td></tr>
+            <tr><td>Login · wrong password</td><td>valid account</td><td>wrong password → submit</td><td>inline error, no session</td><td>negative</td></tr>
+            <tr><td>Login · locked</td><td>locked account</td><td>submit</td><td>lockout message</td><td>edge</td></tr>
+            <tr><td>Login · session</td><td>logged in</td><td>refresh</td><td>stays authenticated</td><td>session</td></tr>
+          </table>
+          <div class="lens">
+            <div class="card see"><div class="h" style="color:var(--green)">You see</div>flows · acceptance criteria · test cases · validation evidence.</div>
+            <div class="card hide"><div class="h" style="color:var(--rose)">You don’t deal with</div>implementation internals — you work at the behavior level.</div>
+          </div>
+        </section>
+
+        <section id="matrix"><h2><span class="ic" style="background:#fdf3dd">📊</span>At a glance</h2>
+          <table>
+            <tr><th>Role</th><th>What you can do</th><th>Flows</th></tr>
+            <tr><td><strong>Developer</strong></td><td>add small/large features · fix bugs · write unit/integration tests</td><td>A · B · C · F</td></tr>
+            <tr><td><strong>PM / architect</strong></td><td>frame a brief · plan · risk read · gate (go/kill) · track status</td><td>brief · planning · gates</td></tr>
+            <tr><td><strong>Test / QA</strong></td><td>extract test cases · write unit tests · build automation · bootstrap first test · scale coverage</td><td>D · E · F</td></tr>
+          </table>
+          <p class="muted">All three talk to the same agent — the lens (which flows are yours) is what changes.</p>
+        </section>
+      </main>
+    </div>
+    <footer>ACEF — Ayyildiz Context Engineering Framework · roles.</footer>
+  </body>
+</html>
