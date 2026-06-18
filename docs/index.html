@@ -1,0 +1,217 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ACEF — Ayyildiz Context Engineering Framework</title>
+    <meta
+      name="description"
+      content="ACEF is a stack-agnostic SDLC operating system for AI-assisted software work."
+    />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <header class="topbar" aria-label="Primary navigation">
+      <a class="brand" href="#top" aria-label="ACEF home">
+        <span class="brand-mark">A</span>
+        <span>ACEF</span>
+      </a>
+      <nav class="nav">
+        <a href="#problem">Problem</a>
+        <a href="#model">Model</a>
+        <a href="#routes">Routes</a>
+        <a href="#adapter">Adapter</a>
+        <a href="#agent">Agent</a>
+      </nav>
+    </header>
+
+    <main id="top">
+      <section class="hero">
+        <div class="hero-copy">
+          <p class="eyebrow">Ayyildiz Context Engineering Framework</p>
+          <h1>AI-assisted software delivery that adapts to the actual codebase.</h1>
+          <p class="lede">
+            ACEF routes the work, extracts the project's real adapter, and runs only the SDLC steps that matter.
+            The result is less ceremony, fewer wrong assumptions, and AI agents that copy the right local patterns.
+          </p>
+          <div class="hero-actions">
+            <a class="button primary" href="#model">Explore the model</a>
+            <a class="button secondary" href="#routes">See the routes</a>
+          </div>
+        </div>
+        <div class="hero-visual" aria-label="ACEF system diagram">
+          <div class="orbit-card intent">
+            <span>User intent</span>
+            <strong>"I want to change this project"</strong>
+          </div>
+          <div class="connector vertical"></div>
+          <div class="orbit-card agent">
+            <span>ACEF agent</span>
+            <strong>Route · Coordinate · Teach</strong>
+          </div>
+          <div class="connector split"></div>
+          <div class="visual-grid">
+            <div class="mini-card">Project adapter</div>
+            <div class="mini-card">Right route</div>
+            <div class="mini-card">Golden neighbor</div>
+            <div class="mini-card">Approval gates</div>
+          </div>
+        </div>
+      </section>
+
+      <section id="problem" class="band">
+        <div class="section-head">
+          <p class="eyebrow">Why ACEF exists</p>
+          <h2>Generic workflows break when the project context is missing.</h2>
+        </div>
+        <div class="issue-grid">
+          <article>
+            <h3>Wrong local pattern</h3>
+            <p>The agent writes plausible code, but not the way this repo works.</p>
+          </article>
+          <article>
+            <h3>Too much ceremony</h3>
+            <p>Small fixes get pulled through heavyweight planning steps they do not need.</p>
+          </article>
+          <article>
+            <h3>Stack assumptions</h3>
+            <p>"Web" or "mobile" is not enough. Each repo can have different tooling and conventions.</p>
+          </article>
+          <article>
+            <h3>Unclear proof</h3>
+            <p>Documents, skills, and working evidence get mixed together unless the system labels them honestly.</p>
+          </article>
+        </div>
+      </section>
+
+      <section id="model" class="section">
+        <div class="section-head">
+          <p class="eyebrow">The model</p>
+          <h2>ACEF separates universal method from project-specific truth.</h2>
+        </div>
+        <div class="layer-stack" aria-label="ACEF layered model">
+          <div class="layer">
+            <span>01</span>
+            <div>
+              <h3>Universal ACEF routes</h3>
+              <p>Small feature, large feature, bug fix, test-case extraction, automation setup, unit/integration tests.</p>
+            </div>
+          </div>
+          <div class="layer">
+            <span>02</span>
+            <div>
+              <h3>Project adapter</h3>
+              <p>Stack, commands, CI, test setup, golden neighbors, repo conventions, and risk surfaces.</p>
+            </div>
+          </div>
+          <div class="layer">
+            <span>03</span>
+            <div>
+              <h3>ACEF agent</h3>
+              <p>One front door that routes the work and hides unnecessary process from the user.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="routes" class="section">
+        <div class="section-head">
+          <p class="eyebrow">Routes</p>
+          <h2>Every request starts with routing, not execution.</h2>
+        </div>
+        <div class="route-board">
+          <button class="route active" data-route="small">Small feature</button>
+          <button class="route" data-route="large">Large feature</button>
+          <button class="route" data-route="bug">Bug fix</button>
+          <button class="route" data-route="cases">Test cases</button>
+          <button class="route" data-route="auto">Automation setup</button>
+          <button class="route" data-route="unit">Unit / integration</button>
+        </div>
+        <div class="route-detail" aria-live="polite">
+          <h3 id="route-title">Small feature</h3>
+          <p id="route-copy">
+            Use a short brief, select a qualified golden neighbor, implement locally, and review. Skip heavy
+            requirements and design unless the route escalates.
+          </p>
+        </div>
+      </section>
+
+      <section id="adapter" class="band">
+        <div class="section-head">
+          <p class="eyebrow">Project adapter</p>
+          <h2>The adapter is extracted from the repo, not guessed.</h2>
+        </div>
+        <div class="adapter-diagram">
+          <div class="adapter-source">
+            <h3>Evidence</h3>
+            <ul>
+              <li>Manifests</li>
+              <li>CI workflows</li>
+              <li>Package scripts</li>
+              <li>Repo layout</li>
+              <li>Existing tests</li>
+              <li>Local docs</li>
+            </ul>
+          </div>
+          <div class="arrow" aria-hidden="true">→</div>
+          <div class="adapter-output">
+            <h3>Adapter</h3>
+            <ul>
+              <li>Stack and commands</li>
+              <li>Golden neighbors</li>
+              <li>Risk surfaces</li>
+              <li>Test setup</li>
+              <li>Release facts</li>
+              <li>Freshness stamp</li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <section id="agent" class="section">
+        <div class="section-head">
+          <p class="eyebrow">Agent behavior</p>
+          <h2>The user should not need to know the system internals.</h2>
+        </div>
+        <div class="agent-grid">
+          <article>
+            <h3>Guide</h3>
+            <p>Names the current route and the next useful step in one or two sentences.</p>
+          </article>
+          <article>
+            <h3>Route</h3>
+            <p>Asks at most a few clarifying questions, then chooses the safest matching path.</p>
+          </article>
+          <article>
+            <h3>Coordinate</h3>
+            <p>Uses adapter, specify, test-bootstrap, and release helpers only when the route needs them.</p>
+          </article>
+          <article>
+            <h3>Teach</h3>
+            <p>Explains ACEF on demand: short by default, deeper when the user asks.</p>
+          </article>
+        </div>
+      </section>
+
+      <section class="section status-section">
+        <div class="section-head">
+          <p class="eyebrow">Status</p>
+          <h2>Honest labels keep the system grounded.</h2>
+        </div>
+        <div class="status-row">
+          <div><strong>VAR</strong><span>Working skill or real artifact</span></div>
+          <div><strong>TASLAK</strong><span>Draft doc or unproven skill</span></div>
+          <div><strong>EKSİK</strong><span>Not built or not found</span></div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <p>ACEF — Ayyildiz Context Engineering Framework</p>
+      <a href="#top">Back to top</a>
+    </footer>
+
+    <script src="./script.js"></script>
+  </body>
+</html>
+
