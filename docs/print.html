@@ -133,8 +133,9 @@ Captures (each field cites a source path):
               Judge, Test Author, Documentation Maintainer, plus mechanical/standard/guarded tracks.</p></div>
             <div class="card" style="border-left-color:var(--violet)"><h3>Two lanes</h3><p>Small/ongoing work uses the
               lightweight lane. Epics and risky large work use full BMAD v2.</p></div>
-            <div class="card" style="border-left-color:var(--rose)"><h3>Process gates</h3><p>Process Judge and Epic
-              Process Judge verify the required skills, phase order, artifacts, and evidence before <code>done</code>.</p></div>
+            <div class="card" style="border-left-color:var(--rose)"><h3>Process gates</h3><p><code>ACEF_PREFLIGHT.md</code>
+              must PASS before planning or implementation; Process Judge and Epic Process Judge verify skills, phase
+              order, artifacts, and evidence before <code>done</code>.</p></div>
             <div class="card" style="border-left-color:var(--teal)"><h3>Test pipeline</h3><p>User flows become test
               cases before automation: <code>test-user-flow-mapper</code> → <code>test-case-planner</code> → generators.</p></div>
           </div>
@@ -225,6 +226,20 @@ Captures (each field cites a source path):
             skips 2–4 entirely; a small feature skips heavy requirements/design. The router decides which phases run.</div></div>
         </section>
 
+        <section id="delivery"><h2><span class="ic" style="background:#f0eaff">⚙️</span>Delivery model</h2>
+          <p>ACEF runs one of two lanes, then applies process gates before anything is marked done.</p>
+          <table>
+            <tr><th>Lane</th><th>Use when</th><th>Gate</th></tr>
+            <tr><td><strong>Lightweight</strong></td><td>Small, scoped, ongoing work</td><td>Planner / Developer / Judge, with mechanical · standard · guarded tracks</td></tr>
+            <tr><td><strong>Full BMAD v2</strong></td><td>Epics, large features, core behavior, multi-module, or risky-and-large work</td><td>Real BMAD conductor/skills must resolve before the lane starts</td></tr>
+          </table>
+          <div class="grid">
+            <div class="card" style="border-left-color:var(--rose)"><h3>Preflight + Story Judge</h3><p><code>ACEF_PREFLIGHT.md</code> must PASS before planning or implementation. Before a story/task is <code>done</code>, verify route, lane, track, skill paths, phase order, artifacts, and evidence.</p></div>
+            <div class="card" style="border-left-color:var(--violet)"><h3>Epic Process Judge</h3><p>Before epic close, verify drift audit, trace, epic test-review, E2E/user-flow evidence, manual QA ledger, product-done audit, retrospective, and status close.</p></div>
+            <div class="card" style="border-left-color:var(--teal)"><h3>Test cases first</h3><p>For risky/large work, user flows become test cases before automation and before final story slicing.</p></div>
+          </div>
+        </section>
+
         <section id="phases"><h2><span class="ic" style="background:#e3f7ec">🔢</span>The 8 phases</h2>
           <div class="phase"><div class="pname">1 · Brief &amp; Route<small>entry</small></div><div>Take the brief, classify it into a route, and detect risk. Greenfield vs brownfield is a deterministic check, not a question.<div class="ext">Frameworks: ACEF router · BMAD scale levels (idea)</div></div></div>
           <div class="phase"><div class="pname">2 · Requirements<small>what to build</small></div><div>User-facing behavior + acceptance criteria, with traceable IDs. Imported if a tool already produced them.<div class="ext">Frameworks: BMAD PRD · Kiro requirements (EARS) · spec-kit FR/US/SC IDs</div></div></div>
@@ -238,8 +253,12 @@ Captures (each field cites a source path):
 
         <section id="bmad"><h2><span class="ic" style="background:#f0eaff">🅱️</span>BMAD v2 in detail</h2>
           <p>BMAD v2 is itself a full pipeline (Analysis → Planning → Solutioning → Implementation) with agent personas.
-            ACEF does <strong>not</strong> run all of BMAD. It uses BMAD as the <strong>large-feature planning engine</strong>
-            and imports its output — it never regenerates what BMAD already produced.</p>
+            ACEF uses BMAD as the <strong>large-feature heavy lane</strong> and imports its output — it never regenerates
+            what BMAD already produced.</p>
+          <div class="callout"><span class="em">⚠️</span><div><strong>Real BMAD only:</strong> Route B starts with a
+            capability preflight. The conductor and required BMAD skills/commands must resolve to real paths. If they
+            do not, ACEF halts instead of running a BMAD-like generic-subagent imitation. Fallback to non-BMAD guarded
+            work requires explicit human approval.</div></div>
           <table>
             <tr><th>BMAD produces</th><th>ACEF maps it to</th></tr>
             <tr><td>PRD (functional / non-functional requirements)</td><td><code>requirements.md</code></td></tr>

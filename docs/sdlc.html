@@ -65,7 +65,7 @@
             <tr><td><strong>Full BMAD v2</strong></td><td>Epics, large features, core behavior, multi-module, or risky-and-large work</td><td>Real BMAD conductor/skills must resolve before the lane starts</td></tr>
           </table>
           <div class="grid">
-            <div class="card" style="border-left-color:var(--rose)"><h3>Story Process Judge</h3><p>Before a story/task is <code>done</code>, verify route, lane, track, skill paths, phase order, artifacts, and evidence.</p></div>
+            <div class="card" style="border-left-color:var(--rose)"><h3>Preflight + Story Judge</h3><p><code>ACEF_PREFLIGHT.md</code> must PASS before planning or implementation. Before a story/task is <code>done</code>, verify route, lane, track, skill paths, phase order, artifacts, and evidence.</p></div>
             <div class="card" style="border-left-color:var(--violet)"><h3>Epic Process Judge</h3><p>Before epic close, verify drift audit, trace, epic test-review, E2E/user-flow evidence, manual QA ledger, product-done audit, retrospective, and status close.</p></div>
             <div class="card" style="border-left-color:var(--teal)"><h3>Test cases first</h3><p>For risky/large work, user flows become test cases before automation and before final story slicing.</p></div>
           </div>
@@ -88,7 +88,8 @@
             what BMAD already produced.</p>
           <div class="callout"><span class="em">⚠️</span><div><strong>Real BMAD only:</strong> Route B starts with a
             capability preflight. The conductor and required BMAD skills/commands must resolve to real paths. If they
-            do not, ACEF halts instead of running a BMAD-like generic-subagent imitation.</div></div>
+            do not, ACEF halts instead of running a BMAD-like generic-subagent imitation. Fallback to non-BMAD guarded
+            work requires explicit human approval.</div></div>
           <table>
             <tr><th>BMAD produces</th><th>ACEF maps it to</th></tr>
             <tr><td>PRD (functional / non-functional requirements)</td><td><code>requirements.md</code></td></tr>

@@ -53,6 +53,10 @@ then to the appropriate `test-generator` for code generation.
 Read every file provided or referenced. Identify the language and framework first,
 then extract accordingly.
 
+For ACEF guarded or Route B work, this plan can become gate evidence. Do not plan from a subagent summary alone; cite
+the source files/spec sections behind every Critical/High case. If an expected contract or flow is not source-backed,
+mark it `needs evidence` instead of turning it into an asserted test case.
+
 Accepted upstream inputs:
 
 - **Story map artifact** (`artifact: "story-map"`) — broad coverage input; activities/tasks become test planning candidates

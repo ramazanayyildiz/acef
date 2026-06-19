@@ -447,6 +447,10 @@ If `NEEDS_SETUP`:
 
 ## Test Framework Bootstrap
 
+When this skill is invoked through ACEF, ACEF gates override this bootstrap flow. Do not install a runtime, test
+framework, browser tool, or dependency unless the ACEF preflight artifact says bootstrap is allowed and the user gives
+explicit approval. A detected runtime is not a mandate to bootstrap; it is evidence for a human decision.
+
 **Detect existing test framework and project runtime:**
 
 ```bash
@@ -516,6 +520,8 @@ If user picks C → write `.gstack/no-test-bootstrap`. Tell user: "If you change
 If multiple runtimes detected (monorepo) → ask which runtime to set up first, with option to do both sequentially.
 
 ### B4. Install and configure
+
+Only run this section after explicit user approval for the selected framework and package changes.
 
 1. Install the chosen packages (npm/bun/gem/pip/etc.)
 2. Create minimal config file

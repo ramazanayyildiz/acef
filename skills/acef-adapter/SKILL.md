@@ -26,6 +26,11 @@ when the existing map conflicts with the repo. **Do not** re-run for every small
 
 **Golden-neighbor qualifies when:** same repo (or accepted reference) · follows current convention · not legacy/do-not-copy · similar lifecycle & flow · same stack/package pattern · has twins/tests/docs. Else escalate to new-pattern/larger route.
 
+**Gate evidence rule:** adapter output is used by other ACEF gates, so every gate-relevant field must be source-backed.
+Subagent summaries are leads, not adapter facts. Before recording READY for test setup, CI gates, backend/API source of
+truth, BMAD/tool availability, release workflow, or risk surface, verify the source file/command yourself and cite it.
+If the source cannot be verified, mark DRAFT or MISSING.
+
 ## Research-derived mechanisms
 
 Use these when possible:

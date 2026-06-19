@@ -30,6 +30,10 @@ Most brownfield repos start with no tests. The first test on a repo runs through
   pure/no-DOM target to de-risk the first green run;
 - then expand coverage with the skills above.
 
+Test setup status is a gate input. A subagent summary like "no tests" is not enough; the conductor must verify
+project manifests, config files, scripts/commands, and existing test files before recording `wired`,
+`installed-but-not-wired`, or `missing` in the preflight artifact.
+
 ## Grounding rule (applies to all test generation)
 Ground at the **symbol level, not the file level**: read the actual signature/return shape of the target and assert
 against that. A file-level "this is the validator/formatter" pointer hides contract mismatches. Never ground in

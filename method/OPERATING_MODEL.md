@@ -60,6 +60,32 @@ Planner → Test Author + Developer (parallel) → Judge (full pipeline).
 
 ## Process gates
 
+### No Gate Artifact, No Progress
+
+ACEF advances by artifacts, not narrative. Before moving from routing/preflight into planning, implementation, test
+generation, release, or `done`, the conductor must create or update a durable preflight artifact (default:
+`docs/ai/ACEF_PREFLIGHT.md`, or the project's equivalent) with:
+
+- requested work and source inputs;
+- selected route, lane, and track;
+- required skills/tools for that route/lane/track;
+- resolved path or command for every required skill/tool;
+- adapter/codemap freshness evidence;
+- test setup evidence (`wired`, `installed-but-not-wired`, or `missing`);
+- API/backend/source-of-truth evidence when contracts are involved;
+- risk gates and required human approvals;
+- verdict: `PASS`, `FAIL: <missing evidence/gate>`, or `HALT: <human decision needed>`.
+
+If the verdict is not `PASS`, the conductor stops. It may ask for missing installation, wiring, evidence, or a human
+decision, but it may not silently continue on a weaker lane.
+
+### Subagent Claims Are Not Evidence
+
+Subagents can collect leads, but their output is a claim until the conductor verifies the source path, command, or
+artifact that supports it. Any fact that affects a gate (BMAD availability, test setup, backend contract, adapter
+freshness, security/payment/entitlement risk, done-state) must be verified by source evidence before it is recorded as
+READY.
+
 The implementation Judge and the Process Judge are separate roles. The Judge reviews the change; the Process Judge
 reviews the workflow claim. A workflow claim is invalid unless the required skill exists, was invoked, and left evidence
 on disk.

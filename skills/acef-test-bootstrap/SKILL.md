@@ -17,24 +17,26 @@ Use this skill when a repo needs its first accepted test neighbor.
 ## Procedure
 
 1. Read the project adapter.
-2. If tests exist:
+2. Verify test setup from source evidence: manifest dependencies, scripts/commands, config files, and existing test
+   files. Do not accept a subagent's "tests exist/no tests" summary as gate evidence.
+3. If tests exist:
    - choose a qualified golden test neighbor
    - do not bootstrap a new pattern
-3. If framework exists but no tests exist:
+4. If framework exists but no tests exist:
    - create/propose one minimal test using that framework
    - keep it focused on stable behavior
-4. If no framework exists:
+5. If no framework exists:
    - identify likely framework from the stack
    - present options and tradeoffs
    - ask for approval before installing anything
-5. Define the adapter values:
+6. Define the adapter values:
    - test folder
    - naming pattern
    - command
    - fixture/mock setup
    - CI hook if present
-6. Run only the narrow command needed for the sample when approved.
-7. Record the approved test as the golden test neighbor.
+7. Run only the narrow command needed for the sample when approved.
+8. Record the approved test as the golden test neighbor and update the preflight/process artifact with evidence.
 
 ## Detection Rule
 
@@ -64,6 +66,7 @@ If it fails, run a narrow fix loop. Do not expand into broad coverage.
 ```md
 Test bootstrap target:
 Existing test status:
+Evidence checked:
 Selected framework:
 Command:
 Sample test path:

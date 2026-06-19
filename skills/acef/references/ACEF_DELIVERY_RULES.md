@@ -21,7 +21,13 @@ ongoing work lives in the lightweight lane.
 
 Full BMAD v2 has a hard capability preflight: the real BMAD workflow must be installed/wired and its required skills or
 commands must resolve to paths before the lane starts. If BMAD is missing, ACEF stops and asks for installation/wiring or
-a lane decision. A generic subagent running a BMAD-like checklist is not valid BMAD.
+a lane decision. A generic subagent running a BMAD-like checklist is not valid BMAD. **No automatic fallback is allowed:**
+classification says what the work needs; capability preflight proves what can actually run. If Route B needs BMAD and
+BMAD is unavailable, the verdict is `HALT` until the human explicitly chooses to install/wire BMAD or accepts a
+non-BMAD guarded lightweight exception.
+
+Before any lane executes, the conductor must write/update the preflight artifact described in `OPERATING_MODEL.md`.
+No preflight artifact with `PASS` means no planning, implementation, test generation, release, or done-state change.
 
 ## Route → lane
 

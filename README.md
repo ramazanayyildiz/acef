@@ -81,13 +81,17 @@ a BMAD-like checklist is not BMAD.
 
 ACEF separates implementation review from process review:
 
+- **Preflight artifact** (`docs/ai/ACEF_PREFLIGHT.md` by default) is required before planning, implementation, test
+  generation, release, or done-state changes. It records route/lane/track, required skills, resolved paths, adapter
+  freshness, test setup, API/backend source of truth, risk gates, approvals, and a `PASS` / `FAIL` / `HALT` verdict.
 - **Judge** reviews the change and returns `MERGE` / `REVISE` / `REPLAN`.
 - **Process Judge** verifies that the required route/lane/track, skills, phase order, and artifacts were actually used
   before a story/task is marked `done`.
 - **Epic Process Judge** verifies epic closeout gates before an epic is product-done: drift audit when needed, trace,
   epic test-review, E2E/user-flow evidence, manual QA ledger, product-done audit, retrospective, and final status close.
 
-A workflow claim is invalid unless the required skill exists, was invoked, and left evidence on disk.
+A workflow claim is invalid unless the required skill exists, was invoked, and left evidence on disk. Subagent output is
+a lead, not gate evidence, until the conductor verifies the backing source path, command, or artifact.
 
 ## Honest status
 

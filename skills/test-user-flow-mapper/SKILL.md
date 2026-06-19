@@ -79,6 +79,10 @@ If nothing is provided, ask:
 
 Read everything provided before proceeding.
 
+If a flow affects a gate (payment, entitlement, auth, data, release, or epic closeout), do not treat prose or subagent
+summary as enough evidence. Record which files/spec sections support each critical flow step, and mark unsupported
+steps as `unknown` or `needs decision`.
+
 If a `story-map` is provided, do not remap the whole product unless explicitly asked. Select:
 - one critical task/journey for `scope=single-flow`, or
 - 2-5 related critical journeys for `scope=multi-flow`

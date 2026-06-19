@@ -169,7 +169,9 @@ State the detected framework before proceeding.
 Accept input in one of two forms:
 
 **Form A (preferred):** Risk Profile handoff block (see `shared/handoff-schema.md` § "Risk Profile Handoff") + original source file
-**Form B (fallback):** Source file only — run basic inline analysis before generating. **Note: fast path is lower confidence. Do not use for comprehensive coverage or code with external side effects.**
+**Form B (low-context mode):** Source file only — run basic inline analysis before generating. **Note: this is lower
+confidence. Do not use for ACEF guarded gates, comprehensive coverage, or code with external side effects unless the
+missing risk-profile/test-case evidence is explicitly accepted by the human.**
 
 **Validate the handoff block:**
 1. Check `"artifact": "risk-profile"` — reject if wrong type

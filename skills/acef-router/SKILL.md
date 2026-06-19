@@ -18,6 +18,10 @@ Use this skill as the front door for ACEF brownfield work.
 
 Route first. Execute later.
 
+Route selection is not capability availability. A route says what the work needs; preflight proves whether the required
+lane/tools can actually run. The router must not claim BMAD, tests, CI, or release readiness as available unless the
+later preflight records resolved paths/commands and evidence.
+
 Do not start implementation, tests, installs, or broad repo scans unless the user explicitly approves that next step.
 
 Ask at most three yes/no clarifying questions before choosing a provisional route. If confidence is low or risk is
@@ -43,9 +47,11 @@ high, route upward to the safer/larger path; never route downward to reduce cere
 4. Return:
    - selected route
    - why
+   - intended lane/track if inferable
    - minimum next inputs
    - next artifact
    - missing prerequisites
+   - capability checks still required
 5. Use READY / DRAFT / MISSING language for capabilities.
 
 ## Confidence And Escalation
@@ -74,6 +80,7 @@ Why:
 Need from user:
 Next artifact:
 Prerequisites:
+Capability checks still required:
 Do not run yet:
 ```
 
@@ -84,3 +91,7 @@ Do not run yet:
 - If adapter is missing or stale, say adapter extraction is the next step.
 - If work is guarded/critical, require human approval before execution.
 - Brownfield vs greenfield is determined from repo/project evidence, not by asking the user to choose methodology.
+- If Route B is selected, say full BMAD v2 is the intended lane but still requires real BMAD conductor/skill preflight.
+  Do not say "BMAD lane is active" until that preflight passes.
+- Do not propose fallback from Route B to lightweight guarded. If BMAD is missing, the next state is `HALT` and the
+  human must choose install/wire BMAD or explicitly accept a non-BMAD exception.

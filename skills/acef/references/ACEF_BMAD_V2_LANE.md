@@ -29,6 +29,10 @@ HALT: BMAD-METHOD is not installed or not wired for this repo. Install/wire the 
 different lane. Do not continue with a hand-rolled substitute.
 ```
 
+This `HALT` is not a fallback. The conductor may not switch to lightweight guarded work on its own. A non-BMAD
+lightweight exception requires explicit human approval and must be recorded as risk acceptance in the preflight
+artifact.
+
 ## Story lifecycle (per story)
 1. **Readiness** — the story is implementable: acceptance criteria clear, canonical references linked, domain contract
    complete, dependency order known. A soft story is sent back before any build.

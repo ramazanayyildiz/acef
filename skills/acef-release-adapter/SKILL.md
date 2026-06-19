@@ -36,6 +36,9 @@ Use this skill for release/CD preparation after implementation and review are co
 4. Produce release readiness checklist.
 5. Ask for explicit approval before any deploy or external side effect.
 
+Gate rule: release readiness is a Process Judge input. Do not accept "CI exists" or "deploy exists" from a summary.
+Record the exact workflow/script path and the checks it actually runs. A deploy-only workflow is not a test gate.
+
 ## Readiness Checks
 
 Before release, identify whether the project has:

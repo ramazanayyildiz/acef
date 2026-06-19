@@ -27,6 +27,11 @@ Parse the first argument as the target:
 
 Spawn **4 parallel read-only sub-agents** using the Agent tool with `subagent_type: "Explore"`. Each agent is strictly **read-only — never modifies code**.
 
+Subagent output is not final evidence. Treat each agent report as a lead. During synthesis, verify any gate-relevant
+claim against source files or commands before recording it as fact: stack/tool versions, test setup, CI gates,
+secrets/security findings, auth/payment/data risk, generated clients, backend/API contracts, and do-not-copy patterns.
+If you cannot verify it, label it low-confidence or omit it from hard rules.
+
 ### Agent 1: STACK
 
 > "Analyze the STACK of this repository. Report:
@@ -86,12 +91,13 @@ Spawn **4 parallel read-only sub-agents** using the Agent tool with `subagent_ty
 ### After all 4 agents return
 
 1. **Synthesize** their outputs into a single `codebase-map.md` with four clearly labeled sections
-2. **Capture a freshness stamp** before writing: `git rev-parse --short HEAD` (commit), the date, and the scope
+2. **Verify high-impact claims** from source evidence; never promote a subagent summary directly into a gate.
+3. **Capture a freshness stamp** before writing: `git rev-parse --short HEAD` (commit), the date, and the scope
    covered (which dirs/modules). This lets later runs decide "refresh or reuse?" mechanically instead of guessing.
-3. Add header (with the stamp):
+4. Add header (with the stamp):
    `# Codebase Map: {repo-name}\n\n*generated_at: {date} · commit: {short-sha} · covered: {scope} · Code is source of truth; supersedes any hand-written repo-inventory.*`
-4. If CONCERNS found committed secrets → add a prominent WARNING block at the top
-5. Write to the output path
+5. If CONCERNS found committed secrets → add a prominent WARNING block at the top
+6. Write to the output path
 
 ## Output Format
 
@@ -133,6 +139,7 @@ The mapper produces the descriptive layer. The human adds governance on top:
 ## Design Principles
 
 - **Code is truth.** Never trust docs over code. Cite file:line or don't claim it.
+- **Subagents are not proof.** They accelerate discovery; the synthesized map owns the verification.
 - **Read-only.** The mapper never modifies anything. It observes and reports.
 - **Parallel for speed.** 4 agents run simultaneously. Total wall-clock ~30-60s per repo.
 - **Honest about gaps.** If a section has low confidence, say so. Don't hallucinate conventions.
