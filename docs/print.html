@@ -1,7 +1,7 @@
 <!doctype html><html lang="en"><head><meta charset="utf-8"/>
 <title>ACEF — Developer Guide</title>
 <link rel="stylesheet" href="./theme.css"/>
-    <style>
+<style>
       .can{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:12px;margin:.7rem 0}
       .can .c{border:1px solid var(--line);border-radius:13px;background:var(--panel);padding:14px 16px;border-top:4px solid var(--rc,#2f6fed);box-shadow:0 1px 2px rgba(20,30,60,.04)}
       .can .c h4{margin:0 0 .35rem;font-size:1rem;display:flex;align-items:center;justify-content:space-between;gap:.5rem}
@@ -48,6 +48,9 @@
             <div class="card" style="border-left-color:var(--violet)"><h3>Orchestrate</h3><p>Drives existing tools
               (BMAD, Kiro, spec-kit, GSD, your own skills) through that adapter, behind one agent.</p></div>
           </div>
+          <div class="callout"><span class="em">🎯</span><div><strong>Grounding rule:</strong> a golden neighbor is
+            only qualified when the consumed symbol, hook, signature, or contract also matches. File-level similarity
+            is not enough.</div></div>
         </section>
 
         <section id="use"><h2><span class="ic" style="background:#f0eaff">💬</span>How to use it</h2>
@@ -99,6 +102,9 @@ Captures (each field cites a source path):
           <p>It does <strong>not</strong> install, write tests, or change code. It reads manifests, lock files, CI
             workflows, and the directory tree — no embeddings, no guessing. Re-run only when it goes stale (big refactor,
             new module, dependency or contract change), not for every task.</p>
+          <div class="callout blue"><span class="em">ℹ️</span><div><strong>Per-repo, not per-stack:</strong> even if two
+            repos both look like “web”, ACEF still extracts each repo’s own stack, test setup, CI, and golden
+            neighbors separately.</div></div>
         </section>
 
         <section id="howto"><h2><span class="ic" style="background:#f0eaff">🛠️</span>Task how-to</h2>
@@ -171,7 +177,7 @@ Captures (each field cites a source path):
           </ul>
         </section>
       </main>
-<div class="pb"></div>
+      <div class="pb"></div>
       <main>
         <p class="kicker">The process</p>
         <h1>SDLC &amp; Frameworks</h1>
@@ -201,7 +207,7 @@ Captures (each field cites a source path):
           <div class="phase"><div class="pname">2 · Requirements<small>what to build</small></div><div>User-facing behavior + acceptance criteria, with traceable IDs. Imported if a tool already produced them.<div class="ext">Frameworks: BMAD PRD · Kiro requirements (EARS) · spec-kit FR/US/SC IDs</div></div></div>
           <div class="phase"><div class="pname">3 · Design<small>how to build it</small></div><div>Architecture, data flow, contracts, affected modules, risks.<div class="ext">Frameworks: BMAD architecture · Kiro design</div></div></div>
           <div class="phase"><div class="pname">4 · Planning<small>break it down</small></div><div>Story map → epics → user stories → tasks, each traced back to a requirement.<div class="ext">Frameworks: BMAD stories/tasks · storymap · OpenSpec deltas (brownfield)</div></div></div>
-          <div class="phase"><div class="pname">5 · Implement<small>build</small></div><div>Copy the repo's golden neighbor; minimal, code-grounded change per task.<div class="ext">Frameworks: your project's own build skills, via the adapter</div></div></div>
+          <div class="phase"><div class="pname">5 · Implement<small>build</small></div><div>Follow the repo's golden neighbor — but ground it at the symbol level, not the file level: diff the target's real signatures and return shapes against the neighbor's before reusing, so a verbatim copy can't ship a type error. Minimal, code-grounded change per task.<div class="ext">Frameworks: your project's own build skills, via the adapter</div></div></div>
           <div class="phase"><div class="pname">6 · Review / Test / CI<small>verify</small></div><div>Review against the repo's standard; bootstrap a test pattern if none exists; run the gate.<div class="ext">Frameworks: your test stack (detected) · review skills</div></div></div>
           <div class="phase"><div class="pname">7 · Release / CD<small>ship</small></div><div>Readiness checklist, staged rollout, rollback — from the repo's real workflows.<div class="ext">Frameworks: your CI/CD, surfaced via the release adapter</div></div></div>
           <div class="phase"><div class="pname">8 · Feedback<small>learn</small></div><div>What went wrong / what to change → update the rule or checklist. No metric ceremony unless asked.<div class="ext">Frameworks: lessons / retro</div></div></div>
@@ -288,7 +294,7 @@ Captures (each field cites a source path):
           </div>
         </section>
       </main>
-<div class="pb"></div>
+      <div class="pb"></div>
       <main>
         <p class="kicker">What each role can do</p>
         <h1>ACEF for your role</h1>
