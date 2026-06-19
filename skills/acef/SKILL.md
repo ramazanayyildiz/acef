@@ -62,13 +62,22 @@ If user asks:
 5. Delegate route classification to `acef-router`.
 6. Depending on route:
    - Route A small feature: use adapter + golden neighbor; implementation helper may be project-specific. **Before copying a golden neighbor, ground at symbol/contract level** — read the actual symbols the target consumes (hook return shape, signatures, types) and diff them against the neighbor's assumptions; copy only contract-matching parts. A file-level "copy this neighbor" hides type mismatches.
-   - Route B large feature: delegate requirements/design/planning to `acef-specify`
+   - Route B large feature: run the BMAD capability preflight from `ACEF_BMAD_V2_LANE` first. If the real BMAD
+     conductor/skills cannot be resolved to paths, stop with `HALT: BMAD-METHOD is not installed or not wired for this
+     repo`; do not continue with a BMAD-like generic subagent flow. If preflight passes, delegate
+     requirements/design/planning to `acef-specify` and the full BMAD lane.
    - Route C bug fix: ask for expected/actual/repro; use adapter/golden neighbor (same symbol-level grounding rule — the fix should mirror the repo's own sibling pattern, contract-checked)
    - Route D test-case extraction: run `test-user-flow-mapper` → `test-case-planner` (use `flow-document-composer` / `flow-suite-composer` for the flow artifacts) per `ACEF_TEST_PIPELINE`; preserve READY/DRAFT/MISSING honesty
    - Route E test automation: add `test-browser-generator` after the cases (detect the real browser tool from the adapter); if the repo has zero tests, bootstrap the first pattern via `acef-test-bootstrap` first
    - Route F unit/integration: `test-gen` / `test-generator` (+ `test-coverage-auditor` / `test-risk-classifier` to target by risk); zero-test repos start with `acef-test-bootstrap` (one golden test, symbol-grounded)
    - Release/CD: delegate to `acef-release-adapter`
-7. Before any side effect, ask for explicit user approval.
+7. Before any story/task is marked `done`, require the Process Judge gate from `ACEF_OPERATING_MODEL`: verify route,
+   lane, track, required skills, resolved skill paths, phase order, and durable artifacts. Verdict must be `PASS`,
+   `FAIL`, or `HALT`.
+8. Before any epic is marked product-done or status-done, require the Epic Process Judge gate from
+   `ACEF_OPERATING_MODEL` and `ACEF_BMAD_V2_LANE`: drift audit, trace, epic test-review, E2E/user-flow evidence, manual
+   QA ledger, product-done audit, retrospective, and final status close must exist when required.
+9. Before any side effect, ask for explicit user approval.
 
 ## Helper Skills
 
@@ -84,6 +93,8 @@ If user asks:
 - No ceremony: do not run phases a route does not need.
 - Stack-agnostic: never assume framework/tooling; use adapter evidence.
 - Evidence-based: cite source files/paths for project facts when practical.
+- No imitation: never call generic subagent work "BMAD". BMAD means the real BMAD conductor/skills were installed,
+  invoked, and left evidence on disk.
 - Honesty: label capabilities as READY, DRAFT, or MISSING.
 - Approval: do not install, edit, deploy, or run broad automation without explicit user approval.
 - Guarded work: auth, payment, data/migrations, secrets, shared/core APIs, releases, and multi-repo work need human approval before execution.

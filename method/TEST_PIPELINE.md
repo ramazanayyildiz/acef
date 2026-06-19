@@ -41,3 +41,13 @@ commented-out/dead code or non-test scaffolding (a benchmark harness in a `test/
 - **Unit / integration (F):** `test-gen` / `test-generator` (+ `acef-test-bootstrap` if the repo has no tests yet).
 
 All frameworks, commands, and tools are **adapter values** — detected per repo, never assumed.
+
+## Where cases sit in delivery
+
+For risky or large work, test cases are not a late documentation task. They are the oracle that stories and automation
+use:
+- before implementation: map the affected flows and produce the first test-case plan;
+- during story slicing: attach relevant cases to each story/task;
+- before automation: use the test-case plan as the source for browser/unit/integration generators;
+- at epic close: regenerate or reconcile the flow/test-case/manual-QA set so every Critical/High persona path is
+  executed, explicitly deferred, or marked blocked/failing.

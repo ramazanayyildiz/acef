@@ -20,7 +20,8 @@ ACEF is one package that unifies **five layers** — the actual delivery engine,
 
 1. **Operating model** — personas (Planner / Developer / Judge / Test Author / Doc Maintainer) + tracks (mechanical / standard / guarded). `method/OPERATING_MODEL.md`
 2. **Test & flow engine** — real skills for user-flow → test-cases → tests, and bootstrapping the first test. `method/TEST_PIPELINE.md` + `skills/`
-3. **BMAD v2 heavy lane** — the full story lifecycle for epics / risky work (drives BMAD-METHOD). `method/BMAD_V2_LANE.md`
+3. **BMAD v2 heavy lane** — the full story lifecycle for epics / risky work (drives BMAD-METHOD, with a hard
+   installed-skill preflight). `method/BMAD_V2_LANE.md`
 4. **Codemap / project adapter** — grounds everything in *your* real repo (evidence-pinned, no embeddings). `skills/map-codebase` + `skills/acef-adapter`
 5. **Delivery rules (the glue)** — which layer runs for which work: small/ongoing → lightweight lane, epics → BMAD v2, with a promotion path. `method/DELIVERY_RULES.md`
 
@@ -44,6 +45,10 @@ docs/        The developer-guide website (also published via GitHub Pages)
 README.md
 ```
 
+Naming convention: `acef-*` skills are ACEF-specific orchestration/core skills. Unprefixed skills such as
+`map-codebase`, `test-case-planner`, and `storymap` are reusable workhorses that ACEF calls; they are intentionally
+not renamed because they can be used outside ACEF too.
+
 ## Install & use
 
 ACEF runs as a set of [Claude Code](https://docs.anthropic.com/claude-code) skills — they're Markdown instruction
@@ -65,8 +70,24 @@ understand how delivery actually runs; the agent applies them for you.
 ## Dependency: BMAD (large-feature flow only)
 
 For the **large-feature route (Route B)**, ACEF uses [BMAD-METHOD](https://github.com/bmad-code-org/BMAD-METHOD) (MIT)
-as the planning engine — `acef-specify` imports its PRD/architecture/stories output. BMAD is **not** bundled here;
-install it separately if you need Route B. Every other route works without it.
+as the heavy delivery engine. BMAD is **not** bundled here; install/wire it separately if you need Route B. Every other
+route works without it.
+
+Route B starts with a hard preflight. ACEF must resolve the real BMAD conductor/skills or commands before it proceeds.
+If BMAD is missing, ACEF must stop and ask you to install/wire it or choose a different lane. A generic subagent running
+a BMAD-like checklist is not BMAD.
+
+## Process gates
+
+ACEF separates implementation review from process review:
+
+- **Judge** reviews the change and returns `MERGE` / `REVISE` / `REPLAN`.
+- **Process Judge** verifies that the required route/lane/track, skills, phase order, and artifacts were actually used
+  before a story/task is marked `done`.
+- **Epic Process Judge** verifies epic closeout gates before an epic is product-done: drift audit when needed, trace,
+  epic test-review, E2E/user-flow evidence, manual QA ledger, product-done audit, retrospective, and final status close.
+
+A workflow claim is invalid unless the required skill exists, was invoked, and left evidence on disk.
 
 ## Honest status
 

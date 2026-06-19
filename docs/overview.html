@@ -28,10 +28,11 @@
           <a href="#routes"><span class="n">③</span> Routes</a>
           <a href="#onboard"><span class="n">④</span> Onboarding a repo</a>
           <a href="#howto"><span class="n">⑤</span> Task how-to</a>
-          <a href="#skills"><span class="n">⑥</span> Skills reference</a>
-          <a href="#status"><span class="n">⑦</span> Honest status</a>
-          <a href="#setup"><span class="n">⑧</span> Setup</a>
-          <a href="#principles"><span class="n">⑨</span> Principles</a>
+          <a href="#engine"><span class="n">⑥</span> Delivery engine</a>
+          <a href="#skills"><span class="n">⑦</span> Skills reference</a>
+          <a href="#status"><span class="n">⑧</span> Honest status</a>
+          <a href="#setup"><span class="n">⑨</span> Setup</a>
+          <a href="#principles"><span class="n">⑩</span> Principles</a>
         </nav>
       </aside>
 
@@ -118,8 +119,8 @@ Captures (each field cites a source path):
             <div class="card" style="border-left-color:var(--blue)"><h3>Small feature</h3><p>Adapter must be fresh → the
               agent picks a qualified golden neighbor → copies its pattern → review. No heavy spec/design.</p></div>
             <div class="card" style="border-left-color:var(--violet)"><h3>Large feature</h3><p><code>acef-specify</code>
-              imports BMAD/Kiro output if it exists (never regenerates), else lightweight requirements/design/tasks with
-              traceable IDs → build per task → review.</p></div>
+              starts with real BMAD preflight. If BMAD resolves, ACEF imports its PRD/architecture/stories output; if it
+              does not, ACEF halts instead of imitating BMAD with generic subagents.</p></div>
             <div class="card" style="border-left-color:var(--rose)"><h3>Bug fix</h3><p>Give expected vs actual + a repro.
               The agent finds root cause, makes the minimal fix matching local style, adds a regression test.</p></div>
             <div class="card" style="border-left-color:var(--amber)"><h3>Tests (none yet)</h3><p><code>acef-test-bootstrap</code>
@@ -128,6 +129,21 @@ Captures (each field cites a source path):
             <div class="card" style="border-left-color:var(--green)"><h3>Release</h3><p><code>acef-release-adapter</code>
               builds a readiness checklist from the repo's real workflows: staged rollout, rollback, changelog — and
               flags deploy-only workflows that aren't real test gates.</p></div>
+          </div>
+        </section>
+
+        <section id="engine"><h2><span class="ic" style="background:#f0eaff">⚙️</span>Delivery engine</h2>
+          <p>The repo ships more than the front-door agent. The engine is in <code>method/</code> and the agent reads
+            mirrored copies from <code>skills/acef/references/</code>.</p>
+          <div class="grid">
+            <div class="card" style="border-left-color:var(--blue)"><h3>Operating model</h3><p>Planner, Developer,
+              Judge, Test Author, Documentation Maintainer, plus mechanical/standard/guarded tracks.</p></div>
+            <div class="card" style="border-left-color:var(--violet)"><h3>Two lanes</h3><p>Small/ongoing work uses the
+              lightweight lane. Epics and risky large work use full BMAD v2.</p></div>
+            <div class="card" style="border-left-color:var(--rose)"><h3>Process gates</h3><p>Process Judge and Epic
+              Process Judge verify the required skills, phase order, artifacts, and evidence before <code>done</code>.</p></div>
+            <div class="card" style="border-left-color:var(--teal)"><h3>Test pipeline</h3><p>User flows become test
+              cases before automation: <code>test-user-flow-mapper</code> → <code>test-case-planner</code> → generators.</p></div>
           </div>
         </section>
 
@@ -140,10 +156,16 @@ Captures (each field cites a source path):
             <tr><td><code>acef-specify</code></td><td>Requirements/design/tasks — import if present, else lightweight.</td><td><span class="chip c-draft">DRAFT</span></td></tr>
             <tr><td><code>acef-test-bootstrap</code></td><td>First approved golden test for a repo with none.</td><td><span class="chip c-draft">DRAFT</span></td></tr>
             <tr><td><code>acef-release-adapter</code></td><td>Release/CD readiness from the repo's real config.</td><td><span class="chip c-draft">DRAFT</span></td></tr>
-            <tr><td><code>codebase-map</code></td><td>Auto-generate a code-grounded map of any repo (+ freshness stamp).</td><td><span class="chip c-ready">READY</span></td></tr>
+            <tr><td><code>map-codebase</code></td><td>Auto-generate a code-grounded map of any repo (+ freshness stamp).</td><td><span class="chip c-ready">READY</span></td></tr>
+            <tr><td><code>test-user-flow-mapper</code>, <code>test-case-planner</code></td><td>Turn product/user flows into structured test cases before automation.</td><td><span class="chip c-draft">DRAFT</span></td></tr>
+            <tr><td><code>test-browser-generator</code>, <code>test-gen</code>, <code>test-generator</code></td><td>Generate browser/E2E and unit/integration tests from approved cases and adapter evidence.</td><td><span class="chip c-draft">DRAFT</span></td></tr>
+            <tr><td><code>test-strategy</code>, <code>test-risk-classifier</code>, <code>test-coverage-auditor</code></td><td>Pick test levels, rank risky behavior, and find weak or missing coverage.</td><td><span class="chip c-draft">DRAFT</span></td></tr>
+            <tr><td><code>flow-document-composer</code>, <code>flow-suite-composer</code>, <code>storymap</code>, <code>qa</code></td><td>Compose flow docs, QA suites, story maps, and QA passes.</td><td><span class="chip c-draft">DRAFT</span></td></tr>
           </table>
-          <p class="muted">Plus your project's own build and review helpers — ACEF calls them through the adapter, it
-            doesn't replace them.</p>
+          <p class="muted">Plus BMAD-METHOD for Route B when installed. ACEF does not accept "BMAD-like" generic
+            subagents as BMAD; the real BMAD conductor/skills must resolve first.</p>
+          <p class="muted"><code>acef-*</code> names are reserved for ACEF-specific orchestration/core skills. The
+            unprefixed skills are reusable workhorses that ACEF calls, not renamed copies.</p>
         </section>
 
         <section id="status"><h2><span class="ic" style="background:#fdf3dd">✅</span>Honest status</h2>
@@ -154,7 +176,7 @@ Captures (each field cites a source path):
             <div class="card" style="border-left-color:var(--rose)"><span class="chip c-missing">MISSING</span><p style="margin-top:.5rem">Not built or not found yet.</p></div>
           </div>
           <p class="muted">Today the orchestrator and helper skills are <span class="chip c-draft">DRAFT</span>; the
-            methodology docs are written; <code>codebase-map</code> is <span class="chip c-ready">READY</span>. The next
+            methodology docs are written; <code>map-codebase</code> is <span class="chip c-ready">READY</span>. The next
             step is using the agent on a real case — after that, DRAFT skills can be promoted to READY.</p>
         </section>
 
@@ -168,7 +190,9 @@ Captures (each field cites a source path):
   acef-specify/          # requirements / design / tasks (import or lightweight)
   acef-test-bootstrap/   # first golden test for a repo with no tests
   acef-release-adapter/  # release / CD readiness
-  codebase-map/          # auto-generate a code-grounded map of any repo</code></pre>
+  map-codebase/          # auto-generate a code-grounded map of any repo
+  test-*/ flow-*/        # user flows, test cases, risk, generators, QA passes
+  storymap/ qa/          # planning + QA workhorses</code></pre>
           <p>Nothing in the skills is project-specific — every stack value comes from the adapter you extract per repo.</p>
         </section>
 

@@ -19,6 +19,10 @@ first, then work" — the codemap idea.)
 The lightweight lane *is* Layer 1 run for day-to-day work. Full BMAD v2 is the heavy lane for big/risky work. Most
 ongoing work lives in the lightweight lane.
 
+Full BMAD v2 has a hard capability preflight: the real BMAD workflow must be installed/wired and its required skills or
+commands must resolve to paths before the lane starts. If BMAD is missing, ACEF stops and asks for installation/wiring or
+a lane decision. A generic subagent running a BMAD-like checklist is not valid BMAD.
+
 ## Route → lane
 
 | Route | Lane | Track (lightweight) |
@@ -46,6 +50,8 @@ A lightweight (usually guarded) task promotes to full BMAD when any of:
 - **Plan integrity** — no skip / reorder / shrink / expand scope without human approval.
 - **2×REPLAN → escalate** — the circuit breaker.
 - **Fresh Judge review** (no self-approval) and **verify-patch on REVISE**.
+- **Process Judge gates** — story/task close and epic close must prove the required steps, skills, and artifacts were
+  actually used before status changes to `done`.
 - **Done = user-visible** — for user-facing work, prove the owning persona can reach and use the surface, not just a green unit test.
 - **Drift = stop condition** — if specs, artifact, and code disagree, resolve the source-of-truth conflict before merging.
 - **Guarded test floor** — for guarded-track work a verification checklist is a **supplement, not a substitute**: require at least one symbol-grounded test on the auth / payment / entitlement / data boundary (bootstrap the framework with approval if the repo has none). A zero-test repo does not license shipping guarded work untested; the human-approval gate confirms a test was written, not just a checklist.

@@ -30,6 +30,8 @@ the review surface; the Developer never self-merges.
 | **Test Author** | Guarded track only. Writes/​names the failing tests from the acceptance criteria, independently, before/alongside the Developer. |
 | **Developer** | Implements exactly one task, runs tests/gates, writes a Developer Report. |
 | **Judge** | Fresh review (never self-approval). Returns exactly one of `MERGE` / `REVISE` / `REPLAN`. |
+| **Process Judge** | Verifies the required process was actually followed. It checks route/lane/track, required skill paths, phase order, artifacts, and evidence before any story or task is marked `done`. It does not review implementation quality. |
+| **Epic Process Judge** | Runs only at epic close. It verifies the full epic gate chain before product-done/status close. |
 | **Documentation Maintainer** | Runs only on doc drift; updates docs to match behavior, never expands scope. |
 | **Human Architect** | Owns the plan, approves scope changes, gates, and done-state. |
 
@@ -55,6 +57,33 @@ The Planner assigns one **track** per task. The track sets which personas partic
 
 **Track flows:** Mechanical = Planner → Developer → done · Standard = Planner → Developer → Judge · Guarded =
 Planner → Test Author + Developer (parallel) → Judge (full pipeline).
+
+## Process gates
+
+The implementation Judge and the Process Judge are separate roles. The Judge reviews the change; the Process Judge
+reviews the workflow claim. A workflow claim is invalid unless the required skill exists, was invoked, and left evidence
+on disk.
+
+**Story/task Process Judge questions:**
+1. What route, lane, and track was selected, and where is that recorded?
+2. Which skills were required for that route/lane/track, and what are their resolved paths?
+3. If BMAD was claimed, did the real BMAD skill/conductor run, or was this only a hand-rolled imitation?
+4. Were required phases executed in order?
+5. Do readiness, ATDD/test, review, verify-patch, test-review, and product-done artifacts exist when the lane requires them?
+6. Do required artifacts include the real workflow evidence/manifest, not only files shaped like the expected output?
+7. If a required gate is missing, did the work return to the right phase instead of being marked done?
+
+**Story/task verdict:** `PASS`, `FAIL: <missing gate/evidence>`, or `HALT: <human decision needed>`.
+
+**Epic Process Judge questions:**
+1. Did the epic start with the required test-design / risk-weighted coverage plan?
+2. Did every story pass story-level Process Judge before epic close?
+3. Did drift audit, trace, epic test-review, E2E/user-flow evidence, manual QA ledger, product-done audit, retrospective,
+   and final status close run when required?
+4. Are all Critical/High persona flows executed, explicitly deferred with owner/rationale, or marked blocked/failing?
+5. Is any `done` status based on chat or prose instead of durable artifact + PR evidence?
+
+**Epic verdict:** `PASS` means the epic may close; `FAIL` returns to the missing gate; `HALT` asks the human.
 
 ## Status flow
 
