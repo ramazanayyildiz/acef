@@ -3,182 +3,89 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>ACEF — Developer Guide</title>
-    <meta name="description" content="How to use ACEF: a stack-agnostic SDLC operating system for AI-assisted software work. Practical developer guide." />
+    <title>ACEF — Start Here</title>
+    <meta name="description" content="ACEF start page: what it does, how to enter, and where to read the detailed guides." />
     <link rel="stylesheet" href="./theme.css" />
   </head>
   <body>
     <div class="wrap">
       <aside>
-        <div class="logo"><b>A</b><div>ACEF<br/><small>developer guide</small></div></div>
+        <div class="logo"><b>A</b><div>ACEF<br/><small>start here</small></div></div>
         <div class="pageswitch">
-          <a class="active" href="./index.html">📘 Overview</a>
+          <a class="active" href="./index.html">🏠 Start</a>
           <a href="./sdlc.html">🔄 SDLC &amp; frameworks</a>
           <a href="./roles.html">👥 Roles</a>
         </div>
         <div class="navlabel">On this page</div>
         <nav>
-          <a href="#what"><span class="n">①</span> What ACEF is</a>
-          <a href="#use"><span class="n">②</span> How to use it</a>
-          <a href="#routes"><span class="n">③</span> Routes</a>
-          <a href="#onboard"><span class="n">④</span> Onboarding a repo</a>
-          <a href="#howto"><span class="n">⑤</span> Task how-to</a>
-          <a href="#skills"><span class="n">⑥</span> Skills reference</a>
-          <a href="#status"><span class="n">⑦</span> Honest status</a>
-          <a href="#setup"><span class="n">⑧</span> Setup</a>
-          <a href="#principles"><span class="n">⑨</span> Principles</a>
+          <a href="#what"><span class="n">①</span> What it does</a>
+          <a href="#use"><span class="n">②</span> How to start</a>
+          <a href="#pages"><span class="n">③</span> Where to read more</a>
         </nav>
       </aside>
 
       <main>
         <p class="kicker">Ayyildiz Context Engineering Framework</p>
-        <h1>ACEF Developer Guide</h1>
-        <p class="lede">A practical guide for developers who will <em>use</em> ACEF on a real codebase — a
-          stack-agnostic way to let an AI agent understand your project first, route the work correctly, and run only
-          the steps that case needs. For the full process see <a href="./sdlc.html">SDLC &amp; frameworks</a>; for
-          role-specific use see <a href="./roles.html">Roles</a>.</p>
+        <h1>ACEF</h1>
+        <p class="lede">ACEF helps an AI agent understand your repo, pick the right path, and keep the work simple for
+          the person using it. This page is the short entry point; the detailed guides stay on the other pages.</p>
 
-        <section id="what"><h2><span class="ic" style="background:#e8f0ff">🧭</span>What ACEF is</h2>
-          <p>ACEF is not a code generator and not a second methodology. It is a thin layer that makes AI-assisted work
-            fit <em>your</em> repo, doing three things:</p>
+        <section id="what">
+          <h2><span class="ic" style="background:#e8f0ff">🧭</span>What ACEF does</h2>
           <div class="grid">
-            <div class="card" style="border-left-color:var(--blue)"><h3>Extract</h3><p>Reads a <strong>project adapter</strong>
-              from the repo — stack, commands, CI, tests, golden examples, risky areas — from evidence, not guesses.</p></div>
-            <div class="card" style="border-left-color:var(--teal)"><h3>Route</h3><p>Classifies each request and runs
-              only the SDLC steps that case needs. No ceremony.</p></div>
-            <div class="card" style="border-left-color:var(--violet)"><h3>Orchestrate</h3><p>Drives existing tools
-              (BMAD, Kiro, spec-kit, GSD, your own skills) through that adapter, behind one agent.</p></div>
+            <div class="card" style="border-left-color:var(--blue)">
+              <h3>Understands the repo</h3>
+              <p>Reads the project from evidence, not guesses.</p>
+            </div>
+            <div class="card" style="border-left-color:var(--teal)">
+              <h3>Picks the right path</h3>
+              <p>Chooses the smallest useful flow for the work.</p>
+            </div>
+            <div class="card" style="border-left-color:var(--violet)">
+              <h3>Keeps it simple</h3>
+              <p>The user says what they want. ACEF handles the rest.</p>
+            </div>
           </div>
-          <div class="callout"><span class="em">🎯</span><div><strong>Grounding rule:</strong> a golden neighbor is
-            only qualified when the consumed symbol, hook, signature, or contract also matches. File-level similarity
-            is not enough.</div></div>
         </section>
 
-        <section id="use"><h2><span class="ic" style="background:#f0eaff">💬</span>How to use it</h2>
-          <p>You don't pick routes, phases, or skills. You talk to the <code>acef</code> agent in plain language and it
-            drives the rest:</p>
+        <section id="use">
+          <h2><span class="ic" style="background:#f0eaff">💬</span>How to start</h2>
           <div class="chat">
-            <div class="u"><div class="who">You</div>I want to add a notifications screen to this app.</div>
-            <div class="a"><div class="who">ACEF</div>Brownfield, small feature. I'll copy the screen pattern your repo
-              already uses, implement, then review. Which area is the entry point — anything special?</div>
+            <div class="u"><div class="who">You</div>I want to add a new feature to this project.</div>
+            <div class="a"><div class="who">ACEF</div>I’ll check the repo, pick the right route, and use the project’s
+              own patterns.</div>
           </div>
           <div class="chat">
-            <div class="u"><div class="who">You</div>Write tests for this service — there are none yet.</div>
-            <div class="a"><div class="who">ACEF</div>No test pattern here yet. First I'll set up one example test in
-              your stack and get your approval — that becomes the pattern. Then we expand. OK?</div>
+            <div class="u"><div class="who">You</div>I need tests for this codebase.</div>
+            <div class="a"><div class="who">ACEF</div>I’ll inspect the current setup, then choose the smallest safe test
+              path for this repo.</div>
           </div>
-          <p>Replies are short by default (one step at a time). Ask for more depth anytime:</p>
-          <ul class="clean">
-            <li><code>detail</code> → the route's purpose, inputs/outputs, why, risks</li>
-            <li><code>how</code> → which skills, adapter values, and files will run</li>
-            <li><code>teach</code> → explains the ACEF concept with an example</li>
-          </ul>
         </section>
 
-        <section id="routes"><h2><span class="ic" style="background:#e8f0ff">🚦</span>Routes — which one, when</h2>
-          <p>The agent classifies your intent into one route and runs only its steps. You don't choose this — it's here
-            so you understand what it's doing.</p>
+        <section id="pages">
+          <h2><span class="ic" style="background:#e3f7ec">📚</span>Where to read more</h2>
           <div class="routes">
-            <div class="route" style="--rc:var(--blue)"><h3>A · Small feature</h3><div class="tag">localized, follows an existing pattern</div><p>Short brief → golden neighbor → implement → review.</p></div>
-            <div class="route" style="--rc:var(--violet)"><h3>B · Large feature</h3><div class="tag">multi-module, new pattern, or touches data/auth/payment</div><p>Requirements → design → planning → build per task → review.</p></div>
-            <div class="route" style="--rc:var(--rose)"><h3>C · Bug fix</h3><div class="tag">correct known broken behavior</div><p>Reproduce → root cause → minimal fix → regression test → review.</p></div>
-            <div class="route" style="--rc:var(--teal)"><h3>D · Test cases</h3><div class="tag">produce test cases from the product</div><p>Flows → acceptance criteria → test cases.</p></div>
-            <div class="route" style="--rc:var(--amber)"><h3>E · Test automation</h3><div class="tag">repo needs its first automation</div><p>Inspect tests → bootstrap one approved test → automate a flow.</p></div>
-            <div class="route" style="--rc:var(--green)"><h3>F · Unit / integration</h3><div class="tag">add coverage to a module</div><p>Find pattern (or bootstrap) → focused tests → run.</p></div>
-          </div>
-          <div class="callout"><span class="em">⬆️</span><div><strong>Escalation rule:</strong> if the request is
-            ambiguous, low-confidence, or touches a risk area (auth, payment, migration, contract, multi-repo), the agent
-            moves <em>up</em> a route — never down — and asks at most a couple of yes/no questions.</div></div>
-        </section>
-
-        <section id="onboard"><h2><span class="ic" style="background:#e3f7ec">🔍</span>Onboarding a repo</h2>
-          <p>The first time ACEF touches a repo it extracts the <strong>project adapter</strong> (read-only). Everything
-            else relies on it.</p>
-          <pre><code>acef-adapter  →  {project}-adapter.md
-
-Captures (each field cites a source path):
-  identity / lifecycle · stack + package manager · layout · real commands
-  (build / test / lint / typecheck) · test setup · CI/CD · golden neighbors · risk surface
-  + freshness stamp (generated_at · commit · scope covered)</code></pre>
-          <p>It does <strong>not</strong> install, write tests, or change code. It reads manifests, lock files, CI
-            workflows, and the directory tree — no embeddings, no guessing. Re-run only when it goes stale (big refactor,
-            new module, dependency or contract change), not for every task.</p>
-          <div class="callout blue"><span class="em">ℹ️</span><div><strong>Per-repo, not per-stack:</strong> even if two
-            repos both look like “web”, ACEF still extracts each repo’s own stack, test setup, CI, and golden
-            neighbors separately.</div></div>
-        </section>
-
-        <section id="howto"><h2><span class="ic" style="background:#f0eaff">🛠️</span>Task how-to</h2>
-          <div class="grid">
-            <div class="card" style="border-left-color:var(--blue)"><h3>Small feature</h3><p>Adapter must be fresh → the
-              agent picks a qualified golden neighbor → copies its pattern → review. No heavy spec/design.</p></div>
-            <div class="card" style="border-left-color:var(--violet)"><h3>Large feature</h3><p><code>acef-specify</code>
-              imports BMAD/Kiro output if it exists (never regenerates), else lightweight requirements/design/tasks with
-              traceable IDs → build per task → review.</p></div>
-            <div class="card" style="border-left-color:var(--rose)"><h3>Bug fix</h3><p>Give expected vs actual + a repro.
-              The agent finds root cause, makes the minimal fix matching local style, adds a regression test.</p></div>
-            <div class="card" style="border-left-color:var(--amber)"><h3>Tests (none yet)</h3><p><code>acef-test-bootstrap</code>
-              detects the framework from evidence (or proposes the stack default and asks), writes <strong>one</strong>
-              idiomatic test, runs it, and gets your approval — that becomes the golden test.</p></div>
-            <div class="card" style="border-left-color:var(--green)"><h3>Release</h3><p><code>acef-release-adapter</code>
-              builds a readiness checklist from the repo's real workflows: staged rollout, rollback, changelog — and
-              flags deploy-only workflows that aren't real test gates.</p></div>
+            <div class="route" style="--rc:var(--blue)">
+              <h3><a href="./sdlc.html">SDLC &amp; frameworks</a></h3>
+              <p>How ACEF maps the lifecycle and where BMAD, Kiro, spec-kit, GSD, and OpenSpec fit.</p>
+            </div>
+            <div class="route" style="--rc:var(--teal)">
+              <h3><a href="./roles.html">Roles</a></h3>
+              <p>What a developer, PM, and QA/test engineer can do with ACEF.</p>
+            </div>
           </div>
         </section>
 
-        <section id="skills"><h2><span class="ic" style="background:#e8f0ff">🧩</span>Skills reference</h2>
-          <table>
-            <tr><th>Skill</th><th>Does</th><th>Status</th></tr>
-            <tr><td><code>acef</code></td><td>Front door. Routes intent, coordinates helpers, guides and teaches.</td><td><span class="chip c-draft">DRAFT</span></td></tr>
-            <tr><td><code>acef-adapter</code></td><td>Extract the per-repo project adapter (evidence-based, no embeddings).</td><td><span class="chip c-draft">DRAFT</span></td></tr>
-            <tr><td><code>acef-router</code></td><td>Classify a request into a route + the minimum questions.</td><td><span class="chip c-draft">DRAFT</span></td></tr>
-            <tr><td><code>acef-specify</code></td><td>Requirements/design/tasks — import if present, else lightweight.</td><td><span class="chip c-draft">DRAFT</span></td></tr>
-            <tr><td><code>acef-test-bootstrap</code></td><td>First approved golden test for a repo with none.</td><td><span class="chip c-draft">DRAFT</span></td></tr>
-            <tr><td><code>acef-release-adapter</code></td><td>Release/CD readiness from the repo's real config.</td><td><span class="chip c-draft">DRAFT</span></td></tr>
-            <tr><td><code>codebase-map</code></td><td>Auto-generate a code-grounded map of any repo (+ freshness stamp).</td><td><span class="chip c-ready">READY</span></td></tr>
-          </table>
-          <p class="muted">Plus your project's own build and review helpers — ACEF calls them through the adapter, it
-            doesn't replace them.</p>
-        </section>
-
-        <section id="status"><h2><span class="ic" style="background:#fdf3dd">✅</span>Honest status</h2>
-          <p>ACEF labels every capability so you always know what is real:</p>
-          <div class="grid">
-            <div class="card" style="border-left-color:var(--green)"><span class="chip c-ready">READY</span><p style="margin-top:.5rem">Working skill or real artifact, used on real repos.</p></div>
-            <div class="card" style="border-left-color:var(--amber)"><span class="chip c-draft">DRAFT</span><p style="margin-top:.5rem">Written, research-informed definition — <em>not yet tested on a real project</em>.</p></div>
-            <div class="card" style="border-left-color:var(--rose)"><span class="chip c-missing">MISSING</span><p style="margin-top:.5rem">Not built or not found yet.</p></div>
-          </div>
-          <p class="muted">Today the orchestrator and helper skills are <span class="chip c-draft">DRAFT</span>; the
-            methodology docs are written; <code>codebase-map</code> is <span class="chip c-ready">READY</span>. The next
-            step is using the agent on a real case — after that, DRAFT skills can be promoted to READY.</p>
-        </section>
-
-        <section id="setup"><h2><span class="ic" style="background:#e3f7ec">📦</span>Setup</h2>
-          <p>ACEF ships as AI-agent skills. The front door is the <code>acef</code> skill; it delegates to helpers and
-            reads its own portable methodology docs, so it works in any repo.</p>
-          <pre><code>skills/
-  acef/                  # the orchestrator (front door) + references/ (portable method docs)
-  acef-adapter/          # project adapter extraction
-  acef-router/           # route classification
-  acef-specify/          # requirements / design / tasks (import or lightweight)
-  acef-test-bootstrap/   # first golden test for a repo with no tests
-  acef-release-adapter/  # release / CD readiness
-  codebase-map/          # auto-generate a code-grounded map of any repo</code></pre>
-          <p>Nothing in the skills is project-specific — every stack value comes from the adapter you extract per repo.</p>
-        </section>
-
-        <section id="principles"><h2><span class="ic" style="background:#e8f0ff">⚖️</span>Principles</h2>
+        <section>
+          <h2><span class="ic" style="background:#fdf3dd">✅</span>What to remember</h2>
           <ul class="clean">
-            <li><strong>Stack-agnostic.</strong> The core knows no stack; every stack value comes from the adapter.</li>
-            <li><strong>Code-grounded.</strong> Copy a real golden neighbor; never invent a pattern the repo already has.</li>
-            <li><strong>No ceremony.</strong> Run only the steps a route needs. No dashboards or cadences unless asked.</li>
-            <li><strong>Human approval on risk.</strong> Auth, payment, migrations, secrets, shared APIs, releases, and
-              multi-repo work need a human before execution.</li>
-            <li><strong>Honesty.</strong> Always label READY / DRAFT / MISSING. Never present a draft as proven.</li>
+            <li>ACEF is a guide, not a second methodology.</li>
+            <li>It adapts to the repo you already have.</li>
+            <li>The detailed flows live on the SDLC and Roles pages.</li>
           </ul>
         </section>
       </main>
     </div>
-    <footer>ACEF — Ayyildiz Context Engineering Framework · developer guide.</footer>
+    <footer>ACEF — Ayyildiz Context Engineering Framework · start page.</footer>
   </body>
 </html>
