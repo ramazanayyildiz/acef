@@ -8,6 +8,11 @@ html{scroll-behavior:smooth}
 body{margin:0;background:radial-gradient(1100px 560px at 82% -8%,#e9f0ff 0%,var(--bg) 55%);color:var(--ink);
   font:16px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
 a{color:var(--blue);text-decoration:none} a:hover{text-decoration:underline}
+.repo-link{position:fixed;top:14px;right:14px;z-index:20;display:inline-flex;align-items:center;gap:8px;
+  padding:8px 12px;border:1px solid var(--line);border-radius:999px;background:rgba(255,255,255,.92);
+  box-shadow:0 4px 18px rgba(20,30,60,.08);color:var(--ink);font-size:.88rem;font-weight:700}
+.repo-link:hover{text-decoration:none;background:#fff}
+.repo-link svg{width:16px;height:16px;display:block;fill:currentColor}
 code,kbd{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:.88em;background:var(--code);
   border:1px solid var(--line);border-radius:5px;padding:.08em .42em;color:#264a9e}
 pre{background:var(--code);border:1px solid var(--line);border-radius:12px;padding:14px 16px;overflow:auto;margin:.6rem 0}
@@ -84,3 +89,4 @@ ul.clean{margin:.4rem 0;padding-left:1.1rem} ul.clean li{margin:.25rem 0}
 .route-card.f{border-top:4px solid var(--violet)}
 footer{border-top:1px solid var(--line);padding:22px 44px;color:var(--muted);max-width:1180px;margin:0 auto;font-size:.88rem}
 @media (max-width:840px){.wrap{grid-template-columns:1fr}aside{display:none}main{padding:24px 18px 60px}h1{font-size:1.85rem}.phase{grid-template-columns:1fr}}
+@media (max-width:520px){.repo-link{top:10px;right:10px;padding:7px 10px;font-size:.82rem}.repo-link span{display:none}}
