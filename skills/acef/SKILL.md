@@ -83,6 +83,9 @@ If user asks:
      repo`; do not continue with a BMAD-like generic subagent flow and do not auto-fallback. A non-BMAD lightweight
      exception requires explicit human approval recorded in the preflight artifact. If preflight passes, delegate
      requirements/design/planning to `acef-specify` and the full BMAD lane.
+     During epics/stories generation, seed one durable `Epic N Process Judge [PENDING]` row/artifact for every epic.
+     At the final story in each epic, the story-level Process Judge must set `Next allowed step: Epic N Process Judge`.
+     Do not create, start, or dispatch the first story of Epic N+1 until Epic N Process Judge is `PASS`.
    - Route C bug fix: ask for expected/actual/repro; use adapter/golden neighbor (same symbol-level grounding rule — the fix should mirror the repo's own sibling pattern, contract-checked)
    - Route D test-case extraction: run `test-user-flow-mapper` → `test-case-planner` (use `flow-document-composer` / `flow-suite-composer` for the flow artifacts) per `ACEF_TEST_PIPELINE`; preserve READY/DRAFT/MISSING honesty
    - Route E test automation: add `test-browser-generator` after the cases (detect the real browser tool from the adapter); if the repo has zero tests, bootstrap the first pattern via `acef-test-bootstrap` first
@@ -94,7 +97,9 @@ If user asks:
 10. Before any epic is marked product-done or status-done, require the Epic Process Judge gate from
    `ACEF_OPERATING_MODEL` and `ACEF_BMAD_V2_LANE`: drift audit, trace, epic test-review, E2E/user-flow evidence, manual
    QA ledger, product-done audit, retrospective, and final status close must exist when required.
-11. Before any side effect, ask for explicit user approval.
+11. Treat "continue without me" as permission to skip waiting for a human checkpoint only. It never waives Process Judge
+   or Epic Process Judge gates.
+12. Before any side effect, ask for explicit user approval.
 
 ## Helper Skills
 
@@ -140,6 +145,8 @@ If user asks:
   Author/Tester, Developer, Code Reviewer/Judge, Verify-Patch Reviewer, Test Reviewer, Process Judge, and Documentation
   Maintainer. Generic subagents are invalid unless their prompt binds them to one persona and the artifact records that
   identity. The conductor is not a persona worker.
+- Full BMAD epic boundary: epics/stories generation seeds epic gate rows up front, the last story in an epic points to
+  that epic's Process Judge, and the next epic cannot start until the prior epic gate is `PASS`.
 - Honesty: label capabilities as READY, DRAFT, or MISSING.
 - Approval: do not install, edit, deploy, or run broad automation without explicit user approval.
 - Guarded work: auth, payment, data/migrations, secrets, shared/core APIs, releases, and multi-repo work need human approval before execution.

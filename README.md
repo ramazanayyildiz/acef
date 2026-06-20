@@ -92,6 +92,10 @@ Route B also requires actor separation. Planning, ATDD, development, code review
 Process Judge must record distinct valid persona actors. A generic worker is invalid unless it is explicitly bound to a
 BMAD/ACEF persona in the artifact evidence.
 
+Route B also requires seeded epic gates. When epics/stories are generated, every epic gets an `Epic N Process Judge
+[PENDING]` row or artifact before implementation starts. The last story in an epic points to that gate, and the next
+epic cannot start until the prior epic gate is `PASS`.
+
 ## Process gates
 
 ACEF separates implementation review from process review:
@@ -107,6 +111,8 @@ ACEF separates implementation review from process review:
   cannot be waived on guarded stories.
 - **Epic Process Judge** verifies epic closeout gates before an epic is product-done: drift audit when needed, trace,
   epic test-review, E2E/user-flow evidence, manual QA ledger, product-done audit, retrospective, and final status close.
+- **Epic boundary** is mechanical: `continue without me` may skip waiting for a human checkpoint, but it never skips the
+  seeded Epic Process Judge gate.
 
 A workflow claim is invalid unless the required skill exists, was invoked, and left evidence on disk. Subagent output is
 a lead, not gate evidence, until the conductor verifies the backing source path, command, or artifact.

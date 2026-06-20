@@ -67,6 +67,11 @@ A lightweight (usually guarded) task promotes to full BMAD when any of:
   steps.
 - **Process Judge gates** — story/task close and epic close must prove the required steps, skills, and artifacts were
   actually used before status changes to `done`.
+- **Seeded epic gates** — full BMAD epics/stories generation must seed `Epic N Process Judge [PENDING]` rows/artifacts
+  before implementation starts. The final story in an epic points to that epic gate, and Epic N+1 cannot start until
+  Epic N Process Judge is `PASS`.
+- **Human-pause is not process-gate** — a human may permit autonomous continuation, but that only waives waiting for
+  the human. It never waives required Process Judge or Epic Process Judge gates.
 - **Artifact claim reconciliation** — before a step can pass, every claimed output path in a state file, frontmatter,
   or ledger entry must be verified on disk. Missing claimed outputs halt the run until corrected or generated under a
   valid ledger step.

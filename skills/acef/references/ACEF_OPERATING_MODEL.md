@@ -152,6 +152,20 @@ decision, but it may not silently continue on a weaker lane.
 The preflight artifact is not a replacement for the delivery ledger. Preflight decides whether the first lane can start;
 the delivery ledger proves that the feature keeps following the lane until completion.
 
+### Seeded Epic Gates
+
+For full BMAD work, epic gates must exist on the board before implementation starts. When the epics/stories phase
+creates the story backlog, it must also create one `Epic N Process Judge [PENDING]` ledger row or artifact for every
+epic. The row sits immediately after that epic's final story and has its own required skill/tool, evidence source,
+verdict, and next allowed step.
+
+The last story-level Process Judge in an epic must point to `Epic N Process Judge`. It must not point to the first story
+of the next epic. The next epic's first story may not be created, started, or dispatched until the prior epic gate is
+`PASS`.
+
+Autonomy grants and human-pause grants are separate from process gates. If a human says "continue without me", the
+conductor may skip waiting for a human checkpoint, but it may not skip `Epic N Process Judge`.
+
 ### Subagent Claims Are Not Evidence
 
 Subagents can collect leads, but their output is a claim until the conductor verifies the source path, command, or
@@ -190,13 +204,18 @@ Reviewer, Process Judge, and Documentation Maintainer. A generic or conductor id
 **Story/task verdict:** `PASS`, `FAIL: <missing gate/evidence>`, or `HALT: <human decision needed>`.
 
 **Epic Process Judge questions:**
-1. Did the epic start with the required test-design / risk-weighted coverage plan?
-2. Did every story pass story-level Process Judge before epic close?
-3. Did drift audit, trace, epic test-review, E2E/user-flow evidence, manual QA ledger, product-done audit, retrospective,
+1. Was the `Epic N Process Judge [PENDING]` gate row/artifact seeded during epics/stories generation, before
+   implementation started?
+2. Did the final story-level Process Judge in the epic set `Next allowed step: Epic N Process Judge`?
+3. Did the next epic wait until this epic gate reached `PASS` before any next-epic story was created, started, or
+   dispatched?
+4. Did the epic start with the required test-design / risk-weighted coverage plan?
+5. Did every story pass story-level Process Judge before epic close?
+6. Did drift audit, trace, epic test-review, E2E/user-flow evidence, manual QA ledger, product-done audit, retrospective,
    and final status close run when required?
-4. Are all Critical/High persona flows executed, explicitly deferred with owner/rationale, or marked blocked/failing?
-5. Is any `done` status based on chat or prose instead of durable artifact + PR evidence?
-6. Does the feature delivery ledger reconcile the full epic path: preflight → planning → stories → tests → review →
+7. Are all Critical/High persona flows executed, explicitly deferred with owner/rationale, or marked blocked/failing?
+8. Is any `done` status based on chat or prose instead of durable artifact + PR evidence?
+9. Does the feature delivery ledger reconcile the full epic path: preflight → planning → stories → tests → review →
    product-done → close?
 
 **Epic verdict:** `PASS` means the epic may close; `FAIL` returns to the missing gate; `HALT` asks the human.

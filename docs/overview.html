@@ -150,6 +150,8 @@ Captures (each field cites a source path):
             <div class="card" style="border-left-color:var(--amber)"><h3>Actor separation</h3><p>Full BMAD story evidence
               records ATDD actor, Developer actor, Code Review actor, Verify-Patch actor, Test Review actor, and Process
               Judge actor. Self-review is invalid.</p></div>
+            <div class="card" style="border-left-color:var(--violet)"><h3>Epic boundary</h3><p>Every epic gets a seeded
+              Process Judge gate. The final story points to that gate, and the next epic waits for <code>PASS</code>.</p></div>
             <div class="card" style="border-left-color:var(--teal)"><h3>Test pipeline</h3><p>User flows become test
               cases before automation: <code>test-user-flow-mapper</code> → <code>test-case-planner</code> → generators.</p></div>
           </div>
@@ -205,7 +207,8 @@ Captures (each field cites a source path):
           <p>For Claude Code users, ACEF also ships a portable BMAD guard hook in
             <code>claude-plugins/acef-bmad-guard/</code>. Clone users can install it with
             <code>scripts/install-acef-bmad-guard</code>; plugin users can enable that directory as a Claude Code
-            plugin. Restart Claude Code after installing hooks.</p>
+            plugin. The hook blocks dispatcher/conductor writes and blocks crossing into Epic N+1 until Epic N Process
+            Judge is <code>PASS</code>. Restart Claude Code after installing hooks.</p>
         </section>
 
         <section id="principles"><h2><span class="ic" style="background:#e8f0ff">⚖️</span>Principles</h2>

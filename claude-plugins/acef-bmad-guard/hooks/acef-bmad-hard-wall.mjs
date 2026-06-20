@@ -152,17 +152,88 @@ function bashIsRestricted(command, cwd, repoRoot) {
     || /\b(touch|mkdir|cp|mv|rm)\b.*\b(app|src|modules|shared|lib|_bmad-output|docs\/ai|docs\/prd\.md|docs\/architecture\.md)\b/.test(command);
 }
 
+function parseTargetEpicNumber(command) {
+  const explicit = process.env.ACEF_TARGET_EPIC || process.env.ACEF_EPIC_NUMBER || process.env.BMAD_EPIC_NUMBER || "";
+  if (/^\d+$/.test(explicit)) return Number(explicit);
+
+  const patterns = [
+    /(?:--epic(?:=|\s+)|\bepic[\s_-]*)(\d+)/i,
+    /\bE(\d+)[-.]\d+\b/i,
+    /\bGIFT-(\d+)[-.]\d+\b/i,
+    /\bstory\s+(\d+)[-.]\d+\b/i,
+  ];
+
+  for (const pattern of patterns) {
+    const match = command.match(pattern);
+    if (match) return Number(match[1]);
+  }
+
+  return 0;
+}
+
+function fileContainsPass(filePath, epicNumber) {
+  try {
+    if (!fs.statSync(filePath).isFile()) return false;
+    const text = fs.readFileSync(filePath, "utf8");
+    const hasEpic = new RegExp(`Epic\\s+${epicNumber}\\s+Process\\s+Judge`, "i").test(text)
+      || new RegExp(`epic[-_ ]${epicNumber}[-_ ]process[-_ ]judge`, "i").test(filePath);
+    const hasPass = /\b(Verdict|Status)\s*:\s*PASS\b/i.test(text)
+      || /\|\s*Epic\s+\d+\s+Process\s+Judge\s*\|[^|\n]*\|\s*PASS\b/i.test(text);
+    return hasEpic && hasPass;
+  } catch {
+    return false;
+  }
+}
+
+function epicGatePassed(repoRoot, epicNumber) {
+  const candidates = [
+    path.join(repoRoot, "docs", "ai", `ACEF_EPIC_${epicNumber}_PROCESS_JUDGE_PASS.md`),
+    path.join(repoRoot, "docs", "ai", `ACEF_EPIC_${epicNumber}_PROCESS_JUDGE.md`),
+    path.join(repoRoot, "docs", "ai", `epic-${epicNumber}-process-judge.md`),
+    path.join(repoRoot, "_bmad-output", `epic-${epicNumber}-process-judge.md`),
+  ];
+
+  if (candidates.some((candidate) => fileContainsPass(candidate, epicNumber))) return true;
+
+  const dirs = [
+    path.join(repoRoot, "docs", "ai"),
+    path.join(repoRoot, "_bmad-output"),
+    path.join(repoRoot, "_bmad-output", "planning-artifacts"),
+    path.join(repoRoot, "_bmad-output", "implementation-artifacts"),
+  ];
+
+  for (const dir of dirs) {
+    try {
+      for (const name of fs.readdirSync(dir)) {
+        const filePath = path.join(dir, name);
+        if (fileContainsPass(filePath, epicNumber)) return true;
+      }
+    } catch {
+      // Ignore absent artifact directories.
+    }
+  }
+
+  return false;
+}
+
+function epicBoundaryRestricted(command, repoRoot) {
+  if (!/\b(bmad-create-story|create-story|dev-story|start-story|dispatch-story)\b/i.test(command)) return "";
+
+  const targetEpic = parseTargetEpicNumber(command);
+  if (!targetEpic || targetEpic <= 1) return "";
+
+  const priorEpic = targetEpic - 1;
+  if (epicGatePassed(repoRoot, priorEpic)) return "";
+
+  return `ACEF/BMAD epic boundary: cannot start Epic ${targetEpic} before Epic ${priorEpic} Process Judge is PASS. Seed/run the Epic ${priorEpic} gate first.`;
+}
+
 (async () => {
   let payload = {};
   try {
     const raw = await readStdin();
     payload = raw.trim() ? JSON.parse(raw) : {};
   } catch {
-    allow();
-    return;
-  }
-
-  if (isWorker()) {
     allow();
     return;
   }
@@ -174,6 +245,19 @@ function bashIsRestricted(command, cwd, repoRoot) {
   const repoRoot = findActiveRoot([filePath, cwd, process.env.CLAUDE_PROJECT_DIR ? resolvePath(process.env.CLAUDE_PROJECT_DIR) : ""]);
 
   if (!repoRoot) {
+    allow();
+    return;
+  }
+
+  if (toolName === "Bash") {
+    const boundaryReason = epicBoundaryRestricted(input.command || "", repoRoot);
+    if (boundaryReason) {
+      deny(boundaryReason);
+      return;
+    }
+  }
+
+  if (isWorker()) {
     allow();
     return;
   }

@@ -51,6 +51,8 @@ artifact.
 8. **Test-review** — score test quality (target ≥ 80/100): brittleness, duplication, false-positive risk, fixture hygiene.
 9. **Story closeout Process Judge** — before product-done/test-review close, verify the real steps ran in order and the
    artifacts are genuine skill outputs. Any missing BLOCKER/HIGH process evidence returns the story to the required phase.
+   If this is the last story in its epic, the next allowed step must be `Epic N Process Judge`, not the next epic's
+   first story.
 10. **Product-done audit + manual QA** — see below.
 11. **Mark done** only through the evidence gate.
 
@@ -101,6 +103,17 @@ Rules:
 Start: test-design (levels/boundaries/risk-weighted coverage). Close: trace (AC↔test matrix) · epic test-review ·
 E2E for any user-facing surface (flow-map → test-cases → browser tests, via the Layer-2 skills) · manual-QA
 stabilization · product-done audit · retrospective.
+
+When epics/stories are generated, the conductor must also seed one durable `Epic N Process Judge [PENDING]` gate row or
+artifact for every epic. This row is positioned after that epic's final story in the delivery ledger. It is not a note
+and not a reminder; it is the next allowed transition at the epic boundary.
+
+Epic boundary rule:
+- The last story-level Process Judge in an epic must set `Next allowed step: Epic N Process Judge`.
+- The first story in Epic N+1 must not be created, started, or dispatched until Epic N Process Judge is `PASS`.
+- Human permission to "continue" can waive a pause for human review, but it cannot waive the process gate.
+- If the next epic starts without the prior epic gate PASS, stop, mark the run as drift, and restart from the missing
+  Epic Process Judge gate.
 
 Epic close must end with an **Epic Process Judge** pass. The epic may not be marked product-done until the judge verifies
 that drift audit (when specs exist), trace, epic test-review, E2E/user-flow evidence, manual QA ledger, product-done

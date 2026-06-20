@@ -5,6 +5,10 @@ Portable Claude Code hook package for ACEF/BMAD lanes.
 It prevents the main dispatcher/conductor from authoring BMAD artifacts or implementation code once a BMAD lane is
 active. Dedicated persona workers are allowed through when their environment identifies them as workers.
 
+It also enforces epic boundaries for story-start commands. If a command such as `bmad-create-story`, `create-story`, or
+`dispatch-story` targets Epic N+1, the hook requires Epic N Process Judge to be `PASS` first. The target epic can be
+provided with `ACEF_TARGET_EPIC`, `ACEF_EPIC_NUMBER`, `BMAD_EPIC_NUMBER`, `--epic N`, or story names such as `E2-1`.
+
 ## Activation
 
 The hook is active when the current repo or one of its ancestors contains one of:
@@ -49,3 +53,13 @@ workers.
 
 If a real BMAD worker is blocked, fix the worker identity marker. Do not disable the hard wall for the dispatcher or
 conductor.
+
+## Epic Boundary Evidence
+
+The hook accepts a prior epic gate when one of the standard artifacts contains `Epic N Process Judge` and
+`Verdict: PASS` or `Status: PASS`, for example:
+
+- `docs/ai/ACEF_EPIC_N_PROCESS_JUDGE.md`
+- `docs/ai/epic-N-process-judge.md`
+- `_bmad-output/epic-N-process-judge.md`
+- a delivery ledger under `docs/ai/` or `_bmad-output/`
