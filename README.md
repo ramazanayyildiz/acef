@@ -27,6 +27,10 @@ ACEF is one package that unifies **five layers** — the actual delivery engine,
 
 A front-door agent (`acef`) ties them together and routes each request, so the user never has to pick a layer, route, or skill.
 
+For full BMAD work, the conductor/dispatcher is only the lifecycle coordinator. It must not author PRDs, UX specs,
+architecture, stories, code, tests, reviews, or done-state judgments itself. Each phase binds to a concrete worker
+persona, and a worker that wrote code cannot review, verify, or mark its own work done.
+
 ## What's in this repo
 
 ```text
@@ -64,6 +68,13 @@ files the agent follows. No build, no npm, no services.
    your request, picks the lane (lightweight vs BMAD v2 per `method/DELIVERY_RULES.md`), and runs only the steps that
    case needs.
 
+4. **Optional hard wall for BMAD lanes** — if you use Claude Code hooks, install the ACEF/BMAD guard so the dispatcher
+   or conductor cannot write implementation files or BMAD artifacts during a BMAD lane:
+   ```bash
+   scripts/install-acef-bmad-guard
+   ```
+   The portable hook package lives in `claude-plugins/acef-bmad-guard/` for plugin-based installs.
+
 The `method/` docs are the engine the agent follows (personas, tracks, lanes, the test pipeline). Read them to
 understand how delivery actually runs; the agent applies them for you.
 
@@ -77,6 +88,10 @@ Route B starts with a hard preflight. ACEF must resolve the real BMAD conductor/
 If BMAD is missing, ACEF must stop and ask you to install/wire it or choose a different lane. A generic subagent running
 a BMAD-like checklist is not BMAD.
 
+Route B also requires actor separation. Planning, ATDD, development, code review, verify-patch, test review, and
+Process Judge must record distinct valid persona actors. A generic worker is invalid unless it is explicitly bound to a
+BMAD/ACEF persona in the artifact evidence.
+
 ## Process gates
 
 ACEF separates implementation review from process review:
@@ -87,6 +102,9 @@ ACEF separates implementation review from process review:
 - **Judge** reviews the change and returns `MERGE` / `REVISE` / `REPLAN`.
 - **Process Judge** verifies that the required route/lane/track, skills, phase order, and artifacts were actually used
   before a story/task is marked `done`.
+- **Actor separation** is part of the gate: every story ledger must record ATDD actor, Developer actor, Code Review
+  actor, Verify-Patch actor, Test Review actor, and Process Judge actor. Self-review is invalid on full BMAD work and
+  cannot be waived on guarded stories.
 - **Epic Process Judge** verifies epic closeout gates before an epic is product-done: drift audit when needed, trace,
   epic test-review, E2E/user-flow evidence, manual QA ledger, product-done audit, retrospective, and final status close.
 

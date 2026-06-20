@@ -1,0 +1,17 @@
+{
+  "description": "Blocks dispatcher/conductor writes during active ACEF/BMAD lanes. Dedicated persona workers are allowed.",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Read|Write|Edit|MultiEdit|NotebookEdit|Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node ${CLAUDE_PLUGIN_ROOT}/hooks/acef-bmad-hard-wall.mjs",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}

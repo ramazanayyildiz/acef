@@ -1,0 +1,57 @@
+#!/usr/bin/env node
+const fs = require("node:fs");
+const path = require("node:path");
+
+const repoRoot = path.resolve(__dirname, "..");
+const sourceHook = path.join(repoRoot, "claude-plugins", "acef-bmad-guard", "hooks", "acef-bmad-hard-wall.mjs");
+const home = process.env.HOME;
+
+if (!home) {
+  throw new Error("HOME is not set; cannot locate ~/.claude.");
+}
+
+if (!fs.existsSync(sourceHook)) {
+  throw new Error(`Hook source not found: ${sourceHook}`);
+}
+
+const claudeDir = path.join(home, ".claude");
+const hooksDir = path.join(claudeDir, "hooks");
+const settingsPath = path.join(claudeDir, "settings.json");
+const targetHook = path.join(hooksDir, "acef-bmad-hard-wall.mjs");
+
+fs.mkdirSync(hooksDir, { recursive: true });
+fs.copyFileSync(sourceHook, targetHook);
+
+let settings = {};
+if (fs.existsSync(settingsPath)) {
+  const raw = fs.readFileSync(settingsPath, "utf8").trim();
+  settings = raw ? JSON.parse(raw) : {};
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+  fs.copyFileSync(settingsPath, `${settingsPath}.bak-${stamp}`);
+}
+
+settings.hooks = settings.hooks && typeof settings.hooks === "object" ? settings.hooks : {};
+settings.hooks.PreToolUse = Array.isArray(settings.hooks.PreToolUse) ? settings.hooks.PreToolUse : [];
+
+settings.hooks.PreToolUse = settings.hooks.PreToolUse.filter((entry) => {
+  const hooks = Array.isArray(entry?.hooks) ? entry.hooks : [];
+  return !hooks.some((hook) => typeof hook?.command === "string" && hook.command.includes("acef-bmad-hard-wall.mjs"));
+});
+
+settings.hooks.PreToolUse.push({
+  matcher: "Read|Write|Edit|MultiEdit|NotebookEdit|Bash",
+  hooks: [
+    {
+      type: "command",
+      command: "node ~/.claude/hooks/acef-bmad-hard-wall.mjs",
+      timeout: 5
+    }
+  ]
+});
+
+fs.mkdirSync(claudeDir, { recursive: true });
+fs.writeFileSync(settingsPath, `${JSON.stringify(settings, null, 2)}\n`);
+
+console.log(`Installed ACEF/BMAD guard hook: ${targetHook}`);
+console.log(`Updated Claude settings: ${settingsPath}`);
+console.log("Restart Claude Code for hook changes to load.");

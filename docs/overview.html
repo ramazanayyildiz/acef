@@ -53,11 +53,15 @@
             <div class="card" style="border-left-color:var(--teal)"><h3>Route</h3><p>Classifies each request and runs
               only the SDLC steps that case needs. No ceremony.</p></div>
             <div class="card" style="border-left-color:var(--violet)"><h3>Orchestrate</h3><p>Drives existing tools
-              (BMAD, Kiro, spec-kit, GSD, your own skills) through that adapter, behind one agent.</p></div>
+              (BMAD, Kiro, spec-kit, GSD, your own skills) through that adapter, behind one front-door agent.</p></div>
           </div>
           <div class="callout"><span class="em">🎯</span><div><strong>Grounding rule:</strong> a golden neighbor is
             only qualified when the consumed symbol, hook, signature, or contract also matches. File-level similarity
             is not enough.</div></div>
+          <div class="callout blue"><span class="em">🧱</span><div><strong>BMAD actor rule:</strong> in the full BMAD
+            lane, the conductor/dispatcher coordinates only. PRD, UX, architecture, stories, ATDD, development, code
+            review, verify-patch, test review, and Process Judge must be performed by concrete worker personas. A worker
+            cannot review or mark done its own output.</div></div>
         </section>
 
         <section id="use"><h2><span class="ic" style="background:#f0eaff">💬</span>How to use it</h2>
@@ -143,6 +147,9 @@ Captures (each field cites a source path):
             <div class="card" style="border-left-color:var(--rose)"><h3>Process gates</h3><p><code>ACEF_PREFLIGHT.md</code>
               must PASS before planning or implementation; Process Judge and Epic Process Judge verify skills, phase
               order, artifacts, and evidence before <code>done</code>.</p></div>
+            <div class="card" style="border-left-color:var(--amber)"><h3>Actor separation</h3><p>Full BMAD story evidence
+              records ATDD actor, Developer actor, Code Review actor, Verify-Patch actor, Test Review actor, and Process
+              Judge actor. Self-review is invalid.</p></div>
             <div class="card" style="border-left-color:var(--teal)"><h3>Test pipeline</h3><p>User flows become test
               cases before automation: <code>test-user-flow-mapper</code> → <code>test-case-planner</code> → generators.</p></div>
           </div>
@@ -195,6 +202,10 @@ Captures (each field cites a source path):
   test-*/ flow-*/        # user flows, test cases, risk, generators, QA passes
   storymap/ qa/          # planning + QA workhorses</code></pre>
           <p>Nothing in the skills is project-specific — every stack value comes from the adapter you extract per repo.</p>
+          <p>For Claude Code users, ACEF also ships a portable BMAD guard hook in
+            <code>claude-plugins/acef-bmad-guard/</code>. Clone users can install it with
+            <code>scripts/install-acef-bmad-guard</code>; plugin users can enable that directory as a Claude Code
+            plugin. Restart Claude Code after installing hooks.</p>
         </section>
 
         <section id="principles"><h2><span class="ic" style="background:#e8f0ff">⚖️</span>Principles</h2>

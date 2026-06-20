@@ -57,6 +57,10 @@
             <div class="card see"><div class="h" style="color:var(--green)">PM / architect</div>frames, plans, and gates — scope, risk, go/kill.</div>
             <div class="card see"><div class="h" style="color:var(--green)">Test / QA</div>turns behavior into checks — flows, cases, automation.</div>
           </div>
+          <div class="callout blue"><span class="em">🧱</span><div><strong>Internal BMAD personas are separate:</strong>
+            user-facing roles are lenses, but full BMAD execution uses worker identities. Test Author, Developer, Code
+            Reviewer, Verify-Patch Reviewer, Test Reviewer, and Process Judge must be separate where the story lifecycle
+            requires it. The conductor/dispatcher coordinates; it does not author or approve the work.</div></div>
         </section>
 
         <!-- ============ DEVELOPER ============ -->
@@ -131,8 +135,10 @@
             <tr><td><strong>Developer</strong></td><td>add small/large features · fix bugs · write unit/integration tests</td><td>A · B · C · F</td></tr>
             <tr><td><strong>PM / architect</strong></td><td>frame a brief · plan · risk read · gate (go/kill) · track status</td><td>brief · planning · gates</td></tr>
             <tr><td><strong>Test / QA</strong></td><td>extract test cases · write unit tests · build automation · bootstrap first test · scale coverage</td><td>D · E · F</td></tr>
+            <tr><td><strong>BMAD story workers</strong></td><td>ATDD · development · code review · verify-patch · test review · process judgment</td><td>full BMAD v2</td></tr>
           </table>
-          <p class="muted">All three talk to the same agent — the lens (which flows are yours) is what changes.</p>
+          <p class="muted">All three talk to the same front-door agent — the lens is what changes. In full BMAD, the
+            story ledger still records separate worker personas so one actor cannot build and approve the same work.</p>
         </section>
       </main>
     </div>

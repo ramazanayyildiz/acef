@@ -62,12 +62,13 @@
           <table>
             <tr><th>Lane</th><th>Use when</th><th>Gate</th></tr>
             <tr><td><strong>Lightweight</strong></td><td>Small, scoped, ongoing work</td><td>Planner / Developer / Judge, with mechanical · standard · guarded tracks</td></tr>
-            <tr><td><strong>Full BMAD v2</strong></td><td>Epics, large features, core behavior, multi-module, or risky-and-large work</td><td>Real BMAD conductor/skills must resolve before the lane starts</td></tr>
+            <tr><td><strong>Full BMAD v2</strong></td><td>Epics, large features, core behavior, multi-module, or risky-and-large work</td><td>Real BMAD conductor/skills must resolve, and each phase must bind to a separate worker persona</td></tr>
           </table>
           <div class="grid">
             <div class="card" style="border-left-color:var(--rose)"><h3>Preflight + Story Judge</h3><p><code>ACEF_PREFLIGHT.md</code> must PASS before planning or implementation. Before a story/task is <code>done</code>, verify route, lane, track, skill paths, phase order, artifacts, and evidence.</p></div>
             <div class="card" style="border-left-color:var(--violet)"><h3>Epic Process Judge</h3><p>Before epic close, verify drift audit, trace, epic test-review, E2E/user-flow evidence, manual QA ledger, product-done audit, retrospective, and status close.</p></div>
             <div class="card" style="border-left-color:var(--teal)"><h3>Test cases first</h3><p>For risky/large work, user flows become test cases before automation and before final story slicing.</p></div>
+            <div class="card" style="border-left-color:var(--amber)"><h3>Separation of powers</h3><p>The conductor routes the lifecycle. Test Author, Developer, Code Reviewer, Verify-Patch Reviewer, Test Reviewer, and Process Judge are separate actors. A worker cannot approve its own output.</p></div>
           </div>
         </section>
 
@@ -90,6 +91,14 @@
             capability preflight. The conductor and required BMAD skills/commands must resolve to real paths. If they
             do not, ACEF halts instead of running a BMAD-like generic-subagent imitation. Fallback to non-BMAD guarded
             work requires explicit human approval.</div></div>
+          <div class="callout blue"><span class="em">🧱</span><div><strong>Actor separation:</strong> a full BMAD story
+            is invalid unless its evidence records the ATDD actor, Developer actor, Code Review actor, Verify-Patch
+            actor, Test Review actor, and Process Judge actor. Generic subagents are not enough; each worker must be
+            bound to a valid persona. Guarded stories cannot use self-review.</div></div>
+          <div class="callout"><span class="em">🔒</span><div><strong>Optional hard wall:</strong> Claude Code users can
+            install <code>claude-plugins/acef-bmad-guard/</code> or run <code>scripts/install-acef-bmad-guard</code>.
+            When a BMAD lane marker is present, the hook blocks the dispatcher/conductor from writing BMAD artifacts or
+            implementation files while allowing dedicated persona workers.</div></div>
           <table>
             <tr><th>BMAD produces</th><th>ACEF maps it to</th></tr>
             <tr><td>PRD (functional / non-functional requirements)</td><td><code>requirements.md</code></td></tr>

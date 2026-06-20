@@ -28,6 +28,8 @@ non-BMAD guarded lightweight exception.
 
 Before any lane executes, the conductor must write/update the preflight artifact described in `OPERATING_MODEL.md`.
 No preflight artifact with `PASS` means no planning, implementation, test generation, release, or done-state change.
+For multi-step features, the conductor must also create/update the feature delivery ledger described in
+`OPERATING_MODEL.md`. Preflight proves the start; the ledger proves the run stayed on the rails.
 
 ## Route → lane
 
@@ -56,8 +58,31 @@ A lightweight (usually guarded) task promotes to full BMAD when any of:
 - **Plan integrity** — no skip / reorder / shrink / expand scope without human approval.
 - **2×REPLAN → escalate** — the circuit breaker.
 - **Fresh Judge review** (no self-approval) and **verify-patch on REVISE**.
+- **Conductor step ledger** — every transition records expected route/lane/track, required skill/tool, resolved
+  path/command, inputs, outputs, evidence, verdict, and next allowed step. No ledger entry means no advancement.
+  The entry starts before the conductor reads that step's workflow/template files or invokes the skill/tool; outputs and
+  verdict are filled afterward. Writing it only after exploration has already begun is drift, not compliance.
+- **Bounded gate reports** — capability gates are not open-ended exploration. Once the gate fact is proven, the
+  conductor writes the artifact, states the next allowed action, and returns control before loading deeper workflow
+  steps.
 - **Process Judge gates** — story/task close and epic close must prove the required steps, skills, and artifacts were
   actually used before status changes to `done`.
+- **Artifact claim reconciliation** — before a step can pass, every claimed output path in a state file, frontmatter,
+  or ledger entry must be verified on disk. Missing claimed outputs halt the run until corrected or generated under a
+  valid ledger step.
+- **Source reconciliation** — before an import/reconcile step can pass, every named source that owns required scope must
+  be parsed and reconciled. Functional spec, UX/design, backend contract, adapter, and codebase evidence are separate
+  sources of truth; do not collapse them into one. Source differences must become a superset/discrepancy table, not a
+  silent omission.
+- **Full BMAD actor separation** — the conductor coordinates the story lifecycle; it is not the ATDD author,
+  implementing actor, code reviewer, verifier, test reviewer, or Process Judge. The actor that authored code must never
+  review, accept, or mark done that code. Guarded payment/auth/entitlement/data stories require independent review by
+  default. If one worker collapses ATDD + dev-story + code-review, the story is process-tainted until restarted or
+  backfilled by separate independent review and Process Judge approval.
+- **Full BMAD persona mapping** — every BMAD worker must bind to an explicit persona identity: PM/Planner, UX Designer,
+  Architect, Test Author/Tester, Developer, Code Reviewer/Judge, Verify-Patch Reviewer, Test Reviewer, Process Judge,
+  or Documentation Maintainer. Generic workers are invalid unless their prompt and artifact record one of these
+  identities. The conductor is not a persona worker.
 - **Done = user-visible** — for user-facing work, prove the owning persona can reach and use the surface, not just a green unit test.
 - **Drift = stop condition** — if specs, artifact, and code disagree, resolve the source-of-truth conflict before merging.
 - **Guarded test floor** — for guarded-track work a verification checklist is a **supplement, not a substitute**: require at least one symbol-grounded test on the auth / payment / entitlement / data boundary (bootstrap the framework with approval if the repo has none). A zero-test repo does not license shipping guarded work untested; the human-approval gate confirms a test was written, not just a checklist.

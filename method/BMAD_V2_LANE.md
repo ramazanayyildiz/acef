@@ -21,8 +21,11 @@ Minimum required capability evidence:
   E2E/manual-QA, and retrospective skills or commands as required by the selected flow;
 - resolved paths for each required skill/command;
 - an artifact location where each phase leaves durable evidence.
+- proof that the conductor is adapted to the current repo's project adapter (stack, commands, test tools, artifact
+  paths, branch/PR rules). A conductor copied from another project/stack without adaptation does not satisfy preflight.
 
-If any required BMAD capability is missing, return:
+If any required BMAD capability is missing or the conductor resolves only to an unadapted copy from another project,
+return:
 
 ```text
 HALT: BMAD-METHOD is not installed or not wired for this repo. Install/wire the real BMAD workflow, or choose a
@@ -51,6 +54,44 @@ artifact.
 10. **Product-done audit + manual QA** — see below.
 11. **Mark done** only through the evidence gate.
 
+## Actor separation (mandatory)
+
+The conductor is a lifecycle coordinator, not an implementing or reviewing actor. It may sequence story workers, but it
+must not collapse ATDD, dev-story, code-review, verify-patch, test-review, or Process Judge into one self-reviewing
+worker context.
+
+Worker identities must map to explicit personas:
+
+| BMAD phase | Required persona identity |
+|---|---|
+| PRD / story intent | PM / Planner |
+| UX gate | UX Designer |
+| Architecture | Architect |
+| Epics/stories | PM / Planner, with Architect consistency check when needed |
+| Readiness | Architect or Process Judge, depending on the gate |
+| ATDD / test-design | Test Author / Tester |
+| Dev-story | Developer |
+| Code-review | Code Reviewer / Judge |
+| Verify-patch | Verify-Patch Reviewer |
+| Test-review | Test Reviewer |
+| Product-done / workflow close | Process Judge |
+| Docs drift | Documentation Maintainer |
+
+Generic subagents are invalid for BMAD phases unless their prompt binds them to one persona and the artifact records
+that identity. The conductor is not a persona worker.
+
+Rules:
+- ATDD, dev-story, code-review, verify-patch, test-review, and Process Judge must run under separate worker identities
+  when the lane requires those phases.
+- The actor that authored code must never review, accept, or mark done that code.
+- Code review must be independent of the implementing actor, even for low-risk stories unless the human explicitly
+  waives the split and a Process Judge backfills the risk.
+- Guarded payment/auth/entitlement/data stories require independent review by default; no self-review waiver.
+- If the conductor starts implementing or self-reviewing, halt and restart the affected story from the last clean
+  gate with separate workers.
+- Story ledgers must record `ATDD actor`, `Developer actor`, `Code review actor`, `Verify-patch actor`,
+  `Test-review actor`, and `Process Judge actor` where those phases apply.
+
 ## Dev-done vs product-done
 - **Dev-done:** ATDD/feature tests green, acceptance criteria implemented, review reached its stop condition, test-review evidence exists.
 - **Product-done:** dev-done **plus** the owning persona can actually discover and use the surface (real entry point,
@@ -71,6 +112,8 @@ Blind session isolation between phases · artifact-mediated handoffs (no side-ch
 **Final Review Stop Condition** recorded in the story before done · model tier is a cost decision, never a gate
 shortcut · do not fake skill artifacts — run the real workflow and leave real evidence on disk · a workflow claim is
 invalid unless the required skill exists, was invoked, and left evidence on disk.
+The conductor must name its adapter source and stack-specific command mapping before Step 0. If that mapping still
+contains another project's name, stack, commands, paths, or test tools, the lane is not wired.
 
 ## Mechanical guards
 A pre-review self-check + CI gate should enforce the hard rules mechanically (build / format / test / the project's

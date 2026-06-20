@@ -60,6 +60,76 @@ Planner → Test Author + Developer (parallel) → Judge (full pipeline).
 
 ## Process gates
 
+### Feature Delivery Ledger
+
+Preflight is only the first gate. For any multi-step feature, the conductor must also maintain a durable delivery
+ledger (default: `docs/ai/ACEF_<feature>_DELIVERY_AUDIT.md`, or the project's equivalent) from the first route decision
+until final done-state.
+
+The ledger is the supervisor/auditor surface. It records every phase transition, not just the initial classification:
+
+- current route, lane, track, and story/task;
+- next allowed phase and the exact skill/tool that must run;
+- resolved path/command for that skill/tool before invocation;
+- input artifacts consumed by the skill;
+- output artifacts produced by the skill;
+- tests/checks run and their full pass/fail status;
+- Process Judge or Epic Process Judge verdicts;
+- drift findings and the framework/skill/documentation patch applied to prevent repeat drift;
+- rerun evidence after a drift fix.
+
+If a phase is skipped, reordered, substituted, or renamed, the ledger must show explicit human approval. Otherwise the
+supervisor must halt the run, patch the ACEF instruction that allowed ambiguity, and rerun from the failed gate.
+
+Every artifact claim must be reconciled against disk before the step can pass. If a state file, frontmatter field, or
+ledger entry says an output was generated, the conductor must verify the exact path exists or explicitly mark it as not
+produced yet. Missing claimed artifacts are a `HALT` until the state file is corrected or the missing outputs are
+generated through a properly started ledger step.
+
+Every source claim must also be reconciled before the step can pass. For import/reconcile steps, each named input
+document that owns required scope must be parsed and reconciled, or explicitly marked `not used` with a reason. Do not
+let one source stand in for another when they own different dimensions: functional specs may own business rules,
+UX/design docs may own screen and flow inventory, backend/code may own contracts, and adapters may own repo patterns.
+If sources disagree, the artifact records a superset or discrepancy table and the gate remains open until the conflict
+is resolved or intentionally deferred.
+
+The ledger is opened before the work step starts, not reconstructed after the fact. Once preflight passes, the conductor
+must start the relevant Step Ledger Entry before reading that step's workflow/template files, invoking its skill/tool,
+spawning a worker, or generating an artifact. Outputs, verdict, and next step are filled after the step completes.
+Retroactive entries are allowed only to document drift recovery; they do not make the skipped gate valid.
+
+### Step Ledger Entry
+
+Every conductor step must use this shape:
+
+```md
+Step:
+Expected route/lane/track:
+Required skill/tool:
+Resolved skill/tool path:
+Inputs:
+Outputs:
+Evidence command/source:
+Verdict: PASS | FAIL | HALT
+Next allowed step:
+```
+
+No step may advance on prose alone. A statement like "I followed BMAD" or "tests are missing" is invalid unless the
+entry names the actual skill/tool path and the source evidence behind the claim.
+
+### Bounded Gate Reports
+
+Gate work is intentionally narrow. A gate answers one question: can the next phase start?
+
+After the gate fact is proven, the conductor must:
+
+1. update the gate artifact;
+2. record the verdict and next allowed action;
+3. return control before loading deeper workflow steps.
+
+Do not turn a preflight or capability check into unbounded method exploration. If deeper planning is now allowed, it
+starts as the next phase with its own ledger entry.
+
 ### No Gate Artifact, No Progress
 
 ACEF advances by artifacts, not narrative. Before moving from routing/preflight into planning, implementation, test
@@ -79,6 +149,9 @@ generation, release, or `done`, the conductor must create or update a durable pr
 If the verdict is not `PASS`, the conductor stops. It may ask for missing installation, wiring, evidence, or a human
 decision, but it may not silently continue on a weaker lane.
 
+The preflight artifact is not a replacement for the delivery ledger. Preflight decides whether the first lane can start;
+the delivery ledger proves that the feature keeps following the lane until completion.
+
 ### Subagent Claims Are Not Evidence
 
 Subagents can collect leads, but their output is a claim until the conductor verifies the source path, command, or
@@ -90,14 +163,29 @@ The implementation Judge and the Process Judge are separate roles. The Judge rev
 reviews the workflow claim. A workflow claim is invalid unless the required skill exists, was invoked, and left evidence
 on disk.
 
+In full BMAD, the conductor is also separate from the story workers. It coordinates step order only. It must not act as
+the ATDD author, implementing actor, code reviewer, verifier, test reviewer, or Process Judge. A code-review claim is
+invalid if the reviewer is the same worker identity that authored the code. Guarded payment/auth/entitlement/data
+stories cannot use self-review.
+
+BMAD story evidence must include persona identity for every required worker phase. Valid persona identities are:
+PM/Planner, UX Designer, Architect, Test Author/Tester, Developer, Code Reviewer/Judge, Verify-Patch Reviewer, Test
+Reviewer, Process Judge, and Documentation Maintainer. A generic or conductor identity does not satisfy a worker phase.
+
 **Story/task Process Judge questions:**
 1. What route, lane, and track was selected, and where is that recorded?
 2. Which skills were required for that route/lane/track, and what are their resolved paths?
 3. If BMAD was claimed, did the real BMAD skill/conductor run, or was this only a hand-rolled imitation?
 4. Were required phases executed in order?
-5. Do readiness, ATDD/test, review, verify-patch, test-review, and product-done artifacts exist when the lane requires them?
-6. Do required artifacts include the real workflow evidence/manifest, not only files shaped like the expected output?
-7. If a required gate is missing, did the work return to the right phase instead of being marked done?
+5. Were ATDD, dev-story, code-review, verify-patch, test-review, and Process Judge performed by separate valid worker
+   identities where required?
+6. Does each worker identity map to an allowed persona, not to conductor/dispatcher/general-purpose?
+7. Is the code reviewer independent from the worker that authored the code?
+8. Do readiness, ATDD/test, review, verify-patch, test-review, and product-done artifacts exist when the lane requires them?
+9. Do required artifacts include the real workflow evidence/manifest, not only files shaped like the expected output?
+10. If a required gate is missing, did the work return to the right phase instead of being marked done?
+11. Does the delivery ledger contain a step entry for every transition since preflight?
+12. If a drift fix was applied, was the failed gate rerun from the start after the fix?
 
 **Story/task verdict:** `PASS`, `FAIL: <missing gate/evidence>`, or `HALT: <human decision needed>`.
 
@@ -108,6 +196,8 @@ on disk.
    and final status close run when required?
 4. Are all Critical/High persona flows executed, explicitly deferred with owner/rationale, or marked blocked/failing?
 5. Is any `done` status based on chat or prose instead of durable artifact + PR evidence?
+6. Does the feature delivery ledger reconcile the full epic path: preflight → planning → stories → tests → review →
+   product-done → close?
 
 **Epic verdict:** `PASS` means the epic may close; `FAIL` returns to the missing gate; `HALT` asks the human.
 
