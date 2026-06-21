@@ -19,6 +19,7 @@ Checks:
   do-not-copy         Fail when ledger treats do-not-copy entries as reusable patterns
   partial-workshape   In PARTIAL registries, require ledger-declared covered workShape or human risk acceptance
   finding-promotion   Require each conformance finding to record a patch/registry/check/defer disposition
+  session-handoff     Require a structured Session Handoff block in the delivery ledger
   seeded-epic-gates   Require Epic N Process Judge rows/artifacts for epics mentioned in ledger
   epic-boundary       Require Epic N-1 Process Judge PASS before target Epic N
   replan-counter      Fail when the same scope has 2+ REPLAN decisions in ledger text
@@ -618,6 +619,80 @@ function checkFindingPromotion(ledgerPath) {
   return result("finding-promotion", true, `All ${findings.length} conformance finding(s) have dispositions`);
 }
 
+function extractSection(text, title) {
+  const lines = text.split(/\r?\n/);
+  const start = lines.findIndex((line) => new RegExp(`^\\s*#{1,6}\\s+${title}\\s*$`, "i").test(line));
+  if (start < 0) return "";
+  let end = lines.length;
+  for (let index = start + 1; index < lines.length; index += 1) {
+    if (/^\s*#{1,6}\s+/.test(lines[index])) {
+      end = index;
+      break;
+    }
+  }
+  return lines.slice(start, end).join("\n");
+}
+
+function normalizedFieldValue(value) {
+  return String(value || "").trim().replace(/[`"'.,;]+$/g, "");
+}
+
+function sessionHandoffFields(section) {
+  const fields = {};
+  for (const line of section.split(/\r?\n/)) {
+    const match = line.match(/^\s*(?:[-*]\s*)?([A-Za-z][A-Za-z0-9_-]*)\s*:\s*(.+?)\s*$/);
+    if (!match) continue;
+    fields[match[1].trim().toLowerCase().replace(/-/g, "_")] = normalizedFieldValue(match[2]);
+  }
+  return fields;
+}
+
+function hasMeaningfulValue(value) {
+  return Boolean(value) && !/^(?:none|n\/a|null|unknown|tbd|pending)$/i.test(value);
+}
+
+function checkSessionHandoff(repoRoot, ledgerPath, adapterPath, registryPath) {
+  if (!ledgerPath || !exists(ledgerPath)) return result("session-handoff", false, "Missing ledger path");
+
+  for (const filePath of [adapterPath, registryPath].filter(Boolean).filter(exists)) {
+    if (filePath === ledgerPath) continue;
+    if (/session\s+handoff/i.test(read(filePath))) {
+      return result("session-handoff", false, `Session Handoff belongs in the delivery ledger, not ${path.relative(repoRoot, filePath)}`);
+    }
+  }
+
+  const section = extractSection(read(ledgerPath), "Session Handoff");
+  if (!section) return result("session-handoff", false, "Missing ## Session Handoff block");
+
+  const fields = sessionHandoffFields(section);
+  const required = [
+    "status",
+    "current_step",
+    "last_passed_gate",
+    "next_allowed_step",
+    "active_lane",
+    "active_track",
+    "ledger_path",
+  ];
+  const missing = required.filter((field) => !hasMeaningfulValue(fields[field]));
+  if (missing.length) return result("session-handoff", false, `Missing Session Handoff field(s): ${missing.join(", ")}`);
+
+  const declaredLedgerPath = resolvePath(fields.ledger_path, repoRoot);
+  if (!exists(declaredLedgerPath)) {
+    return result("session-handoff", false, `Session Handoff ledger_path does not exist: ${fields.ledger_path}`);
+  }
+
+  const guardedOrBlocked = /^guarded$/i.test(fields.active_track)
+    || /^(?:blocked|hold|halt)$/i.test(fields.status);
+  if (guardedOrBlocked
+    && !hasMeaningfulValue(fields.blocked_on)
+    && !hasMeaningfulValue(fields.do_not_continue_without)) {
+    return result("session-handoff", false, "Guarded/blocked handoff requires blocked_on or do_not_continue_without");
+  }
+
+  return result("session-handoff", true, `Session Handoff ready; next allowed step: ${fields.next_allowed_step}`);
+}
+
 function main() {
   const args = parseArgs(process.argv);
   if (args.help) {
@@ -629,7 +704,7 @@ function main() {
   const adapter = args.adapter || findAdapter(args.repo);
   const registry = findPatternRegistry(args.repo, adapter);
   const checks = args.check === "all"
-    ? ["preflight", "claims", "adapter-freshness", "pattern-registry", "reuse-before-create", "do-not-copy", "partial-workshape", "finding-promotion", "seeded-epic-gates", "epic-boundary", "replan-counter"]
+    ? ["preflight", "claims", "adapter-freshness", "pattern-registry", "reuse-before-create", "do-not-copy", "partial-workshape", "finding-promotion", "session-handoff", "seeded-epic-gates", "epic-boundary", "replan-counter"]
     : [args.check];
 
   const results = checks.map((check) => {
@@ -641,6 +716,7 @@ function main() {
     if (check === "do-not-copy") return checkDoNotCopy(ledger, registry);
     if (check === "partial-workshape") return checkPartialWorkshape(ledger, registry);
     if (check === "finding-promotion") return checkFindingPromotion(ledger);
+    if (check === "session-handoff") return checkSessionHandoff(args.repo, ledger, adapter, registry);
     if (check === "seeded-epic-gates") return checkSeededEpicGates(args.repo, ledger);
     if (check === "epic-boundary") return checkEpicBoundary(args.repo, ledger, args.targetEpic);
     if (check === "replan-counter") return checkReplanCounter(ledger);

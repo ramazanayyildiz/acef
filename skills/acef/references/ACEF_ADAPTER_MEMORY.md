@@ -25,6 +25,27 @@ Default locations when a repo has no stronger convention:
 Do not place gate summaries, drift notes, context handoffs, or next-allowed-step state in the pattern registry. A
 recurring drift can graduate into a do-not-copy entry or fitness check, but the per-run drift note stays in the ledger.
 
+## Session handoff block
+
+An active delivery ledger must carry the resume state explicitly. This is run state, not adapter memory.
+
+```md
+## Session Handoff
+status:
+current_step:
+last_passed_gate:
+next_allowed_step:
+active_lane:
+active_track:
+ledger_path:
+blocked_on:
+do_not_continue_without:
+```
+
+`blocked_on` and `do_not_continue_without` may be `none` for standard work. Guarded, blocked, hold, or halt states must
+name the blocker or the missing approval/evidence. The handoff must live in the delivery ledger; putting it in
+`docs/ai/pattern-registry.json`, the codemap, or the project adapter is a category error.
+
 ## Provenance triple
 
 Every adapter memory entry that can guide implementation or review must carry:

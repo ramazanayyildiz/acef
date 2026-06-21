@@ -154,6 +154,17 @@ try {
     "Conformance finding: service helper duplicated an existing shared client pattern.",
     "Disposition: pattern registry update",
     "",
+    "## Session Handoff",
+    "status: ready",
+    "current_step: Story 1.1 create",
+    "last_passed_gate: Preflight PASS",
+    "next_allowed_step: Story 1.1 dev",
+    "active_lane: lightweight",
+    "active_track: standard",
+    "ledger_path: docs/ai/ACEF_demo_DELIVERY_AUDIT.md",
+    "blocked_on: none",
+    "do_not_continue_without: none",
+    "",
   ].join("\n"));
   expectHookDecision("started step ledger", storyCommandPayload, "allow");
   expectHookDecision("P1 conformance allows source write", {
@@ -186,6 +197,7 @@ try {
   expectPass("do-not-copy", ["--repo", tmp, "--check", "do-not-copy", "--ledger", "docs/ai/ACEF_demo_DELIVERY_AUDIT.md"]);
   expectPass("partial-workshape", ["--repo", tmp, "--check", "partial-workshape", "--ledger", "docs/ai/ACEF_demo_DELIVERY_AUDIT.md"]);
   expectPass("finding-promotion", ["--repo", tmp, "--check", "finding-promotion", "--ledger", "docs/ai/ACEF_demo_DELIVERY_AUDIT.md"]);
+  expectPass("session-handoff", ["--repo", tmp, "--check", "session-handoff", "--ledger", "docs/ai/ACEF_demo_DELIVERY_AUDIT.md"]);
   expectPass("claims", ["--repo", tmp, "--check", "claims", "--ledger", "docs/ai/ACEF_demo_DELIVERY_AUDIT.md"]);
   expectPass("seeded-epic-gates", ["--repo", tmp, "--check", "seeded-epic-gates", "--ledger", "docs/ai/ACEF_demo_DELIVERY_AUDIT.md"]);
   expectPass("epic-boundary", ["--repo", tmp, "--check", "epic-boundary", "--ledger", "docs/ai/ACEF_demo_DELIVERY_AUDIT.md", "--target-epic", "2"]);
@@ -254,6 +266,22 @@ try {
     "Disposition: proposed mechanical check",
   ].join("\n"));
   expectPass("finding-promotion", ["--repo", tmp, "--check", "finding-promotion", "--ledger", "docs/ai/ACEF_promoted_finding_DELIVERY_AUDIT.md"]);
+  fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_missing_handoff_DELIVERY_AUDIT.md"), "Status: PASS\n");
+  expectFail("session-handoff", ["--repo", tmp, "--check", "session-handoff", "--ledger", "docs/ai/ACEF_missing_handoff_DELIVERY_AUDIT.md"]);
+  fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_guarded_handoff_DELIVERY_AUDIT.md"), [
+    "Status: PASS",
+    "## Session Handoff",
+    "status: ready",
+    "current_step: Story 2.1 guarded",
+    "last_passed_gate: Test floor PASS",
+    "next_allowed_step: Guarded implementation",
+    "active_lane: bmad",
+    "active_track: guarded",
+    "ledger_path: docs/ai/ACEF_guarded_handoff_DELIVERY_AUDIT.md",
+  ].join("\n"));
+  expectFail("session-handoff", ["--repo", tmp, "--check", "session-handoff", "--ledger", "docs/ai/ACEF_guarded_handoff_DELIVERY_AUDIT.md"]);
+  fs.appendFileSync(path.join(tmp, "docs", "ai", "ACEF_guarded_handoff_DELIVERY_AUDIT.md"), "\ndo_not_continue_without: human guarded approval\n");
+  expectPass("session-handoff", ["--repo", tmp, "--check", "session-handoff", "--ledger", "docs/ai/ACEF_guarded_handoff_DELIVERY_AUDIT.md"]);
   expectHookDecision("P1 do-not-copy misuse denies source write", {
     tool_name: "Write",
     cwd: tmp,

@@ -96,6 +96,7 @@ scripts/acef-process-validator --repo /path/to/repo --check reuse-before-create 
 scripts/acef-process-validator --repo /path/to/repo --check do-not-copy --ledger docs/ai/ACEF_feature_DELIVERY_AUDIT.md
 scripts/acef-process-validator --repo /path/to/repo --check partial-workshape --ledger docs/ai/ACEF_feature_DELIVERY_AUDIT.md
 scripts/acef-process-validator --repo /path/to/repo --check finding-promotion --ledger docs/ai/ACEF_feature_DELIVERY_AUDIT.md
+scripts/acef-process-validator --repo /path/to/repo --check session-handoff --ledger docs/ai/ACEF_feature_DELIVERY_AUDIT.md
 scripts/acef-process-validator --repo /path/to/repo --check epic-boundary --ledger docs/ai/ACEF_feature_DELIVERY_AUDIT.md --target-epic 2
 ```
 
@@ -107,6 +108,9 @@ For `PARTIAL` registries, the ledger must declare `track:` and `workShape:`; unc
 explicit human risk acceptance.
 For P2 self-hardening, each ledgered `Conformance finding:` must record a `Disposition:`: patch, registry update,
 do-not-copy update, mechanical check, or explicit human deferral/risk acceptance.
+For session continuity, every active delivery ledger must include `## Session Handoff` with current step, last passed
+gate, next allowed step, active lane/track, and ledger path. Guarded or blocked handoffs must state what not to continue
+without.
 
 Validator regression tests and the CI entrypoint use the same executable:
 
