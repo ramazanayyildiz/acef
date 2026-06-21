@@ -40,6 +40,7 @@ treated as enforcement.
 | Reuse-before-create | validator CLI | machinery | `--check reuse-before-create` requires ledger evidence citing registry probe/golden neighbor. | P1 |
 | Do-not-copy guard | validator CLI | machinery | `--check do-not-copy` fails if known legacy/risk entries are treated as reusable. | P1 |
 | Pattern registry `PARTIAL` limits work | validator CLI + hook | machinery | `--check partial-workshape`; hook blocks implementation writes when ledger-declared `workShape` is missing/uncovered/guarded without human risk acceptance. | P1 |
+| Finding promotion lifecycle | validator CLI | machinery | `--check finding-promotion` fails if a ledgered conformance finding has no patch/registry/check/defer disposition. | P2 |
 | No raw hex / new dependency without decision | documentation-only/new | machinery | Lint/hook per stack. | P2 |
 | Plan integrity / intent / altitude / taste | documentation-only | shard | Irreducible judgment; fresh Process Judge, never main-agent memory. | P2 |
 

@@ -134,6 +134,13 @@ Every conformance finding must end in one of:
 
 Findings must not disappear into chat.
 
+Ledger format:
+
+```text
+Conformance finding: <what drifted>
+Disposition: patch | pattern registry update | do-not-copy update | proposed mechanical check | explicit human deferral | risk acceptance
+```
+
 ## Mechanical checks
 
 `scripts/acef-process-validator` includes the first mechanical conformance checks:
@@ -145,6 +152,8 @@ Findings must not disappear into chat.
   context.
 - `--check partial-workshape` enforces `PARTIAL` registry permissions from ledger-declared `track:` and `workShape:`.
   It does not infer work shape from file paths.
+- `--check finding-promotion` fails if a ledgered `Conformance finding:` has no `Disposition:` recording how the
+  finding was patched, promoted, mechanically checked, deferred, or risk-accepted.
 
 These checks do not replace judgment. They prevent the most common silent drift: skipping local neighbor search or
 treating known legacy examples as patterns.

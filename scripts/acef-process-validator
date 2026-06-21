@@ -18,6 +18,7 @@ Checks:
   reuse-before-create Require the delivery ledger to record a reuse-before-create probe
   do-not-copy         Fail when ledger treats do-not-copy entries as reusable patterns
   partial-workshape   In PARTIAL registries, require ledger-declared covered workShape or human risk acceptance
+  finding-promotion   Require each conformance finding to record a patch/registry/check/defer disposition
   seeded-epic-gates   Require Epic N Process Judge rows/artifacts for epics mentioned in ledger
   epic-boundary       Require Epic N-1 Process Judge PASS before target Epic N
   replan-counter      Fail when the same scope has 2+ REPLAN decisions in ledger text
@@ -580,6 +581,43 @@ function checkPartialWorkshape(ledgerPath, registryPath) {
   return result("partial-workshape", verdict.ok, verdict.message);
 }
 
+function extractConformanceFindings(text) {
+  const lines = text.split(/\r?\n/);
+  const findings = [];
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+    if (!/^\s*(?:[-*]\s*)?(?:conformance\s+)?finding(?:\s+\[[^\]]+\])?\s*[:|-]/i.test(line)) continue;
+    const windowText = lines.slice(index, index + 5).join("\n");
+    findings.push({ line: index + 1, text: windowText });
+  }
+  return findings;
+}
+
+function hasPromotionDisposition(text) {
+  return /\bDisposition\s*:\s*(?:code\s+)?patch\b/i.test(text)
+    || /\bDisposition\s*:\s*(?:pattern\s+)?registry\s+update\b/i.test(text)
+    || /\bDisposition\s*:\s*do[- ]not[- ]copy\s+update\b/i.test(text)
+    || /\bDisposition\s*:\s*(?:proposed\s+)?(?:mechanical|validator|hook|lint|fitness)\s+(?:check|gate|rule|test)\b/i.test(text)
+    || /\bDisposition\s*:\s*(?:explicit\s+)?human\s+(?:decision\s+to\s+)?defer\b/i.test(text)
+    || /\bDisposition\s*:\s*(?:accepted\s+risk|risk\s+acceptance|explicit\s+human\s+acceptance)\b/i.test(text);
+}
+
+function checkFindingPromotion(ledgerPath) {
+  if (!ledgerPath || !exists(ledgerPath)) return result("finding-promotion", false, "Missing ledger path");
+  const findings = extractConformanceFindings(read(ledgerPath));
+  if (!findings.length) return result("finding-promotion", true, "No conformance findings recorded");
+
+  const missing = findings.filter((finding) => !hasPromotionDisposition(finding.text));
+  if (missing.length) {
+    return result(
+      "finding-promotion",
+      false,
+      `Conformance finding(s) missing disposition at line(s): ${missing.map((finding) => finding.line).join(", ")}`
+    );
+  }
+  return result("finding-promotion", true, `All ${findings.length} conformance finding(s) have dispositions`);
+}
+
 function main() {
   const args = parseArgs(process.argv);
   if (args.help) {
@@ -591,7 +629,7 @@ function main() {
   const adapter = args.adapter || findAdapter(args.repo);
   const registry = findPatternRegistry(args.repo, adapter);
   const checks = args.check === "all"
-    ? ["preflight", "claims", "adapter-freshness", "pattern-registry", "reuse-before-create", "do-not-copy", "partial-workshape", "seeded-epic-gates", "epic-boundary", "replan-counter"]
+    ? ["preflight", "claims", "adapter-freshness", "pattern-registry", "reuse-before-create", "do-not-copy", "partial-workshape", "finding-promotion", "seeded-epic-gates", "epic-boundary", "replan-counter"]
     : [args.check];
 
   const results = checks.map((check) => {
@@ -602,6 +640,7 @@ function main() {
     if (check === "reuse-before-create") return checkReuseBeforeCreate(ledger, registry);
     if (check === "do-not-copy") return checkDoNotCopy(ledger, registry);
     if (check === "partial-workshape") return checkPartialWorkshape(ledger, registry);
+    if (check === "finding-promotion") return checkFindingPromotion(ledger);
     if (check === "seeded-epic-gates") return checkSeededEpicGates(args.repo, ledger);
     if (check === "epic-boundary") return checkEpicBoundary(args.repo, ledger, args.targetEpic);
     if (check === "replan-counter") return checkReplanCounter(ledger);

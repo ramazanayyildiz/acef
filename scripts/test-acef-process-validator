@@ -151,6 +151,9 @@ try {
     "- Checked `src/services/current.ts` and `sharedApiClient`; reused the canonical service pattern.",
     "- Do-not-copy: avoided `legacy.service.direct-fetch`.",
     "",
+    "Conformance finding: service helper duplicated an existing shared client pattern.",
+    "Disposition: pattern registry update",
+    "",
   ].join("\n"));
   expectHookDecision("started step ledger", storyCommandPayload, "allow");
   expectHookDecision("P1 conformance allows source write", {
@@ -182,6 +185,7 @@ try {
   expectPass("reuse-before-create", ["--repo", tmp, "--check", "reuse-before-create", "--ledger", "docs/ai/ACEF_demo_DELIVERY_AUDIT.md"]);
   expectPass("do-not-copy", ["--repo", tmp, "--check", "do-not-copy", "--ledger", "docs/ai/ACEF_demo_DELIVERY_AUDIT.md"]);
   expectPass("partial-workshape", ["--repo", tmp, "--check", "partial-workshape", "--ledger", "docs/ai/ACEF_demo_DELIVERY_AUDIT.md"]);
+  expectPass("finding-promotion", ["--repo", tmp, "--check", "finding-promotion", "--ledger", "docs/ai/ACEF_demo_DELIVERY_AUDIT.md"]);
   expectPass("claims", ["--repo", tmp, "--check", "claims", "--ledger", "docs/ai/ACEF_demo_DELIVERY_AUDIT.md"]);
   expectPass("seeded-epic-gates", ["--repo", tmp, "--check", "seeded-epic-gates", "--ledger", "docs/ai/ACEF_demo_DELIVERY_AUDIT.md"]);
   expectPass("epic-boundary", ["--repo", tmp, "--check", "epic-boundary", "--ledger", "docs/ai/ACEF_demo_DELIVERY_AUDIT.md", "--target-epic", "2"]);
@@ -239,6 +243,17 @@ try {
     "- Checked `src/services/current.ts`.",
   ].join("\n"));
   expectFail("do-not-copy", ["--repo", tmp, "--check", "do-not-copy", "--ledger", "docs/ai/ACEF_bad_copy_DELIVERY_AUDIT.md"]);
+  fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_unpromoted_finding_DELIVERY_AUDIT.md"), [
+    "Status: PASS",
+    "Conformance finding: worker created a duplicate service helper.",
+  ].join("\n"));
+  expectFail("finding-promotion", ["--repo", tmp, "--check", "finding-promotion", "--ledger", "docs/ai/ACEF_unpromoted_finding_DELIVERY_AUDIT.md"]);
+  fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_promoted_finding_DELIVERY_AUDIT.md"), [
+    "Status: PASS",
+    "Conformance finding: worker created a duplicate service helper.",
+    "Disposition: proposed mechanical check",
+  ].join("\n"));
+  expectPass("finding-promotion", ["--repo", tmp, "--check", "finding-promotion", "--ledger", "docs/ai/ACEF_promoted_finding_DELIVERY_AUDIT.md"]);
   expectHookDecision("P1 do-not-copy misuse denies source write", {
     tool_name: "Write",
     cwd: tmp,

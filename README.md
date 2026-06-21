@@ -95,6 +95,7 @@ scripts/acef-process-validator --repo /path/to/repo --check pattern-registry
 scripts/acef-process-validator --repo /path/to/repo --check reuse-before-create --ledger docs/ai/ACEF_feature_DELIVERY_AUDIT.md
 scripts/acef-process-validator --repo /path/to/repo --check do-not-copy --ledger docs/ai/ACEF_feature_DELIVERY_AUDIT.md
 scripts/acef-process-validator --repo /path/to/repo --check partial-workshape --ledger docs/ai/ACEF_feature_DELIVERY_AUDIT.md
+scripts/acef-process-validator --repo /path/to/repo --check finding-promotion --ledger docs/ai/ACEF_feature_DELIVERY_AUDIT.md
 scripts/acef-process-validator --repo /path/to/repo --check epic-boundary --ledger docs/ai/ACEF_feature_DELIVERY_AUDIT.md --target-epic 2
 ```
 
@@ -104,6 +105,8 @@ which local neighbor/probe was checked before creation, and do-not-copy entries 
 The Claude Code guard hook also runs those P1 checks before implementation writes in active ACEF/BMAD lanes.
 For `PARTIAL` registries, the ledger must declare `track:` and `workShape:`; uncovered or guarded work requires
 explicit human risk acceptance.
+For P2 self-hardening, each ledgered `Conformance finding:` must record a `Disposition:`: patch, registry update,
+do-not-copy update, mechanical check, or explicit human deferral/risk acceptance.
 
 Validator regression tests and the CI entrypoint use the same executable:
 
