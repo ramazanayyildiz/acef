@@ -126,6 +126,8 @@ node scripts/test-acef-process-validator
 
 GitHub Actions runs this test from `.github/workflows/validate.yml`.
 
+Current capstone review: `docs/capstone-review-2026-06-21.md`.
+
 ## Dependency: BMAD (large-feature flow only)
 
 For the **large-feature route (Route B)**, ACEF uses [BMAD-METHOD](https://github.com/bmad-code-org/BMAD-METHOD) (MIT)
