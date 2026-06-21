@@ -120,19 +120,15 @@ For session continuity, every active delivery ledger must include `## Session Ha
 gate, next allowed step, active lane/track, and ledger path. Guarded or blocked handoffs must state what not to continue
 without.
 
-Validator regression tests and the CI entrypoint use the same executable:
+Quick verify:
 
 ```bash
 node scripts/test-acef-process-validator
-```
-
-Hook active-ledger smoke test:
-
-```bash
+node scripts/acef-process-validator --repo . --check clean-tree
 node scripts/smoke-acef-hook-active-ledger
 ```
 
-GitHub Actions runs this test from `.github/workflows/validate.yml`.
+GitHub Actions runs the regression test from `.github/workflows/validate.yml`.
 
 Current capstone review: `docs/capstone-review-2026-06-21.md`.
 

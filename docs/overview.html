@@ -119,10 +119,14 @@ Captures (each field cites a source path):
           <p><code>pattern-registry.json</code> entries also carry <code>evidence</code>,
             <code>lastVerifiedCommit</code>, and <code>enforcedBy</code>. <code>PARTIAL</code> registries permit only
             covered mechanical/standard work shapes; guarded work needs extraction or explicit risk acceptance.</p>
-          <p>The process validator now includes first conformance checks for registry contract shape,
-            reuse-before-create evidence, and do-not-copy misuse.</p>
-          <p>The guard hook also runs the reuse/do-not-copy checks before implementation writes in active ACEF/BMAD
-            lanes, so workers cannot skip the conformance ledger under context pressure.</p>
+          <p>The process validator now checks registry contract shape, reuse-before-create evidence, do-not-copy misuse,
+            partial work-shape permission, finding promotion, graduation reconciliation, session handoff, clean-tree,
+            epic gates, claimed outputs, adapter freshness, and REPLAN count.</p>
+          <p>The guard hook also runs the reuse/do-not-copy/PARTIAL checks before implementation writes in active
+            ACEF/BMAD lanes, so workers cannot skip the conformance ledger under context pressure.</p>
+          <p>If multiple delivery ledgers exist, set <code>ACEF_ACTIVE_LEDGER</code> or
+            <code>docs/ai/ACEF_ACTIVE_LEDGER</code>. Without an active pointer, implementation writes are denied rather
+            than satisfied by stale ledger evidence.</p>
           <p>For <code>PARTIAL</code> registries, the ledger must declare <code>track:</code> and
             <code>workShape:</code>; guarded or uncovered work needs explicit human risk acceptance.</p>
           <p>Freshness stamps point to the commit where evidence was verified. A committed registry remains fresh only
@@ -235,7 +239,8 @@ Captures (each field cites a source path):
             <code>claude-plugins/acef-bmad-guard/</code>. Clone users can install it with
             <code>scripts/install-acef-bmad-guard</code>; plugin users can enable that directory as a Claude Code
             plugin. The hook blocks dispatcher/conductor writes and blocks crossing into Epic N+1 until Epic N Process
-            Judge is <code>PASS</code>. Restart Claude Code after installing hooks.</p>
+            Judge is <code>PASS</code>. Use <code>node scripts/smoke-acef-hook-active-ledger</code> to verify active
+            ledger scoping. Restart Claude Code after installing hooks.</p>
         </section>
 
         <section id="principles"><h2><span class="ic" style="background:#e8f0ff">⚖️</span>Principles</h2>
