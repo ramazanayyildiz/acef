@@ -114,6 +114,8 @@ Captures (each field cites a source path):
             covered mechanical/standard work shapes; guarded work needs extraction or explicit risk acceptance.</p>
           <p>The process validator now includes first conformance checks for registry contract shape,
             reuse-before-create evidence, and do-not-copy misuse.</p>
+          <p>The guard hook also runs the reuse/do-not-copy checks before implementation writes in active ACEF/BMAD
+            lanes, so workers cannot skip the conformance ledger under context pressure.</p>
           <p>Freshness stamps point to the commit where evidence was verified. A committed registry remains fresh only
             when that commit is reachable from HEAD and no covered source paths changed since.</p>
           <p>It does <strong>not</strong> install, write tests, or change code. It reads manifests, lock files, CI

@@ -13,6 +13,10 @@ It also enforces the ACEF step-ledger-before-tool-use rule for phase/story comma
 `acef-adapter`, `map-codebase`, `bmad-create-story`, `bmad-dev-story`, `bmad-code-review`, `verify-patch`,
 `test-review`, or `process-judge`, the delivery ledger must already contain that command/step with `IN PROGRESS`.
 
+For implementation writes, it also enforces the first P1 conformance gate before worker bypass: the repo needs a
+readable `docs/ai/pattern-registry.json`, the delivery ledger must cite a reuse/golden-neighbor probe from the
+registry, and any do-not-copy entry mentioned in the ledger must be explicitly avoided or rejected.
+
 ## Activation
 
 The hook is active when the current repo or one of its ancestors contains one of:
@@ -73,3 +77,13 @@ The hook accepts a prior epic gate when one of the standard artifacts contains `
 Before phase/story commands run, the hook searches `docs/ai/` and `_bmad-output/` for a delivery-ledger entry that
 mentions the command and has `IN PROGRESS`, `STARTED`, or `PASS`. Missing evidence denies the command with a reminder
 to start the ledger row first.
+
+## P1 Conformance Evidence
+
+Before source/test/package writes in an active ACEF/BMAD lane, the hook searches delivery ledgers under `docs/ai/` and
+`_bmad-output/`. It denies the write when:
+
+- `docs/ai/pattern-registry.json` is missing or unreadable;
+- no reuse-before-create / golden-neighbor evidence exists;
+- the reuse evidence does not cite a registry probe term or golden-neighbor path;
+- a do-not-copy entry is mentioned without an explicit avoided/rejected context.

@@ -144,12 +144,41 @@ function restrictedPath(filePath, repoRoot) {
   ].some((rx) => rx.test(rel));
 }
 
+function implementationPath(filePath, repoRoot) {
+  if (!filePath || !repoRoot || !under(filePath, repoRoot)) return false;
+  const rel = path.relative(repoRoot, filePath);
+  return [
+    /^app(\/|$)/,
+    /^src(\/|$)/,
+    /^modules(\/|$)/,
+    /^shared(\/|$)/,
+    /^lib(\/|$)/,
+    /^components(\/|$)/,
+    /^hooks(\/|$)/,
+    /^services(\/|$)/,
+    /^stores(\/|$)/,
+    /^utils(\/|$)/,
+    /^constants(\/|$)/,
+    /^types(\/|$)/,
+    /(^|\/)(__tests__|tests?)(\/|$)/,
+    /(^|\/)(package\.json|yarn\.lock|package-lock\.json|pnpm-lock\.yaml|bun\.lockb|jest\.config\.[jt]s|babel\.config\.[jt]s|tsconfig\.json|app\.config\.ts)$/,
+  ].some((rx) => rx.test(rel));
+}
+
 function bashIsRestricted(command, cwd, repoRoot) {
   if (!command || !repoRoot || !cwd || !under(cwd, repoRoot)) return false;
 
   return /\b(yarn\s+(add|install)|npm\s+(install|i)|pnpm\s+(add|install)|expo\s+install|bun\s+add)\b/i.test(command)
     || /(>|>>)\s*(app|src|modules|shared|lib|components|hooks|services|stores|utils|constants|types|_bmad-output|docs\/ai|docs\/prd\.md|docs\/architecture\.md)/.test(command)
     || /\b(touch|mkdir|cp|mv|rm)\b.*\b(app|src|modules|shared|lib|_bmad-output|docs\/ai|docs\/prd\.md|docs\/architecture\.md)\b/.test(command);
+}
+
+function bashTouchesImplementation(command, cwd, repoRoot) {
+  if (!command || !repoRoot || !cwd || !under(cwd, repoRoot)) return false;
+
+  return /\b(yarn\s+(add|install)|npm\s+(install|i)|pnpm\s+(add|install)|expo\s+install|bun\s+add)\b/i.test(command)
+    || /(>|>>)\s*(app|src|modules|shared|lib|components|hooks|services|stores|utils|constants|types)/.test(command)
+    || /\b(touch|mkdir|cp|mv|rm)\b.*\b(app|src|modules|shared|lib|components|hooks|services|stores|utils|constants|types)\b/.test(command);
 }
 
 function parseTargetEpicNumber(command) {
@@ -256,6 +285,20 @@ function listTextFiles(dirPath) {
   return out;
 }
 
+function allLedgerText(repoRoot) {
+  const files = [
+    ...listTextFiles(path.join(repoRoot, "docs", "ai")),
+    ...listTextFiles(path.join(repoRoot, "_bmad-output")),
+  ].filter((filePath) => /delivery|audit|ledger/i.test(path.basename(filePath)));
+  return files.map((filePath) => {
+    try {
+      return fs.readFileSync(filePath, "utf8");
+    } catch {
+      return "";
+    }
+  }).join("\n");
+}
+
 function ledgerEntryStarted(repoRoot, commandName) {
   const files = [
     ...listTextFiles(path.join(repoRoot, "docs", "ai")),
@@ -281,6 +324,69 @@ function ledgerBeforeToolRestricted(command, repoRoot) {
   if (!commandName) return "";
   if (ledgerEntryStarted(repoRoot, commandName)) return "";
   return `ACEF step-ledger gate: start a delivery-ledger row for ${commandName} with IN PROGRESS before running the phase/tool command.`;
+}
+
+function patternRegistryPath(repoRoot) {
+  const filePath = path.join(repoRoot, "docs", "ai", "pattern-registry.json");
+  return exists(filePath) ? filePath : "";
+}
+
+function readPatternRegistry(repoRoot) {
+  const filePath = patternRegistryPath(repoRoot);
+  if (!filePath) return null;
+  try {
+    return JSON.parse(fs.readFileSync(filePath, "utf8"));
+  } catch {
+    return null;
+  }
+}
+
+function registryTerms(registry) {
+  const terms = new Set();
+  for (const pattern of registry?.patterns || []) {
+    for (const term of pattern.reuseProbe || []) terms.add(String(term));
+    for (const neighbor of pattern.goldenNeighbors || []) {
+      if (neighbor?.path) terms.add(String(neighbor.path));
+    }
+  }
+  return [...terms].filter(Boolean);
+}
+
+function doNotCopyEntries(registry) {
+  const entries = [];
+  for (const entry of registry?.doNotCopy || []) entries.push(String(entry.id || ""));
+  for (const pattern of registry?.patterns || []) {
+    for (const id of pattern.doNotCopy || []) entries.push(String(id || ""));
+  }
+  return [...new Set(entries.filter(Boolean))];
+}
+
+function p1ConformanceRestricted(repoRoot) {
+  const registry = readPatternRegistry(repoRoot);
+  if (!registry) {
+    return "ACEF conformance gate: missing readable docs/ai/pattern-registry.json before implementation write.";
+  }
+
+  const ledgerText = allLedgerText(repoRoot);
+  if (!/reuse[- ]before[- ]create|reuse probe|reuse check|nearest neighbor|golden neighbor/i.test(ledgerText)) {
+    return "ACEF conformance gate: missing reuse-before-create / golden-neighbor ledger evidence before implementation write.";
+  }
+
+  const matched = registryTerms(registry).filter((term) => ledgerText.includes(term));
+  if (!matched.length) {
+    return "ACEF conformance gate: reuse ledger does not cite a registry probe term or golden neighbor before implementation write.";
+  }
+
+  for (const id of doNotCopyEntries(registry)) {
+    const pattern = new RegExp(`\\b${escapeRegex(id)}\\b`, "i");
+    const badLine = ledgerText.split(/\r?\n/).find((line) => pattern.test(line)
+      && !/\b(avoid|avoided|blocked|reject|rejected|do not copy|not copied|do-not-copy)\b/i.test(line));
+    if (badLine) {
+      return `ACEF conformance gate: do-not-copy entry ${id} is mentioned without rejection context before implementation write.`;
+    }
+  }
+
+  return "";
 }
 
 (async () => {
@@ -314,6 +420,18 @@ function ledgerBeforeToolRestricted(command, repoRoot) {
     const boundaryReason = epicBoundaryRestricted(input.command || "", repoRoot);
     if (boundaryReason) {
       deny(boundaryReason);
+      return;
+    }
+  }
+
+  const needsP1Conformance = /^(Write|Edit|MultiEdit|NotebookEdit)$/.test(toolName)
+    ? implementationPath(filePath, repoRoot)
+    : toolName === "Bash" && bashTouchesImplementation(input.command || "", cwd, repoRoot);
+
+  if (needsP1Conformance) {
+    const p1Reason = p1ConformanceRestricted(repoRoot);
+    if (p1Reason) {
+      deny(p1Reason);
       return;
     }
   }

@@ -38,17 +38,18 @@ function expectFail(label, args) {
   throw new Error(`Expected ${label} to fail, but it passed`);
 }
 
-function runHook(payload) {
+function runHook(payload, env = {}) {
   const output = cp.execFileSync("node", [bmadHook], {
     input: JSON.stringify(payload),
     encoding: "utf8",
     stdio: ["pipe", "pipe", "pipe"],
+    env: { ...process.env, ...env },
   }).trim();
   return JSON.parse(output);
 }
 
-function expectHookDecision(label, payload, decision) {
-  const output = runHook(payload);
+function expectHookDecision(label, payload, decision, env = {}) {
+  const output = runHook(payload, env);
   const actual = output?.hookSpecificOutput?.permissionDecision;
   if (actual !== decision) {
     throw new Error(`Expected hook ${label} to ${decision}, got ${actual || "none"}:\n${JSON.stringify(output, null, 2)}`);
@@ -118,10 +119,6 @@ try {
     "",
     "Status: PASS",
     "",
-    "Reuse-before-create:",
-    "- Checked `src/services/current.ts` and `sharedApiClient`; reused the canonical service pattern.",
-    "- Do-not-copy: avoided `legacy.service.direct-fetch`.",
-    "",
   ].join("\n"));
 
   fs.writeFileSync(path.join(tmp, ".acef-bmad-lane"), "active\n");
@@ -133,14 +130,35 @@ try {
     },
   };
   expectHookDecision("missing step ledger", storyCommandPayload, "deny");
+  const workerEnv = { ACEF_BMAD_WORKER: "1" };
+  expectHookDecision("missing P1 conformance", {
+    tool_name: "Write",
+    cwd: tmp,
+    tool_input: {
+      file_path: path.join(tmp, "src", "new-service.ts"),
+      content: "export const ok = true;\n",
+    },
+  }, "deny", workerEnv);
   fs.appendFileSync(path.join(tmp, "docs", "ai", "ACEF_demo_DELIVERY_AUDIT.md"), [
     "",
     "| Step | Tool | Status |",
     "| --- | --- | --- |",
     "| Story 1.1 create | bmad-create-story | IN PROGRESS |",
     "",
+    "Reuse-before-create:",
+    "- Checked `src/services/current.ts` and `sharedApiClient`; reused the canonical service pattern.",
+    "- Do-not-copy: avoided `legacy.service.direct-fetch`.",
+    "",
   ].join("\n"));
   expectHookDecision("started step ledger", storyCommandPayload, "allow");
+  expectHookDecision("P1 conformance allows source write", {
+    tool_name: "Write",
+    cwd: tmp,
+    tool_input: {
+      file_path: path.join(tmp, "src", "new-service.ts"),
+      content: "export const ok = true;\n",
+    },
+  }, "allow", workerEnv);
 
   expectPass("preflight", ["--repo", tmp, "--check", "preflight"]);
   expectPass("adapter-freshness", ["--repo", tmp, "--check", "adapter-freshness", "--adapter", "docs/codebase-map.md"]);
@@ -175,6 +193,14 @@ try {
     "- Checked `src/services/current.ts`.",
   ].join("\n"));
   expectFail("do-not-copy", ["--repo", tmp, "--check", "do-not-copy", "--ledger", "docs/ai/ACEF_bad_copy_DELIVERY_AUDIT.md"]);
+  expectHookDecision("P1 do-not-copy misuse denies source write", {
+    tool_name: "Write",
+    cwd: tmp,
+    tool_input: {
+      file_path: path.join(tmp, "src", "bad-service.ts"),
+      content: "export const bad = true;\n",
+    },
+  }, "deny", workerEnv);
 
   fs.rmSync(path.join(tmp, "docs", "ai", "ACEF_PREFLIGHT.md"));
   expectFail("preflight", ["--repo", tmp, "--check", "preflight"]);
