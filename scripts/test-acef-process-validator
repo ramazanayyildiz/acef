@@ -146,6 +146,31 @@ try {
       content: "export const ok = true;\n",
     },
   }, "deny", workerEnv);
+  expectHookDecision("dispatcher can bootstrap delivery ledger", {
+    tool_name: "Edit",
+    cwd: tmp,
+    tool_input: {
+      file_path: path.join(tmp, "docs", "ai", "ACEF_demo_DELIVERY_AUDIT.md"),
+      old_string: "Status: PASS",
+      new_string: "Status: PASS\nnext_allowed_step: BMAD planning launch",
+    },
+  }, "allow");
+  expectHookDecision("dispatcher can bootstrap active ledger pointer", {
+    tool_name: "Write",
+    cwd: tmp,
+    tool_input: {
+      file_path: path.join(tmp, "docs", "ai", "ACEF_ACTIVE_LEDGER"),
+      content: "docs/ai/ACEF_demo_DELIVERY_AUDIT.md\n",
+    },
+  }, "allow");
+  expectHookDecision("dispatcher still cannot author arbitrary docs ai artifact", {
+    tool_name: "Write",
+    cwd: tmp,
+    tool_input: {
+      file_path: path.join(tmp, "docs", "ai", "architecture-notes.md"),
+      content: "# Architecture\n",
+    },
+  }, "deny");
   fs.appendFileSync(path.join(tmp, "docs", "ai", "ACEF_demo_DELIVERY_AUDIT.md"), [
     "",
     "| Step | Tool | Status |",

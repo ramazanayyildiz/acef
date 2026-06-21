@@ -148,6 +148,14 @@ function restrictedPath(filePath, repoRoot) {
   ].some((rx) => rx.test(rel));
 }
 
+function runControlPath(filePath, repoRoot) {
+  if (!filePath || !repoRoot || !under(filePath, repoRoot)) return false;
+  const rel = path.relative(repoRoot, filePath);
+  return /^docs\/ai\/ACEF_ACTIVE_LEDGER$/.test(rel)
+    || /^docs\/ai\/ACEF_PREFLIGHT\.md$/.test(rel)
+    || /^docs\/ai\/ACEF_[A-Za-z0-9_-]+_DELIVERY_AUDIT\.md$/.test(rel);
+}
+
 function implementationPath(filePath, repoRoot) {
   if (!filePath || !repoRoot || !under(filePath, repoRoot)) return false;
   const rel = path.relative(repoRoot, filePath);
@@ -508,7 +516,9 @@ function p1ConformanceRestricted(repoRoot) {
     return;
   }
 
-  if (/^(Read|Write|Edit|MultiEdit|NotebookEdit)$/.test(toolName) && restrictedPath(filePath, repoRoot)) {
+  if (/^(Read|Write|Edit|MultiEdit|NotebookEdit)$/.test(toolName)
+    && restrictedPath(filePath, repoRoot)
+    && !runControlPath(filePath, repoRoot)) {
     deny(`ACEF/BMAD hard wall: dispatcher/conductor agent cannot ${toolName} ${filePath}. Dispatch a dedicated persona worker instead.`);
     return;
   }
