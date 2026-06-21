@@ -70,6 +70,8 @@ files the agent follows. No build, no npm, no services.
 3. **Use it** — open your own repo and run `/acef` (or just say "use acef"). It extracts your project adapter, routes
    your request, picks the lane (lightweight vs BMAD v2 per `method/DELIVERY_RULES.md`), and runs only the steps that
    case needs.
+   For concrete work, ACEF first creates a target-run ledger, sets `ACEF_ACTIVE_LEDGER` or
+   `docs/ai/ACEF_ACTIVE_LEDGER`, and writes a `Session Handoff` before worker fan-out or deep planning.
 
 4. **Optional hard wall for BMAD lanes** — if you use Claude Code hooks, install the ACEF/BMAD guard so the dispatcher
    or conductor cannot write implementation files or BMAD artifacts during an ACEF lane:

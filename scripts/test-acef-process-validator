@@ -50,6 +50,10 @@ function runHook(payload, env = {}) {
 
 function expectHookDecision(label, payload, decision, env = {}) {
   const output = runHook(payload, env);
+  const hookEventName = output?.hookSpecificOutput?.hookEventName;
+  if (hookEventName !== "PreToolUse") {
+    throw new Error(`Expected hook ${label} to include hookEventName PreToolUse, got ${hookEventName || "none"}:\n${JSON.stringify(output, null, 2)}`);
+  }
   const actual = output?.hookSpecificOutput?.permissionDecision;
   if (actual !== decision) {
     throw new Error(`Expected hook ${label} to ${decision}, got ${actual || "none"}:\n${JSON.stringify(output, null, 2)}`);

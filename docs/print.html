@@ -117,6 +117,9 @@ Captures (each field cites a source path):
             epic gates, claimed outputs, adapter freshness, and REPLAN count.</p>
           <p>The guard hook also runs the reuse/do-not-copy/PARTIAL checks before implementation writes in active
             ACEF/BMAD lanes, so workers cannot skip the conformance ledger under context pressure.</p>
+          <p>An ACEF run must bootstrap its target state before worker fan-out: create <code>docs/ai/</code>, create the
+            delivery ledger, set <code>ACEF_ACTIVE_LEDGER</code> or <code>docs/ai/ACEF_ACTIVE_LEDGER</code>, and write a
+            complete <code>Session Handoff</code>. Source repos are evidence; the target repo owns the run gates.</p>
           <p>If multiple delivery ledgers exist, set <code>ACEF_ACTIVE_LEDGER</code> or
             <code>docs/ai/ACEF_ACTIVE_LEDGER</code>. Without an active pointer, implementation writes are denied rather
             than satisfied by stale ledger evidence.</p>
@@ -233,7 +236,8 @@ Captures (each field cites a source path):
             <code>scripts/install-acef-bmad-guard</code>; plugin users can enable that directory as a Claude Code
             plugin. The hook blocks dispatcher/conductor writes and blocks crossing into Epic N+1 until Epic N Process
             Judge is <code>PASS</code>. Use <code>node scripts/smoke-acef-hook-active-ledger</code> to verify active
-            ledger scoping. Restart Claude Code after installing hooks.</p>
+            ledger scoping. Hook responses include the required <code>PreToolUse</code> event name so Claude Code can
+            validate and enforce them. Restart Claude Code after installing hooks.</p>
         </section>
 
         <section id="principles"><h2><span class="ic" style="background:#e8f0ff">⚖️</span>Principles</h2>

@@ -58,20 +58,32 @@ If user asks:
    - pre-SDLC discussion (idea/research/thinking/council) — outside this ACEF SDLC flow
    - brownfield SDLC work — route through ACEF
    - greenfield/new-project work — say this orchestrator is currently prepared for brownfield routes unless a greenfield adapter exists
-3. For brownfield work, check if a project adapter exists and is fresh:
+3. For any concrete ACEF work item that will use workers, source verification, planning, or implementation, bootstrap the
+   active run before deeper work:
+   - resolve the target repo/workspace where run artifacts live; for greenfield work, create or select the target home
+     before running target-scoped gates;
+   - create `docs/ai/` if missing;
+   - create the feature delivery ledger (`docs/ai/ACEF_<feature>_DELIVERY_AUDIT.md` or project equivalent);
+   - set `docs/ai/ACEF_ACTIVE_LEDGER` to that ledger path, or set `ACEF_ACTIVE_LEDGER`;
+   - add a complete `## Session Handoff` block to the ledger with `last_passed_gate`, `active_lane`, `active_track`,
+     `next_allowed_step`, and `ledger_path`;
+   - start the first step row before spawning workers, reading deep workflow/templates, or launching source verifiers.
+   A run that invokes workers before this bootstrap is a drift finding. Stop, patch the ambiguous rule if needed, and
+   restart the run from the bootstrap.
+4. For brownfield work, check if a project adapter exists and is fresh:
    - if missing/stale, delegate to `acef-adapter`
    - if present, use it
-4. Delegate route classification to `acef-router`.
-5. Read `ACEF_DELIVERY_RULES` to select the intended lane — **lightweight lane** (small/ongoing) vs **full BMAD v2**
+5. Delegate route classification to `acef-router`.
+6. Read `ACEF_DELIVERY_RULES` to select the intended lane — **lightweight lane** (small/ongoing) vs **full BMAD v2**
    (epics/risky-and-large) — and, in the lightweight lane, the **track** (mechanical / standard / guarded) and personas
    per `ACEF_OPERATING_MODEL`.
-6. Create/update the preflight artifact (`docs/ai/ACEF_PREFLIGHT.md` or the project equivalent) before any planning,
+7. Create/update the preflight artifact (`docs/ai/ACEF_PREFLIGHT.md` or the project equivalent) before any planning,
    implementation, test generation, or release. It must record: route, lane, track, required skills/tools, resolved
    paths/commands, adapter freshness, test setup status, backend/API source of truth when relevant, risk gates, human
    approvals, and verdict. If verdict is not `PASS`, stop.
    Once the gate condition is proven, write the gate report and return control before loading deeper workflow steps.
    Do not turn a capability preflight into unbounded method exploration.
-7. For any multi-step feature, create/update a feature delivery ledger (`docs/ai/ACEF_<feature>_DELIVERY_AUDIT.md` or
+8. For any multi-step feature, create/update a feature delivery ledger (`docs/ai/ACEF_<feature>_DELIVERY_AUDIT.md` or
    the project equivalent). Preflight is only the first gate. The delivery ledger must be updated at every transition:
    expected route/lane/track, required skill/tool, resolved path/command, inputs, outputs, evidence command/source,
    `PASS`/`FAIL`/`HALT` verdict, and next allowed step. If a required step is skipped, substituted, or reordered without
@@ -79,7 +91,7 @@ If user asks:
    Start the step ledger entry before reading the step's workflow/template files or invoking the skill/tool. Fill
    outputs and verdict after the step completes. A retroactive entry written only after exploration has already begun is
    a drift finding, not a valid substitute.
-8. Depending on route:
+9. Depending on route:
    - Route A small feature: use adapter + golden neighbor; implementation helper may be project-specific. **Before copying a golden neighbor, ground at symbol/contract level** — read the actual symbols the target consumes (hook return shape, signatures, types) and diff them against the neighbor's assumptions; copy only contract-matching parts. A file-level "copy this neighbor" hides type mismatches.
    - Route B large feature: run the BMAD capability preflight from `ACEF_BMAD_V2_LANE` first. If the real BMAD
      conductor/skills cannot be resolved to paths, stop with `HALT: BMAD-METHOD is not installed or not wired for this
@@ -94,15 +106,15 @@ If user asks:
    - Route E test automation: add `test-browser-generator` after the cases (detect the real browser tool from the adapter); if the repo has zero tests, bootstrap the first pattern via `acef-test-bootstrap` first
    - Route F unit/integration: `test-gen` / `test-generator` (+ `test-coverage-auditor` / `test-risk-classifier` to target by risk); zero-test repos start with `acef-test-bootstrap` (one golden test, symbol-grounded)
    - Release/CD: delegate to `acef-release-adapter`
-9. Before any story/task is marked `done`, require the Process Judge gate from `ACEF_OPERATING_MODEL`: verify route,
+10. Before any story/task is marked `done`, require the Process Judge gate from `ACEF_OPERATING_MODEL`: verify route,
    lane, track, required skills, resolved skill paths, phase order, and durable artifacts. Verdict must be `PASS`,
    `FAIL`, or `HALT`.
-10. Before any epic is marked product-done or status-done, require the Epic Process Judge gate from
+11. Before any epic is marked product-done or status-done, require the Epic Process Judge gate from
    `ACEF_OPERATING_MODEL` and `ACEF_BMAD_V2_LANE`: drift audit, trace, epic test-review, E2E/user-flow evidence, manual
    QA ledger, product-done audit, retrospective, and final status close must exist when required.
-11. Treat "continue without me" as permission to skip waiting for a human checkpoint only. It never waives Process Judge
+12. Treat "continue without me" as permission to skip waiting for a human checkpoint only. It never waives Process Judge
    or Epic Process Judge gates.
-12. Before any side effect, ask for explicit user approval.
+13. Before any side effect, ask for explicit user approval.
 
 ## Helper Skills
 
@@ -152,6 +164,9 @@ If user asks:
   that epic's Process Judge, and the next epic cannot start until the prior epic gate is `PASS`.
 - Honesty: label capabilities as READY, DRAFT, or MISSING.
 - Approval: do not install, edit, deploy, or run broad automation without explicit user approval.
+- Active run bootstrap: before workers, source verifiers, deep planning, or implementation, the target run must have a
+  delivery ledger, `docs/ai/ACEF_ACTIVE_LEDGER` or `ACEF_ACTIVE_LEDGER`, and a complete `## Session Handoff` block. Do
+  not let old ledgers or chat memory stand in for the active run.
 - Guarded work: auth, payment, data/migrations, secrets, shared/core APIs, releases, and multi-repo work need human approval before execution.
 - Guarded work — test floor: a verification checklist is a **supplement, not a substitute**. Guarded changes require **at least one symbol-grounded test on the auth/payment/entitlement/data boundary** (bootstrap the framework via `acef-test-bootstrap` if the repo has none — with install approval). The human-approval gate must confirm which was done (test + checklist, not checklist alone). A zero-test repo is not an excuse to ship guarded work untested.
 

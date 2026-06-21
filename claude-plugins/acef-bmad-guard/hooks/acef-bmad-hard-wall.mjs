@@ -93,6 +93,7 @@ function isWorker() {
 function allow() {
   process.stdout.write(JSON.stringify({
     hookSpecificOutput: {
+      hookEventName: "PreToolUse",
       permissionDecision: "allow"
     }
   }));
@@ -101,6 +102,7 @@ function allow() {
 function deny(reason) {
   process.stdout.write(JSON.stringify({
     hookSpecificOutput: {
+      hookEventName: "PreToolUse",
       permissionDecision: "deny"
     },
     systemMessage: reason

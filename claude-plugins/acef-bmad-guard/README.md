@@ -103,3 +103,6 @@ To avoid stale evidence from an older run satisfying the current write, scope th
 When an active ledger is present, P1 conformance checks read only that ledger. Without it, the hook falls back to all
 delivery/audit/ledger files only when there is zero or one ledger. If multiple delivery ledgers exist, the hook denies
 implementation writes until the active ledger is set.
+
+Hook responses include `hookSpecificOutput.hookEventName: "PreToolUse"` plus the permission decision. This is required
+by Claude Code's hook output schema; a missing event name means the hook fails validation instead of enforcing.

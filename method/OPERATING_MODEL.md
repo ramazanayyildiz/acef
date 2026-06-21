@@ -63,6 +63,28 @@ it must exist before new helpers, components, services, hooks, APIs, or patterns
 
 ## Process gates
 
+### Active Run Bootstrap
+
+Before any worker fan-out, source verification, deep workflow/template read, planning artifact, or implementation step,
+the conductor must create a resumable active run in the target repo/workspace.
+
+Required bootstrap order:
+
+1. Resolve the target repo/workspace where run artifacts live. For greenfield work, create or select the target home
+   before target-scoped gates; source repos are read-only evidence and do not own the run state.
+2. Create `docs/ai/` if missing.
+3. Create the feature delivery ledger (`docs/ai/ACEF_<feature>_DELIVERY_AUDIT.md` or the project equivalent).
+4. Set the active pointer by writing that relative ledger path to `docs/ai/ACEF_ACTIVE_LEDGER` or by setting
+   `ACEF_ACTIVE_LEDGER`.
+5. Add a complete `## Session Handoff` block to the ledger with at least:
+   `last_passed_gate`, `active_lane`, `active_track`, `next_allowed_step`, and `ledger_path`.
+6. Start the first Step Ledger Entry before invoking a worker, reading deeper method files/templates, or launching
+   source verifiers.
+
+If a run invokes workers before this bootstrap exists, the correct response is not to reconstruct the ledger afterward.
+Record a drift finding, patch the ambiguous instruction if needed, and restart from the bootstrap. A stale ledger from a
+different run must never satisfy the current run.
+
 ### Feature Delivery Ledger
 
 Preflight is only the first gate. For any multi-step feature, the conductor must also maintain a durable delivery

@@ -56,6 +56,12 @@ No preflight artifact with `PASS` means no planning, implementation, test genera
 For multi-step features, the conductor must also create/update the feature delivery ledger described in
 `OPERATING_MODEL.md`. Preflight proves the start; the ledger proves the run stayed on the rails.
 
+Before any worker fan-out, source verification, deep workflow/template read, planning artifact, or implementation step,
+the conductor must also complete the Active Run Bootstrap from `OPERATING_MODEL.md`: target repo/workspace resolved,
+`docs/ai/` created, delivery ledger created, active ledger pointer set (`ACEF_ACTIVE_LEDGER` or
+`docs/ai/ACEF_ACTIVE_LEDGER`), and `## Session Handoff` recorded. Source repos used for evidence do not own the target
+run's gates.
+
 ## Route → lane
 
 | Route | Lane | Track (lightweight) |
@@ -88,6 +94,8 @@ A lightweight (usually guarded) task promotes to full BMAD when any of:
   This gate is short in the lightweight lane and story-scoped in full BMAD, but it is never skipped.
 - **Conformance feedback loop** — every conformance finding becomes a code patch, pattern-registry update,
   do-not-copy update, proposed mechanical check, or explicit human deferral. Findings do not disappear into chat.
+- **Active run bootstrap** — before workers or source verifiers run, the target workspace has a delivery ledger, active
+  ledger pointer, and structured session handoff. A stale ledger from another run cannot satisfy the current run.
 - **Conductor step ledger** — every transition records expected route/lane/track, required skill/tool, resolved
   path/command, inputs, outputs, evidence, verdict, and next allowed step. No ledger entry means no advancement.
   The entry starts before the conductor reads that step's workflow/template files or invokes the skill/tool; outputs and

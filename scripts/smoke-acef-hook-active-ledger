@@ -14,7 +14,11 @@ function runHook(payload) {
     stdio: ["pipe", "pipe", "pipe"],
     env: { ...process.env, ACEF_BMAD_WORKER: "1" },
   }).trim();
-  return JSON.parse(output)?.hookSpecificOutput?.permissionDecision || "none";
+  const parsed = JSON.parse(output);
+  if (parsed?.hookSpecificOutput?.hookEventName !== "PreToolUse") {
+    throw new Error(`hookEventName missing/invalid: ${output}`);
+  }
+  return parsed?.hookSpecificOutput?.permissionDecision || "none";
 }
 
 function expect(label, actual, expected) {
