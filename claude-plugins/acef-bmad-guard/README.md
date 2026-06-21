@@ -1,6 +1,6 @@
 # ACEF BMAD Guard
 
-Portable Claude Code hook package for ACEF/BMAD lanes.
+Portable Claude Code hook package for ACEF lightweight and BMAD lanes.
 
 It prevents the main dispatcher/conductor from authoring BMAD artifacts or implementation code once a BMAD lane is
 active. Dedicated persona workers are allowed through when their environment identifies them as workers.
@@ -21,6 +21,8 @@ registry, and any do-not-copy entry mentioned in the ledger must be explicitly a
 
 The hook is active when the current repo or one of its ancestors contains one of:
 
+- `.acef-lane`
+- `.acef-lightweight-lane`
 - `.acef-bmad-lane`
 - `.bmad`
 - `_bmad`

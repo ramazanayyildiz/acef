@@ -49,6 +49,8 @@ function ancestors(startPath) {
 
 function hasLaneMarker(dirPath) {
   return [
+    ".acef-lane",
+    ".acef-lightweight-lane",
     ".acef-bmad-lane",
     ".bmad",
     "_bmad",

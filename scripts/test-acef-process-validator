@@ -160,6 +160,20 @@ try {
     },
   }, "allow", workerEnv);
 
+  const lightweight = fs.mkdtempSync(path.join(os.tmpdir(), "acef-lightweight-"));
+  fs.mkdirSync(path.join(lightweight, "docs", "ai"), { recursive: true });
+  fs.writeFileSync(path.join(lightweight, ".acef-lightweight-lane"), "active\n");
+  fs.writeFileSync(path.join(lightweight, "docs", "ai", "pattern-registry.json"), fs.readFileSync(path.join(tmp, "docs", "ai", "pattern-registry.json"), "utf8"));
+  expectHookDecision("lightweight lane missing P1 conformance", {
+    tool_name: "Write",
+    cwd: lightweight,
+    tool_input: {
+      file_path: path.join(lightweight, "src", "light.ts"),
+      content: "export const light = true;\n",
+    },
+  }, "deny", workerEnv);
+  fs.rmSync(lightweight, { recursive: true, force: true });
+
   expectPass("preflight", ["--repo", tmp, "--check", "preflight"]);
   expectPass("adapter-freshness", ["--repo", tmp, "--check", "adapter-freshness", "--adapter", "docs/codebase-map.md"]);
   expectPass("pattern-registry", ["--repo", tmp, "--check", "pattern-registry"]);

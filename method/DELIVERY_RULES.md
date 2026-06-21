@@ -40,6 +40,10 @@ Adapter/pattern-registry status controls what can proceed:
 The lightweight lane *is* Layer 1 run for day-to-day work. Full BMAD v2 is the heavy lane for big/risky work. Most
 ongoing work lives in the lightweight lane.
 
+When using the Claude Code guard hook, lightweight runs should create `.acef-lightweight-lane` (or the neutral
+`.acef-lane`) at the repo root while the run is active. Full BMAD runs use `.acef-bmad-lane` or BMAD runtime markers.
+Without a lane marker, Claude Code hooks cannot know a repo is inside an ACEF run and will allow by default.
+
 Full BMAD v2 has a hard capability preflight: the real BMAD workflow must be installed/wired and its required skills or
 commands must resolve to paths before the lane starts. If BMAD is missing, ACEF stops and asks for installation/wiring or
 a lane decision. A generic subagent running a BMAD-like checklist is not valid BMAD. **No automatic fallback is allowed:**
