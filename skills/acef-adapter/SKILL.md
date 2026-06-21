@@ -1,12 +1,21 @@
 ---
 name: acef-adapter
-description: "Extract a project's ACEF Project Adapter — the stack-agnostic, evidence-based snapshot that makes ACEF fit THIS repo: identity/lifecycle, stack + package manager, repo layout, real commands (build/test/lint/typecheck/codegen/deploy), test setup, CI/CD, golden neighbors, and risk surface — plus a freshness stamp. Read-only fact-finding; never installs, never writes tests, never changes code, never picks a framework without approval. Run on first onboarding to a repo, when there's no fresh map, before large/multi-repo/test-bootstrap work, or after major refactors/upgrades. Output is the per-repo adapter (the moat: each project feeds on its own reality). Triggers: extract the adapter, onboard this repo, map this project, project adapter, what stack/test/CI does this repo use, refresh the codemap/adapter"
+description: "Extract a project's ACEF Project Adapter — the stack-agnostic, evidence-based snapshot and living repo memory that makes ACEF fit THIS repo: identity/lifecycle, stack + package manager, repo layout, real commands, test setup, CI/CD, golden neighbors, pattern registry, do-not-copy, reuse probes, risk surface, provenance, and freshness. Read-only fact-finding; never installs, never writes tests, never changes code, never picks a framework without approval. Run on first onboarding to a repo, when there's no fresh map, before large/multi-repo/test-bootstrap/conformance-sensitive work, or after major refactors/upgrades. Output is the per-repo adapter (the moat: each project feeds on its own reality). Triggers: extract the adapter, onboard this repo, map this project, project adapter, pattern registry, what stack/test/CI does this repo use, refresh the codemap/adapter"
 ---
 
 # ACEF Project Adapter Extraction
 
 Produce the **project adapter**: evidence from the repo, not a hand-written guess. **ACEF core is stack-agnostic** —
 detect, never assume (no "web=Next, mobile=RN"). This is **read-only fact-finding**.
+
+The adapter has two durable parts:
+
+1. **Snapshot** — the codemap photo: stack, layout, commands, tests, CI, architecture, conventions, concerns.
+2. **Living repo knowledge** — pattern registry, golden neighbors, do-not-copy entries, reuse probes, fitness checks,
+   risk boundaries, and inventories. These entries persist across runs and must carry provenance.
+
+Do not put run-local state here. Gate summaries, drift notes, handoffs, and next-allowed-step belong in the delivery
+ledger for that feature/task.
 
 ## When to run
 First onboarding to a repo · no fresh map exists · before large/multi-repo/test-bootstrap/unfamiliar-stack work ·
@@ -21,8 +30,18 @@ when the existing map conflicts with the repo. **Do not** re-run for every small
 4. **Commands** — install · build · lint · typecheck · test · codegen · format · (deploy if relevant). *Read from package scripts / Makefile / CI / project files. Missing → write `not found`; never invent.*
 5. **Test setup** — do tests exist? · framework(s) · test folders/naming · test command · fixture/mock/data setup · unit/component/integration/e2e split · best test neighbor. *No tests → record `no accepted test neighbor`, identify likely bootstrap surface, do NOT pick a framework without evidence/approval.*
 6. **CI/CD** — workflow files · required checks · build/test/lint/typecheck gates · deploy workflows · environments · manual approvals. *A deploy workflow is NOT automatically a test gate — record what it actually checks.*
-7. **Golden neighbors** — per common work (feature/endpoint/screen/store-hook/test/migration): path · why it qualifies · what to copy · what NOT to copy · twins to check · **the consumed contract** (the exact symbols the neighbor depends on — hook return shape, function signature, exported types, constants — with `path:line`). Cite neighbors at SYMBOL level, not just file level: a file-level pointer ("the pull-to-refresh screen", "the lang validator") hides contract mismatches. *No qualified neighbor → mark new-pattern.*
+7. **Golden neighbors + pattern registry** — per common work (feature/endpoint/screen/store-hook/test/migration): path · why it qualifies · what to copy · what NOT to copy · twins to check · **the consumed contract** (the exact symbols the neighbor depends on — hook return shape, function signature, exported types, constants — with `path:line`). Cite neighbors at SYMBOL level, not just file level: a file-level pointer ("the pull-to-refresh screen", "the lang validator") hides contract mismatches. *No qualified neighbor → mark new-pattern / needs decision.*
 8. **Risk surface** — point to the files/folders indicating: auth/permissions · payment/billing · data model/migrations · external integrations · generated client · shared/core packages · deploy/env config · tenant boundaries · feature flags/rollout · observability/error handling.
+9. **Adapter memory schema** — every living entry that can guide implementation/review must include:
+   - source evidence (`path:line` or command),
+   - confidence (`statistical-strong`, `multiple-examples`, `single-example`, `inferred`, `needs-verification`),
+   - freshness (verified date + commit/revision + scope),
+   - evidence (why this is canonical, not only an example path),
+   - per-entry `lastVerifiedCommit`,
+   - `enforcedBy` (`null` or the lint/CI/hook/fitness check that enforces it),
+   - maturity (`review-finding`, `rubric-item`, `mechanical-check`, `retired`),
+   - update trigger (`conformance-revise`, `merged-better-exemplar`, `command-change`, `risk-boundary-change`,
+     `n-commits-stale`, `major-refactor`, `no-qualified-neighbor`).
 
 **Golden-neighbor qualifies when:** same repo (or accepted reference) · follows current convention · not legacy/do-not-copy · similar lifecycle & flow · same stack/package pattern · has twins/tests/docs. Else escalate to new-pattern/larger route.
 
@@ -64,10 +83,38 @@ Avoid:
 Write `docs/.../{project}-adapter.md` (or the project's chosen location) with this shape, plus a freshness stamp:
 ```
 generated_at · repo · commit/revision · covered_modules · known_omissions · extractor_version
-## Identity / Stack / Layout / Commands / Tests / CI-CD / Golden Neighbors / Risk Surface / Refresh Triggers
+## Identity / Stack / Layout / Commands / Tests / CI-CD / Snapshot / Pattern Registry / Golden Neighbors / Do-Not-Copy / Reuse Probes / Risk Surface / Refresh Triggers
 ```
 Tag each finding **READY** (found with evidence) / **DRAFT** (in docs, not wired/verified) / **MISSING** (not found).
 Never record a desired future convention as current project fact.
+
+Living repo knowledge entries should use this compact shape when practical:
+
+```yaml
+id: pattern.example
+kind: pattern | golden-neighbor | do-not-copy | reuse-probe | fitness-check | risk-boundary | component-inventory
+status: proposed | active | promoted-to-check | retired | archived
+maturity: review-finding | rubric-item | mechanical-check | retired
+enforcedBy: null
+trigger: conformance-revise | merged-better-exemplar | command-change | risk-boundary-change | n-commits-stale | major-refactor | no-qualified-neighbor
+evidence: "Why this is canonical, not just an example path."
+source_evidence: ["path/to/file.ts:12"]
+confidence: multiple-examples
+freshness: { verified_at: YYYY-MM-DD, commit: short-sha, scope: path-or-module }
+lastVerifiedCommit: short-sha
+notes: "Short rule."
+```
+
+If an adapter entry lacks source evidence, confidence, and freshness, treat it as a lead, not a conformance rule.
+For `pattern-registry.json`, follow `PATTERN_REGISTRY.md`.
+
+## Memory lifecycle
+
+Soft conformance rules should graduate:
+
+`review finding -> rubric item -> mechanical check (lint / fitness / hook / CI) -> prose RETIRED`
+
+Remove, retire, or archive entries that are superseded. Do not let the adapter become an all-add prose blob.
 
 ## Refresh triggers (write into the output)
 stamp missing/stale · major dep/framework change · folder-structure change · new repo/module/package · tests or CI

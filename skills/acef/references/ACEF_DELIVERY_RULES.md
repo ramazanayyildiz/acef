@@ -6,8 +6,29 @@ operating model (Layer 1), the test/flow skills (Layer 2), the BMAD v2 lane (Lay
 
 ## Always first: ground (Layer 4)
 Before any work, extract/refresh the **project adapter** (`acef-adapter` + `map-codebase`): stack, commands, tests,
-CI, golden neighbors, risk surface, with a freshness stamp. No route runs on a stale adapter. ("Understand the repo
-first, then work" — the codemap idea.)
+CI, golden neighbors, pattern registry, risk surface, with a freshness stamp. No route runs on a stale adapter.
+("Understand the repo first, then work" — the codemap idea.)
+
+Adapter memory and run state are separate:
+
+- **Codemap snapshot** records what the repo currently looks like.
+- **Adapter living-knowledge** records durable repo facts: pattern registry, golden neighbors, do-not-copy,
+  reuse probes, risk boundaries, and fitness checks. Each entry needs source evidence, confidence, freshness,
+  maturity, and an update trigger.
+- **Delivery ledger** records one run's working state: gate summaries, drift notes, handoffs, and next allowed step.
+
+See `ACEF_ADAPTER_MEMORY.md`. Do not store run-local drift/handoff state in the adapter, and do not treat uncited
+adapter notes as conformance rules.
+
+Method prose is not enforcement. Load-bearing rules must move into machinery, fresh sharded workers, or just-in-time
+injection. Use `ACEF_RULE_ENFORCEMENT_MAP.md` to track which ACEF rules still depend on agent memory.
+
+Adapter/pattern-registry status controls what can proceed:
+
+- `READY` — work may proceed within the adapter's covered scopes.
+- `PARTIAL` — mechanical/standard work may proceed only for work shapes already covered in the pattern registry. New
+  work shapes and guarded work require registry extraction or explicit human risk acceptance first.
+- `MISSING` — no conformance gate may pass; run adapter/codemap first.
 
 ## Two lanes
 
@@ -58,6 +79,11 @@ A lightweight (usually guarded) task promotes to full BMAD when any of:
 - **Plan integrity** — no skip / reorder / shrink / expand scope without human approval.
 - **2×REPLAN → escalate** — the circuit breaker.
 - **Fresh Judge review** (no self-approval) and **verify-patch on REVISE**.
+- **Reuse-before-create gate** — before implementation in either lane, the worker records the work shape, registry
+  entry used, golden neighbor checked, existing symbols searched, what was reused, and why any new pattern is needed.
+  This gate is short in the lightweight lane and story-scoped in full BMAD, but it is never skipped.
+- **Conformance feedback loop** — every conformance finding becomes a code patch, pattern-registry update,
+  do-not-copy update, proposed mechanical check, or explicit human deferral. Findings do not disappear into chat.
 - **Conductor step ledger** — every transition records expected route/lane/track, required skill/tool, resolved
   path/command, inputs, outputs, evidence, verdict, and next allowed step. No ledger entry means no advancement.
   The entry starts before the conductor reads that step's workflow/template files or invokes the skill/tool; outputs and

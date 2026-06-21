@@ -58,6 +58,9 @@ The Planner assigns one **track** per task. The track sets which personas partic
 **Track flows:** Mechanical = Planner → Developer → done · Standard = Planner → Developer → Judge · Guarded =
 Planner → Test Author + Developer (parallel) → Judge (full pipeline).
 
+Every implementation track uses the reuse-before-create gate. The gate can be tiny for mechanical/lightweight work, but
+it must exist before new helpers, components, services, hooks, APIs, or patterns are written.
+
 ## Process gates
 
 ### Feature Delivery Ledger
@@ -228,10 +231,22 @@ Mechanical tasks may go `in-progress → done` on passing validation (no Judge).
 ## Required task blocks (short, factual, copy-paste)
 
 - **Task Header** (Planner): Track · Status · Owner · Scope (in/out) · Expected files · Acceptance criteria · Test plan · Non-goals · Risks.
+- **Reuse-before-create** (Developer before code): Work shape · registry status/entry · golden neighbor checked ·
+  existing symbols/components/helpers searched · reused item or reason for new pattern · do-not-copy checked.
 - **Test Author Report** (guarded): test files · failure modes targeted · boundary cases.
 - **Developer Report**: what changed · files changed · exact test commands · pass/fail + full failing output (no paraphrase) · open questions (max 2, only if blocking).
-- **Judge Decision**: `MERGE`/`REVISE`/`REPLAN` · 3–7 actionable reasons · follow-ups · a lessons entry (or "none") · on MERGE, close the task in the artifact.
+- **Judge Decision**: `MERGE`/`REVISE`/`REPLAN` · 3–7 actionable reasons · conformance lens result · follow-ups ·
+  a lessons/registry update entry (or "none") · on MERGE, close the task in the artifact.
 - **Docs Drift Note** (when needed): docs updated · why · what was not changed.
+
+Conformance lens:
+
+- Did the change use the right pattern-registry entry or explain why none applies?
+- Did it check and reuse a qualified golden neighbor?
+- Did it avoid do-not-copy entries and stale/legacy exemplars?
+- Did it introduce a new helper/component/service/dependency/pattern without a decision?
+- Did any finding become a code patch, registry update, do-not-copy update, proposed mechanical check, or explicit
+  human deferral?
 
 Every PR includes: link to the task · scope + non-goals · test commands + results · rollback/kill-switch notes when applicable.
 

@@ -1,0 +1,88 @@
+# ACEF Rule Enforcement Map
+
+ACEF rules are not load-bearing just because they are written in a method document. A rule becomes load-bearing only
+when it lives in one of these homes:
+
+1. **Machinery** — hook, validator, CI, lint, or fitness function.
+2. **Shard** — a fresh worker/reviewer/judge with a small scoped context.
+3. **JIT injection** — the relevant rule or neighbor is surfaced at the moment of action.
+
+Anything else is documentation-only. Documentation is useful for humans and harness authors, but it should not be
+treated as enforcement.
+
+## Enforcement homes
+
+| Home | What it means | Attention dependency |
+| --- | --- | --- |
+| `machinery` | A tool blocks, validates, or fails deterministically. | None |
+| `shard` | A fresh worker receives only the relevant artifact/diff/rubric. | Low |
+| `jit` | A tiny rule/hint is injected at the moment it is needed. | Low |
+| `documentation-only` | The agent must remember prose from the method docs. | High |
+
+## Current rule map
+
+| Rule | Lives today | Should live in | Gap to load-bearing | Priority |
+| --- | --- | --- | --- | --- |
+| Conductor cannot write implementation/BMAD artifacts | `machinery` via `acef-bmad-guard` | machinery | None. This is the exemplar. | Done |
+| 2x `REPLAN` escalates to human | documentation-only | machinery | Counter validator in ledger/PR state. | P0 |
+| Artifact-claim reconciliation | documentation-only | machinery | Validate claimed output paths exist before `PASS`. | P0 |
+| Epic N+1 blocked until Epic N Process Judge is `PASS` | documentation + seeded row | machinery | Ledger-state validator on story dispatch. | P0 |
+| Seeded epic gates exist before implementation | documentation-only | machinery | Existence validator after epics/stories generation. | P0 |
+| Adapter fresh before any route | documentation-only | machinery | Freshness-stamp vs current commit/scope validator. | P0 |
+| Preflight `PASS` before planning/implementation | documentation-only | machinery | Artifact-exists + verdict==`PASS` gate. | P0 |
+| Step ledger entry exists before workflow/read/task execution | documentation-only | machinery | PreToolUse ordering hook. This is weak until hooked. | P0 |
+| Guarded test floor has at least one symbol-grounded boundary test | documentation-only + sharded Test Author | machinery + shard | Validate boundary symbol reference plus independent Test Author artifact. | P1 |
+| Actor separation | documentation + partial shard | shard + machinery | Harness must spawn distinct identities; ledger can validate identity fields. | P1 |
+| Subagent claims are not evidence | documentation-only | machinery + shard | Cited-path/command/artifact validator plus Process Judge. | P1 |
+| Reuse-before-create | documentation-only | jit + shard | Write-time block plus conformance reviewer. | P1 |
+| Conformance lens | documentation-only | shard | Fresh reviewer with diff + small rubric. | P1 |
+| Pattern registry `PARTIAL` limits work | documentation-only | machinery | Validator blocks guarded/new work-shape when registry is partial. | P1 |
+| No raw hex / new dependency without decision | documentation-only/new | machinery | Lint/hook per stack. | P2 |
+| Plan integrity / intent / altitude / taste | documentation-only | shard | Irreducible judgment; fresh Process Judge, never main-agent memory. | P2 |
+
+## Cheap mechanical wins
+
+Build these before growing more prose:
+
+1. `REPLAN` counter validator.
+2. Claimed-output path-exists validator.
+3. Epic gate state validator.
+4. Seeded epic gate existence validator.
+5. Adapter freshness validator.
+6. Preflight `PASS` validator.
+7. Step-ledger-before-tool-use hook.
+
+These are mostly counters, path checks, and state checks. They convert the highest-risk documentation-only rules into
+rules the agent cannot forget.
+
+## Maturity rule
+
+ACEF uses the same maturity ladder for its own process rules that it uses for repo conformance rules:
+
+```text
+documentation-only -> machinery/shard/jit -> retire duplicated prose
+```
+
+The map is a worklist, not a permanent registry. A row should either move toward load-bearing enforcement or be
+demoted as non-load-bearing guidance.
+
+## Success metric
+
+Track:
+
+```text
+documentation-only load-bearing rules count
+```
+
+The number should trend toward zero. If it does not, ACEF is relying on agent memory and will degrade under context
+pressure.
+
+## Dogfood question
+
+During Delta-3 validation, ask for each row:
+
+- Did the agent have to remember this rule?
+- Was it injected just in time?
+- Did a fresh worker own the judgment?
+- Did machinery make violation impossible?
+- If the agent missed it, which enforcement home should it move to?

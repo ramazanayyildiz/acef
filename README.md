@@ -22,7 +22,7 @@ ACEF is one package that unifies **five layers** — the actual delivery engine,
 2. **Test & flow engine** — real skills for user-flow → test-cases → tests, and bootstrapping the first test. `method/TEST_PIPELINE.md` + `skills/`
 3. **BMAD v2 heavy lane** — the full story lifecycle for epics / risky work (drives BMAD-METHOD, with a hard
    installed-skill preflight). `method/BMAD_V2_LANE.md`
-4. **Codemap / project adapter** — grounds everything in *your* real repo (evidence-pinned, no embeddings). `skills/map-codebase` + `skills/acef-adapter`
+4. **Codemap / project adapter** — grounds everything in *your* real repo and extracts the pattern registry for conformance (evidence-pinned, no embeddings). `skills/map-codebase` + `skills/acef-adapter`
 5. **Delivery rules (the glue)** — which layer runs for which work: small/ongoing → lightweight lane, epics → BMAD v2, with a promotion path. `method/DELIVERY_RULES.md`
 
 A front-door agent (`acef`) ties them together and routes each request, so the user never has to pick a layer, route, or skill.
@@ -38,10 +38,13 @@ method/      The delivery engine — how the work actually runs
   OPERATING_MODEL.md   personas + tracks (Layer 1)
   TEST_PIPELINE.md     the test/flow skill chain (Layer 2)
   BMAD_V2_LANE.md      the heavy story lifecycle for epics (Layer 3)
+  ADAPTER_MEMORY.md    snapshot vs adapter memory vs run ledger state
+  PATTERN_REGISTRY.md  machine-readable conformance registry contract
+  RULE_ENFORCEMENT_MAP.md  which rules are machinery/shard/JIT vs documentation-only
   DELIVERY_RULES.md    two lanes + promotion — the glue (Layer 5)
 skills/      The ACEF agent skills you install into Claude Code
-  acef/ acef-adapter/ acef-router/ acef-specify/ acef-test-bootstrap/ acef-release-adapter/   orchestration
-  map-codebase/                                                          codemap / repo grounding (Layer 4)
+  acef/ acef-adapter/ acef-router/ acef-specify/ acef-test-bootstrap/ acef-release-adapter/   orchestration + adapter memory
+  map-codebase/                                                          codemap + pattern registry / repo grounding (Layer 4)
   test-user-flow-mapper/ test-case-planner/ test-browser-generator/
   test-gen/ test-generator/ test-coverage-auditor/ test-strategy/ test-risk-classifier/
   flow-document-composer/ flow-suite-composer/ storymap/ qa/ qa-only/    test & flow workhorses (Layer 2)

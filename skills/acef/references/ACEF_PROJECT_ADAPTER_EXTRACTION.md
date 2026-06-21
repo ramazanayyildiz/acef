@@ -19,6 +19,15 @@ Before ACEF is used regularly on a brownfield project, extract the project's rea
 
 The adapter is evidence from the project, not a hand-written guess.
 
+The adapter has two durable parts:
+
+1. **Snapshot** — the codemap photo: stack, layout, commands, tests, CI, architecture, conventions, concerns.
+2. **Living repo knowledge** — pattern registry, golden neighbors, do-not-copy entries, reuse probes, fitness checks,
+   risk boundaries, and inventories.
+
+Run-local state does not belong in the adapter. Gate summaries, drift notes, handoffs, and next allowed step belong in
+the delivery ledger for that feature/task.
+
 ## When To Run
 
 Run adapter extraction:
@@ -154,9 +163,9 @@ Important distinction:
 
 Deploy workflow is not automatically a test gate. Record what the workflow actually checks.
 
-### 7. Golden Neighbors
+### 7. Golden Neighbors And Pattern Registry
 
-Capture qualified local examples for common work:
+Capture qualified local examples and accepted patterns for common work:
 
 - similar feature
 - similar API endpoint
@@ -174,6 +183,9 @@ For each neighbor, record:
 - related twins to check
 - **the consumed contract** — the exact symbols the neighbor depends on (hook return shape, function
   signature, exported types, constants), each with `path:line`
+- reuse-before-create probe terms
+- pattern label: Canonical, Emerging, Aspirational, Legacy/do-not-copy, or Needs decision
+- confidence and freshness
 
 If no qualified neighbor exists, mark the work as no-neighbor/new-pattern.
 
@@ -218,6 +230,56 @@ Capture project-specific risky areas:
 - deployment and environment config
 - tenant boundaries
 - feature flags and rollout logic
+
+## Adapter Living-Knowledge Schema
+
+Every living entry that can guide implementation or review must carry a provenance triple:
+
+- `source_evidence` — file/command/path proving the entry, preferably `path:line`
+- `confidence` — `statistical-strong`, `multiple-examples`, `single-example`, `inferred`, or `needs-verification`
+- `freshness` — last verified date + commit/revision + scope
+
+It must also carry:
+
+- `maturity` — `review-finding`, `rubric-item`, `mechanical-check`, or `retired`
+- `trigger` — the event that updates it
+- `status` — `proposed`, `active`, `promoted-to-check`, `retired`, or `archived`
+
+Use this compact shape when practical:
+
+```yaml
+id: pattern.example
+kind: pattern | golden-neighbor | do-not-copy | reuse-probe | fitness-check | risk-boundary | component-inventory
+status: proposed | active | promoted-to-check | retired | archived
+maturity: review-finding | rubric-item | mechanical-check | retired
+trigger: conformance-revise | merged-better-exemplar | command-change | risk-boundary-change | n-commits-stale | major-refactor | no-qualified-neighbor
+source_evidence: ["path/to/file.ts:12"]
+confidence: multiple-examples
+freshness: { verified_at: YYYY-MM-DD, commit: short-sha, scope: path-or-module }
+notes: "Short rule."
+```
+
+If an entry lacks source evidence, confidence, and freshness, treat it as a lead, not a conformance rule.
+
+## Memory Lifecycle
+
+Soft conformance rules should graduate:
+
+`review finding -> rubric item -> mechanical check (lint / fitness / hook / CI) -> prose RETIRED`
+
+Remove, retire, or archive entries that are superseded. Do not let the adapter become an all-add prose blob.
+
+## Update Triggers
+
+Every living entry must name when it updates:
+
+- `conformance-revise` — patch code or append/update do-not-copy/reuse probe; propose a fitness check if repeated
+- `merged-better-exemplar` — refresh golden neighbor and demote/archive the older exemplar
+- `command-change` — refresh command map and freshness stamp
+- `risk-boundary-change` — refresh risk boundary and required gate evidence
+- `n-commits-stale` — re-run codemap or verify affected entries
+- `major-refactor` — re-extract snapshot and revalidate living entries
+- `no-qualified-neighbor` — mark `Needs decision`; do not silently create a new pattern
 - observability/error handling
 
 Risk values are project-specific. The adapter should point to the files/folders that indicate risk.
@@ -302,4 +364,3 @@ Adapter extraction should not:
 - run broad automation
 
 It is read-only fact finding unless the user explicitly approves a later build step.
-

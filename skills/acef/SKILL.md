@@ -17,6 +17,9 @@ Read these as needed:
 - `references/ACEF_AGENT_BEHAVIOR.md`
 - `references/ACEF_BROWNFIELD_ROUTES.md`
 - `references/ACEF_PROJECT_ADAPTER_EXTRACTION.md`
+- `references/ACEF_ADAPTER_MEMORY.md`
+- `references/ACEF_PATTERN_REGISTRY.md`
+- `references/ACEF_RULE_ENFORCEMENT_MAP.md`
 - `references/ACEF_TEST_PIPELINE.md`
 - `references/ACEF_RESEARCH_FINDINGS.md`
 - `references/ACEF_OPERATING_MODEL.md`

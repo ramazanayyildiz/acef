@@ -39,22 +39,28 @@ artifact.
 ## Story lifecycle (per story)
 1. **Readiness** — the story is implementable: acceptance criteria clear, canonical references linked, domain contract
    complete, dependency order known. A soft story is sent back before any build.
-2. **(NFR)** — extract non-functional constraints first on state-machine / concurrency / money / security-critical work.
-3. **ATDD** — failing tests land **before** implementation, as their own commit. Every test fails on HEAD first.
-4. **Dev-story** — implement until the ATDD tests go green.
-5. **Code-review** — multi-layer adversarial review (e.g. correctness + blind-spot + edge-case + acceptance-auditor
+2. **Reuse-before-create** — before implementation, record work shape, pattern-registry status/entry, golden neighbor
+   checked, existing symbols/components/helpers searched, what was reused, and why any new pattern is needed.
+   `PARTIAL` registries permit only covered mechanical/standard work shapes; guarded stories and new work shapes must
+   refresh the registry or record explicit human risk acceptance first.
+3. **(NFR)** — extract non-functional constraints first on state-machine / concurrency / money / security-critical work.
+4. **ATDD** — failing tests land **before** implementation, as their own commit. Every test fails on HEAD first.
+5. **Dev-story** — implement until the ATDD tests go green.
+6. **Code-review** — multi-layer adversarial review (e.g. correctness + conformance + blind-spot + edge-case + acceptance-auditor
    lenses). Reviewer returns `MERGE` / `REVISE` / `REPLAN` (findings classed Patch / Decision / Defer / Dismiss).
-6. **Verify-patch** — after every REVISE, fresh-context verifiers re-read each patch's acceptance criteria + domain
+   Every conformance finding becomes a code patch, pattern-registry update, do-not-copy update, proposed mechanical
+   check, or explicit human deferral.
+7. **Verify-patch** — after every REVISE, fresh-context verifiers re-read each patch's acceptance criteria + domain
    contract + the actual diff, and check the patch claim **and** adjacent invariants it could affect.
-7. **Loop** code-review → verify-patch until **zero blocker + zero high** findings remain (read the findings, don't
+8. **Loop** code-review → verify-patch until **zero blocker + zero high** findings remain (read the findings, don't
    stop on a verdict string or a round count).
-8. **Test-review** — score test quality (target ≥ 80/100): brittleness, duplication, false-positive risk, fixture hygiene.
-9. **Story closeout Process Judge** — before product-done/test-review close, verify the real steps ran in order and the
+9. **Test-review** — score test quality (target ≥ 80/100): brittleness, duplication, false-positive risk, fixture hygiene.
+10. **Story closeout Process Judge** — before product-done/test-review close, verify the real steps ran in order and the
    artifacts are genuine skill outputs. Any missing BLOCKER/HIGH process evidence returns the story to the required phase.
    If this is the last story in its epic, the next allowed step must be `Epic N Process Judge`, not the next epic's
    first story.
-10. **Product-done audit + manual QA** — see below.
-11. **Mark done** only through the evidence gate.
+11. **Product-done audit + manual QA** — see below.
+12. **Mark done** only through the evidence gate.
 
 ## Actor separation (mandatory)
 
