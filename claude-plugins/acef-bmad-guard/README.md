@@ -16,6 +16,8 @@ It also enforces the ACEF step-ledger-before-tool-use rule for phase/story comma
 For implementation writes, it also enforces the first P1 conformance gate before worker bypass: the repo needs a
 readable `docs/ai/pattern-registry.json`, the delivery ledger must cite a reuse/golden-neighbor probe from the
 registry, and any do-not-copy entry mentioned in the ledger must be explicitly avoided or rejected.
+For `PARTIAL` registries, the delivery ledger must declare `track:` and `workShape:`. The hook does not infer work
+shape from file paths.
 
 ## Activation
 
@@ -86,6 +88,9 @@ Before source/test/package writes in an active ACEF/BMAD lane, the hook searches
 `_bmad-output/`. It denies the write when:
 
 - `docs/ai/pattern-registry.json` is missing or unreadable;
+- a `PARTIAL` registry has no ledger-declared `workShape:`;
+- a `PARTIAL` registry does not cover the declared `workShape:` and no human risk acceptance is recorded;
+- a `PARTIAL` registry has `track: guarded` and no human risk acceptance is recorded;
 - no reuse-before-create / golden-neighbor evidence exists;
 - the reuse evidence does not cite a registry probe term or golden-neighbor path;
 - a do-not-copy entry is mentioned without an explicit avoided/rejected context.

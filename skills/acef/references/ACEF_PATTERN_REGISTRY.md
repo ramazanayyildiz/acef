@@ -143,6 +143,8 @@ Findings must not disappear into chat.
   registry `reuseProbe` term or golden-neighbor path.
 - `--check do-not-copy` fails when a delivery ledger mentions a do-not-copy entry without an explicit avoided/rejected
   context.
+- `--check partial-workshape` enforces `PARTIAL` registry permissions from ledger-declared `track:` and `workShape:`.
+  It does not infer work shape from file paths.
 
 These checks do not replace judgment. They prevent the most common silent drift: skipping local neighbor search or
 treating known legacy examples as patterns.

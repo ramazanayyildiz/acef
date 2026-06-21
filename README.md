@@ -94,6 +94,7 @@ scripts/acef-process-validator --repo /path/to/repo --check adapter-freshness --
 scripts/acef-process-validator --repo /path/to/repo --check pattern-registry
 scripts/acef-process-validator --repo /path/to/repo --check reuse-before-create --ledger docs/ai/ACEF_feature_DELIVERY_AUDIT.md
 scripts/acef-process-validator --repo /path/to/repo --check do-not-copy --ledger docs/ai/ACEF_feature_DELIVERY_AUDIT.md
+scripts/acef-process-validator --repo /path/to/repo --check partial-workshape --ledger docs/ai/ACEF_feature_DELIVERY_AUDIT.md
 scripts/acef-process-validator --repo /path/to/repo --check epic-boundary --ledger docs/ai/ACEF_feature_DELIVERY_AUDIT.md --target-epic 2
 ```
 
@@ -101,6 +102,8 @@ These checks are the first step in moving ACEF rules out of agent memory and int
 The P1 conformance checks are deliberately mechanical: the registry must satisfy the contract, the ledger must record
 which local neighbor/probe was checked before creation, and do-not-copy entries cannot be cited as reusable patterns.
 The Claude Code guard hook also runs those P1 checks before implementation writes in active ACEF/BMAD lanes.
+For `PARTIAL` registries, the ledger must declare `track:` and `workShape:`; uncovered or guarded work requires
+explicit human risk acceptance.
 
 Validator regression tests and the CI entrypoint use the same executable:
 

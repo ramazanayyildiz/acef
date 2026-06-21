@@ -118,6 +118,8 @@ try {
     "Epic 1 Process Judge",
     "",
     "Status: PASS",
+    "track: standard",
+    "workShape: service",
     "",
   ].join("\n"));
 
@@ -179,6 +181,7 @@ try {
   expectPass("pattern-registry", ["--repo", tmp, "--check", "pattern-registry"]);
   expectPass("reuse-before-create", ["--repo", tmp, "--check", "reuse-before-create", "--ledger", "docs/ai/ACEF_demo_DELIVERY_AUDIT.md"]);
   expectPass("do-not-copy", ["--repo", tmp, "--check", "do-not-copy", "--ledger", "docs/ai/ACEF_demo_DELIVERY_AUDIT.md"]);
+  expectPass("partial-workshape", ["--repo", tmp, "--check", "partial-workshape", "--ledger", "docs/ai/ACEF_demo_DELIVERY_AUDIT.md"]);
   expectPass("claims", ["--repo", tmp, "--check", "claims", "--ledger", "docs/ai/ACEF_demo_DELIVERY_AUDIT.md"]);
   expectPass("seeded-epic-gates", ["--repo", tmp, "--check", "seeded-epic-gates", "--ledger", "docs/ai/ACEF_demo_DELIVERY_AUDIT.md"]);
   expectPass("epic-boundary", ["--repo", tmp, "--check", "epic-boundary", "--ledger", "docs/ai/ACEF_demo_DELIVERY_AUDIT.md", "--target-epic", "2"]);
@@ -199,6 +202,35 @@ try {
 
   fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_bad_reuse_DELIVERY_AUDIT.md"), "Status: PASS\n");
   expectFail("reuse-before-create", ["--repo", tmp, "--check", "reuse-before-create", "--ledger", "docs/ai/ACEF_bad_reuse_DELIVERY_AUDIT.md"]);
+  expectFail("partial-workshape", ["--repo", tmp, "--check", "partial-workshape", "--ledger", "docs/ai/ACEF_bad_reuse_DELIVERY_AUDIT.md"]);
+
+  fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_unknown_shape_DELIVERY_AUDIT.md"), [
+    "Status: PASS",
+    "track: standard",
+    "workShape: controller",
+    "Reuse-before-create:",
+    "- Checked `src/services/current.ts` and `sharedApiClient`.",
+  ].join("\n"));
+  expectFail("partial-workshape", ["--repo", tmp, "--check", "partial-workshape", "--ledger", "docs/ai/ACEF_unknown_shape_DELIVERY_AUDIT.md"]);
+
+  fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_guarded_DELIVERY_AUDIT.md"), [
+    "Status: PASS",
+    "track: guarded",
+    "workShape: service",
+    "Reuse-before-create:",
+    "- Checked `src/services/current.ts` and `sharedApiClient`.",
+  ].join("\n"));
+  expectFail("partial-workshape", ["--repo", tmp, "--check", "partial-workshape", "--ledger", "docs/ai/ACEF_guarded_DELIVERY_AUDIT.md"]);
+
+  fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_accepted_DELIVERY_AUDIT.md"), [
+    "Status: PASS",
+    "track: guarded",
+    "workShape: controller",
+    "Human risk acceptance: user explicitly accepted uncovered guarded workShape controller.",
+    "Reuse-before-create:",
+    "- Checked `src/services/current.ts` and `sharedApiClient`.",
+  ].join("\n"));
+  expectPass("partial-workshape", ["--repo", tmp, "--check", "partial-workshape", "--ledger", "docs/ai/ACEF_accepted_DELIVERY_AUDIT.md"]);
 
   fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_bad_copy_DELIVERY_AUDIT.md"), [
     "Status: PASS",
@@ -215,6 +247,45 @@ try {
       content: "export const bad = true;\n",
     },
   }, "deny", workerEnv);
+
+  const partialHook = fs.mkdtempSync(path.join(os.tmpdir(), "acef-partial-hook-"));
+  fs.mkdirSync(path.join(partialHook, "docs", "ai"), { recursive: true });
+  fs.writeFileSync(path.join(partialHook, ".acef-lightweight-lane"), "active\n");
+  fs.writeFileSync(path.join(partialHook, "docs", "ai", "pattern-registry.json"), fs.readFileSync(path.join(tmp, "docs", "ai", "pattern-registry.json"), "utf8"));
+  fs.writeFileSync(path.join(partialHook, "docs", "ai", "ACEF_partial_DELIVERY_AUDIT.md"), [
+    "Status: PASS",
+    "track: guarded",
+    "workShape: controller",
+    "Human risk acceptance: user explicitly accepted uncovered guarded workShape controller.",
+    "Reuse-before-create:",
+    "- Checked `src/services/current.ts` and `sharedApiClient`.",
+    "- Do-not-copy: avoided `legacy.service.direct-fetch`.",
+  ].join("\n"));
+  expectHookDecision("PARTIAL accepted guarded workshape allows source write", {
+    tool_name: "Write",
+    cwd: partialHook,
+    tool_input: {
+      file_path: path.join(partialHook, "src", "accepted.ts"),
+      content: "export const accepted = true;\n",
+    },
+  }, "allow", workerEnv);
+  fs.writeFileSync(path.join(partialHook, "docs", "ai", "ACEF_partial_DELIVERY_AUDIT.md"), [
+    "Status: PASS",
+    "track: standard",
+    "workShape: controller",
+    "Reuse-before-create:",
+    "- Checked `src/services/current.ts` and `sharedApiClient`.",
+    "- Do-not-copy: avoided `legacy.service.direct-fetch`.",
+  ].join("\n"));
+  expectHookDecision("PARTIAL uncovered workshape denies source write", {
+    tool_name: "Write",
+    cwd: partialHook,
+    tool_input: {
+      file_path: path.join(partialHook, "src", "blocked.ts"),
+      content: "export const blocked = true;\n",
+    },
+  }, "deny", workerEnv);
+  fs.rmSync(partialHook, { recursive: true, force: true });
 
   fs.rmSync(path.join(tmp, "docs", "ai", "ACEF_PREFLIGHT.md"));
   expectFail("preflight", ["--repo", tmp, "--check", "preflight"]);

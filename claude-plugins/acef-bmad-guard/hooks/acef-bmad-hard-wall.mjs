@@ -363,6 +363,34 @@ function doNotCopyEntries(registry) {
   return [...new Set(entries.filter(Boolean))];
 }
 
+function ledgerField(text, name) {
+  const match = text.match(new RegExp(`^\\s*${name}\\s*:\\s*([^\\n#|]+)`, "im"));
+  return match ? match[1].trim().replace(/[`"'.,;]+$/g, "") : "";
+}
+
+function hasHumanRiskAcceptance(text) {
+  return /\b(human risk acceptance|risk acceptance|explicit human acceptance|human accepted risk|user accepted risk)\b/i.test(text);
+}
+
+function partialWorkshapeRestricted(registry, ledgerText) {
+  if (String(registry?.status || "").toUpperCase() !== "PARTIAL") return "";
+
+  const track = ledgerField(ledgerText, "track").toLowerCase();
+  const workShape = ledgerField(ledgerText, "workShape");
+  const accepted = hasHumanRiskAcceptance(ledgerText);
+  if (!workShape) return "ACEF conformance gate: PARTIAL registry requires ledger field workShape: <name> before implementation write.";
+
+  const covered = new Set((registry.patterns || []).map((pattern) => String(pattern.workShape || "").trim()).filter(Boolean));
+  if (track === "guarded" && !accepted) {
+    return `ACEF conformance gate: PARTIAL registry blocks guarded workShape ${workShape} without human risk acceptance.`;
+  }
+  if (!covered.has(workShape) && !accepted) {
+    return `ACEF conformance gate: PARTIAL registry does not cover workShape ${workShape}; human risk acceptance required before implementation write.`;
+  }
+
+  return "";
+}
+
 function p1ConformanceRestricted(repoRoot) {
   const registry = readPatternRegistry(repoRoot);
   if (!registry) {
@@ -370,6 +398,9 @@ function p1ConformanceRestricted(repoRoot) {
   }
 
   const ledgerText = allLedgerText(repoRoot);
+  const partialReason = partialWorkshapeRestricted(registry, ledgerText);
+  if (partialReason) return partialReason;
+
   if (!/reuse[- ]before[- ]create|reuse probe|reuse check|nearest neighbor|golden neighbor/i.test(ledgerText)) {
     return "ACEF conformance gate: missing reuse-before-create / golden-neighbor ledger evidence before implementation write.";
   }

@@ -17,6 +17,7 @@ Checks:
   pattern-registry    Require docs/ai/pattern-registry.json to satisfy the ACEF registry contract
   reuse-before-create Require the delivery ledger to record a reuse-before-create probe
   do-not-copy         Fail when ledger treats do-not-copy entries as reusable patterns
+  partial-workshape   In PARTIAL registries, require ledger-declared covered workShape or human risk acceptance
   seeded-epic-gates   Require Epic N Process Judge rows/artifacts for epics mentioned in ledger
   epic-boundary       Require Epic N-1 Process Judge PASS before target Epic N
   replan-counter      Fail when the same scope has 2+ REPLAN decisions in ledger text
@@ -527,6 +528,58 @@ function checkDoNotCopy(ledgerPath, registryPath) {
   return result("do-not-copy", true, `No do-not-copy entry is treated as reusable (${doNotCopyEntries(registry).length} known)`);
 }
 
+function ledgerField(text, name) {
+  const match = text.match(new RegExp(`^\\s*${name}\\s*:\\s*([^\\n#|]+)`, "im"));
+  return match ? match[1].trim().replace(/[`"'.,;]+$/g, "") : "";
+}
+
+function hasHumanRiskAcceptance(text) {
+  return /\b(human risk acceptance|risk acceptance|explicit human acceptance|human accepted risk|user accepted risk)\b/i.test(text);
+}
+
+function coveredWorkShapes(registry) {
+  return new Set((registry.patterns || []).map((pattern) => String(pattern.workShape || "").trim()).filter(Boolean));
+}
+
+function partialWorkshapeVerdict(registry, ledgerText) {
+  if (String(registry.status || "").toUpperCase() !== "PARTIAL") {
+    return { ok: true, message: `Registry ${registry.status || "UNKNOWN"} does not require PARTIAL work-shape blocking` };
+  }
+
+  const track = ledgerField(ledgerText, "track").toLowerCase();
+  const workShape = ledgerField(ledgerText, "workShape");
+  const accepted = hasHumanRiskAcceptance(ledgerText);
+
+  if (!workShape) return { ok: false, message: "PARTIAL registry requires ledger field workShape: <name>" };
+
+  const covered = coveredWorkShapes(registry);
+  const isCovered = covered.has(workShape);
+  if (track === "guarded" && !accepted) {
+    return { ok: false, message: `PARTIAL registry blocks guarded workShape ${workShape} without human risk acceptance` };
+  }
+  if (!isCovered && !accepted) {
+    return { ok: false, message: `PARTIAL registry does not cover workShape ${workShape}; human risk acceptance required` };
+  }
+
+  if (!isCovered && accepted) return { ok: true, message: `Uncovered workShape ${workShape} allowed by human risk acceptance` };
+  if (track === "guarded" && accepted) return { ok: true, message: `Guarded workShape ${workShape} allowed by human risk acceptance` };
+  return { ok: true, message: `PARTIAL registry covers workShape ${workShape}` };
+}
+
+function checkPartialWorkshape(ledgerPath, registryPath) {
+  if (!ledgerPath || !exists(ledgerPath)) return result("partial-workshape", false, "Missing ledger path");
+
+  let registry;
+  try {
+    registry = readPatternRegistry(registryPath);
+  } catch (error) {
+    return result("partial-workshape", false, error.message);
+  }
+
+  const verdict = partialWorkshapeVerdict(registry, read(ledgerPath));
+  return result("partial-workshape", verdict.ok, verdict.message);
+}
+
 function main() {
   const args = parseArgs(process.argv);
   if (args.help) {
@@ -538,7 +591,7 @@ function main() {
   const adapter = args.adapter || findAdapter(args.repo);
   const registry = findPatternRegistry(args.repo, adapter);
   const checks = args.check === "all"
-    ? ["preflight", "claims", "adapter-freshness", "pattern-registry", "reuse-before-create", "do-not-copy", "seeded-epic-gates", "epic-boundary", "replan-counter"]
+    ? ["preflight", "claims", "adapter-freshness", "pattern-registry", "reuse-before-create", "do-not-copy", "partial-workshape", "seeded-epic-gates", "epic-boundary", "replan-counter"]
     : [args.check];
 
   const results = checks.map((check) => {
@@ -548,6 +601,7 @@ function main() {
     if (check === "pattern-registry") return checkPatternRegistry(registry);
     if (check === "reuse-before-create") return checkReuseBeforeCreate(ledger, registry);
     if (check === "do-not-copy") return checkDoNotCopy(ledger, registry);
+    if (check === "partial-workshape") return checkPartialWorkshape(ledger, registry);
     if (check === "seeded-epic-gates") return checkSeededEpicGates(args.repo, ledger);
     if (check === "epic-boundary") return checkEpicBoundary(args.repo, ledger, args.targetEpic);
     if (check === "replan-counter") return checkReplanCounter(ledger);
