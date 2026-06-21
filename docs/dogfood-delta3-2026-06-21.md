@@ -41,6 +41,13 @@ Scope: first real run of `scripts/acef-process-validator` against `/Users/ramaza
    - The dogfood artifacts remain untracked locally in `goztepe-web`.
    - Nothing was pushed to any Delta-3 remote by operator instruction.
 
+6. Mechanical catch-test run against `goztepe-web`.
+   - Temporary bad ledgers were passed to the validator; no bad app code was committed or pushed.
+   - `reuse-before-create` fails when a delivery ledger has no reuse/golden-neighbor evidence.
+   - `do-not-copy` fails when a delivery ledger treats `risk.local-storage-access-token` as a reusable pattern.
+   - The ACEF/BMAD hook denies a phase command before execution when the step-ledger row is missing.
+   - The temporary hook marker was removed after the test.
+
 ## Commands exercised
 
 ```bash
@@ -52,6 +59,8 @@ scripts/acef-process-validator --repo /Users/ramazanayyildiz/CODE/Delta-3/core -
 scripts/acef-process-validator --repo /Users/ramazanayyildiz/CODE/Delta-3/Delta3-Core-Backend --check preflight
 scripts/acef-process-validator --repo /Users/ramazanayyildiz/CODE/Delta-3/goztepe-web --check adapter-freshness --adapter docs/codebase-map.md
 scripts/acef-process-validator --repo /Users/ramazanayyildiz/CODE/Delta-3/goztepe-web --check adapter-freshness --adapter docs/ai/pattern-registry.json
+scripts/acef-process-validator --repo /Users/ramazanayyildiz/CODE/Delta-3/goztepe-web --check reuse-before-create --ledger /tmp/acef-bad-reuse.*.md
+scripts/acef-process-validator --repo /Users/ramazanayyildiz/CODE/Delta-3/goztepe-web --check do-not-copy --ledger /tmp/acef-bad-copy.*.md
 ```
 
 ## Validation results
@@ -60,21 +69,15 @@ scripts/acef-process-validator --repo /Users/ramazanayyildiz/CODE/Delta-3/goztep
 PASS adapter-freshness: Adapter freshness matches HEAD b163c82
 PASS adapter-freshness: Adapter freshness matches HEAD b163c82
 FAIL preflight: Missing docs/ai/ACEF_PREFLIGHT.md
+FAIL reuse-before-create: Missing reuse-before-create / golden-neighbor ledger entry
+FAIL do-not-copy: Do-not-copy entr(y/ies) mentioned without rejection context: risk.local-storage-access-token
+DENY hook: ACEF step-ledger gate blocks bmad-create-story until the delivery-ledger row is IN PROGRESS
 json-ok
 git diff --check: clean
 ```
 
-## Next dogfood step
+## Current next step
 
-Patch ACEF from the dogfood findings:
-
-- Document that pattern registries use reachable evidence commits, not necessarily exact final commit hashes.
-- Add/clarify that `PARTIAL` registry permits only covered mechanical/standard work shapes.
-- Keep `gate-summaries` and `drift-notes` in delivery ledgers, not adapter memory.
-- Add a future validator path for reuse-before-create/do-not-copy once P0 process validators are stable.
-
-Then use a real delivery run to exercise:
-
-```bash
-scripts/acef-process-validator --repo <repo> --check preflight
-```
+The P0 process gates and first P1 conformance checks are now implemented and dogfood-proven at the mechanical level.
+Next useful hardening is hook-level P1 enforcement for reuse-before-create / do-not-copy before writes, or P2 promotion
+of repeated findings into repo-specific lint/fitness checks.
