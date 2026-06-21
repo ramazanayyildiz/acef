@@ -11,6 +11,7 @@ Usage:
 
 Checks:
   all                 Run all checks that have enough inputs
+  clean-tree          Require git working tree to be clean before certification/Process Judge
   preflight           Require docs/ai/ACEF_PREFLIGHT.md with Verdict/Status: PASS
   claims              Require claimed output paths in the ledger to exist
   adapter-freshness   Require adapter/codebase-map freshness commit to match HEAD
@@ -133,6 +134,28 @@ function gitChangedFiles(repoRoot, fromRef, toRef) {
   } catch {
     return [];
   }
+}
+
+function gitStatusPorcelain(repoRoot) {
+  try {
+    const output = cp.execFileSync("git", ["status", "--porcelain=v1", "--untracked-files=all"], {
+      cwd: repoRoot,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    });
+    return output.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  } catch {
+    return null;
+  }
+}
+
+function checkCleanTree(repoRoot) {
+  const status = gitStatusPorcelain(repoRoot);
+  if (status === null) return result("clean-tree", false, "Could not read git status");
+  if (status.length) {
+    return result("clean-tree", false, `Working tree is dirty: ${status.slice(0, 8).join(", ")}`);
+  }
+  return result("clean-tree", true, "Working tree clean");
 }
 
 function nestedGitRepos(repoRoot) {
@@ -753,10 +776,11 @@ function main() {
   const adapter = args.adapter || findAdapter(args.repo);
   const registry = findPatternRegistry(args.repo, adapter);
   const checks = args.check === "all"
-    ? ["preflight", "claims", "adapter-freshness", "pattern-registry", "reuse-before-create", "do-not-copy", "partial-workshape", "finding-promotion", "graduation-reconciliation", "session-handoff", "seeded-epic-gates", "epic-boundary", "replan-counter"]
+    ? ["clean-tree", "preflight", "claims", "adapter-freshness", "pattern-registry", "reuse-before-create", "do-not-copy", "partial-workshape", "finding-promotion", "graduation-reconciliation", "session-handoff", "seeded-epic-gates", "epic-boundary", "replan-counter"]
     : [args.check];
 
   const results = checks.map((check) => {
+    if (check === "clean-tree") return checkCleanTree(args.repo);
     if (check === "preflight") return checkPreflight(args.repo);
     if (check === "claims") return checkClaims(args.repo, ledger);
     if (check === "adapter-freshness") return checkAdapterFreshness(args.repo, adapter);

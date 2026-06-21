@@ -155,6 +155,10 @@ decision, but it may not silently continue on a weaker lane.
 The preflight artifact is not a replacement for the delivery ledger. Preflight decides whether the first lane can start;
 the delivery ledger proves that the feature keeps following the lane until completion.
 
+Before any certification, Process Judge, Epic Process Judge, or external verifier handoff, run
+`scripts/acef-process-validator --check clean-tree`. A verifier must not certify one commit while uncommitted follow-on
+work is layered on top.
+
 ### Seeded Epic Gates
 
 For full BMAD work, epic gates must exist on the board before implementation starts. When the epics/stories phase

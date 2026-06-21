@@ -88,6 +88,7 @@ understand how delivery actually runs; the agent applies them for you.
 ACEF ships a stack-agnostic process validator for cheap mechanical gates:
 
 ```bash
+scripts/acef-process-validator --repo /path/to/repo --check clean-tree
 scripts/acef-process-validator --repo /path/to/repo --check preflight
 scripts/acef-process-validator --repo /path/to/repo --check claims --ledger docs/ai/ACEF_feature_DELIVERY_AUDIT.md
 scripts/acef-process-validator --repo /path/to/repo --check adapter-freshness --adapter docs/codebase-map.md
@@ -102,6 +103,8 @@ scripts/acef-process-validator --repo /path/to/repo --check epic-boundary --ledg
 ```
 
 These checks are the first step in moving ACEF rules out of agent memory and into machinery.
+Run `clean-tree` before certification, Process Judge, or external verifier handoff so a verifier never certifies commit
+N while the builder has uncommitted N+1 edits layered on top.
 The P1 conformance checks are deliberately mechanical: the registry must satisfy the contract, the ledger must record
 which local neighbor/probe was checked before creation, and do-not-copy entries cannot be cited as reusable patterns.
 The Claude Code guard hook also runs those P1 checks before implementation writes in active ACEF/BMAD lanes.
