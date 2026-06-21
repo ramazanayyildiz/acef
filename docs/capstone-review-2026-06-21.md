@@ -30,8 +30,9 @@ Use either:
 - `ACEF_ACTIVE_LEDGER=docs/ai/ACEF_feature_DELIVERY_AUDIT.md`, or
 - `docs/ai/ACEF_ACTIVE_LEDGER` containing the ledger path.
 
-When present, the hook reads only that ledger for P1 conformance evidence. Without it, the hook falls back to all
-delivery/audit/ledger files for backward compatibility.
+When present, the hook reads only that ledger for P1 conformance evidence. Without it, the hook falls back only when
+there is zero or one ledger. If multiple delivery ledgers exist, the hook denies implementation writes until the active
+ledger is set.
 
 ### 2. Validator and hook duplicate parsing logic
 

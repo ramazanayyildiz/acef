@@ -322,6 +322,14 @@ try {
     "track: standard",
     "workShape: service",
   ].join("\n"));
+  expectHookDecision("multiple ledgers require active pointer", {
+    tool_name: "Write",
+    cwd: scopedHook,
+    tool_input: {
+      file_path: path.join(scopedHook, "src", "no-pointer-deny.ts"),
+      content: "export const scoped = false;\n",
+    },
+  }, "deny", workerEnv);
   fs.writeFileSync(path.join(scopedHook, "docs", "ai", "ACEF_ACTIVE_LEDGER"), "docs/ai/ACEF_current_DELIVERY_AUDIT.md\n");
   expectHookDecision("active ledger ignores stale reuse evidence", {
     tool_name: "Write",

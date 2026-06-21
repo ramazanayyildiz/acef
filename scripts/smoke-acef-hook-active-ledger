@@ -93,7 +93,7 @@ try {
     },
   });
 
-  expect("fallback all-ledgers allows old evidence", runHook(payload("fallback.ts")), "allow");
+  expect("multiple ledgers require active pointer", runHook(payload("no-pointer-deny.ts")), "deny");
 
   write(path.join(tmp, "docs", "ai", "ACEF_ACTIVE_LEDGER"), "docs/ai/ACEF_current_DELIVERY_AUDIT.md\n");
   expect("active ledger ignores stale reuse evidence", runHook(payload("active-deny.ts")), "deny");
@@ -108,4 +108,3 @@ try {
 } finally {
   fs.rmSync(tmp, { recursive: true, force: true });
 }
-

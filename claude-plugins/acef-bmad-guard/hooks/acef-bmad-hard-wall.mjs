@@ -289,10 +289,7 @@ function listTextFiles(dirPath) {
 
 function allLedgerText(repoRoot) {
   const active = activeLedgerPath(repoRoot);
-  const files = active ? [active] : [
-    ...listTextFiles(path.join(repoRoot, "docs", "ai")),
-    ...listTextFiles(path.join(repoRoot, "_bmad-output")),
-  ].filter((filePath) => /delivery|audit|ledger/i.test(path.basename(filePath)));
+  const files = active ? [active] : ledgerFiles(repoRoot);
   return files.map((filePath) => {
     try {
       return fs.readFileSync(filePath, "utf8");
@@ -300,6 +297,13 @@ function allLedgerText(repoRoot) {
       return "";
     }
   }).join("\n");
+}
+
+function ledgerFiles(repoRoot) {
+  return [
+    ...listTextFiles(path.join(repoRoot, "docs", "ai")),
+    ...listTextFiles(path.join(repoRoot, "_bmad-output")),
+  ].filter((filePath) => /delivery|audit|ledger/i.test(path.basename(filePath)));
 }
 
 function activeLedgerPath(repoRoot) {
@@ -317,6 +321,13 @@ function activeLedgerPath(repoRoot) {
     return "";
   }
   return "";
+}
+
+function activeLedgerRestricted(repoRoot) {
+  if (activeLedgerPath(repoRoot)) return "";
+  const files = ledgerFiles(repoRoot);
+  if (files.length <= 1) return "";
+  return `ACEF conformance gate: ${files.length} delivery ledgers found; set ACEF_ACTIVE_LEDGER or docs/ai/ACEF_ACTIVE_LEDGER before implementation write.`;
 }
 
 function ledgerEntryStarted(repoRoot, commandName) {
@@ -414,6 +425,9 @@ function p1ConformanceRestricted(repoRoot) {
   if (!registry) {
     return "ACEF conformance gate: missing readable docs/ai/pattern-registry.json before implementation write.";
   }
+
+  const activeLedgerReason = activeLedgerRestricted(repoRoot);
+  if (activeLedgerReason) return activeLedgerReason;
 
   const ledgerText = allLedgerText(repoRoot);
   const partialReason = partialWorkshapeRestricted(registry, ledgerText);

@@ -101,4 +101,5 @@ To avoid stale evidence from an older run satisfying the current write, scope th
 - write that relative path into `docs/ai/ACEF_ACTIVE_LEDGER`.
 
 When an active ledger is present, P1 conformance checks read only that ledger. Without it, the hook falls back to all
-delivery/audit/ledger files for backward compatibility.
+delivery/audit/ledger files only when there is zero or one ledger. If multiple delivery ledgers exist, the hook denies
+implementation writes until the active ledger is set.
