@@ -139,7 +139,11 @@ Ledger format:
 ```text
 Conformance finding: <what drifted>
 Disposition: patch | pattern registry update | do-not-copy update | proposed mechanical check | explicit human deferral | risk acceptance
+Reconciled: <existing path or enforcedBy: value for registry/do-not-copy/mechanical-check dispositions>
 ```
+
+`Reconciled:` is required when the disposition promises graduation into registry memory, do-not-copy memory, or a
+mechanical check. This keeps "we should mechanize this" from passing as if it were already mechanized.
 
 ## Mechanical checks
 
@@ -154,6 +158,8 @@ Disposition: patch | pattern registry update | do-not-copy update | proposed mec
   It does not infer work shape from file paths.
 - `--check finding-promotion` fails if a ledgered `Conformance finding:` has no `Disposition:` recording how the
   finding was patched, promoted, mechanically checked, deferred, or risk-accepted.
+- `--check graduation-reconciliation` fails if a registry/do-not-copy/mechanical-check disposition has no
+  `Reconciled:` line pointing to an existing file or `enforcedBy:` value.
 
 These checks do not replace judgment. They prevent the most common silent drift: skipping local neighbor search or
 treating known legacy examples as patterns.
