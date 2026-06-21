@@ -171,6 +171,34 @@ try {
       content: "# Architecture\n",
     },
   }, "deny");
+  expectHookDecision("dispatcher cannot author BMAD artifact", {
+    tool_name: "Write",
+    cwd: tmp,
+    tool_input: {
+      file_path: path.join(tmp, "_bmad-output", "planning-artifacts", "brief.md"),
+      content: "# Brief\n",
+    },
+  }, "deny");
+  expectHookDecision("payload agent worker can author BMAD artifact", {
+    tool_name: "Write",
+    agent_id: "bmad-agent-pm@fixture",
+    agent_type: "bmad-agent-pm",
+    cwd: tmp,
+    tool_input: {
+      file_path: path.join(tmp, "_bmad-output", "planning-artifacts", "brief.md"),
+      content: "# Brief\n",
+    },
+  }, "allow");
+  expectHookDecision("payload conductor subagent cannot author BMAD artifact", {
+    tool_name: "Write",
+    agent_id: "conductor@fixture",
+    agent_type: "conductor",
+    cwd: tmp,
+    tool_input: {
+      file_path: path.join(tmp, "_bmad-output", "planning-artifacts", "brief.md"),
+      content: "# Brief\n",
+    },
+  }, "deny");
   fs.appendFileSync(path.join(tmp, "docs", "ai", "ACEF_demo_DELIVERY_AUDIT.md"), [
     "",
     "| Step | Tool | Status |",

@@ -73,7 +73,18 @@ function findActiveRoot(paths) {
   return "";
 }
 
-function isWorker() {
+function isWorker(payload) {
+  const agentId = (payload && (payload.agent_id || payload.agentId)) || "";
+  const agentType = (payload && (payload.agent_type || payload.agentType)) || "";
+
+  if (agentId || agentType) {
+    const identity = `${agentId} ${agentType}`;
+    if (/(^|[\s_@-])(conductor|dispatcher|orchestrator|coordinator|main-agent|main)([\s_@-]|$)/i.test(identity)) {
+      return false;
+    }
+    return true;
+  }
+
   const values = [
     process.env.ACEF_BMAD_WORKER,
     process.env.ACEF_ROLE,
@@ -511,7 +522,7 @@ function p1ConformanceRestricted(repoRoot) {
     }
   }
 
-  if (isWorker()) {
+  if (isWorker(payload)) {
     allow();
     return;
   }
