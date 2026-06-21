@@ -15,9 +15,9 @@ Scope: first real run of `scripts/acef-process-validator` against `/Users/ramaza
    - `preflight` correctly fails in those repos.
 
 3. Real dogfood repo selected: `goztepe-web`.
-   - `goztepe-web` is a git repo at local HEAD `770e81a`, one local commit ahead of `origin/main`.
-   - The evidence stamp is `b163c82`, the reachable source commit before the local ACEF docs commit.
-   - Added a current `docs/codebase-map.md` and `docs/ai/pattern-registry.json`.
+   - `goztepe-web` is a git repo at `origin/main` / `b163c82`.
+   - The evidence stamp is `b163c82`.
+   - Added a current `docs/codebase-map.md` and `docs/ai/pattern-registry.json` as local untracked dogfood artifacts.
    - Pattern registry status is `PARTIAL`, which permits covered/mechanical work shapes only.
    - Registry includes the required living-memory fields: `evidence`, `enforcedBy`, and per-entry
      `lastVerifiedCommit`.
@@ -37,8 +37,9 @@ Scope: first real run of `scripts/acef-process-validator` against `/Users/ramaza
    - `preflight` still correctly fails because this was adapter/pattern-registry dogfood, not a delivery run.
 
 5. Delta-3 push policy for this run.
-   - The dogfood commit exists locally in `goztepe-web` as `770e81a`.
-   - It was not pushed to any Delta-3 remote by operator instruction.
+   - The temporary local dogfood commit was removed by operator request.
+   - The dogfood artifacts remain untracked locally in `goztepe-web`.
+   - Nothing was pushed to any Delta-3 remote by operator instruction.
 
 ## Commands exercised
 
@@ -56,8 +57,8 @@ scripts/acef-process-validator --repo /Users/ramazanayyildiz/CODE/Delta-3/goztep
 ## Validation results
 
 ```text
-PASS adapter-freshness: Adapter freshness b163c82 is ancestor of HEAD 770e81a; no covered changes since stamp
-PASS adapter-freshness: Adapter freshness b163c82 is ancestor of HEAD 770e81a; no covered changes since stamp
+PASS adapter-freshness: Adapter freshness matches HEAD b163c82
+PASS adapter-freshness: Adapter freshness matches HEAD b163c82
 FAIL preflight: Missing docs/ai/ACEF_PREFLIGHT.md
 json-ok
 git diff --check: clean
