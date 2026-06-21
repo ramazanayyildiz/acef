@@ -103,6 +103,31 @@ function gitHead(repoRoot) {
   }
 }
 
+function gitIsAncestor(repoRoot, ancestor, descendant) {
+  try {
+    cp.execFileSync("git", ["merge-base", "--is-ancestor", ancestor, descendant], {
+      cwd: repoRoot,
+      stdio: ["ignore", "ignore", "ignore"],
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function gitChangedFiles(repoRoot, fromRef, toRef) {
+  try {
+    const output = cp.execFileSync("git", ["diff", "--name-only", `${fromRef}..${toRef}`], {
+      cwd: repoRoot,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    });
+    return output.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
 function nestedGitRepos(repoRoot) {
   const repos = [];
   function walk(current, depth) {
@@ -216,6 +241,57 @@ function extractFreshnessCommit(text) {
   return "";
 }
 
+function extractCoveredScopes(text) {
+  try {
+    const json = JSON.parse(text);
+    if (Array.isArray(json.coveredScopes)) {
+      return json.coveredScopes.filter((scope) => typeof scope === "string" && scope.trim()).map((scope) => scope.trim());
+    }
+  } catch {
+    // Markdown adapter; fall through to textual extraction.
+  }
+
+  const covered = text.match(/\bcovered:\s*([^·\n]+)/i);
+  if (!covered) return [];
+  return covered[1].split(/[,;]/).map((scope) => scope.trim()).filter(Boolean);
+}
+
+function isPathLikeScope(scope) {
+  return scope.includes("/") || scope.includes(".") || scope === "src" || scope === "app" || scope === "modules" || scope === "lib";
+}
+
+function scopeMatches(filePath, scope) {
+  const normalized = scope.replace(/^\.\//, "").replace(/\/$/, "");
+  if (!normalized || normalized === ".") return true;
+  if (!isPathLikeScope(normalized)) return false;
+  return filePath === normalized || filePath.startsWith(`${normalized}/`);
+}
+
+function coveredChangesSince(repoRoot, stamp, head, adapterText) {
+  const changed = gitChangedFiles(repoRoot, stamp, head);
+  const scopes = extractCoveredScopes(adapterText);
+  const pathLikeScopes = scopes.filter(isPathLikeScope);
+  const defaultSourceScopes = [
+    "src",
+    "app",
+    "modules",
+    "lib",
+    "components",
+    "hooks",
+    "services",
+    "stores",
+    "utils",
+    "constants",
+    "types",
+    "package.json",
+    "pnpm-lock.yaml",
+    "yarn.lock",
+    "package-lock.json",
+  ];
+  const activeScopes = pathLikeScopes.length ? pathLikeScopes : defaultSourceScopes;
+  return changed.filter((filePath) => activeScopes.some((scope) => scopeMatches(filePath, scope)));
+}
+
 function checkAdapterFreshness(repoRoot, adapterPath) {
   if (!adapterPath || !exists(adapterPath)) return result("adapter-freshness", false, "Missing adapter/codebase-map/pattern-registry file");
   const head = gitHead(repoRoot);
@@ -229,10 +305,19 @@ function checkAdapterFreshness(repoRoot, adapterPath) {
   const text = read(adapterPath);
   const stamp = extractFreshnessCommit(text);
   if (!stamp) return result("adapter-freshness", false, `No freshness commit found in ${path.relative(repoRoot, adapterPath)}`);
-  const ok = head.startsWith(stamp) || stamp.startsWith(head);
-  return result("adapter-freshness", ok, ok
-    ? `Adapter freshness matches HEAD ${head}`
-    : `Adapter freshness ${stamp} does not match HEAD ${head}`);
+  const exact = head.startsWith(stamp) || stamp.startsWith(head);
+  if (exact) return result("adapter-freshness", true, `Adapter freshness matches HEAD ${head}`);
+
+  if (!gitIsAncestor(repoRoot, stamp, "HEAD")) {
+    return result("adapter-freshness", false, `Adapter freshness ${stamp} is not an ancestor of HEAD ${head}`);
+  }
+
+  const coveredChanges = coveredChangesSince(repoRoot, stamp, "HEAD", text);
+  if (coveredChanges.length) {
+    return result("adapter-freshness", false, `Adapter freshness ${stamp} is stale; covered changes since stamp: ${coveredChanges.slice(0, 8).join(", ")}`);
+  }
+
+  return result("adapter-freshness", true, `Adapter freshness ${stamp} is ancestor of HEAD ${head}; no covered changes since stamp`);
 }
 
 function mentionedEpics(text) {

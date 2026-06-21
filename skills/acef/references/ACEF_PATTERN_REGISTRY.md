@@ -83,6 +83,13 @@ Every `patterns[]` entry must include:
 
 `goldenNeighbors` are examples. `evidence` is the proof that the pattern is accepted.
 
+## Freshness semantics
+
+`generatedFromCommit` and each `lastVerifiedCommit` record the commit where the cited evidence was verified. A registry
+is fresh when that stamp is the current HEAD, or when that stamp is an ancestor of HEAD and no covered source paths have
+changed since. If the branch is rebased, pulled forward, or otherwise moved across covered code, rerun the relevant
+extraction or recheck the cited evidence before treating the registry as fresh.
+
 ## Status values
 
 | Value | Meaning |

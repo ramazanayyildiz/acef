@@ -112,6 +112,8 @@ Captures (each field cites a source path):
           <p><code>pattern-registry.json</code> entries also carry <code>evidence</code>,
             <code>lastVerifiedCommit</code>, and <code>enforcedBy</code>. <code>PARTIAL</code> registries permit only
             covered mechanical/standard work shapes; guarded work needs extraction or explicit risk acceptance.</p>
+          <p>Freshness stamps point to the commit where evidence was verified. A committed registry remains fresh only
+            when that commit is reachable from HEAD and no covered source paths changed since.</p>
           <p>It does <strong>not</strong> install, write tests, or change code. It reads manifests, lock files, CI
             workflows, and the directory tree — no embeddings, no guessing. Re-run only when it goes stale (big refactor,
             new module, dependency or contract change), not for every task.</p>

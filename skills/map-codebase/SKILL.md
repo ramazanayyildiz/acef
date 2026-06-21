@@ -143,6 +143,10 @@ If producing a machine-readable registry, write/propose `docs/ai/pattern-registr
 `sourceEvidence`, `confidence`, `lastVerifiedCommit`, `enforcedBy`, and `refreshTriggers`. Do not store run-local gate
 summaries or drift notes in that file.
 
+Freshness stamps record the commit where evidence was verified. A committed registry may carry an ancestor stamp; it is
+fresh only if no covered source paths changed since that stamp. If the repo is rebased or pulled forward across covered
+code after extraction, rerun the relevant evidence checks before reusing the registry.
+
 ### Reuse-before-create checklist
 - Before adding a helper/service/component/hook, search the registry's probe terms and golden neighbors.
 - If a matching local abstraction exists, reuse it or record why it does not fit.

@@ -1,0 +1,96 @@
+#!/usr/bin/env node
+const fs = require("node:fs");
+const os = require("node:os");
+const path = require("node:path");
+const cp = require("node:child_process");
+
+const repoRoot = path.resolve(__dirname, "..");
+const validator = path.join(repoRoot, "scripts", "acef-process-validator");
+
+function run(command, args, options = {}) {
+  return cp.execFileSync(command, args, {
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+    ...options,
+  }).trim();
+}
+
+function runValidator(args, options = {}) {
+  return run("node", [validator, ...args], options);
+}
+
+function expectPass(label, args) {
+  const output = runValidator(args);
+  if (!output.includes(`PASS ${label}:`)) {
+    throw new Error(`Expected ${label} to pass, got:\n${output}`);
+  }
+}
+
+function expectFail(label, args) {
+  try {
+    runValidator(args);
+  } catch (error) {
+    const output = `${error.stdout || ""}${error.stderr || ""}`;
+    if (output.includes(`FAIL ${label}:`)) return;
+    throw new Error(`Expected ${label} to fail, got:\n${output}`);
+  }
+  throw new Error(`Expected ${label} to fail, but it passed`);
+}
+
+const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "acef-validator-"));
+
+try {
+  run("git", ["init"], { cwd: tmp });
+  run("git", ["config", "user.email", "acef@example.invalid"], { cwd: tmp });
+  run("git", ["config", "user.name", "ACEF Test"], { cwd: tmp });
+
+  fs.mkdirSync(path.join(tmp, "docs", "ai"), { recursive: true });
+  fs.writeFileSync(path.join(tmp, "README.md"), "# fixture\n");
+  run("git", ["add", "README.md"], { cwd: tmp });
+  run("git", ["commit", "-m", "init"], { cwd: tmp });
+  const head = run("git", ["rev-parse", "--short", "HEAD"], { cwd: tmp });
+
+  fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_PREFLIGHT.md"), "Status: PASS\n");
+  fs.writeFileSync(path.join(tmp, "docs", "codebase-map.md"), `# Codebase Map\n\ngenerated_at: 2026-06-21 · commit: ${head}\n`);
+  fs.writeFileSync(path.join(tmp, "docs", "out.md"), "generated output\n");
+  fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_demo_DELIVERY_AUDIT.md"), [
+    "# ACEF Demo Delivery Audit",
+    "",
+    "Epic 1",
+    "",
+    "Outputs:",
+    "- `docs/out.md`",
+    "",
+    "Epic 1 Process Judge",
+    "",
+    "Status: PASS",
+    "",
+  ].join("\n"));
+
+  expectPass("preflight", ["--repo", tmp, "--check", "preflight"]);
+  expectPass("adapter-freshness", ["--repo", tmp, "--check", "adapter-freshness", "--adapter", "docs/codebase-map.md"]);
+  expectPass("claims", ["--repo", tmp, "--check", "claims", "--ledger", "docs/ai/ACEF_demo_DELIVERY_AUDIT.md"]);
+  expectPass("seeded-epic-gates", ["--repo", tmp, "--check", "seeded-epic-gates", "--ledger", "docs/ai/ACEF_demo_DELIVERY_AUDIT.md"]);
+  expectPass("epic-boundary", ["--repo", tmp, "--check", "epic-boundary", "--ledger", "docs/ai/ACEF_demo_DELIVERY_AUDIT.md", "--target-epic", "2"]);
+  expectPass("replan-counter", ["--repo", tmp, "--check", "replan-counter", "--ledger", "docs/ai/ACEF_demo_DELIVERY_AUDIT.md"]);
+
+  run("git", ["add", "docs"], { cwd: tmp });
+  run("git", ["commit", "-m", "add acef docs"], { cwd: tmp });
+  expectPass("adapter-freshness", ["--repo", tmp, "--check", "adapter-freshness", "--adapter", "docs/codebase-map.md"]);
+
+  fs.mkdirSync(path.join(tmp, "src"), { recursive: true });
+  fs.writeFileSync(path.join(tmp, "src", "changed.ts"), "export const changed = true;\n");
+  run("git", ["add", "src/changed.ts"], { cwd: tmp });
+  run("git", ["commit", "-m", "change covered source"], { cwd: tmp });
+  expectFail("adapter-freshness", ["--repo", tmp, "--check", "adapter-freshness", "--adapter", "docs/codebase-map.md"]);
+
+  fs.writeFileSync(path.join(tmp, "docs", "stale-map.md"), "# stale\n\ncommit: deadbeef\n");
+  expectFail("adapter-freshness", ["--repo", tmp, "--check", "adapter-freshness", "--adapter", "docs/stale-map.md"]);
+
+  fs.rmSync(path.join(tmp, "docs", "ai", "ACEF_PREFLIGHT.md"));
+  expectFail("preflight", ["--repo", tmp, "--check", "preflight"]);
+
+  console.log("acef-process-validator tests passed");
+} finally {
+  fs.rmSync(tmp, { recursive: true, force: true });
+}

@@ -94,6 +94,14 @@ scripts/acef-process-validator --repo /path/to/repo --check epic-boundary --ledg
 
 These checks are the first step in moving ACEF rules out of agent memory and into machinery.
 
+Validator regression tests and the CI entrypoint use the same executable:
+
+```bash
+node scripts/test-acef-process-validator
+```
+
+GitHub Actions runs this test from `.github/workflows/validate.yml`.
+
 ## Dependency: BMAD (large-feature flow only)
 
 For the **large-feature route (Route B)**, ACEF uses [BMAD-METHOD](https://github.com/bmad-code-org/BMAD-METHOD) (MIT)
