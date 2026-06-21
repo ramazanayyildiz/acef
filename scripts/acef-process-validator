@@ -103,6 +103,32 @@ function gitHead(repoRoot) {
   }
 }
 
+function nestedGitRepos(repoRoot) {
+  const repos = [];
+  function walk(current, depth) {
+    if (depth > 2) return;
+    let entries = [];
+    try {
+      entries = fs.readdirSync(current, { withFileTypes: true });
+    } catch {
+      return;
+    }
+
+    if (entries.some((entry) => entry.isDirectory() && entry.name === ".git")) {
+      repos.push(path.relative(repoRoot, current) || ".");
+      return;
+    }
+
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      if (entry.name.startsWith(".") || entry.name === "node_modules") continue;
+      walk(path.join(current, entry.name), depth + 1);
+    }
+  }
+  walk(repoRoot, 0);
+  return repos;
+}
+
 function findLedger(repoRoot) {
   const roots = [
     path.join(repoRoot, "docs", "ai"),
@@ -193,7 +219,13 @@ function extractFreshnessCommit(text) {
 function checkAdapterFreshness(repoRoot, adapterPath) {
   if (!adapterPath || !exists(adapterPath)) return result("adapter-freshness", false, "Missing adapter/codebase-map/pattern-registry file");
   const head = gitHead(repoRoot);
-  if (!head) return result("adapter-freshness", false, "Could not resolve git HEAD");
+  if (!head) {
+    const nested = nestedGitRepos(repoRoot);
+    const suffix = nested.length
+      ? ` This looks like a workspace root; choose a git repo with --repo. Nested repos: ${nested.slice(0, 8).join(", ")}`
+      : "";
+    return result("adapter-freshness", false, `Could not resolve git HEAD.${suffix}`);
+  }
   const text = read(adapterPath);
   const stamp = extractFreshnessCommit(text);
   if (!stamp) return result("adapter-freshness", false, `No freshness commit found in ${path.relative(repoRoot, adapterPath)}`);
