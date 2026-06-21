@@ -94,6 +94,10 @@ A lightweight (usually guarded) task promotes to full BMAD when any of:
   This gate is short in the lightweight lane and story-scoped in full BMAD, but it is never skipped.
 - **Conformance feedback loop** — every conformance finding becomes a code patch, pattern-registry update,
   do-not-copy update, proposed mechanical check, or explicit human deferral. Findings do not disappear into chat.
+- **Architecture conformance before stories** — after architecture and before epics/stories, run an independent
+  conformance gate over adapter/codemap use, golden-neighbor claims, source discrepancies, counts/inventories,
+  do-not-copy entries, and deliberate divergences. `REVISE` returns to architecture; stories cannot start while
+  conformance findings are undispositioned.
 - **Active run bootstrap** — before workers or source verifiers run, the target workspace has a delivery ledger, active
   ledger pointer, and structured session handoff. A stale ledger from another run cannot satisfy the current run.
 - **Conductor step ledger** — every transition records expected route/lane/track, required skill/tool, resolved

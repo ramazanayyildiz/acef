@@ -271,6 +271,10 @@ Conformance lens:
 - Did it check and reuse a qualified golden neighbor?
 - Did it avoid do-not-copy entries and stale/legacy exemplars?
 - Did it introduce a new helper/component/service/dependency/pattern without a decision?
+- For architecture/planning artifacts: did every codemap/adapter-derived claim cite current source evidence rather
+  than memory or a worker summary?
+- For architecture/planning artifacts: were source conflicts recorded as discrepancies, and were counts/inventories
+  re-verified before they became scope?
 - Did any finding become a code patch, registry update, do-not-copy update, proposed mechanical check, or explicit
   human deferral?
 

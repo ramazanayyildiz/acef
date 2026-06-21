@@ -36,6 +36,26 @@ This `HALT` is not a fallback. The conductor may not switch to lightweight guard
 lightweight exception requires explicit human approval and must be recorded as risk acceptance in the preflight
 artifact.
 
+## Planning artifact gates
+
+Full BMAD planning is not complete when PRD/UX/Architecture artifacts merely exist. Before epics/stories generation,
+the conductor must run an **Architecture Conformance Gate** under an independent Architect / Process Judge persona.
+
+The gate checks that the architecture:
+- uses adapter/codemap facts as evidence, not unverified memory or worker claims;
+- qualifies every golden-neighbor claim at file plus symbol/contract level;
+- reconciles PRD, UX/design, backend/API, adapter/codemap, and source-code evidence into an explicit discrepancy table
+  when they conflict;
+- proves counts and inventories that drive scope (modules, screens, blocks, routes, collections, endpoints);
+- flags any deliberate divergence from a golden neighbor as a decision, not as copied precedent;
+- checks do-not-copy entries and stale/legacy exemplars before recommending reuse;
+- converts every conformance finding into a ledgered disposition before epics/stories start.
+
+Valid dispositions are: `revise`, `accepted risk`, `spike`, `story acceptance criteria`, `pattern-registry update`,
+`do-not-copy update`, or `proposed mechanical check`. Findings do not remain only in chat. A gate verdict of `REVISE`
+returns to the architecture worker; epics/stories may not start until the gate is `PASS` or the human records explicit
+risk acceptance for the unresolved items.
+
 ## Story lifecycle (per story)
 1. **Readiness** — the story is implementable: acceptance criteria clear, canonical references linked, domain contract
    complete, dependency order known. A soft story is sent back before any build.
@@ -75,6 +95,7 @@ Worker identities must map to explicit personas:
 | PRD / story intent | PM / Planner |
 | UX gate | UX Designer |
 | Architecture | Architect |
+| Architecture conformance gate | Architect or Process Judge, independent of the architecture author |
 | Epics/stories | PM / Planner, with Architect consistency check when needed |
 | Readiness | Architect or Process Judge, depending on the gate |
 | ATDD / test-design | Test Author / Tester |
