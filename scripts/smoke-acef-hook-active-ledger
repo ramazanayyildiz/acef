@@ -1,0 +1,111 @@
+#!/usr/bin/env node
+const fs = require("node:fs");
+const os = require("node:os");
+const path = require("node:path");
+const cp = require("node:child_process");
+
+const repoRoot = path.resolve(__dirname, "..");
+const hookPath = path.join(repoRoot, "claude-plugins", "acef-bmad-guard", "hooks", "acef-bmad-hard-wall.mjs");
+
+function runHook(payload) {
+  const output = cp.execFileSync("node", [hookPath], {
+    input: JSON.stringify(payload),
+    encoding: "utf8",
+    stdio: ["pipe", "pipe", "pipe"],
+    env: { ...process.env, ACEF_BMAD_WORKER: "1" },
+  }).trim();
+  return JSON.parse(output)?.hookSpecificOutput?.permissionDecision || "none";
+}
+
+function expect(label, actual, expected) {
+  if (actual !== expected) {
+    throw new Error(`${label}: expected ${expected}, got ${actual}`);
+  }
+  console.log(`PASS ${label}`);
+}
+
+function write(filePath, text) {
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  fs.writeFileSync(filePath, text);
+}
+
+const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "acef-active-ledger-smoke-"));
+
+try {
+  write(path.join(tmp, ".acef-lightweight-lane"), "active\n");
+  write(path.join(tmp, "docs", "ai", "pattern-registry.json"), JSON.stringify({
+    schemaVersion: 1,
+    repo: "active-ledger-smoke",
+    generatedAt: "2026-06-21",
+    generatedFromCommit: "0000000",
+    coveredScopes: ["src"],
+    status: "PARTIAL",
+    patterns: [
+      {
+        id: "pattern.service.shared-client",
+        workShape: "service",
+        status: "canonical",
+        maturity: "rubric-item",
+        enforcedBy: null,
+        summary: "Services use the shared API client.",
+        evidence: "Smoke fixture service pattern evidence.",
+        sourceEvidence: [{ path: "src/services/current.ts", line: 1 }],
+        goldenNeighbors: [{ path: "src/services/current.ts", why: "canonical service" }],
+        reuseProbe: ["sharedApiClient", "src/services/current.ts"],
+        doNotCopy: ["legacy.service.direct-fetch"],
+        confidence: "single-example",
+        lastVerifiedAt: "2026-06-21",
+        lastVerifiedCommit: "0000000",
+        refreshTriggers: ["touched-scope-change"],
+      },
+    ],
+    doNotCopy: [
+      {
+        id: "legacy.service.direct-fetch",
+        reason: "Bypasses shared API client.",
+        sourceEvidence: [{ path: "src/legacy/direct-fetch.ts", line: 1 }],
+        lastVerifiedCommit: "0000000",
+      },
+    ],
+  }, null, 2));
+
+  write(path.join(tmp, "docs", "ai", "ACEF_old_DELIVERY_AUDIT.md"), [
+    "Status: PASS",
+    "track: standard",
+    "workShape: service",
+    "Reuse-before-create:",
+    "- Checked `src/services/current.ts` and `sharedApiClient`.",
+    "- Do-not-copy: avoided `legacy.service.direct-fetch`.",
+  ].join("\n"));
+
+  write(path.join(tmp, "docs", "ai", "ACEF_current_DELIVERY_AUDIT.md"), [
+    "Status: PASS",
+    "track: standard",
+    "workShape: service",
+  ].join("\n"));
+
+  const payload = (filename) => ({
+    tool_name: "Write",
+    cwd: tmp,
+    tool_input: {
+      file_path: path.join(tmp, "src", filename),
+      content: "export const smoke = true;\n",
+    },
+  });
+
+  expect("fallback all-ledgers allows old evidence", runHook(payload("fallback.ts")), "allow");
+
+  write(path.join(tmp, "docs", "ai", "ACEF_ACTIVE_LEDGER"), "docs/ai/ACEF_current_DELIVERY_AUDIT.md\n");
+  expect("active ledger ignores stale reuse evidence", runHook(payload("active-deny.ts")), "deny");
+
+  fs.appendFileSync(path.join(tmp, "docs", "ai", "ACEF_current_DELIVERY_AUDIT.md"), [
+    "",
+    "Reuse-before-create:",
+    "- Checked `src/services/current.ts` and `sharedApiClient`.",
+    "- Do-not-copy: avoided `legacy.service.direct-fetch`.",
+  ].join("\n"));
+  expect("active ledger allows current reuse evidence", runHook(payload("active-allow.ts")), "allow");
+} finally {
+  fs.rmSync(tmp, { recursive: true, force: true });
+}
+
