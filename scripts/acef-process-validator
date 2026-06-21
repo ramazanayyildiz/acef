@@ -1,0 +1,300 @@
+#!/usr/bin/env node
+const fs = require("node:fs");
+const path = require("node:path");
+const cp = require("node:child_process");
+
+function usage() {
+  console.log(`ACEF process validator
+
+Usage:
+  scripts/acef-process-validator [--repo <path>] [--check <name>] [--ledger <path>] [--adapter <path>] [--target-epic <n>]
+
+Checks:
+  all                 Run all checks that have enough inputs
+  preflight           Require docs/ai/ACEF_PREFLIGHT.md with Verdict/Status: PASS
+  claims              Require claimed output paths in the ledger to exist
+  adapter-freshness   Require adapter/codebase-map freshness commit to match HEAD
+  seeded-epic-gates   Require Epic N Process Judge rows/artifacts for epics mentioned in ledger
+  epic-boundary       Require Epic N-1 Process Judge PASS before target Epic N
+  replan-counter      Fail when the same scope has 2+ REPLAN decisions in ledger text
+`);
+}
+
+function parseArgs(argv) {
+  const args = {
+    repo: process.cwd(),
+    check: "all",
+    ledger: "",
+    adapter: "",
+    targetEpic: 0,
+  };
+
+  for (let index = 2; index < argv.length; index += 1) {
+    const arg = argv[index];
+    if (arg === "--help" || arg === "-h") {
+      args.help = true;
+    } else if (arg === "--repo") {
+      args.repo = argv[++index] || "";
+    } else if (arg === "--check") {
+      args.check = argv[++index] || "";
+    } else if (arg === "--ledger") {
+      args.ledger = argv[++index] || "";
+    } else if (arg === "--adapter") {
+      args.adapter = argv[++index] || "";
+    } else if (arg === "--target-epic") {
+      args.targetEpic = Number(argv[++index] || "0");
+    } else {
+      throw new Error(`Unknown argument: ${arg}`);
+    }
+  }
+
+  args.repo = path.resolve(args.repo || process.cwd());
+  if (args.ledger) args.ledger = resolvePath(args.ledger, args.repo);
+  if (args.adapter) args.adapter = resolvePath(args.adapter, args.repo);
+  return args;
+}
+
+function resolvePath(value, repoRoot) {
+  if (!value) return "";
+  const expanded = value.replace(/^~(?=\/|$)/, process.env.HOME || "");
+  return path.resolve(path.isAbsolute(expanded) ? expanded : path.join(repoRoot, expanded));
+}
+
+function exists(filePath) {
+  try {
+    return fs.existsSync(filePath);
+  } catch {
+    return false;
+  }
+}
+
+function read(filePath) {
+  return fs.readFileSync(filePath, "utf8");
+}
+
+function listFiles(dirPath) {
+  const out = [];
+  function walk(current) {
+    let entries = [];
+    try {
+      entries = fs.readdirSync(current, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      const filePath = path.join(current, entry.name);
+      if (entry.isDirectory()) walk(filePath);
+      else if (entry.isFile()) out.push(filePath);
+    }
+  }
+  walk(dirPath);
+  return out;
+}
+
+function gitHead(repoRoot) {
+  try {
+    return cp.execFileSync("git", ["rev-parse", "--short", "HEAD"], {
+      cwd: repoRoot,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
+  } catch {
+    return "";
+  }
+}
+
+function findLedger(repoRoot) {
+  const roots = [
+    path.join(repoRoot, "docs", "ai"),
+    path.join(repoRoot, "_bmad-output"),
+  ];
+  const candidates = roots.flatMap((root) => listFiles(root))
+    .filter((filePath) => /delivery|audit|ledger/i.test(path.basename(filePath)))
+    .sort();
+  return candidates[0] || "";
+}
+
+function findAdapter(repoRoot) {
+  const candidates = [
+    path.join(repoRoot, "docs", "codebase-map.md"),
+    path.join(repoRoot, "docs", "ai", "project-adapter.md"),
+    path.join(repoRoot, "docs", "ai", "pattern-registry.json"),
+    ...listFiles(path.join(repoRoot, "docs", "ai")).filter((filePath) => /adapter|codebase-map|pattern-registry/i.test(path.basename(filePath))),
+  ];
+  return candidates.find(exists) || "";
+}
+
+function result(name, ok, message) {
+  return { name, ok, message };
+}
+
+function checkPreflight(repoRoot) {
+  const filePath = path.join(repoRoot, "docs", "ai", "ACEF_PREFLIGHT.md");
+  if (!exists(filePath)) return result("preflight", false, `Missing ${path.relative(repoRoot, filePath)}`);
+  const text = read(filePath);
+  const pass = /\b(Verdict|Status)\s*:\s*PASS\b/i.test(text)
+    || /\|\s*(Verdict|Status)\s*\|[^|\n]*\bPASS\b/i.test(text);
+  return result("preflight", pass, pass ? "Preflight PASS found" : "Preflight exists but PASS verdict/status was not found");
+}
+
+function extractClaimedPaths(text) {
+  const claims = new Set();
+  const lines = text.split(/\r?\n/);
+  let inOutputs = false;
+
+  for (const line of lines) {
+    if (/^\s*(#{1,6}\s*)?(Outputs?|Artifacts?|Generated files?|Claimed outputs?)\s*:?\s*$/i.test(line)) {
+      inOutputs = true;
+      continue;
+    }
+    if (/^\s*(Inputs?|Evidence|Verdict|Next allowed|Tests?|Checks?)\s*:/i.test(line) || /^#{1,6}\s+/.test(line)) {
+      inOutputs = false;
+    }
+
+    const shouldScan = inOutputs || /^\s*(Outputs?|Artifacts?|Generated files?|Claimed outputs?)\s*:/i.test(line);
+    if (!shouldScan) continue;
+
+    const matches = [...line.matchAll(/`([^`]+\.[A-Za-z0-9]{1,12})`|(?:^|[\s:])((?:\.\/)?(?:docs|src|app|modules|shared|lib|components|hooks|services|stores|utils|constants|types|_bmad-output)\/[^\s,;|)]+)/g)];
+    for (const match of matches) {
+      const value = (match[1] || match[2] || "").replace(/[.,;:]$/, "");
+      if (value && !/pending|none|n\/a/i.test(value)) claims.add(value);
+    }
+  }
+
+  return [...claims];
+}
+
+function checkClaims(repoRoot, ledgerPath) {
+  if (!ledgerPath || !exists(ledgerPath)) return result("claims", false, "Missing ledger path for claimed-output validation");
+  const claims = extractClaimedPaths(read(ledgerPath));
+  const missing = claims
+    .map((claim) => ({ claim, filePath: resolvePath(claim, repoRoot) }))
+    .filter(({ filePath }) => !exists(filePath));
+
+  if (!claims.length) return result("claims", true, "No claimed output paths found");
+  if (missing.length) {
+    return result("claims", false, `Missing claimed outputs: ${missing.map((item) => item.claim).join(", ")}`);
+  }
+  return result("claims", true, `All ${claims.length} claimed output path(s) exist`);
+}
+
+function extractFreshnessCommit(text) {
+  const patterns = [
+    /\b(?:commit|revision|generatedFromCommit|lastVerifiedCommit)\b["':\s-]*([0-9a-f]{6,40})\b/i,
+    /\*\s*generated_at:[^·\n]*·\s*commit:\s*([0-9a-f]{6,40})\b/i,
+  ];
+  for (const pattern of patterns) {
+    const match = text.match(pattern);
+    if (match) return match[1].slice(0, 12);
+  }
+  return "";
+}
+
+function checkAdapterFreshness(repoRoot, adapterPath) {
+  if (!adapterPath || !exists(adapterPath)) return result("adapter-freshness", false, "Missing adapter/codebase-map/pattern-registry file");
+  const head = gitHead(repoRoot);
+  if (!head) return result("adapter-freshness", false, "Could not resolve git HEAD");
+  const text = read(adapterPath);
+  const stamp = extractFreshnessCommit(text);
+  if (!stamp) return result("adapter-freshness", false, `No freshness commit found in ${path.relative(repoRoot, adapterPath)}`);
+  const ok = head.startsWith(stamp) || stamp.startsWith(head);
+  return result("adapter-freshness", ok, ok
+    ? `Adapter freshness matches HEAD ${head}`
+    : `Adapter freshness ${stamp} does not match HEAD ${head}`);
+}
+
+function mentionedEpics(text) {
+  const epics = new Set();
+  for (const match of text.matchAll(/\b(?:Epic|E)\s*[-_ ]?(\d+)\b/gi)) {
+    epics.add(Number(match[1]));
+  }
+  return [...epics].filter(Boolean).sort((a, b) => a - b);
+}
+
+function hasEpicProcessJudge(text, epicNumber) {
+  const epic = `Epic\\s+${epicNumber}\\s+Process\\s+Judge`;
+  return new RegExp(epic, "i").test(text)
+    || new RegExp(`epic[-_ ]${epicNumber}[-_ ]process[-_ ]judge`, "i").test(text);
+}
+
+function hasEpicProcessJudgePass(text, epicNumber) {
+  if (!hasEpicProcessJudge(text, epicNumber)) return false;
+  return /\b(Verdict|Status)\s*:\s*PASS\b/i.test(text)
+    || new RegExp(`\\|[^\\n]*Epic\\s+${epicNumber}\\s+Process\\s+Judge[^\\n]*\\|[^\\n]*\\bPASS\\b`, "i").test(text);
+}
+
+function allArtifactText(repoRoot, ledgerPath) {
+  const files = [
+    ledgerPath,
+    ...listFiles(path.join(repoRoot, "docs", "ai")),
+    ...listFiles(path.join(repoRoot, "_bmad-output")),
+  ].filter(Boolean).filter(exists);
+  return files.map((filePath) => `\n--- ${path.relative(repoRoot, filePath)} ---\n${read(filePath)}`).join("\n");
+}
+
+function checkSeededEpicGates(repoRoot, ledgerPath) {
+  if (!ledgerPath || !exists(ledgerPath)) return result("seeded-epic-gates", false, "Missing ledger path");
+  const ledgerText = read(ledgerPath);
+  const epics = mentionedEpics(ledgerText);
+  if (!epics.length) return result("seeded-epic-gates", true, "No epics mentioned in ledger");
+  const text = allArtifactText(repoRoot, ledgerPath);
+  const missing = epics.filter((epicNumber) => !hasEpicProcessJudge(text, epicNumber));
+  if (missing.length) return result("seeded-epic-gates", false, `Missing Epic Process Judge gate(s): ${missing.join(", ")}`);
+  return result("seeded-epic-gates", true, `Epic Process Judge gate exists for epic(s): ${epics.join(", ")}`);
+}
+
+function checkEpicBoundary(repoRoot, ledgerPath, targetEpic) {
+  if (!targetEpic || targetEpic <= 1) return result("epic-boundary", true, "No prior epic required");
+  const prior = targetEpic - 1;
+  const text = allArtifactText(repoRoot, ledgerPath);
+  const ok = hasEpicProcessJudgePass(text, prior);
+  return result("epic-boundary", ok, ok
+    ? `Epic ${prior} Process Judge PASS found`
+    : `Epic ${prior} Process Judge PASS required before starting Epic ${targetEpic}`);
+}
+
+function checkReplanCounter(ledgerPath) {
+  if (!ledgerPath || !exists(ledgerPath)) return result("replan-counter", false, "Missing ledger path");
+  const text = read(ledgerPath);
+  const count = (text.match(/\bREPLAN\b/g) || []).length;
+  return result("replan-counter", count < 2, count < 2
+    ? `REPLAN count ${count}`
+    : `REPLAN count ${count}; human escalation required`);
+}
+
+function main() {
+  const args = parseArgs(process.argv);
+  if (args.help) {
+    usage();
+    return;
+  }
+
+  const ledger = args.ledger || findLedger(args.repo);
+  const adapter = args.adapter || findAdapter(args.repo);
+  const checks = args.check === "all"
+    ? ["preflight", "claims", "adapter-freshness", "seeded-epic-gates", "epic-boundary", "replan-counter"]
+    : [args.check];
+
+  const results = checks.map((check) => {
+    if (check === "preflight") return checkPreflight(args.repo);
+    if (check === "claims") return checkClaims(args.repo, ledger);
+    if (check === "adapter-freshness") return checkAdapterFreshness(args.repo, adapter);
+    if (check === "seeded-epic-gates") return checkSeededEpicGates(args.repo, ledger);
+    if (check === "epic-boundary") return checkEpicBoundary(args.repo, ledger, args.targetEpic);
+    if (check === "replan-counter") return checkReplanCounter(ledger);
+    return result(check, false, `Unknown check: ${check}`);
+  });
+
+  for (const item of results) {
+    console.log(`${item.ok ? "PASS" : "FAIL"} ${item.name}: ${item.message}`);
+  }
+
+  if (results.some((item) => !item.ok)) process.exitCode = 1;
+}
+
+try {
+  main();
+} catch (error) {
+  console.error(`FAIL validator: ${error.message}`);
+  process.exitCode = 1;
+}

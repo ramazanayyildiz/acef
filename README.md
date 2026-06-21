@@ -81,6 +81,19 @@ files the agent follows. No build, no npm, no services.
 The `method/` docs are the engine the agent follows (personas, tracks, lanes, the test pipeline). Read them to
 understand how delivery actually runs; the agent applies them for you.
 
+## Process validators
+
+ACEF ships a stack-agnostic process validator for cheap mechanical gates:
+
+```bash
+scripts/acef-process-validator --repo /path/to/repo --check preflight
+scripts/acef-process-validator --repo /path/to/repo --check claims --ledger docs/ai/ACEF_feature_DELIVERY_AUDIT.md
+scripts/acef-process-validator --repo /path/to/repo --check adapter-freshness --adapter docs/codebase-map.md
+scripts/acef-process-validator --repo /path/to/repo --check epic-boundary --ledger docs/ai/ACEF_feature_DELIVERY_AUDIT.md --target-epic 2
+```
+
+These checks are the first step in moving ACEF rules out of agent memory and into machinery.
+
 ## Dependency: BMAD (large-feature flow only)
 
 For the **large-feature route (Route B)**, ACEF uses [BMAD-METHOD](https://github.com/bmad-code-org/BMAD-METHOD) (MIT)
