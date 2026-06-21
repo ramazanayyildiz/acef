@@ -94,3 +94,11 @@ Before source/test/package writes in an active ACEF/BMAD lane, the hook searches
 - no reuse-before-create / golden-neighbor evidence exists;
 - the reuse evidence does not cite a registry probe term or golden-neighbor path;
 - a do-not-copy entry is mentioned without an explicit avoided/rejected context.
+
+To avoid stale evidence from an older run satisfying the current write, scope the hook to one active ledger:
+
+- set `ACEF_ACTIVE_LEDGER=docs/ai/ACEF_feature_DELIVERY_AUDIT.md`, or
+- write that relative path into `docs/ai/ACEF_ACTIVE_LEDGER`.
+
+When an active ledger is present, P1 conformance checks read only that ledger. Without it, the hook falls back to all
+delivery/audit/ledger files for backward compatibility.

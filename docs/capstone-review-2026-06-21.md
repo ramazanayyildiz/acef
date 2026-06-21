@@ -21,15 +21,17 @@ node scripts/test-acef-process-validator
 
 ## Capstone Findings
 
-### 1. Hook ledger scope is coarse
+### 1. Hook ledger scope can be active-ledger scoped
 
-The guard hook reads all delivery/audit/ledger files under `docs/ai/` and `_bmad-output/`.
+The guard hook now supports active-ledger scoping.
 
-That is acceptable for v1 because it prevents missing evidence, but it can be too permissive: an old ledger may contain
-reuse evidence, human risk acceptance, or do-not-copy rejection text that lets a later write pass.
+Use either:
 
-Next hardening: add an active-ledger marker or environment variable, then make the hook prefer that ledger before
-falling back to all ledgers.
+- `ACEF_ACTIVE_LEDGER=docs/ai/ACEF_feature_DELIVERY_AUDIT.md`, or
+- `docs/ai/ACEF_ACTIVE_LEDGER` containing the ledger path.
+
+When present, the hook reads only that ledger for P1 conformance evidence. Without it, the hook falls back to all
+delivery/audit/ledger files for backward compatibility.
 
 ### 2. Validator and hook duplicate parsing logic
 
@@ -70,7 +72,6 @@ This avoids treating arbitrary text as evidence.
 
 Do not add a new large validator yet.
 
-Recommended next slice: active-ledger scoping for the hook.
+Recommended next slice: mirrored parser tests for hook and validator.
 
-Goal: prevent stale ledger evidence from satisfying current implementation writes while keeping the hook simple.
-
+Goal: prevent the validator and hook from drifting when they parse the same ledger/registry concepts.

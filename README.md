@@ -79,6 +79,8 @@ files the agent follows. No build, no npm, no services.
    The portable hook package lives in `claude-plugins/acef-bmad-guard/` for plugin-based installs.
    Lightweight runs should create `.acef-lightweight-lane` or `.acef-lane`; full BMAD runs use `.acef-bmad-lane` or
    BMAD runtime markers.
+   To scope hook conformance checks to the current run, set `ACEF_ACTIVE_LEDGER` or write the active ledger path into
+   `docs/ai/ACEF_ACTIVE_LEDGER`.
 
 The `method/` docs are the engine the agent follows (personas, tracks, lanes, the test pipeline). Read them to
 understand how delivery actually runs; the agent applies them for you.

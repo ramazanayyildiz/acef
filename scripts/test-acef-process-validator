@@ -305,6 +305,48 @@ try {
     },
   }, "deny", workerEnv);
 
+  const scopedHook = fs.mkdtempSync(path.join(os.tmpdir(), "acef-scoped-hook-"));
+  fs.mkdirSync(path.join(scopedHook, "docs", "ai"), { recursive: true });
+  fs.writeFileSync(path.join(scopedHook, ".acef-lightweight-lane"), "active\n");
+  fs.writeFileSync(path.join(scopedHook, "docs", "ai", "pattern-registry.json"), fs.readFileSync(path.join(tmp, "docs", "ai", "pattern-registry.json"), "utf8"));
+  fs.writeFileSync(path.join(scopedHook, "docs", "ai", "ACEF_old_DELIVERY_AUDIT.md"), [
+    "Status: PASS",
+    "track: standard",
+    "workShape: service",
+    "Reuse-before-create:",
+    "- Checked `src/services/current.ts` and `sharedApiClient`.",
+    "- Do-not-copy: avoided `legacy.service.direct-fetch`.",
+  ].join("\n"));
+  fs.writeFileSync(path.join(scopedHook, "docs", "ai", "ACEF_current_DELIVERY_AUDIT.md"), [
+    "Status: PASS",
+    "track: standard",
+    "workShape: service",
+  ].join("\n"));
+  fs.writeFileSync(path.join(scopedHook, "docs", "ai", "ACEF_ACTIVE_LEDGER"), "docs/ai/ACEF_current_DELIVERY_AUDIT.md\n");
+  expectHookDecision("active ledger ignores stale reuse evidence", {
+    tool_name: "Write",
+    cwd: scopedHook,
+    tool_input: {
+      file_path: path.join(scopedHook, "src", "scoped-deny.ts"),
+      content: "export const scoped = false;\n",
+    },
+  }, "deny", workerEnv);
+  fs.appendFileSync(path.join(scopedHook, "docs", "ai", "ACEF_current_DELIVERY_AUDIT.md"), [
+    "",
+    "Reuse-before-create:",
+    "- Checked `src/services/current.ts` and `sharedApiClient`.",
+    "- Do-not-copy: avoided `legacy.service.direct-fetch`.",
+  ].join("\n"));
+  expectHookDecision("active ledger allows current reuse evidence", {
+    tool_name: "Write",
+    cwd: scopedHook,
+    tool_input: {
+      file_path: path.join(scopedHook, "src", "scoped-allow.ts"),
+      content: "export const scoped = true;\n",
+    },
+  }, "allow", workerEnv);
+  fs.rmSync(scopedHook, { recursive: true, force: true });
+
   const partialHook = fs.mkdtempSync(path.join(os.tmpdir(), "acef-partial-hook-"));
   fs.mkdirSync(path.join(partialHook, "docs", "ai"), { recursive: true });
   fs.writeFileSync(path.join(partialHook, ".acef-lightweight-lane"), "active\n");

@@ -288,7 +288,8 @@ function listTextFiles(dirPath) {
 }
 
 function allLedgerText(repoRoot) {
-  const files = [
+  const active = activeLedgerPath(repoRoot);
+  const files = active ? [active] : [
     ...listTextFiles(path.join(repoRoot, "docs", "ai")),
     ...listTextFiles(path.join(repoRoot, "_bmad-output")),
   ].filter((filePath) => /delivery|audit|ledger/i.test(path.basename(filePath)));
@@ -299,6 +300,23 @@ function allLedgerText(repoRoot) {
       return "";
     }
   }).join("\n");
+}
+
+function activeLedgerPath(repoRoot) {
+  const envPath = process.env.ACEF_ACTIVE_LEDGER ? resolvePath(process.env.ACEF_ACTIVE_LEDGER, repoRoot) : "";
+  if (envPath && under(envPath, repoRoot) && exists(envPath)) return envPath;
+
+  const markerPath = path.join(repoRoot, "docs", "ai", "ACEF_ACTIVE_LEDGER");
+  if (!exists(markerPath)) return "";
+  try {
+    const value = fs.readFileSync(markerPath, "utf8").trim();
+    if (!value || /^none$/i.test(value)) return "";
+    const filePath = resolvePath(value, repoRoot);
+    if (under(filePath, repoRoot) && exists(filePath)) return filePath;
+  } catch {
+    return "";
+  }
+  return "";
 }
 
 function ledgerEntryStarted(repoRoot, commandName) {
