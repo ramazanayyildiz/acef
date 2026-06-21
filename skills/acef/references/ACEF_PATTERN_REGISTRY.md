@@ -133,3 +133,16 @@ Every conformance finding must end in one of:
 5. explicit human decision to defer.
 
 Findings must not disappear into chat.
+
+## Mechanical checks
+
+`scripts/acef-process-validator` includes the first mechanical conformance checks:
+
+- `--check pattern-registry` validates the registry contract and required per-entry fields.
+- `--check reuse-before-create` requires the delivery ledger to record a reuse/golden-neighbor probe that cites a
+  registry `reuseProbe` term or golden-neighbor path.
+- `--check do-not-copy` fails when a delivery ledger mentions a do-not-copy entry without an explicit avoided/rejected
+  context.
+
+These checks do not replace judgment. They prevent the most common silent drift: skipping local neighbor search or
+treating known legacy examples as patterns.

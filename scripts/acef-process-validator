@@ -14,6 +14,9 @@ Checks:
   preflight           Require docs/ai/ACEF_PREFLIGHT.md with Verdict/Status: PASS
   claims              Require claimed output paths in the ledger to exist
   adapter-freshness   Require adapter/codebase-map freshness commit to match HEAD
+  pattern-registry    Require docs/ai/pattern-registry.json to satisfy the ACEF registry contract
+  reuse-before-create Require the delivery ledger to record a reuse-before-create probe
+  do-not-copy         Fail when ledger treats do-not-copy entries as reusable patterns
   seeded-epic-gates   Require Epic N Process Judge rows/artifacts for epics mentioned in ledger
   epic-boundary       Require Epic N-1 Process Judge PASS before target Epic N
   replan-counter      Fail when the same scope has 2+ REPLAN decisions in ledger text
@@ -175,6 +178,13 @@ function findAdapter(repoRoot) {
   return candidates.find(exists) || "";
 }
 
+function findPatternRegistry(repoRoot, adapterPath) {
+  const preferred = path.join(repoRoot, "docs", "ai", "pattern-registry.json");
+  if (exists(preferred)) return preferred;
+  if (adapterPath && /pattern-registry\.json$/i.test(adapterPath) && exists(adapterPath)) return adapterPath;
+  return "";
+}
+
 function result(name, ok, message) {
   return { name, ok, message };
 }
@@ -198,7 +208,7 @@ function extractClaimedPaths(text) {
       inOutputs = true;
       continue;
     }
-    if (/^\s*(Inputs?|Evidence|Verdict|Next allowed|Tests?|Checks?)\s*:/i.test(line) || /^#{1,6}\s+/.test(line)) {
+    if (/^\s*(Inputs?|Evidence|Verdict|Next allowed|Tests?|Checks?|Reuse[- ]before[- ]create|Reuse probe|Golden neighbors?|Do[- ]not[- ]copy)\s*:/i.test(line) || /^#{1,6}\s+/.test(line)) {
       inOutputs = false;
     }
 
@@ -379,6 +389,144 @@ function checkReplanCounter(ledgerPath) {
     : `REPLAN count ${count}; human escalation required`);
 }
 
+function readPatternRegistry(registryPath) {
+  if (!registryPath || !exists(registryPath)) {
+    throw new Error("Missing docs/ai/pattern-registry.json");
+  }
+  return JSON.parse(read(registryPath));
+}
+
+const requiredPatternFields = [
+  "id",
+  "workShape",
+  "status",
+  "maturity",
+  "enforcedBy",
+  "evidence",
+  "sourceEvidence",
+  "goldenNeighbors",
+  "reuseProbe",
+  "doNotCopy",
+  "confidence",
+  "lastVerifiedAt",
+  "lastVerifiedCommit",
+  "refreshTriggers",
+];
+
+function checkPatternRegistry(registryPath) {
+  let registry;
+  try {
+    registry = readPatternRegistry(registryPath);
+  } catch (error) {
+    return result("pattern-registry", false, error.message);
+  }
+
+  const missing = [];
+  for (const field of ["schemaVersion", "repo", "generatedAt", "generatedFromCommit", "coveredScopes", "status", "patterns", "doNotCopy"]) {
+    if (!(field in registry)) missing.push(field);
+  }
+
+  if (!Array.isArray(registry.patterns)) missing.push("patterns[]");
+  if (!Array.isArray(registry.doNotCopy)) missing.push("doNotCopy[]");
+
+  for (const [index, pattern] of (registry.patterns || []).entries()) {
+    for (const field of requiredPatternFields) {
+      if (!(field in pattern)) missing.push(`patterns[${index}].${field}`);
+    }
+    if (!Array.isArray(pattern.sourceEvidence) || !pattern.sourceEvidence.length) missing.push(`patterns[${index}].sourceEvidence`);
+    if (!Array.isArray(pattern.goldenNeighbors) || !pattern.goldenNeighbors.length) missing.push(`patterns[${index}].goldenNeighbors`);
+    if (!Array.isArray(pattern.reuseProbe) || !pattern.reuseProbe.length) missing.push(`patterns[${index}].reuseProbe`);
+  }
+
+  for (const [index, entry] of (registry.doNotCopy || []).entries()) {
+    for (const field of ["id", "reason", "sourceEvidence", "lastVerifiedCommit"]) {
+      if (!(field in entry)) missing.push(`doNotCopy[${index}].${field}`);
+    }
+  }
+
+  if (missing.length) return result("pattern-registry", false, `Missing required field(s): ${missing.slice(0, 12).join(", ")}`);
+  return result("pattern-registry", true, `Registry ${registry.status} with ${registry.patterns.length} pattern(s) and ${registry.doNotCopy.length} do-not-copy entr(ies)`);
+}
+
+function registryTerms(registry) {
+  const terms = new Set();
+  for (const pattern of registry.patterns || []) {
+    for (const term of pattern.reuseProbe || []) terms.add(String(term));
+    for (const neighbor of pattern.goldenNeighbors || []) {
+      if (neighbor?.path) terms.add(String(neighbor.path));
+    }
+  }
+  return [...terms].filter(Boolean);
+}
+
+function checkReuseBeforeCreate(ledgerPath, registryPath) {
+  if (!ledgerPath || !exists(ledgerPath)) return result("reuse-before-create", false, "Missing ledger path");
+
+  let registry;
+  try {
+    registry = readPatternRegistry(registryPath);
+  } catch (error) {
+    return result("reuse-before-create", false, error.message);
+  }
+
+  const text = read(ledgerPath);
+  if (!/reuse[- ]before[- ]create|reuse probe|reuse check|nearest neighbor|golden neighbor/i.test(text)) {
+    return result("reuse-before-create", false, "Missing reuse-before-create / golden-neighbor ledger entry");
+  }
+
+  const terms = registryTerms(registry);
+  const matched = terms.filter((term) => text.includes(term));
+  if (!matched.length) {
+    return result("reuse-before-create", false, "Reuse ledger entry does not cite any registry probe term or golden neighbor");
+  }
+
+  return result("reuse-before-create", true, `Reuse ledger cites registry evidence: ${matched.slice(0, 5).join(", ")}`);
+}
+
+function doNotCopyEntries(registry) {
+  const entries = [];
+  for (const entry of registry.doNotCopy || []) {
+    entries.push({ id: entry.id, paths: (entry.sourceEvidence || []).map((source) => source.path).filter(Boolean) });
+  }
+  for (const pattern of registry.patterns || []) {
+    for (const id of pattern.doNotCopy || []) entries.push({ id, paths: [] });
+  }
+  const seen = new Set();
+  return entries.filter((entry) => {
+    if (!entry.id || seen.has(entry.id)) return false;
+    seen.add(entry.id);
+    return true;
+  });
+}
+
+function checkDoNotCopy(ledgerPath, registryPath) {
+  if (!ledgerPath || !exists(ledgerPath)) return result("do-not-copy", false, "Missing ledger path");
+
+  let registry;
+  try {
+    registry = readPatternRegistry(registryPath);
+  } catch (error) {
+    return result("do-not-copy", false, error.message);
+  }
+
+  const text = read(ledgerPath);
+  const badMentions = [];
+  for (const entry of doNotCopyEntries(registry)) {
+    const idPattern = new RegExp(`\\b${entry.id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i");
+    if (!idPattern.test(text)) continue;
+    const line = text.split(/\r?\n/).find((item) => idPattern.test(item)) || "";
+    if (!/\b(avoid|avoided|blocked|reject|rejected|do not copy|not copied|do-not-copy)\b/i.test(line)) {
+      badMentions.push(entry.id);
+    }
+  }
+
+  if (badMentions.length) {
+    return result("do-not-copy", false, `Do-not-copy entr(y/ies) mentioned without rejection context: ${badMentions.join(", ")}`);
+  }
+
+  return result("do-not-copy", true, `No do-not-copy entry is treated as reusable (${doNotCopyEntries(registry).length} known)`);
+}
+
 function main() {
   const args = parseArgs(process.argv);
   if (args.help) {
@@ -388,14 +536,18 @@ function main() {
 
   const ledger = args.ledger || findLedger(args.repo);
   const adapter = args.adapter || findAdapter(args.repo);
+  const registry = findPatternRegistry(args.repo, adapter);
   const checks = args.check === "all"
-    ? ["preflight", "claims", "adapter-freshness", "seeded-epic-gates", "epic-boundary", "replan-counter"]
+    ? ["preflight", "claims", "adapter-freshness", "pattern-registry", "reuse-before-create", "do-not-copy", "seeded-epic-gates", "epic-boundary", "replan-counter"]
     : [args.check];
 
   const results = checks.map((check) => {
     if (check === "preflight") return checkPreflight(args.repo);
     if (check === "claims") return checkClaims(args.repo, ledger);
     if (check === "adapter-freshness") return checkAdapterFreshness(args.repo, adapter);
+    if (check === "pattern-registry") return checkPatternRegistry(registry);
+    if (check === "reuse-before-create") return checkReuseBeforeCreate(ledger, registry);
+    if (check === "do-not-copy") return checkDoNotCopy(ledger, registry);
     if (check === "seeded-epic-gates") return checkSeededEpicGates(args.repo, ledger);
     if (check === "epic-boundary") return checkEpicBoundary(args.repo, ledger, args.targetEpic);
     if (check === "replan-counter") return checkReplanCounter(ledger);

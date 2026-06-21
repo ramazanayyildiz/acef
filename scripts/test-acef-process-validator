@@ -70,6 +70,41 @@ try {
 
   fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_PREFLIGHT.md"), "Status: PASS\n");
   fs.writeFileSync(path.join(tmp, "docs", "codebase-map.md"), `# Codebase Map\n\ngenerated_at: 2026-06-21 · commit: ${head}\n`);
+  fs.writeFileSync(path.join(tmp, "docs", "ai", "pattern-registry.json"), JSON.stringify({
+    schemaVersion: 1,
+    repo: "fixture",
+    generatedAt: "2026-06-21",
+    generatedFromCommit: head,
+    coveredScopes: ["src"],
+    status: "PARTIAL",
+    patterns: [
+      {
+        id: "pattern.service.shared-client",
+        workShape: "service",
+        status: "canonical",
+        maturity: "rubric-item",
+        enforcedBy: null,
+        summary: "Services use the shared API client.",
+        evidence: "Fixture service pattern evidence.",
+        sourceEvidence: [{ path: "src/services/current.ts", line: 1 }],
+        goldenNeighbors: [{ path: "src/services/current.ts", why: "canonical service" }],
+        reuseProbe: ["sharedApiClient", "src/services/current.ts"],
+        doNotCopy: ["legacy.service.direct-fetch"],
+        confidence: "single-example",
+        lastVerifiedAt: "2026-06-21",
+        lastVerifiedCommit: head,
+        refreshTriggers: ["touched-scope-change"],
+      },
+    ],
+    doNotCopy: [
+      {
+        id: "legacy.service.direct-fetch",
+        reason: "Bypasses shared API client.",
+        sourceEvidence: [{ path: "src/legacy/direct-fetch.ts", line: 1 }],
+        lastVerifiedCommit: head,
+      },
+    ],
+  }, null, 2));
   fs.writeFileSync(path.join(tmp, "docs", "out.md"), "generated output\n");
   fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_demo_DELIVERY_AUDIT.md"), [
     "# ACEF Demo Delivery Audit",
@@ -82,6 +117,10 @@ try {
     "Epic 1 Process Judge",
     "",
     "Status: PASS",
+    "",
+    "Reuse-before-create:",
+    "- Checked `src/services/current.ts` and `sharedApiClient`; reused the canonical service pattern.",
+    "- Do-not-copy: avoided `legacy.service.direct-fetch`.",
     "",
   ].join("\n"));
 
@@ -105,6 +144,9 @@ try {
 
   expectPass("preflight", ["--repo", tmp, "--check", "preflight"]);
   expectPass("adapter-freshness", ["--repo", tmp, "--check", "adapter-freshness", "--adapter", "docs/codebase-map.md"]);
+  expectPass("pattern-registry", ["--repo", tmp, "--check", "pattern-registry"]);
+  expectPass("reuse-before-create", ["--repo", tmp, "--check", "reuse-before-create", "--ledger", "docs/ai/ACEF_demo_DELIVERY_AUDIT.md"]);
+  expectPass("do-not-copy", ["--repo", tmp, "--check", "do-not-copy", "--ledger", "docs/ai/ACEF_demo_DELIVERY_AUDIT.md"]);
   expectPass("claims", ["--repo", tmp, "--check", "claims", "--ledger", "docs/ai/ACEF_demo_DELIVERY_AUDIT.md"]);
   expectPass("seeded-epic-gates", ["--repo", tmp, "--check", "seeded-epic-gates", "--ledger", "docs/ai/ACEF_demo_DELIVERY_AUDIT.md"]);
   expectPass("epic-boundary", ["--repo", tmp, "--check", "epic-boundary", "--ledger", "docs/ai/ACEF_demo_DELIVERY_AUDIT.md", "--target-epic", "2"]);
@@ -122,6 +164,17 @@ try {
 
   fs.writeFileSync(path.join(tmp, "docs", "stale-map.md"), "# stale\n\ncommit: deadbeef\n");
   expectFail("adapter-freshness", ["--repo", tmp, "--check", "adapter-freshness", "--adapter", "docs/stale-map.md"]);
+
+  fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_bad_reuse_DELIVERY_AUDIT.md"), "Status: PASS\n");
+  expectFail("reuse-before-create", ["--repo", tmp, "--check", "reuse-before-create", "--ledger", "docs/ai/ACEF_bad_reuse_DELIVERY_AUDIT.md"]);
+
+  fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_bad_copy_DELIVERY_AUDIT.md"), [
+    "Status: PASS",
+    "Reuse-before-create:",
+    "- Use legacy.service.direct-fetch as the implementation pattern.",
+    "- Checked `src/services/current.ts`.",
+  ].join("\n"));
+  expectFail("do-not-copy", ["--repo", tmp, "--check", "do-not-copy", "--ledger", "docs/ai/ACEF_bad_copy_DELIVERY_AUDIT.md"]);
 
   fs.rmSync(path.join(tmp, "docs", "ai", "ACEF_PREFLIGHT.md"));
   expectFail("preflight", ["--repo", tmp, "--check", "preflight"]);

@@ -36,7 +36,10 @@ treated as enforcement.
 | Subagent claims are not evidence | documentation-only | machinery + shard | Cited-path/command/artifact validator plus Process Judge. | P1 |
 | Reuse-before-create | documentation-only | jit + shard | Write-time block plus conformance reviewer. | P1 |
 | Conformance lens | documentation-only | shard | Fresh reviewer with diff + small rubric. | P1 |
-| Pattern registry `PARTIAL` limits work | documentation-only | machinery | Validator blocks guarded/new work-shape when registry is partial. | P1 |
+| Pattern registry contract | validator CLI | machinery | `--check pattern-registry` validates required fields and evidence. | P1 |
+| Reuse-before-create | validator CLI | machinery | `--check reuse-before-create` requires ledger evidence citing registry probe/golden neighbor. | P1 |
+| Do-not-copy guard | validator CLI | machinery | `--check do-not-copy` fails if known legacy/risk entries are treated as reusable. | P1 |
+| Pattern registry `PARTIAL` limits work | documentation-only | machinery | Future validator blocks guarded/new work-shape when registry is partial. | P1 |
 | No raw hex / new dependency without decision | documentation-only/new | machinery | Lint/hook per stack. | P2 |
 | Plan integrity / intent / altitude / taste | documentation-only | shard | Irreducible judgment; fresh Process Judge, never main-agent memory. | P2 |
 
