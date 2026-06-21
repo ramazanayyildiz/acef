@@ -9,6 +9,10 @@ It also enforces epic boundaries for story-start commands. If a command such as 
 `dispatch-story` targets Epic N+1, the hook requires Epic N Process Judge to be `PASS` first. The target epic can be
 provided with `ACEF_TARGET_EPIC`, `ACEF_EPIC_NUMBER`, `BMAD_EPIC_NUMBER`, `--epic N`, or story names such as `E2-1`.
 
+It also enforces the ACEF step-ledger-before-tool-use rule for phase/story commands. Before running commands such as
+`acef-adapter`, `map-codebase`, `bmad-create-story`, `bmad-dev-story`, `bmad-code-review`, `verify-patch`,
+`test-review`, or `process-judge`, the delivery ledger must already contain that command/step with `IN PROGRESS`.
+
 ## Activation
 
 The hook is active when the current repo or one of its ancestors contains one of:
@@ -63,3 +67,9 @@ The hook accepts a prior epic gate when one of the standard artifacts contains `
 - `docs/ai/epic-N-process-judge.md`
 - `_bmad-output/epic-N-process-judge.md`
 - a delivery ledger under `docs/ai/` or `_bmad-output/`
+
+## Step Ledger Evidence
+
+Before phase/story commands run, the hook searches `docs/ai/` and `_bmad-output/` for a delivery-ledger entry that
+mentions the command and has `IN PROGRESS`, `STARTED`, or `PASS`. Missing evidence denies the command with a reminder
+to start the ledger row first.

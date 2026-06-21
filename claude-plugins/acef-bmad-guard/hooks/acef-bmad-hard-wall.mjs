@@ -228,6 +228,61 @@ function epicBoundaryRestricted(command, repoRoot) {
   return `ACEF/BMAD epic boundary: cannot start Epic ${targetEpic} before Epic ${priorEpic} Process Judge is PASS. Seed/run the Epic ${priorEpic} gate first.`;
 }
 
+function phaseCommand(command) {
+  const match = command.match(/\b(acef-adapter|map-codebase|bmad-prd|bmad-ux|bmad-create-architecture|bmad-create-epics-and-stories|bmad-check-implementation-readiness|bmad-create-story|create-story|bmad-dev-story|dev-story|bmad-code-review|code-review|verify-patch|test-review|process-judge)\b/i);
+  return match ? match[1].toLowerCase() : "";
+}
+
+function escapeRegex(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function listTextFiles(dirPath) {
+  const out = [];
+  function walk(current) {
+    let entries = [];
+    try {
+      entries = fs.readdirSync(current, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      const filePath = path.join(current, entry.name);
+      if (entry.isDirectory()) walk(filePath);
+      else if (entry.isFile() && /\.(md|txt|json)$/i.test(entry.name)) out.push(filePath);
+    }
+  }
+  walk(dirPath);
+  return out;
+}
+
+function ledgerEntryStarted(repoRoot, commandName) {
+  const files = [
+    ...listTextFiles(path.join(repoRoot, "docs", "ai")),
+    ...listTextFiles(path.join(repoRoot, "_bmad-output")),
+  ];
+  const commandPattern = new RegExp(escapeRegex(commandName), "i");
+  const startedPattern = /\b(IN PROGRESS|STARTED|PASS)\b/i;
+
+  for (const filePath of files) {
+    try {
+      const text = fs.readFileSync(filePath, "utf8");
+      if (commandPattern.test(text) && startedPattern.test(text)) return true;
+    } catch {
+      // Ignore unreadable artifacts.
+    }
+  }
+
+  return false;
+}
+
+function ledgerBeforeToolRestricted(command, repoRoot) {
+  const commandName = phaseCommand(command);
+  if (!commandName) return "";
+  if (ledgerEntryStarted(repoRoot, commandName)) return "";
+  return `ACEF step-ledger gate: start a delivery-ledger row for ${commandName} with IN PROGRESS before running the phase/tool command.`;
+}
+
 (async () => {
   let payload = {};
   try {
@@ -250,6 +305,12 @@ function epicBoundaryRestricted(command, repoRoot) {
   }
 
   if (toolName === "Bash") {
+    const ledgerReason = ledgerBeforeToolRestricted(input.command || "", repoRoot);
+    if (ledgerReason) {
+      deny(ledgerReason);
+      return;
+    }
+
     const boundaryReason = epicBoundaryRestricted(input.command || "", repoRoot);
     if (boundaryReason) {
       deny(boundaryReason);

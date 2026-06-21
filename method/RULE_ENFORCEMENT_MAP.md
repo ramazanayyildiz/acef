@@ -30,7 +30,7 @@ treated as enforcement.
 | Seeded epic gates exist before implementation | validator CLI | machinery | `scripts/acef-process-validator --check seeded-epic-gates`; hook/CI wiring still pending. | P0 |
 | Adapter fresh before any route | validator CLI | machinery | `scripts/acef-process-validator --check adapter-freshness`; hook/CI wiring still pending. | P0 |
 | Preflight `PASS` before planning/implementation | validator CLI | machinery | `scripts/acef-process-validator --check preflight`; hook/CI wiring still pending. | P0 |
-| Step ledger entry exists before workflow/read/task execution | documentation-only | machinery | PreToolUse ordering hook. This is weak until hooked. | P0 |
+| Step ledger entry exists before workflow/read/task execution | hook partial + validator tests | machinery | ACEF/BMAD guard hook blocks phase/story Bash commands until the ledger row is `IN PROGRESS`; wider tool coverage can mature later. | P0 |
 | Guarded test floor has at least one symbol-grounded boundary test | documentation-only + sharded Test Author | machinery + shard | Validate boundary symbol reference plus independent Test Author artifact. | P1 |
 | Actor separation | documentation + partial shard | shard + machinery | Harness must spawn distinct identities; ledger can validate identity fields. | P1 |
 | Subagent claims are not evidence | documentation-only | machinery + shard | Cited-path/command/artifact validator plus Process Judge. | P1 |

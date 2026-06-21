@@ -6,6 +6,7 @@ const cp = require("node:child_process");
 
 const repoRoot = path.resolve(__dirname, "..");
 const validator = path.join(repoRoot, "scripts", "acef-process-validator");
+const bmadHook = path.join(repoRoot, "claude-plugins", "acef-bmad-guard", "hooks", "acef-bmad-hard-wall.mjs");
 
 function run(command, args, options = {}) {
   return cp.execFileSync(command, args, {
@@ -37,6 +38,23 @@ function expectFail(label, args) {
   throw new Error(`Expected ${label} to fail, but it passed`);
 }
 
+function runHook(payload) {
+  const output = cp.execFileSync("node", [bmadHook], {
+    input: JSON.stringify(payload),
+    encoding: "utf8",
+    stdio: ["pipe", "pipe", "pipe"],
+  }).trim();
+  return JSON.parse(output);
+}
+
+function expectHookDecision(label, payload, decision) {
+  const output = runHook(payload);
+  const actual = output?.hookSpecificOutput?.permissionDecision;
+  if (actual !== decision) {
+    throw new Error(`Expected hook ${label} to ${decision}, got ${actual || "none"}:\n${JSON.stringify(output, null, 2)}`);
+  }
+}
+
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "acef-validator-"));
 
 try {
@@ -66,6 +84,24 @@ try {
     "Status: PASS",
     "",
   ].join("\n"));
+
+  fs.writeFileSync(path.join(tmp, ".acef-bmad-lane"), "active\n");
+  const storyCommandPayload = {
+    tool_name: "Bash",
+    cwd: tmp,
+    tool_input: {
+      command: "bmad-create-story --story E1-1",
+    },
+  };
+  expectHookDecision("missing step ledger", storyCommandPayload, "deny");
+  fs.appendFileSync(path.join(tmp, "docs", "ai", "ACEF_demo_DELIVERY_AUDIT.md"), [
+    "",
+    "| Step | Tool | Status |",
+    "| --- | --- | --- |",
+    "| Story 1.1 create | bmad-create-story | IN PROGRESS |",
+    "",
+  ].join("\n"));
+  expectHookDecision("started step ledger", storyCommandPayload, "allow");
 
   expectPass("preflight", ["--repo", tmp, "--check", "preflight"]);
   expectPass("adapter-freshness", ["--repo", tmp, "--check", "adapter-freshness", "--adapter", "docs/codebase-map.md"]);
