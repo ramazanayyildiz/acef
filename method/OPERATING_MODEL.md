@@ -238,6 +238,19 @@ Reviewer, Process Judge, and Documentation Maintainer. A generic or conductor id
 
 **Story/task verdict:** `PASS`, `FAIL: <missing gate/evidence>`, or `HALT: <human decision needed>`.
 
+### Vertical-Slice Completeness Gate
+
+Before a user-visible or runtime-wired story/epic can close, its ledger must contain `## Vertical Slice Trace` with:
+
+| Capability | Actor | Surface | Entrypoint | Application Path | Runtime Evidence | Status |
+|---|---|---|---|---|---|---|
+| promised user action | real actor | UI/admin/HTTP/API/CLI/queue/scheduler/CMS | production entrypoint | surface -> application layers | existing real-path test/evidence file | PASS |
+
+A controller, service, repository, model, form, seeder, helper, or class is supporting structure, not a surface. If the
+trace ends at one of those artifacts, the capability is incomplete. When repo docs/skills/stubs do not exist, derive the
+slice from the requirement itself: who performs what action, where they enter, which layers execute, and which real-path
+test proves it. Run `scripts/acef-process-validator --check vertical-slice` before story/epic close.
+
 **Epic Process Judge questions:**
 1. Was the `Epic N Process Judge [PENDING]` gate row/artifact seeded during epics/stories generation, before
    implementation started?

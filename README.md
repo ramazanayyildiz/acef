@@ -126,6 +126,7 @@ scripts/acef-process-validator --repo /path/to/repo --check do-not-copy --ledger
 scripts/acef-process-validator --repo /path/to/repo --check partial-workshape --ledger docs/ai/ACEF_feature_DELIVERY_AUDIT.md
 scripts/acef-process-validator --repo /path/to/repo --check finding-promotion --ledger docs/ai/ACEF_feature_DELIVERY_AUDIT.md
 scripts/acef-process-validator --repo /path/to/repo --check graduation-reconciliation --ledger docs/ai/ACEF_feature_DELIVERY_AUDIT.md
+scripts/acef-process-validator --repo /path/to/repo --check vertical-slice --ledger docs/ai/ACEF_feature_DELIVERY_AUDIT.md
 scripts/acef-process-validator --repo /path/to/repo --check session-handoff --ledger docs/ai/ACEF_feature_DELIVERY_AUDIT.md
 scripts/acef-process-validator --repo /path/to/repo --check epic-boundary --ledger docs/ai/ACEF_feature_DELIVERY_AUDIT.md --target-epic 2
 ```

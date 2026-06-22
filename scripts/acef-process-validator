@@ -21,6 +21,7 @@ Checks:
   partial-workshape   In PARTIAL registries, require ledger-declared covered workShape or human risk acceptance
   finding-promotion   Require each conformance finding to record a patch/registry/check/defer disposition
   graduation-reconciliation Require promoted findings to reconcile to a real file or enforcedBy value
+  vertical-slice      Require capabilities to trace actor -> real surface/entrypoint -> application path -> runtime evidence
   session-handoff     Require a structured Session Handoff block in the delivery ledger
   seeded-epic-gates   Require Epic N Process Judge rows/artifacts for epics mentioned in ledger
   epic-boundary       Require Epic N-1 Process Judge PASS before target Epic N
@@ -662,12 +663,65 @@ function reconciliationLine(text) {
 
 function pathClaimsFromText(text) {
   const claims = new Set();
-  const matches = [...text.matchAll(/`([^`]+)`|(?:^|[\s:])((?:\.\/)?(?:docs|src|app|modules|shared|lib|components|hooks|services|stores|utils|constants|types|scripts|claude-plugins|skills|method|\.github)\/[^\s,;|)]+)/g)];
+  const matches = [...text.matchAll(/`([^`]+)`|(?:^|[\s:])((?:\.\/)?(?:docs|src|app|modules|shared|lib|components|hooks|services|stores|utils|constants|types|tests?|specs?|scripts|claude-plugins|skills|method|\.github)\/[^\s,;|)]+)/g)];
   for (const match of matches) {
     const value = (match[1] || match[2] || "").replace(/[.,;:]$/, "");
     if (value && !/pending|none|n\/a/i.test(value)) claims.add(value);
   }
   return [...claims];
+}
+
+function normalizedTableHeader(value) {
+  return String(value || "").trim().toLowerCase().replace(/[^a-z0-9]+/g, "");
+}
+
+function markdownTable(section) {
+  const sectionLines = section.split(/\r?\n/);
+  const start = sectionLines.findIndex((line) => /^\s*\|.*\|\s*$/.test(line));
+  if (start < 0) return { headers: [], rows: [] };
+  const lines = [];
+  for (let index = start; index < sectionLines.length; index += 1) {
+    if (!/^\s*\|.*\|\s*$/.test(sectionLines[index])) break;
+    lines.push(sectionLines[index]);
+  }
+  if (lines.length < 3) return { headers: [], rows: [] };
+  const cells = (line) => line.trim().slice(1, -1).split("|").map((cell) => cell.trim());
+  const headers = cells(lines[0]).map(normalizedTableHeader);
+  const rows = lines.slice(2).map(cells).filter((row) => row.some(hasMeaningfulValue));
+  return { headers, rows };
+}
+
+function checkVerticalSlice(repoRoot, ledgerPath) {
+  if (!ledgerPath || !exists(ledgerPath)) return result("vertical-slice", false, "Missing ledger path");
+  const section = extractSection(read(ledgerPath), "Vertical Slice Trace");
+  if (!section) return result("vertical-slice", false, "Missing ## Vertical Slice Trace section");
+
+  const table = markdownTable(section);
+  const required = ["capability", "actor", "surface", "entrypoint", "applicationpath", "runtimeevidence", "status"];
+  const missingHeaders = required.filter((field) => !table.headers.includes(field));
+  if (missingHeaders.length) {
+    return result("vertical-slice", false, `Missing column(s): ${missingHeaders.join(", ")}`);
+  }
+  if (!table.rows.length) return result("vertical-slice", false, "Vertical Slice Trace has no capability rows");
+
+  const index = Object.fromEntries(required.map((field) => [field, table.headers.indexOf(field)]));
+  const supportingOnly = /^(?:controller|service|repository|model|form|seeder|helper|class|file|database)$/i;
+  const failures = [];
+  for (const [rowIndex, row] of table.rows.entries()) {
+    const values = Object.fromEntries(required.map((field) => [field, normalizedFieldValue(row[index[field]])]));
+    const missing = required.filter((field) => !hasMeaningfulValue(values[field]));
+    if (missing.length) failures.push(`row ${rowIndex + 1}: missing ${missing.join("/")}`);
+    if (supportingOnly.test(values.surface)) failures.push(`row ${rowIndex + 1}: supporting artifact is not a user/runtime surface`);
+    if (!/(?:->|→)/.test(values.applicationpath)) failures.push(`row ${rowIndex + 1}: application path must show at least two linked layers`);
+    if (!/^pass$/i.test(values.status)) failures.push(`row ${rowIndex + 1}: status must be PASS at close`);
+    const evidencePaths = pathClaimsFromText(row[index.runtimeevidence] || "");
+    if (!evidencePaths.length || !evidencePaths.some((claim) => exists(resolvePath(claim, repoRoot)))) {
+      failures.push(`row ${rowIndex + 1}: runtime evidence must reconcile to an existing file`);
+    }
+  }
+
+  if (failures.length) return result("vertical-slice", false, failures.join("; "));
+  return result("vertical-slice", true, `${table.rows.length} capability slice(s) reconcile to real surfaces and runtime evidence`);
 }
 
 function checkGraduationReconciliation(repoRoot, ledgerPath) {
@@ -783,7 +837,7 @@ function main() {
   const adapter = args.adapter || findAdapter(args.repo);
   const registry = findPatternRegistry(args.repo, adapter);
   const checks = args.check === "all"
-    ? ["clean-tree", "preflight", "claims", "adapter-freshness", "pattern-registry", "reuse-before-create", "do-not-copy", "partial-workshape", "finding-promotion", "graduation-reconciliation", "session-handoff", "seeded-epic-gates", "epic-boundary", "replan-counter"]
+    ? ["clean-tree", "preflight", "claims", "adapter-freshness", "pattern-registry", "reuse-before-create", "do-not-copy", "partial-workshape", "finding-promotion", "graduation-reconciliation", "vertical-slice", "session-handoff", "seeded-epic-gates", "epic-boundary", "replan-counter"]
     : [args.check];
 
   const results = checks.map((check) => {
@@ -797,6 +851,7 @@ function main() {
     if (check === "partial-workshape") return checkPartialWorkshape(ledger, registry);
     if (check === "finding-promotion") return checkFindingPromotion(ledger);
     if (check === "graduation-reconciliation") return checkGraduationReconciliation(args.repo, ledger);
+    if (check === "vertical-slice") return checkVerticalSlice(args.repo, ledger);
     if (check === "session-handoff") return checkSessionHandoff(args.repo, ledger, adapter, registry);
     if (check === "seeded-epic-gates") return checkSeededEpicGates(args.repo, ledger);
     if (check === "epic-boundary") return checkEpicBoundary(args.repo, ledger, args.targetEpic);

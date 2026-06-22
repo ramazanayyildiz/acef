@@ -86,6 +86,10 @@ Examples:
 At epic close, trace each FR to: owning story, capability test, and manual/runtime check when the capability is
 browser/admin-facing. Missing ownership means decomposition failed; do not hide it under manual-QA deferral.
 
+Record that proof in the delivery ledger's `## Vertical Slice Trace`. If no repo documentation or golden neighbor exists,
+derive the trace directly from the requirement. A backend-only test cannot close a capability whose actor enters through
+a UI/admin/public surface; real-path evidence must exercise that entrypoint.
+
 ## How it maps to routes
 - **Test-case extraction (D):** `test-user-flow-mapper → test-case-planner`.
 - **Test automation (E):** add `test-browser-generator` (E2E) after the cases.

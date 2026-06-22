@@ -140,6 +140,8 @@ try {
     ],
   }, null, 2));
   fs.writeFileSync(path.join(tmp, "docs", "out.md"), "generated output\n");
+  fs.mkdirSync(path.join(tmp, "tests", "Feature"), { recursive: true });
+  fs.writeFileSync(path.join(tmp, "tests", "Feature", "ServiceCapabilityTest.php"), "<?php // runtime capability fixture\n");
   fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_demo_DELIVERY_AUDIT.md"), [
     "# ACEF Demo Delivery Audit",
     "",
@@ -153,6 +155,12 @@ try {
     "Status: PASS",
     "track: standard",
     "workShape: service",
+    "",
+    "## Vertical Slice Trace",
+    "",
+    "| Capability | Actor | Surface | Entrypoint | Application Path | Runtime Evidence | Status |",
+    "|---|---|---|---|---|---|---|",
+    "| Update account | Member | HTTP UI | /account | UI -> controller -> service | `tests/Feature/ServiceCapabilityTest.php` | PASS |",
     "",
   ].join("\n"));
   expectFail("clean-tree", ["--repo", tmp, "--check", "clean-tree"]);
@@ -362,6 +370,17 @@ try {
   expectPass("partial-workshape", ["--repo", tmp, "--check", "partial-workshape", "--ledger", "docs/ai/ACEF_demo_DELIVERY_AUDIT.md"]);
   expectPass("finding-promotion", ["--repo", tmp, "--check", "finding-promotion", "--ledger", "docs/ai/ACEF_demo_DELIVERY_AUDIT.md"]);
   expectPass("graduation-reconciliation", ["--repo", tmp, "--check", "graduation-reconciliation", "--ledger", "docs/ai/ACEF_demo_DELIVERY_AUDIT.md"]);
+  expectPass("vertical-slice", ["--repo", tmp, "--check", "vertical-slice", "--ledger", "docs/ai/ACEF_demo_DELIVERY_AUDIT.md"]);
+  fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_backend_only_DELIVERY_AUDIT.md"), [
+    "# Backend-only false completion",
+    "",
+    "## Vertical Slice Trace",
+    "",
+    "| Capability | Actor | Surface | Entrypoint | Application Path | Runtime Evidence | Status |",
+    "|---|---|---|---|---|---|---|",
+    "| Edit page | Editor | service | PageController | controller -> service | `tests/Feature/ServiceCapabilityTest.php` | PASS |",
+  ].join("\n"));
+  expectFail("vertical-slice", ["--repo", tmp, "--check", "vertical-slice", "--ledger", "docs/ai/ACEF_backend_only_DELIVERY_AUDIT.md"]);
   expectPass("session-handoff", ["--repo", tmp, "--check", "session-handoff", "--ledger", "docs/ai/ACEF_demo_DELIVERY_AUDIT.md"]);
   expectPass("claims", ["--repo", tmp, "--check", "claims", "--ledger", "docs/ai/ACEF_demo_DELIVERY_AUDIT.md"]);
   expectPass("seeded-epic-gates", ["--repo", tmp, "--check", "seeded-epic-gates", "--ledger", "docs/ai/ACEF_demo_DELIVERY_AUDIT.md"]);
@@ -369,6 +388,7 @@ try {
   expectPass("replan-counter", ["--repo", tmp, "--check", "replan-counter", "--ledger", "docs/ai/ACEF_demo_DELIVERY_AUDIT.md"]);
 
   run("git", ["add", "docs"], { cwd: tmp });
+  run("git", ["add", "tests"], { cwd: tmp });
   run("git", ["add", ".acef-bmad-lane"], { cwd: tmp });
   run("git", ["commit", "-m", "add acef docs"], { cwd: tmp });
   expectPass("clean-tree", ["--repo", tmp, "--check", "clean-tree"]);
