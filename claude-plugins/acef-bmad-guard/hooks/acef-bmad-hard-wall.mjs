@@ -574,6 +574,45 @@ function readActiveWorkerScope(repoRoot) {
   }
 }
 
+function readReviewPatchGate(repoRoot) {
+  const filePath = path.join(repoRoot, "docs", "ai", "ACEF_REVIEW_PATCH_REQUIRED.json");
+  if (!exists(filePath)) return null;
+  try {
+    const parsed = JSON.parse(fs.readFileSync(filePath, "utf8"));
+    return parsed && typeof parsed === "object" ? parsed : { invalid: true };
+  } catch {
+    return { invalid: true };
+  }
+}
+
+function normalizedScopePhase(scope) {
+  return String(scope?.phase || scope?.activePhase || "").toLowerCase().replace(/[^a-z0-9]+/g, "");
+}
+
+function reviewPatchRestricted(repoRoot, payload) {
+  const gate = readReviewPatchGate(repoRoot);
+  if (!gate) return "";
+  if (gate.invalid) return "ACEF review-patch gate: docs/ai/ACEF_REVIEW_PATCH_REQUIRED.json is not valid JSON.";
+
+  const status = String(gate.status || "REQUIRED").toUpperCase();
+  if (/^(?:PASS|CLEARED|CLOSED|DONE)$/i.test(status)) return "";
+
+  const scope = readActiveWorkerScope(repoRoot);
+  const phase = normalizedScopePhase(scope);
+  const gateStory = String(gate.activeStory || gate.story || "").trim();
+  const scopeStory = String(scope?.activeStory || scope?.story || "").trim();
+  const verifyPatchWorker = isWorker(payload)
+    && scope
+    && !scope.invalid
+    && /^verifypatch$/.test(phase)
+    && (!gateStory || gateStory === scopeStory)
+    && scopeAppliesToWorker(payload, scope);
+
+  if (verifyPatchWorker) return "";
+
+  return `ACEF review-patch gate: reviewer returned ${gate.reviewVerdict || status}; only a scoped verify-patch worker may edit implementation for ${gateStory || "the active story"}. Conductor must stop after summarizing findings.`;
+}
+
 function payloadWorkerIdentity(payload) {
   const values = [
     payload?.agent_id,
@@ -825,6 +864,12 @@ function p1ConformanceRestricted(repoRoot) {
     : isShellTool(toolName) && bashTouchesImplementation(shellCommand(input), cwd, repoRoot);
 
   if (needsP1Conformance) {
+    const reviewPatchReason = reviewPatchRestricted(repoRoot, payload);
+    if (reviewPatchReason) {
+      deny(reviewPatchReason);
+      return;
+    }
+
     const p1Reason = p1ConformanceRestricted(repoRoot);
     if (p1Reason) {
       deny(p1Reason);

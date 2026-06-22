@@ -141,6 +141,13 @@ must start the relevant Step Ledger Entry before reading that step's workflow/te
 spawning a worker, or generating an artifact. Outputs, verdict, and next step are filled after the step completes.
 Retroactive entries are allowed only to document drift recovery; they do not make the skipped gate valid.
 
+If an independent reviewer returns `REVISE`, `BLOCK`, or `MERGE WITH REQUIRED PATCH`, the conductor stops after
+summarizing the findings. It must not patch the files itself. The conductor writes
+`docs/ai/ACEF_REVIEW_PATCH_REQUIRED.json` with `activeStory`, `reviewVerdict`, and `status: REQUIRED`, then dispatches a
+separate `verify-patch` worker with `docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json`. The marker is removed or marked `CLEARED`
+only after the verify-patch worker reports and the patch is independently verified. This is a hard role boundary, not a
+style preference.
+
 Workers must return a complete final report in their final message: artifact paths, commits, files changed, test
 commands/results, findings, deferrals, and blockers. If a worker goes idle without this report, the conductor treats it
 as an incomplete step and records the gap before requesting the missing report.
@@ -258,12 +265,14 @@ ledger/run-control files, and must report then stop.
 6. Does each worker identity map to an allowed persona, not to conductor/dispatcher/general-purpose?
 7. Is the code reviewer independent from the worker that authored the code?
 8. Do readiness, ATDD/test, review, verify-patch, test-review, and product-done artifacts exist when the lane requires them?
-9. If the story claims a user-visible, runtime-wired, admin/editor, API, CLI, queue, scheduler, or framework-integrated
+9. If review required a patch or returned `REVISE`/`BLOCK`, did the conductor stop and use a separate verify-patch worker
+   rather than editing the files itself?
+10. If the story claims a user-visible, runtime-wired, admin/editor, API, CLI, queue, scheduler, or framework-integrated
    capability, did evidence exercise the real entrypoint/capability instead of only supporting artifacts or isolated helpers?
-10. Do required artifacts include the real workflow evidence/manifest, not only files shaped like the expected output?
-11. If a required gate is missing, did the work return to the right phase instead of being marked done?
-12. Does the delivery ledger contain a step entry for every transition since preflight?
-13. If a drift fix was applied, was the failed gate rerun from the start after the fix?
+11. Do required artifacts include the real workflow evidence/manifest, not only files shaped like the expected output?
+12. If a required gate is missing, did the work return to the right phase instead of being marked done?
+13. Does the delivery ledger contain a step entry for every transition since preflight?
+14. If a drift fix was applied, was the failed gate rerun from the start after the fix?
 
 **Story/task verdict:** `PASS`, `FAIL: <missing gate/evidence>`, or `HALT: <human decision needed>`.
 

@@ -429,6 +429,45 @@ try {
       content: "export const ok = true;\n",
     },
   }, "allow", workerEnv);
+  fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_REVIEW_PATCH_REQUIRED.json"), JSON.stringify({
+    activeStory: "1.1",
+    reviewVerdict: "MERGE WITH REQUIRED PATCH",
+    status: "REQUIRED",
+  }, null, 2));
+  expectHookDecision("review patch gate blocks conductor implementation patch", {
+    tool_name: "Write",
+    cwd: tmp,
+    tool_input: {
+      file_path: path.join(tmp, "src", "review-fix.ts"),
+      content: "export const conductorPatch = true;\n",
+    },
+  }, "deny");
+  expectHookDecision("review patch gate blocks non-verify worker phase", {
+    tool_name: "Write",
+    cwd: tmp,
+    tool_input: {
+      file_path: path.join(tmp, "src", "review-fix.ts"),
+      content: "export const devPatch = true;\n",
+    },
+  }, "deny", workerEnv);
+  fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_ACTIVE_WORKER_SCOPE.json"), JSON.stringify({
+    activeStory: "1.1",
+    phase: "verify-patch",
+    workerId: "ACEF_BMAD_WORKER",
+    allowedPaths: ["src/**", "tests/**"],
+    maxCommits: 1,
+    canEditLedger: false,
+    canSpawnAgents: false,
+  }, null, 2));
+  expectHookDecision("review patch gate allows scoped verify-patch worker", {
+    tool_name: "Write",
+    cwd: tmp,
+    tool_input: {
+      file_path: path.join(tmp, "src", "review-fix.ts"),
+      content: "export const verifyPatch = true;\n",
+    },
+  }, "allow", workerEnv);
+  fs.rmSync(path.join(tmp, "docs", "ai", "ACEF_REVIEW_PATCH_REQUIRED.json"));
 
   const fakeHome = fs.mkdtempSync(path.join(os.tmpdir(), "acef-home-"));
   const nonAcefRepo = path.join(fakeHome, "work", "browser-rts");

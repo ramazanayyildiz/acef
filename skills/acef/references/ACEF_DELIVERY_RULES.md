@@ -92,6 +92,9 @@ A lightweight (usually guarded) task promotes to full BMAD when any of:
 - **Plan integrity** — no skip / reorder / shrink / expand scope without human approval.
 - **2×REPLAN → escalate** — the circuit breaker.
 - **Fresh Judge review** (no self-approval) and **verify-patch on REVISE**.
+- **Review-patch hard stop** — if an independent reviewer returns `REVISE`, `BLOCK`, or `MERGE WITH REQUIRED PATCH`, the
+  conductor records `docs/ai/ACEF_REVIEW_PATCH_REQUIRED.json` and stops. Only a separate `verify-patch` worker scoped in
+  `docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json` may edit implementation files until the marker is cleared.
 - **Reuse-before-create gate** — before implementation in either lane, the worker records the work shape, registry
   entry used, golden neighbor checked, existing symbols searched, what was reused, and why any new pattern is needed.
   This gate is short in the lightweight lane and story-scoped in full BMAD, but it is never skipped.

@@ -74,7 +74,10 @@ risk acceptance for the unresolved items.
    Every conformance finding becomes a code patch, pattern-registry update, do-not-copy update, proposed mechanical
    check, or explicit human deferral.
 8. **Verify-patch** — after every REVISE, fresh-context verifiers re-read each patch's acceptance criteria + domain
-   contract + the actual diff, and check the patch claim **and** adjacent invariants it could affect.
+   contract + the actual diff, and check the patch claim **and** adjacent invariants it could affect. The conductor does
+   not apply review patches. A `REVISE`, `BLOCK`, or `MERGE WITH REQUIRED PATCH` verdict creates
+   `docs/ai/ACEF_REVIEW_PATCH_REQUIRED.json`; only a separately scoped `verify-patch` worker may edit implementation
+   until the marker is cleared.
 9. **Loop** code-review → verify-patch until **zero blocker + zero high** findings remain (read the findings, don't
    stop on a verdict string or a round count).
 10. **Test-review** — score test quality (target ≥ 80/100): brittleness, duplication, false-positive risk, fixture hygiene.
