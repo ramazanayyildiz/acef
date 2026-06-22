@@ -36,6 +36,7 @@ treated as enforcement.
 | Worker stays inside one story/phase scope | hook + scope manifest | machinery | `docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json` binds implementation workers to `activeStory`, `phase`, `allowedPaths`, one commit budget, no ledger edits, and no subagent spawning. | P0 |
 | Guarded test floor has at least one symbol-grounded boundary test | documentation-only + sharded Test Author | machinery + shard | Validate boundary symbol reference plus independent Test Author artifact. | P1 |
 | External framework API assumptions grounded before ATDD | shard + Process Judge | shard + machinery | Stories using third-party framework APIs require a spike/reference implementation before ATDD; fake descriptors, vendor overrides, monkey patches, and test-only shims are REPLAN triggers. | P1 |
+| Runtime shortcuts cannot replace production entrypoint tests | shard + Process Judge | shard + machinery | Story/epic close requires real HTTP/CLI/queue/scheduler/CMS-runtime smoke with content or negative assertions when that runtime path owns behavior. | P1 |
 | Actor separation | documentation + partial shard | shard + machinery | Harness must spawn distinct identities; ledger can validate identity fields. | P1 |
 | Subagent claims are not evidence | documentation-only | machinery + shard | Cited-path/command/artifact validator plus Process Judge. | P1 |
 | Reuse-before-create | documentation-only | jit + shard | Write-time block plus conformance reviewer. | P1 |

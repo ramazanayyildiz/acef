@@ -153,6 +153,9 @@ If user asks:
   framework version with a small spike/reference implementation and record the contract. If the API contradicts the
   planned tests, `REPLAN`; do not fake green with fake descriptors, vendor overrides, monkey patches, or test-only
   framework shims.
+- Real runtime smoke: for user-visible/runtime-wired behavior, story or epic close must prove at least one production
+  entrypoint path (HTTP route, CLI command, queue/scheduler, CMS/admin runtime, or template render path) with meaningful
+  content/negative assertions. A 200/status-only or isolated helper test is not enough.
 - No imitation: never call generic subagent work "BMAD". BMAD means the real BMAD conductor/skills were installed,
   invoked, and left evidence on disk.
 - Full BMAD actor separation: the conductor coordinates the story lifecycle; it is not the ATDD author, implementing

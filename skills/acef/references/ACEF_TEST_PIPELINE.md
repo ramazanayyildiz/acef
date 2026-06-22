@@ -54,6 +54,24 @@ Required behavior:
 
 If the proven API contradicts the planned test contract, the right outcome is `REPLAN`, not a green test.
 
+## Real runtime smoke
+When behavior depends on a runtime entrypoint, at least one test or verification must execute that same entrypoint. Do
+not accept a green test that exercises only a shortcut path when production uses a command, HTTP route, scheduler, queue,
+middleware stack, template renderer, or CMS/admin runtime.
+
+Examples:
+- seeders: run the real seed command, not only an in-process seeder shortcut;
+- routed pages: issue the real HTTP request and assert meaningful rendered content, not only `200`;
+- queues/jobs: dispatch through the configured queue path when queue wiring is the behavior under test;
+- scheduler/cache/indexing: run the command or scheduler entrypoint;
+- CMS blocks/templates: render through the page/template route used in production, not only an isolated component helper.
+
+Every status assertion on a user-visible runtime path should be paired with a content or negative assertion that proves
+the body is correct. `assertOk()` alone is not enough; a page returning raw JSON, fallback HTML, or an error shell can
+still be `200`.
+
+A discovered runtime-smoke gap is a test gap: write the failing real-entrypoint test first, then fix.
+
 ## How it maps to routes
 - **Test-case extraction (D):** `test-user-flow-mapper → test-case-planner`.
 - **Test automation (E):** add `test-browser-generator` (E2E) after the cases.

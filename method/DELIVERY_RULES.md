@@ -125,6 +125,11 @@ A lightweight (usually guarded) task promotes to full BMAD when any of:
   installed framework's real API with a small spike/probe and one reference implementation. ATDD must assert that proven
   API, not guessed methods or internal properties. Fake descriptors, vendor facade/class overrides, monkey patches, and
   test-only framework shims are `REPLAN` triggers unless the human explicitly accepts them as architecture.
+- **Real Runtime Smoke Gate** — for user-visible or runtime-wired behavior, story/epic close must include at least one
+  real entrypoint check: HTTP route, CLI command, queue dispatch, scheduler, CMS/admin runtime, or template render path
+  as production uses it. Status-only checks are insufficient; assert meaningful rendered content or a negative guard
+  against known broken output. If manual/conductor app review finds the issue first, write the failing runtime-smoke
+  test before fixing.
 - **Full BMAD actor separation** — the conductor coordinates the story lifecycle; it is not the ATDD author,
   implementing actor, code reviewer, verifier, test reviewer, or Process Judge. The actor that authored code must never
   review, accept, or mark done that code. Guarded payment/auth/entitlement/data stories require independent review by

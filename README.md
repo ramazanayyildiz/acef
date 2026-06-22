@@ -141,6 +141,9 @@ edit `docs/ai/ACEF_*`, spawn subagents, or commit without citing the active stor
 When story tests depend on third-party framework APIs, run a grounding spike first and record the proven contract before
 ATDD. Green tests built on fake descriptors, vendor overrides, monkey patches, or test-only framework shims are not
 evidence; they are a REPLAN signal.
+When behavior depends on a runtime entrypoint, include a real-runtime smoke: hit the real HTTP route, command, queue,
+scheduler, CMS/admin runtime, or template path and assert meaningful content or a negative guard. Status-only checks and
+isolated helper/component tests do not prove the production path.
 For `PARTIAL` registries, the ledger must declare `track:` and `workShape:`; uncovered or guarded work requires
 explicit human risk acceptance.
 For P2 self-hardening, each ledgered `Conformance finding:` must record a `Disposition:`: patch, registry update,

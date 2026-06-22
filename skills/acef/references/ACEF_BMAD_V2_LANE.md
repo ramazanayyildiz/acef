@@ -174,6 +174,10 @@ Start: test-design (levels/boundaries/risk-weighted coverage). Close: trace (AC�
 E2E for any user-facing surface (flow-map → test-cases → browser tests, via the Layer-2 skills) · manual-QA
 stabilization · product-done audit · retrospective.
 
+Epic close must include a real-runtime smoke slice for each user-visible/runtime-wired surface class the epic claims:
+real HTTP route plus content assertion, real CLI command, real queue/scheduler path, real CMS/admin/runtime render path,
+or an explicit deferral/blocker. Green isolated unit/component tests do not satisfy this gate by themselves.
+
 When epics/stories are generated, the conductor must also seed one durable `Epic N Process Judge [PENDING]` gate row or
 artifact for every epic. This row is positioned after that epic's final story in the delivery ledger. It is not a note
 and not a reminder; it is the next allowed transition at the epic boundary.
