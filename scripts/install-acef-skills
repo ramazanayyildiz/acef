@@ -1,0 +1,99 @@
+#!/usr/bin/env node
+const fs = require("node:fs");
+const path = require("node:path");
+
+const repoRoot = path.resolve(__dirname, "..");
+const sourceSkillsDir = path.join(repoRoot, "skills");
+const defaultSkills = [
+  "acef",
+  "acef-adapter",
+  "acef-router",
+  "acef-test-bootstrap",
+  "map-codebase",
+];
+
+const toolSkillDirs = {
+  codex: [".codex", "skills"],
+  claude: [".claude", "skills"],
+  opencode: [".opencode", "skills"],
+};
+
+function usage() {
+  console.log(`Usage: scripts/install-acef-skills --repo <path> [--tool codex|claude|opencode|all] [--skill name ...] [--all-core]
+
+Installs ACEF skills repo-locally. Defaults:
+  --tool all
+  --skill acef acef-adapter acef-router acef-test-bootstrap map-codebase
+
+Examples:
+  scripts/install-acef-skills --repo /path/to/repo
+  scripts/install-acef-skills --repo /path/to/repo --tool codex --skill acef --skill map-codebase
+  scripts/install-acef-skills --repo /path/to/repo --all-core`);
+}
+
+function parseArgs(argv) {
+  const opts = {
+    repo: "",
+    tools: ["all"],
+    skills: [],
+    allCore: false,
+  };
+
+  for (let i = 0; i < argv.length; i += 1) {
+    const arg = argv[i];
+    if (arg === "--repo" || arg === "--target") {
+      opts.repo = argv[++i];
+    } else if (arg === "--tool") {
+      opts.tools = [argv[++i]];
+    } else if (arg === "--skill") {
+      opts.skills.push(argv[++i]);
+    } else if (arg === "--all-core") {
+      opts.allCore = true;
+    } else if (arg === "-h" || arg === "--help") {
+      usage();
+      process.exit(0);
+    } else {
+      throw new Error(`Unknown argument: ${arg}`);
+    }
+  }
+
+  if (!opts.repo) throw new Error("--repo is required");
+  opts.repo = path.resolve(opts.repo);
+  return opts;
+}
+
+function copyDir(source, target) {
+  if (!fs.existsSync(source)) throw new Error(`Skill source not found: ${source}`);
+  fs.rmSync(target, { recursive: true, force: true });
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+  fs.cpSync(source, target, { recursive: true });
+}
+
+function selectedTools(tools) {
+  const values = tools.includes("all") ? Object.keys(toolSkillDirs) : tools;
+  for (const tool of values) {
+    if (!toolSkillDirs[tool]) throw new Error(`Unknown tool: ${tool}`);
+  }
+  return values;
+}
+
+function selectedSkills(opts) {
+  if (opts.allCore) {
+    return fs.readdirSync(sourceSkillsDir)
+      .filter((name) => fs.existsSync(path.join(sourceSkillsDir, name, "SKILL.md")))
+      .sort();
+  }
+  return opts.skills.length ? opts.skills : defaultSkills;
+}
+
+const opts = parseArgs(process.argv.slice(2));
+const tools = selectedTools(opts.tools);
+const skills = selectedSkills(opts);
+
+for (const tool of tools) {
+  const targetBase = path.join(opts.repo, ...toolSkillDirs[tool]);
+  for (const skill of skills) {
+    copyDir(path.join(sourceSkillsDir, skill), path.join(targetBase, skill));
+  }
+  console.log(`Installed ${skills.length} ACEF skill(s) for ${tool}: ${targetBase}`);
+}

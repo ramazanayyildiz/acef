@@ -62,11 +62,19 @@ ACEF runs as a set of [Claude Code](https://docs.anthropic.com/claude-code) skil
 files the agent follows. No build, no npm, no services.
 
 1. **Get Claude Code** and a Claude account.
-2. **Install the skills** — copy everything in `skills/` into your skills directory:
+2. **Install the skills** — local-first is preferred. Copy the core ACEF skills into the repo you are working on:
+   ```bash
+   scripts/install-acef-skills --repo /path/to/your/repo
+   ```
+   This installs the default local set for Claude, Codex, and OpenCode:
+   `acef`, `acef-adapter`, `acef-router`, `acef-test-bootstrap`, and `map-codebase`.
+   Use `--tool codex|claude|opencode` to target one tool, or `--all-core` to copy every skill in this repo.
+
+   Global install is still possible, but should stay minimal:
    ```bash
    cp -R skills/* ~/.claude/skills/
    ```
-   (or into a project's `.claude/skills/` to scope them to one repo.)
+   Prefer repo-local `.claude/skills/`, `.codex/skills/`, and `.opencode/skills/` for project-specific ACEF work.
 3. **Use it** — open your own repo and run `/acef` (or just say "use acef"). It extracts your project adapter, routes
    your request, picks the lane (lightweight vs BMAD v2 per `method/DELIVERY_RULES.md`), and runs only the steps that
    case needs.
