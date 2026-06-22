@@ -160,6 +160,10 @@ If user asks:
   Author/Tester, Developer, Code Reviewer/Judge, Verify-Patch Reviewer, Test Reviewer, Process Judge, and Documentation
   Maintainer. Generic subagents are invalid unless their prompt binds them to one persona and the artifact records that
   identity. The conductor is not a persona worker.
+- Worker Scope Fence: before an implementation worker writes code/tests or commits, bind it to one active story/phase
+  in `docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json` with narrow `allowedPaths`, `maxCommits`, `canEditLedger:false`, and
+  `canSpawnAgents:false`. A worker must not edit `docs/ai/ACEF_*`, spawn subagents, continue to the next story, or write
+  outside its active scope.
 - Full BMAD epic boundary: epics/stories generation seeds epic gate rows up front, the last story in an epic points to
   that epic's Process Judge, and the next epic cannot start until the prior epic gate is `PASS`.
 - Honesty: label capabilities as READY, DRAFT, or MISSING.

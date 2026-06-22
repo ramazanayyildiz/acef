@@ -108,6 +108,15 @@ try {
     "- Checked `src/services/current.ts` and `sharedApiClient`.",
     "- Do-not-copy: avoided `legacy.service.direct-fetch`.",
   ].join("\n"));
+  write(path.join(tmp, "docs", "ai", "ACEF_ACTIVE_WORKER_SCOPE.json"), JSON.stringify({
+    activeStory: "1.1",
+    phase: "dev",
+    workerId: "ACEF_BMAD_WORKER",
+    allowedPaths: ["src/**"],
+    maxCommits: 1,
+    canEditLedger: false,
+    canSpawnAgents: false,
+  }, null, 2));
   expect("active ledger allows current reuse evidence", runHook(payload("active-allow.ts")), "allow");
 } finally {
   fs.rmSync(tmp, { recursive: true, force: true });

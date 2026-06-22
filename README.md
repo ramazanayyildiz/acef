@@ -83,6 +83,8 @@ files the agent follows. No build, no npm, no services.
    BMAD runtime markers.
    To scope hook conformance checks to the current run, set `ACEF_ACTIVE_LEDGER` or write the active ledger path into
    `docs/ai/ACEF_ACTIVE_LEDGER`.
+   For implementation workers, also write `docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json` before dispatch. It binds the worker
+   to one story/phase, narrow `allowedPaths`, one commit budget, no ledger edits, and no subagent spawning.
 
 The `method/` docs are the engine the agent follows (personas, tracks, lanes, the test pipeline). Read them to
 understand how delivery actually runs; the agent applies them for you.
@@ -112,6 +114,8 @@ N while the builder has uncommitted N+1 edits layered on top.
 The P1 conformance checks are deliberately mechanical: the registry must satisfy the contract, the ledger must record
 which local neighbor/probe was checked before creation, and do-not-copy entries cannot be cited as reusable patterns.
 The Claude Code guard hook also runs those P1 checks before implementation writes in active ACEF/BMAD lanes.
+The hook also enforces the worker scope fence: implementation workers cannot write outside their active story manifest,
+edit `docs/ai/ACEF_*`, spawn subagents, or commit without citing the active story.
 For `PARTIAL` registries, the ledger must declare `track:` and `workShape:`; uncovered or guarded work requires
 explicit human risk acceptance.
 For P2 self-hardening, each ledgered `Conformance finding:` must record a `Disposition:`: patch, registry update,

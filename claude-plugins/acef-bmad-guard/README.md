@@ -66,6 +66,39 @@ workers.
 If a real BMAD worker is blocked, fix the worker identity marker. Do not disable the hard wall for the dispatcher or
 conductor.
 
+## Worker Scope Fence
+
+Implementation workers need a current scope manifest before they can write source/tests or commit:
+
+```json
+{
+  "activeStory": "3.4",
+  "phase": "dev",
+  "workerId": "bmad-agent-dev-14",
+  "allowedPaths": [
+    "app/Models/Page.php",
+    "app/Http/Controllers/PageDisplayController.php",
+    "tests/Feature/Story34*.php"
+  ],
+  "maxCommits": 1,
+  "canEditLedger": false,
+  "canSpawnAgents": false
+}
+```
+
+Place it at `docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json`, or set `ACEF_ACTIVE_WORKER_SCOPE` to the manifest path.
+
+The hook denies:
+
+- worker writes outside `allowedPaths`;
+- worker edits to `docs/ai/ACEF_*` run-control or ledger files;
+- worker `Agent`/subagent spawning;
+- worker `git commit` commands that do not cite the active story;
+- a second commit when `baseRef` is present and `maxCommits` has already been reached.
+
+This fence applies to implementation writes and commits. It does not broadly block `_bmad-output/`, because legitimate
+PM/UX/Architect BMAD persona workers must still be able to write planning artifacts.
+
 ## Epic Boundary Evidence
 
 The hook accepts a prior epic gate when one of the standard artifacts contains `Epic N Process Judge` and

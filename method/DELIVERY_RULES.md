@@ -130,6 +130,12 @@ A lightweight (usually guarded) task promotes to full BMAD when any of:
   Architect, Test Author/Tester, Developer, Code Reviewer/Judge, Verify-Patch Reviewer, Test Reviewer, Process Judge,
   or Documentation Maintainer. Generic workers are invalid unless their prompt and artifact record one of these
   identities. The conductor is not a persona worker.
+- **Worker Scope Fence** — implementation workers must be bound to one active story/phase before they write code or
+  commit. The conductor records the bound scope in `docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json` with `activeStory`,
+  `phase`, `workerId`, `allowedPaths`, `maxCommits`, `canEditLedger:false`, and `canSpawnAgents:false`. The guard hook
+  blocks worker writes outside `allowedPaths`, worker edits to `docs/ai/ACEF_*`, worker-spawned subagents, and commits
+  that do not cite the active story. Planning personas may still write legitimate BMAD artifacts; do not solve worker
+  drift by broadly blocking `_bmad-output/`.
 - **Accelerated cadence is bounded** — independent stories/spikes may run in parallel only when dependencies and likely
   touched files do not overlap. Workers must emit complete final reports inline. Mechanical/low-risk work may use a
   combined independent review-and-judge worker only when the author is separate and the ledger records the waiver.

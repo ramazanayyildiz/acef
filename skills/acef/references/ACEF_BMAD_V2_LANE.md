@@ -142,6 +142,17 @@ Worker reporting:
 - A worker that goes idle without a final report is incomplete; the conductor records it as a process gap before asking
   for the missing report.
 
+Worker scope fence:
+- Before dispatching an implementation worker, write `docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json` for exactly one
+  story/phase. Include `activeStory`, `phase`, `workerId`, `allowedPaths`, `maxCommits`, `canEditLedger:false`, and
+  `canSpawnAgents:false`.
+- `allowedPaths` must be narrow enough that the worker cannot drift into the next story. Use explicit files or tight
+  globs; broad module roots are only valid when the story owns the entire module slice.
+- Workers do not edit `docs/ai/ACEF_*`, do not spawn subagents, do not continue to the next story, and make at most the
+  scoped commit(s). The conductor or a ledger-worker owns ledger updates.
+- Parallel implementation stories require separate worktrees or non-overlapping scope manifests. Same worktree plus
+  overlapping `allowedPaths` is a process halt, not speed mode.
+
 Risk-based review tier:
 - Guarded/security/auth/payment/entitlement/storage/KVKK/data-migration/routing/source-conflict stories keep separate
   reviewer and Process Judge identities, and should use the strongest available judgment model.

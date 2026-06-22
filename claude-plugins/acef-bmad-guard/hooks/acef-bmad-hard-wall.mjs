@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import fs from "node:fs";
 import path from "node:path";
+import { execFileSync } from "node:child_process";
 
 function readStdin() {
   return new Promise((resolve) => {
@@ -169,6 +170,15 @@ function runControlPath(filePath, repoRoot) {
     || /^docs\/ai\/ACEF_[A-Za-z0-9_-]+_DELIVERY_AUDIT\.md$/.test(rel);
 }
 
+function ledgerPath(filePath, repoRoot) {
+  if (!filePath || !repoRoot || !under(filePath, repoRoot)) return false;
+  const rel = path.relative(repoRoot, filePath);
+  return /^docs\/ai\/ACEF_ACTIVE_LEDGER$/.test(rel)
+    || /^docs\/ai\/ACEF_PREFLIGHT\.md$/.test(rel)
+    || /^docs\/ai\/ACEF_[A-Za-z0-9_-]+_DELIVERY_AUDIT\.md$/.test(rel)
+    || /^docs\/ai\/ACEF_.*\.md$/.test(rel);
+}
+
 function implementationPath(filePath, repoRoot) {
   if (!filePath || !repoRoot || !under(filePath, repoRoot)) return false;
   const rel = path.relative(repoRoot, filePath);
@@ -204,6 +214,21 @@ function bashTouchesImplementation(command, cwd, repoRoot) {
   return /\b(yarn\s+(add|install)|npm\s+(install|i)|pnpm\s+(add|install)|expo\s+install|bun\s+add)\b/i.test(command)
     || /(>|>>)\s*(app|src|modules|shared|lib|components|hooks|services|stores|utils|constants|types)/.test(command)
     || /\b(touch|mkdir|cp|mv|rm)\b.*\b(app|src|modules|shared|lib|components|hooks|services|stores|utils|constants|types)\b/.test(command);
+}
+
+function bashTouchesLedger(command, cwd, repoRoot) {
+  if (!command || !repoRoot || !cwd || !under(cwd, repoRoot)) return false;
+  return /(>|>>)\s*docs\/ai\/ACEF_/.test(command)
+    || /\b(touch|mkdir|cp|mv|rm)\b.*\bdocs\/ai\/ACEF_/.test(command);
+}
+
+function bashIsCommit(command) {
+  return /\bgit\s+commit\b/i.test(command || "");
+}
+
+function bashSpawnsAgent(command) {
+  return /\b(claude|codex)\b.*\b(agent|subagent|task)\b/i.test(command || "")
+    || /\b(spawn|dispatch|launch)\b.*\b(agent|subagent|worker)\b/i.test(command || "");
 }
 
 function parseTargetEpicNumber(command) {
@@ -424,6 +449,145 @@ function hasHumanRiskAcceptance(text) {
   return /\b(human risk acceptance|risk acceptance|explicit human acceptance|human accepted risk|user accepted risk)\b/i.test(text);
 }
 
+function activeWorkerScopePath(repoRoot) {
+  const envPath = process.env.ACEF_ACTIVE_WORKER_SCOPE ? resolvePath(process.env.ACEF_ACTIVE_WORKER_SCOPE, repoRoot) : "";
+  if (envPath && under(envPath, repoRoot) && exists(envPath)) return envPath;
+
+  const markerPath = path.join(repoRoot, "docs", "ai", "ACEF_ACTIVE_WORKER_SCOPE.json");
+  return exists(markerPath) ? markerPath : "";
+}
+
+function readActiveWorkerScope(repoRoot) {
+  const filePath = activeWorkerScopePath(repoRoot);
+  if (!filePath) return null;
+  try {
+    const parsed = JSON.parse(fs.readFileSync(filePath, "utf8"));
+    return parsed && typeof parsed === "object" ? parsed : null;
+  } catch {
+    return { invalid: true };
+  }
+}
+
+function payloadWorkerIdentity(payload) {
+  const values = [
+    payload?.agent_id,
+    payload?.agentId,
+    payload?.agent_type,
+    payload?.agentType,
+    process.env.ACEF_ROLE,
+    process.env.CLAUDE_AGENT_NAME,
+    process.env.CLAUDE_SUBAGENT_NAME,
+    process.env.AGENT_NAME,
+  ].filter(Boolean);
+  if (/^(1|true)$/i.test(process.env.ACEF_BMAD_WORKER || "")) values.push("ACEF_BMAD_WORKER");
+  return values.join(" ");
+}
+
+function globToRegex(glob) {
+  let out = "^";
+  for (let i = 0; i < glob.length; i += 1) {
+    const char = glob[i];
+    if (char === "*") {
+      if (glob[i + 1] === "*") {
+        out += ".*";
+        i += 1;
+      } else {
+        out += "[^/]*";
+      }
+    } else {
+      out += escapeRegex(char);
+    }
+  }
+  return new RegExp(`${out}$`);
+}
+
+function allowedByScopePath(filePath, repoRoot, scope) {
+  const allowedPaths = Array.isArray(scope?.allowedPaths) ? scope.allowedPaths : [];
+  if (!allowedPaths.length) return false;
+
+  const rel = path.relative(repoRoot, filePath).replaceAll(path.sep, "/");
+  return allowedPaths.some((entry) => {
+    if (!entry || typeof entry !== "string") return false;
+    const normalized = entry.replaceAll(path.sep, "/").replace(/^\.\//, "");
+    return globToRegex(normalized).test(rel);
+  });
+}
+
+function scopeAppliesToWorker(payload, scope) {
+  const expected = String(scope?.workerId || scope?.worker || "").trim();
+  if (!expected) return true;
+  return payloadWorkerIdentity(payload).includes(expected);
+}
+
+function countCommitsSince(repoRoot, baseRef) {
+  if (!baseRef) return 0;
+  try {
+    const output = execFileSync("git", ["rev-list", "--count", `${baseRef}..HEAD`], {
+      cwd: repoRoot,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
+    return Number(output || "0") || 0;
+  } catch {
+    return 0;
+  }
+}
+
+function workerScopeRestricted(payload, toolName, input, cwd, repoRoot, filePath) {
+  if (!isWorker(payload)) return "";
+
+  if (/^(Task|Agent)$/i.test(toolName)) {
+    return "ACEF worker scope fence: worker cannot spawn Agent/subagent tools. Return a final report and STOP.";
+  }
+
+  const command = input.command || "";
+  if (toolName === "Bash" && bashSpawnsAgent(command)) {
+    return "ACEF worker scope fence: worker cannot spawn or dispatch additional agents/subagents.";
+  }
+
+  const writesLedger = /^(Write|Edit|MultiEdit|NotebookEdit)$/.test(toolName)
+    ? ledgerPath(filePath, repoRoot)
+    : toolName === "Bash" && bashTouchesLedger(command, cwd, repoRoot);
+  if (writesLedger) {
+    return "ACEF worker scope fence: workers cannot edit ACEF run-control/ledger files. Conductor or ledger-worker only.";
+  }
+
+  const touchesImplementation = /^(Write|Edit|MultiEdit|NotebookEdit)$/.test(toolName)
+    ? implementationPath(filePath, repoRoot)
+    : toolName === "Bash" && (bashTouchesImplementation(command, cwd, repoRoot) || bashIsCommit(command));
+  if (!touchesImplementation) return "";
+
+  const scope = readActiveWorkerScope(repoRoot);
+  if (!scope) {
+    return "ACEF worker scope fence: missing docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json before worker implementation write/commit.";
+  }
+  if (scope.invalid) {
+    return "ACEF worker scope fence: docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json is not valid JSON.";
+  }
+  if (!scopeAppliesToWorker(payload, scope)) {
+    return "ACEF worker scope fence: active worker scope is assigned to a different worker identity.";
+  }
+
+  if (/^(Write|Edit|MultiEdit|NotebookEdit)$/.test(toolName) && !allowedByScopePath(filePath, repoRoot, scope)) {
+    const story = scope.activeStory || "current story";
+    return `ACEF worker scope fence: ${path.relative(repoRoot, filePath)} is outside allowedPaths for Story ${story}.`;
+  }
+
+  if (toolName === "Bash" && bashIsCommit(command)) {
+    const activeStory = String(scope.activeStory || "").trim();
+    if (activeStory && !new RegExp(escapeRegex(activeStory), "i").test(command)) {
+      return `ACEF worker scope fence: git commit command must cite activeStory ${activeStory}.`;
+    }
+
+    const maxCommits = Number(scope.maxCommits || 0);
+    if (maxCommits > 0 && scope.baseRef && countCommitsSince(repoRoot, scope.baseRef) >= maxCommits) {
+      return `ACEF worker scope fence: maxCommits ${maxCommits} already reached for active worker scope.`;
+    }
+  }
+
+  return "";
+}
+
 function partialWorkshapeRestricted(registry, ledgerText) {
   if (String(registry?.status || "").toUpperCase() !== "PARTIAL") return "";
 
@@ -495,6 +659,12 @@ function p1ConformanceRestricted(repoRoot) {
 
   if (!repoRoot) {
     allow();
+    return;
+  }
+
+  const workerScopeReason = workerScopeRestricted(payload, toolName, input, cwd, repoRoot, filePath);
+  if (workerScopeReason) {
+    deny(workerScopeReason);
     return;
   }
 

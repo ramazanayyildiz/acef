@@ -226,6 +226,58 @@ try {
     "",
   ].join("\n"));
   expectHookDecision("started step ledger", storyCommandPayload, "allow");
+
+  expectHookDecision("worker cannot edit delivery ledger", {
+    tool_name: "Edit",
+    cwd: tmp,
+    tool_input: {
+      file_path: path.join(tmp, "docs", "ai", "ACEF_demo_DELIVERY_AUDIT.md"),
+      old_string: "Status: PASS",
+      new_string: "Status: PASS\nworker edit",
+    },
+  }, "deny", workerEnv);
+  expectHookDecision("worker cannot spawn subagent tool", {
+    tool_name: "Agent",
+    agent_id: "bmad-agent-dev-1",
+    agent_type: "bmad-agent-dev",
+    cwd: tmp,
+    tool_input: {
+      prompt: "Continue with the next story",
+    },
+  }, "deny");
+  expectHookDecision("worker implementation write needs active scope", {
+    tool_name: "Write",
+    cwd: tmp,
+    tool_input: {
+      file_path: path.join(tmp, "src", "needs-scope.ts"),
+      content: "export const blocked = true;\n",
+    },
+  }, "deny", workerEnv);
+  fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_ACTIVE_WORKER_SCOPE.json"), JSON.stringify({
+    activeStory: "1.1",
+    phase: "dev",
+    workerId: "ACEF_BMAD_WORKER",
+    allowedPaths: ["src/**", "tests/**"],
+    maxCommits: 1,
+    canEditLedger: false,
+    canSpawnAgents: false,
+  }, null, 2));
+  expectHookDecision("worker outside active story scope denied", {
+    tool_name: "Write",
+    cwd: tmp,
+    tool_input: {
+      file_path: path.join(tmp, "app", "Models", "OutOfScope.php"),
+      content: "<?php\n",
+    },
+  }, "deny", workerEnv);
+  expectHookDecision("worker commit must cite active story", {
+    tool_name: "Bash",
+    cwd: tmp,
+    tool_input: {
+      command: "git commit -m 'feat: Story 1.2 wrong story'",
+      cwd: tmp,
+    },
+  }, "deny", workerEnv);
   expectHookDecision("P1 conformance allows source write", {
     tool_name: "Write",
     cwd: tmp,
@@ -415,6 +467,15 @@ try {
     "- Checked `src/services/current.ts` and `sharedApiClient`.",
     "- Do-not-copy: avoided `legacy.service.direct-fetch`.",
   ].join("\n"));
+  fs.writeFileSync(path.join(scopedHook, "docs", "ai", "ACEF_ACTIVE_WORKER_SCOPE.json"), JSON.stringify({
+    activeStory: "1.1",
+    phase: "dev",
+    workerId: "ACEF_BMAD_WORKER",
+    allowedPaths: ["src/**"],
+    maxCommits: 1,
+    canEditLedger: false,
+    canSpawnAgents: false,
+  }, null, 2));
   expectHookDecision("active ledger allows current reuse evidence", {
     tool_name: "Write",
     cwd: scopedHook,
@@ -438,6 +499,15 @@ try {
     "- Checked `src/services/current.ts` and `sharedApiClient`.",
     "- Do-not-copy: avoided `legacy.service.direct-fetch`.",
   ].join("\n"));
+  fs.writeFileSync(path.join(partialHook, "docs", "ai", "ACEF_ACTIVE_WORKER_SCOPE.json"), JSON.stringify({
+    activeStory: "1.1",
+    phase: "dev",
+    workerId: "ACEF_BMAD_WORKER",
+    allowedPaths: ["src/**"],
+    maxCommits: 1,
+    canEditLedger: false,
+    canSpawnAgents: false,
+  }, null, 2));
   expectHookDecision("PARTIAL accepted guarded workshape allows source write", {
     tool_name: "Write",
     cwd: partialHook,
