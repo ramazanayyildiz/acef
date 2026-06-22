@@ -11,11 +11,24 @@ project adapter, not hard-coded here.
 - Keep communication deterministic and auditable.
 - Prevent agent chat-drift and scope creep.
 - Make every decision traceable to a task + PR.
+- Keep chat/context small while preserving full disk evidence.
 
 ## Single source of truth
 For an initiative, the single source of truth is the task artifact + the PR. Agents do **not** communicate via
 side-chats — they write updates into (1) the task artifact and (2) the PR description and review comments. If a fact
 matters for review, merge, or future maintenance, it lives in the artifact or PR, never only in chat.
+
+## Lean Runtime Default
+
+ACEF is lean by default. Lean mode never removes gates or evidence; it only limits what is pasted into chat.
+
+- Write artifacts, gate reports, worker reports, and audits to disk.
+- In chat, return only the artifact path, verdict, key evidence command/path, next allowed step, and any decision needed.
+- Do not paste full PRDs, story specs, ledgers, broad search output, or long test logs into chat unless the user asks.
+- Prefer targeted reads/searches. If a command would return more than roughly 100 lines, narrow it or write a derived
+  summary artifact instead.
+- Worker final reports should be complete on disk, but chat summaries should stay under about 20 lines.
+- If details are needed for audit, link the file path and exact command rather than copying the body.
 
 ## Branching and PR targets
 Cut task branches from the repo's **integration branch** (an adapter value — varies per repo), never from the
@@ -126,6 +139,9 @@ Retroactive entries are allowed only to document drift recovery; they do not mak
 Workers must return a complete final report in their final message: artifact paths, commits, files changed, test
 commands/results, findings, deferrals, and blockers. If a worker goes idle without this report, the conductor treats it
 as an incomplete step and records the gap before requesting the missing report.
+
+For chat, the conductor summarizes that final report compactly. The full report belongs in the ledger, PR, or worker
+artifact; the conversation should not become the artifact store.
 
 ### Step Ledger Entry
 

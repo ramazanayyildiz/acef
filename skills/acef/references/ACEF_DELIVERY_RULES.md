@@ -9,6 +9,9 @@ Before any work, extract/refresh the **project adapter** (`acef-adapter` + `map-
 CI, golden neighbors, pattern registry, risk surface, with a freshness stamp. No route runs on a stale adapter.
 ("Understand the repo first, then work" — the codemap idea.)
 
+ACEF runs in lean mode by default: durable artifacts carry the evidence; chat carries only compact status. Do not paste
+full artifacts, broad search output, long logs, or worker transcripts into chat unless the user asks for detail.
+
 Adapter memory and run state are separate:
 
 - **Codemap snapshot** records what the repo currently looks like.
@@ -107,6 +110,9 @@ A lightweight (usually guarded) task promotes to full BMAD when any of:
 - **Bounded gate reports** — capability gates are not open-ended exploration. Once the gate fact is proven, the
   conductor writes the artifact, states the next allowed action, and returns control before loading deeper workflow
   steps.
+- **Lean reporting** — every lane writes complete evidence to disk but reports compactly in chat: artifact path,
+  verdict, key evidence path/command, and next allowed step. Raw output dumps and full artifact bodies are drift
+  risks because they consume context and hide the next gate.
 - **Process Judge gates** — story/task close and epic close must prove the required steps, skills, and artifacts were
   actually used before status changes to `done`.
 - **Seeded epic gates** — full BMAD epics/stories generation must seed `Epic N Process Judge [PENDING]` rows/artifacts

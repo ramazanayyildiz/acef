@@ -135,6 +135,18 @@ OpenCode still needs the same ACEF run files as the other tools:
 The `method/` docs are the engine the agent follows (personas, tracks, lanes, the test pipeline). Read them to
 understand how delivery actually runs; the agent applies them for you.
 
+## Lean runtime
+
+ACEF defaults to lean reporting. Evidence remains durable on disk; chat gets compact summaries only:
+
+- artifact path
+- verdict
+- key evidence command/path
+- next allowed step
+- decision needed from the human
+
+Do not paste full PRDs, story specs, ledgers, broad `rg` output, or long logs into chat unless the user asks for detail.
+
 ## Process validators
 
 ACEF ships a stack-agnostic process validator for cheap mechanical gates:

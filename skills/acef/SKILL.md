@@ -45,6 +45,13 @@ Default response:
 - next artifact/action
 - any approval needed
 
+Default runtime is **Lean Mode**:
+
+- evidence stays on disk; chat gets only path + verdict + next step
+- do not paste full artifacts, broad `rg` output, or long worker reports into chat
+- write artifacts to files and summarize in 5-8 lines unless the user asks for detail
+- stop before dumping more than 100 lines of raw output; narrow the query or write a file instead
+
 If user asks:
 
 - `detail`: explain phase/route, inputs, outputs, risks
@@ -128,6 +135,8 @@ If user asks:
 ## Hard Rules
 
 - No ceremony: do not run phases a route does not need.
+- Lean default: ACEF reduces chat/context load, not evidence. Keep gates, ledgers, tests, and worker reports durable on
+  disk; return only compact summaries, evidence paths, verdicts, and next allowed steps unless the user asks for detail.
 - Stack-agnostic: never assume framework/tooling; use adapter evidence.
 - Evidence-based: cite source files/paths for project facts when practical.
 - No gate artifact, no progress: route/lane/track claims must be recorded in the preflight artifact with resolved
@@ -200,6 +209,17 @@ Will not do without approval:
 ```
 
 Keep this short unless the user asks for detail.
+
+For worker/gate completion, prefer:
+
+```md
+Artifact:
+Verdict:
+Evidence:
+Next:
+```
+
+Do not paste the artifact body into chat by default.
 
 ## Status
 
