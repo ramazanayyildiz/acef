@@ -430,6 +430,7 @@ const requiredPatternFields = [
   "maturity",
   "enforcedBy",
   "evidence",
+  "completionEvidence",
   "sourceEvidence",
   "goldenNeighbors",
   "reuseProbe",
@@ -452,6 +453,9 @@ function checkPatternRegistry(registryPath) {
   for (const field of ["schemaVersion", "repo", "generatedAt", "generatedFromCommit", "coveredScopes", "status", "patterns", "doNotCopy"]) {
     if (!(field in registry)) missing.push(field);
   }
+  if (!Number.isInteger(registry.schemaVersion) || registry.schemaVersion < 2) {
+    missing.push("schemaVersion>=2");
+  }
 
   if (!Array.isArray(registry.patterns)) missing.push("patterns[]");
   if (!Array.isArray(registry.doNotCopy)) missing.push("doNotCopy[]");
@@ -459,6 +463,9 @@ function checkPatternRegistry(registryPath) {
   for (const [index, pattern] of (registry.patterns || []).entries()) {
     for (const field of requiredPatternFields) {
       if (!(field in pattern)) missing.push(`patterns[${index}].${field}`);
+    }
+    if (typeof pattern.completionEvidence !== "object" || pattern.completionEvidence === null || Array.isArray(pattern.completionEvidence)) {
+      missing.push(`patterns[${index}].completionEvidence`);
     }
     if (!Array.isArray(pattern.sourceEvidence) || !pattern.sourceEvidence.length) missing.push(`patterns[${index}].sourceEvidence`);
     if (!Array.isArray(pattern.goldenNeighbors) || !pattern.goldenNeighbors.length) missing.push(`patterns[${index}].goldenNeighbors`);

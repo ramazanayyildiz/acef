@@ -21,7 +21,7 @@ Do-not-copy starts as a section in this JSON. Split it into a separate file only
 
 ```json
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "repo": "repo-name",
   "generatedAt": "2026-06-21",
   "generatedFromCommit": "abc123",
@@ -36,6 +36,12 @@ Do-not-copy starts as a section in this JSON. Split it into a separate file only
       "enforcedBy": null,
       "summary": "Mutations use the shared API client and invalidate query keys after success.",
       "evidence": "12 of 13 mutation hooks match; the outlier is listed in doNotCopy.",
+      "completionEvidence": {
+        "structure": "The code shape exists.",
+        "registration": "The feature is wired into the repo's provider/router/config/menu/permission system where needed.",
+        "discoverability": "The intended user/editor/developer can find it through the normal UI/CLI/API.",
+        "runtime": "A real entrypoint or smoke test exercises the capability."
+      },
       "sourceEvidence": [
         { "path": "modules/account/hooks/use-update-profile.ts", "line": 12 },
         { "path": "modules/account/query-keys.ts", "line": 1 }
@@ -72,6 +78,7 @@ Every `patterns[]` entry must include:
 - `maturity`
 - `enforcedBy`
 - `evidence`
+- `completionEvidence`
 - `sourceEvidence`
 - `goldenNeighbors`
 - `reuseProbe`
@@ -82,6 +89,10 @@ Every `patterns[]` entry must include:
 - `refreshTriggers`
 
 `goldenNeighbors` are examples. `evidence` is the proof that the pattern is accepted.
+
+`completionEvidence` records what "done" means for the pattern. It should separate supporting structure from registration,
+discoverability, and real runtime proof when the work shape has those concerns. Local generation docs, skills, stubs, and
+checklists are valid `completionEvidence` sources when reconciled against live code.
 
 ## Freshness semantics
 

@@ -173,6 +173,10 @@ Capture qualified local examples and accepted patterns for common work:
 - similar state/store/hook
 - similar test
 - similar migration/integration
+- local generator or scaffolding recipe
+- local module/capsule/feature checklist
+- local skill/agent/command that defines how this repo creates the work shape
+- local stubs/templates that encode completion wiring
 
 For each neighbor, record:
 
@@ -188,6 +192,36 @@ For each neighbor, record:
 - confidence and freshness
 
 If no qualified neighbor exists, mark the work as no-neighbor/new-pattern.
+
+### Local generation docs, skills, stubs, and checklists are pattern sources
+
+The adapter/codemap must not treat source code as the only pattern source. Many repos encode their real completion
+criteria in repo-local docs, skills, generators, stubs, and checklists. These sources are first-class evidence when they
+are current and reconcile with live code.
+
+During extraction, search for and reconcile:
+
+- `AGENTS.md`, `CLAUDE.md`, repo guides, module/capsule generation docs, and handbook/checklist files;
+- local skills/commands/agents that generate or modify the work shape;
+- stubs/templates used for new modules, screens, controllers, migrations, forms, navigation, or routes;
+- generator output conventions and registration steps;
+- completion checks that make a feature discoverable and usable, not merely present on disk.
+
+For each work shape, the pattern registry should distinguish:
+
+- **structure evidence** — files/classes/routes/config exist;
+- **registration evidence** — providers, route registration, navigation/menu registration, config lists, permissions, or
+  equivalent wiring make the capability reachable;
+- **discoverability evidence** — a normal user/editor/developer can find the capability through the intended UI/CLI/API;
+- **runtime evidence** — the capability works through its real entrypoint.
+
+If repo-local generation docs/skills/stubs say a registration or discoverability step is required, the adapter must record
+that step in the corresponding pattern entry. A module is not "complete" just because the supporting files exist.
+
+Example: a Twill capsule pattern may require `TwillNavigation::addLink(...)->forModule(...)`,
+`bootstrap/providers.php` registration, `config/twill.php` capsule registration, admin route reachability, and admin menu
+visibility. If those requirements appear in source repos, stubs, or a `twill-make-capsule` skill, they must be captured as
+pattern-registry evidence and later tested at the capability level.
 
 ### Symbol/contract-level grounding (mandatory before copy)
 

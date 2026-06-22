@@ -99,7 +99,7 @@ try {
   fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_PREFLIGHT.md"), "Status: PASS\n");
   fs.writeFileSync(path.join(tmp, "docs", "codebase-map.md"), `# Codebase Map\n\ngenerated_at: 2026-06-21 · commit: ${head}\n`);
   fs.writeFileSync(path.join(tmp, "docs", "ai", "pattern-registry.json"), JSON.stringify({
-    schemaVersion: 1,
+    schemaVersion: 2,
     repo: "fixture",
     generatedAt: "2026-06-21",
     generatedFromCommit: head,
@@ -114,6 +114,12 @@ try {
         enforcedBy: null,
         summary: "Services use the shared API client.",
         evidence: "Fixture service pattern evidence.",
+        completionEvidence: {
+          structure: "Fixture service file exists.",
+          registration: "Not required for this fixture work shape.",
+          discoverability: "The shared service is imported by callers.",
+          runtime: "Fixture runtime evidence is out of scope for validator tests.",
+        },
         sourceEvidence: [{ path: "src/services/current.ts", line: 1 }],
         goldenNeighbors: [{ path: "src/services/current.ts", why: "canonical service" }],
         reuseProbe: ["sharedApiClient", "src/services/current.ts"],
@@ -340,6 +346,17 @@ try {
   expectPass("preflight", ["--repo", tmp, "--check", "preflight"]);
   expectPass("adapter-freshness", ["--repo", tmp, "--check", "adapter-freshness", "--adapter", "docs/codebase-map.md"]);
   expectPass("pattern-registry", ["--repo", tmp, "--check", "pattern-registry"]);
+  const registryPath = path.join(tmp, "docs", "ai", "pattern-registry.json");
+  const validRegistry = JSON.parse(fs.readFileSync(registryPath, "utf8"));
+  const missingCompletionEvidence = JSON.parse(JSON.stringify(validRegistry));
+  delete missingCompletionEvidence.patterns[0].completionEvidence;
+  fs.writeFileSync(registryPath, JSON.stringify(missingCompletionEvidence));
+  expectFail("pattern-registry", ["--repo", tmp, "--check", "pattern-registry"]);
+  const staleSchemaRegistry = JSON.parse(JSON.stringify(validRegistry));
+  staleSchemaRegistry.schemaVersion = 1;
+  fs.writeFileSync(registryPath, JSON.stringify(staleSchemaRegistry));
+  expectFail("pattern-registry", ["--repo", tmp, "--check", "pattern-registry"]);
+  fs.writeFileSync(registryPath, JSON.stringify(validRegistry));
   expectPass("reuse-before-create", ["--repo", tmp, "--check", "reuse-before-create", "--ledger", "docs/ai/ACEF_demo_DELIVERY_AUDIT.md"]);
   expectPass("do-not-copy", ["--repo", tmp, "--check", "do-not-copy", "--ledger", "docs/ai/ACEF_demo_DELIVERY_AUDIT.md"]);
   expectPass("partial-workshape", ["--repo", tmp, "--check", "partial-workshape", "--ledger", "docs/ai/ACEF_demo_DELIVERY_AUDIT.md"]);

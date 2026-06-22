@@ -22,7 +22,7 @@ ACEF is one package that unifies **five layers** — the actual delivery engine,
 2. **Test & flow engine** — real skills for user-flow → test-cases → tests, and bootstrapping the first test. `method/TEST_PIPELINE.md` + `skills/`
 3. **BMAD v2 heavy lane** — the full story lifecycle for epics / risky work (drives BMAD-METHOD, with a hard
    installed-skill preflight). `method/BMAD_V2_LANE.md`
-4. **Codemap / project adapter** — grounds everything in *your* real repo and extracts the pattern registry for conformance (evidence-pinned, no embeddings). `skills/map-codebase` + `skills/acef-adapter`
+4. **Codemap / project adapter** — grounds everything in *your* real repo and extracts the pattern registry for conformance, including local generation docs, skills, stubs, and the registration/discoverability/runtime evidence that defines a complete work shape (evidence-pinned, no embeddings). `skills/map-codebase` + `skills/acef-adapter`
 5. **Delivery rules (the glue)** — which layer runs for which work: small/ongoing → lightweight lane, epics → BMAD v2, with a promotion path. `method/DELIVERY_RULES.md`
 
 A front-door agent (`acef`) ties them together and routes each request, so the user never has to pick a layer, route, or skill.
