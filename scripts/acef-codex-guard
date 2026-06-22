@@ -1,0 +1,232 @@
+#!/usr/bin/env node
+const fs = require("node:fs");
+const path = require("node:path");
+const cp = require("node:child_process");
+
+function usage() {
+  console.log(`ACEF Codex guard
+
+Usage:
+  scripts/acef-codex-guard --repo <path> [--role worker|conductor] [--base-ref <ref>] [--story <id>] [--allow-ledger]
+
+What it checks:
+  - active ledger pointer exists when multiple ledgers exist
+  - worker role has docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json
+  - worker changes stay inside allowedPaths
+  - worker does not edit docs/ai/ACEF_* unless --allow-ledger
+  - worker commit count since baseRef does not exceed maxCommits
+  - --story, when provided, matches activeStory
+
+This is the Codex/CLI equivalent of the Claude PreToolUse scope fence. It is not a hook by itself; run it before
+certifying a worker, before commit, or from a git pre-commit/CI wrapper.
+`);
+}
+
+function parseArgs(argv) {
+  const args = {
+    repo: process.cwd(),
+    role: "worker",
+    baseRef: "",
+    story: "",
+    allowLedger: false,
+    help: false,
+  };
+
+  for (let index = 2; index < argv.length; index += 1) {
+    const arg = argv[index];
+    if (arg === "--help" || arg === "-h") args.help = true;
+    else if (arg === "--repo") args.repo = argv[++index] || "";
+    else if (arg === "--role") args.role = argv[++index] || "";
+    else if (arg === "--base-ref") args.baseRef = argv[++index] || "";
+    else if (arg === "--story") args.story = argv[++index] || "";
+    else if (arg === "--allow-ledger") args.allowLedger = true;
+    else throw new Error(`Unknown argument: ${arg}`);
+  }
+
+  args.repo = path.resolve(args.repo || process.cwd());
+  return args;
+}
+
+function exists(filePath) {
+  try {
+    return fs.existsSync(filePath);
+  } catch {
+    return false;
+  }
+}
+
+function readJson(filePath) {
+  try {
+    return JSON.parse(fs.readFileSync(filePath, "utf8"));
+  } catch (error) {
+    throw new Error(`Could not read valid JSON ${filePath}: ${error.message}`);
+  }
+}
+
+function runGit(repoRoot, args) {
+  return cp.execFileSync("git", args, {
+    cwd: repoRoot,
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+  }).trim();
+}
+
+function gitStatusPaths(repoRoot) {
+  const output = runGit(repoRoot, ["status", "--porcelain=v1", "--untracked-files=all"]);
+  return output.split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => line.replace(/^.. /, "").replace(/^.* -> /, "").trim())
+    .filter(Boolean);
+}
+
+function gitChangedSince(repoRoot, baseRef) {
+  if (!baseRef) return [];
+  try {
+    const output = runGit(repoRoot, ["diff", "--name-only", `${baseRef}..HEAD`]);
+    return output.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
+function commitCountSince(repoRoot, baseRef) {
+  if (!baseRef) return 0;
+  try {
+    return Number(runGit(repoRoot, ["rev-list", "--count", `${baseRef}..HEAD`]) || "0") || 0;
+  } catch {
+    return 0;
+  }
+}
+
+function globToRegex(glob) {
+  let out = "^";
+  const normalized = glob.replaceAll(path.sep, "/").replace(/^\.\//, "");
+  for (let index = 0; index < normalized.length; index += 1) {
+    const char = normalized[index];
+    if (char === "*") {
+      if (normalized[index + 1] === "*") {
+        out += ".*";
+        index += 1;
+      } else {
+        out += "[^/]*";
+      }
+    } else {
+      out += char.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    }
+  }
+  return new RegExp(`${out}$`);
+}
+
+function isAllowed(filePath, allowedPaths) {
+  return allowedPaths.some((entry) => globToRegex(String(entry || "")).test(filePath.replaceAll(path.sep, "/")));
+}
+
+function isLedgerPath(filePath) {
+  return /^docs\/ai\/ACEF_/.test(filePath.replaceAll(path.sep, "/"));
+}
+
+function listFiles(dirPath) {
+  const out = [];
+  function walk(current) {
+    let entries = [];
+    try {
+      entries = fs.readdirSync(current, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      const filePath = path.join(current, entry.name);
+      if (entry.isDirectory()) walk(filePath);
+      else if (entry.isFile()) out.push(filePath);
+    }
+  }
+  walk(dirPath);
+  return out;
+}
+
+function activeLedgerPath(repoRoot) {
+  const markerPath = path.join(repoRoot, "docs", "ai", "ACEF_ACTIVE_LEDGER");
+  if (!exists(markerPath)) return "";
+  const value = fs.readFileSync(markerPath, "utf8").trim();
+  if (!value || /^none$/i.test(value)) return "";
+  const filePath = path.resolve(repoRoot, value);
+  return exists(filePath) ? filePath : "";
+}
+
+function ledgerFiles(repoRoot) {
+  return [
+    ...listFiles(path.join(repoRoot, "docs", "ai")),
+    ...listFiles(path.join(repoRoot, "_bmad-output")),
+  ].filter((filePath) => /delivery|audit|ledger/i.test(path.basename(filePath)));
+}
+
+function fail(message) {
+  console.error(`FAIL codex-guard: ${message}`);
+  process.exit(2);
+}
+
+function pass(message) {
+  console.log(`PASS codex-guard: ${message}`);
+}
+
+function main() {
+  let args;
+  try {
+    args = parseArgs(process.argv);
+  } catch (error) {
+    console.error(error.message);
+    usage();
+    process.exit(2);
+  }
+
+  if (args.help) {
+    usage();
+    return;
+  }
+
+  if (!exists(path.join(args.repo, ".git"))) fail(`not a git repo: ${args.repo}`);
+
+  const ledgers = ledgerFiles(args.repo);
+  if (ledgers.length > 1 && !activeLedgerPath(args.repo)) {
+    fail(`${ledgers.length} delivery ledgers found; set docs/ai/ACEF_ACTIVE_LEDGER`);
+  }
+
+  const changed = [...new Set([...gitChangedSince(args.repo, args.baseRef), ...gitStatusPaths(args.repo)])];
+  if (args.role !== "worker") {
+    pass(`role=${args.role}; changed=${changed.length}`);
+    return;
+  }
+
+  const scopePath = path.join(args.repo, "docs", "ai", "ACEF_ACTIVE_WORKER_SCOPE.json");
+  if (!exists(scopePath)) fail("missing docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json for worker role");
+  const scope = readJson(scopePath);
+
+  if (args.story && String(scope.activeStory || "") !== args.story) {
+    fail(`activeStory ${scope.activeStory || "missing"} does not match --story ${args.story}`);
+  }
+
+  const allowedPaths = Array.isArray(scope.allowedPaths) ? scope.allowedPaths : [];
+  if (!allowedPaths.length) fail("active worker scope has no allowedPaths");
+
+  const illegalLedger = changed.filter((filePath) => isLedgerPath(filePath));
+  if (illegalLedger.length && !args.allowLedger && scope.canEditLedger !== true) {
+    fail(`worker changed ACEF ledger/run-control files: ${illegalLedger.join(", ")}`);
+  }
+
+  const outOfScope = changed.filter((filePath) => !isLedgerPath(filePath) && !isAllowed(filePath, allowedPaths));
+  if (outOfScope.length) {
+    fail(`worker changed files outside allowedPaths: ${outOfScope.join(", ")}`);
+  }
+
+  const baseRef = scope.baseRef || args.baseRef;
+  const maxCommits = Number(scope.maxCommits || 0);
+  if (baseRef && maxCommits > 0) {
+    const count = commitCountSince(args.repo, baseRef);
+    if (count > maxCommits) fail(`commit count ${count} exceeds maxCommits ${maxCommits} since ${baseRef}`);
+  }
+
+  pass(`worker scope ok; activeStory=${scope.activeStory || "unknown"}; changed=${changed.length}`);
+}
+
+main();

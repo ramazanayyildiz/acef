@@ -24,6 +24,7 @@ treated as enforcement.
 | Rule | Lives today | Should live in | Gap to load-bearing | Priority |
 | --- | --- | --- | --- | --- |
 | Conductor cannot write implementation/BMAD artifacts | `machinery` via `acef-bmad-guard` | machinery | None. This is the exemplar. | Done |
+| Codex worker scope checks | `machinery` via `scripts/acef-codex-guard` | machinery | Codex has no Claude PreToolUse hook; run the guard before commit/certification or from git hooks/CI. | Done |
 | Verification requires clean tree | validator CLI | machinery | `scripts/acef-process-validator --check clean-tree` blocks certification on uncommitted or untracked changes. | P0 |
 | 2x `REPLAN` escalates to human | validator CLI | machinery | `scripts/acef-process-validator --check replan-counter`; hook/CI wiring still pending. | P0 |
 | Artifact-claim reconciliation | validator CLI | machinery | `scripts/acef-process-validator --check claims`; hook/CI wiring still pending. | P0 |

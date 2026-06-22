@@ -6,6 +6,7 @@ const cp = require("node:child_process");
 
 const repoRoot = path.resolve(__dirname, "..");
 const validator = path.join(repoRoot, "scripts", "acef-process-validator");
+const codexGuard = path.join(repoRoot, "scripts", "acef-codex-guard");
 const bmadHook = path.join(repoRoot, "claude-plugins", "acef-bmad-guard", "hooks", "acef-bmad-hard-wall.mjs");
 
 function run(command, args, options = {}) {
@@ -36,6 +37,28 @@ function expectFail(label, args) {
     throw new Error(`Expected ${label} to fail, got:\n${output}`);
   }
   throw new Error(`Expected ${label} to fail, but it passed`);
+}
+
+function runCodexGuard(args, options = {}) {
+  return run("node", [codexGuard, ...args], options);
+}
+
+function expectCodexGuardPass(label, args) {
+  const output = runCodexGuard(args);
+  if (!output.includes("PASS codex-guard:")) {
+    throw new Error(`Expected codex guard ${label} to pass, got:\n${output}`);
+  }
+}
+
+function expectCodexGuardFail(label, args) {
+  try {
+    runCodexGuard(args);
+  } catch (error) {
+    const output = `${error.stdout || ""}${error.stderr || ""}`;
+    if (output.includes("FAIL codex-guard:")) return;
+    throw new Error(`Expected codex guard ${label} to fail, got:\n${output}`);
+  }
+  throw new Error(`Expected codex guard ${label} to fail, but it passed`);
 }
 
 function runHook(payload, env = {}) {
@@ -536,6 +559,45 @@ try {
 
   fs.rmSync(path.join(tmp, "docs", "ai", "ACEF_PREFLIGHT.md"));
   expectFail("preflight", ["--repo", tmp, "--check", "preflight"]);
+
+  const codexTmp = fs.mkdtempSync(path.join(os.tmpdir(), "acef-codex-guard-"));
+  run("git", ["init"], { cwd: codexTmp });
+  run("git", ["config", "user.email", "acef@example.invalid"], { cwd: codexTmp });
+  run("git", ["config", "user.name", "ACEF Test"], { cwd: codexTmp });
+  fs.mkdirSync(path.join(codexTmp, "docs", "ai"), { recursive: true });
+  fs.mkdirSync(path.join(codexTmp, "src"), { recursive: true });
+  fs.writeFileSync(path.join(codexTmp, "docs", "ai", "ACEF_demo_DELIVERY_AUDIT.md"), "Status: PASS\n");
+  fs.writeFileSync(path.join(codexTmp, "docs", "ai", "ACEF_ACTIVE_LEDGER"), "docs/ai/ACEF_demo_DELIVERY_AUDIT.md\n");
+  fs.writeFileSync(path.join(codexTmp, "README.md"), "# codex guard fixture\n");
+  run("git", ["add", "."], { cwd: codexTmp });
+  run("git", ["commit", "-m", "init"], { cwd: codexTmp });
+  const codexBase = run("git", ["rev-parse", "--short", "HEAD"], { cwd: codexTmp });
+
+  fs.writeFileSync(path.join(codexTmp, "src", "needs-scope.ts"), "export const needsScope = true;\n");
+  expectCodexGuardFail("missing worker scope", ["--repo", codexTmp, "--role", "worker", "--story", "1.1", "--base-ref", codexBase]);
+  fs.rmSync(path.join(codexTmp, "src", "needs-scope.ts"));
+
+  fs.writeFileSync(path.join(codexTmp, "docs", "ai", "ACEF_ACTIVE_WORKER_SCOPE.json"), JSON.stringify({
+    activeStory: "1.1",
+    phase: "dev",
+    workerId: "codex-worker",
+    allowedPaths: ["src/story-1-1/**", "tests/story-1-1/**"],
+    maxCommits: 1,
+    canEditLedger: false,
+    canSpawnAgents: false,
+  }, null, 2));
+  run("git", ["add", "docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json"], { cwd: codexTmp });
+  run("git", ["commit", "-m", "scope Story 1.1"], { cwd: codexTmp });
+  const codexScopedBase = run("git", ["rev-parse", "--short", "HEAD"], { cwd: codexTmp });
+  fs.mkdirSync(path.join(codexTmp, "src", "story-1-1"), { recursive: true });
+  fs.writeFileSync(path.join(codexTmp, "src", "story-1-1", "ok.ts"), "export const ok = true;\n");
+  expectCodexGuardPass("allowed worker scope", ["--repo", codexTmp, "--role", "worker", "--story", "1.1", "--base-ref", codexScopedBase]);
+  fs.writeFileSync(path.join(codexTmp, "src", "story-1-2.ts"), "export const bad = true;\n");
+  expectCodexGuardFail("out of scope worker write", ["--repo", codexTmp, "--role", "worker", "--story", "1.1", "--base-ref", codexScopedBase]);
+  fs.rmSync(path.join(codexTmp, "src", "story-1-2.ts"));
+  fs.appendFileSync(path.join(codexTmp, "docs", "ai", "ACEF_demo_DELIVERY_AUDIT.md"), "worker should not edit ledger\n");
+  expectCodexGuardFail("worker ledger edit", ["--repo", codexTmp, "--role", "worker", "--story", "1.1", "--base-ref", codexScopedBase]);
+  fs.rmSync(codexTmp, { recursive: true, force: true });
 
   console.log("acef-process-validator tests passed");
 } finally {

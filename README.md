@@ -86,6 +86,28 @@ files the agent follows. No build, no npm, no services.
    For implementation workers, also write `docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json` before dispatch. It binds the worker
    to one story/phase, narrow `allowedPaths`, one commit budget, no ledger edits, and no subagent spawning.
 
+## Codex support
+
+ACEF is tool-agnostic, so Codex can run the same method docs, ledgers, adapters, and validators. The only non-portable
+piece is Claude Code's `PreToolUse` hook. In Codex, use the CLI guard before certifying worker output, before commits,
+or from a git hook/CI wrapper:
+
+```bash
+scripts/acef-codex-guard --repo /path/to/repo --role worker --story 3.5 --base-ref HEAD
+```
+
+The Codex guard reads the same `docs/ai/ACEF_ACTIVE_LEDGER` and `docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json` files as the
+Claude hook. It fails if a worker edits `docs/ai/ACEF_*`, changes files outside `allowedPaths`, exceeds `maxCommits`,
+or works under the wrong `activeStory`.
+
+For practical Codex use:
+
+1. Start an ACEF run normally and create the ledger + active ledger pointer.
+2. Before dispatching an implementation worker, write `docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json`.
+3. After the worker returns, run `scripts/acef-codex-guard ...` and the relevant `scripts/acef-process-validator`
+   checks before accepting the output.
+4. For stronger enforcement, call `scripts/acef-codex-guard` from a repo-local `pre-commit` hook.
+
 The `method/` docs are the engine the agent follows (personas, tracks, lanes, the test pipeline). Read them to
 understand how delivery actually runs; the agent applies them for you.
 
