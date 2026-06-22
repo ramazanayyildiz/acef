@@ -47,9 +47,10 @@ scripts/install-acef-bmad-guard
 
 That copies the hook to `~/.claude/hooks/acef-bmad-hard-wall.mjs` and `~/.codex/hooks/acef-bmad-hard-wall.mjs`, then
 merges the `PreToolUse` hook into `~/.claude/settings.json` and `~/.codex/hooks.json` while preserving existing hook
-entries.
+entries. It also installs the OpenCode adapter plugin to `~/.config/opencode/plugins/acef-bmad-hard-wall.js`; that
+plugin adapts OpenCode `tool.execute.before` events to the same hook engine.
 
-Restart Claude Code / Codex after installation. Hooks are loaded at session start.
+Restart Claude Code / Codex / OpenCode after installation. Hooks and plugins are loaded at session start.
 
 ## Worker Bypass
 

@@ -4,6 +4,7 @@ const path = require("node:path");
 
 const repoRoot = path.resolve(__dirname, "..");
 const sourceHook = path.join(repoRoot, "claude-plugins", "acef-bmad-guard", "hooks", "acef-bmad-hard-wall.mjs");
+const sourceOpenCodePlugin = path.join(repoRoot, "opencode-plugins", "acef-bmad-guard", "acef-bmad-hard-wall.js");
 const home = process.env.HOME;
 
 if (!home) {
@@ -12,6 +13,9 @@ if (!home) {
 
 if (!fs.existsSync(sourceHook)) {
   throw new Error(`Hook source not found: ${sourceHook}`);
+}
+if (!fs.existsSync(sourceOpenCodePlugin)) {
+  throw new Error(`OpenCode plugin source not found: ${sourceOpenCodePlugin}`);
 }
 
 const claudeDir = path.join(home, ".claude");
@@ -22,6 +26,9 @@ const codexDir = path.join(home, ".codex");
 const codexHooksDir = path.join(codexDir, "hooks");
 const codexHooksPath = path.join(codexDir, "hooks.json");
 const codexTargetHook = path.join(codexHooksDir, "acef-bmad-hard-wall.mjs");
+const opencodePluginsDir = path.join(home, ".config", "opencode", "plugins");
+const opencodeTargetPlugin = path.join(opencodePluginsDir, "acef-bmad-hard-wall.js");
+const opencodeTargetHook = path.join(opencodePluginsDir, "acef-bmad-hard-wall.mjs");
 
 function backupIfExists(filePath) {
   if (!fs.existsSync(filePath)) return;
@@ -93,8 +100,15 @@ ensurePreToolUseHook(codexHooks, {
 fs.mkdirSync(codexDir, { recursive: true });
 fs.writeFileSync(codexHooksPath, `${JSON.stringify(codexHooks, null, 2)}\n`);
 
+fs.mkdirSync(opencodePluginsDir, { recursive: true });
+if (fs.existsSync(opencodeTargetPlugin)) backupIfExists(opencodeTargetPlugin);
+if (fs.existsSync(opencodeTargetHook)) backupIfExists(opencodeTargetHook);
+fs.copyFileSync(sourceOpenCodePlugin, opencodeTargetPlugin);
+fs.copyFileSync(sourceHook, opencodeTargetHook);
+
 console.log(`Installed ACEF/BMAD guard hook for Claude: ${claudeTargetHook}`);
 console.log(`Updated Claude settings: ${settingsPath}`);
 console.log(`Installed ACEF/BMAD guard hook for Codex: ${codexTargetHook}`);
 console.log(`Updated Codex hooks: ${codexHooksPath}`);
-console.log("Restart Claude Code / Codex for hook changes to load.");
+console.log(`Installed ACEF/BMAD guard plugin for OpenCode: ${opencodeTargetPlugin}`);
+console.log("Restart Claude Code / Codex / OpenCode for hook changes to load.");

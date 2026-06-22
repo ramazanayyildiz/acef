@@ -78,8 +78,9 @@ files the agent follows. No build, no npm, no services.
    ```bash
    scripts/install-acef-bmad-guard
    ```
-   The installer wires both Claude Code (`~/.claude/settings.json`) and Codex (`~/.codex/hooks.json`) when those homes
-   exist, while preserving existing hook entries such as context-mode.
+   The installer wires Claude Code (`~/.claude/settings.json`), Codex (`~/.codex/hooks.json`), and OpenCode
+   (`~/.config/opencode/plugins/acef-bmad-hard-wall.js`) when those homes exist, while preserving existing hook entries
+   such as context-mode.
    The portable hook package lives in `claude-plugins/acef-bmad-guard/` for plugin-based Claude installs.
    Lightweight runs should create `.acef-lightweight-lane` or `.acef-lane`; full BMAD runs use `.acef-bmad-lane` or
    BMAD runtime markers.
@@ -113,6 +114,23 @@ For practical Codex use:
 4. After the worker returns, run `scripts/acef-codex-guard ...` and the relevant `scripts/acef-process-validator`
    checks before accepting the output.
 5. For stronger enforcement, call `scripts/acef-codex-guard` from a repo-local `pre-commit` hook.
+
+## OpenCode support
+
+OpenCode can load ACEF's normal `AGENTS.md` rules and `SKILL.md` files directly. Its supported skill locations include
+`.opencode/skills/<name>/SKILL.md`, `~/.config/opencode/skills/<name>/SKILL.md`, and Claude-compatible
+`.claude/skills/<name>/SKILL.md` / `~/.claude/skills/<name>/SKILL.md`.
+
+Run the installer once to copy the ACEF guard plugin into `~/.config/opencode/plugins/`. The plugin adapts OpenCode's
+`tool.execute.before` event to the same `acef-bmad-hard-wall.mjs` guard used by Claude Code and Codex. It checks
+OpenCode `write`, `edit`, `apply_patch`, and `bash` calls before they land.
+
+OpenCode still needs the same ACEF run files as the other tools:
+
+1. Create a lane marker such as `.acef-lightweight-lane` or `.acef-bmad-lane`.
+2. Set `docs/ai/ACEF_ACTIVE_LEDGER`.
+3. For implementation workers, write `docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json`.
+4. Restart OpenCode after installing or updating the plugin.
 
 The `method/` docs are the engine the agent follows (personas, tracks, lanes, the test pipeline). Read them to
 understand how delivery actually runs; the agent applies them for you.
@@ -175,6 +193,7 @@ Quick verify:
 node scripts/test-acef-process-validator
 node scripts/acef-process-validator --repo . --check clean-tree
 node scripts/smoke-acef-hook-active-ledger
+node scripts/smoke-acef-opencode-plugin
 ```
 
 GitHub Actions runs the regression test from `.github/workflows/validate.yml`.

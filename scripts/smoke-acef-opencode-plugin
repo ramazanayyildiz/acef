@@ -1,0 +1,131 @@
+#!/usr/bin/env node
+const fs = require("node:fs");
+const os = require("node:os");
+const path = require("node:path");
+const { pathToFileURL } = require("node:url");
+
+const repoRoot = path.resolve(__dirname, "..");
+const sourcePlugin = path.join(repoRoot, "opencode-plugins", "acef-bmad-guard", "acef-bmad-hard-wall.js");
+const sourceHook = path.join(repoRoot, "claude-plugins", "acef-bmad-guard", "hooks", "acef-bmad-hard-wall.mjs");
+
+function write(filePath, text) {
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  fs.writeFileSync(filePath, text);
+}
+
+async function decision(pluginHook, input, output) {
+  try {
+    await pluginHook(input, output);
+    return "allow";
+  } catch (error) {
+    if (/\bACEF\b/.test(String(error?.message || ""))) {
+      return "deny";
+    }
+    throw error;
+  }
+}
+
+function expect(label, actual, expected) {
+  if (actual !== expected) {
+    throw new Error(`${label}: expected ${expected}, got ${actual}`);
+  }
+  console.log(`PASS ${label}`);
+}
+
+(async () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "acef-opencode-plugin-smoke-"));
+  const pluginDir = path.join(tmp, "plugin");
+  const project = path.join(tmp, "project");
+
+  try {
+    fs.mkdirSync(pluginDir, { recursive: true });
+    fs.mkdirSync(project, { recursive: true });
+    fs.copyFileSync(sourcePlugin, path.join(pluginDir, "acef-bmad-hard-wall.js"));
+    fs.copyFileSync(sourceHook, path.join(pluginDir, "acef-bmad-hard-wall.mjs"));
+
+    const imported = await import(pathToFileURL(path.join(pluginDir, "acef-bmad-hard-wall.js")).href);
+    const plugin = await imported.AcefBmadGuard({ directory: project, worktree: project });
+    const before = plugin["tool.execute.before"];
+
+    write(path.join(project, ".acef-lightweight-lane"), "active\n");
+
+    expect(
+      "opencode write denies missing pattern registry",
+      await decision(before, { tool: "write" }, { args: { filePath: path.join(project, "src", "missing.ts"), content: "export {}\n" } }),
+      "deny",
+    );
+
+    write(path.join(project, "docs", "ai", "pattern-registry.json"), JSON.stringify({
+      schemaVersion: 2,
+      repo: "opencode-smoke",
+      generatedAt: "2026-06-23",
+      generatedFromCommit: "0000000",
+      coveredScopes: ["src"],
+      status: "PARTIAL",
+      patterns: [
+        {
+          id: "pattern.service.shared-client",
+          workShape: "service",
+          status: "canonical",
+          maturity: "rubric-item",
+          enforcedBy: null,
+          summary: "Services use the shared API client.",
+          evidence: "Smoke fixture service pattern evidence.",
+          sourceEvidence: [{ path: "src/services/current.ts", line: 1 }],
+          completionEvidence: [{ kind: "entrypoint", path: "src/services/current.ts", probe: "sharedApiClient" }],
+          goldenNeighbors: [{ path: "src/services/current.ts", why: "canonical service" }],
+          reuseProbe: ["sharedApiClient", "src/services/current.ts"],
+          doNotCopy: ["legacy.service.direct-fetch"],
+          confidence: "single-example",
+          lastVerifiedAt: "2026-06-23",
+          lastVerifiedCommit: "0000000",
+          refreshTriggers: ["touched-scope-change"],
+        },
+      ],
+      doNotCopy: [
+        {
+          id: "legacy.service.direct-fetch",
+          reason: "Bypasses shared API client.",
+          sourceEvidence: [{ path: "src/legacy/direct-fetch.ts", line: 1 }],
+          lastVerifiedCommit: "0000000",
+        },
+      ],
+    }, null, 2));
+
+    write(path.join(project, "docs", "ai", "ACEF_feature_DELIVERY_AUDIT.md"), [
+      "Status: PASS",
+      "track: standard",
+      "workShape: service",
+      "Reuse-before-create:",
+      "- Checked `src/services/current.ts` and `sharedApiClient`.",
+      "- Do-not-copy: avoided `legacy.service.direct-fetch`.",
+    ].join("\n"));
+    write(path.join(project, "docs", "ai", "ACEF_ACTIVE_LEDGER"), "docs/ai/ACEF_feature_DELIVERY_AUDIT.md\n");
+    write(path.join(project, "docs", "ai", "ACEF_ACTIVE_WORKER_SCOPE.json"), JSON.stringify({
+      activeStory: "1.1",
+      phase: "dev",
+      workerId: "worker",
+      allowedPaths: ["src/**"],
+      maxCommits: 1,
+      canEditLedger: false,
+      canSpawnAgents: false,
+    }, null, 2));
+
+    expect(
+      "opencode worker write allows scoped conformance evidence",
+      await decision(before, { tool: "write", agent: { id: "worker", type: "developer" } }, { args: { filePath: path.join(project, "src", "allowed.ts"), content: "export {}\n" } }),
+      "allow",
+    );
+
+    expect(
+      "opencode apply_patch denies out-of-scope implementation path",
+      await decision(before, { tool: "apply_patch", agent: { id: "worker", type: "developer" } }, { args: { patchText: "*** Begin Patch\n*** Add File: app/out.php\n+<?php\n*** End Patch\n" } }),
+      "deny",
+    );
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+})().catch((error) => {
+  console.error(error?.stack || error);
+  process.exit(1);
+});

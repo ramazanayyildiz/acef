@@ -68,8 +68,8 @@ function findActiveRoot(paths) {
     }
   }
 
-  const projectDir = process.env.CLAUDE_PROJECT_DIR || process.env.CODEX_PROJECT_DIR
-    ? resolvePath(process.env.CLAUDE_PROJECT_DIR || process.env.CODEX_PROJECT_DIR)
+  const projectDir = process.env.CLAUDE_PROJECT_DIR || process.env.CODEX_PROJECT_DIR || process.env.OPENCODE_PROJECT_DIR
+    ? resolvePath(process.env.CLAUDE_PROJECT_DIR || process.env.CODEX_PROJECT_DIR || process.env.OPENCODE_PROJECT_DIR)
     : "";
   if (projectDir && exists(path.join(projectDir, ".acef-bmad-hard-wall"))) {
     return projectDir;
@@ -95,6 +95,7 @@ function isWorker(payload) {
     process.env.ACEF_ROLE,
     process.env.CLAUDE_AGENT_NAME,
     process.env.CLAUDE_SUBAGENT_NAME,
+    process.env.OPENCODE_AGENT_NAME,
     process.env.AGENT_NAME,
   ].filter(Boolean).join(" ");
 
@@ -126,7 +127,7 @@ function deny(reason) {
 }
 
 function toolFilePath(input, cwd) {
-  const value = input.file_path || input.path || input.notebook_path || "";
+  const value = input.file_path || input.filePath || input.path || input.notebook_path || "";
   return value ? resolvePath(value, cwd) : "";
 }
 
@@ -136,6 +137,7 @@ function inputText(input) {
   if (typeof input !== "object") return "";
   return [
     input.patch,
+    input.patchText,
     input.diff,
     input.content,
     input.text,
@@ -171,6 +173,14 @@ function patchTouchedPaths(input, cwd) {
 
 function isShellTool(toolName) {
   return /^(Bash|Shell|shell|local_shell|shell_command|exec_command|functions\.exec_command)$/i.test(toolName || "");
+}
+
+function isWriteTool(toolName) {
+  return /^(Write|Edit|MultiEdit|NotebookEdit|write|edit|multi_edit|notebook_edit)$/i.test(toolName || "");
+}
+
+function isReadOrWriteTool(toolName) {
+  return /^(Read|Write|Edit|MultiEdit|NotebookEdit|read|write|edit|multi_edit|notebook_edit)$/i.test(toolName || "");
 }
 
 function shellCommand(input) {
@@ -573,6 +583,7 @@ function payloadWorkerIdentity(payload) {
     process.env.ACEF_ROLE,
     process.env.CLAUDE_AGENT_NAME,
     process.env.CLAUDE_SUBAGENT_NAME,
+    process.env.OPENCODE_AGENT_NAME,
     process.env.AGENT_NAME,
   ].filter(Boolean);
   if (/^(1|true)$/i.test(process.env.ACEF_BMAD_WORKER || "")) values.push("ACEF_BMAD_WORKER");
@@ -641,14 +652,14 @@ function workerScopeRestricted(payload, toolName, input, cwd, repoRoot, filePath
     return "ACEF worker scope fence: worker cannot spawn or dispatch additional agents/subagents.";
   }
 
-  const writesLedger = /^(Write|Edit|MultiEdit|NotebookEdit)$/.test(toolName)
+  const writesLedger = isWriteTool(toolName)
     ? ledgerPath(filePath, repoRoot)
     : isShellTool(toolName) && bashTouchesLedger(command, cwd, repoRoot);
   if (writesLedger) {
     return "ACEF worker scope fence: workers cannot edit ACEF run-control/ledger files. Conductor or ledger-worker only.";
   }
 
-  const touchesImplementation = /^(Write|Edit|MultiEdit|NotebookEdit)$/.test(toolName)
+  const touchesImplementation = isWriteTool(toolName)
     ? implementationPath(filePath, repoRoot)
     : /^apply_patch$/i.test(toolName)
       ? patchTouchedPaths(input, cwd).some((patchPath) => implementationPath(patchPath, repoRoot))
@@ -670,7 +681,7 @@ function workerScopeRestricted(payload, toolName, input, cwd, repoRoot, filePath
   const transitionReason = epicTransitionRestricted(targetEpic, repoRoot);
   if (transitionReason) return transitionReason;
 
-  if (/^(Write|Edit|MultiEdit|NotebookEdit)$/.test(toolName) && !allowedByScopePath(filePath, repoRoot, scope)) {
+  if (isWriteTool(toolName) && !allowedByScopePath(filePath, repoRoot, scope)) {
     const story = scope.activeStory || "current story";
     return `ACEF worker scope fence: ${path.relative(repoRoot, filePath)} is outside allowedPaths for Story ${story}.`;
   }
@@ -763,7 +774,7 @@ function p1ConformanceRestricted(repoRoot) {
 
   const toolName = payload.tool_name || payload.toolName || payload.name || "";
   const input = payload.tool_input || payload.toolInput || payload.input || {};
-  const cwd = resolvePath(payload.cwd || input.cwd || process.env.CLAUDE_PROJECT_DIR || process.env.CODEX_PROJECT_DIR || process.cwd());
+  const cwd = resolvePath(payload.cwd || input.cwd || process.env.CLAUDE_PROJECT_DIR || process.env.CODEX_PROJECT_DIR || process.env.OPENCODE_PROJECT_DIR || process.cwd());
   const filePath = toolFilePath(input, cwd);
   const patchPaths = patchTouchedPaths(input, cwd);
   const repoRoot = findActiveRoot([
@@ -772,6 +783,7 @@ function p1ConformanceRestricted(repoRoot) {
     cwd,
     process.env.CLAUDE_PROJECT_DIR ? resolvePath(process.env.CLAUDE_PROJECT_DIR) : "",
     process.env.CODEX_PROJECT_DIR ? resolvePath(process.env.CODEX_PROJECT_DIR) : "",
+    process.env.OPENCODE_PROJECT_DIR ? resolvePath(process.env.OPENCODE_PROJECT_DIR) : "",
   ]);
 
   if (!repoRoot) {
@@ -806,7 +818,7 @@ function p1ConformanceRestricted(repoRoot) {
     }
   }
 
-  const needsP1Conformance = /^(Write|Edit|MultiEdit|NotebookEdit)$/.test(toolName)
+  const needsP1Conformance = isWriteTool(toolName)
     ? implementationPath(filePath, repoRoot)
     : /^apply_patch$/i.test(toolName)
       ? patchPaths.some((patchPath) => implementationPath(patchPath, repoRoot))
@@ -825,7 +837,7 @@ function p1ConformanceRestricted(repoRoot) {
     return;
   }
 
-  if (/^(Read|Write|Edit|MultiEdit|NotebookEdit)$/.test(toolName)
+  if (isReadOrWriteTool(toolName)
     && restrictedPath(filePath, repoRoot)
     && !runControlPath(filePath, repoRoot)) {
     deny(`ACEF/BMAD hard wall: dispatcher/conductor agent cannot ${toolName} ${filePath}. Dispatch a dedicated persona worker instead.`);
