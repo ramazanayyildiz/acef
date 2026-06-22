@@ -235,6 +235,19 @@ try {
     },
   }, "allow", workerEnv);
 
+  const fakeHome = fs.mkdtempSync(path.join(os.tmpdir(), "acef-home-"));
+  const nonAcefRepo = path.join(fakeHome, "work", "browser-rts");
+  fs.mkdirSync(path.join(fakeHome, ".bmad"), { recursive: true });
+  fs.mkdirSync(nonAcefRepo, { recursive: true });
+  expectHookDecision("home-level bmad marker does not activate unrelated repo", {
+    tool_name: "Bash",
+    cwd: nonAcefRepo,
+    tool_input: {
+      command: "npm install fast-check",
+      cwd: nonAcefRepo,
+    },
+  }, "allow", { HOME: fakeHome });
+
   const lightweight = fs.mkdtempSync(path.join(os.tmpdir(), "acef-lightweight-"));
   fs.mkdirSync(path.join(lightweight, "docs", "ai"), { recursive: true });
   fs.writeFileSync(path.join(lightweight, ".acef-lightweight-lane"), "active\n");

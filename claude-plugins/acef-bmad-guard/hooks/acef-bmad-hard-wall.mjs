@@ -59,8 +59,10 @@ function hasLaneMarker(dirPath) {
 }
 
 function findActiveRoot(paths) {
+  const home = process.env.HOME ? path.resolve(process.env.HOME) : "";
   for (const candidate of paths.filter(Boolean)) {
     for (const dirPath of ancestors(candidate)) {
+      if (home && path.resolve(dirPath) === home) continue;
       if (hasLaneMarker(dirPath)) return dirPath;
     }
   }
