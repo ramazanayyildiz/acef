@@ -243,8 +243,10 @@ Captures (each field cites a source path):
           <p>Nothing in the skills is project-specific — every stack value comes from the adapter you extract per repo.</p>
           <p>ACEF ships a portable BMAD guard hook in
             <code>claude-plugins/acef-bmad-guard/</code>. Clone users can install it with
-            <code>scripts/install-acef-bmad-guard</code>; the installer wires Claude Code, Codex, and OpenCode guards while preserving existing entries. Claude plugin users can enable that directory as a Claude Code
-            plugin. The hook blocks dispatcher/conductor writes and blocks crossing into Epic N+1 until Epic N Process
+            <code>scripts/install-acef-bmad-guard --repo /path/to/repo</code>; the installer writes the full guard into the repo's
+            <code>.acef/hooks/</code> directory and installs a repo-local OpenCode plugin. Claude Code and Codex users can add
+            <code>--global-dispatcher</code> once per machine for a tiny dispatcher that only forwards to repos with a local hook.
+            Claude plugin users can enable that directory as a Claude Code plugin. The hook blocks dispatcher/conductor writes and blocks crossing into Epic N+1 until Epic N Process
             Judge is <code>PASS</code>. Use <code>node scripts/smoke-acef-hook-active-ledger</code> to verify active
             ledger scoping and <code>node scripts/smoke-acef-opencode-plugin</code> to verify the OpenCode adapter.
             Hook responses include the required <code>PreToolUse</code> event name so Claude Code can
@@ -326,8 +328,10 @@ Captures (each field cites a source path):
             is invalid unless its evidence records the ATDD actor, Developer actor, Code Review actor, Verify-Patch
             actor, Test Review actor, and Process Judge actor. Generic subagents are not enough; each worker must be
             bound to a valid persona. Guarded stories cannot use self-review.</div></div>
-          <div class="callout"><span class="em">🔒</span><div><strong>Optional hard wall:</strong> Claude Code users can
-            install <code>claude-plugins/acef-bmad-guard/</code> or run <code>scripts/install-acef-bmad-guard</code>.
+          <div class="callout"><span class="em">🔒</span><div><strong>Optional hard wall:</strong> Claude Code, Codex, and OpenCode users can
+            install <code>claude-plugins/acef-bmad-guard/</code> or run <code>scripts/install-acef-bmad-guard --repo /path/to/repo</code>.
+            The full guard is repo-local under <code>.acef/hooks/</code>; Claude Code and Codex can use the optional
+            <code>--global-dispatcher</code> shim to find that local hook.
             When an ACEF lane marker is present, the hook blocks the dispatcher/conductor from writing BMAD artifacts or
             implementation files while allowing dedicated persona workers. It also blocks Epic N+1 story-start commands
             until Epic N Process Judge is <code>PASS</code>.</div></div>

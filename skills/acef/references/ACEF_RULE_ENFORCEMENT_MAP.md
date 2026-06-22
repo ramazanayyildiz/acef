@@ -24,7 +24,8 @@ treated as enforcement.
 | Rule | Lives today | Should live in | Gap to load-bearing | Priority |
 | --- | --- | --- | --- | --- |
 | Conductor cannot write implementation/BMAD artifacts | `machinery` via `acef-bmad-guard` | machinery | None. This is the exemplar. | Done |
-| Codex worker scope checks | `machinery` via Codex `PreToolUse` hook + `scripts/acef-codex-guard` | machinery | `scripts/install-acef-bmad-guard` wires `~/.codex/hooks.json`; run the CLI guard before commit/certification or from git hooks/CI as a backstop. | Done |
+| Codex worker scope checks | `machinery` via repo-local ACEF hook + optional Codex dispatcher + `scripts/acef-codex-guard` | machinery | `scripts/install-acef-bmad-guard --repo <repo>` installs `.acef/hooks`; `--global-dispatcher` wires a tiny `~/.codex/hooks.json` dispatcher that only forwards to repos with a local engine. Run the CLI guard before commit/certification or from git hooks/CI as a backstop. | Done |
+| OpenCode worker scope checks | `machinery` via repo-local ACEF hook + OpenCode `tool.execute.before` plugin | machinery | `scripts/install-acef-bmad-guard --repo <repo>` installs `.opencode/plugins/acef-bmad-hard-wall.js`; optional `--global-dispatcher` installs a user-level plugin that still dispatches to each repo's local `.acef/hooks` engine. | Done |
 | Verification requires clean tree | validator CLI | machinery | `scripts/acef-process-validator --check clean-tree` blocks certification on uncommitted or untracked changes. | P0 |
 | 2x `REPLAN` escalates to human | validator CLI | machinery | `scripts/acef-process-validator --check replan-counter`; hook/CI wiring still pending. | P0 |
 | Artifact-claim reconciliation | validator CLI | machinery | `scripts/acef-process-validator --check claims`; hook/CI wiring still pending. | P0 |

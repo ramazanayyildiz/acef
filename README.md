@@ -73,15 +73,20 @@ files the agent follows. No build, no npm, no services.
    For concrete work, ACEF first creates a target-run ledger, sets `ACEF_ACTIVE_LEDGER` or
    `docs/ai/ACEF_ACTIVE_LEDGER`, and writes a `Session Handoff` before worker fan-out or deep planning.
 
-4. **Optional hard wall for BMAD lanes** — install the ACEF/BMAD guard so the dispatcher or conductor cannot write
-   implementation files or BMAD artifacts during an ACEF lane:
+4. **Optional hard wall for BMAD lanes** — install the ACEF/BMAD guard locally in each repo so the dispatcher or
+   conductor cannot write implementation files or BMAD artifacts during an ACEF lane:
    ```bash
-   scripts/install-acef-bmad-guard
+   scripts/install-acef-bmad-guard --repo /path/to/your/repo
    ```
-   The installer wires Claude Code (`~/.claude/settings.json`), Codex (`~/.codex/hooks.json`), and OpenCode
-   (`~/.config/opencode/plugins/acef-bmad-hard-wall.js`) when those homes exist, while preserving existing hook entries
-   such as context-mode.
-   The portable hook package lives in `claude-plugins/acef-bmad-guard/` for plugin-based Claude installs.
+   This writes the full guard engine to `/path/to/your/repo/.acef/hooks/acef-bmad-hard-wall.mjs` and installs a
+   repo-local OpenCode plugin at `/path/to/your/repo/.opencode/plugins/acef-bmad-hard-wall.js`.
+   For Claude Code and Codex, which need a user-level hook entry, install the tiny dispatcher once per machine:
+   ```bash
+   scripts/install-acef-bmad-guard --repo /path/to/your/repo --global-dispatcher
+   ```
+   The dispatcher only forwards to a repo-local `.acef/hooks/acef-bmad-hard-wall.mjs` when one exists; repos without a
+   local ACEF hook are allowed. The portable hook package lives in `claude-plugins/acef-bmad-guard/` for plugin-based
+   Claude installs.
    Lightweight runs should create `.acef-lightweight-lane` or `.acef-lane`; full BMAD runs use `.acef-bmad-lane` or
    BMAD runtime markers.
    To scope hook conformance checks to the current run, set `ACEF_ACTIVE_LEDGER` or write the active ledger path into
@@ -91,9 +96,16 @@ files the agent follows. No build, no npm, no services.
 
 ## Codex support
 
-ACEF is tool-agnostic, so Codex can run the same method docs, ledgers, adapters, validators, and hook guard. Run the
-installer once to add the ACEF guard to `~/.codex/hooks.json`; Codex `PreToolUse` then checks `exec_command`,
-`apply_patch`, and file-write tools before they land.
+ACEF is tool-agnostic, so Codex can run the same method docs, ledgers, adapters, validators, and hook guard. Install
+the guard into the target repo, then install the global dispatcher once if Codex needs a `PreToolUse` entry:
+
+```bash
+scripts/install-acef-bmad-guard --repo /path/to/repo
+scripts/install-acef-bmad-guard --repo /path/to/repo --global-dispatcher
+```
+
+Codex `PreToolUse` then checks `exec_command`, `apply_patch`, and file-write tools before they land, but only in repos
+that carry the local `.acef/hooks/acef-bmad-hard-wall.mjs` engine.
 
 Use the CLI guard as the explicit certification/backstop before accepting worker output, before commits, or from a git
 hook/CI wrapper:
@@ -127,9 +139,12 @@ OpenCode can load ACEF's normal `AGENTS.md` rules and `SKILL.md` files directly.
 `.opencode/skills/<name>/SKILL.md`, `~/.config/opencode/skills/<name>/SKILL.md`, and Claude-compatible
 `.claude/skills/<name>/SKILL.md` / `~/.claude/skills/<name>/SKILL.md`.
 
-Run the installer once to copy the ACEF guard plugin into `~/.config/opencode/plugins/`. The plugin adapts OpenCode's
-`tool.execute.before` event to the same `acef-bmad-hard-wall.mjs` guard used by Claude Code and Codex. It checks
+Run the installer in the target repo to copy the ACEF guard plugin into `.opencode/plugins/`. The plugin adapts
+OpenCode's `tool.execute.before` event to the repo-local `.acef/hooks/acef-bmad-hard-wall.mjs` engine. It checks
 OpenCode `write`, `edit`, `apply_patch`, and `bash` calls before they land.
+
+If you want one OpenCode user-level plugin for all repos, run the installer with `--global-dispatcher`; the global
+plugin still dispatches to each repo's local `.acef/hooks` engine.
 
 OpenCode still needs the same ACEF run files as the other tools:
 

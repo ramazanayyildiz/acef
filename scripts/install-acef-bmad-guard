@@ -4,31 +4,48 @@ const path = require("node:path");
 
 const repoRoot = path.resolve(__dirname, "..");
 const sourceHook = path.join(repoRoot, "claude-plugins", "acef-bmad-guard", "hooks", "acef-bmad-hard-wall.mjs");
+const sourceDispatcher = path.join(repoRoot, "claude-plugins", "acef-bmad-guard", "hooks", "acef-bmad-dispatcher.mjs");
 const sourceOpenCodePlugin = path.join(repoRoot, "opencode-plugins", "acef-bmad-guard", "acef-bmad-hard-wall.js");
 const home = process.env.HOME;
 
-if (!home) {
-  throw new Error("HOME is not set; cannot locate agent hook directories.");
+function usage() {
+  console.log(`Usage: scripts/install-acef-bmad-guard [--repo <path>] [--global-dispatcher]
+
+Default installs the full ACEF guard engine locally into the target repo:
+  <repo>/.acef/hooks/acef-bmad-hard-wall.mjs
+  <repo>/.opencode/plugins/acef-bmad-hard-wall.js
+
+Use --global-dispatcher once per machine for Claude/Codex/OpenCode surfaces that need a user-level hook entry.
+The dispatcher is tiny: it only forwards to a repo-local .acef/hooks/acef-bmad-hard-wall.mjs when one exists.`);
 }
 
-if (!fs.existsSync(sourceHook)) {
-  throw new Error(`Hook source not found: ${sourceHook}`);
-}
-if (!fs.existsSync(sourceOpenCodePlugin)) {
-  throw new Error(`OpenCode plugin source not found: ${sourceOpenCodePlugin}`);
+function parseArgs(argv) {
+  const opts = {
+    repo: process.cwd(),
+    globalDispatcher: false,
+  };
+  for (let i = 0; i < argv.length; i += 1) {
+    const arg = argv[i];
+    if (arg === "--repo" || arg === "--target") {
+      opts.repo = argv[++i];
+    } else if (arg === "--global-dispatcher") {
+      opts.globalDispatcher = true;
+    } else if (arg === "-h" || arg === "--help") {
+      usage();
+      process.exit(0);
+    } else {
+      throw new Error(`Unknown argument: ${arg}`);
+    }
+  }
+  opts.repo = path.resolve(opts.repo);
+  return opts;
 }
 
-const claudeDir = path.join(home, ".claude");
-const claudeHooksDir = path.join(claudeDir, "hooks");
-const settingsPath = path.join(claudeDir, "settings.json");
-const claudeTargetHook = path.join(claudeHooksDir, "acef-bmad-hard-wall.mjs");
-const codexDir = path.join(home, ".codex");
-const codexHooksDir = path.join(codexDir, "hooks");
-const codexHooksPath = path.join(codexDir, "hooks.json");
-const codexTargetHook = path.join(codexHooksDir, "acef-bmad-hard-wall.mjs");
-const opencodePluginsDir = path.join(home, ".config", "opencode", "plugins");
-const opencodeTargetPlugin = path.join(opencodePluginsDir, "acef-bmad-hard-wall.js");
-const opencodeTargetHook = path.join(opencodePluginsDir, "acef-bmad-hard-wall.mjs");
+function assertFile(filePath) {
+  if (!fs.existsSync(filePath)) {
+    throw new Error(`Source not found: ${filePath}`);
+  }
+}
 
 function backupIfExists(filePath) {
   if (!fs.existsSync(filePath)) return;
@@ -42,73 +59,112 @@ function readJsonFile(filePath) {
   return raw ? JSON.parse(raw) : {};
 }
 
-function ensurePreToolUseHook(config, entry) {
+function ensurePreToolUseHook(config, entry, commandNeedles) {
+  const needles = Array.isArray(commandNeedles) ? commandNeedles : [commandNeedles];
   config.hooks = config.hooks && typeof config.hooks === "object" ? config.hooks : {};
   config.hooks.PreToolUse = Array.isArray(config.hooks.PreToolUse) ? config.hooks.PreToolUse : [];
 
   config.hooks.PreToolUse = config.hooks.PreToolUse.filter((existing) => {
     const hooks = Array.isArray(existing?.hooks) ? existing.hooks : [];
-    return !hooks.some((hook) => typeof hook?.command === "string" && hook.command.includes("acef-bmad-hard-wall.mjs"));
+    return !hooks.some((hook) => typeof hook?.command === "string" && needles.some((needle) => hook.command.includes(needle)));
   });
 
   config.hooks.PreToolUse.push(entry);
   return config;
 }
 
-fs.mkdirSync(claudeHooksDir, { recursive: true });
-fs.copyFileSync(sourceHook, claudeTargetHook);
-
-let settings = {};
-if (fs.existsSync(settingsPath)) {
-  settings = readJsonFile(settingsPath);
-  backupIfExists(settingsPath);
+function copyFile(source, target) {
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+  fs.copyFileSync(source, target);
 }
 
-ensurePreToolUseHook(settings, {
-  matcher: "Read|Write|Edit|MultiEdit|NotebookEdit|Bash",
-  hooks: [
-    {
-      type: "command",
-      command: "node ~/.claude/hooks/acef-bmad-hard-wall.mjs",
-      timeout: 5
-    }
-  ]
-});
-
-fs.mkdirSync(claudeDir, { recursive: true });
-fs.writeFileSync(settingsPath, `${JSON.stringify(settings, null, 2)}\n`);
-
-fs.mkdirSync(codexHooksDir, { recursive: true });
-fs.copyFileSync(sourceHook, codexTargetHook);
-
-let codexHooks = {};
-if (fs.existsSync(codexHooksPath)) {
-  codexHooks = readJsonFile(codexHooksPath);
-  backupIfExists(codexHooksPath);
+function installLocal(targetRepo) {
+  const localHook = path.join(targetRepo, ".acef", "hooks", "acef-bmad-hard-wall.mjs");
+  const localOpenCodePlugin = path.join(targetRepo, ".opencode", "plugins", "acef-bmad-hard-wall.js");
+  copyFile(sourceHook, localHook);
+  copyFile(sourceOpenCodePlugin, localOpenCodePlugin);
+  console.log(`Installed local ACEF guard engine: ${localHook}`);
+  console.log(`Installed local OpenCode plugin: ${localOpenCodePlugin}`);
 }
 
-ensurePreToolUseHook(codexHooks, {
-  matcher: "local_shell|shell|shell_command|exec_command|Bash|Shell|apply_patch|Edit|Write|MultiEdit|Read|grep_files|ctx_execute|ctx_execute_file|ctx_batch_execute|ctx_fetch_and_index|ctx_search|ctx_index|mcp__",
-  hooks: [
-    {
-      type: "command",
-      command: "node ~/.codex/hooks/acef-bmad-hard-wall.mjs"
-    }
-  ]
-});
+function installGlobalDispatchers() {
+  if (!home) {
+    throw new Error("HOME is not set; cannot locate user hook directories.");
+  }
 
-fs.mkdirSync(codexDir, { recursive: true });
-fs.writeFileSync(codexHooksPath, `${JSON.stringify(codexHooks, null, 2)}\n`);
+  const claudeDir = path.join(home, ".claude");
+  const claudeHooksDir = path.join(claudeDir, "hooks");
+  const settingsPath = path.join(claudeDir, "settings.json");
+  const claudeDispatcher = path.join(claudeHooksDir, "acef-bmad-dispatcher.mjs");
+  copyFile(sourceDispatcher, claudeDispatcher);
 
-fs.mkdirSync(opencodePluginsDir, { recursive: true });
-if (fs.existsSync(opencodeTargetPlugin)) backupIfExists(opencodeTargetPlugin);
-if (fs.existsSync(opencodeTargetHook)) backupIfExists(opencodeTargetHook);
-fs.copyFileSync(sourceOpenCodePlugin, opencodeTargetPlugin);
-fs.copyFileSync(sourceHook, opencodeTargetHook);
+  let settings = {};
+  if (fs.existsSync(settingsPath)) {
+    settings = readJsonFile(settingsPath);
+    backupIfExists(settingsPath);
+  }
+  ensurePreToolUseHook(settings, {
+    matcher: "Read|Write|Edit|MultiEdit|NotebookEdit|Bash",
+    hooks: [
+      {
+        type: "command",
+        command: "node ~/.claude/hooks/acef-bmad-dispatcher.mjs",
+        timeout: 5,
+      },
+    ],
+  }, ["acef-bmad-dispatcher.mjs", "acef-bmad-hard-wall.mjs"]);
+  fs.mkdirSync(claudeDir, { recursive: true });
+  fs.writeFileSync(settingsPath, `${JSON.stringify(settings, null, 2)}\n`);
 
-console.log(`Installed ACEF/BMAD guard hook for Claude: ${claudeTargetHook}`);
-console.log(`Updated Claude settings: ${settingsPath}`);
-console.log(`Installed ACEF/BMAD guard hook for Codex: ${codexTargetHook}`);
-console.log(`Updated Codex hooks: ${codexHooksPath}`);
-console.log(`Installed ACEF/BMAD guard plugin for OpenCode: ${opencodeTargetPlugin}`);
-console.log("Restart Claude Code / Codex / OpenCode for hook changes to load.");
+  const codexDir = path.join(home, ".codex");
+  const codexHooksDir = path.join(codexDir, "hooks");
+  const codexHooksPath = path.join(codexDir, "hooks.json");
+  const codexDispatcher = path.join(codexHooksDir, "acef-bmad-dispatcher.mjs");
+  copyFile(sourceDispatcher, codexDispatcher);
+
+  let codexHooks = {};
+  if (fs.existsSync(codexHooksPath)) {
+    codexHooks = readJsonFile(codexHooksPath);
+    backupIfExists(codexHooksPath);
+  }
+  ensurePreToolUseHook(codexHooks, {
+    matcher: "local_shell|shell|shell_command|exec_command|Bash|Shell|apply_patch|Edit|Write|MultiEdit|Read|grep_files|ctx_execute|ctx_execute_file|ctx_batch_execute|ctx_fetch_and_index|ctx_search|ctx_index|mcp__",
+    hooks: [
+      {
+        type: "command",
+        command: "node ~/.codex/hooks/acef-bmad-dispatcher.mjs",
+      },
+    ],
+  }, ["acef-bmad-dispatcher.mjs", "acef-bmad-hard-wall.mjs"]);
+  fs.mkdirSync(codexDir, { recursive: true });
+  fs.writeFileSync(codexHooksPath, `${JSON.stringify(codexHooks, null, 2)}\n`);
+
+  const opencodePluginsDir = path.join(home, ".config", "opencode", "plugins");
+  const opencodeTargetPlugin = path.join(opencodePluginsDir, "acef-bmad-hard-wall.js");
+  const opencodeTargetHook = path.join(opencodePluginsDir, "acef-bmad-hard-wall.mjs");
+  if (fs.existsSync(opencodeTargetPlugin)) backupIfExists(opencodeTargetPlugin);
+  if (fs.existsSync(opencodeTargetHook)) {
+    backupIfExists(opencodeTargetHook);
+    fs.rmSync(opencodeTargetHook);
+  }
+  copyFile(sourceOpenCodePlugin, opencodeTargetPlugin);
+
+  console.log(`Installed Claude dispatcher: ${claudeDispatcher}`);
+  console.log(`Updated Claude settings: ${settingsPath}`);
+  console.log(`Installed Codex dispatcher: ${codexDispatcher}`);
+  console.log(`Updated Codex hooks: ${codexHooksPath}`);
+  console.log(`Installed OpenCode dispatcher plugin: ${opencodeTargetPlugin}`);
+  console.log("Restart Claude Code / Codex / OpenCode for global dispatcher changes to load.");
+}
+
+assertFile(sourceHook);
+assertFile(sourceDispatcher);
+assertFile(sourceOpenCodePlugin);
+
+const opts = parseArgs(process.argv.slice(2));
+installLocal(opts.repo);
+if (opts.globalDispatcher) {
+  installGlobalDispatchers();
+} else {
+  console.log("Global dispatchers were not installed. Add --global-dispatcher once per machine if your tool needs a user-level hook entry.");
+}

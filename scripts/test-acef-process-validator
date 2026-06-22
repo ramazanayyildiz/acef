@@ -8,6 +8,7 @@ const repoRoot = path.resolve(__dirname, "..");
 const validator = path.join(repoRoot, "scripts", "acef-process-validator");
 const codexGuard = path.join(repoRoot, "scripts", "acef-codex-guard");
 const bmadHook = path.join(repoRoot, "claude-plugins", "acef-bmad-guard", "hooks", "acef-bmad-hard-wall.mjs");
+const bmadDispatcher = path.join(repoRoot, "claude-plugins", "acef-bmad-guard", "hooks", "acef-bmad-dispatcher.mjs");
 
 function run(command, args, options = {}) {
   return cp.execFileSync(command, args, {
@@ -69,6 +70,28 @@ function runHook(payload, env = {}) {
     env: { ...process.env, ...env },
   }).trim();
   return JSON.parse(output);
+}
+
+function runDispatcher(payload, env = {}) {
+  const output = cp.execFileSync("node", [bmadDispatcher], {
+    input: JSON.stringify(payload),
+    encoding: "utf8",
+    stdio: ["pipe", "pipe", "pipe"],
+    env: { ...process.env, ...env },
+  }).trim();
+  return JSON.parse(output);
+}
+
+function expectDispatcherDecision(label, payload, decision, env = {}) {
+  const output = runDispatcher(payload, env);
+  const hookEventName = output?.hookSpecificOutput?.hookEventName;
+  if (hookEventName !== "PreToolUse") {
+    throw new Error(`Expected dispatcher ${label} to include hookEventName PreToolUse, got ${hookEventName || "none"}:\n${JSON.stringify(output, null, 2)}`);
+  }
+  const actual = output?.hookSpecificOutput?.permissionDecision;
+  if (actual !== decision) {
+    throw new Error(`Expected dispatcher ${label} to ${decision}, got ${actual || "none"}:\n${JSON.stringify(output, null, 2)}`);
+  }
 }
 
 function expectHookDecision(label, payload, decision, env = {}) {
@@ -771,6 +794,27 @@ try {
   expectCodexGuardFail("worker ledger edit", ["--repo", codexTmp, "--role", "worker", "--story", "1.1", "--base-ref", codexScopedBase]);
   fs.rmSync(codexTmp, { recursive: true, force: true });
 
+  const dispatcherNoHook = fs.mkdtempSync(path.join(os.tmpdir(), "acef-dispatcher-no-hook-"));
+  fs.mkdirSync(path.join(dispatcherNoHook, "src"), { recursive: true });
+  expectDispatcherDecision("allows repo without local hook", {
+    tool_name: "Write",
+    cwd: dispatcherNoHook,
+    tool_input: { file_path: path.join(dispatcherNoHook, "src", "free.ts") },
+  }, "allow");
+  fs.rmSync(dispatcherNoHook, { recursive: true, force: true });
+
+  const dispatcherLocal = fs.mkdtempSync(path.join(os.tmpdir(), "acef-dispatcher-local-"));
+  fs.mkdirSync(path.join(dispatcherLocal, ".acef", "hooks"), { recursive: true });
+  fs.mkdirSync(path.join(dispatcherLocal, "src"), { recursive: true });
+  fs.writeFileSync(path.join(dispatcherLocal, ".acef-lightweight-lane"), "active\n");
+  fs.copyFileSync(bmadHook, path.join(dispatcherLocal, ".acef", "hooks", "acef-bmad-hard-wall.mjs"));
+  expectDispatcherDecision("forwards to local hook", {
+    tool_name: "Write",
+    cwd: dispatcherLocal,
+    tool_input: { file_path: path.join(dispatcherLocal, "src", "guarded.ts") },
+  }, "deny");
+  fs.rmSync(dispatcherLocal, { recursive: true, force: true });
+
   const installerHome = fs.mkdtempSync(path.join(os.tmpdir(), "acef-installer-home-"));
   fs.mkdirSync(path.join(installerHome, ".codex"), { recursive: true });
   fs.writeFileSync(path.join(installerHome, ".codex", "hooks.json"), JSON.stringify({
@@ -780,25 +824,45 @@ try {
           matcher: "exec_command",
           hooks: [{ type: "command", command: "context-mode hook codex pretooluse" }],
         },
+        {
+          matcher: "Write",
+          hooks: [{ type: "command", command: "node ~/.codex/hooks/acef-bmad-hard-wall.mjs" }],
+        },
       ],
     },
   }, null, 2));
-  run("node", [path.join(repoRoot, "scripts", "install-acef-bmad-guard")], {
+  fs.mkdirSync(path.join(installerHome, ".config", "opencode", "plugins"), { recursive: true });
+  fs.writeFileSync(path.join(installerHome, ".config", "opencode", "plugins", "acef-bmad-hard-wall.mjs"), "old global full hook\n");
+  const installerRepo = fs.mkdtempSync(path.join(os.tmpdir(), "acef-installer-repo-"));
+  run("node", [path.join(repoRoot, "scripts", "install-acef-bmad-guard"), "--repo", installerRepo, "--global-dispatcher"], {
     env: { ...process.env, HOME: installerHome },
   });
+  if (!fs.existsSync(path.join(installerRepo, ".acef", "hooks", "acef-bmad-hard-wall.mjs"))) {
+    throw new Error("Expected installer to add local ACEF guard engine");
+  }
+  if (!fs.existsSync(path.join(installerRepo, ".opencode", "plugins", "acef-bmad-hard-wall.js"))) {
+    throw new Error("Expected installer to add local OpenCode plugin");
+  }
   const installedCodexHooks = JSON.parse(fs.readFileSync(path.join(installerHome, ".codex", "hooks.json"), "utf8"));
   const codexPreTool = installedCodexHooks.hooks.PreToolUse || [];
   if (!codexPreTool.some((entry) => (entry.hooks || []).some((hook) => String(hook.command || "").includes("context-mode hook codex pretooluse")))) {
     throw new Error("Expected installer to preserve existing Codex PreToolUse hook");
   }
-  if (!codexPreTool.some((entry) => (entry.hooks || []).some((hook) => String(hook.command || "").includes("acef-bmad-hard-wall.mjs")))) {
-    throw new Error("Expected installer to add ACEF guard to Codex PreToolUse hooks");
+  if (!codexPreTool.some((entry) => (entry.hooks || []).some((hook) => String(hook.command || "").includes("acef-bmad-dispatcher.mjs")))) {
+    throw new Error("Expected installer to add ACEF dispatcher to Codex PreToolUse hooks");
+  }
+  if (codexPreTool.some((entry) => (entry.hooks || []).some((hook) => String(hook.command || "").includes("acef-bmad-hard-wall.mjs")))) {
+    throw new Error("Expected installer to remove old full ACEF guard from Codex PreToolUse hooks");
   }
   const installedClaudeSettings = JSON.parse(fs.readFileSync(path.join(installerHome, ".claude", "settings.json"), "utf8"));
-  if (!String(JSON.stringify(installedClaudeSettings)).includes("acef-bmad-hard-wall.mjs")) {
-    throw new Error("Expected installer to add ACEF guard to Claude PreToolUse hooks");
+  if (!String(JSON.stringify(installedClaudeSettings)).includes("acef-bmad-dispatcher.mjs")) {
+    throw new Error("Expected installer to add ACEF dispatcher to Claude PreToolUse hooks");
+  }
+  if (fs.existsSync(path.join(installerHome, ".config", "opencode", "plugins", "acef-bmad-hard-wall.mjs"))) {
+    throw new Error("Expected installer to remove old full ACEF guard sibling from global OpenCode plugin dir");
   }
   fs.rmSync(installerHome, { recursive: true, force: true });
+  fs.rmSync(installerRepo, { recursive: true, force: true });
 
   console.log("acef-process-validator tests passed");
 } finally {

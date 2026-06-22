@@ -41,7 +41,8 @@ function expect(label, actual, expected) {
     fs.mkdirSync(pluginDir, { recursive: true });
     fs.mkdirSync(project, { recursive: true });
     fs.copyFileSync(sourcePlugin, path.join(pluginDir, "acef-bmad-hard-wall.js"));
-    fs.copyFileSync(sourceHook, path.join(pluginDir, "acef-bmad-hard-wall.mjs"));
+    fs.mkdirSync(path.join(project, ".acef", "hooks"), { recursive: true });
+    fs.copyFileSync(sourceHook, path.join(project, ".acef", "hooks", "acef-bmad-hard-wall.mjs"));
 
     const imported = await import(pathToFileURL(path.join(pluginDir, "acef-bmad-hard-wall.js")).href);
     const plugin = await imported.AcefBmadGuard({ directory: project, worktree: project });

@@ -1,9 +1,40 @@
 import { spawnSync } from "node:child_process";
+import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const pluginDir = path.dirname(fileURLToPath(import.meta.url));
-const hookPath = path.join(pluginDir, "acef-bmad-hard-wall.mjs");
+const siblingHookPath = path.join(pluginDir, "acef-bmad-hard-wall.mjs");
+
+function exists(filePath) {
+  try {
+    return !!filePath && fs.existsSync(filePath);
+  } catch {
+    return false;
+  }
+}
+
+function ancestors(startPath) {
+  const dirs = [];
+  let current = exists(startPath) && fs.statSync(startPath).isDirectory()
+    ? startPath
+    : path.dirname(startPath);
+
+  while (current && current !== path.dirname(current)) {
+    dirs.push(current);
+    current = path.dirname(current);
+  }
+  dirs.push(current);
+  return dirs;
+}
+
+function findLocalHook(projectDir) {
+  for (const dirPath of ancestors(projectDir || process.cwd())) {
+    const hookPath = path.join(dirPath, ".acef", "hooks", "acef-bmad-hard-wall.mjs");
+    if (exists(hookPath)) return hookPath;
+  }
+  return exists(siblingHookPath) ? siblingHookPath : "";
+}
 
 function firstString(...values) {
   return values.find((value) => typeof value === "string" && value.trim()) || "";
@@ -46,6 +77,9 @@ function agentIdentity(input, output) {
 }
 
 function runAcefHook(payload, projectDir) {
+  const hookPath = findLocalHook(projectDir);
+  if (!hookPath) return { decision: "allow", reason: "" };
+
   const result = spawnSync(process.execPath, [hookPath], {
     input: JSON.stringify(payload),
     encoding: "utf8",

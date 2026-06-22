@@ -42,13 +42,23 @@ depend on a local username or checkout path.
 For users who clone ACEF and do not use plugin installation:
 
 ```sh
-scripts/install-acef-bmad-guard
+scripts/install-acef-bmad-guard --repo /path/to/your/repo
 ```
 
-That copies the hook to `~/.claude/hooks/acef-bmad-hard-wall.mjs` and `~/.codex/hooks/acef-bmad-hard-wall.mjs`, then
-merges the `PreToolUse` hook into `~/.claude/settings.json` and `~/.codex/hooks.json` while preserving existing hook
-entries. It also installs the OpenCode adapter plugin to `~/.config/opencode/plugins/acef-bmad-hard-wall.js`; that
-plugin adapts OpenCode `tool.execute.before` events to the same hook engine.
+That copies the full hook engine into the repo at `.acef/hooks/acef-bmad-hard-wall.mjs` and installs the repo-local
+OpenCode adapter plugin at `.opencode/plugins/acef-bmad-hard-wall.js`.
+
+Claude Code and Codex need a user-level hook entry, so install the tiny dispatcher once per machine when using those
+tools:
+
+```sh
+scripts/install-acef-bmad-guard --repo /path/to/your/repo --global-dispatcher
+```
+
+The dispatcher is deliberately small: it allows by default, walks from the current tool path/cwd to find a repo-local
+`.acef/hooks/acef-bmad-hard-wall.mjs`, and forwards the hook payload only when that local engine exists. It preserves
+existing hook entries such as context-mode. The OpenCode global plugin, when installed, uses the same repo-local engine
+lookup.
 
 Restart Claude Code / Codex / OpenCode after installation. Hooks and plugins are loaded at session start.
 

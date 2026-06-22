@@ -257,8 +257,10 @@ Captures (each field cites a source path):
           <p>Nothing in the skills is project-specific — every stack value comes from the adapter you extract per repo.</p>
           <p>ACEF ships a portable BMAD guard hook in
             <code>claude-plugins/acef-bmad-guard/</code>. Clone users can install it with
-            <code>scripts/install-acef-bmad-guard</code>; the installer wires Claude Code, Codex, and OpenCode guards while preserving existing entries. Claude plugin users can enable that directory as a Claude Code
-            plugin. The hook blocks dispatcher/conductor writes and blocks crossing into Epic N+1 until Epic N Process
+            <code>scripts/install-acef-bmad-guard --repo /path/to/repo</code>; the installer writes the full guard into the repo's
+            <code>.acef/hooks/</code> directory and installs a repo-local OpenCode plugin. Claude Code and Codex users can add
+            <code>--global-dispatcher</code> once per machine for a tiny dispatcher that only forwards to repos with a local hook.
+            Claude plugin users can enable that directory as a Claude Code plugin. The hook blocks dispatcher/conductor writes and blocks crossing into Epic N+1 until Epic N Process
             Judge is <code>PASS</code>. Use <code>node scripts/smoke-acef-hook-active-ledger</code> to verify active
             ledger scoping and <code>node scripts/smoke-acef-opencode-plugin</code> to verify the OpenCode adapter.
             Restart Claude Code / Codex / OpenCode after installing hooks.</p>
