@@ -22,6 +22,9 @@ Checks:
   finding-promotion   Require each conformance finding to record a patch/registry/check/defer disposition
   graduation-reconciliation Require promoted findings to reconcile to a real file or enforcedBy value
   vertical-slice      Require capabilities to trace actor -> real surface/entrypoint -> application path -> runtime evidence
+  guarded-test-floor  For guarded work, require a symbol-grounded asserted boundary test and independent Test Author
+  actor-separation    For full BMAD, require distinct phase actors with durable provenance evidence
+  source-reconciliation For full BMAD, require every planning source to record use/conflict/resolution
   session-handoff     Require a structured Session Handoff block in the delivery ledger
   seeded-epic-gates   Require Epic N Process Judge rows/artifacts for epics mentioned in ledger
   epic-boundary       Require Epic N-1 Process Judge PASS before target Epic N
@@ -467,6 +470,12 @@ function checkPatternRegistry(registryPath) {
     }
     if (typeof pattern.completionEvidence !== "object" || pattern.completionEvidence === null || Array.isArray(pattern.completionEvidence)) {
       missing.push(`patterns[${index}].completionEvidence`);
+    } else {
+      for (const field of ["structure", "registration", "discoverability", "runtime"]) {
+        if (!hasMeaningfulValue(pattern.completionEvidence[field])) {
+          missing.push(`patterns[${index}].completionEvidence.${field}`);
+        }
+      }
     }
     if (!Array.isArray(pattern.sourceEvidence) || !pattern.sourceEvidence.length) missing.push(`patterns[${index}].sourceEvidence`);
     if (!Array.isArray(pattern.goldenNeighbors) || !pattern.goldenNeighbors.length) missing.push(`patterns[${index}].goldenNeighbors`);
@@ -691,13 +700,36 @@ function markdownTable(section) {
   return { headers, rows };
 }
 
+function evidenceReference(value) {
+  const normalized = String(value || "").trim().replace(/^`|`$/g, "");
+  const separator = normalized.indexOf("#");
+  if (separator <= 0 || separator === normalized.length - 1) return null;
+  return {
+    path: normalized.slice(0, separator).trim(),
+    probe: normalized.slice(separator + 1).trim(),
+  };
+}
+
+function verifyEvidenceReference(repoRoot, value, options = {}) {
+  const reference = evidenceReference(value);
+  if (!reference) return "must use path#probe evidence syntax";
+  const filePath = resolvePath(reference.path, repoRoot);
+  if (!exists(filePath)) return `missing evidence file ${reference.path}`;
+  const content = read(filePath);
+  if (!content.includes(reference.probe)) return `probe not found in ${reference.path}: ${reference.probe}`;
+  if (options.requireAssertion && !/(?:\bassert\w*\s*\(|->assert\w*\s*\(|\bexpect\s*\(|\bshould\s*[.(]|\btest\s*\()/i.test(content)) {
+    return `runtime evidence has no executable assertion in ${reference.path}`;
+  }
+  return "";
+}
+
 function checkVerticalSlice(repoRoot, ledgerPath) {
   if (!ledgerPath || !exists(ledgerPath)) return result("vertical-slice", false, "Missing ledger path");
   const section = extractSection(read(ledgerPath), "Vertical Slice Trace");
   if (!section) return result("vertical-slice", false, "Missing ## Vertical Slice Trace section");
 
   const table = markdownTable(section);
-  const required = ["capability", "actor", "surface", "entrypoint", "applicationpath", "runtimeevidence", "status"];
+  const required = ["capability", "actor", "surface", "entrypoint", "entrypointevidence", "applicationpath", "runtimeevidence", "status"];
   const missingHeaders = required.filter((field) => !table.headers.includes(field));
   if (missingHeaders.length) {
     return result("vertical-slice", false, `Missing column(s): ${missingHeaders.join(", ")}`);
@@ -714,14 +746,115 @@ function checkVerticalSlice(repoRoot, ledgerPath) {
     if (supportingOnly.test(values.surface)) failures.push(`row ${rowIndex + 1}: supporting artifact is not a user/runtime surface`);
     if (!/(?:->|→)/.test(values.applicationpath)) failures.push(`row ${rowIndex + 1}: application path must show at least two linked layers`);
     if (!/^pass$/i.test(values.status)) failures.push(`row ${rowIndex + 1}: status must be PASS at close`);
-    const evidencePaths = pathClaimsFromText(row[index.runtimeevidence] || "");
-    if (!evidencePaths.length || !evidencePaths.some((claim) => exists(resolvePath(claim, repoRoot)))) {
-      failures.push(`row ${rowIndex + 1}: runtime evidence must reconcile to an existing file`);
-    }
+    const entrypointError = verifyEvidenceReference(repoRoot, row[index.entrypointevidence]);
+    if (entrypointError) failures.push(`row ${rowIndex + 1}: entrypoint evidence ${entrypointError}`);
+    const runtimeError = verifyEvidenceReference(repoRoot, row[index.runtimeevidence], { requireAssertion: true });
+    if (runtimeError) failures.push(`row ${rowIndex + 1}: runtime evidence ${runtimeError}`);
   }
 
   if (failures.length) return result("vertical-slice", false, failures.join("; "));
   return result("vertical-slice", true, `${table.rows.length} capability slice(s) reconcile to real surfaces and runtime evidence`);
+}
+
+function isFullBmad(text) {
+  return /\b(?:active_?lane|lane)\s*:\s*[^\n]*(?:full\s+)?bmad\b/i.test(text)
+    || /\bfull\s+bmad\s+v?2\b/i.test(text);
+}
+
+function checkGuardedTestFloor(repoRoot, ledgerPath) {
+  if (!ledgerPath || !exists(ledgerPath)) return result("guarded-test-floor", false, "Missing ledger path");
+  const text = read(ledgerPath);
+  const track = (ledgerField(text, "track") || ledgerField(text, "active_track")).toLowerCase();
+  if (track !== "guarded") return result("guarded-test-floor", true, "Track is not guarded");
+
+  const section = extractSection(text, "Guarded Test Floor");
+  if (!section) return result("guarded-test-floor", false, "Missing ## Guarded Test Floor section");
+  const fields = sessionHandoffFields(section);
+  const required = ["boundary", "boundary_symbol", "test_evidence", "test_author_actor", "status"];
+  const missing = required.filter((field) => !hasMeaningfulValue(fields[field]));
+  if (missing.length) return result("guarded-test-floor", false, `Missing field(s): ${missing.join(", ")}`);
+  if (!/^pass$/i.test(fields.status)) return result("guarded-test-floor", false, "Guarded test floor status must be PASS");
+  if (/^(?:conductor|dispatcher|orchestrator|main|general-purpose)$/i.test(fields.test_author_actor)) {
+    return result("guarded-test-floor", false, "Test Author must be a dedicated actor");
+  }
+  const reference = evidenceReference(fields.test_evidence);
+  if (!reference || reference.probe !== fields.boundary_symbol) {
+    return result("guarded-test-floor", false, "test_evidence must use path#probe with probe equal to boundary_symbol");
+  }
+  const evidenceError = verifyEvidenceReference(repoRoot, fields.test_evidence, { requireAssertion: true });
+  if (evidenceError) return result("guarded-test-floor", false, evidenceError);
+  return result("guarded-test-floor", true, `Guarded boundary ${fields.boundary} is grounded at ${fields.boundary_symbol}`);
+}
+
+function normalizedPhase(value) {
+  return String(value || "").toLowerCase().replace(/[^a-z0-9]+/g, "");
+}
+
+function checkActorSeparation(repoRoot, ledgerPath) {
+  if (!ledgerPath || !exists(ledgerPath)) return result("actor-separation", false, "Missing ledger path");
+  const text = read(ledgerPath);
+  if (!isFullBmad(text)) return result("actor-separation", true, "Lane is not full BMAD");
+  const section = extractSection(text, "Actor Separation");
+  if (!section) return result("actor-separation", false, "Missing ## Actor Separation section");
+  const table = markdownTable(section);
+  const requiredHeaders = ["phase", "actor", "evidence"];
+  const missingHeaders = requiredHeaders.filter((field) => !table.headers.includes(field));
+  if (missingHeaders.length) return result("actor-separation", false, `Missing column(s): ${missingHeaders.join(", ")}`);
+  const index = Object.fromEntries(requiredHeaders.map((field) => [field, table.headers.indexOf(field)]));
+  const requiredPhases = ["atdd", "development", "codereview", "verifypatch", "testreview", "processjudge"];
+  const rows = new Map(table.rows.map((row) => [normalizedPhase(row[index.phase]), row]));
+  const missingPhases = requiredPhases.filter((phase) => !rows.has(phase));
+  if (missingPhases.length) return result("actor-separation", false, `Missing phase(s): ${missingPhases.join(", ")}`);
+
+  const actors = [];
+  const failures = [];
+  for (const phase of requiredPhases) {
+    const row = rows.get(phase);
+    const actor = normalizedFieldValue(row[index.actor]);
+    actors.push(actor);
+    if (!hasMeaningfulValue(actor)) failures.push(`${phase}: missing actor`);
+    if (/^(?:conductor|dispatcher|orchestrator|main|general-purpose)$/i.test(actor)) failures.push(`${phase}: invalid actor ${actor}`);
+    const reference = evidenceReference(row[index.evidence]);
+    if (!reference || reference.probe !== actor) failures.push(`${phase}: evidence must use path#actor`);
+    else {
+      const evidenceError = verifyEvidenceReference(repoRoot, row[index.evidence]);
+      if (evidenceError) failures.push(`${phase}: ${evidenceError}`);
+    }
+  }
+  const duplicates = actors.filter((actor, indexValue) => actor && actors.indexOf(actor) !== indexValue);
+  if (duplicates.length) failures.push(`actors must be distinct: ${[...new Set(duplicates)].join(", ")}`);
+  if (failures.length) return result("actor-separation", false, failures.join("; "));
+  return result("actor-separation", true, "Six full-BMAD phases have distinct actors and durable evidence");
+}
+
+function checkSourceReconciliation(repoRoot, ledgerPath) {
+  if (!ledgerPath || !exists(ledgerPath)) return result("source-reconciliation", false, "Missing ledger path");
+  const text = read(ledgerPath);
+  if (!isFullBmad(text)) return result("source-reconciliation", true, "Lane is not full BMAD");
+  const section = extractSection(text, "Source Reconciliation");
+  if (!section) return result("source-reconciliation", false, "Missing ## Source Reconciliation section");
+  const table = markdownTable(section);
+  const required = ["source", "path", "decision", "discrepancy", "resolution"];
+  const missingHeaders = required.filter((field) => !table.headers.includes(field));
+  if (missingHeaders.length) return result("source-reconciliation", false, `Missing column(s): ${missingHeaders.join(", ")}`);
+  if (!table.rows.length) return result("source-reconciliation", false, "Source Reconciliation has no source rows");
+  const index = Object.fromEntries(required.map((field) => [field, table.headers.indexOf(field)]));
+  const failures = [];
+  for (const [rowIndex, row] of table.rows.entries()) {
+    const source = normalizedFieldValue(row[index.source]);
+    const sourcePath = String(row[index.path] || "").trim().replace(/^`|`$/g, "");
+    const decision = normalizedPhase(row[index.decision]);
+    const discrepancy = normalizedFieldValue(row[index.discrepancy]);
+    const resolution = normalizedFieldValue(row[index.resolution]);
+    if (!hasMeaningfulValue(source)) failures.push(`row ${rowIndex + 1}: missing source`);
+    if (!sourcePath || !exists(resolvePath(sourcePath, repoRoot))) failures.push(`row ${rowIndex + 1}: missing source path ${sourcePath || "<empty>"}`);
+    if (!new Set(["used", "notused", "conflict"]).has(decision)) failures.push(`row ${rowIndex + 1}: decision must be USED, NOT USED, or CONFLICT`);
+    if (decision === "conflict" && !hasMeaningfulValue(discrepancy)) failures.push(`row ${rowIndex + 1}: conflict requires discrepancy`);
+    if ((decision === "conflict" || decision === "notused") && !hasMeaningfulValue(resolution)) failures.push(`row ${rowIndex + 1}: ${decision} requires resolution`);
+    if (/^(?:pending|tbd|unresolved|open)$/i.test(resolution)) failures.push(`row ${rowIndex + 1}: resolution remains open`);
+  }
+  if (failures.length) return result("source-reconciliation", false, failures.join("; "));
+  return result("source-reconciliation", true, `${table.rows.length} planning source(s) reconciled`);
 }
 
 function checkGraduationReconciliation(repoRoot, ledgerPath) {
@@ -837,7 +970,7 @@ function main() {
   const adapter = args.adapter || findAdapter(args.repo);
   const registry = findPatternRegistry(args.repo, adapter);
   const checks = args.check === "all"
-    ? ["clean-tree", "preflight", "claims", "adapter-freshness", "pattern-registry", "reuse-before-create", "do-not-copy", "partial-workshape", "finding-promotion", "graduation-reconciliation", "vertical-slice", "session-handoff", "seeded-epic-gates", "epic-boundary", "replan-counter"]
+    ? ["clean-tree", "preflight", "claims", "adapter-freshness", "pattern-registry", "reuse-before-create", "do-not-copy", "partial-workshape", "finding-promotion", "graduation-reconciliation", "vertical-slice", "guarded-test-floor", "actor-separation", "source-reconciliation", "session-handoff", "seeded-epic-gates", "epic-boundary", "replan-counter"]
     : [args.check];
 
   const results = checks.map((check) => {
@@ -852,6 +985,9 @@ function main() {
     if (check === "finding-promotion") return checkFindingPromotion(ledger);
     if (check === "graduation-reconciliation") return checkGraduationReconciliation(args.repo, ledger);
     if (check === "vertical-slice") return checkVerticalSlice(args.repo, ledger);
+    if (check === "guarded-test-floor") return checkGuardedTestFloor(args.repo, ledger);
+    if (check === "actor-separation") return checkActorSeparation(args.repo, ledger);
+    if (check === "source-reconciliation") return checkSourceReconciliation(args.repo, ledger);
     if (check === "session-handoff") return checkSessionHandoff(args.repo, ledger, adapter, registry);
     if (check === "seeded-epic-gates") return checkSeededEpicGates(args.repo, ledger);
     if (check === "epic-boundary") return checkEpicBoundary(args.repo, ledger, args.targetEpic);

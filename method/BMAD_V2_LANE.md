@@ -123,6 +123,8 @@ Rules:
   gate with separate workers.
 - Story ledgers must record `ATDD actor`, `Developer actor`, `Code review actor`, `Verify-patch actor`,
   `Test-review actor`, and `Process Judge actor` where those phases apply.
+- Before close, represent those identities in `## Actor Separation` with `path#actor` provenance and run
+  `scripts/acef-process-validator --check actor-separation`.
 
 ## Accelerated cadence (safe speed mode)
 

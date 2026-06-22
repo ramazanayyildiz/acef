@@ -141,7 +141,13 @@ try {
   }, null, 2));
   fs.writeFileSync(path.join(tmp, "docs", "out.md"), "generated output\n");
   fs.mkdirSync(path.join(tmp, "tests", "Feature"), { recursive: true });
-  fs.writeFileSync(path.join(tmp, "tests", "Feature", "ServiceCapabilityTest.php"), "<?php // runtime capability fixture\n");
+  fs.mkdirSync(path.join(tmp, "routes"), { recursive: true });
+  fs.writeFileSync(path.join(tmp, "routes", "web.php"), "<?php Route::get('/account', fn () => 'account');\n");
+  fs.writeFileSync(path.join(tmp, "tests", "Feature", "ServiceCapabilityTest.php"), "<?php test('/account'); assert(true);\n");
+  fs.writeFileSync(path.join(tmp, "tests", "Feature", "PaymentBoundaryTest.php"), "<?php PaymentBoundary::authorize(); assert(true);\n");
+  fs.writeFileSync(path.join(tmp, "docs", "ai", "actor-provenance.md"), [
+    "atdd-1", "dev-1", "review-1", "verify-1", "test-review-1", "judge-1", ""
+  ].join("\n"));
   fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_demo_DELIVERY_AUDIT.md"), [
     "# ACEF Demo Delivery Audit",
     "",
@@ -153,14 +159,33 @@ try {
     "Epic 1 Process Judge",
     "",
     "Status: PASS",
+    "active_lane: Full BMAD v2",
     "track: standard",
     "workShape: service",
     "",
     "## Vertical Slice Trace",
     "",
-    "| Capability | Actor | Surface | Entrypoint | Application Path | Runtime Evidence | Status |",
-    "|---|---|---|---|---|---|---|",
-    "| Update account | Member | HTTP UI | /account | UI -> controller -> service | `tests/Feature/ServiceCapabilityTest.php` | PASS |",
+    "| Capability | Actor | Surface | Entrypoint | Entrypoint Evidence | Application Path | Runtime Evidence | Status |",
+    "|---|---|---|---|---|---|---|---|",
+    "| Update account | Member | HTTP UI | /account | `routes/web.php#/account` | UI -> controller -> service | `tests/Feature/ServiceCapabilityTest.php#/account` | PASS |",
+    "",
+    "## Actor Separation",
+    "",
+    "| Phase | Actor | Evidence |",
+    "|---|---|---|",
+    "| ATDD | atdd-1 | `docs/ai/actor-provenance.md#atdd-1` |",
+    "| Development | dev-1 | `docs/ai/actor-provenance.md#dev-1` |",
+    "| Code Review | review-1 | `docs/ai/actor-provenance.md#review-1` |",
+    "| Verify Patch | verify-1 | `docs/ai/actor-provenance.md#verify-1` |",
+    "| Test Review | test-review-1 | `docs/ai/actor-provenance.md#test-review-1` |",
+    "| Process Judge | judge-1 | `docs/ai/actor-provenance.md#judge-1` |",
+    "",
+    "## Source Reconciliation",
+    "",
+    "| Source | Path | Decision | Discrepancy | Resolution |",
+    "|---|---|---|---|---|",
+    "| Product brief | `README.md` | USED | aligned | adopted |",
+    "| Codebase map | `docs/codebase-map.md` | USED | aligned | adopted |",
     "",
   ].join("\n"));
   expectFail("clean-tree", ["--repo", tmp, "--check", "clean-tree"]);
@@ -360,6 +385,10 @@ try {
   delete missingCompletionEvidence.patterns[0].completionEvidence;
   fs.writeFileSync(registryPath, JSON.stringify(missingCompletionEvidence));
   expectFail("pattern-registry", ["--repo", tmp, "--check", "pattern-registry"]);
+  const emptyCompletionEvidence = JSON.parse(JSON.stringify(validRegistry));
+  emptyCompletionEvidence.patterns[0].completionEvidence = {};
+  fs.writeFileSync(registryPath, JSON.stringify(emptyCompletionEvidence));
+  expectFail("pattern-registry", ["--repo", tmp, "--check", "pattern-registry"]);
   const staleSchemaRegistry = JSON.parse(JSON.stringify(validRegistry));
   staleSchemaRegistry.schemaVersion = 1;
   fs.writeFileSync(registryPath, JSON.stringify(staleSchemaRegistry));
@@ -376,11 +405,46 @@ try {
     "",
     "## Vertical Slice Trace",
     "",
-    "| Capability | Actor | Surface | Entrypoint | Application Path | Runtime Evidence | Status |",
-    "|---|---|---|---|---|---|---|",
-    "| Edit page | Editor | service | PageController | controller -> service | `tests/Feature/ServiceCapabilityTest.php` | PASS |",
+    "| Capability | Actor | Surface | Entrypoint | Entrypoint Evidence | Application Path | Runtime Evidence | Status |",
+    "|---|---|---|---|---|---|---|---|",
+    "| Edit page | Editor | service | PageController | `routes/web.php#/missing-admin` | controller -> service | `tests/Feature/ServiceCapabilityTest.php#/missing-admin` | PASS |",
   ].join("\n"));
   expectFail("vertical-slice", ["--repo", tmp, "--check", "vertical-slice", "--ledger", "docs/ai/ACEF_backend_only_DELIVERY_AUDIT.md"]);
+  expectPass("guarded-test-floor", ["--repo", tmp, "--check", "guarded-test-floor", "--ledger", "docs/ai/ACEF_demo_DELIVERY_AUDIT.md"]);
+  fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_guarded_floor_DELIVERY_AUDIT.md"), [
+    "# Guarded floor",
+    "track: guarded",
+    "",
+    "## Guarded Test Floor",
+    "boundary: authorization",
+    "boundary_symbol: PaymentBoundary::authorize",
+    "test_evidence: tests/Feature/PaymentBoundaryTest.php#PaymentBoundary::authorize",
+    "test_author_actor: test-author-1",
+    "status: PASS",
+  ].join("\n"));
+  expectPass("guarded-test-floor", ["--repo", tmp, "--check", "guarded-test-floor", "--ledger", "docs/ai/ACEF_guarded_floor_DELIVERY_AUDIT.md"]);
+  fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_fake_guarded_floor_DELIVERY_AUDIT.md"), [
+    "# Fake guarded floor",
+    "track: guarded",
+    "",
+    "## Guarded Test Floor",
+    "boundary: authorization",
+    "boundary_symbol: MissingBoundary::authorize",
+    "test_evidence: tests/Feature/PaymentBoundaryTest.php#MissingBoundary::authorize",
+    "test_author_actor: conductor",
+    "status: PASS",
+  ].join("\n"));
+  expectFail("guarded-test-floor", ["--repo", tmp, "--check", "guarded-test-floor", "--ledger", "docs/ai/ACEF_fake_guarded_floor_DELIVERY_AUDIT.md"]);
+  expectPass("actor-separation", ["--repo", tmp, "--check", "actor-separation", "--ledger", "docs/ai/ACEF_demo_DELIVERY_AUDIT.md"]);
+  const duplicateActorLedger = fs.readFileSync(path.join(tmp, "docs", "ai", "ACEF_demo_DELIVERY_AUDIT.md"), "utf8")
+    .replace("| Development | dev-1 | `docs/ai/actor-provenance.md#dev-1` |", "| Development | atdd-1 | `docs/ai/actor-provenance.md#atdd-1` |");
+  fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_duplicate_actor_DELIVERY_AUDIT.md"), duplicateActorLedger);
+  expectFail("actor-separation", ["--repo", tmp, "--check", "actor-separation", "--ledger", "docs/ai/ACEF_duplicate_actor_DELIVERY_AUDIT.md"]);
+  expectPass("source-reconciliation", ["--repo", tmp, "--check", "source-reconciliation", "--ledger", "docs/ai/ACEF_demo_DELIVERY_AUDIT.md"]);
+  const openConflictLedger = fs.readFileSync(path.join(tmp, "docs", "ai", "ACEF_demo_DELIVERY_AUDIT.md"), "utf8")
+    .replace("| Codebase map | `docs/codebase-map.md` | USED | aligned | adopted |", "| Backend | `docs/missing-contract.md` | CONFLICT | endpoint differs | pending |");
+  fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_open_source_conflict_DELIVERY_AUDIT.md"), openConflictLedger);
+  expectFail("source-reconciliation", ["--repo", tmp, "--check", "source-reconciliation", "--ledger", "docs/ai/ACEF_open_source_conflict_DELIVERY_AUDIT.md"]);
   expectPass("session-handoff", ["--repo", tmp, "--check", "session-handoff", "--ledger", "docs/ai/ACEF_demo_DELIVERY_AUDIT.md"]);
   expectPass("claims", ["--repo", tmp, "--check", "claims", "--ledger", "docs/ai/ACEF_demo_DELIVERY_AUDIT.md"]);
   expectPass("seeded-epic-gates", ["--repo", tmp, "--check", "seeded-epic-gates", "--ledger", "docs/ai/ACEF_demo_DELIVERY_AUDIT.md"]);
@@ -389,6 +453,7 @@ try {
 
   run("git", ["add", "docs"], { cwd: tmp });
   run("git", ["add", "tests"], { cwd: tmp });
+  run("git", ["add", "routes"], { cwd: tmp });
   run("git", ["add", ".acef-bmad-lane"], { cwd: tmp });
   run("git", ["commit", "-m", "add acef docs"], { cwd: tmp });
   expectPass("clean-tree", ["--repo", tmp, "--check", "clean-tree"]);

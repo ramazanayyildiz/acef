@@ -184,6 +184,9 @@ If user asks:
   not let old ledgers or chat memory stand in for the active run.
 - Guarded work: auth, payment, data/migrations, secrets, shared/core APIs, releases, and multi-repo work need human approval before execution.
 - Guarded work — test floor: a verification checklist is a **supplement, not a substitute**. Guarded changes require **at least one symbol-grounded test on the auth/payment/entitlement/data boundary** (bootstrap the framework via `acef-test-bootstrap` if the repo has none — with install approval). The human-approval gate must confirm which was done (test + checklist, not checklist alone). A zero-test repo is not an excuse to ship guarded work untested.
+  Record `## Guarded Test Floor` and run `--check guarded-test-floor`.
+- Full BMAD close: run `--check actor-separation` and `--check source-reconciliation`; distinct names or source claims
+  without durable evidence do not pass.
 
 ## Output Shape
 

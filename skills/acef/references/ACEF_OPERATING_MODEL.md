@@ -242,14 +242,28 @@ Reviewer, Process Judge, and Documentation Maintainer. A generic or conductor id
 
 Before a user-visible or runtime-wired story/epic can close, its ledger must contain `## Vertical Slice Trace` with:
 
-| Capability | Actor | Surface | Entrypoint | Application Path | Runtime Evidence | Status |
-|---|---|---|---|---|---|---|
-| promised user action | real actor | UI/admin/HTTP/API/CLI/queue/scheduler/CMS | production entrypoint | surface -> application layers | existing real-path test/evidence file | PASS |
+| Capability | Actor | Surface | Entrypoint | Entrypoint Evidence | Application Path | Runtime Evidence | Status |
+|---|---|---|---|---|---|---|---|
+| promised user action | real actor | UI/admin/HTTP/API/CLI/queue/scheduler/CMS | production entrypoint | `source/path#probe` | surface -> application layers | `test/path#probe` | PASS |
 
 A controller, service, repository, model, form, seeder, helper, or class is supporting structure, not a surface. If the
 trace ends at one of those artifacts, the capability is incomplete. When repo docs/skills/stubs do not exist, derive the
 slice from the requirement itself: who performs what action, where they enter, which layers execute, and which real-path
-test proves it. Run `scripts/acef-process-validator --check vertical-slice` before story/epic close.
+test proves it. Both evidence cells use `path#probe`; the validator requires the production source to contain the
+entrypoint probe and the test to contain the runtime probe plus an executable assertion. Run
+`scripts/acef-process-validator --check vertical-slice` before story/epic close.
+
+For guarded work, add `## Guarded Test Floor` with `boundary`, `boundary_symbol`, `test_evidence`,
+`test_author_actor`, and `status: PASS`. The evidence uses `test/path#boundary_symbol`; the file must contain that exact
+boundary symbol and an assertion. Run `--check guarded-test-floor`.
+
+For full BMAD, add `## Actor Separation` as a `Phase | Actor | Evidence` table. ATDD, Development, Code Review,
+Verify Patch, Test Review, and Process Judge actors must be distinct, non-conductor identities. Evidence uses
+`path#actor`, and the file must contain that actor identity. Run `--check actor-separation`.
+
+For full BMAD planning/import work, add `## Source Reconciliation` as a
+`Source | Path | Decision | Discrepancy | Resolution` table. Decisions are `USED`, `NOT USED`, or `CONFLICT`; source
+paths must exist, and conflicts/non-use require a closed resolution. Run `--check source-reconciliation`.
 
 **Epic Process Judge questions:**
 1. Was the `Epic N Process Judge [PENDING]` gate row/artifact seeded during epics/stories generation, before

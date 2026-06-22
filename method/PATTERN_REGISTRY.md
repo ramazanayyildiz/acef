@@ -93,6 +93,8 @@ Every `patterns[]` entry must include:
 `completionEvidence` records what "done" means for the pattern. It should separate supporting structure from registration,
 discoverability, and real runtime proof when the work shape has those concerns. Local generation docs, skills, stubs, and
 checklists are valid `completionEvidence` sources when reconciled against live code.
+All four keys (`structure`, `registration`, `discoverability`, `runtime`) are mandatory and must contain meaningful values;
+an empty object is invalid.
 
 ## Freshness semantics
 

@@ -120,7 +120,7 @@ A lightweight (usually guarded) task promotes to full BMAD when any of:
 - **Source reconciliation** — before an import/reconcile step can pass, every named source that owns required scope must
   be parsed and reconciled. Functional spec, UX/design, backend contract, adapter, and codebase evidence are separate
   sources of truth; do not collapse them into one. Source differences must become a superset/discrepancy table, not a
-  silent omission.
+  silent omission. Full BMAD records `## Source Reconciliation` and runs `--check source-reconciliation`.
 - **External Framework Grounding Gate** — before ATDD for a story that relies on third-party framework APIs, prove the
   installed framework's real API with a small spike/probe and one reference implementation. ATDD must assert that proven
   API, not guessed methods or internal properties. Fake descriptors, vendor facade/class overrides, monkey patches, and
@@ -157,6 +157,8 @@ A lightweight (usually guarded) task promotes to full BMAD when any of:
 - **Done = user-visible** — for user-facing work, prove the owning persona can reach and use the surface, not just a green unit test.
 - **Drift = stop condition** — if specs, artifact, and code disagree, resolve the source-of-truth conflict before merging.
 - **Guarded test floor** — for guarded-track work a verification checklist is a **supplement, not a substitute**: require at least one symbol-grounded test on the auth / payment / entitlement / data boundary (bootstrap the framework with approval if the repo has none). A zero-test repo does not license shipping guarded work untested; the human-approval gate confirms a test was written, not just a checklist.
+  Record the exact boundary symbol and `path#symbol` evidence under `## Guarded Test Floor`; run
+  `--check guarded-test-floor` before close.
 
 ## Explicitly OUT (reference-only)
 - **Heavy phase-gated PM governance** (full charter / WBS / RTM / RAID / phase-gate document suites) — for large

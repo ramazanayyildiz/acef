@@ -34,11 +34,12 @@ treated as enforcement.
 | Preflight `PASS` before planning/implementation | validator CLI | machinery | `scripts/acef-process-validator --check preflight`; hook/CI wiring still pending. | P0 |
 | Step ledger entry exists before workflow/read/task execution | hook partial + validator tests | machinery | ACEF/BMAD guard hook blocks phase/story Bash commands until the ledger row is `IN PROGRESS`; wider tool coverage can mature later. | P0 |
 | Worker stays inside one story/phase scope | hook + scope manifest | machinery | `docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json` binds implementation workers to `activeStory`, `phase`, `allowedPaths`, one commit budget, no ledger edits, and no subagent spawning. | P0 |
-| Guarded test floor has at least one symbol-grounded boundary test | documentation-only + sharded Test Author | machinery + shard | Validate boundary symbol reference plus independent Test Author artifact. | P1 |
+| Guarded test floor has at least one symbol-grounded boundary test | validator CLI + sharded Test Author | machinery + shard | `--check guarded-test-floor` reconciles an exact boundary symbol to an asserted test and dedicated Test Author. | P1 |
 | External framework API assumptions grounded before ATDD | shard + Process Judge | shard + machinery | Stories using third-party framework APIs require a spike/reference implementation before ATDD; fake descriptors, vendor overrides, monkey patches, and test-only shims are REPLAN triggers. | P1 |
 | Runtime shortcuts cannot replace production entrypoint tests | shard + Process Judge | shard + machinery | Story/epic close requires real HTTP/CLI/queue/scheduler/CMS-runtime smoke with content or negative assertions when that runtime path owns behavior. | P1 |
 | FRs trace to exercised capabilities, not artifacts | validator CLI + Process Judge | machinery | `--check vertical-slice` requires actor -> surface/entrypoint -> application path -> existing runtime evidence; artifact existence and manual-QA polish deferrals cannot satisfy missing user actions. | P1 |
-| Actor separation | documentation + partial shard | shard + machinery | Harness must spawn distinct identities; ledger can validate identity fields. | P1 |
+| Actor separation | validator CLI + provenance artifact | machinery | `--check actor-separation` requires six distinct full-BMAD actors and `path#actor` evidence. | P1 |
+| Source reconciliation | validator CLI + planning shard | machinery + shard | `--check source-reconciliation` requires existing source paths and closed USED/NOT USED/CONFLICT decisions. | P1 |
 | Subagent claims are not evidence | documentation-only | machinery + shard | Cited-path/command/artifact validator plus Process Judge. | P1 |
 | Reuse-before-create | documentation-only | jit + shard | Write-time block plus conformance reviewer. | P1 |
 | Conformance lens | documentation-only | shard | Fresh reviewer with diff + small rubric. | P1 |
