@@ -91,6 +91,21 @@ The conductor is a lifecycle coordinator, not an implementing or reviewing actor
 must not collapse ATDD, dev-story, code-review, verify-patch, test-review, or Process Judge into one self-reviewing
 worker context.
 
+Full BMAD requires delegation. During capability preflight or active-run bootstrap, record:
+
+```md
+## Delegation Authorization
+- status: APPROVED
+- scope: ACEF-required persona workers only
+- allowed_personas: PM/Planner, UX Designer, Architect, Test Author/Tester, Developer, Code Reviewer/Judge,
+  Verify-Patch Reviewer, Test Reviewer, Process Judge, Documentation Maintainer
+- limits: one story/phase per worker; no worker-spawned subagents; no worker edits to docs/ai/ACEF_*; active worker
+  scope required before implementation writes; final report then STOP
+```
+
+If this section is missing, the conductor should ask once at the lane start instead of asking again at every review or
+judge phase. Generic delegation remains forbidden.
+
 Worker identities must map to explicit personas:
 
 | BMAD phase | Required persona identity |

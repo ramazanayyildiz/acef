@@ -91,7 +91,11 @@ Required bootstrap order:
    `ACEF_ACTIVE_LEDGER`.
 5. Add a complete `## Session Handoff` block to the ledger with at least:
    `last_passed_gate`, `active_lane`, `active_track`, `next_allowed_step`, and `ledger_path`.
-6. Start the first Step Ledger Entry before invoking a worker, reading deeper method files/templates, or launching
+6. For any lane that requires independent worker/persona phases, record `## Delegation Authorization` before the first
+   dispatch. It must say whether delegation is approved, the allowed personas, and the limits: one story/phase per
+   worker, no worker-spawned subagents, no worker edits to `docs/ai/ACEF_*`, active worker scope required before
+   implementation writes, and final report then STOP.
+7. Start the first Step Ledger Entry before invoking a worker, reading deeper method files/templates, or launching
    source verifiers.
 
 If a run invokes workers before this bootstrap exists, the correct response is not to reconstruct the ledger afterward.
@@ -107,6 +111,7 @@ until final done-state.
 The ledger is the supervisor/auditor surface. It records every phase transition, not just the initial classification:
 
 - current route, lane, track, and story/task;
+- delegation authorization for ACEF-required persona workers when the lane needs independent workers;
 - next allowed phase and the exact skill/tool that must run;
 - resolved path/command for that skill/tool before invocation;
 - input artifacts consumed by the skill;
@@ -237,6 +242,11 @@ stories cannot use self-review.
 BMAD story evidence must include persona identity for every required worker phase. Valid persona identities are:
 PM/Planner, UX Designer, Architect, Test Author/Tester, Developer, Code Reviewer/Judge, Verify-Patch Reviewer, Test
 Reviewer, Process Judge, and Documentation Maintainer. A generic or conductor identity does not satisfy a worker phase.
+
+When the full BMAD lane is authorized, delegation to those ACEF-required persona workers should be approved once at run
+start and recorded in the ledger. The approval is not a blank check: it covers only the required persona phases in the
+current ACEF run. Each worker remains bound by the Worker Scope Fence, cannot spawn another worker, cannot edit the
+ledger/run-control files, and must report then stop.
 
 **Story/task Process Judge questions:**
 1. What route, lane, and track was selected, and where is that recorded?

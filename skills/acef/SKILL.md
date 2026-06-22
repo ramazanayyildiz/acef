@@ -48,7 +48,10 @@ Before any worker fan-out, source verification, deep workflow/template read, pla
 3. Create or update the delivery ledger.
 4. Set `docs/ai/ACEF_ACTIVE_LEDGER` or `ACEF_ACTIVE_LEDGER`.
 5. Add/update `## Session Handoff` with `last_passed_gate`, `active_lane`, `active_track`, `next_allowed_step`, and `ledger_path`.
-6. Start the first step row before invoking workers/tools.
+6. If the lane needs independent persona workers, record `## Delegation Authorization`: approved personas, one
+   story/phase per worker, no worker-spawned subagents, no worker ledger edits, active worker scope required, final
+   report then STOP.
+7. Start the first step row before invoking workers/tools.
 
 A worker launched before this bootstrap is drift. Stop, record it, patch the ambiguous rule if needed, and restart from bootstrap.
 
@@ -66,6 +69,7 @@ A worker launched before this bootstrap is drift. Stop, record it, patch the amb
 - No unapproved installs, code edits, deploys, migrations, broad automation, or pushes.
 - No generic subagent work may be called BMAD. BMAD requires the real runtime/skills and disk evidence.
 - Conductor coordinates; it does not author implementation, ATDD, code review, verify-patch, test review, or Process Judge work in full BMAD.
+- Full BMAD delegation is approved once per run for ACEF-required persona workers only; generic delegation remains forbidden.
 - Every multi-step feature uses preflight + delivery ledger + Process Judge gates.
 - Epic N+1 needs Epic N Process Judge `PASS` and explicit Epic Transition Approval; generic “go on/devam/continue” is not approval.
 - Guarded work needs explicit approval and at least one symbol-grounded boundary test.

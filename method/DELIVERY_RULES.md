@@ -103,6 +103,10 @@ A lightweight (usually guarded) task promotes to full BMAD when any of:
   conformance findings are undispositioned.
 - **Active run bootstrap** — before workers or source verifiers run, the target workspace has a delivery ledger, active
   ledger pointer, and structured session handoff. A stale ledger from another run cannot satisfy the current run.
+- **Delegation authorization** — full BMAD and any lane that requires independent workers records one run-level
+  delegation approval for ACEF-required persona workers. This avoids repeated permission prompts while preserving the
+  boundary: no generic delegation, no worker-spawned subagents, no worker ledger edits, one story/phase per worker, and
+  active worker scope before implementation writes.
 - **Conductor step ledger** — every transition records expected route/lane/track, required skill/tool, resolved
   path/command, inputs, outputs, evidence, verdict, and next allowed step. No ledger entry means no advancement.
   The entry starts before the conductor reads that step's workflow/template files or invokes the skill/tool; outputs and

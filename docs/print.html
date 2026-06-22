@@ -126,6 +126,8 @@ Captures (each field cites a source path):
           <p>An ACEF run must bootstrap its target state before worker fan-out: create <code>docs/ai/</code>, create the
             delivery ledger, set <code>ACEF_ACTIVE_LEDGER</code> or <code>docs/ai/ACEF_ACTIVE_LEDGER</code>, and write a
             complete <code>Session Handoff</code>. Source repos are evidence; the target repo owns the run gates.</p>
+          <p>Full BMAD ledgers also record <code>Delegation Authorization</code> once per run. It permits only
+            ACEF-required persona workers, not open-ended subagent delegation.</p>
           <p>If multiple delivery ledgers exist, set <code>ACEF_ACTIVE_LEDGER</code> or
             <code>docs/ai/ACEF_ACTIVE_LEDGER</code>. Without an active pointer, implementation writes are denied rather
             than satisfied by stale ledger evidence.</p>

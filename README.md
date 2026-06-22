@@ -115,6 +115,12 @@ For practical Codex use:
    checks before accepting the output.
 5. For stronger enforcement, call `scripts/acef-codex-guard` from a repo-local `pre-commit` hook.
 
+Full BMAD also needs run-level delegation authorization. Record `## Delegation Authorization` once in the ledger:
+delegation is approved only for ACEF-required persona workers, with one story/phase per worker, no worker-spawned
+subagents, no worker ledger edits, active worker scope before implementation writes, and final report then STOP. This
+satisfies tools that require explicit user authorization before spawning independent reviewers without turning
+delegation into a blank check.
+
 ## OpenCode support
 
 OpenCode can load ACEF's normal `AGENTS.md` rules and `SKILL.md` files directly. Its supported skill locations include
