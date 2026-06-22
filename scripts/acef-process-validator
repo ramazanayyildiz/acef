@@ -28,6 +28,7 @@ Checks:
   session-handoff     Require a structured Session Handoff block in the delivery ledger
   seeded-epic-gates   Require Epic N Process Judge rows/artifacts for epics mentioned in ledger
   epic-boundary       Require Epic N-1 Process Judge PASS before target Epic N
+  epic-transition-approval Require explicit human approval before starting Epic N
   replan-counter      Fail when the same scope has 2+ REPLAN decisions in ledger text
 `);
 }
@@ -409,6 +410,43 @@ function checkEpicBoundary(repoRoot, ledgerPath, targetEpic) {
   return result("epic-boundary", ok, ok
     ? `Epic ${prior} Process Judge PASS found`
     : `Epic ${prior} Process Judge PASS required before starting Epic ${targetEpic}`);
+}
+
+function explicitEpicApprovalQuote(text, targetEpic) {
+  const genericContinuation = /\b(go on|continue|devam|tamamla|bunları tamamla|proceed|ilerle)\b/i;
+  const epicMention = new RegExp(`\\b(?:Epic|E)\\s*[-_ ]?${targetEpic}\\b`, "i");
+  const approvalVerb = /\b(start|begin|launch|approve|approved|approval|başla|basla|başlat|baslat|geç|gec|onay|onayla|onaylandı|onaylandi)\b/i;
+
+  const lines = text.split(/\r?\n/);
+  for (const line of lines) {
+    if (!epicMention.test(line)) continue;
+    if (!/\b(user_quote|user quote|human quote|approval quote|approved by user|human approval|transition approval|epic transition approval)\b/i.test(line)) continue;
+    if (!approvalVerb.test(line)) continue;
+    if (genericContinuation.test(line) && !approvalVerb.test(line.replace(genericContinuation, ""))) continue;
+    return line.trim();
+  }
+
+  return "";
+}
+
+function hasEpicTransitionApproval(text, targetEpic) {
+  const approvalSection = extractSection(text, "Epic Transition Approval")
+    || extractSection(text, `Epic ${targetEpic} Transition Approval`)
+    || "";
+  const searchText = approvalSection || text;
+  const statusApproved = /\b(status|verdict|decision)\s*:\s*(?:APPROVED|PASS)\b/i.test(searchText)
+    || /\bEpic\s*[-_ ]?\d+\s+Transition\s+Approval\b[^\n]*\b(APPROVED|PASS)\b/i.test(searchText);
+  return statusApproved && explicitEpicApprovalQuote(searchText, targetEpic);
+}
+
+function checkEpicTransitionApproval(repoRoot, ledgerPath, targetEpic) {
+  if (!targetEpic || targetEpic <= 1) return result("epic-transition-approval", true, "No explicit transition approval required for Epic 1");
+  if (!ledgerPath || !exists(ledgerPath)) return result("epic-transition-approval", false, "Missing ledger path");
+  const text = allArtifactText(repoRoot, ledgerPath);
+  if (hasEpicTransitionApproval(text, targetEpic)) {
+    return result("epic-transition-approval", true, `Explicit human approval found for Epic ${targetEpic}`);
+  }
+  return result("epic-transition-approval", false, `Epic ${targetEpic} requires explicit human approval. Generic continuation phrases such as "go on", "continue", "devam", or "tamamla" are not valid epic transition approval.`);
 }
 
 function checkReplanCounter(ledgerPath) {
@@ -970,7 +1008,7 @@ function main() {
   const adapter = args.adapter || findAdapter(args.repo);
   const registry = findPatternRegistry(args.repo, adapter);
   const checks = args.check === "all"
-    ? ["clean-tree", "preflight", "claims", "adapter-freshness", "pattern-registry", "reuse-before-create", "do-not-copy", "partial-workshape", "finding-promotion", "graduation-reconciliation", "vertical-slice", "guarded-test-floor", "actor-separation", "source-reconciliation", "session-handoff", "seeded-epic-gates", "epic-boundary", "replan-counter"]
+    ? ["clean-tree", "preflight", "claims", "adapter-freshness", "pattern-registry", "reuse-before-create", "do-not-copy", "partial-workshape", "finding-promotion", "graduation-reconciliation", "vertical-slice", "guarded-test-floor", "actor-separation", "source-reconciliation", "session-handoff", "seeded-epic-gates", "epic-boundary", "epic-transition-approval", "replan-counter"]
     : [args.check];
 
   const results = checks.map((check) => {
@@ -991,6 +1029,7 @@ function main() {
     if (check === "session-handoff") return checkSessionHandoff(args.repo, ledger, adapter, registry);
     if (check === "seeded-epic-gates") return checkSeededEpicGates(args.repo, ledger);
     if (check === "epic-boundary") return checkEpicBoundary(args.repo, ledger, args.targetEpic);
+    if (check === "epic-transition-approval") return checkEpicTransitionApproval(args.repo, ledger, args.targetEpic);
     if (check === "replan-counter") return checkReplanCounter(ledger);
     return result(check, false, `Unknown check: ${check}`);
   });

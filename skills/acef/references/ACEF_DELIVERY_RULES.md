@@ -17,11 +17,11 @@ Adapter memory and run state are separate:
   maturity, and an update trigger.
 - **Delivery ledger** records one run's working state: gate summaries, drift notes, handoffs, and next allowed step.
 
-See `ACEF_ADAPTER_MEMORY.md`. Do not store run-local drift/handoff state in the adapter, and do not treat uncited
+See `method/ADAPTER_MEMORY.md`. Do not store run-local drift/handoff state in the adapter, and do not treat uncited
 adapter notes as conformance rules.
 
 Method prose is not enforcement. Load-bearing rules must move into machinery, fresh sharded workers, or just-in-time
-injection. Use `ACEF_RULE_ENFORCEMENT_MAP.md` to track which ACEF rules still depend on agent memory.
+injection. Use `method/RULE_ENFORCEMENT_MAP.md` to track which ACEF rules still depend on agent memory.
 
 Adapter/pattern-registry status controls what can proceed:
 
@@ -112,6 +112,11 @@ A lightweight (usually guarded) task promotes to full BMAD when any of:
 - **Seeded epic gates** — full BMAD epics/stories generation must seed `Epic N Process Judge [PENDING]` rows/artifacts
   before implementation starts. The final story in an epic points to that epic gate, and Epic N+1 cannot start until
   Epic N Process Judge is `PASS`.
+- **Explicit epic transition approval** — Epic N+1 cannot start merely because the user said "go on", "continue",
+  "devam", or "tamamla". After Epic N Process Judge `PASS`, the ledger must record `## Epic Transition Approval` with
+  `status: APPROVED`, `target_epic: Epic N+1`, and the exact `user_quote` naming that epic with an approval/start verb.
+  Run `scripts/acef-process-validator --check epic-transition-approval --target-epic N+1` before creating or dispatching
+  the first story in the next epic.
 - **Human-pause is not process-gate** — a human may permit autonomous continuation, but that only waives waiting for
   the human. It never waives required Process Judge or Epic Process Judge gates.
 - **Artifact claim reconciliation** — before a step can pass, every claimed output path in a state file, frontmatter,

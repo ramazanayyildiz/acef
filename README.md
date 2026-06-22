@@ -132,6 +132,7 @@ scripts/acef-process-validator --repo /path/to/repo --check actor-separation --l
 scripts/acef-process-validator --repo /path/to/repo --check source-reconciliation --ledger docs/ai/ACEF_feature_DELIVERY_AUDIT.md
 scripts/acef-process-validator --repo /path/to/repo --check session-handoff --ledger docs/ai/ACEF_feature_DELIVERY_AUDIT.md
 scripts/acef-process-validator --repo /path/to/repo --check epic-boundary --ledger docs/ai/ACEF_feature_DELIVERY_AUDIT.md --target-epic 2
+scripts/acef-process-validator --repo /path/to/repo --check epic-transition-approval --ledger docs/ai/ACEF_feature_DELIVERY_AUDIT.md --target-epic 2
 ```
 
 These checks are the first step in moving ACEF rules out of agent memory and into machinery.
@@ -208,7 +209,9 @@ ACEF separates implementation review from process review:
 - **Epic Process Judge** verifies epic closeout gates before an epic is product-done: drift audit when needed, trace,
   epic test-review, E2E/user-flow evidence, manual QA ledger, product-done audit, retrospective, and final status close.
 - **Epic boundary** is mechanical: `continue without me` may skip waiting for a human checkpoint, but it never skips the
-  seeded Epic Process Judge gate.
+  seeded Epic Process Judge gate. Starting Epic N+1 also requires explicit `Epic Transition Approval` with an exact
+  human quote naming the target epic; generic continuation phrases (`go on`, `continue`, `devam`, `tamamla`) are not
+  valid transition approval.
 
 A workflow claim is invalid unless the required skill exists, was invoked, and left evidence on disk. Subagent output is
 a lead, not gate evidence, until the conductor verifies the backing source path, command, or artifact.

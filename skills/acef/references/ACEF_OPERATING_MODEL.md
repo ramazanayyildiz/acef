@@ -197,7 +197,10 @@ of the next epic. The next epic's first story may not be created, started, or di
 `PASS`.
 
 Autonomy grants and human-pause grants are separate from process gates. If a human says "continue without me", the
-conductor may skip waiting for a human checkpoint, but it may not skip `Epic N Process Judge`.
+conductor may skip waiting for a human checkpoint, but it may not skip `Epic N Process Judge`. A next-epic transition is
+a separate scope approval: the ledger must record `Epic Transition Approval`, `status: APPROVED`, `target_epic`, and the
+exact `user_quote` naming the target epic. Generic continuation phrases such as "go on", "continue", "devam", and
+"tamamla" never authorize Epic N+1.
 
 ### Subagent Claims Are Not Evidence
 

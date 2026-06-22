@@ -29,6 +29,7 @@ treated as enforcement.
 | 2x `REPLAN` escalates to human | validator CLI | machinery | `scripts/acef-process-validator --check replan-counter`; hook/CI wiring still pending. | P0 |
 | Artifact-claim reconciliation | validator CLI | machinery | `scripts/acef-process-validator --check claims`; hook/CI wiring still pending. | P0 |
 | Epic N+1 blocked until Epic N Process Judge is `PASS` | hook partial + validator CLI | machinery | Hook exists for story commands; `--check epic-boundary` validates ledger/artifacts. | P0 |
+| Epic N+1 requires explicit human transition approval | hook + validator CLI | machinery | `--check epic-transition-approval --target-epic N`; hook blocks story commands and worker scopes for Epic N without exact approval quote. Generic "go on/devam/tamamla" is invalid. | P0 |
 | Seeded epic gates exist before implementation | validator CLI | machinery | `scripts/acef-process-validator --check seeded-epic-gates`; hook/CI wiring still pending. | P0 |
 | Adapter fresh before any route | validator CLI | machinery | `scripts/acef-process-validator --check adapter-freshness`; hook/CI wiring still pending. | P0 |
 | Preflight `PASS` before planning/implementation | validator CLI | machinery | `scripts/acef-process-validator --check preflight`; hook/CI wiring still pending. | P0 |
@@ -60,10 +61,11 @@ Build these before growing more prose:
 1. `REPLAN` counter validator. `scripts/acef-process-validator --check replan-counter`
 2. Claimed-output path-exists validator. `scripts/acef-process-validator --check claims`
 3. Epic gate state validator. `scripts/acef-process-validator --check epic-boundary --target-epic N`
-4. Seeded epic gate existence validator. `scripts/acef-process-validator --check seeded-epic-gates`
-5. Adapter freshness validator. `scripts/acef-process-validator --check adapter-freshness`
-6. Preflight `PASS` validator. `scripts/acef-process-validator --check preflight`
-7. Step-ledger-before-tool-use hook. Pending.
+4. Epic transition approval validator. `scripts/acef-process-validator --check epic-transition-approval --target-epic N`
+5. Seeded epic gate existence validator. `scripts/acef-process-validator --check seeded-epic-gates`
+6. Adapter freshness validator. `scripts/acef-process-validator --check adapter-freshness`
+7. Preflight `PASS` validator. `scripts/acef-process-validator --check preflight`
+8. Step-ledger-before-tool-use hook. Pending.
 
 These are mostly counters, path checks, and state checks. They convert the highest-risk documentation-only rules into
 rules the agent cannot forget.

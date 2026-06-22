@@ -195,9 +195,16 @@ and not a reminder; it is the next allowed transition at the epic boundary.
 Epic boundary rule:
 - The last story-level Process Judge in an epic must set `Next allowed step: Epic N Process Judge`.
 - The first story in Epic N+1 must not be created, started, or dispatched until Epic N Process Judge is `PASS`.
-- Human permission to "continue" can waive a pause for human review, but it cannot waive the process gate.
+- Epic N+1 also requires a separate **Epic Transition Approval** ledger entry with `status: APPROVED` and the exact
+  `user_quote`. Generic continuation phrases such as "go on", "continue", "devam", or "tamamla" are not valid transition
+  approval. Valid approval names the target epic and an approval/start verb, for example `user_quote: "Start Epic 4"` or
+  `user_quote: "Epic 4'e başla"`.
+- Human permission to "continue" can waive a pause for human review, but it cannot waive the process gate and cannot
+  approve the next epic unless it is recorded as explicit Epic Transition Approval.
 - If the next epic starts without the prior epic gate PASS, stop, mark the run as drift, and restart from the missing
   Epic Process Judge gate.
+- If the next epic starts without explicit transition approval, stop, mark the run as intent/scope drift, revert or
+  preserve the unauthorized work as a lead, and return to the approval checkpoint.
 
 Epic close must end with an **Epic Process Judge** pass. The epic may not be marked product-done until the judge verifies
 that drift audit (when specs exist), trace, epic test-review, E2E/user-flow evidence, manual QA ledger, product-done

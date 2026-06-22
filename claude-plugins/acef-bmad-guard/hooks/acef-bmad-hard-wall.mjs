@@ -250,6 +250,21 @@ function parseTargetEpicNumber(command) {
   return 0;
 }
 
+function parseEpicNumberFromStory(value) {
+  const text = String(value || "");
+  const patterns = [
+    /\b(?:Epic|E)\s*[-_ ]?(\d+)\b/i,
+    /\b(?:Story\s*)?(\d+)[-.]\d+\b/i,
+  ];
+
+  for (const pattern of patterns) {
+    const match = text.match(pattern);
+    if (match) return Number(match[1]);
+  }
+
+  return 0;
+}
+
 function fileContainsPass(filePath, epicNumber) {
   try {
     if (!fs.statSync(filePath).isFile()) return false;
@@ -295,6 +310,30 @@ function epicGatePassed(repoRoot, epicNumber) {
   return false;
 }
 
+function explicitEpicApprovalQuote(text, targetEpic) {
+  const genericContinuation = /\b(go on|continue|devam|tamamla|bunları tamamla|proceed|ilerle)\b/i;
+  const epicMention = new RegExp(`\\b(?:Epic|E)\\s*[-_ ]?${targetEpic}\\b`, "i");
+  const approvalVerb = /\b(start|begin|launch|approve|approved|approval|başla|basla|başlat|baslat|geç|gec|onay|onayla|onaylandı|onaylandi)\b/i;
+
+  for (const line of text.split(/\r?\n/)) {
+    if (!epicMention.test(line)) continue;
+    if (!/\b(user_quote|user quote|human quote|approval quote|approved by user|human approval|transition approval|epic transition approval)\b/i.test(line)) continue;
+    if (!approvalVerb.test(line)) continue;
+    if (genericContinuation.test(line) && !approvalVerb.test(line.replace(genericContinuation, ""))) continue;
+    return line.trim();
+  }
+
+  return "";
+}
+
+function epicTransitionApproved(repoRoot, targetEpic) {
+  if (!targetEpic || targetEpic <= 1) return true;
+  const text = allLedgerText(repoRoot);
+  const statusApproved = /\b(status|verdict|decision)\s*:\s*(?:APPROVED|PASS)\b/i.test(text)
+    || /\bEpic\s*[-_ ]?\d+\s+Transition\s+Approval\b[^\n]*\b(APPROVED|PASS)\b/i.test(text);
+  return statusApproved && Boolean(explicitEpicApprovalQuote(text, targetEpic));
+}
+
 function epicBoundaryRestricted(command, repoRoot) {
   if (!/\b(bmad-create-story|create-story|dev-story|start-story|dispatch-story)\b/i.test(command)) return "";
 
@@ -305,6 +344,12 @@ function epicBoundaryRestricted(command, repoRoot) {
   if (epicGatePassed(repoRoot, priorEpic)) return "";
 
   return `ACEF/BMAD epic boundary: cannot start Epic ${targetEpic} before Epic ${priorEpic} Process Judge is PASS. Seed/run the Epic ${priorEpic} gate first.`;
+}
+
+function epicTransitionRestricted(targetEpic, repoRoot) {
+  if (!targetEpic || targetEpic <= 1) return "";
+  if (epicTransitionApproved(repoRoot, targetEpic)) return "";
+  return `ACEF/BMAD epic transition gate: Epic ${targetEpic} requires explicit human approval recorded in the active ledger (for example: Epic ${targetEpic} Transition Approval, status APPROVED, user_quote: "Start Epic ${targetEpic}"). Generic continuation phrases such as "go on", "continue", "devam", or "tamamla" are not valid.`;
 }
 
 function phaseCommand(command) {
@@ -568,6 +613,10 @@ function workerScopeRestricted(payload, toolName, input, cwd, repoRoot, filePath
     return "ACEF worker scope fence: active worker scope is assigned to a different worker identity.";
   }
 
+  const targetEpic = parseEpicNumberFromStory(scope.activeStory || scope.story || scope.scope || "");
+  const transitionReason = epicTransitionRestricted(targetEpic, repoRoot);
+  if (transitionReason) return transitionReason;
+
   if (/^(Write|Edit|MultiEdit|NotebookEdit)$/.test(toolName) && !allowedByScopePath(filePath, repoRoot, scope)) {
     const story = scope.activeStory || "current story";
     return `ACEF worker scope fence: ${path.relative(repoRoot, filePath)} is outside allowedPaths for Story ${story}.`;
@@ -678,6 +727,12 @@ function p1ConformanceRestricted(repoRoot) {
     const boundaryReason = epicBoundaryRestricted(input.command || "", repoRoot);
     if (boundaryReason) {
       deny(boundaryReason);
+      return;
+    }
+
+    const transitionReason = epicTransitionRestricted(parseTargetEpicNumber(input.command || ""), repoRoot);
+    if (transitionReason) {
+      deny(transitionReason);
       return;
     }
   }

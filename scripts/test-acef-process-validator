@@ -288,6 +288,32 @@ try {
     "",
   ].join("\n"));
   expectHookDecision("started step ledger", storyCommandPayload, "allow");
+  expectHookDecision("Epic transition needs explicit approval despite prior epic PASS", {
+    tool_name: "Bash",
+    cwd: tmp,
+    tool_input: {
+      command: "bmad-create-story --story E2-1",
+    },
+  }, "deny");
+  fs.appendFileSync(path.join(tmp, "docs", "ai", "ACEF_demo_DELIVERY_AUDIT.md"), [
+    "",
+    "## Epic Transition Approval",
+    "status: APPROVED",
+    "target_epic: Epic 2",
+    "user_quote: \"Start Epic 2\"",
+    "",
+    "| Gate | Status |",
+    "| --- | --- |",
+    "| Epic 2 Process Judge | PENDING |",
+    "",
+  ].join("\n"));
+  expectHookDecision("Epic transition allows explicit approval", {
+    tool_name: "Bash",
+    cwd: tmp,
+    tool_input: {
+      command: "bmad-create-story --story E2-1",
+    },
+  }, "allow");
 
   expectHookDecision("worker cannot edit delivery ledger", {
     tool_name: "Edit",
@@ -449,6 +475,18 @@ try {
   expectPass("claims", ["--repo", tmp, "--check", "claims", "--ledger", "docs/ai/ACEF_demo_DELIVERY_AUDIT.md"]);
   expectPass("seeded-epic-gates", ["--repo", tmp, "--check", "seeded-epic-gates", "--ledger", "docs/ai/ACEF_demo_DELIVERY_AUDIT.md"]);
   expectPass("epic-boundary", ["--repo", tmp, "--check", "epic-boundary", "--ledger", "docs/ai/ACEF_demo_DELIVERY_AUDIT.md", "--target-epic", "2"]);
+  expectPass("epic-transition-approval", ["--repo", tmp, "--check", "epic-transition-approval", "--ledger", "docs/ai/ACEF_demo_DELIVERY_AUDIT.md", "--target-epic", "2"]);
+  fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_generic_continue_DELIVERY_AUDIT.md"), [
+    "# Generic continuation is not transition approval",
+    "Epic 1 Process Judge",
+    "Status: PASS",
+    "",
+    "## Epic Transition Approval",
+    "status: APPROVED",
+    "target_epic: Epic 2",
+    "user_quote: \"go on\"",
+  ].join("\n"));
+  expectFail("epic-transition-approval", ["--repo", tmp, "--check", "epic-transition-approval", "--ledger", "docs/ai/ACEF_generic_continue_DELIVERY_AUDIT.md", "--target-epic", "2"]);
   expectPass("replan-counter", ["--repo", tmp, "--check", "replan-counter", "--ledger", "docs/ai/ACEF_demo_DELIVERY_AUDIT.md"]);
 
   run("git", ["add", "docs"], { cwd: tmp });
