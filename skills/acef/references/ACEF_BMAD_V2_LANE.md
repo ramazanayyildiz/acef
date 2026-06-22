@@ -178,6 +178,14 @@ Epic close must include a real-runtime smoke slice for each user-visible/runtime
 real HTTP route plus content assertion, real CLI command, real queue/scheduler path, real CMS/admin/runtime render path,
 or an explicit deferral/blocker. Green isolated unit/component tests do not satisfy this gate by themselves.
 
+Epic close must also include an FR-capability trace:
+- every FR assigned to the epic maps to at least one owning story;
+- the story's deliverable is the capability the user performs, not only a supporting class, form, model, route, or
+  seeder;
+- each FR has a green real-path capability test or an explicit blocker/defer;
+- admin/editor capabilities include an admin route/edit-screen smoke when the FR promises editability;
+- manual-QA deferrals may cover polish only after automated evidence proves the entrypoint exists.
+
 When epics/stories are generated, the conductor must also seed one durable `Epic N Process Judge [PENDING]` gate row or
 artifact for every epic. This row is positioned after that epic's final story in the delivery ledger. It is not a note
 and not a reminder; it is the next allowed transition at the epic boundary.

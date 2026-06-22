@@ -156,6 +156,8 @@ If user asks:
 - Real runtime smoke: for user-visible/runtime-wired behavior, story or epic close must prove at least one production
   entrypoint path (HTTP route, CLI command, queue/scheduler, CMS/admin runtime, or template render path) with meaningful
   content/negative assertions. A 200/status-only or isolated helper test is not enough.
+- FR-capability trace: every FR assigned to an epic must map to an owning story and a real-path capability test/manual
+  check. Supporting artifacts do not satisfy requirements; only exercised user-visible capabilities do.
 - No imitation: never call generic subagent work "BMAD". BMAD means the real BMAD conductor/skills were installed,
   invoked, and left evidence on disk.
 - Full BMAD actor separation: the conductor coordinates the story lifecycle; it is not the ATDD author, implementing

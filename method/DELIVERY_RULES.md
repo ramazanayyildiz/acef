@@ -130,6 +130,11 @@ A lightweight (usually guarded) task promotes to full BMAD when any of:
   as production uses it. Status-only checks are insufficient; assert meaningful rendered content or a negative guard
   against known broken output. If manual/conductor app review finds the issue first, write the failing runtime-smoke
   test before fixing.
+- **FR-Capability Trace Gate** — before an epic starts, every functional requirement assigned to that epic must map to
+  at least one owning story whose deliverable is the user-visible capability, not merely a supporting artifact. Before
+  epic close, each mapped FR needs: owning story done, a real-path capability test, and conductor/manual execution where
+  browser/admin/runtime UX is involved. Artifact existence never satisfies an FR by itself. A "manual QA later" deferral
+  may cover polish only after an automated check proves the entrypoint exists.
 - **Full BMAD actor separation** — the conductor coordinates the story lifecycle; it is not the ATDD author,
   implementing actor, code reviewer, verifier, test reviewer, or Process Judge. The actor that authored code must never
   review, accept, or mark done that code. Guarded payment/auth/entitlement/data stories require independent review by

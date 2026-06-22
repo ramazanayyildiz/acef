@@ -144,6 +144,8 @@ evidence; they are a REPLAN signal.
 When behavior depends on a runtime entrypoint, include a real-runtime smoke: hit the real HTTP route, command, queue,
 scheduler, CMS/admin runtime, or template path and assert meaningful content or a negative guard. Status-only checks and
 isolated helper/component tests do not prove the production path.
+Every FR assigned to an epic must trace to an owning story and an exercised capability. A supporting artifact such as a
+form definition, model, seeder, or route file is not enough unless a real-path test/manual check proves the user action.
 For `PARTIAL` registries, the ledger must declare `track:` and `workShape:`; uncovered or guarded work requires
 explicit human risk acceptance.
 For P2 self-hardening, each ledgered `Conformance finding:` must record a `Disposition:`: patch, registry update,

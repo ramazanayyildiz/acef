@@ -72,6 +72,20 @@ still be `200`.
 
 A discovered runtime-smoke gap is a test gap: write the failing real-entrypoint test first, then fix.
 
+## Capability trace
+Functional requirements are satisfied by exercised capabilities, not by artifact existence. A class, form definition,
+route file, migration, seed, or helper may support a requirement, but it does not prove the requirement unless a test or
+manual verification performs the user-visible action over the real path.
+
+Examples:
+- "Editor can add/reorder blocks" requires an admin edit route/block-editor capability check, not only block `getForm()`
+  definitions.
+- "User can download a whitepaper" requires the route/storage/auth path, not only a PDF field.
+- "Menu is editor-managed" requires admin CRUD or a documented blocker, not only seeded menu rows.
+
+At epic close, trace each FR to: owning story, capability test, and manual/runtime check when the capability is
+browser/admin-facing. Missing ownership means decomposition failed; do not hide it under manual-QA deferral.
+
 ## How it maps to routes
 - **Test-case extraction (D):** `test-user-flow-mapper → test-case-planner`.
 - **Test automation (E):** add `test-browser-generator` (E2E) after the cases.
