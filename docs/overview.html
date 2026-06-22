@@ -128,6 +128,8 @@ Captures (each field cites a source path):
             ACEF/BMAD lanes, so workers cannot skip the conformance ledger under context pressure.</p>
           <p>Lean runtime is the default: evidence stays in artifacts on disk; chat reports only path, verdict, key
             evidence, and next step unless the user asks for detail.</p>
+          <p>The <code>acef</code> front-door skill is compact and loads detailed reference files just-in-time, so
+            routine runs do not pay for the full method body upfront.</p>
           <p>An ACEF run must bootstrap its target state before worker fan-out: create <code>docs/ai/</code>, create the
             delivery ledger, set <code>ACEF_ACTIVE_LEDGER</code> or <code>docs/ai/ACEF_ACTIVE_LEDGER</code>, and write a
             complete <code>Session Handoff</code>. Source repos are evidence; the target repo owns the run gates.</p>

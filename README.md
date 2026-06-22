@@ -147,6 +147,10 @@ ACEF defaults to lean reporting. Evidence remains durable on disk; chat gets com
 
 Do not paste full PRDs, story specs, ledgers, broad `rg` output, or long logs into chat unless the user asks for detail.
 
+The `acef` front-door skill is intentionally compact. It routes and names which reference files to load just-in-time;
+the detailed operating rules live in `skills/acef/references/` and `method/` so every run does not pay for the full
+method body upfront.
+
 ## Process validators
 
 ACEF ships a stack-agnostic process validator for cheap mechanical gates:
