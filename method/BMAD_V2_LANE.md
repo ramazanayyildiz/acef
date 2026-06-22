@@ -82,8 +82,8 @@ risk acceptance for the unresolved items.
    artifacts are genuine skill outputs. Any missing BLOCKER/HIGH process evidence returns the story to the required phase.
    If this is the last story in its epic, the next allowed step must be `Epic N Process Judge`, not the next epic's
    first story.
-11. **Product-done audit + manual QA** — see below.
-12. **Mark done** only through the evidence gate.
+12. **Product-done audit + manual QA** — see below.
+13. **Mark done** only through the evidence gate.
 
 ## Actor separation (mandatory)
 

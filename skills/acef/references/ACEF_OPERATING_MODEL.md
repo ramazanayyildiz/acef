@@ -229,10 +229,12 @@ Reviewer, Process Judge, and Documentation Maintainer. A generic or conductor id
 6. Does each worker identity map to an allowed persona, not to conductor/dispatcher/general-purpose?
 7. Is the code reviewer independent from the worker that authored the code?
 8. Do readiness, ATDD/test, review, verify-patch, test-review, and product-done artifacts exist when the lane requires them?
-9. Do required artifacts include the real workflow evidence/manifest, not only files shaped like the expected output?
-10. If a required gate is missing, did the work return to the right phase instead of being marked done?
-11. Does the delivery ledger contain a step entry for every transition since preflight?
-12. If a drift fix was applied, was the failed gate rerun from the start after the fix?
+9. If the story claims a user-visible, runtime-wired, admin/editor, API, CLI, queue, scheduler, or framework-integrated
+   capability, did evidence exercise the real entrypoint/capability instead of only supporting artifacts or isolated helpers?
+10. Do required artifacts include the real workflow evidence/manifest, not only files shaped like the expected output?
+11. If a required gate is missing, did the work return to the right phase instead of being marked done?
+12. Does the delivery ledger contain a step entry for every transition since preflight?
+13. If a drift fix was applied, was the failed gate rerun from the start after the fix?
 
 **Story/task verdict:** `PASS`, `FAIL: <missing gate/evidence>`, or `HALT: <human decision needed>`.
 
@@ -244,11 +246,16 @@ Reviewer, Process Judge, and Documentation Maintainer. A generic or conductor id
    dispatched?
 4. Did the epic start with the required test-design / risk-weighted coverage plan?
 5. Did every story pass story-level Process Judge before epic close?
-6. Did drift audit, trace, epic test-review, E2E/user-flow evidence, manual QA ledger, product-done audit, retrospective,
-   and final status close run when required?
-7. Are all Critical/High persona flows executed, explicitly deferred with owner/rationale, or marked blocked/failing?
-8. Is any `done` status based on chat or prose instead of durable artifact + PR evidence?
-9. Does the feature delivery ledger reconcile the full epic path: preflight → planning → stories → tests → review →
+6. Did drift audit, FR-capability trace, real-runtime smoke, epic test-review, E2E/user-flow evidence, manual QA ledger,
+   product-done audit, retrospective, and final status close run when required?
+7. Does every FR assigned to the epic map to at least one owning story marked done, plus a real-path capability test or
+   manual check that exercises the promised user-visible capability?
+8. For runtime-wired, admin/editor, API, CLI, queue, scheduler, or framework-integrated capabilities, did a real entrypoint
+   smoke execute the production path with positive content assertions and relevant negative leak/shortcut assertions?
+9. Are all Critical/High persona flows executed, explicitly deferred with owner/rationale, or marked blocked/failing, and
+   are deferrals limited to polish or explicit blockers rather than whether the capability exists at all?
+10. Is any `done` status based on chat or prose instead of durable artifact + PR evidence?
+11. Does the feature delivery ledger reconcile the full epic path: preflight → planning → stories → tests → review →
    product-done → close?
 
 **Epic verdict:** `PASS` means the epic may close; `FAIL` returns to the missing gate; `HALT` asks the human.
