@@ -123,6 +123,10 @@ must start the relevant Step Ledger Entry before reading that step's workflow/te
 spawning a worker, or generating an artifact. Outputs, verdict, and next step are filled after the step completes.
 Retroactive entries are allowed only to document drift recovery; they do not make the skipped gate valid.
 
+Workers must return a complete final report in their final message: artifact paths, commits, files changed, test
+commands/results, findings, deferrals, and blockers. If a worker goes idle without this report, the conductor treats it
+as an incomplete step and records the gap before requesting the missing report.
+
 ### Step Ledger Entry
 
 Every conductor step must use this shape:

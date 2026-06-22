@@ -121,6 +121,35 @@ Rules:
 - Story ledgers must record `ATDD actor`, `Developer actor`, `Code review actor`, `Verify-patch actor`,
   `Test-review actor`, and `Process Judge actor` where those phases apply.
 
+## Accelerated cadence (safe speed mode)
+
+ACEF may run faster without dropping the evidence chain, but only inside explicit dependency boundaries.
+
+Safe parallelization:
+- Independent stories/spikes inside the same epic may run concurrently only after their dependency graph is explicit,
+  shared contracts are stabilized, and likely touched files are non-overlapping.
+- Parallel workers each need their own ledger entry, persona identity, expected files, acceptance criteria, and final
+  report. The conductor still verifies each worker's artifact on disk before marking anything `PASS`.
+- Stories that touch the same module, shared contract, route table, migration, settings, auth, storage, payment,
+  entitlement, or security boundary do not run in parallel unless the human explicitly accepts the merge/integration
+  risk.
+- All parallel branches converge at the same story/epic Process Judge gates. Epic N+1 still waits for Epic N Process
+  Judge `PASS`.
+
+Worker reporting:
+- Every worker must emit its complete final report as its final message: artifact paths, commits, files changed, test
+  commands/results, findings, deferrals, and open blockers. The conductor should not need a second "send report" prompt.
+- A worker that goes idle without a final report is incomplete; the conductor records it as a process gap before asking
+  for the missing report.
+
+Risk-based review tier:
+- Guarded/security/auth/payment/entitlement/storage/KVKK/data-migration/routing/source-conflict stories keep separate
+  reviewer and Process Judge identities, and should use the strongest available judgment model.
+- Mechanical or low-risk stories may use a combined independent review-and-judge worker only if that worker is not the
+  author, no guarded boundary is touched, and the ledger records the waiver.
+- The author never approves or marks done its own output. Speed mode changes scheduling and model choice, not the
+  author-reviewer separation rule.
+
 ## Dev-done vs product-done
 - **Dev-done:** ATDD/feature tests green, acceptance criteria implemented, review reached its stop condition, test-review evidence exists.
 - **Product-done:** dev-done **plus** the owning persona can actually discover and use the surface (real entry point,

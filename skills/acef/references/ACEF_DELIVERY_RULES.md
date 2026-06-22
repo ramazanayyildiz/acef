@@ -130,6 +130,10 @@ A lightweight (usually guarded) task promotes to full BMAD when any of:
   Architect, Test Author/Tester, Developer, Code Reviewer/Judge, Verify-Patch Reviewer, Test Reviewer, Process Judge,
   or Documentation Maintainer. Generic workers are invalid unless their prompt and artifact record one of these
   identities. The conductor is not a persona worker.
+- **Accelerated cadence is bounded** — independent stories/spikes may run in parallel only when dependencies and likely
+  touched files do not overlap. Workers must emit complete final reports inline. Mechanical/low-risk work may use a
+  combined independent review-and-judge worker only when the author is separate and the ledger records the waiver.
+  Guarded/security/routing/storage/KVKK/data-migration/source-conflict work keeps separate reviewer and Process Judge.
 - **Done = user-visible** — for user-facing work, prove the owning persona can reach and use the surface, not just a green unit test.
 - **Drift = stop condition** — if specs, artifact, and code disagree, resolve the source-of-truth conflict before merging.
 - **Guarded test floor** — for guarded-track work a verification checklist is a **supplement, not a substitute**: require at least one symbol-grounded test on the auth / payment / entitlement / data boundary (bootstrap the framework with approval if the repo has none). A zero-test repo does not license shipping guarded work untested; the human-approval gate confirms a test was written, not just a checklist.
