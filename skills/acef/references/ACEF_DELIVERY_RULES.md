@@ -121,6 +121,10 @@ A lightweight (usually guarded) task promotes to full BMAD when any of:
   be parsed and reconciled. Functional spec, UX/design, backend contract, adapter, and codebase evidence are separate
   sources of truth; do not collapse them into one. Source differences must become a superset/discrepancy table, not a
   silent omission.
+- **External Framework Grounding Gate** — before ATDD for a story that relies on third-party framework APIs, prove the
+  installed framework's real API with a small spike/probe and one reference implementation. ATDD must assert that proven
+  API, not guessed methods or internal properties. Fake descriptors, vendor facade/class overrides, monkey patches, and
+  test-only framework shims are `REPLAN` triggers unless the human explicitly accepts them as architecture.
 - **Full BMAD actor separation** — the conductor coordinates the story lifecycle; it is not the ATDD author,
   implementing actor, code reviewer, verifier, test reviewer, or Process Judge. The actor that authored code must never
   review, accept, or mark done that code. Guarded payment/auth/entitlement/data stories require independent review by

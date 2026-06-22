@@ -149,6 +149,10 @@ If user asks:
   contracts, and code maps often own different dimensions; do not collapse one source into another. For UI scope,
   UX/design docs are authoritative for screen and flow inventory. Differences must be represented as a superset or
   discrepancy table before the step can pass.
+- External framework grounding: before ATDD for a story that depends on third-party framework APIs, prove the installed
+  framework version with a small spike/reference implementation and record the contract. If the API contradicts the
+  planned tests, `REPLAN`; do not fake green with fake descriptors, vendor overrides, monkey patches, or test-only
+  framework shims.
 - No imitation: never call generic subagent work "BMAD". BMAD means the real BMAD conductor/skills were installed,
   invoked, and left evidence on disk.
 - Full BMAD actor separation: the conductor coordinates the story lifecycle; it is not the ATDD author, implementing

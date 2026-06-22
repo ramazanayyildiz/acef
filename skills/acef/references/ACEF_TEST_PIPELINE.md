@@ -39,6 +39,21 @@ Ground at the **symbol level, not the file level**: read the actual signature/re
 against that. A file-level "this is the validator/formatter" pointer hides contract mismatches. Never ground in
 commented-out/dead code or non-test scaffolding (a benchmark harness in a `test/` dir is not a test idiom).
 
+## External framework API grounding
+When a story's ATDD depends on third-party framework behavior, prove the real API before writing acceptance tests.
+Examples: CMS block registration/forms, router internals, ORM relationship conventions, payment SDK callbacks, queue
+middleware, or component-library field builders.
+
+Required behavior:
+- run a small grounding spike or probe against the installed framework version;
+- prove one real reference implementation using the framework's real public API;
+- record the API contract in the ledger before ATDD starts;
+- write ATDD against that proven contract, not against guessed introspection methods;
+- reject framework-fighting fixes such as fake descriptors, vendor facade/class overrides, monkey patches, or test-only
+  shims unless the human explicitly accepts them as product architecture.
+
+If the proven API contradicts the planned test contract, the right outcome is `REPLAN`, not a green test.
+
 ## How it maps to routes
 - **Test-case extraction (D):** `test-user-flow-mapper → test-case-planner`.
 - **Test automation (E):** add `test-browser-generator` (E2E) after the cases.

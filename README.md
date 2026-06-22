@@ -116,6 +116,9 @@ which local neighbor/probe was checked before creation, and do-not-copy entries 
 The Claude Code guard hook also runs those P1 checks before implementation writes in active ACEF/BMAD lanes.
 The hook also enforces the worker scope fence: implementation workers cannot write outside their active story manifest,
 edit `docs/ai/ACEF_*`, spawn subagents, or commit without citing the active story.
+When story tests depend on third-party framework APIs, run a grounding spike first and record the proven contract before
+ATDD. Green tests built on fake descriptors, vendor overrides, monkey patches, or test-only framework shims are not
+evidence; they are a REPLAN signal.
 For `PARTIAL` registries, the ledger must declare `track:` and `workShape:`; uncovered or guarded work requires
 explicit human risk acceptance.
 For P2 self-hardening, each ledgered `Conformance finding:` must record a `Disposition:`: patch, registry update,

@@ -64,18 +64,21 @@ risk acceptance for the unresolved items.
    `PARTIAL` registries permit only covered mechanical/standard work shapes; guarded stories and new work shapes must
    refresh the registry or record explicit human risk acceptance first.
 3. **(NFR)** — extract non-functional constraints first on state-machine / concurrency / money / security-critical work.
-4. **ATDD** — failing tests land **before** implementation, as their own commit. Every test fails on HEAD first.
-5. **Dev-story** — implement until the ATDD tests go green.
-6. **Code-review** — multi-layer adversarial review (e.g. correctness + conformance + blind-spot + edge-case + acceptance-auditor
+4. **External framework grounding when needed** — if ATDD depends on third-party framework APIs, prove the installed
+   version's real API with a spike/reference implementation before writing failing tests. Wrong framework assumptions
+   produce hollow greens; the correct result is `REPLAN`.
+5. **ATDD** — failing tests land **before** implementation, as their own commit. Every test fails on HEAD first.
+6. **Dev-story** — implement until the ATDD tests go green.
+7. **Code-review** — multi-layer adversarial review (e.g. correctness + conformance + blind-spot + edge-case + acceptance-auditor
    lenses). Reviewer returns `MERGE` / `REVISE` / `REPLAN` (findings classed Patch / Decision / Defer / Dismiss).
    Every conformance finding becomes a code patch, pattern-registry update, do-not-copy update, proposed mechanical
    check, or explicit human deferral.
-7. **Verify-patch** — after every REVISE, fresh-context verifiers re-read each patch's acceptance criteria + domain
+8. **Verify-patch** — after every REVISE, fresh-context verifiers re-read each patch's acceptance criteria + domain
    contract + the actual diff, and check the patch claim **and** adjacent invariants it could affect.
-8. **Loop** code-review → verify-patch until **zero blocker + zero high** findings remain (read the findings, don't
+9. **Loop** code-review → verify-patch until **zero blocker + zero high** findings remain (read the findings, don't
    stop on a verdict string or a round count).
-9. **Test-review** — score test quality (target ≥ 80/100): brittleness, duplication, false-positive risk, fixture hygiene.
-10. **Story closeout Process Judge** — before product-done/test-review close, verify the real steps ran in order and the
+10. **Test-review** — score test quality (target ≥ 80/100): brittleness, duplication, false-positive risk, fixture hygiene.
+11. **Story closeout Process Judge** — before product-done/test-review close, verify the real steps ran in order and the
    artifacts are genuine skill outputs. Any missing BLOCKER/HIGH process evidence returns the story to the required phase.
    If this is the last story in its epic, the next allowed step must be `Epic N Process Judge`, not the next epic's
    first story.

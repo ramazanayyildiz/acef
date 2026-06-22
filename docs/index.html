@@ -101,6 +101,7 @@
             <li>ACEF isn't a second methodology — it adapts to the repo you already have.</li>
             <li>Full BMAD work separates the conductor from worker personas, so the same actor cannot build and approve its own work.</li>
             <li>Implementation workers are fenced to one active story/phase with narrow allowed paths, no ledger edits, no subagent spawning, and a bounded commit budget.</li>
+            <li>Stories that depend on third-party framework internals ground the real installed API before ATDD, so agents cannot fake green with shims or vendor overrides.</li>
             <li>Full BMAD epics seed their Process Judge gates up front; the next epic waits until the prior one is PASS.</li>
             <li>Every active run starts with a delivery ledger, active ledger pointer, and Session Handoff before workers fan out.</li>
             <li>Claude Code users can install the ACEF/BMAD guard hook to enforce these boundaries during ACEF/BMAD lanes.</li>
