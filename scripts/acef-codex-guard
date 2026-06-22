@@ -17,8 +17,8 @@ What it checks:
   - worker commit count since baseRef does not exceed maxCommits
   - --story, when provided, matches activeStory
 
-This is the Codex/CLI equivalent of the Claude PreToolUse scope fence. It is not a hook by itself; run it before
-certifying a worker, before commit, or from a git pre-commit/CI wrapper.
+This is the Codex/CLI backstop for the same scope fence that the ACEF Codex PreToolUse hook runs before writes.
+Run it before certifying a worker, before commit, or from a git pre-commit/CI wrapper.
 `);
 }
 

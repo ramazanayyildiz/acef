@@ -73,12 +73,14 @@ files the agent follows. No build, no npm, no services.
    For concrete work, ACEF first creates a target-run ledger, sets `ACEF_ACTIVE_LEDGER` or
    `docs/ai/ACEF_ACTIVE_LEDGER`, and writes a `Session Handoff` before worker fan-out or deep planning.
 
-4. **Optional hard wall for BMAD lanes** — if you use Claude Code hooks, install the ACEF/BMAD guard so the dispatcher
-   or conductor cannot write implementation files or BMAD artifacts during an ACEF lane:
+4. **Optional hard wall for BMAD lanes** — install the ACEF/BMAD guard so the dispatcher or conductor cannot write
+   implementation files or BMAD artifacts during an ACEF lane:
    ```bash
    scripts/install-acef-bmad-guard
    ```
-   The portable hook package lives in `claude-plugins/acef-bmad-guard/` for plugin-based installs.
+   The installer wires both Claude Code (`~/.claude/settings.json`) and Codex (`~/.codex/hooks.json`) when those homes
+   exist, while preserving existing hook entries such as context-mode.
+   The portable hook package lives in `claude-plugins/acef-bmad-guard/` for plugin-based Claude installs.
    Lightweight runs should create `.acef-lightweight-lane` or `.acef-lane`; full BMAD runs use `.acef-bmad-lane` or
    BMAD runtime markers.
    To scope hook conformance checks to the current run, set `ACEF_ACTIVE_LEDGER` or write the active ledger path into
@@ -88,9 +90,12 @@ files the agent follows. No build, no npm, no services.
 
 ## Codex support
 
-ACEF is tool-agnostic, so Codex can run the same method docs, ledgers, adapters, and validators. The only non-portable
-piece is Claude Code's `PreToolUse` hook. In Codex, use the CLI guard before certifying worker output, before commits,
-or from a git hook/CI wrapper:
+ACEF is tool-agnostic, so Codex can run the same method docs, ledgers, adapters, validators, and hook guard. Run the
+installer once to add the ACEF guard to `~/.codex/hooks.json`; Codex `PreToolUse` then checks `exec_command`,
+`apply_patch`, and file-write tools before they land.
+
+Use the CLI guard as the explicit certification/backstop before accepting worker output, before commits, or from a git
+hook/CI wrapper:
 
 ```bash
 scripts/acef-codex-guard --repo /path/to/repo --role worker --story 3.5 --base-ref HEAD
@@ -104,9 +109,10 @@ For practical Codex use:
 
 1. Start an ACEF run normally and create the ledger + active ledger pointer.
 2. Before dispatching an implementation worker, write `docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json`.
-3. After the worker returns, run `scripts/acef-codex-guard ...` and the relevant `scripts/acef-process-validator`
+3. Let the Codex `PreToolUse` guard block out-of-scope writes during the run.
+4. After the worker returns, run `scripts/acef-codex-guard ...` and the relevant `scripts/acef-process-validator`
    checks before accepting the output.
-4. For stronger enforcement, call `scripts/acef-codex-guard` from a repo-local `pre-commit` hook.
+5. For stronger enforcement, call `scripts/acef-codex-guard` from a repo-local `pre-commit` hook.
 
 The `method/` docs are the engine the agent follows (personas, tracks, lanes, the test pipeline). Read them to
 understand how delivery actually runs; the agent applies them for you.

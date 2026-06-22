@@ -249,12 +249,12 @@ Captures (each field cites a source path):
   test-*/ flow-*/        # user flows, test cases, risk, generators, QA passes
   storymap/ qa/          # planning + QA workhorses</code></pre>
           <p>Nothing in the skills is project-specific — every stack value comes from the adapter you extract per repo.</p>
-          <p>For Claude Code users, ACEF also ships a portable BMAD guard hook in
+          <p>ACEF ships a portable BMAD guard hook in
             <code>claude-plugins/acef-bmad-guard/</code>. Clone users can install it with
-            <code>scripts/install-acef-bmad-guard</code>; plugin users can enable that directory as a Claude Code
+            <code>scripts/install-acef-bmad-guard</code>; the installer wires Claude Code and Codex hooks while preserving existing entries. Claude plugin users can enable that directory as a Claude Code
             plugin. The hook blocks dispatcher/conductor writes and blocks crossing into Epic N+1 until Epic N Process
             Judge is <code>PASS</code>. Use <code>node scripts/smoke-acef-hook-active-ledger</code> to verify active
-            ledger scoping. Restart Claude Code after installing hooks.</p>
+            ledger scoping. Restart Claude Code / Codex after installing hooks.</p>
         </section>
 
         <section id="principles"><h2><span class="ic" style="background:#e8f0ff">⚖️</span>Principles</h2>

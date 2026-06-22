@@ -45,10 +45,11 @@ For users who clone ACEF and do not use plugin installation:
 scripts/install-acef-bmad-guard
 ```
 
-That copies the hook to `~/.claude/hooks/acef-bmad-hard-wall.mjs` and merges the `PreToolUse` hook into
-`~/.claude/settings.json`.
+That copies the hook to `~/.claude/hooks/acef-bmad-hard-wall.mjs` and `~/.codex/hooks/acef-bmad-hard-wall.mjs`, then
+merges the `PreToolUse` hook into `~/.claude/settings.json` and `~/.codex/hooks.json` while preserving existing hook
+entries.
 
-Restart Claude Code after installation. Hooks are loaded at session start.
+Restart Claude Code / Codex after installation. Hooks are loaded at session start.
 
 ## Worker Bypass
 

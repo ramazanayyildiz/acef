@@ -7,7 +7,7 @@ const sourceHook = path.join(repoRoot, "claude-plugins", "acef-bmad-guard", "hoo
 const home = process.env.HOME;
 
 if (!home) {
-  throw new Error("HOME is not set; cannot locate ~/.claude.");
+  throw new Error("HOME is not set; cannot locate agent hook directories.");
 }
 
 if (!fs.existsSync(sourceHook)) {
@@ -15,30 +15,49 @@ if (!fs.existsSync(sourceHook)) {
 }
 
 const claudeDir = path.join(home, ".claude");
-const hooksDir = path.join(claudeDir, "hooks");
+const claudeHooksDir = path.join(claudeDir, "hooks");
 const settingsPath = path.join(claudeDir, "settings.json");
-const targetHook = path.join(hooksDir, "acef-bmad-hard-wall.mjs");
+const claudeTargetHook = path.join(claudeHooksDir, "acef-bmad-hard-wall.mjs");
+const codexDir = path.join(home, ".codex");
+const codexHooksDir = path.join(codexDir, "hooks");
+const codexHooksPath = path.join(codexDir, "hooks.json");
+const codexTargetHook = path.join(codexHooksDir, "acef-bmad-hard-wall.mjs");
 
-fs.mkdirSync(hooksDir, { recursive: true });
-fs.copyFileSync(sourceHook, targetHook);
+function backupIfExists(filePath) {
+  if (!fs.existsSync(filePath)) return;
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+  fs.copyFileSync(filePath, `${filePath}.bak-${stamp}`);
+}
+
+function readJsonFile(filePath) {
+  if (!fs.existsSync(filePath)) return {};
+  const raw = fs.readFileSync(filePath, "utf8").trim();
+  return raw ? JSON.parse(raw) : {};
+}
+
+function ensurePreToolUseHook(config, entry) {
+  config.hooks = config.hooks && typeof config.hooks === "object" ? config.hooks : {};
+  config.hooks.PreToolUse = Array.isArray(config.hooks.PreToolUse) ? config.hooks.PreToolUse : [];
+
+  config.hooks.PreToolUse = config.hooks.PreToolUse.filter((existing) => {
+    const hooks = Array.isArray(existing?.hooks) ? existing.hooks : [];
+    return !hooks.some((hook) => typeof hook?.command === "string" && hook.command.includes("acef-bmad-hard-wall.mjs"));
+  });
+
+  config.hooks.PreToolUse.push(entry);
+  return config;
+}
+
+fs.mkdirSync(claudeHooksDir, { recursive: true });
+fs.copyFileSync(sourceHook, claudeTargetHook);
 
 let settings = {};
 if (fs.existsSync(settingsPath)) {
-  const raw = fs.readFileSync(settingsPath, "utf8").trim();
-  settings = raw ? JSON.parse(raw) : {};
-  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
-  fs.copyFileSync(settingsPath, `${settingsPath}.bak-${stamp}`);
+  settings = readJsonFile(settingsPath);
+  backupIfExists(settingsPath);
 }
 
-settings.hooks = settings.hooks && typeof settings.hooks === "object" ? settings.hooks : {};
-settings.hooks.PreToolUse = Array.isArray(settings.hooks.PreToolUse) ? settings.hooks.PreToolUse : [];
-
-settings.hooks.PreToolUse = settings.hooks.PreToolUse.filter((entry) => {
-  const hooks = Array.isArray(entry?.hooks) ? entry.hooks : [];
-  return !hooks.some((hook) => typeof hook?.command === "string" && hook.command.includes("acef-bmad-hard-wall.mjs"));
-});
-
-settings.hooks.PreToolUse.push({
+ensurePreToolUseHook(settings, {
   matcher: "Read|Write|Edit|MultiEdit|NotebookEdit|Bash",
   hooks: [
     {
@@ -52,6 +71,30 @@ settings.hooks.PreToolUse.push({
 fs.mkdirSync(claudeDir, { recursive: true });
 fs.writeFileSync(settingsPath, `${JSON.stringify(settings, null, 2)}\n`);
 
-console.log(`Installed ACEF/BMAD guard hook: ${targetHook}`);
+fs.mkdirSync(codexHooksDir, { recursive: true });
+fs.copyFileSync(sourceHook, codexTargetHook);
+
+let codexHooks = {};
+if (fs.existsSync(codexHooksPath)) {
+  codexHooks = readJsonFile(codexHooksPath);
+  backupIfExists(codexHooksPath);
+}
+
+ensurePreToolUseHook(codexHooks, {
+  matcher: "local_shell|shell|shell_command|exec_command|Bash|Shell|apply_patch|Edit|Write|MultiEdit|Read|grep_files|ctx_execute|ctx_execute_file|ctx_batch_execute|ctx_fetch_and_index|ctx_search|ctx_index|mcp__",
+  hooks: [
+    {
+      type: "command",
+      command: "node ~/.codex/hooks/acef-bmad-hard-wall.mjs"
+    }
+  ]
+});
+
+fs.mkdirSync(codexDir, { recursive: true });
+fs.writeFileSync(codexHooksPath, `${JSON.stringify(codexHooks, null, 2)}\n`);
+
+console.log(`Installed ACEF/BMAD guard hook for Claude: ${claudeTargetHook}`);
 console.log(`Updated Claude settings: ${settingsPath}`);
-console.log("Restart Claude Code for hook changes to load.");
+console.log(`Installed ACEF/BMAD guard hook for Codex: ${codexTargetHook}`);
+console.log(`Updated Codex hooks: ${codexHooksPath}`);
+console.log("Restart Claude Code / Codex for hook changes to load.");

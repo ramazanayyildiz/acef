@@ -68,7 +68,9 @@ function findActiveRoot(paths) {
     }
   }
 
-  const projectDir = process.env.CLAUDE_PROJECT_DIR ? resolvePath(process.env.CLAUDE_PROJECT_DIR) : "";
+  const projectDir = process.env.CLAUDE_PROJECT_DIR || process.env.CODEX_PROJECT_DIR
+    ? resolvePath(process.env.CLAUDE_PROJECT_DIR || process.env.CODEX_PROJECT_DIR)
+    : "";
   if (projectDir && exists(path.join(projectDir, ".acef-bmad-hard-wall"))) {
     return projectDir;
   }
@@ -126,6 +128,55 @@ function deny(reason) {
 function toolFilePath(input, cwd) {
   const value = input.file_path || input.path || input.notebook_path || "";
   return value ? resolvePath(value, cwd) : "";
+}
+
+function inputText(input) {
+  if (!input) return "";
+  if (typeof input === "string") return input;
+  if (typeof input !== "object") return "";
+  return [
+    input.patch,
+    input.diff,
+    input.content,
+    input.text,
+    input.input,
+    input.command,
+    input.cmd,
+  ].filter((value) => typeof value === "string").join("\n");
+}
+
+function patchTouchedPaths(input, cwd) {
+  const text = inputText(input);
+  if (!text) return [];
+
+  const paths = new Set();
+  const patterns = [
+    /^\*\*\* (?:Add|Update|Delete) File:\s+(.+?)\s*$/gm,
+    /^diff --git a\/(.+?) b\/(.+?)$/gm,
+    /^\+\+\+ b\/(.+?)$/gm,
+    /^--- a\/(.+?)$/gm,
+  ];
+
+  for (const pattern of patterns) {
+    for (const match of text.matchAll(pattern)) {
+      for (let index = 1; index < match.length; index += 1) {
+        const value = String(match[index] || "").trim();
+        if (value && value !== "/dev/null") paths.add(resolvePath(value, cwd));
+      }
+    }
+  }
+
+  return [...paths];
+}
+
+function isShellTool(toolName) {
+  return /^(Bash|Shell|shell|local_shell|shell_command|exec_command|functions\.exec_command)$/i.test(toolName || "");
+}
+
+function shellCommand(input) {
+  if (!input) return "";
+  if (typeof input === "string") return input;
+  return input.command || input.cmd || input.script || "";
 }
 
 function restrictedPath(filePath, repoRoot) {
@@ -585,21 +636,23 @@ function workerScopeRestricted(payload, toolName, input, cwd, repoRoot, filePath
     return "ACEF worker scope fence: worker cannot spawn Agent/subagent tools. Return a final report and STOP.";
   }
 
-  const command = input.command || "";
-  if (toolName === "Bash" && bashSpawnsAgent(command)) {
+  const command = shellCommand(input);
+  if (isShellTool(toolName) && bashSpawnsAgent(command)) {
     return "ACEF worker scope fence: worker cannot spawn or dispatch additional agents/subagents.";
   }
 
   const writesLedger = /^(Write|Edit|MultiEdit|NotebookEdit)$/.test(toolName)
     ? ledgerPath(filePath, repoRoot)
-    : toolName === "Bash" && bashTouchesLedger(command, cwd, repoRoot);
+    : isShellTool(toolName) && bashTouchesLedger(command, cwd, repoRoot);
   if (writesLedger) {
     return "ACEF worker scope fence: workers cannot edit ACEF run-control/ledger files. Conductor or ledger-worker only.";
   }
 
   const touchesImplementation = /^(Write|Edit|MultiEdit|NotebookEdit)$/.test(toolName)
     ? implementationPath(filePath, repoRoot)
-    : toolName === "Bash" && (bashTouchesImplementation(command, cwd, repoRoot) || bashIsCommit(command));
+    : /^apply_patch$/i.test(toolName)
+      ? patchTouchedPaths(input, cwd).some((patchPath) => implementationPath(patchPath, repoRoot))
+    : isShellTool(toolName) && (bashTouchesImplementation(command, cwd, repoRoot) || bashIsCommit(command));
   if (!touchesImplementation) return "";
 
   const scope = readActiveWorkerScope(repoRoot);
@@ -622,7 +675,15 @@ function workerScopeRestricted(payload, toolName, input, cwd, repoRoot, filePath
     return `ACEF worker scope fence: ${path.relative(repoRoot, filePath)} is outside allowedPaths for Story ${story}.`;
   }
 
-  if (toolName === "Bash" && bashIsCommit(command)) {
+  if (/^apply_patch$/i.test(toolName)) {
+    const outOfScope = patchTouchedPaths(input, cwd).filter((patchPath) => implementationPath(patchPath, repoRoot) && !allowedByScopePath(patchPath, repoRoot, scope));
+    if (outOfScope.length) {
+      const story = scope.activeStory || "current story";
+      return `ACEF worker scope fence: ${outOfScope.map((patchPath) => path.relative(repoRoot, patchPath)).join(", ")} outside allowedPaths for Story ${story}.`;
+    }
+  }
+
+  if (isShellTool(toolName) && bashIsCommit(command)) {
     const activeStory = String(scope.activeStory || "").trim();
     if (activeStory && !new RegExp(escapeRegex(activeStory), "i").test(command)) {
       return `ACEF worker scope fence: git commit command must cite activeStory ${activeStory}.`;
@@ -702,9 +763,16 @@ function p1ConformanceRestricted(repoRoot) {
 
   const toolName = payload.tool_name || payload.toolName || payload.name || "";
   const input = payload.tool_input || payload.toolInput || payload.input || {};
-  const cwd = resolvePath(payload.cwd || input.cwd || process.env.CLAUDE_PROJECT_DIR || process.cwd());
+  const cwd = resolvePath(payload.cwd || input.cwd || process.env.CLAUDE_PROJECT_DIR || process.env.CODEX_PROJECT_DIR || process.cwd());
   const filePath = toolFilePath(input, cwd);
-  const repoRoot = findActiveRoot([filePath, cwd, process.env.CLAUDE_PROJECT_DIR ? resolvePath(process.env.CLAUDE_PROJECT_DIR) : ""]);
+  const patchPaths = patchTouchedPaths(input, cwd);
+  const repoRoot = findActiveRoot([
+    filePath,
+    ...patchPaths,
+    cwd,
+    process.env.CLAUDE_PROJECT_DIR ? resolvePath(process.env.CLAUDE_PROJECT_DIR) : "",
+    process.env.CODEX_PROJECT_DIR ? resolvePath(process.env.CODEX_PROJECT_DIR) : "",
+  ]);
 
   if (!repoRoot) {
     allow();
@@ -717,20 +785,21 @@ function p1ConformanceRestricted(repoRoot) {
     return;
   }
 
-  if (toolName === "Bash") {
-    const ledgerReason = ledgerBeforeToolRestricted(input.command || "", repoRoot);
+  if (isShellTool(toolName)) {
+    const command = shellCommand(input);
+    const ledgerReason = ledgerBeforeToolRestricted(command, repoRoot);
     if (ledgerReason) {
       deny(ledgerReason);
       return;
     }
 
-    const boundaryReason = epicBoundaryRestricted(input.command || "", repoRoot);
+    const boundaryReason = epicBoundaryRestricted(command, repoRoot);
     if (boundaryReason) {
       deny(boundaryReason);
       return;
     }
 
-    const transitionReason = epicTransitionRestricted(parseTargetEpicNumber(input.command || ""), repoRoot);
+    const transitionReason = epicTransitionRestricted(parseTargetEpicNumber(command), repoRoot);
     if (transitionReason) {
       deny(transitionReason);
       return;
@@ -739,7 +808,9 @@ function p1ConformanceRestricted(repoRoot) {
 
   const needsP1Conformance = /^(Write|Edit|MultiEdit|NotebookEdit)$/.test(toolName)
     ? implementationPath(filePath, repoRoot)
-    : toolName === "Bash" && bashTouchesImplementation(input.command || "", cwd, repoRoot);
+    : /^apply_patch$/i.test(toolName)
+      ? patchPaths.some((patchPath) => implementationPath(patchPath, repoRoot))
+    : isShellTool(toolName) && bashTouchesImplementation(shellCommand(input), cwd, repoRoot);
 
   if (needsP1Conformance) {
     const p1Reason = p1ConformanceRestricted(repoRoot);
@@ -761,7 +832,13 @@ function p1ConformanceRestricted(repoRoot) {
     return;
   }
 
-  if (toolName === "Bash" && bashIsRestricted(input.command || "", cwd, repoRoot)) {
+  const restrictedPatchPaths = patchPaths.filter((patchPath) => restrictedPath(patchPath, repoRoot) && !runControlPath(patchPath, repoRoot));
+  if (/^apply_patch$/i.test(toolName) && restrictedPatchPaths.length) {
+    deny(`ACEF/BMAD hard wall: dispatcher/conductor agent cannot apply_patch restricted path(s): ${restrictedPatchPaths.map((patchPath) => path.relative(repoRoot, patchPath)).join(", ")}. Dispatch a dedicated persona worker instead.`);
+    return;
+  }
+
+  if (isShellTool(toolName) && bashIsRestricted(shellCommand(input), cwd, repoRoot)) {
     deny("ACEF/BMAD hard wall: dispatcher/conductor agent cannot run implementation/install/write Bash commands in an active BMAD lane. Dispatch the dedicated persona worker/operator path.");
     return;
   }

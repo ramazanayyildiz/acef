@@ -241,6 +241,26 @@ try {
       content: "# Brief\n",
     },
   }, "deny");
+  expectHookDecision("Codex exec_command dispatcher cannot install/write implementation", {
+    tool_name: "exec_command",
+    cwd: tmp,
+    tool_input: {
+      cmd: "npm install fast-check",
+      cwd: tmp,
+    },
+  }, "deny");
+  expectHookDecision("Codex apply_patch dispatcher cannot patch implementation", {
+    tool_name: "apply_patch",
+    cwd: tmp,
+    tool_input: {
+      patch: [
+        "*** Begin Patch",
+        "*** Add File: src/from-patch.ts",
+        "+export const patched = true;",
+        "*** End Patch",
+      ].join("\n"),
+    },
+  }, "deny");
   expectHookDecision("payload agent worker can author BMAD artifact", {
     tool_name: "Write",
     agent_id: "bmad-agent-pm@fixture",
@@ -356,6 +376,18 @@ try {
     tool_input: {
       file_path: path.join(tmp, "app", "Models", "OutOfScope.php"),
       content: "<?php\n",
+    },
+  }, "deny", workerEnv);
+  expectHookDecision("worker apply_patch outside active story scope denied", {
+    tool_name: "apply_patch",
+    cwd: tmp,
+    tool_input: {
+      patch: [
+        "*** Begin Patch",
+        "*** Add File: app/Models/OutOfScope.php",
+        "+<?php",
+        "*** End Patch",
+      ].join("\n"),
     },
   }, "deny", workerEnv);
   expectHookDecision("worker commit must cite active story", {
@@ -738,6 +770,35 @@ try {
   fs.appendFileSync(path.join(codexTmp, "docs", "ai", "ACEF_demo_DELIVERY_AUDIT.md"), "worker should not edit ledger\n");
   expectCodexGuardFail("worker ledger edit", ["--repo", codexTmp, "--role", "worker", "--story", "1.1", "--base-ref", codexScopedBase]);
   fs.rmSync(codexTmp, { recursive: true, force: true });
+
+  const installerHome = fs.mkdtempSync(path.join(os.tmpdir(), "acef-installer-home-"));
+  fs.mkdirSync(path.join(installerHome, ".codex"), { recursive: true });
+  fs.writeFileSync(path.join(installerHome, ".codex", "hooks.json"), JSON.stringify({
+    hooks: {
+      PreToolUse: [
+        {
+          matcher: "exec_command",
+          hooks: [{ type: "command", command: "context-mode hook codex pretooluse" }],
+        },
+      ],
+    },
+  }, null, 2));
+  run("node", [path.join(repoRoot, "scripts", "install-acef-bmad-guard")], {
+    env: { ...process.env, HOME: installerHome },
+  });
+  const installedCodexHooks = JSON.parse(fs.readFileSync(path.join(installerHome, ".codex", "hooks.json"), "utf8"));
+  const codexPreTool = installedCodexHooks.hooks.PreToolUse || [];
+  if (!codexPreTool.some((entry) => (entry.hooks || []).some((hook) => String(hook.command || "").includes("context-mode hook codex pretooluse")))) {
+    throw new Error("Expected installer to preserve existing Codex PreToolUse hook");
+  }
+  if (!codexPreTool.some((entry) => (entry.hooks || []).some((hook) => String(hook.command || "").includes("acef-bmad-hard-wall.mjs")))) {
+    throw new Error("Expected installer to add ACEF guard to Codex PreToolUse hooks");
+  }
+  const installedClaudeSettings = JSON.parse(fs.readFileSync(path.join(installerHome, ".claude", "settings.json"), "utf8"));
+  if (!String(JSON.stringify(installedClaudeSettings)).includes("acef-bmad-hard-wall.mjs")) {
+    throw new Error("Expected installer to add ACEF guard to Claude PreToolUse hooks");
+  }
+  fs.rmSync(installerHome, { recursive: true, force: true });
 
   console.log("acef-process-validator tests passed");
 } finally {
