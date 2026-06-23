@@ -264,6 +264,10 @@ First lens pilot:
 - a Code Reviewer may receive it as a short JIT lens, but findings still follow ACEF disposition and actor-separation
   rules.
 
+Status: the 10-case fixture pilot passed as a controlled signal. `bug-hunter` is now recommended as a JIT lens for
+bounded PR/lightweight review, but remains outside the minimal default install. The next decision gate is real
+PR/lightweight usage, not synthetic fixture performance.
+
 Exit criteria:
 
 - at least 10 representative PR/lightweight runs across standard and guarded work;

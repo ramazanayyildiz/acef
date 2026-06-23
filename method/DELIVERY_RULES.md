@@ -104,9 +104,12 @@ The review actor reports findings and evidence; it does not patch the implementa
 finding is dispositioned through a separately scoped implementation or `verify-patch` actor. Runtime/browser QA may be
 supplied by `qa-only`; the combined test-and-fix `qa` skill must not collapse reviewer and patch roles in an ACEF run.
 
-Short specialist lenses such as a future `bug-hunter` may be injected JIT into the review actor. A lens does not become
-a new actor, satisfy independent review by itself, approve a gate, or expand the active scope. Security findings remain
-the responsibility of a separately defined guarded security lens or reviewer contract.
+`bug-hunter` is the recommended bounded JIT lens for PR/lightweight review when behavioral defects, hollow-green risks,
+or framework-fighting risks are plausible. It stays report-only and is injected into the review actor; it does not become
+a new actor, satisfy independent review by itself, patch code, approve a gate, or expand the active scope. Keep it out of
+the minimal default install until measured on real PR/lightweight reviews; install with `scripts/install-acef-skills
+--repo <repo> --review-lenses` when a repo wants the lens. Security findings remain the responsibility of a separately
+defined guarded security lens or reviewer contract.
 
 Lightweight work uses a mechanically checkable compact lifecycle:
 

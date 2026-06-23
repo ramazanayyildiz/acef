@@ -106,6 +106,10 @@ files the agent follows. No build, no npm, no services.
    `acef-context-actor-prompt`, `acef-context-actor-prompt-batch`, and `acef-context-record-actor-report`.
    It also installs shared parser support under `.acef/bin/lib/` and typed-state schemas under `.acef/schemas/`.
    Use `--tool codex|claude|opencode` to target one tool, or `--all-core` to copy every skill in this repo.
+   Optional measured review lenses such as `bug-hunter` stay out of the minimal default install; add them explicitly:
+   ```bash
+   scripts/install-acef-skills --repo /path/to/your/repo --review-lenses
+   ```
 
    Global install is still possible, but should stay minimal:
    ```bash
