@@ -1,0 +1,23 @@
+#!/usr/bin/env node
+const assert = require("node:assert/strict");
+const path = require("node:path");
+const cp = require("node:child_process");
+const { validateSkillMetadata } = require("./lib/acef-skill-metadata");
+
+const repoRoot = path.resolve(__dirname, "..");
+const fixtures = path.join(repoRoot, "tests", "fixtures", "skill-metadata");
+
+const valid = validateSkillMetadata(path.join(fixtures, "valid", "SKILL.md"), "valid");
+assert.deepEqual(valid.errors, []);
+
+const invalid = validateSkillMetadata(path.join(fixtures, "missing-name", "SKILL.md"), "missing-name");
+assert.match(invalid.errors.join("; "), /name must be/);
+
+const run = cp.spawnSync(process.execPath, [path.join(repoRoot, "scripts", "validate-acef-skills")], {
+  cwd: repoRoot,
+  encoding: "utf8",
+});
+assert.equal(run.status, 0, run.stderr || run.stdout);
+assert.match(run.stdout, /Validated 20 ACEF skill metadata record/);
+
+console.log("acef skill metadata tests passed");

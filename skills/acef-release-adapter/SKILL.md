@@ -1,5 +1,6 @@
 ---
 name: acef-release-adapter
+version: 1.0.0
 description: "Extract and use a project's release/CD adapter for ACEF. Use when preparing release, deployment, rollback, changelog, or post-release checks for a brownfield project. Stack-agnostic: reads project workflows and scripts, distinguishes deploy-only workflows from real gates, and produces a release readiness checklist. Does not deploy without explicit approval."
 ---
 

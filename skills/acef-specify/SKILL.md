@@ -1,5 +1,6 @@
 ---
 name: acef-specify
+version: 1.0.0
 description: "Prepare requirements, design, and planning artifacts for ACEF brownfield large-feature work. Use when a route requires requirements/design/planning before implementation. Imports BMAD/Kiro/manual artifacts if they exist and does not regenerate them. If no artifacts exist, guides a lightweight requirements/design/planning flow and keeps traceability from requirements to stories/tasks."
 ---
 

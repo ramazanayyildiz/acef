@@ -1,5 +1,6 @@
 ---
 name: test-user-flow-mapper
+version: 1.0.0
 description: 'Map user journeys and flows BEFORE writing any tests. Identifies what
   real users do in the system, which flows are critical, and which technical components
   each flow touches. Framework-extensible (core is language-agnostic). Works from descriptions, route lists, controllers,

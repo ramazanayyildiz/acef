@@ -2,7 +2,7 @@
 name: qa-only
 preamble-tier: 4
 version: 1.0.0
-description: "Report-only QA testing. Triggers: just report bugs, qa report only, test but don"
+description: "Report-only browser and runtime QA for web applications. Use when the user asks to test a site without changing code. Triggers: just report bugs, QA report only, test but do not fix, runtime QA, browser QA."
 ---
 <!-- AUTO-GENERATED from SKILL.md.tmpl — do not edit directly -->
 <!-- Regenerate: bun run gen:skill-docs -->

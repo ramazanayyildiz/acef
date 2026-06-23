@@ -1,5 +1,6 @@
 ---
 name: test-coverage-auditor
+version: 1.0.0
 description: 'Scan an existing codebase and test suite to find coverage gaps. Produces
   a prioritized audit report showing what''s untested, undertested, or tested only
   at the happy path level. Framework-extensible core (currently Laravel-aware). Laravel-specific when PHP files are

@@ -1,5 +1,6 @@
 ---
 name: acef-router
+version: 1.0.0
 description: "Route a user request through ACEF brownfield paths before any execution. Use when a user wants work on an existing codebase but the right path is unclear: small feature, large feature, bug fix, test-case extraction, test automation setup, or unit/integration tests. Produces a short route decision, minimum required inputs, expected next artifact, and whether project adapter extraction is needed. Does not create files or change code without explicit approval."
 ---
 

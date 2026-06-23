@@ -1,6 +1,7 @@
 ---
-title: SKILL
-type: note
+name: test-strategy
+version: 1.0.0
+description: "Choose the appropriate test levels, boundaries, and ACEF test pipeline before tests are written. Use when the user asks how to test a feature, where testing should start, or requests a test strategy. Triggers: test strategy for, how should I test, plan testing for, where do I start testing."
 permalink: ram/04-ai-toolkit/skills/test/test-strategy/skill
 ---
 

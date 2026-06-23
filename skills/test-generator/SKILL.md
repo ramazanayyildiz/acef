@@ -1,5 +1,6 @@
 ---
 name: test-generator
+version: 1.0.0
 description: 'Generate complete, production-ready test classes from a Risk Profile.
   Framework-aware workflow — reads framework-specific templates from references/{framework}/.
   Currently supports Laravel. from references/{framework}/ before generating code.

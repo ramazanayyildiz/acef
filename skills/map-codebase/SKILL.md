@@ -1,5 +1,6 @@
 ---
 name: map-codebase
+version: 1.0.0
 description: "Auto-generate a code-grounded codebase map and pattern registry for any repo using 4 parallel agents (STACK, ARCHITECTURE, CONVENTIONS, CONCERNS). Use when onboarding to a new codebase, before relying on stale docs, after major refactors, before conformance-sensitive implementation, or when asking 'what does this repo actually do / how does this repo write this'. Triggers: map this codebase, map the repo, codebase map, generate repo map, pattern registry, how does this repo write, what does this codebase look like, scan the repo, repo overview"
 ---
 

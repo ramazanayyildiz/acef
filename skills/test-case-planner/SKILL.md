@@ -1,5 +1,6 @@
 ---
 name: test-case-planner
+version: 1.0.0
 description: 'Analyze any codebase and generate a structured, prioritized list of
   test cases as a human-readable plan — no test code generated. Covers: Unit, Integration/HTTP,
   Data Model, Validation, Async/Queue/Event, User Flows, Browser (automated), and

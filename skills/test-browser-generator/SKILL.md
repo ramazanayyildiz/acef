@@ -1,5 +1,6 @@
 ---
 name: test-browser-generator
+version: 1.0.0
 description: 'Generate complete browser and E2E test code from a test plan or Risk
   Profile. Framework-extensible workflow (currently supports Dusk + Playwright) — reads tool-specific syntax from references/
   before generating. Currently supports: Laravel Dusk (references/dusk.md), Playwright

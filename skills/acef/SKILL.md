@@ -1,6 +1,7 @@
 ---
 name: acef
-description: "ACEF Orchestrator: single front door for ACEF SDLC work. Routes plain-language software work into the correct ACEF lane/track, keeps evidence durable, delegates to helper skills, and coordinates without authoring implementation. Stack-agnostic, lean by default, no unapproved side effects."
+version: 1.0.0
+description: "ACEF Orchestrator: single front door for ACEF SDLC work. Use when a request needs ACEF routing, lane selection, durable evidence, or coordinated helper skills. Coordinates without authoring implementation; stack-agnostic, lean by default, and no unapproved side effects."
 ---
 
 # ACEF Orchestrator

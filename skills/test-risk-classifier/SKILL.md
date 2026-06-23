@@ -1,5 +1,6 @@
 ---
 name: test-risk-classifier
+version: 1.0.0
 description: 'Analyze any class or module and produce a structured Risk Profile before
   tests are written. Enumerates branches, side effects, dependencies, complexity,
   and preconditions per method. Framework-aware — currently Laravel/PHP reference

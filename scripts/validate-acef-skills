@@ -1,0 +1,39 @@
+#!/usr/bin/env node
+const path = require("node:path");
+const { listSkillFiles, validateSkillMetadata } = require("./lib/acef-skill-metadata");
+
+function parseArgs(argv) {
+  const args = { skillsDir: path.resolve(__dirname, "..", "skills") };
+  for (let index = 0; index < argv.length; index += 1) {
+    const arg = argv[index];
+    if (arg === "--skills-dir") args.skillsDir = path.resolve(argv[++index] || "");
+    else if (arg === "--help" || arg === "-h") args.help = true;
+    else throw new Error(`Unknown argument: ${arg}`);
+  }
+  return args;
+}
+
+function main() {
+  const args = parseArgs(process.argv.slice(2));
+  if (args.help) {
+    console.log("Usage: scripts/validate-acef-skills [--skills-dir <path>]");
+    return;
+  }
+  const files = listSkillFiles(args.skillsDir);
+  if (!files.length) throw new Error(`No SKILL.md files found under ${args.skillsDir}`);
+  const failures = [];
+  for (const file of files) {
+    const { metadata, errors } = validateSkillMetadata(file);
+    if (errors.length) failures.push(`${path.relative(args.skillsDir, file)}: ${errors.join("; ")}`);
+    else console.log(`PASS ${metadata.name}@${metadata.version}`);
+  }
+  if (failures.length) throw new Error(`Skill metadata validation failed:\n${failures.join("\n")}`);
+  console.log(`Validated ${files.length} ACEF skill metadata record(s)`);
+}
+
+try {
+  main();
+} catch (error) {
+  console.error(`FAIL skill-metadata: ${error.message}`);
+  process.exitCode = 1;
+}

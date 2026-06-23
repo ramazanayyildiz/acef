@@ -1,5 +1,6 @@
 ---
 name: acef-test-bootstrap
+version: 1.0.0
 description: "Bootstrap the first accepted test pattern for a repository using the project's adapter. Use when a repo has no qualified test neighbor or test automation/unit/integration work needs a local pattern. Stack-agnostic: detect and follow the repo's existing framework if present; if none exists, propose options and ask for approval before adding dependencies. Produces one small approved test pattern, not broad test coverage."
 ---
 
