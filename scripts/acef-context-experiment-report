@@ -182,11 +182,11 @@ function renderMarkdown(result) {
     "",
     `rows: ${result.rows}`,
     "",
-    "| Task | Mode | Provider | Runs | Reduction | Returned bytes | Input tokens | Evidence | Invalid | Safety leaks |",
-    "|---|---|---|---:|---:|---:|---:|---|---:|---:|",
+    "| Task | Mode | Provider | Runs | Reduction | Returned bytes | Input tokens | Avg recall | Evidence | Failures | Invalid | Safety leaks |",
+    "|---|---|---|---:|---:|---:|---:|---:|---|---:|---:|---:|",
   ];
   for (const item of result.summaries) {
-    lines.push(`| ${item.task_type} | ${item.mode} | ${item.provider} | ${item.runs} | ${item.median_reduction_pct ?? ""} | ${item.median_returned_bytes ?? ""} | ${item.median_input_tokens ?? ""} | ${item.evidence_level} | ${item.invalid} | ${item.stale_story_leaks + item.wrong_scope_touches} |`);
+    lines.push(`| ${item.task_type} | ${item.mode} | ${item.provider} | ${item.runs} | ${item.median_reduction_pct ?? ""} | ${item.median_returned_bytes ?? ""} | ${item.median_input_tokens ?? ""} | ${item.avg_known_findings_recalled ?? ""} | ${item.evidence_level} | ${item.failures} | ${item.invalid} | ${item.stale_story_leaks + item.wrong_scope_touches} |`);
   }
   lines.push("");
   lines.push(`adoptable: ${result.threshold.adoptable ? "yes" : "no"}`);
