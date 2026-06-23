@@ -28,6 +28,25 @@ The default worker context is:
 
 Do not give every worker the full delivery ledger, full planning folder, full pattern registry, or unbounded `git diff`.
 
+## Fresh Session Startup
+
+Any new agent session should begin from the repo-local startup packet:
+
+```bash
+.acef/bin/acef-status --repo .
+```
+
+The required read order is:
+
+1. `AGENTS.md`
+2. `.acef/bin/acef-status --repo .`
+3. `docs/ai/ACEF_CURRENT_CONTEXT.md`
+4. the active ledger named by `acef-status`
+
+This avoids importing hidden chat memory into a new session. `acef-status` is read-only and only reports the active run,
+current story/phase, next allowed step, ledger/context paths, worker scope, and blockers. It must not advance state or
+replace `acef next`.
+
 ## Next Optimization Target
 
 The next optimization round should stay inside this file/artifact model:

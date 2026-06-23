@@ -18,15 +18,18 @@ function run(command, args, options = {}) {
 
 try {
   fs.writeFileSync(path.join(tmp, "package.json"), JSON.stringify({ private: true, type: "module" }, null, 2));
+  fs.writeFileSync(path.join(tmp, "AGENTS.md"), "# ACEF test repo\n");
   run("node", [installer, "--repo", tmp]);
 
   const validator = path.join(tmp, ".acef", "bin", "acef-process-validator");
   const state = path.join(tmp, ".acef", "bin", "acef-state");
+  const status = path.join(tmp, ".acef", "bin", "acef-status");
   const parser = path.join(tmp, ".acef", "bin", "lib", "acef-state-parser.js");
   const schema = path.join(tmp, ".acef", "schemas", "active-run.schema.json");
   const runtimePackage = path.join(tmp, ".acef", "bin", "package.json");
   if (!fs.existsSync(validator)) throw new Error("validator wrapper was not installed");
   if (!fs.existsSync(state)) throw new Error("typed-state writer was not installed");
+  if (!fs.existsSync(status)) throw new Error("status helper was not installed");
   if (!fs.existsSync(parser)) throw new Error("parser support library was not installed");
   if (!fs.existsSync(schema)) throw new Error("typed-state schemas were not installed");
   if (JSON.parse(fs.readFileSync(runtimePackage, "utf8")).type !== "commonjs") throw new Error("ACEF runtime CommonJS boundary was not installed");
@@ -93,6 +96,11 @@ try {
   if (!output.includes("PASS current-context:")) {
     throw new Error(`installed validator did not use installed parser:\n${output}`);
   }
+  const statusOutput = run(status, ["--repo", tmp, "--format", "json"]);
+  const statusJson = JSON.parse(statusOutput);
+  if (statusJson.status !== "ready") throw new Error(`installed status helper did not report ready:\n${statusOutput}`);
+  if (statusJson.activeRun.activeStory !== "story 1.1") throw new Error("installed status helper did not read active run");
+  if (!statusJson.readOrder.includes("docs/ai/ACEF_CURRENT_CONTEXT.md")) throw new Error("installed status helper did not include current-context read order");
 
   console.log("install-acef-tools tests passed");
 } finally {

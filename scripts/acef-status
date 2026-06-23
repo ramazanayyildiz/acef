@@ -1,0 +1,181 @@
+#!/usr/bin/env node
+const fs = require("node:fs");
+const path = require("node:path");
+const { parseActiveRun, parseWorkerScope } = require("./lib/acef-state-parser");
+
+function usage() {
+  console.log(`Usage: acef-status --repo <path> [--format text|json]
+
+Prints the small repo-truth startup packet a fresh agent should read before acting.
+It is read-only: it does not advance state, edit ledgers, approve gates, or choose work.`);
+}
+
+function parseArgs(argv) {
+  const opts = { repo: process.cwd(), format: "text" };
+  for (let index = 0; index < argv.length; index += 1) {
+    const arg = argv[index];
+    if (arg === "--repo") {
+      opts.repo = argv[++index] || "";
+    } else if (arg === "--format") {
+      opts.format = argv[++index] || "";
+    } else if (arg === "--help" || arg === "-h") {
+      opts.help = true;
+    } else {
+      throw new Error(`Unknown argument: ${arg}`);
+    }
+  }
+  if (!["text", "json"].includes(opts.format)) throw new Error("--format must be text or json");
+  opts.repo = path.resolve(opts.repo);
+  return opts;
+}
+
+function readTextIfExists(filePath) {
+  return fs.existsSync(filePath) ? fs.readFileSync(filePath, "utf8").trim() : null;
+}
+
+function existsRelative(repo, relativePath) {
+  return Boolean(relativePath) && fs.existsSync(path.join(repo, relativePath));
+}
+
+function currentGit(repo) {
+  const head = readTextIfExists(path.join(repo, ".git", "HEAD"));
+  if (!head) return { branch: null, head: null };
+  if (!head.startsWith("ref: ")) return { branch: null, head: head.slice(0, 12) };
+  const ref = head.slice(5).trim();
+  const branch = ref.replace(/^refs\/heads\//, "");
+  const commit = readTextIfExists(path.join(repo, ".git", ref));
+  return { branch, head: commit ? commit.slice(0, 12) : null };
+}
+
+function loadActiveRun(repo) {
+  const filePath = path.join(repo, "docs", "ai", "ACEF_ACTIVE_RUN.json");
+  if (!fs.existsSync(filePath)) return { path: "docs/ai/ACEF_ACTIVE_RUN.json", exists: false, record: null, error: null };
+  try {
+    return { path: "docs/ai/ACEF_ACTIVE_RUN.json", exists: true, record: parseActiveRun(filePath), error: null };
+  } catch (error) {
+    return { path: "docs/ai/ACEF_ACTIVE_RUN.json", exists: true, record: null, error: error.message };
+  }
+}
+
+function loadWorkerScope(repo) {
+  const filePath = path.join(repo, "docs", "ai", "ACEF_ACTIVE_WORKER_SCOPE.json");
+  if (!fs.existsSync(filePath)) return { path: "docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json", exists: false, record: null, error: null };
+  try {
+    return { path: "docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json", exists: true, record: parseWorkerScope(filePath), error: null };
+  } catch (error) {
+    return { path: "docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json", exists: true, record: null, error: error.message };
+  }
+}
+
+function buildStatus(repo) {
+  const activeRun = loadActiveRun(repo);
+  const workerScope = loadWorkerScope(repo);
+  const activeLedgerPath = readTextIfExists(path.join(repo, "docs", "ai", "ACEF_ACTIVE_LEDGER"));
+  const contextPath = activeRun.record?.contextPath || "docs/ai/ACEF_CURRENT_CONTEXT.md";
+  const ledgerPath = activeRun.record?.ledgerPath || activeLedgerPath || null;
+  const git = currentGit(repo);
+  const blockers = [];
+
+  if (!fs.existsSync(path.join(repo, "AGENTS.md"))) blockers.push("missing AGENTS.md");
+  if (!activeRun.exists) blockers.push("missing docs/ai/ACEF_ACTIVE_RUN.json");
+  if (activeRun.error) blockers.push(`invalid active run: ${activeRun.error}`);
+  if (!ledgerPath) blockers.push("missing active ledger path");
+  if (ledgerPath && !existsRelative(repo, ledgerPath)) blockers.push(`active ledger not found: ${ledgerPath}`);
+  if (!existsRelative(repo, contextPath)) blockers.push(`current context not found: ${contextPath}`);
+  if (workerScope.error) blockers.push(`invalid worker scope: ${workerScope.error}`);
+
+  const nextAllowedStep = activeRun.record?.nextAllowedStep || null;
+  return {
+    schema: "acef.status.v1",
+    repo,
+    git,
+    status: blockers.length ? "needs-attention" : "ready",
+    blockers,
+    readOrder: [
+      "AGENTS.md",
+      ".acef/bin/acef-status --repo .",
+      contextPath,
+      ledgerPath || "docs/ai/ACEF_ACTIVE_LEDGER",
+    ],
+    activeRun: activeRun.record ? {
+      runId: activeRun.record.runId,
+      lane: activeRun.record.lane,
+      status: activeRun.record.status,
+      activeEpic: activeRun.record.activeEpic ?? null,
+      activeStory: activeRun.record.activeStory,
+      activePhase: activeRun.record.activePhase,
+      workerRole: activeRun.record.workerRole ?? null,
+      activeActorId: activeRun.record.activeActorId ?? null,
+      lastPassedGate: activeRun.record.lastPassedGate ?? null,
+      nextAllowedStep,
+      ledgerPath,
+      contextPath,
+    } : null,
+    workerScope: workerScope.record ? {
+      activeStory: workerScope.record.activeStory,
+      phase: workerScope.record.phase,
+      workerId: workerScope.record.workerId,
+      allowedPaths: workerScope.record.allowedPaths,
+      maxCommits: workerScope.record.maxCommits,
+      canEditLedger: workerScope.record.canEditLedger,
+      canSpawnAgents: workerScope.record.canSpawnAgents,
+    } : null,
+    reminders: [
+      "Do not infer approval from go on/devam/tamamla.",
+      "Do not start the next epic/story unless active state and approval allow it.",
+      "Workers read current context and scoped artifacts, not the full ledger by default.",
+      "Agent output is not evidence until backed by files, hashes, commands, or typed gates.",
+    ],
+  };
+}
+
+function printText(status) {
+  console.log(`ACEF status: ${status.status}`);
+  console.log(`repo: ${status.repo}`);
+  if (status.git.branch || status.git.head) console.log(`git: ${status.git.branch || "detached"} ${status.git.head || ""}`.trim());
+  if (status.blockers.length) {
+    console.log("blockers:");
+    for (const blocker of status.blockers) console.log(`- ${blocker}`);
+  }
+  console.log("read order:");
+  for (const entry of status.readOrder) console.log(`- ${entry}`);
+  if (status.activeRun) {
+    console.log("active run:");
+    console.log(`- lane: ${status.activeRun.lane}`);
+    console.log(`- status: ${status.activeRun.status}`);
+    if (status.activeRun.activeEpic) console.log(`- epic: ${status.activeRun.activeEpic}`);
+    console.log(`- story: ${status.activeRun.activeStory}`);
+    console.log(`- phase: ${status.activeRun.activePhase}`);
+    if (status.activeRun.lastPassedGate) console.log(`- last passed gate: ${status.activeRun.lastPassedGate}`);
+    if (status.activeRun.nextAllowedStep) console.log(`- next allowed step: ${status.activeRun.nextAllowedStep}`);
+    console.log(`- ledger: ${status.activeRun.ledgerPath}`);
+    console.log(`- context: ${status.activeRun.contextPath}`);
+  }
+  if (status.workerScope) {
+    console.log("worker scope:");
+    console.log(`- worker: ${status.workerScope.workerId}`);
+    console.log(`- phase: ${status.workerScope.phase}`);
+    console.log(`- allowed paths: ${status.workerScope.allowedPaths.join(", ")}`);
+    console.log(`- max commits: ${status.workerScope.maxCommits}`);
+  }
+  console.log("reminders:");
+  for (const reminder of status.reminders) console.log(`- ${reminder}`);
+}
+
+try {
+  const opts = parseArgs(process.argv.slice(2));
+  if (opts.help) {
+    usage();
+    process.exit(0);
+  }
+  const status = buildStatus(opts.repo);
+  if (opts.format === "json") {
+    console.log(JSON.stringify(status, null, 2));
+  } else {
+    printText(status);
+  }
+  if (status.blockers.length) process.exitCode = 2;
+} catch (error) {
+  console.error(`acef-status: ${error.message}`);
+  process.exitCode = 1;
+}

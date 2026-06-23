@@ -100,7 +100,7 @@ files the agent follows. No build, no npm, no services.
    For OpenCode, the same installer also writes repo-local slash command wrappers under `.opencode/commands/`
    (`/acef`, `/acef-adapter`, `/acef-router`, `/acef-test-bootstrap`, `/map-codebase`). OpenCode skills live under
    `.opencode/skills/`, but slash commands are a separate `.opencode/commands/*.md` mechanism.
-   The tools installer adds repo-local helper CLIs under `.acef/bin/`, including `acef-process-validator`,
+   The tools installer adds repo-local helper CLIs under `.acef/bin/`, including `acef-status`, `acef-process-validator`,
    `acef-codex-guard`, `acef-query`, `acef-context-experiment`, `acef-context-experiment-report`,
    `acef-context-actor-prompt`, `acef-context-actor-prompt-batch`, and `acef-context-record-actor-report`.
    It also installs shared parser support under `.acef/bin/lib/` and typed-state schemas under `.acef/schemas/`.
@@ -116,6 +116,14 @@ files the agent follows. No build, no npm, no services.
    case needs.
    For concrete work, ACEF first creates a target-run ledger, sets `ACEF_ACTIVE_LEDGER` or
    `docs/ai/ACEF_ACTIVE_LEDGER`, and writes a `Session Handoff` before worker fan-out or deep planning.
+   A fresh agent should start from repo truth, not chat memory:
+   ```bash
+   .acef/bin/acef-status --repo .
+   ```
+   Read order for a new session is: `AGENTS.md` -> `.acef/bin/acef-status --repo .` ->
+   `docs/ai/ACEF_CURRENT_CONTEXT.md` -> the active ledger named by the status output. `acef-status` is read-only; it
+   reports the active run, current story/phase, next allowed step, current-context path, ledger path, worker scope, and
+   blockers without advancing state.
 
 4. **Optional hard wall for BMAD lanes** — install the ACEF/BMAD guard locally in each repo so the dispatcher or
    conductor cannot write implementation files or BMAD artifacts during an ACEF lane:

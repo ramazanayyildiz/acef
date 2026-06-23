@@ -1,0 +1,89 @@
+#!/usr/bin/env node
+const fs = require("node:fs");
+const os = require("node:os");
+const path = require("node:path");
+const cp = require("node:child_process");
+
+const repoRoot = path.resolve(__dirname, "..");
+const status = path.join(repoRoot, "scripts", "acef-status");
+const state = path.join(repoRoot, "scripts", "acef-state");
+const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "acef-status-"));
+
+function run(command, args, options = {}) {
+  return cp.spawnSync(command, args, {
+    cwd: tmp,
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+    ...options,
+  });
+}
+
+function mustRun(command, args) {
+  const result = run(command, args);
+  if (result.status !== 0) {
+    throw new Error(`${command} ${args.join(" ")} failed:\n${result.stdout}\n${result.stderr}`);
+  }
+  return result.stdout;
+}
+
+try {
+  fs.writeFileSync(path.join(tmp, "AGENTS.md"), "# Agent entry\n");
+  fs.mkdirSync(path.join(tmp, "docs", "ai"), { recursive: true });
+  mustRun("git", ["init", "-q"]);
+  mustRun("git", ["config", "user.email", "acef@example.test"]);
+  mustRun("git", ["config", "user.name", "ACEF Test"]);
+  fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_demo_DELIVERY_AUDIT.md"), [
+    "# Demo",
+    "",
+    "## Session Handoff",
+    "last_passed_gate: Story 2.1 PASS",
+    "",
+  ].join("\n"));
+  fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_ACTIVE_LEDGER"), "docs/ai/ACEF_demo_DELIVERY_AUDIT.md\n");
+  fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_CURRENT_CONTEXT.md"), [
+    "source_ledger: docs/ai/ACEF_demo_DELIVERY_AUDIT.md",
+    "active_story: Story 2.2",
+    "active_phase: review",
+    "last_passed_gate: Story 2.1 PASS",
+    "",
+    "## Current Work",
+    "Story 2.2",
+  ].join("\n"));
+  mustRun("git", ["add", "."]);
+  mustRun("git", ["commit", "-qm", "fixture"]);
+
+  const missing = run(status, ["--repo", tmp, "--format", "json"]);
+  if (missing.status !== 2) throw new Error("acef-status should exit 2 when active run is missing");
+  const missingJson = JSON.parse(missing.stdout);
+  if (!missingJson.blockers.some((entry) => entry.includes("ACEF_ACTIVE_RUN"))) {
+    throw new Error("acef-status did not explain missing active run");
+  }
+
+  mustRun(state, [
+    "active-run", "--repo", tmp,
+    "--run-id", "RUN-status-test",
+    "--lane", "lightweight",
+    "--status", "active",
+    "--story", "Story 2.2",
+    "--phase", "review",
+    "--ledger", "docs/ai/ACEF_demo_DELIVERY_AUDIT.md",
+    "--context", "docs/ai/ACEF_CURRENT_CONTEXT.md",
+    "--last-passed-gate", "Story 2.1 PASS",
+    "--next-allowed-step", "review current diff only",
+  ]);
+
+  const ready = mustRun(status, ["--repo", tmp, "--format", "json"]);
+  const readyJson = JSON.parse(ready);
+  if (readyJson.status !== "ready") throw new Error(`acef-status was not ready:\n${ready}`);
+  if (readyJson.activeRun.nextAllowedStep !== "review current diff only") throw new Error("acef-status lost nextAllowedStep");
+  if (!readyJson.reminders.some((entry) => entry.includes("Do not infer approval"))) throw new Error("acef-status missing approval reminder");
+
+  const text = mustRun(status, ["--repo", tmp]);
+  if (!text.includes("ACEF status: ready") || !text.includes("next allowed step: review current diff only")) {
+    throw new Error(`acef-status text output missing expected summary:\n${text}`);
+  }
+
+  console.log("acef-status tests passed");
+} finally {
+  fs.rmSync(tmp, { recursive: true, force: true });
+}
