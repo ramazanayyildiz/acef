@@ -58,6 +58,7 @@ method/      The delivery engine — how the work actually runs
   CONTEXT_RETRIEVAL.md optional bounded retrieval adapters and acef-query
   CONTEXT_POLICY.md    role-specific context budgets and worker input policy
   STATE_MACHINE_CONTEXT.md proposed acef next state-machine pushed context contract
+  WORKFLOW_AS_CODE.md  minimal workflow YAML, artifact passing, and fresh-node context contract
   ACEF_COCKPIT.md      product direction for cockpit + context compiler + tool proxy
   TYPED_STATE.md       JSON sidecars for machine-readable ACEF state
   TRUST_MODEL.md       what ACEF guards do and do not guarantee
@@ -101,7 +102,8 @@ files the agent follows. No build, no npm, no services.
    For OpenCode, the same installer also writes repo-local slash command wrappers under `.opencode/commands/`
    (`/acef`, `/acef-adapter`, `/acef-router`, `/acef-test-bootstrap`, `/map-codebase`). OpenCode skills live under
    `.opencode/skills/`, but slash commands are a separate `.opencode/commands/*.md` mechanism.
-   The tools installer adds repo-local helper CLIs under `.acef/bin/`, including `acef-status`, `acef-next`, `acef-process-validator`,
+   The tools installer adds repo-local helper CLIs under `.acef/bin/`, including `acef-status`, `acef-next`,
+   `acef-workflow-validate`, `acef-process-validator`,
    `acef-codex-guard`, `acef-query`, `acef-context-experiment`, `acef-context-experiment-report`,
    `acef-context-actor-prompt`, `acef-context-actor-prompt-batch`, and `acef-context-record-actor-report`.
    It also installs shared parser support under `.acef/bin/lib/` and typed-state schemas under `.acef/schemas/`.
@@ -131,6 +133,10 @@ files the agent follows. No build, no npm, no services.
    reports the active run, current story/phase, next allowed step, current-context path, ledger path, worker scope, and
    blockers without advancing state. `acef-next` is also read-only; it turns that typed state into the current
    next-action contract: allowed paths, forbidden actions, required evidence, and stop condition.
+   Workflow definitions are installed under `.acef/workflows/`; validate them with:
+   ```bash
+   .acef/bin/acef-workflow-validate --repo . --workflow .acef/workflows/lightweight-review.yaml
+   ```
 
 4. **Optional hard wall for BMAD lanes** — install the ACEF/BMAD guard locally in each repo so the dispatcher or
    conductor cannot write implementation files or BMAD artifacts during an ACEF lane:

@@ -165,10 +165,15 @@ The first slice checks:
 - current context path exists;
 - worker scope is valid when present;
 - output remains bounded and role-specific enough for the next prompt.
+- if `workflowPath` and `workflowNodeId` are present, the current workflow node is validated and its declared
+  `inputs`/`outputs` are returned as artifact-passing context.
 
 Future hardening can add schema validation, actor-record matching, current-context freshness checks, gate/evidence lookups,
 and explicit approval-record checks before epic transitions. Those are not required for the command to be useful as a
 fresh-session guard today.
+
+See `method/WORKFLOW_AS_CODE.md` for the minimal workflow YAML contract. This is not a workflow runner yet; it is a
+validated graph definition plus `acef-next` projection for fresh-node prompts.
 
 ## Intended tests
 

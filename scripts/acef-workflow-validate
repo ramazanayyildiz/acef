@@ -1,0 +1,47 @@
+#!/usr/bin/env node
+const fs = require("node:fs");
+const path = require("node:path");
+const { parseWorkflow } = require("./lib/acef-state-parser");
+
+function usage() {
+  console.log(`Usage: acef-workflow-validate --repo <path> --workflow <path>
+
+Validates ACEF workflow-as-code files. This is a definition check only:
+it does not run agents, execute commands, advance state, or approve gates.`);
+}
+
+function parseArgs(argv) {
+  const opts = { repo: process.cwd(), workflow: "" };
+  for (let index = 0; index < argv.length; index += 1) {
+    const arg = argv[index];
+    if (arg === "--repo") {
+      opts.repo = argv[++index] || "";
+    } else if (arg === "--workflow") {
+      opts.workflow = argv[++index] || "";
+    } else if (arg === "--help" || arg === "-h") {
+      opts.help = true;
+    } else {
+      throw new Error(`Unknown argument: ${arg}`);
+    }
+  }
+  opts.repo = path.resolve(opts.repo);
+  if (!opts.workflow && !opts.help) throw new Error("--workflow is required");
+  return opts;
+}
+
+function main() {
+  const opts = parseArgs(process.argv.slice(2));
+  if (opts.help) return usage();
+  const workflowPath = path.resolve(opts.repo, opts.workflow);
+  if (!workflowPath.startsWith(`${opts.repo}${path.sep}`)) throw new Error("--workflow must stay inside --repo");
+  if (!fs.existsSync(workflowPath)) throw new Error(`workflow not found: ${opts.workflow}`);
+  const workflow = parseWorkflow(workflowPath);
+  console.log(`PASS workflow ${workflow.workflow}: nodes=${workflow.nodes.length}`);
+}
+
+try {
+  main();
+} catch (error) {
+  console.error(`ACEF_WORKFLOW_ERROR: ${error.message}`);
+  process.exitCode = 2;
+}

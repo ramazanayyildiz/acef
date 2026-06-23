@@ -17,7 +17,7 @@ function usage() {
   console.log(`ACEF typed-state writer
 
 Usage:
-  acef-state active-run --repo <path> --run-id <id> --lane <lane> --status <status> --story <scope> --phase <phase> --ledger <path> [options]
+  acef-state active-run --repo <path> --run-id <id> --lane <lane> --status <status> --story <scope> --phase <phase> --ledger <path> [--workflow <path> --workflow-node <id>] [options]
   acef-state actor --repo <path> --id <id> --story <scope> --phase <phase> --role <role> --client <client> --context-profile <profile> [options]
   acef-state worker-scope --repo <path> --story <scope> --phase <phase> --worker-id <id> --allow <glob>... [options]
   acef-state approval --repo <path> --id <id> --decision APPROVE|REJECT|ACCEPT_RISK --scope <scope> --quote <exact human words> [options]
@@ -150,6 +150,8 @@ function writeActiveRun(opts) {
     workerRole: opts.workerRole || null,
     activeActorId: opts.actor || null,
     workerScopePath: opts.workerScope || null,
+    workflowPath: opts.workflow || null,
+    workflowNodeId: opts.workflowNode || null,
     fullLedgerAccess: opts.fullLedgerAccess || null,
     maxLines: opts.maxLines ? Number(opts.maxLines) : null,
     nextAllowedStep: opts.nextAllowedStep || null,

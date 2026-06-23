@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 const fs = require("node:fs");
 const path = require("node:path");
-const { parseActiveRun, parseWorkerScope } = require("./lib/acef-state-parser");
+const { parseActiveRun, parseWorkerScope, parseWorkflow } = require("./lib/acef-state-parser");
 
 function usage() {
   console.log(`Usage: acef-next --repo <path> [--role <role>] [--format json]
@@ -124,9 +124,31 @@ function phaseCanWrite(activeRun, workerScope) {
   ].includes(action);
 }
 
+function loadWorkflow(repo, activeRunRecord) {
+  if (!activeRunRecord?.workflowPath) return { path: null, record: null, node: null, error: null };
+  const workflowPath = path.join(repo, activeRunRecord.workflowPath);
+  if (!fs.existsSync(workflowPath)) return { path: activeRunRecord.workflowPath, record: null, node: null, error: `workflow not found: ${activeRunRecord.workflowPath}` };
+  try {
+    const record = parseWorkflow(workflowPath);
+    const node = activeRunRecord.workflowNodeId
+      ? record.nodes.find((entry) => entry.id === activeRunRecord.workflowNodeId)
+      : null;
+    if (activeRunRecord.workflowNodeId && !node) {
+      return { path: activeRunRecord.workflowPath, record, node: null, error: `workflow node not found: ${activeRunRecord.workflowNodeId}` };
+    }
+    if (!activeRunRecord.workflowNodeId) {
+      return { path: activeRunRecord.workflowPath, record, node: null, error: "active run has workflowPath but no workflowNodeId" };
+    }
+    return { path: activeRunRecord.workflowPath, record, node, error: null };
+  } catch (error) {
+    return { path: activeRunRecord.workflowPath, record: null, node: null, error: error.message };
+  }
+}
+
 function buildNext(repo, roleOverride) {
   const activeRun = loadActiveRun(repo);
   const workerScope = loadWorkerScope(repo);
+  const workflow = loadWorkflow(repo, activeRun.record);
   const activeLedgerPath = readTextIfExists(path.join(repo, "docs", "ai", "ACEF_ACTIVE_LEDGER"));
   const contextPath = activeRun.record?.contextPath || "docs/ai/ACEF_CURRENT_CONTEXT.md";
   const ledgerPath = activeRun.record?.ledgerPath || activeLedgerPath || null;
@@ -140,6 +162,7 @@ function buildNext(repo, roleOverride) {
   if (ledgerPath && !existsRelative(repo, ledgerPath)) blockers.push(`active ledger not found: ${ledgerPath}`);
   if (!existsRelative(repo, contextPath)) blockers.push(`current context not found: ${contextPath}`);
   if (workerScope.error) blockers.push(`invalid worker scope: ${workerScope.error}`);
+  if (workflow.error) blockers.push(`invalid workflow state: ${workflow.error}`);
 
   const base = {
     schema: "acef.next.v1",
@@ -156,7 +179,17 @@ function buildNext(repo, roleOverride) {
       current_context: contextPath,
       ledger: ledgerPath,
       worker_scope: workerScope.exists ? workerScope.path : null,
+      workflow: workflow.path,
+      inputs: workflow.node?.inputs || [],
+      outputs: workflow.node?.outputs || [],
     },
+    workflow_node: workflow.node ? {
+      id: workflow.node.id,
+      type: workflow.node.type,
+      requires: workflow.node.requires,
+      inputs: workflow.node.inputs,
+      outputs: workflow.node.outputs,
+    } : null,
     evidence_required: [],
     stop_condition: "fix_blockers_then_rerun_acef_next",
   };
@@ -172,6 +205,7 @@ function buildNext(repo, roleOverride) {
     role,
     last_passed_gate: activeRun.record.lastPassedGate || null,
     next_allowed_action: blockers.length ? null : action,
+    workflow_node_id: activeRun.record.workflowNodeId || null,
   };
   base.allowed = {
     can_write: !blockers.length && phaseCanWrite(activeRun, workerScope),

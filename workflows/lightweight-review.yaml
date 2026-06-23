@@ -1,0 +1,50 @@
+workflow: lightweight-review
+version: 1
+nodes:
+  - id: preflight
+    type: validator
+    inputs:
+      - AGENTS.md
+      - docs/ai/ACEF_CURRENT_CONTEXT.md
+    outputs:
+      - docs/ai/ACEF_LIGHTWEIGHT_RUN.json
+  - id: implement
+    type: agent
+    role: developer
+    requires:
+      - preflight
+    inputs:
+      - docs/ai/ACEF_CURRENT_CONTEXT.md
+      - docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json
+    outputs:
+      - docs/ai/reports/lightweight-implementation.md
+  - id: test
+    type: command
+    command: focused-test-command-from-current-context
+    requires:
+      - implement
+    inputs:
+      - docs/ai/reports/lightweight-implementation.md
+    outputs:
+      - docs/ai/evidence/lightweight-focused-test.json
+  - id: review
+    type: agent
+    role: reviewer
+    requires:
+      - test
+    inputs:
+      - docs/ai/ACEF_CURRENT_CONTEXT.md
+      - docs/ai/pr-reviews/current-profile.json
+    outputs:
+      - docs/ai/reports/lightweight-review.md
+  - id: judge
+    type: gate
+    requires:
+      - review
+    inputs:
+      - docs/ai/ACEF_LIGHTWEIGHT_RUN.json
+      - docs/ai/reports/lightweight-implementation.md
+      - docs/ai/reports/lightweight-review.md
+      - docs/ai/evidence/lightweight-focused-test.json
+    outputs:
+      - docs/ai/gates/lightweight-close.json

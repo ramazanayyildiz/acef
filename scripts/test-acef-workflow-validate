@@ -1,0 +1,102 @@
+#!/usr/bin/env node
+const fs = require("node:fs");
+const os = require("node:os");
+const path = require("node:path");
+const cp = require("node:child_process");
+
+const repoRoot = path.resolve(__dirname, "..");
+const validator = path.join(repoRoot, "scripts", "acef-workflow-validate");
+const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "acef-workflow-"));
+
+function run(args) {
+  return cp.spawnSync(validator, ["--repo", tmp, ...args], {
+    cwd: tmp,
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+}
+
+function write(rel, text) {
+  const filePath = path.join(tmp, rel);
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  fs.writeFileSync(filePath, text);
+}
+
+try {
+  write("workflows/lightweight-review.yaml", [
+    "workflow: lightweight-review",
+    "version: 1",
+    "nodes:",
+    "  - id: preflight",
+    "    type: validator",
+    "    inputs:",
+    "      - AGENTS.md",
+    "    outputs:",
+    "      - docs/ai/ACEF_LIGHTWEIGHT_RUN.json",
+    "  - id: implement",
+    "    type: agent",
+    "    role: developer",
+    "    requires:",
+    "      - preflight",
+    "    inputs:",
+    "      - docs/ai/ACEF_CURRENT_CONTEXT.md",
+    "    outputs:",
+    "      - docs/ai/reports/dev.md",
+    "  - id: test",
+    "    type: command",
+    "    command: npm test",
+    "    requires:",
+    "      - implement",
+    "    inputs:",
+    "      - docs/ai/reports/dev.md",
+    "    outputs:",
+    "      - docs/ai/evidence/test.json",
+  ].join("\n"));
+  const good = run(["--workflow", "workflows/lightweight-review.yaml"]);
+  if (good.status !== 0 || !good.stdout.includes("PASS workflow lightweight-review: nodes=3")) {
+    throw new Error(`valid workflow failed:\n${good.stdout}\n${good.stderr}`);
+  }
+
+  write("workflows/bad-later.yaml", [
+    "workflow: bad",
+    "version: 1",
+    "nodes:",
+    "  - id: implement",
+    "    type: agent",
+    "    role: developer",
+    "    requires:",
+    "      - review",
+    "    inputs:",
+    "      - docs/ai/ACEF_CURRENT_CONTEXT.md",
+    "    outputs:",
+    "      - docs/ai/reports/dev.md",
+    "  - id: review",
+    "    type: agent",
+    "    role: reviewer",
+  ].join("\n"));
+  const badLater = run(["--workflow", "workflows/bad-later.yaml"]);
+  if (badLater.status !== 2 || !badLater.stderr.includes("requires unknown or later node")) {
+    throw new Error("workflow validator did not reject later dependency");
+  }
+
+  write("workflows/bad-path.yaml", [
+    "workflow: bad-path",
+    "version: 1",
+    "nodes:",
+    "  - id: implement",
+    "    type: agent",
+    "    role: developer",
+    "    inputs:",
+    "      - ../outside.md",
+    "    outputs:",
+    "      - docs/ai/reports/dev.md",
+  ].join("\n"));
+  const badPath = run(["--workflow", "workflows/bad-path.yaml"]);
+  if (badPath.status !== 2 || !badPath.stderr.includes("repo-relative")) {
+    throw new Error("workflow validator did not reject escaping path");
+  }
+
+  console.log("acef-workflow-validate tests passed");
+} finally {
+  fs.rmSync(tmp, { recursive: true, force: true });
+}

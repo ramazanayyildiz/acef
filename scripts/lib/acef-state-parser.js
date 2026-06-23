@@ -98,6 +98,99 @@ function parseWorkerScope(filePath) {
   return record;
 }
 
+function parseScalar(value) {
+  return String(value || "").trim().replace(/^["']|["']$/g, "");
+}
+
+function parseStringList(lines, startIndex) {
+  const values = [];
+  let index = startIndex;
+  while (index < lines.length) {
+    const line = lines[index];
+    if (/^ {6}- /.test(line)) {
+      values.push(parseScalar(line.replace(/^ {6}- /, "")));
+      index += 1;
+      continue;
+    }
+    break;
+  }
+  return { values, nextIndex: index };
+}
+
+function parseWorkflowYaml(text) {
+  const lines = text.split(/\r?\n/).map((line) => line.replace(/\s+#.*$/, "").replace(/\s+$/, ""));
+  const record = { workflow: "", version: "", nodes: [] };
+  let inNodes = false;
+  let current = null;
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+    if (!line.trim() || line.trim().startsWith("#")) continue;
+    if (!inNodes && /^workflow:\s*/.test(line)) {
+      record.workflow = parseScalar(line.replace(/^workflow:\s*/, ""));
+      continue;
+    }
+    if (!inNodes && /^version:\s*/.test(line)) {
+      record.version = parseScalar(line.replace(/^version:\s*/, ""));
+      continue;
+    }
+    if (line === "nodes:") {
+      inNodes = true;
+      continue;
+    }
+    if (!inNodes) throw new Error(`unsupported workflow line: ${line}`);
+    if (/^  - id:\s*/.test(line)) {
+      current = { id: parseScalar(line.replace(/^  - id:\s*/, "")), type: "", requires: [], inputs: [], outputs: [] };
+      record.nodes.push(current);
+      continue;
+    }
+    if (!current) throw new Error(`node field before node id: ${line}`);
+    const keyValue = line.match(/^    ([A-Za-z0-9_-]+):\s*(.*)$/);
+    if (!keyValue) throw new Error(`unsupported node line: ${line}`);
+    const [, key, rawValue] = keyValue;
+    if (["requires", "inputs", "outputs"].includes(key)) {
+      if (rawValue.trim()) {
+        current[key] = rawValue.split(",").map((entry) => parseScalar(entry.replace(/^\[|\]$/g, ""))).filter(Boolean);
+      } else {
+        const parsed = parseStringList(lines, index + 1);
+        current[key] = parsed.values;
+        index = parsed.nextIndex - 1;
+      }
+    } else {
+      current[key] = parseScalar(rawValue);
+    }
+  }
+  return record;
+}
+
+function parseWorkflow(filePath) {
+  const record = parseWorkflowYaml(fs.readFileSync(filePath, "utf8"));
+  requireFields(record, ["workflow", "version"], "workflow");
+  if (!Array.isArray(record.nodes) || !record.nodes.length) throw new Error("workflow nodes must not be empty");
+  const seen = new Set();
+  const allowedTypes = ["agent", "command", "validator", "gate", "approval"];
+  for (const [index, node] of record.nodes.entries()) {
+    requireFields(node, ["id", "type"], `workflow node ${index + 1}`);
+    if (seen.has(node.id)) throw new Error(`workflow duplicate node id: ${node.id}`);
+    seen.add(node.id);
+    if (!allowedTypes.includes(node.type)) throw new Error(`workflow node ${node.id} type must be one of: ${allowedTypes.join(", ")}`);
+    for (const field of ["requires", "inputs", "outputs"]) {
+      if (!Array.isArray(node[field])) throw new Error(`workflow node ${node.id} ${field} must be an array`);
+      if (node[field].some((value) => typeof value !== "string" || !value.trim())) {
+        throw new Error(`workflow node ${node.id} ${field} must contain non-empty strings`);
+      }
+    }
+    requireRelativePaths(node.inputs, `workflow node ${node.id} inputs`);
+    requireRelativePaths(node.outputs, `workflow node ${node.id} outputs`);
+    for (const required of node.requires) {
+      if (!seen.has(required)) throw new Error(`workflow node ${node.id} requires unknown or later node: ${required}`);
+    }
+    if (node.type === "agent" && !String(node.role || "").trim()) throw new Error(`workflow node ${node.id} agent requires role`);
+    if (node.type === "command" && !String(node.command || "").trim()) throw new Error(`workflow node ${node.id} command requires command`);
+  }
+  return record;
+}
+
 function requireRelativePaths(values, label) {
   requireStringArray({ values }, "values", label);
   if (values.some((entry) => path.isAbsolute(entry) || entry.split(/[\\/]/).includes(".."))) {
@@ -338,6 +431,7 @@ module.exports = {
   parseGateVerdict,
   parseApproval,
   parseWorkerScope,
+  parseWorkflow,
   parsePrReview,
   parsePrReviewProfile,
   parseLightweightRun,

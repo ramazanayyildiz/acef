@@ -49,6 +49,20 @@ try {
     "## Current Work",
     "Story 2.2",
   ].join("\n"));
+  fs.mkdirSync(path.join(tmp, "workflows"), { recursive: true });
+  fs.writeFileSync(path.join(tmp, "workflows", "lightweight-review.yaml"), [
+    "workflow: lightweight-review",
+    "version: 1",
+    "nodes:",
+    "  - id: implement",
+    "    type: agent",
+    "    role: developer",
+    "    inputs:",
+    "      - docs/ai/ACEF_CURRENT_CONTEXT.md",
+    "      - docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json",
+    "    outputs:",
+    "      - docs/ai/reports/story-2-2-dev.md",
+  ].join("\n"));
   mustRun("git", ["add", "."]);
   mustRun("git", ["commit", "-qm", "fixture"]);
 
@@ -73,6 +87,8 @@ try {
     "--ledger", "docs/ai/ACEF_demo_DELIVERY_AUDIT.md",
     "--context", "docs/ai/ACEF_CURRENT_CONTEXT.md",
     "--last-passed-gate", "Story 2.1 ATDD PASS",
+    "--workflow", "workflows/lightweight-review.yaml",
+    "--workflow-node", "implement",
   ]);
   mustRun(state, [
     "worker-scope", "--repo", tmp,
@@ -95,6 +111,10 @@ try {
   if (!readyJson.forbidden.actions.includes("spawn_worker")) throw new Error("acef-next missing no-spawn boundary");
   if (!readyJson.evidence_required.includes("green_test_command")) throw new Error("acef-next missing dev evidence requirement");
   if (readyJson.context.ledger !== "docs/ai/ACEF_demo_DELIVERY_AUDIT.md") throw new Error("acef-next lost ledger path");
+  if (readyJson.active_state.workflow_node_id !== "implement") throw new Error("acef-next lost workflow node id");
+  if (readyJson.workflow_node.id !== "implement") throw new Error("acef-next did not load workflow node");
+  if (!readyJson.context.inputs.includes("docs/ai/ACEF_CURRENT_CONTEXT.md")) throw new Error("acef-next lost workflow inputs");
+  if (!readyJson.context.outputs.includes("docs/ai/reports/story-2-2-dev.md")) throw new Error("acef-next lost workflow outputs");
   if (readyJson.stop_condition !== "max_1_commit_then_report") throw new Error("acef-next lost worker stop condition");
 
   console.log("acef-next tests passed");

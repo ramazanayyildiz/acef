@@ -7,6 +7,7 @@ const tools = [
   "acef-state",
   "acef-status",
   "acef-next",
+  "acef-workflow-validate",
   "acef-process-validator",
   "acef-codex-guard",
   "acef-query",
@@ -117,6 +118,22 @@ function copyExperimentFixtures(targetRepo) {
   return copied;
 }
 
+function copyWorkflows(targetRepo) {
+  const sourceDir = path.join(repoRoot, "workflows");
+  const targetDir = path.join(targetRepo, ".acef", "workflows");
+  if (!fs.existsSync(sourceDir)) return [];
+  fs.mkdirSync(targetDir, { recursive: true });
+  const copied = [];
+  for (const entry of fs.readdirSync(sourceDir).sort((a, b) => a.localeCompare(b))) {
+    const source = path.join(sourceDir, entry);
+    if (!fs.statSync(source).isFile()) continue;
+    const target = path.join(targetDir, entry);
+    fs.copyFileSync(source, target);
+    copied.push(target);
+  }
+  return copied;
+}
+
 const opts = parseArgs(process.argv.slice(2));
 console.log(`Installed ACEF runtime package boundary: ${writeRuntimePackage(opts.repo)}`);
 for (const tool of tools) {
@@ -130,4 +147,7 @@ for (const schema of copySchemas(opts.repo)) {
 }
 for (const fixture of copyExperimentFixtures(opts.repo)) {
   console.log(`Installed context experiment fixture: ${fixture}`);
+}
+for (const workflow of copyWorkflows(opts.repo)) {
+  console.log(`Installed workflow: ${workflow}`);
 }

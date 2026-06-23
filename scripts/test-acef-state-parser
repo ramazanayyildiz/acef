@@ -10,6 +10,7 @@ const {
   parseGateVerdict,
   parseApproval,
   parseWorkerScope,
+  parseWorkflow,
   parseFreshness,
   safeRelative,
 } = require("./lib/acef-state-parser");
@@ -102,6 +103,28 @@ try {
     canSpawnAgents: false,
   });
   if (parseWorkerScope(workerScope).workerId !== "dev-1") throw new Error("worker scope parse failed");
+  const workflow = write("workflows/lightweight-review.yaml", [
+    "workflow: lightweight-review",
+    "version: 1",
+    "nodes:",
+    "  - id: implement",
+    "    type: agent",
+    "    role: developer",
+    "    inputs:",
+    "      - docs/ai/ACEF_CURRENT_CONTEXT.md",
+    "    outputs:",
+    "      - docs/ai/reports/dev.md",
+    "  - id: test",
+    "    type: command",
+    "    command: npm test",
+    "    requires:",
+    "      - implement",
+    "    inputs:",
+    "      - docs/ai/reports/dev.md",
+    "    outputs:",
+    "      - docs/ai/evidence/test.json",
+  ].join("\n"));
+  if (parseWorkflow(workflow).nodes.length !== 2) throw new Error("workflow parse failed");
   const unsafeScope = { ...JSON.parse(fs.readFileSync(workerScope, "utf8")), allowedPaths: ["../outside/**"] };
   write("unsafe-scope.json", unsafeScope);
   assertThrows(() => parseWorkerScope(path.join(tmp, "unsafe-scope.json")), /repo-relative/, "unsafe worker scope");

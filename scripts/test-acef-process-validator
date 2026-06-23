@@ -1029,6 +1029,22 @@ try {
   expectCodexGuardFail("missing worker scope", ["--repo", codexTmp, "--role", "worker", "--story", "1.1", "--base-ref", codexBase]);
   fs.rmSync(path.join(codexTmp, "src", "needs-scope.ts"));
 
+  fs.writeFileSync(path.join(codexTmp, "docs", "ai", "ACEF_CURRENT_CONTEXT.md"), [
+    "source_ledger: docs/ai/ACEF_demo_DELIVERY_AUDIT.md",
+    "active_story: 1.1",
+    "active_phase: dev",
+    "",
+  ].join("\n"));
+  fs.writeFileSync(path.join(codexTmp, "docs", "ai", "ACEF_ACTIVE_RUN.json"), JSON.stringify({
+    runId: "RUN-codex-guard",
+    repo: "codex-guard-fixture",
+    lane: "lightweight",
+    status: "active",
+    activeStory: "1.1",
+    activePhase: "dev",
+    ledgerPath: "docs/ai/ACEF_demo_DELIVERY_AUDIT.md",
+    contextPath: "docs/ai/ACEF_CURRENT_CONTEXT.md",
+  }, null, 2));
   fs.writeFileSync(path.join(codexTmp, "docs", "ai", "ACEF_ACTIVE_WORKER_SCOPE.json"), JSON.stringify({
     activeStory: "1.1",
     phase: "dev",
@@ -1039,12 +1055,16 @@ try {
     canEditLedger: false,
     canSpawnAgents: false,
   }, null, 2));
-  run("git", ["add", "docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json"], { cwd: codexTmp });
+  run("git", ["add", "docs/ai/ACEF_ACTIVE_RUN.json", "docs/ai/ACEF_CURRENT_CONTEXT.md", "docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json"], { cwd: codexTmp });
   run("git", ["commit", "-m", "scope Story 1.1"], { cwd: codexTmp });
   const codexScopedBase = run("git", ["rev-parse", "--short", "HEAD"], { cwd: codexTmp });
   fs.mkdirSync(path.join(codexTmp, "src", "story-1-1"), { recursive: true });
   fs.writeFileSync(path.join(codexTmp, "src", "story-1-1", "ok.ts"), "export const ok = true;\n");
   expectCodexGuardPass("allowed worker scope", ["--repo", codexTmp, "--role", "worker", "--story", "1.1", "--base-ref", codexScopedBase]);
+  run("git", ["add", "src/story-1-1/ok.ts"], { cwd: codexTmp });
+  run("git", ["commit", "--amend", "--no-edit"], { cwd: codexTmp });
+  fs.appendFileSync(path.join(codexTmp, "src", "story-1-1", "ok.ts"), "export const stillOk = true;\n");
+  expectCodexGuardPass("allowed modified tracked file", ["--repo", codexTmp, "--role", "worker", "--story", "1.1", "--base-ref", "HEAD"]);
   fs.writeFileSync(path.join(codexTmp, "src", "story-1-2.ts"), "export const bad = true;\n");
   expectCodexGuardFail("out of scope worker write", ["--repo", codexTmp, "--role", "worker", "--story", "1.1", "--base-ref", codexScopedBase]);
   fs.rmSync(path.join(codexTmp, "src", "story-1-2.ts"));

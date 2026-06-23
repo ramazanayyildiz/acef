@@ -2,7 +2,7 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const cp = require("node:child_process");
-const { parseWorkerScope } = require("./lib/acef-state-parser");
+const { parseActiveRun, parseWorkerScope } = require("./lib/acef-state-parser");
 
 function usage() {
   console.log(`ACEF Codex guard
@@ -64,6 +64,23 @@ function readJson(filePath) {
   }
 }
 
+function requireNextReady(repoRoot) {
+  const runPath = path.join(repoRoot, "docs", "ai", "ACEF_ACTIVE_RUN.json");
+  if (!exists(runPath)) fail("missing docs/ai/ACEF_ACTIVE_RUN.json; run acef-status/acef-next before worker writes");
+  let activeRun;
+  try {
+    activeRun = parseActiveRun(runPath);
+  } catch (error) {
+    fail(`invalid active run: ${error.message}`);
+  }
+  if (activeRun.status !== "active") fail(`active run is not active: ${activeRun.status}`);
+  const contextPath = path.join(repoRoot, activeRun.contextPath || "docs/ai/ACEF_CURRENT_CONTEXT.md");
+  if (!exists(contextPath)) fail(`current context not found: ${path.relative(repoRoot, contextPath)}`);
+  const ledgerPath = path.join(repoRoot, activeRun.ledgerPath);
+  if (!exists(ledgerPath)) fail(`active run ledger not found: ${activeRun.ledgerPath}`);
+  return activeRun;
+}
+
 function runGit(repoRoot, args) {
   return cp.execFileSync("git", args, {
     cwd: repoRoot,
@@ -73,12 +90,16 @@ function runGit(repoRoot, args) {
 }
 
 function gitStatusPaths(repoRoot) {
-  const output = runGit(repoRoot, ["status", "--porcelain=v1", "--untracked-files=all"]);
+  const output = cp.execFileSync("git", ["status", "--porcelain=v1", "--untracked-files=all"], {
+    cwd: repoRoot,
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+  });
   return output.split(/\r?\n/)
-    .map((line) => line.trim())
+    .filter((line) => line.trim())
+    .map((line) => line.slice(3))
+    .map((line) => line.replace(/^.* -> /, "").trim())
     .filter(Boolean)
-    .map((line) => line.replace(/^.. /, "").replace(/^.* -> /, "").trim())
-    .filter(Boolean);
 }
 
 function gitChangedSince(repoRoot, baseRef) {
@@ -199,6 +220,7 @@ function main() {
     return;
   }
 
+  const activeRun = requireNextReady(args.repo);
   const scopePath = path.join(args.repo, "docs", "ai", "ACEF_ACTIVE_WORKER_SCOPE.json");
   if (!exists(scopePath)) fail("missing docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json for worker role");
   let scope;
@@ -210,6 +232,9 @@ function main() {
 
   if (args.story && String(scope.activeStory || "") !== args.story) {
     fail(`activeStory ${scope.activeStory || "missing"} does not match --story ${args.story}`);
+  }
+  if (String(activeRun.activeStory || "") !== String(scope.activeStory || "")) {
+    fail(`active run story ${activeRun.activeStory || "missing"} does not match worker scope ${scope.activeStory || "missing"}`);
   }
 
   const allowedPaths = Array.isArray(scope.allowedPaths) ? scope.allowedPaths : [];
