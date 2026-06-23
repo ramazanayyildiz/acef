@@ -124,6 +124,11 @@ Interpretation:
   `tests/Feature/Story52ReferencesAwardsTest.php`, `136c516` records dev scope, `fbd54f4` lands implementation). A valid
   dev A/B/C run should use an isolated worktree at the red-test/dev-scope point and keep the active implementation branch
   untouched.
+- Story 5.2 dev setup is now prepared as that replacement: isolated worktree
+  `/Users/ramazanayyildiz/CODE/OPA/detaysoft2026-story52-dev-experiment` at `136c516`, Composer dependencies installed,
+  `.env` + SQLite test DB initialized locally, and `php artisan test tests/Feature/Story52ReferencesAwardsTest.php
+  --compact` confirmed the expected RED state (8 failed, 33 assertions). Dev-only prompts live under
+  `prompts/story-5-2-dev/`; the dev-only manifest expects 6 rows.
 - All current rows are marked `runner_type=main-codex-self-run`, so they are useful progress but weaker than fresh
   external/subagent runs. The experiment is still intentionally not adoptable.
 
