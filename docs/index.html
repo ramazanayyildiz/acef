@@ -106,6 +106,7 @@
             <li>Functional requirements close only when traced to an owning story and an exercised capability, not merely a supporting artifact.</li>
             <li>Lean runtime is the default: evidence stays on disk; chat reports only artifact path, verdict, key evidence, and next step.</li>
             <li>Story workers receive a maximum-150-line role-specific current-context slice instead of repeatedly reading the full ledger and planning set.</li>
+            <li>Optional <code>acef-query</code> retrieval uses Context Mode when available and a deterministic file fallback otherwise; gates never depend on it.</li>
             <li>The front-door skill is compact and loads detailed ACEF reference files just-in-time.</li>
             <li>Full BMAD epics seed their Process Judge gates up front; the next epic waits until the prior one is PASS.</li>
             <li>Every active run starts with a delivery ledger, active ledger pointer, and Session Handoff before workers fan out.</li>

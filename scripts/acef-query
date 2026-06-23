@@ -1,0 +1,384 @@
+#!/usr/bin/env node
+const fs = require("node:fs");
+const path = require("node:path");
+const cp = require("node:child_process");
+const crypto = require("node:crypto");
+
+function usage() {
+  console.log(`ACEF query
+
+Usage:
+  acef-query context --repo <path> --story <id> --role <role> [options]
+
+Options:
+  --provider <auto|context-mode|files>  Retrieval backend (default: auto)
+  --limit <n>                          Context Mode result count (default: 4)
+  --max-lines <n>                      Output line cap (default: 120, max: 150)
+  --max-chars <n>                      Output character cap (default: 12000)
+  --format <markdown|json>             Output format (default: markdown)
+  --output <path>                      Write output to a file instead of stdout
+
+Context Mode is optional. auto uses it when available and falls back to deterministic file slicing.
+No ACEF gate depends exclusively on Context Mode or this derived output.`);
+}
+
+function parseArgs(argv) {
+  const args = {
+    command: "",
+    repo: process.cwd(),
+    story: "",
+    role: "developer",
+    provider: "auto",
+    limit: 4,
+    maxLines: 120,
+    maxChars: 12000,
+    format: "markdown",
+    output: "",
+  };
+
+  const values = [...argv];
+  if (values[0] === "--help" || values[0] === "-h") {
+    args.help = true;
+    return args;
+  }
+  args.command = values.shift() || "";
+  for (let index = 0; index < values.length; index += 1) {
+    const arg = values[index];
+    if (arg === "--repo") args.repo = values[++index] || "";
+    else if (arg === "--story") args.story = values[++index] || "";
+    else if (arg === "--role") args.role = values[++index] || "";
+    else if (arg === "--provider") args.provider = values[++index] || "";
+    else if (arg === "--limit") args.limit = Number(values[++index]);
+    else if (arg === "--max-lines") args.maxLines = Number(values[++index]);
+    else if (arg === "--max-chars") args.maxChars = Number(values[++index]);
+    else if (arg === "--format") args.format = values[++index] || "";
+    else if (arg === "--output") args.output = values[++index] || "";
+    else if (arg === "--help" || arg === "-h") args.help = true;
+    else throw new Error(`Unknown argument: ${arg}`);
+  }
+
+  if (args.help) return args;
+  if (args.command !== "context") throw new Error("Only the context command is currently supported");
+  if (!args.story) throw new Error("--story is required");
+  if (!new Set(["auto", "context-mode", "files"]).has(args.provider)) throw new Error("--provider must be auto, context-mode, or files");
+  if (!new Set(["markdown", "json"]).has(args.format)) throw new Error("--format must be markdown or json");
+  if (!Number.isInteger(args.limit) || args.limit < 1 || args.limit > 10) throw new Error("--limit must be between 1 and 10");
+  if (!Number.isInteger(args.maxLines) || args.maxLines < 1 || args.maxLines > 150) throw new Error("--max-lines must be between 1 and 150");
+  if (!Number.isInteger(args.maxChars) || args.maxChars < 500 || args.maxChars > 50000) throw new Error("--max-chars must be between 500 and 50000");
+  args.repo = path.resolve(args.repo);
+  if (!fs.existsSync(args.repo)) throw new Error(`Repository path does not exist: ${args.repo}`);
+  return args;
+}
+
+function exists(filePath) {
+  try {
+    return fs.existsSync(filePath);
+  } catch {
+    return false;
+  }
+}
+
+function under(filePath, root) {
+  const rel = path.relative(root, filePath);
+  return rel === "" || (!rel.startsWith("..") && !path.isAbsolute(rel));
+}
+
+function activeLedger(repoRoot) {
+  const marker = path.join(repoRoot, "docs", "ai", "ACEF_ACTIVE_LEDGER");
+  if (exists(marker)) {
+    const value = fs.readFileSync(marker, "utf8").trim();
+    const resolved = path.resolve(repoRoot, value);
+    if (value && under(resolved, repoRoot) && exists(resolved)) return resolved;
+  }
+
+  const dir = path.join(repoRoot, "docs", "ai");
+  if (!exists(dir)) return "";
+  const ledgers = fs.readdirSync(dir)
+    .filter((name) => /^ACEF_.*_DELIVERY_AUDIT\.md$/i.test(name))
+    .map((name) => path.join(dir, name));
+  return ledgers.length === 1 ? ledgers[0] : "";
+}
+
+function walk(root, maxDepth = 4, depth = 0) {
+  if (!exists(root) || depth > maxDepth) return [];
+  const output = [];
+  for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
+    const filePath = path.join(root, entry.name);
+    if (entry.isDirectory()) output.push(...walk(filePath, maxDepth, depth + 1));
+    else if (entry.isFile()) output.push(filePath);
+  }
+  return output;
+}
+
+function storyTokens(story) {
+  const normalized = String(story).trim().replace(/^story\s+/i, "");
+  return [...new Set([normalized, normalized.replaceAll(".", "-"), `story-${normalized.replaceAll(".", "-")}`])];
+}
+
+function selectSources(repoRoot, story) {
+  const sources = [];
+  const ledger = activeLedger(repoRoot);
+  if (ledger) sources.push(ledger);
+
+  const currentContext = path.join(repoRoot, "docs", "ai", "ACEF_CURRENT_CONTEXT.md");
+  if (exists(currentContext)) sources.push(currentContext);
+
+  const epic = String(story).trim().replace(/^story\s+/i, "").split(".")[0];
+  const epicPack = path.join(repoRoot, "docs", "ai", `epic-${epic}-context-pack.md`);
+  if (exists(epicPack)) sources.push(epicPack);
+
+  const tokens = storyTokens(story).map((value) => value.toLowerCase());
+  const artifactRoots = [
+    path.join(repoRoot, "_bmad-output", "implementation-artifacts"),
+    path.join(repoRoot, "docs", "ai", "reports"),
+  ];
+  for (const root of artifactRoots) {
+    for (const filePath of walk(root)) {
+      const name = path.basename(filePath).toLowerCase();
+      if (tokens.some((token) => name.includes(token))) sources.push(filePath);
+    }
+  }
+
+  return [...new Set(sources)].filter(exists);
+}
+
+function commandExists(name) {
+  const result = cp.spawnSync("sh", ["-lc", `command -v ${name}`], { encoding: "utf8" });
+  return result.status === 0 && Boolean(String(result.stdout || "").trim());
+}
+
+function gitHead(repoRoot) {
+  const result = cp.spawnSync("git", ["rev-parse", "--short=12", "HEAD"], { cwd: repoRoot, encoding: "utf8" });
+  return result.status === 0 ? result.stdout.trim() : "no-git";
+}
+
+function sourceDigest(files) {
+  const hash = crypto.createHash("sha256");
+  for (const filePath of files) {
+    hash.update(filePath);
+    hash.update(fs.readFileSync(filePath));
+  }
+  return hash.digest("hex").slice(0, 12);
+}
+
+function roleQuery(story, role) {
+  const common = `Story ${story} current gate allowed scope acceptance criteria required commands deferred scope known pitfalls artifact paths`;
+  const normalized = role.toLowerCase();
+  if (/atdd|test-author/.test(normalized)) return `${common} failing tests target test paths boundary cases`;
+  if (/review/.test(normalized) && !/test-review/.test(normalized)) return `${common} changed files diff findings conformance acceptance matrix`;
+  if (/verify-patch/.test(normalized)) return `${common} required patch actions affected paths regression tests`;
+  if (/process-judge|judge/.test(normalized)) return `${common} phase evidence actor separation command evidence verdict`;
+  if (/planner|pm/.test(normalized)) return `${common} backlog seam dependencies story readiness`;
+  return `${common} ATDD failing summary target implementation paths golden neighbor`;
+}
+
+function runContextMode(args, files) {
+  const source = [
+    "acef-query",
+    path.basename(args.repo).replace(/[^a-z0-9_-]+/gi, "-"),
+    `story-${String(args.story).replace(/[^a-z0-9_-]+/gi, "-")}`,
+    args.role.replace(/[^a-z0-9_-]+/gi, "-"),
+    gitHead(args.repo),
+    sourceDigest(files),
+  ].join(":");
+
+  for (const filePath of files) {
+    const indexed = cp.spawnSync("context-mode", ["index", filePath, "--project", args.repo, "--source", source], {
+      cwd: args.repo,
+      encoding: "utf8",
+    });
+    if (indexed.status !== 0) throw new Error(indexed.stderr.trim() || `Context Mode failed to index ${filePath}`);
+  }
+
+  const searched = cp.spawnSync("context-mode", [
+    "search",
+    "--project", args.repo,
+    "--source", source,
+    "--limit", String(args.limit),
+    roleQuery(args.story, args.role),
+  ], { cwd: args.repo, encoding: "utf8" });
+  if (searched.status !== 0) throw new Error(searched.stderr.trim() || "Context Mode search failed");
+  if (!searched.stdout.trim()) throw new Error("Context Mode returned no scoped results");
+  return searched.stdout.trim();
+}
+
+function extractSection(text, title) {
+  const lines = text.split(/\r?\n/);
+  const start = lines.findIndex((line) => new RegExp(`^\\s*#{1,6}\\s+${title}\\s*$`, "i").test(line));
+  if (start < 0) return [];
+  let end = lines.length;
+  for (let index = start + 1; index < lines.length; index += 1) {
+    if (/^\s*#{1,6}\s+/.test(lines[index])) {
+      end = index;
+      break;
+    }
+  }
+  return lines.slice(start, end);
+}
+
+function extractHandoffSummary(text) {
+  const allowed = new Set([
+    "status",
+    "current_step",
+    "last_passed_gate",
+    "next_allowed_step",
+    "active_lane",
+    "active_track",
+    "ledger_path",
+    "workshape",
+  ]);
+  return extractSection(text, "Session Handoff").filter((line) => {
+    if (/^\s*#{1,6}\s+/.test(line)) return true;
+    const match = line.match(/^\s*([A-Za-z][A-Za-z0-9_-]*)\s*:/);
+    return match && allowed.has(match[1].toLowerCase());
+  });
+}
+
+function extractStorySections(text, story) {
+  const lines = text.split(/\r?\n/);
+  const tokens = storyTokens(story).map((token) => token.toLowerCase());
+  const sections = [];
+  for (let start = 0; start < lines.length; start += 1) {
+    const heading = lines[start].match(/^\s*(#{1,6})\s+(.+?)\s*$/);
+    if (!heading || !tokens.some((token) => heading[2].toLowerCase().includes(token))) continue;
+    const level = heading[1].length;
+    let end = lines.length;
+    for (let index = start + 1; index < lines.length; index += 1) {
+      const next = lines[index].match(/^\s*(#{1,6})\s+/);
+      if (next && next[1].length <= level) {
+        end = index;
+        break;
+      }
+    }
+    sections.push(...lines.slice(start, end));
+    start = end - 1;
+  }
+  return sections;
+}
+
+function extractRelevantSections(text) {
+  const lines = text.split(/\r?\n/);
+  const sections = [];
+  const relevant = /accept|verification|command|scope|pitfall|defer|next|result|file|reuse|risk|test|gate/i;
+  for (let start = 0; start < lines.length; start += 1) {
+    const heading = lines[start].match(/^\s*(#{1,6})\s+(.+?)\s*$/);
+    if (!heading || !relevant.test(heading[2])) continue;
+    const level = heading[1].length;
+    let end = lines.length;
+    for (let index = start + 1; index < lines.length; index += 1) {
+      const next = lines[index].match(/^\s*(#{1,6})\s+/);
+      if (next && next[1].length <= level) {
+        end = index;
+        break;
+      }
+    }
+    sections.push(...lines.slice(start, end));
+    start = end - 1;
+  }
+  return sections;
+}
+
+function runFileFallback(args, files) {
+  const chunks = [];
+  const ledger = activeLedger(args.repo);
+  for (const filePath of files) {
+    const rel = path.relative(args.repo, filePath);
+    const text = fs.readFileSync(filePath, "utf8");
+    let lines = [];
+    if (filePath === ledger) {
+      lines = [
+        ...extractHandoffSummary(text),
+        ...extractStorySections(text, args.story),
+      ];
+    } else {
+      lines = extractRelevantSections(text).slice(0, 60);
+      if (!lines.length) {
+        lines = text.split(/\r?\n/).filter((line) => /accept|command|scope|pitfall|defer|next|verdict|fail|test/i.test(line)).slice(0, 40);
+      }
+    }
+    if (lines.length) chunks.push(`## ${rel}\n${lines.join("\n")}`);
+  }
+  return chunks.join("\n\n") || "No story-scoped context found in selected files.";
+}
+
+function bounded(text, maxLines, maxChars) {
+  const byLines = text.split(/\r?\n/).slice(0, maxLines).join("\n");
+  if (byLines.length <= maxChars) return byLines;
+  return `${byLines.slice(0, Math.max(0, maxChars - 32))}\n...[truncated by ACEF query]`;
+}
+
+function render(args, provider, files, content) {
+  const sourceBytes = files.reduce((total, filePath) => total + fs.statSync(filePath).size, 0);
+  const boundedContent = bounded(content, args.maxLines, args.maxChars);
+  const outputBytes = Buffer.byteLength(boundedContent);
+  const reduction = sourceBytes > 0 ? Math.max(0, 100 - ((outputBytes / sourceBytes) * 100)) : 0;
+  const metadata = {
+    provider,
+    repo: args.repo,
+    story: args.story,
+    role: args.role,
+    source_files: files.map((filePath) => path.relative(args.repo, filePath)),
+    source_bytes: sourceBytes,
+    output_bytes: outputBytes,
+    reduction_percent: Number(reduction.toFixed(1)),
+  };
+  if (args.format === "json") return `${JSON.stringify({ ...metadata, content: boundedContent }, null, 2)}\n`;
+  return [
+    "# ACEF Query Context",
+    `provider: ${metadata.provider}`,
+    `story: ${metadata.story}`,
+    `role: ${metadata.role}`,
+    `source_files: ${metadata.source_files.length}`,
+    "source_paths:",
+    ...metadata.source_files.map((filePath) => `- ${filePath}`),
+    `source_bytes: ${metadata.source_bytes}`,
+    `output_bytes: ${metadata.output_bytes}`,
+    `reduction_percent: ${metadata.reduction_percent}`,
+    "",
+    boundedContent,
+    "",
+  ].join("\n");
+}
+
+function main() {
+  const args = parseArgs(process.argv.slice(2));
+  if (args.help) {
+    usage();
+    return;
+  }
+
+  const files = selectSources(args.repo, args.story);
+  if (!files.length) throw new Error("No active ledger or story context sources found");
+
+  let provider = args.provider;
+  let content = "";
+  if (provider === "auto") provider = commandExists("context-mode") ? "context-mode" : "files";
+  if (provider === "context-mode") {
+    try {
+      content = runContextMode(args, files);
+    } catch (error) {
+      if (args.provider !== "auto") throw error;
+      provider = "files";
+      content = runFileFallback(args, files);
+    }
+  } else {
+    content = runFileFallback(args, files);
+  }
+
+  const output = render(args, provider, files, content);
+  if (args.output) {
+    const outputPath = path.resolve(args.repo, args.output);
+    if (!under(outputPath, args.repo)) throw new Error("--output must stay inside --repo");
+    fs.mkdirSync(path.dirname(outputPath), { recursive: true });
+    fs.writeFileSync(outputPath, output);
+  } else {
+    process.stdout.write(output);
+  }
+}
+
+try {
+  main();
+} catch (error) {
+  console.error(`FAIL acef-query: ${error.message}`);
+  process.exitCode = 1;
+}

@@ -43,6 +43,7 @@ Read only the references needed for the current step, but do read the selected f
 - Full BMAD / large / risky epic work: `references/ACEF_BMAD_V2_LANE.md` and `references/ACEF_RULE_ENFORCEMENT_MAP.md`.
 - Test extraction/automation/bootstrap: `references/ACEF_TEST_PIPELINE.md`.
 - Behavior/drift questions: `references/ACEF_AGENT_BEHAVIOR.md` and `references/ACEF_RULE_ENFORCEMENT_MAP.md`.
+- Large-context or token-budget work: `references/ACEF_CONTEXT_RETRIEVAL.md`.
 - Teaching/explaining ACEF: `references/ACEF_TEACHING_GUIDE.md`.
 - Research provenance only when needed: `references/ACEF_RESEARCH_FINDINGS.md`.
 - Project adapter/pattern registry if present in the target repo.

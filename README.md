@@ -36,6 +36,7 @@ persona, and a worker that wrote code cannot review, verify, or mark its own wor
 ```text
 method/      The delivery engine — how the work actually runs
   OPERATING_MODEL.md   personas + tracks (Layer 1)
+  CONTEXT_RETRIEVAL.md optional bounded retrieval adapters and acef-query
   TEST_PIPELINE.md     the test/flow skill chain (Layer 2)
   BMAD_V2_LANE.md      the heavy story lifecycle for epics (Layer 3)
   ADAPTER_MEMORY.md    snapshot vs adapter memory vs run ledger state
@@ -72,8 +73,8 @@ files the agent follows. No build, no npm, no services.
    For OpenCode, the same installer also writes repo-local slash command wrappers under `.opencode/commands/`
    (`/acef`, `/acef-adapter`, `/acef-router`, `/acef-test-bootstrap`, `/map-codebase`). OpenCode skills live under
    `.opencode/skills/`, but slash commands are a separate `.opencode/commands/*.md` mechanism.
-   The tools installer adds repo-local helper CLIs under `.acef/bin/`, including `acef-process-validator` and
-   `acef-codex-guard`.
+   The tools installer adds repo-local helper CLIs under `.acef/bin/`, including `acef-process-validator`,
+   `acef-codex-guard`, and `acef-query`.
    Use `--tool codex|claude|opencode` to target one tool, or `--all-core` to copy every skill in this repo.
 
    Global install is still possible, but should stay minimal:
@@ -189,6 +190,17 @@ ACEF defaults to lean reporting. Evidence remains durable on disk; chat gets com
 - key evidence command/path
 - next allowed step
 - decision needed from the human
+
+Optional bounded retrieval is available through:
+
+```bash
+.acef/bin/acef-query context --repo /path/to/repo --story 5.2 --role developer
+```
+
+`acef-query` uses Context Mode when its CLI is available, but indexes only the active ledger, matching Epic Context
+Pack, current-context file, and matching story artifacts under a content-hashed source label. It falls back to a
+deterministic file slice when Context Mode is absent or fails. Context Mode remains optional: retrieval output is a
+candidate input, never a gate verdict or source of truth.
 
 Do not paste full PRDs, story specs, ledgers, broad `rg` output, or long logs into chat unless the user asks for detail.
 

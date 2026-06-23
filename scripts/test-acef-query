@@ -1,0 +1,94 @@
+#!/usr/bin/env node
+const fs = require("node:fs");
+const os = require("node:os");
+const path = require("node:path");
+const cp = require("node:child_process");
+
+const script = path.resolve(__dirname, "acef-query");
+const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "acef-query-"));
+
+function write(rel, content) {
+  const filePath = path.join(tmp, rel);
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  fs.writeFileSync(filePath, content);
+  return filePath;
+}
+
+function run(args, env = {}) {
+  return cp.execFileSync(process.execPath, [script, ...args], {
+    cwd: tmp,
+    encoding: "utf8",
+    env: { ...process.env, ...env },
+  });
+}
+
+try {
+  write("docs/ai/ACEF_ACTIVE_LEDGER", "docs/ai/ACEF_demo_DELIVERY_AUDIT.md\n");
+  write("docs/ai/ACEF_demo_DELIVERY_AUDIT.md", [
+    "# Delivery Audit",
+    "## Old Story 4.1",
+    "OLD_SECRET must never leak into Story 5.2 fallback output.",
+    ...Array.from({ length: 80 }, (_, index) => `Historical unrelated evidence line ${index + 1}.`),
+    "## Story 5.2",
+    "Status: IN PROGRESS",
+    "Next allowed step: Story 5.2 Developer phase",
+    "Required command: npm test -- Story52",
+    "## Session Handoff",
+    "status: active",
+    "current_step: Story 5.2 developer",
+    "last_passed_gate: Story 5.2 ATDD PASS",
+    "next_allowed_step: Story 5.2 developer",
+    "active_lane: Full BMAD v2",
+    "active_track: per-story",
+    "ledger_path: docs/ai/ACEF_demo_DELIVERY_AUDIT.md",
+    "",
+  ].join("\n"));
+  write("docs/ai/epic-5-context-pack.md", "# Epic 5 Context Pack\n## Allowed Scope\nStory 5.2 References and Awards.\n## Known Pitfalls\nDo not add slugs.\n");
+  write("_bmad-output/implementation-artifacts/5-2-atdd.md", "# Story 5.2 ATDD\n## Acceptance coverage\nReferences and Awards are editable.\n## Verification Commands\nnpm test -- Story52\n## Next\nDeveloper implements against RED tests.\n");
+
+  const fallback = run(["context", "--repo", tmp, "--story", "5.2", "--role", "developer", "--provider", "files"]);
+  if (!fallback.includes("provider: files")
+    || !fallback.includes("Story 5.2")
+    || !fallback.includes("References and Awards are editable")
+    || !fallback.includes("Do not add slugs")
+    || fallback.includes("OLD_SECRET")) {
+    throw new Error(`file fallback did not remain story-scoped:\n${fallback}`);
+  }
+  const autoFallback = run(["context", "--repo", tmp, "--story", "5.2", "--role", "developer", "--provider", "auto"], {
+    PATH: "/usr/bin:/bin",
+  });
+  if (!autoFallback.includes("provider: files")) throw new Error("auto provider did not fall back when Context Mode was unavailable");
+
+  const fakeBin = path.join(tmp, "fake-bin");
+  fs.mkdirSync(fakeBin, { recursive: true });
+  const fakeContextMode = path.join(fakeBin, "context-mode");
+  fs.writeFileSync(fakeContextMode, `#!/bin/sh\nif [ "$1" = "index" ]; then exit 0; fi\ncat <<'EOF'\n## 1. Scoped Story 5.2 result\nSource: acef-query:fixture\nAcceptance criteria and required command for Story 5.2 developer.\nEOF\n`);
+  fs.chmodSync(fakeContextMode, 0o755);
+  const contextMode = run(["context", "--repo", tmp, "--story", "5.2", "--role", "developer", "--provider", "context-mode"], {
+    PATH: `${fakeBin}:${process.env.PATH}`,
+  });
+  if (!contextMode.includes("provider: context-mode") || !contextMode.includes("Scoped Story 5.2 result")) {
+    throw new Error("Context Mode adapter did not return scoped retrieval");
+  }
+
+  const json = JSON.parse(run(["context", "--repo", tmp, "--story", "5.2", "--role", "reviewer", "--provider", "files", "--format", "json"]));
+  if (json.story !== "5.2" || json.role !== "reviewer" || json.reduction_percent <= 0) {
+    throw new Error("JSON output or reduction metrics are invalid");
+  }
+
+  let escapedOutputBlocked = false;
+  const escapedOutput = cp.spawnSync(process.execPath, [
+    script,
+    "context",
+    "--repo", tmp,
+    "--story", "5.2",
+    "--provider", "files",
+    "--output", "../escape.md",
+  ], { cwd: tmp, encoding: "utf8" });
+  escapedOutputBlocked = escapedOutput.status === 1 && escapedOutput.stderr.includes("must stay inside");
+  if (!escapedOutputBlocked) throw new Error("repo-external output path was not blocked");
+
+  console.log("acef-query tests passed");
+} finally {
+  fs.rmSync(tmp, { recursive: true, force: true });
+}
