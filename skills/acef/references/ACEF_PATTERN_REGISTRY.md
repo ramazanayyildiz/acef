@@ -160,7 +160,7 @@ mechanical check. This keeps "we should mechanize this" from passing as if it we
 
 ## Mechanical checks
 
-`scripts/acef-process-validator` includes the first mechanical conformance checks:
+`.acef/bin/acef-process-validator` includes the first mechanical conformance checks:
 
 - `--check pattern-registry` validates the registry contract and required per-entry fields.
 - `--check reuse-before-create` requires the delivery ledger to record a reuse/golden-neighbor probe that cites a

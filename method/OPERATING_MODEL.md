@@ -46,7 +46,7 @@ fresh_session_recommended: yes  # required for epic close
 ```
 
 The report paths must exist on disk. The conductor chat summary stays compact; the reports contain the complete logs,
-files changed, test evidence, findings, and deferrals. Run `scripts/acef-process-validator --check lean-evidence`
+files changed, test evidence, findings, and deferrals. Run `.acef/bin/acef-process-validator --check lean-evidence`
 before story/epic close.
 
 ## Branching and PR targets
@@ -229,7 +229,7 @@ The preflight artifact is not a replacement for the delivery ledger. Preflight d
 the delivery ledger proves that the feature keeps following the lane until completion.
 
 Before any certification, Process Judge, Epic Process Judge, or external verifier handoff, run
-`scripts/acef-process-validator --check clean-tree`. A verifier must not certify one commit while uncommitted follow-on
+`.acef/bin/acef-process-validator --check clean-tree`. A verifier must not certify one commit while uncommitted follow-on
 work is layered on top.
 
 ### Seeded Epic Gates
@@ -308,7 +308,7 @@ trace ends at one of those artifacts, the capability is incomplete. When repo do
 slice from the requirement itself: who performs what action, where they enter, which layers execute, and which real-path
 test proves it. Both evidence cells use `path#probe`; the validator requires the production source to contain the
 entrypoint probe and the test to contain the runtime probe plus an executable assertion. Run
-`scripts/acef-process-validator --check vertical-slice` before story/epic close.
+`.acef/bin/acef-process-validator --check vertical-slice` before story/epic close.
 
 For guarded work, add `## Guarded Test Floor` with `boundary`, `boundary_symbol`, `test_evidence`,
 `test_author_actor`, and `status: PASS`. The evidence uses `test/path#boundary_symbol`; the file must contain that exact

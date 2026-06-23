@@ -65,9 +65,12 @@ files the agent follows. No build, no npm, no services.
 2. **Install the skills** — local-first is preferred. Copy the core ACEF skills into the repo you are working on:
    ```bash
    scripts/install-acef-skills --repo /path/to/your/repo
+   scripts/install-acef-tools --repo /path/to/your/repo
    ```
    This installs the default local set for Claude, Codex, and OpenCode:
    `acef`, `acef-adapter`, `acef-router`, `acef-test-bootstrap`, and `map-codebase`.
+   The tools installer adds repo-local helper CLIs under `.acef/bin/`, including `acef-process-validator` and
+   `acef-codex-guard`.
    Use `--tool codex|claude|opencode` to target one tool, or `--all-core` to copy every skill in this repo.
 
    Global install is still possible, but should stay minimal:
@@ -119,7 +122,7 @@ Use the CLI guard as the explicit certification/backstop before accepting worker
 hook/CI wrapper:
 
 ```bash
-scripts/acef-codex-guard --repo /path/to/repo --role worker --story 3.5 --base-ref HEAD
+.acef/bin/acef-codex-guard --repo /path/to/repo --role worker --story 3.5 --base-ref HEAD
 ```
 
 The Codex guard reads the same `docs/ai/ACEF_ACTIVE_LEDGER` and `docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json` files as the
@@ -131,9 +134,9 @@ For practical Codex use:
 1. Start an ACEF run normally and create the ledger + active ledger pointer.
 2. Before dispatching an implementation worker, write `docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json`.
 3. Let the Codex `PreToolUse` guard block out-of-scope writes during the run.
-4. After the worker returns, run `scripts/acef-codex-guard ...` and the relevant `scripts/acef-process-validator`
+4. After the worker returns, run `.acef/bin/acef-codex-guard ...` and the relevant `.acef/bin/acef-process-validator`
    checks before accepting the output.
-5. For stronger enforcement, call `scripts/acef-codex-guard` from a repo-local `pre-commit` hook.
+5. For stronger enforcement, call `.acef/bin/acef-codex-guard` from a repo-local `pre-commit` hook.
 
 Full BMAD also needs run-level delegation authorization. Record `## Delegation Authorization` once in the ledger:
 delegation is approved only for ACEF-required persona workers, with one story/phase per worker, no worker-spawned
@@ -185,23 +188,23 @@ method body upfront.
 ACEF ships a stack-agnostic process validator for cheap mechanical gates:
 
 ```bash
-scripts/acef-process-validator --repo /path/to/repo --check clean-tree
-scripts/acef-process-validator --repo /path/to/repo --check preflight
-scripts/acef-process-validator --repo /path/to/repo --check claims --ledger docs/ai/ACEF_feature_DELIVERY_AUDIT.md
-scripts/acef-process-validator --repo /path/to/repo --check adapter-freshness --adapter docs/codebase-map.md
-scripts/acef-process-validator --repo /path/to/repo --check pattern-registry
-scripts/acef-process-validator --repo /path/to/repo --check reuse-before-create --ledger docs/ai/ACEF_feature_DELIVERY_AUDIT.md
-scripts/acef-process-validator --repo /path/to/repo --check do-not-copy --ledger docs/ai/ACEF_feature_DELIVERY_AUDIT.md
-scripts/acef-process-validator --repo /path/to/repo --check partial-workshape --ledger docs/ai/ACEF_feature_DELIVERY_AUDIT.md
-scripts/acef-process-validator --repo /path/to/repo --check finding-promotion --ledger docs/ai/ACEF_feature_DELIVERY_AUDIT.md
-scripts/acef-process-validator --repo /path/to/repo --check graduation-reconciliation --ledger docs/ai/ACEF_feature_DELIVERY_AUDIT.md
-scripts/acef-process-validator --repo /path/to/repo --check vertical-slice --ledger docs/ai/ACEF_feature_DELIVERY_AUDIT.md
-scripts/acef-process-validator --repo /path/to/repo --check guarded-test-floor --ledger docs/ai/ACEF_feature_DELIVERY_AUDIT.md
-scripts/acef-process-validator --repo /path/to/repo --check actor-separation --ledger docs/ai/ACEF_feature_DELIVERY_AUDIT.md
-scripts/acef-process-validator --repo /path/to/repo --check source-reconciliation --ledger docs/ai/ACEF_feature_DELIVERY_AUDIT.md
-scripts/acef-process-validator --repo /path/to/repo --check session-handoff --ledger docs/ai/ACEF_feature_DELIVERY_AUDIT.md
-scripts/acef-process-validator --repo /path/to/repo --check epic-boundary --ledger docs/ai/ACEF_feature_DELIVERY_AUDIT.md --target-epic 2
-scripts/acef-process-validator --repo /path/to/repo --check epic-transition-approval --ledger docs/ai/ACEF_feature_DELIVERY_AUDIT.md --target-epic 2
+.acef/bin/acef-process-validator --repo /path/to/repo --check clean-tree
+.acef/bin/acef-process-validator --repo /path/to/repo --check preflight
+.acef/bin/acef-process-validator --repo /path/to/repo --check claims --ledger docs/ai/ACEF_feature_DELIVERY_AUDIT.md
+.acef/bin/acef-process-validator --repo /path/to/repo --check adapter-freshness --adapter docs/codebase-map.md
+.acef/bin/acef-process-validator --repo /path/to/repo --check pattern-registry
+.acef/bin/acef-process-validator --repo /path/to/repo --check reuse-before-create --ledger docs/ai/ACEF_feature_DELIVERY_AUDIT.md
+.acef/bin/acef-process-validator --repo /path/to/repo --check do-not-copy --ledger docs/ai/ACEF_feature_DELIVERY_AUDIT.md
+.acef/bin/acef-process-validator --repo /path/to/repo --check partial-workshape --ledger docs/ai/ACEF_feature_DELIVERY_AUDIT.md
+.acef/bin/acef-process-validator --repo /path/to/repo --check finding-promotion --ledger docs/ai/ACEF_feature_DELIVERY_AUDIT.md
+.acef/bin/acef-process-validator --repo /path/to/repo --check graduation-reconciliation --ledger docs/ai/ACEF_feature_DELIVERY_AUDIT.md
+.acef/bin/acef-process-validator --repo /path/to/repo --check vertical-slice --ledger docs/ai/ACEF_feature_DELIVERY_AUDIT.md
+.acef/bin/acef-process-validator --repo /path/to/repo --check guarded-test-floor --ledger docs/ai/ACEF_feature_DELIVERY_AUDIT.md
+.acef/bin/acef-process-validator --repo /path/to/repo --check actor-separation --ledger docs/ai/ACEF_feature_DELIVERY_AUDIT.md
+.acef/bin/acef-process-validator --repo /path/to/repo --check source-reconciliation --ledger docs/ai/ACEF_feature_DELIVERY_AUDIT.md
+.acef/bin/acef-process-validator --repo /path/to/repo --check session-handoff --ledger docs/ai/ACEF_feature_DELIVERY_AUDIT.md
+.acef/bin/acef-process-validator --repo /path/to/repo --check epic-boundary --ledger docs/ai/ACEF_feature_DELIVERY_AUDIT.md --target-epic 2
+.acef/bin/acef-process-validator --repo /path/to/repo --check epic-transition-approval --ledger docs/ai/ACEF_feature_DELIVERY_AUDIT.md --target-epic 2
 ```
 
 These checks are the first step in moving ACEF rules out of agent memory and into machinery.
@@ -236,7 +239,7 @@ Quick verify:
 
 ```bash
 node scripts/test-acef-process-validator
-node scripts/acef-process-validator --repo . --check clean-tree
+node .acef/bin/acef-process-validator --repo . --check clean-tree
 node scripts/smoke-acef-hook-active-ledger
 node scripts/smoke-acef-opencode-plugin
 ```

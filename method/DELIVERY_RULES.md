@@ -131,7 +131,7 @@ A lightweight (usually guarded) task promotes to full BMAD when any of:
 - **Explicit epic transition approval** — Epic N+1 cannot start merely because the user said "go on", "continue",
   "devam", or "tamamla". After Epic N Process Judge `PASS`, the ledger must record `## Epic Transition Approval` with
   `status: APPROVED`, `target_epic: Epic N+1`, and the exact `user_quote` naming that epic with an approval/start verb.
-  Run `scripts/acef-process-validator --check epic-transition-approval --target-epic N+1` before creating or dispatching
+  Run `.acef/bin/acef-process-validator --check epic-transition-approval --target-epic N+1` before creating or dispatching
   the first story in the next epic.
 - **Human-pause is not process-gate** — a human may permit autonomous continuation, but that only waives waiting for
   the human. It never waives required Process Judge or Epic Process Judge gates.

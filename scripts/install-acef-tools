@@ -1,0 +1,54 @@
+#!/usr/bin/env node
+const fs = require("node:fs");
+const path = require("node:path");
+
+const repoRoot = path.resolve(__dirname, "..");
+const tools = [
+  "acef-process-validator",
+  "acef-codex-guard",
+];
+
+function usage() {
+  console.log(`Usage: scripts/install-acef-tools --repo <path>
+
+Installs ACEF local helper CLIs into:
+  <repo>/.acef/bin/
+
+This keeps validators and guards repo-local instead of relying on the ACEF checkout path.`);
+}
+
+function parseArgs(argv) {
+  const opts = { repo: "" };
+  for (let index = 0; index < argv.length; index += 1) {
+    const arg = argv[index];
+    if (arg === "--repo" || arg === "--target") {
+      opts.repo = argv[++index] || "";
+    } else if (arg === "-h" || arg === "--help") {
+      usage();
+      process.exit(0);
+    } else {
+      throw new Error(`Unknown argument: ${arg}`);
+    }
+  }
+  if (!opts.repo) throw new Error("--repo is required");
+  opts.repo = path.resolve(opts.repo);
+  return opts;
+}
+
+function copyTool(name, targetRepo) {
+  const source = path.join(repoRoot, "scripts", name);
+  const target = path.join(targetRepo, ".acef", "bin", name);
+  const targetCjs = `${target}.cjs`;
+  if (!fs.existsSync(source)) throw new Error(`Tool source not found: ${source}`);
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+  fs.copyFileSync(source, targetCjs);
+  fs.writeFileSync(target, `#!/usr/bin/env sh\nexec node "$(dirname "$0")/${name}.cjs" "$@"\n`);
+  fs.chmodSync(target, 0o755);
+  fs.chmodSync(targetCjs, 0o755);
+  return target;
+}
+
+const opts = parseArgs(process.argv.slice(2));
+for (const tool of tools) {
+  console.log(`Installed ${tool}: ${copyTool(tool, opts.repo)}`);
+}
