@@ -102,8 +102,8 @@ Interpretation:
 - Next evidence step is actor-based A/B/C runs that fill finding recall, retries, false positives, and task result.
 - The first actor prompt matrix is ready for Story 4.1 review, ATDD, and dev tasks across all three modes, but no actor
   result rows have been recorded yet.
-- The manifest now makes actor coverage explicit. Current actor coverage is 3/18: both baseline review runs and the first
-  files-mode review run recalled the known Story 4.1 control findings without stale-story leakage or wrong-scope touch.
+- The manifest now makes actor coverage explicit. Current actor coverage is 4/18: both baseline review runs and both
+  files-mode review runs recalled the known Story 4.1 control findings without stale-story leakage or wrong-scope touch.
   Files mode preserved recall while returning ~95.7% less context for this reviewer fixture. These rows are marked
   `runner_type=main-codex-self-run`, so this is useful progress but weaker than fresh external/subagent runs. The experiment
   is still intentionally not adoptable.
@@ -126,4 +126,4 @@ scripts/acef-context-experiment-report \
   --manifest docs/experiments/context-retrieval/manifests/detaysoft-4-1-18-run-2026-06-23.json
 ```
 
-Expected interpretation for actor rows: not adoptable yet; coverage is `3/18 actor rows`.
+Expected interpretation for actor rows: not adoptable yet; coverage is `4/18 actor rows`.
