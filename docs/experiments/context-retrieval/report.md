@@ -110,6 +110,7 @@ Interpretation:
   quality regression means Context Mode should not become the default reviewer context from this evidence.
 - The first baseline ATDD row derived a behavior-first red-test slice from the broad context. It is recorded with
   `tests_passed=false` because ATDD should be red on a pre-implementation tree; it did not mutate the active Detaysoft app.
+  The second baseline ATDD row repeated the same behavior-first mapping, so the baseline ATDD cell is now complete.
 - All current rows are marked `runner_type=main-codex-self-run`, so they are useful progress but weaker than fresh
   external/subagent runs. The experiment is still intentionally not adoptable.
 
@@ -131,5 +132,5 @@ scripts/acef-context-experiment-report \
   --manifest docs/experiments/context-retrieval/manifests/detaysoft-4-1-18-run-2026-06-23.json
 ```
 
-Expected interpretation for actor rows: not adoptable yet; coverage is `7/18 actor rows`, with two context-mode review
-recall failures and one baseline ATDD derivation row.
+Expected interpretation for actor rows: not adoptable yet; coverage is `8/18 actor rows`, with two context-mode review
+recall failures and a complete baseline ATDD cell.
