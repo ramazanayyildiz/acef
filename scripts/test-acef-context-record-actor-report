@@ -70,6 +70,69 @@ try {
   }
   if (row.runner_type !== "subagent") throw new Error("runner_type was not forwarded");
 
+  const codexReport = write("codex-report.txt", [
+    "result=pass",
+    "tests_passed=true",
+    "input_tokens=null",
+    "cached_input_tokens=null",
+    "output_tokens=null",
+    "cost=null",
+    "known_findings_recalled=2",
+    "review_findings_count=0",
+    "false_positive_count=0",
+    "retry_count=0",
+    "stale_story_leak=false",
+    "wrong_scope_touch=false",
+    "tokens used",
+    "153,606",
+    "",
+  ].join("\n"));
+  run([
+    "--repo", tmp,
+    "--story", "5.2",
+    "--role", "developer",
+    "--task-type", "dev",
+    "--mode", "baseline",
+    "--fixture", fixture,
+    "--report", codexReport,
+    "--output", output,
+  ]);
+  const rows = fs.readFileSync(output, "utf8").trim().split(/\r?\n/).map((line) => JSON.parse(line));
+  if (rows.at(-1).input_tokens !== 153606) {
+    throw new Error("Codex tokens-used footer was not recorded as input_tokens fallback");
+  }
+
+  const overrideReport = write("override-report.txt", [
+    "result=pass",
+    "tests_passed=true",
+    "input_tokens=null",
+    "cached_input_tokens=null",
+    "output_tokens=null",
+    "cost=null",
+    "known_findings_recalled=2",
+    "review_findings_count=0",
+    "false_positive_count=0",
+    "retry_count=0",
+    "stale_story_leak=false",
+    "wrong_scope_touch=false",
+    "",
+  ].join("\n"));
+  run([
+    "--repo", tmp,
+    "--story", "5.2",
+    "--role", "developer",
+    "--task-type", "dev",
+    "--mode", "baseline",
+    "--fixture", fixture,
+    "--report", overrideReport,
+    "--input-tokens", "153606",
+    "--output", output,
+  ]);
+  const overrideRows = fs.readFileSync(output, "utf8").trim().split(/\r?\n/).map((line) => JSON.parse(line));
+  if (overrideRows.at(-1).input_tokens !== 153606) {
+    throw new Error("input token override was not recorded");
+  }
+
   const badReport = write("bad-report.txt", "result=pass\n");
   const bad = cp.spawnSync(process.execPath, [
     script,

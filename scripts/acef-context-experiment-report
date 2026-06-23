@@ -152,31 +152,39 @@ function summarize(rows, manifest = null) {
   });
 
   const baseline = summaries.find((summary) => summary.mode === "baseline");
+  const manifestCoverage = coverage(rows, manifest);
   const threshold = {
     has_actor_quality: summaries.some((summary) => summary.evidence_level === "actor-quality" || summary.evidence_level === "actor+token"),
     has_token_data: summaries.some((summary) => summary.median_input_tokens !== null),
     stale_story_leak_zero: summaries.every((summary) => summary.stale_story_leaks === 0),
     wrong_scope_touch_zero: summaries.every((summary) => summary.wrong_scope_touches === 0),
     context_reduction_ge_25: summaries.filter((summary) => summary.mode !== "baseline").every((summary) => summary.median_reduction_pct !== null && summary.median_reduction_pct >= 25),
+    coverage_complete: manifestCoverage ? manifestCoverage.complete : true,
     baseline_runs: baseline ? baseline.runs : 0,
   };
   threshold.adoptable = threshold.has_actor_quality
     && threshold.has_token_data
     && threshold.stale_story_leak_zero
     && threshold.wrong_scope_touch_zero
-    && threshold.context_reduction_ge_25;
+    && threshold.context_reduction_ge_25
+    && threshold.coverage_complete;
 
   return {
     input: path.resolve(process.argv.includes("--input") ? process.argv[process.argv.indexOf("--input") + 1] : ""),
     rows: rows.length,
     summaries,
     threshold,
-    coverage: coverage(rows, manifest),
+    coverage: manifestCoverage,
     runner_types: runnerTypes(rows),
   };
 }
 
 function renderMarkdown(result) {
+  const adoptionReason = result.threshold.adoptable
+    ? "actor quality, token data, safety, and manifest coverage all pass"
+    : result.coverage && !result.coverage.complete
+      ? "manifest coverage incomplete; do not change defaults from partial evidence"
+      : "needs actor quality plus token/cost evidence before changing defaults";
   const lines = [
     "# ACEF Context Experiment Summary",
     "",
@@ -190,7 +198,7 @@ function renderMarkdown(result) {
   }
   lines.push("");
   lines.push(`adoptable: ${result.threshold.adoptable ? "yes" : "no"}`);
-  lines.push(`reason: ${result.threshold.adoptable ? "actor quality and token data present with safety clean" : "needs actor quality plus token/cost evidence before changing defaults"}`);
+  lines.push(`reason: ${adoptionReason}`);
   if (result.runner_types.length) {
     lines.push("");
     lines.push("| Runner type | Actor rows |");

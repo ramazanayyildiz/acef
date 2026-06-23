@@ -24,7 +24,7 @@ const required = [
 ];
 
 function usage() {
-  console.log(`Usage: acef-context-record-actor-report --repo <path> --story <id> --role <role> --task-type <review|atdd|dev> --mode <baseline|files|context-mode> --fixture <path> --report <path> [--output <path>]
+  console.log(`Usage: acef-context-record-actor-report --repo <path> --story <id> --role <role> --task-type <review|atdd|dev> --mode <baseline|files|context-mode> --fixture <path> --report <path> [--output <path>] [--input-tokens <n>]
 
 Parses an actor final report and appends a validated ACEF context experiment JSONL row.`);
 }
@@ -39,6 +39,7 @@ function parseArgs(argv) {
     fixture: "",
     report: "",
     output: "",
+    inputTokens: "",
   };
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
@@ -50,6 +51,7 @@ function parseArgs(argv) {
     else if (arg === "--fixture") opts.fixture = argv[++index] || "";
     else if (arg === "--report") opts.report = argv[++index] || "";
     else if (arg === "--output") opts.output = argv[++index] || "";
+    else if (arg === "--input-tokens") opts.inputTokens = argv[++index] || "";
     else if (arg === "-h" || arg === "--help") {
       usage();
       process.exit(0);
@@ -68,6 +70,7 @@ function parseArgs(argv) {
   opts.fixture = path.resolve(opts.fixture);
   opts.report = path.resolve(opts.report);
   if (opts.output) opts.output = path.resolve(opts.output);
+  if (opts.inputTokens) parseNumberOrNull(opts.inputTokens, "--input-tokens");
   for (const [name, filePath] of [["repo", opts.repo], ["fixture", opts.fixture], ["report", opts.report]]) {
     if (!fs.existsSync(filePath)) throw new Error(`${name} does not exist: ${filePath}`);
   }
@@ -82,10 +85,18 @@ function parseReport(filePath) {
     if (!match) continue;
     fields[match[1]] = match[2];
   }
+  applyCodexUsageFallback(fields, text);
   const missing = required.filter((key) => !(key in fields));
   if (missing.length) throw new Error(`Actor report missing required field(s): ${missing.join(", ")}`);
   validate(fields);
   return fields;
+}
+
+function applyCodexUsageFallback(fields, text) {
+  if (fields.input_tokens && fields.input_tokens !== "null") return;
+  const match = text.match(/^tokens used\s*\n\s*([0-9][0-9,]*)\s*$/m);
+  if (!match) return;
+  fields.input_tokens = match[1].replace(/,/g, "");
 }
 
 function validate(fields) {
@@ -117,6 +128,7 @@ function parseNumberOrNull(value, key) {
 function main() {
   const opts = parseArgs(process.argv.slice(2));
   const fields = parseReport(opts.report);
+  if (opts.inputTokens && fields.input_tokens === "null") fields.input_tokens = opts.inputTokens;
   const args = [
     "--repo", opts.repo,
     "--story", opts.story,

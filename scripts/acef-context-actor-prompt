@@ -19,6 +19,11 @@ Usage:
 Options:
   --output <path>      Write prompt to file instead of stdout
   --run-output <path>  JSONL path for the actor's final metric row
+  --base-ref <ref>     Dev-only: pre-dev base ref the actor starts from
+  --failing-command <cmd>
+                       Dev-only: focused command that must be red before implementation
+  --allowed-path <glob>
+                       Dev-only: implementation path/glob allowed for the slice (repeatable)
 
 Generates a reproducible actor prompt for A/B/C context-retrieval experiments.`);
 }
@@ -33,6 +38,9 @@ function parseArgs(argv) {
     fixture: "",
     output: "",
     runOutput: "",
+    baseRef: "",
+    failingCommand: "",
+    allowedPaths: [],
   };
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
@@ -44,6 +52,9 @@ function parseArgs(argv) {
     else if (arg === "--fixture") opts.fixture = argv[++index] || "";
     else if (arg === "--output") opts.output = argv[++index] || "";
     else if (arg === "--run-output") opts.runOutput = argv[++index] || "";
+    else if (arg === "--base-ref") opts.baseRef = argv[++index] || "";
+    else if (arg === "--failing-command") opts.failingCommand = argv[++index] || "";
+    else if (arg === "--allowed-path") opts.allowedPaths.push(argv[++index] || "");
     else if (arg === "-h" || arg === "--help") {
       usage();
       process.exit(0);
@@ -64,6 +75,26 @@ function parseArgs(argv) {
   if (opts.output) opts.output = path.resolve(opts.output);
   if (opts.runOutput) opts.runOutput = path.resolve(opts.runOutput);
   return opts;
+}
+
+function devPreconditionBlock(opts) {
+  if (opts.taskType !== "dev") return "";
+  const allowed = opts.allowedPaths.length
+    ? opts.allowedPaths.map((value) => `- ${value}`).join("\n")
+    : "- NOT PROVIDED";
+  return [
+    "## Dev-Slice Precondition Evidence",
+    "",
+    `Base ref: ${opts.baseRef || "NOT PROVIDED"}`,
+    `Focused red command: ${opts.failingCommand || "NOT PROVIDED"}`,
+    "",
+    "Allowed implementation paths:",
+    allowed,
+    "",
+    "The actor must verify this precondition before implementation. If the base ref, red command, or allowed paths are",
+    "missing or contradicted by repo state, return `result=invalid` and do not edit implementation files.",
+    "",
+  ].join("\n");
 }
 
 function run(command, args) {
@@ -175,6 +206,7 @@ function render(opts) {
     fixture.trim(),
     "```",
     "",
+    devPreconditionBlock(opts),
     "## Experiment Context",
     "",
     contextBundle(opts),

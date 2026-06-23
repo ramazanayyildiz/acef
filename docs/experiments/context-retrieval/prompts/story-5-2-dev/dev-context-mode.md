@@ -62,6 +62,23 @@ quality.
 The focused test goes green without wrong-scope changes, stale-story leakage, or hollow green behavior.
 ```
 
+## Dev-Slice Precondition Evidence
+
+Base ref: 136c516
+Focused red command: php artisan test tests/Feature/Story52ReferencesAwardsTest.php --compact
+
+Allowed implementation paths:
+- app/Twill/Capsules/References/**
+- app/Twill/Capsules/Awards/**
+- bootstrap/providers.php
+- config/twill.php
+- routes/web.php
+- resources/views/pages/reference-list.blade.php
+- resources/views/pages/award-list.blade.php
+
+The actor must verify this precondition before implementation. If the base ref, red command, or allowed paths are
+missing or contradicted by repo state, return `result=invalid` and do not edit implementation files.
+
 ## Experiment Context
 
 Mode `context-mode` provides this bounded context bundle.

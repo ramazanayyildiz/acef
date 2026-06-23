@@ -1,0 +1,93 @@
+#!/usr/bin/env node
+const fs = require("node:fs");
+const os = require("node:os");
+const path = require("node:path");
+const cp = require("node:child_process");
+
+const repoRoot = path.resolve(__dirname, "..");
+const script = path.join(repoRoot, "scripts", "acef-context-experiment-report");
+const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "acef-context-report-"));
+
+function write(rel, content) {
+  const filePath = path.join(tmp, rel);
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  fs.writeFileSync(filePath, content);
+  return filePath;
+}
+
+function run(args) {
+  return cp.execFileSync(process.execPath, [script, ...args], {
+    cwd: repoRoot,
+    encoding: "utf8",
+  });
+}
+
+try {
+  const runs = write("runs.jsonl", `${JSON.stringify({
+    task_type: "dev",
+    mode: "baseline",
+    provider: "baseline",
+    role: "developer",
+    result: "pass",
+    input_tokens: 153606,
+    returned_bytes: 243595,
+    source_bytes: 243595,
+    reduction_pct: 0,
+    known_findings_recalled: 4,
+    retry_count: 1,
+    stale_story_leak: false,
+    wrong_scope_touch: false,
+    runner_type: "main-codex-self-run",
+  })}\n`);
+  const manifest = write("manifest.json", JSON.stringify({
+    runs: [
+      { task_type: "dev", mode: "baseline", role: "developer" },
+      { task_type: "dev", mode: "files", role: "developer" },
+    ],
+  }));
+  const partial = run(["--input", runs, "--manifest", manifest]);
+  if (!partial.includes("adoptable: no") || !partial.includes("manifest coverage incomplete")) {
+    throw new Error("partial manifest coverage should block adoptable status");
+  }
+
+  const completeRuns = write("complete-runs.jsonl", [
+    JSON.stringify({
+      task_type: "dev",
+      mode: "baseline",
+      provider: "baseline",
+      role: "developer",
+      result: "pass",
+      input_tokens: 153606,
+      returned_bytes: 243595,
+      source_bytes: 243595,
+      reduction_pct: 0,
+      known_findings_recalled: 4,
+      retry_count: 1,
+      stale_story_leak: false,
+      wrong_scope_touch: false,
+    }),
+    JSON.stringify({
+      task_type: "dev",
+      mode: "files",
+      provider: "files",
+      role: "developer",
+      result: "pass",
+      input_tokens: 80000,
+      returned_bytes: 10000,
+      source_bytes: 240000,
+      reduction_pct: 95,
+      known_findings_recalled: 4,
+      retry_count: 1,
+      stale_story_leak: false,
+      wrong_scope_touch: false,
+    }),
+  ].join("\n") + "\n");
+  const complete = run(["--input", completeRuns, "--manifest", manifest]);
+  if (!complete.includes("adoptable: yes")) {
+    throw new Error("complete safe manifest should allow adoptable status");
+  }
+
+  console.log("acef-context-experiment-report tests passed");
+} finally {
+  fs.rmSync(tmp, { recursive: true, force: true });
+}

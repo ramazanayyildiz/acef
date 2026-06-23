@@ -86,6 +86,26 @@ try {
     throw new Error("baseline actor prompt did not list controlled sources");
   }
 
+  const devPrompt = run([
+    "--repo", tmp,
+    "--story", "5.2",
+    "--role", "developer",
+    "--task-type", "dev",
+    "--mode", "baseline",
+    "--fixture", fixture,
+    "--base-ref", "abc123",
+    "--failing-command", "php artisan test tests/Feature/Story52.php --compact",
+    "--allowed-path", "app/Twill/Capsules/References/**",
+    "--allowed-path", "app/Twill/Capsules/Awards/**",
+  ]);
+  if (!devPrompt.includes("## Dev-Slice Precondition Evidence")
+    || !devPrompt.includes("Base ref: abc123")
+    || !devPrompt.includes("Focused red command: php artisan test tests/Feature/Story52.php --compact")
+    || !devPrompt.includes("app/Twill/Capsules/References/**")
+    || !devPrompt.includes("app/Twill/Capsules/Awards/**")) {
+    throw new Error("dev actor prompt did not include precondition evidence");
+  }
+
   const fakeBin = path.join(tmp, "fake-bin");
   fs.mkdirSync(fakeBin, { recursive: true });
   const fakeContextMode = path.join(fakeBin, "context-mode");

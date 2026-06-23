@@ -129,6 +129,11 @@ Interpretation:
   `.env` + SQLite test DB initialized locally, and `php artisan test tests/Feature/Story52ReferencesAwardsTest.php
   --compact` confirmed the expected RED state (8 failed, 33 assertions). Dev-only prompts live under
   `prompts/story-5-2-dev/`; the dev-only manifest expects 6 rows.
+- Story 5.2 dev baseline run 1 is now recorded from the isolated worktree. It produced a real green implementation
+  (`php artisan test tests/Feature/Story52ReferencesAwardsTest.php --compact` = 8 passed / 202 assertions), touched only
+  the bounded References/Awards slice, and is recorded with wrapper-observed Codex usage (`input_tokens=153606`). This is
+  useful baseline evidence, not an adoption signal: the dev-only manifest is still 1/6 rows, with files and context-mode
+  dev runs missing.
 - All current rows are marked `runner_type=main-codex-self-run`, so they are useful progress but weaker than fresh
   external/subagent runs. The experiment is still intentionally not adoptable.
 
@@ -153,3 +158,14 @@ scripts/acef-context-experiment-report \
 Expected interpretation for actor rows: not adoptable yet; coverage is `12/18 actor rows` even if the file has 13 total
 rows, because the first dev-baseline attempt is invalid and excluded from actor coverage. Current evidence shows
 context-mode recall failures in both review and ATDD, plus lower ATDD recall for files mode.
+
+Story 5.2 dev replacement command:
+
+```bash
+scripts/acef-context-experiment-report \
+  --input docs/experiments/context-retrieval/runs/detaysoft-5-2-dev-actor-runs-2026-06-23.jsonl \
+  --manifest docs/experiments/context-retrieval/manifests/detaysoft-5-2-dev-6-run-2026-06-23.json
+```
+
+Expected interpretation for Story 5.2 dev rows: not adoptable until the 6-row dev-only manifest is complete. Current
+baseline row is `actor+token` evidence, but manifest coverage is only 1/6.
