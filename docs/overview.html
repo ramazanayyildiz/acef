@@ -204,6 +204,15 @@ Captures (each field cites a source path):
             <div class="card" style="border-left-color:var(--green)"><h3>Typed evidence</h3><p><code>acef-state</code>
               writes actor, worker-scope, hashed command evidence, gate verdict, and approval JSON sidecars. Validators
               bind PASS to the right actor, Git state, raw output hash, and explicit human approval.</p></div>
+            <div class="card" style="border-left-color:var(--blue)"><h3>Fresh state</h3><p><code>acef-status</code>
+              and <code>acef-next</code> turn typed repo state into a small startup packet: current action, allowed paths,
+              forbidden actions, required evidence, and stop condition.</p></div>
+            <div class="card" style="border-left-color:var(--violet)"><h3>Workflow graph</h3><p>Small YAML workflows
+              describe node order and artifact passing. <code>acef-workflow-validate</code> checks the graph; it does not
+              replace evidence, gates, or Process Judge.</p></div>
+            <div class="card" style="border-left-color:var(--amber)"><h3>Review lenses</h3><p><code>bug-hunter</code>
+              is a measured report-only JIT lens for bounded PR/lightweight review. It helps find behavioral defects and
+              hollow-green risks without patching or approving gates.</p></div>
             <div class="card" style="border-left-color:var(--rose)"><h3>Process gates</h3><p><code>ACEF_PREFLIGHT.md</code>
               must PASS before planning or implementation; Process Judge and Epic Process Judge verify skills, phase
               order, artifacts, and evidence before <code>done</code>.</p></div>

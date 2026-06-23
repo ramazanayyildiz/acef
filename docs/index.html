@@ -106,6 +106,9 @@
             <li>Functional requirements close only when traced to an owning story and an exercised capability, not merely a supporting artifact.</li>
             <li>Lean runtime is the default: evidence stays on disk; chat reports only artifact path, verdict, key evidence, and next step.</li>
             <li>Story workers receive a maximum-150-line role-specific current-context slice instead of repeatedly reading the full ledger and planning set.</li>
+            <li>Fresh sessions start from <code>acef-status</code> and <code>acef-next</code>, so the current allowed action, write boundary, evidence requirements, and stop condition come from typed repo state.</li>
+            <li>Workflow definitions can be versioned as small YAML graphs and validated with <code>acef-workflow-validate</code>; nodes pass artifact paths instead of full chat history.</li>
+            <li><code>bug-hunter</code> is a measured, report-only JIT review lens for bounded PR/lightweight review; it is recommended when useful but kept out of the minimal default install.</li>
             <li>Optional <code>acef-query</code> retrieval uses Context Mode when available and a deterministic file fallback otherwise; gates never depend on it.</li>
             <li><code>acef-context-experiment</code> compares baseline, file fallback, and Context Mode retrieval before worker defaults are changed.</li>
             <li>Future tools such as symbol indexes, graph memory, MCP runtimes, and eval frameworks require measured admission before adoption.</li>
