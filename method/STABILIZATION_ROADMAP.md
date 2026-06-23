@@ -3,6 +3,24 @@
 ACEF should now enter a validation-first phase. The goal is not to add more retrieval, graph, vector, or orchestration
 infrastructure. The goal is to make the core delivery model cheaper, less brittle, and empirically measurable.
 
+## v1 Closeout
+
+Status: **ACEF v1**.
+
+The first empirical validation round is complete. ACEF v1 is evidence-backed for quality/process control and guarded
+delivery discipline. It is not evidence-backed as a token-cost reduction system.
+
+The next optimization target is deliberately narrow:
+
+- shorter worker prompts;
+- narrower file and diff reads;
+- less repeated ledger/artifact loading;
+- better per-role Epic Context Packs.
+
+Do not add SQLite, vector, graph, SCIP, Serena, Codebase-Memory, or new retrieval infrastructure during this optimization
+round. First improve the current prompt/context policy, then rerun the 30-run empirical validation matrix and compare
+against the v1 baseline.
+
 ## Strategic Decision
 
 Keep ACEF's core:
@@ -143,6 +161,8 @@ Exit criteria:
 
 ## Phase 5: Real Measurement Round
 
+Status: **COMPLETE for v1** (2026-06-23).
+
 Goal: determine where ACEF is worth its process cost.
 
 Deliverable:
@@ -166,32 +186,47 @@ Exit criteria:
 - context-miss retries affect fewer than 10% of runs;
 - lightweight wall-clock overhead below 30%.
 
-## Phase 6: SQLite Projection, Only If Justified
+v1 result:
+
+- quality/known-defect recall improved in ACEF lanes;
+- median input-token usage increased versus baseline;
+- no default retrieval or storage backend was admitted.
+
+## Phase 6: Context Policy Tightening
+
+Goal: reduce ACEF overhead without weakening evidence, actor separation, or guarded scope.
+
+Allowed work:
+
+- shorten role prompts;
+- improve per-role Epic Context Packs;
+- narrow target-file and diff reads;
+- remove repeated ledger/planning-artifact ingestion from ordinary workers;
+- keep detailed evidence in files, not chat.
+
+Not allowed in this phase:
+
+- SQLite;
+- vector databases;
+- graph databases;
+- SCIP/Serena/Codebase-Memory default rollout;
+- Context Mode or `acef-query` promotion to default worker context.
+
+Exit criteria:
+
+- rerun the same 30-run empirical validation matrix;
+- median input-token reduction improves against the v1 baseline;
+- pass rate, defect recall, scope violations, and invalid-run count do not regress.
+
+## Phase 7: SQLite Projection, Only If Justified
 
 Goal: query structured ACEF state faster without changing source of truth.
 
-SQLite is not canonical. It is a projection from:
+SQLite is not canonical. It is a projection from Markdown reports, JSON sidecars, evidence manifests, and pattern
+registry entries. It is admitted only if a future measurement shows JSON/files are too slow or hard to query in real
+runs, or FR/evidence trace queries become a repeated bottleneck after Phase 6.
 
-- Markdown reports;
-- JSON sidecars;
-- evidence manifests;
-- pattern registry.
-
-Candidate queries:
-
-```text
-FR -> story -> test -> evidence
-actor -> artifact -> gate
-pattern -> golden neighbor
-story -> context pack -> touched files
-```
-
-Admission trigger:
-
-- JSON/files become too slow or hard to query in real runs;
-- FR/evidence trace queries are a repeated bottleneck.
-
-## Phase 7: Tool Pilots, Only For Measured Gaps
+## Phase 8: Tool Pilots, Only For Measured Gaps
 
 Candidate order:
 
@@ -206,13 +241,14 @@ Do not add a tool because it may help someday. Add it only after a concrete repe
 
 ## Immediate Implementation Order
 
-1. Document context policy.
-2. Add typed JSON schemas.
-3. Add shared parser skeleton and tests.
-4. Wire one low-risk validator check to JSON-first parsing.
-5. Add evidence manifest writing to a real ACEF run.
-6. Run a 30-task validation round.
-7. Decide whether SQLite projection is justified.
+1. Document context policy. **Done.**
+2. Add typed JSON schemas. **Done.**
+3. Add shared parser skeleton and tests. **Done.**
+4. Wire one low-risk validator check to JSON-first parsing. **Done.**
+5. Add evidence manifest writing to a real ACEF run. **Done.**
+6. Run a 30-task validation round. **Done.**
+7. Tighten prompt/context policy and rerun the 30-task validation matrix.
+8. Decide whether SQLite projection is justified only after the rerun.
 
 ## Non-Goals For The Current Cycle
 

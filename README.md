@@ -6,6 +6,25 @@ It helps an AI agent understand your project first, route the work correctly, an
 specific case. ACEF does not replace tools like BMAD, Kiro, GSD, OpenSpec, or spec-kit — it orchestrates them through
 the reality of your current project.
 
+## ACEF v1 Status
+
+ACEF v1 is evidence-backed for **quality and process control**, not for token-cost reduction.
+
+The v1 empirical validation matrix ran 30 external-agent tasks across three repositories, three stacks, two clients,
+and three lanes. It showed that ACEF lightweight/guarded lanes improved pass rate and known-defect recall, but increased
+median input-token usage versus baseline. Therefore ACEF v1 keeps the current safe context policy and does not promote
+SQLite, vector, graph, SCIP, Serena, Codebase-Memory, or Context Mode-backed retrieval as defaults.
+
+Current optimization target:
+
+- shorter worker prompts;
+- narrower file and diff reads;
+- less repeated ledger/artifact loading;
+- better per-role Epic Context Packs.
+
+The next benchmark should repeat the same 30-run comparison after those prompt/context-policy improvements and compare
+against `docs/experiments/empirical-validation/runs/results.jsonl`.
+
 ## Core idea
 
 Generic AI development frameworks are useful, but they fall short on real codebases because they don't know:

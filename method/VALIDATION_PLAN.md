@@ -2,6 +2,30 @@
 
 ACEF is valuable only if it improves delivery quality without making normal work too expensive.
 
+## v1 Result
+
+ACEF v1 completed the required empirical validation matrix:
+
+- 30 real external-agent runs;
+- 3 repositories;
+- 3 technology stacks;
+- 2 agent clients;
+- baseline, lightweight, and guarded lanes;
+- 0 invalid runs;
+- 0 scope violations.
+
+Decision: ACEF is validated as a quality/process-control framework for v1, but **not** as a token-cost optimization
+framework. Lightweight and guarded lanes improved completion quality and known-defect recall in the sample, while median
+input-token usage increased versus baseline.
+
+Evidence:
+
+- `docs/experiments/empirical-validation/report.md`;
+- `docs/experiments/empirical-validation/runs/results.jsonl`.
+
+Do not add new retrieval/storage infrastructure from this result. A future measurement round must compare against this
+baseline after prompt/context-policy improvements.
+
 ## Freeze
 
 Do not add new retrieval/storage backends until the current policy is measured on real tasks.
@@ -61,6 +85,9 @@ ACEF can be called empirically proven for a lane only when:
 - context-miss retries affect fewer than 10% of runs;
 - lightweight wall-clock overhead is below 30%;
 - final evidence binds to the right tree/commit in 100% of runs.
+
+For v1, the quality/process-control bar was met; the token-reduction bar was not met. Any later token-optimization claim
+must use a new measurement round against the v1 baseline.
 
 ## Typed-State Acceptance Matrix
 

@@ -2,6 +2,19 @@
 
 ACEF optimizes context by reducing repeated raw reads, not by treating retrieval output as evidence.
 
+## v1 Empirical Decision
+
+The 30-run empirical validation matrix in `docs/experiments/empirical-validation/report.md` did **not** prove token
+reduction from ACEF lightweight or guarded lanes. It did prove better quality/defect recall than baseline in that sample.
+
+Therefore ACEF v1 policy is:
+
+- keep ACEF for process integrity, actor separation, guarded scope, and repo-grounded validation;
+- do not market or configure ACEF as token-saving by default;
+- do not promote `acef-query`, Context Mode, SQLite, vector, graph, SCIP, Serena, or Codebase-Memory as default worker
+  context infrastructure;
+- keep retrieval providers experimental until a later benchmark proves lower real actor tokens/cost with no quality loss.
+
 ## Default Policy
 
 The default worker context is:
@@ -14,6 +27,19 @@ The default worker context is:
 - short failure summaries instead of raw test dumps
 
 Do not give every worker the full delivery ledger, full planning folder, full pattern registry, or unbounded `git diff`.
+
+## Next Optimization Target
+
+The next optimization round should stay inside this file/artifact model:
+
+- shorter worker prompts;
+- narrower target-file and diff reads;
+- less repeated ledger and planning-artifact loading;
+- better per-role Epic Context Packs;
+- shorter failure summaries and final reports.
+
+After these changes, rerun the empirical validation matrix and compare against
+`docs/experiments/empirical-validation/runs/results.jsonl`.
 
 ## Role Profiles
 
@@ -65,4 +91,3 @@ Rules:
 - no raw test dumps;
 - regenerate at phase transitions;
 - validate before worker dispatch.
-
