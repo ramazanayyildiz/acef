@@ -97,3 +97,12 @@ Interpretation:
 - It still does not prove worker quality because no live actor performed the tasks in this pilot; quality fields remain
   placeholders.
 - Next evidence step is actor-based A/B/C runs that fill finding recall, retries, false positives, and task result.
+
+Summarizer verdict:
+
+```bash
+scripts/acef-context-experiment-report \
+  --input docs/experiments/context-retrieval/runs/detaysoft-4-1-mini-pilot-2026-06-23.jsonl
+```
+
+Expected interpretation: not adoptable yet; evidence level is `context-surface`.

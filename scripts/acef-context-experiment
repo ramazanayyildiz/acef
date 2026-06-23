@@ -24,9 +24,15 @@ Options:
   --extra-file-reads <n>    Manually recorded extra file reads (default: 0)
   --tool-calls <n>          Manually recorded tool calls (default: 0)
   --retry-count <n>         Manually recorded retries (default: 0)
+  --input-tokens <n>        Recorded input tokens when available
+  --cached-input-tokens <n> Recorded cached input tokens when available
+  --output-tokens <n>       Recorded output tokens when available
+  --cost <n>                Recorded cost when available
   --known-findings-recalled <n> Manually recorded known finding recall count (default: 0)
   --review-findings-count <n>   Manually recorded review finding count (default: 0)
   --false-positive-count <n>    Manually recorded false positive count (default: 0)
+  --stale-story-leak <true|false> Recorded stale-story leakage (default: false)
+  --wrong-scope-touch <true|false> Recorded wrong-scope touch (default: false)
 
 This harness measures context surface and records quality fields. It does not satisfy ACEF gates.`);
 }
@@ -43,12 +49,18 @@ function parseArgs(argv) {
     output: "",
     result: "invalid",
     testsPassed: false,
+    inputTokens: null,
+    cachedInputTokens: null,
+    outputTokens: null,
+    cost: null,
     extraFileReads: 0,
     toolCalls: 0,
     retryCount: 0,
     knownFindingsRecalled: 0,
     reviewFindingsCount: 0,
     falsePositiveCount: 0,
+    staleStoryLeak: false,
+    wrongScopeTouch: false,
   };
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
@@ -62,12 +74,18 @@ function parseArgs(argv) {
     else if (arg === "--output") opts.output = argv[++index] || "";
     else if (arg === "--result") opts.result = argv[++index] || "";
     else if (arg === "--tests-passed") opts.testsPassed = parseBool(argv[++index]);
+    else if (arg === "--input-tokens") opts.inputTokens = optionalNumber(argv[++index], "--input-tokens");
+    else if (arg === "--cached-input-tokens") opts.cachedInputTokens = optionalNumber(argv[++index], "--cached-input-tokens");
+    else if (arg === "--output-tokens") opts.outputTokens = optionalNumber(argv[++index], "--output-tokens");
+    else if (arg === "--cost") opts.cost = optionalNumber(argv[++index], "--cost");
     else if (arg === "--extra-file-reads") opts.extraFileReads = Number(argv[++index]);
     else if (arg === "--tool-calls") opts.toolCalls = Number(argv[++index]);
     else if (arg === "--retry-count") opts.retryCount = Number(argv[++index]);
     else if (arg === "--known-findings-recalled") opts.knownFindingsRecalled = Number(argv[++index]);
     else if (arg === "--review-findings-count") opts.reviewFindingsCount = Number(argv[++index]);
     else if (arg === "--false-positive-count") opts.falsePositiveCount = Number(argv[++index]);
+    else if (arg === "--stale-story-leak") opts.staleStoryLeak = parseBool(argv[++index]);
+    else if (arg === "--wrong-scope-touch") opts.wrongScopeTouch = parseBool(argv[++index]);
     else if (arg === "-h" || arg === "--help") {
       usage();
       process.exit(0);
@@ -106,6 +124,13 @@ function parseBool(value) {
   if (value === "true") return true;
   if (value === "false") return false;
   throw new Error("boolean options must be true or false");
+}
+
+function optionalNumber(value, name) {
+  if (value === "null" || value === "") return null;
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < 0) throw new Error(`${name} must be a non-negative number or null`);
+  return parsed;
 }
 
 function kebab(value) {
@@ -264,10 +289,10 @@ function record(opts, metrics, runtimeMs) {
     provider: metrics.provider,
     story: opts.story,
     role: opts.role,
-    input_tokens: null,
-    cached_input_tokens: null,
-    output_tokens: null,
-    cost: null,
+    input_tokens: opts.inputTokens,
+    cached_input_tokens: opts.cachedInputTokens,
+    output_tokens: opts.outputTokens,
+    cost: opts.cost,
     source_bytes: metrics.source_bytes,
     returned_bytes: metrics.output_bytes,
     reduction_pct: metrics.reduction_percent,
@@ -283,8 +308,8 @@ function record(opts, metrics, runtimeMs) {
     known_findings_recalled: opts.knownFindingsRecalled,
     false_positive_count: opts.falsePositiveCount,
     retry_count: opts.retryCount,
-    stale_story_leak: false,
-    wrong_scope_touch: false,
+    stale_story_leak: opts.staleStoryLeak,
+    wrong_scope_touch: opts.wrongScopeTouch,
     result: opts.result,
   };
 }

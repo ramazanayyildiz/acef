@@ -6,6 +6,7 @@ const cp = require("node:child_process");
 
 const repoRoot = path.resolve(__dirname, "..");
 const script = path.join(repoRoot, "scripts", "acef-context-experiment");
+const reportScript = path.join(repoRoot, "scripts", "acef-context-experiment-report");
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "acef-context-experiment-"));
 const repoTmp = fs.mkdtempSync(path.join(repoRoot, ".acef-context-experiment-test-"));
 
@@ -85,6 +86,16 @@ try {
     "--output", out,
     "--result", "pass",
     "--tests-passed", "true",
+    "--input-tokens", "1200",
+    "--cached-input-tokens", "100",
+    "--output-tokens", "300",
+    "--cost", "0.012",
+    "--known-findings-recalled", "2",
+    "--review-findings-count", "2",
+    "--false-positive-count", "0",
+    "--retry-count", "0",
+    "--stale-story-leak", "false",
+    "--wrong-scope-touch", "false",
     "--runs", "1",
   ];
   run([...common, "--mode", "baseline"]);
@@ -95,10 +106,16 @@ try {
   const [baseline, files] = rows;
   if (baseline.mode !== "baseline" || baseline.reduction_pct !== 0) throw new Error("baseline row is invalid");
   if (files.mode !== "files" || files.reduction_pct <= 0) throw new Error("files row is invalid");
+  if (files.input_tokens !== 1200 || files.cached_input_tokens !== 100 || files.output_tokens !== 300 || files.cost !== 0.012) {
+    throw new Error("token/cost fields were not recorded");
+  }
   if (!files.source_files.includes("docs/ai/ACEF_demo_DELIVERY_AUDIT.md")) throw new Error("active ledger source missing");
   if (files.source_files.some((source) => source.includes("5-20"))) throw new Error("prefix collision source leaked");
   if (files.fixture_bytes <= 0 || !files.fixture_path.endsWith("dev-slice.md")) throw new Error("fixture was not counted");
   if (files.tests_passed !== true || files.result !== "pass") throw new Error("quality fields were not recorded");
+  if (files.known_findings_recalled !== 2 || files.stale_story_leak !== false || files.wrong_scope_touch !== false) {
+    throw new Error("actor quality/safety fields were not recorded");
+  }
 
   const escaped = cp.spawnSync(process.execPath, [
     script,
@@ -134,6 +151,15 @@ printf 'Scoped Story 5.2 context-mode result\\n'
   const contextModeRow = readJsonl(out2)[0];
   if (contextModeRow.provider !== "context-mode" || contextModeRow.reduction_pct <= 0) {
     throw new Error("context-mode row is invalid");
+  }
+
+  const summary = cp.execFileSync(process.execPath, [reportScript, "--input", out, "--format", "json"], {
+    cwd: repoRoot,
+    encoding: "utf8",
+  });
+  const parsedSummary = JSON.parse(summary);
+  if (parsedSummary.rows !== 2 || parsedSummary.threshold.has_actor_quality !== true || parsedSummary.threshold.has_token_data !== true) {
+    throw new Error("summary did not detect actor/token evidence");
   }
 
   console.log("acef-context-experiment tests passed");

@@ -1,0 +1,140 @@
+#!/usr/bin/env node
+const fs = require("node:fs");
+const path = require("node:path");
+
+function usage() {
+  console.log(`Usage: acef-context-experiment-report --input <runs.jsonl> [--format markdown|json]
+
+Summarizes ACEF context experiment JSONL and reports whether the data is still context-surface-only or actor evidence.`);
+}
+
+function parseArgs(argv) {
+  const opts = { input: "", format: "markdown" };
+  for (let index = 0; index < argv.length; index += 1) {
+    const arg = argv[index];
+    if (arg === "--input") opts.input = argv[++index] || "";
+    else if (arg === "--format") opts.format = argv[++index] || "";
+    else if (arg === "-h" || arg === "--help") {
+      usage();
+      process.exit(0);
+    } else {
+      throw new Error(`Unknown argument: ${arg}`);
+    }
+  }
+  if (!opts.input) throw new Error("--input is required");
+  if (!new Set(["markdown", "json"]).has(opts.format)) throw new Error("--format must be markdown or json");
+  opts.input = path.resolve(opts.input);
+  if (!fs.existsSync(opts.input)) throw new Error(`Input does not exist: ${opts.input}`);
+  return opts;
+}
+
+function median(values) {
+  if (!values.length) return null;
+  const sorted = values.slice().sort((left, right) => left - right);
+  return sorted[Math.floor(sorted.length / 2)];
+}
+
+function avg(values) {
+  if (!values.length) return null;
+  return values.reduce((total, value) => total + value, 0) / values.length;
+}
+
+function rounded(value) {
+  return value === null ? null : Number(value.toFixed(2));
+}
+
+function readRows(filePath) {
+  const text = fs.readFileSync(filePath, "utf8").trim();
+  if (!text) return [];
+  return text.split(/\r?\n/).map((line, index) => {
+    try {
+      return JSON.parse(line);
+    } catch (error) {
+      throw new Error(`Invalid JSONL at line ${index + 1}: ${error.message}`);
+    }
+  });
+}
+
+function summarize(rows) {
+  const groups = new Map();
+  for (const row of rows) {
+    const key = `${row.task_type}/${row.mode}/${row.provider || row.mode}`;
+    const group = groups.get(key) || [];
+    group.push(row);
+    groups.set(key, group);
+  }
+
+  const summaries = [...groups.entries()].sort(([left], [right]) => left.localeCompare(right)).map(([key, group]) => {
+    const [taskType, mode, provider] = key.split("/");
+    const tokenRows = group.filter((row) => Number.isFinite(row.input_tokens));
+    const qualityRows = group.filter((row) => row.result !== "invalid");
+    const failedSafety = group.some((row) => row.stale_story_leak || row.wrong_scope_touch);
+    return {
+      task_type: taskType,
+      mode,
+      provider,
+      runs: group.length,
+      median_reduction_pct: rounded(median(group.map((row) => row.reduction_pct).filter(Number.isFinite))),
+      median_returned_bytes: rounded(median(group.map((row) => row.returned_bytes).filter(Number.isFinite))),
+      median_source_bytes: rounded(median(group.map((row) => row.source_bytes).filter(Number.isFinite))),
+      median_input_tokens: rounded(median(tokenRows.map((row) => row.input_tokens))),
+      avg_known_findings_recalled: rounded(avg(qualityRows.map((row) => row.known_findings_recalled).filter(Number.isFinite))),
+      avg_retry_count: rounded(avg(qualityRows.map((row) => row.retry_count).filter(Number.isFinite))),
+      failures: group.filter((row) => row.result === "fail").length,
+      invalid: group.filter((row) => row.result === "invalid").length,
+      stale_story_leaks: group.filter((row) => row.stale_story_leak).length,
+      wrong_scope_touches: group.filter((row) => row.wrong_scope_touch).length,
+      evidence_level: tokenRows.length && qualityRows.length && !failedSafety ? "actor+token" : qualityRows.length ? "actor-quality" : "context-surface",
+    };
+  });
+
+  const baseline = summaries.find((summary) => summary.mode === "baseline");
+  const threshold = {
+    has_actor_quality: summaries.some((summary) => summary.evidence_level === "actor-quality" || summary.evidence_level === "actor+token"),
+    has_token_data: summaries.some((summary) => summary.median_input_tokens !== null),
+    stale_story_leak_zero: summaries.every((summary) => summary.stale_story_leaks === 0),
+    wrong_scope_touch_zero: summaries.every((summary) => summary.wrong_scope_touches === 0),
+    context_reduction_ge_25: summaries.filter((summary) => summary.mode !== "baseline").every((summary) => summary.median_reduction_pct !== null && summary.median_reduction_pct >= 25),
+    baseline_runs: baseline ? baseline.runs : 0,
+  };
+  threshold.adoptable = threshold.has_actor_quality
+    && threshold.has_token_data
+    && threshold.stale_story_leak_zero
+    && threshold.wrong_scope_touch_zero
+    && threshold.context_reduction_ge_25;
+
+  return {
+    input: path.resolve(process.argv.includes("--input") ? process.argv[process.argv.indexOf("--input") + 1] : ""),
+    rows: rows.length,
+    summaries,
+    threshold,
+  };
+}
+
+function renderMarkdown(result) {
+  const lines = [
+    "# ACEF Context Experiment Summary",
+    "",
+    `rows: ${result.rows}`,
+    "",
+    "| Task | Mode | Provider | Runs | Reduction | Returned bytes | Input tokens | Evidence | Invalid | Safety leaks |",
+    "|---|---|---|---:|---:|---:|---:|---|---:|---:|",
+  ];
+  for (const item of result.summaries) {
+    lines.push(`| ${item.task_type} | ${item.mode} | ${item.provider} | ${item.runs} | ${item.median_reduction_pct ?? ""} | ${item.median_returned_bytes ?? ""} | ${item.median_input_tokens ?? ""} | ${item.evidence_level} | ${item.invalid} | ${item.stale_story_leaks + item.wrong_scope_touches} |`);
+  }
+  lines.push("");
+  lines.push(`adoptable: ${result.threshold.adoptable ? "yes" : "no"}`);
+  lines.push(`reason: ${result.threshold.adoptable ? "actor quality and token data present with safety clean" : "needs actor quality plus token/cost evidence before changing defaults"}`);
+  return `${lines.join("\n")}\n`;
+}
+
+try {
+  const opts = parseArgs(process.argv.slice(2));
+  const result = summarize(readRows(opts.input));
+  if (opts.format === "json") console.log(JSON.stringify(result, null, 2));
+  else process.stdout.write(renderMarkdown(result));
+} catch (error) {
+  console.error(`ERROR: ${error.message}`);
+  process.exit(1);
+}

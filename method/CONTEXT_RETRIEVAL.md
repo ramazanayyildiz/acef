@@ -70,6 +70,9 @@ when it reduces returned context without lowering task quality: no stale-story l
 blocker/high finding recall, and no material retry increase. Token/cost fields remain null until client usage data is
 available; do not treat byte reduction as billing proof.
 
+Use `acef-context-experiment-report` on JSONL run files to distinguish `context-surface`, `actor-quality`, and
+`actor+token` evidence. Only `actor+token` evidence can justify changing worker defaults.
+
 ## Admission rule for more backends
 
 Do not add SQLite, AST, or vector backends until real queries show a gap that Context Mode plus file slicing cannot
