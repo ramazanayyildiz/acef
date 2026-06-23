@@ -128,6 +128,9 @@ Captures (each field cites a source path):
             ACEF/BMAD lanes, so workers cannot skip the conformance ledger under context pressure.</p>
           <p>Lean runtime is the default: evidence stays in artifacts on disk; chat reports only path, verdict, key
             evidence, and next step unless the user asks for detail.</p>
+          <p>The append-only ledger remains authoritative, but ordinary story workers consume a role-specific
+            <code>ACEF_CURRENT_CONTEXT.md</code> hot slice capped at 150 lines. Story Process Judge receives a compact
+            story slice; only Epic Process Judge reads the full ledger.</p>
           <p>The <code>acef</code> front-door skill is compact and loads detailed reference files just-in-time, so
             routine runs do not pay for the full method body upfront.</p>
           <p>An ACEF run must bootstrap its target state before worker fan-out: create <code>docs/ai/</code>, create the
@@ -190,7 +193,8 @@ Captures (each field cites a source path):
             <div class="card" style="border-left-color:var(--blue)"><h3>Process validator</h3><p><code>scripts/acef-process-validator</code>
             checks clean-tree certification state, preflight PASS, claimed output paths, adapter freshness, registry shape, reuse-before-create,
             do-not-copy misuse, partial work-shape permission, finding promotion, graduation reconciliation, probed vertical-slice completeness,
-            guarded boundary tests, actor separation, source reconciliation, session handoff, epic gates, and REPLAN count.</p></div>
+            guarded boundary tests, actor separation, source reconciliation, epic/current context contracts, session handoff,
+            epic gates, and REPLAN count.</p></div>
             <div class="card" style="border-left-color:var(--rose)"><h3>Process gates</h3><p><code>ACEF_PREFLIGHT.md</code>
               must PASS before planning or implementation; Process Judge and Epic Process Judge verify skills, phase
               order, artifacts, and evidence before <code>done</code>.</p></div>

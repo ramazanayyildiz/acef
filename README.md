@@ -107,6 +107,10 @@ files the agent follows. No build, no npm, no services.
    `docs/ai/ACEF_ACTIVE_LEDGER`.
    For implementation workers, also write `docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json` before dispatch. It binds the worker
    to one story/phase, narrow `allowedPaths`, one commit budget, no ledger edits, and no subagent spawning.
+   Generate `docs/ai/ACEF_CURRENT_CONTEXT.md` at each phase transition and run
+   `.acef/bin/acef-process-validator --check current-context`. This file is a maximum-150-line, role-specific hot slice;
+   the append-only ledger remains authoritative. Ordinary workers do not receive the full ledger, Story Process Judge
+   receives only its story slice, and Epic Process Judge may read the full ledger.
 
 ## Codex support
 
@@ -211,6 +215,8 @@ ACEF ships a stack-agnostic process validator for cheap mechanical gates:
 .acef/bin/acef-process-validator --repo /path/to/repo --check guarded-test-floor --ledger docs/ai/ACEF_feature_DELIVERY_AUDIT.md
 .acef/bin/acef-process-validator --repo /path/to/repo --check actor-separation --ledger docs/ai/ACEF_feature_DELIVERY_AUDIT.md
 .acef/bin/acef-process-validator --repo /path/to/repo --check source-reconciliation --ledger docs/ai/ACEF_feature_DELIVERY_AUDIT.md
+.acef/bin/acef-process-validator --repo /path/to/repo --check epic-context-pack --ledger docs/ai/ACEF_feature_DELIVERY_AUDIT.md
+.acef/bin/acef-process-validator --repo /path/to/repo --check current-context --ledger docs/ai/ACEF_feature_DELIVERY_AUDIT.md
 .acef/bin/acef-process-validator --repo /path/to/repo --check session-handoff --ledger docs/ai/ACEF_feature_DELIVERY_AUDIT.md
 .acef/bin/acef-process-validator --repo /path/to/repo --check epic-boundary --ledger docs/ai/ACEF_feature_DELIVERY_AUDIT.md --target-epic 2
 .acef/bin/acef-process-validator --repo /path/to/repo --check epic-transition-approval --ledger docs/ai/ACEF_feature_DELIVERY_AUDIT.md --target-epic 2

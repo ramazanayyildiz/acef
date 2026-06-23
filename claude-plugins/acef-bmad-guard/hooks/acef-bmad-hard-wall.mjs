@@ -228,6 +228,7 @@ function runControlPath(filePath, repoRoot) {
   const rel = path.relative(repoRoot, filePath);
   return /^docs\/ai\/ACEF_ACTIVE_LEDGER$/.test(rel)
     || /^docs\/ai\/ACEF_PREFLIGHT\.md$/.test(rel)
+    || /^docs\/ai\/ACEF_CURRENT_CONTEXT\.md$/.test(rel)
     || /^docs\/ai\/ACEF_[A-Za-z0-9_-]+_DELIVERY_AUDIT\.md$/.test(rel);
 }
 

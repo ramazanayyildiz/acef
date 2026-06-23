@@ -36,8 +36,8 @@ Persona workers should start with a bounded prompt, not the parent thread. This 
 context from quietly overriding the active ledger.
 
 - Default worker context is `fork_context: false` or the closest equivalent the tool supports.
-- Do not pass the parent transcript to workers. Pass only: repo path, active ledger path, story/spec path, allowed paths,
-  required commands/tests, report artifact path, and the explicit STOP rule.
+- Do not pass the parent transcript or full ledger to ordinary workers. Pass only: repo path, role-scoped current-context
+  path, story/spec path, allowed paths, required commands/tests, report artifact path, and the explicit STOP rule.
 - One worker owns one phase of one story. It writes one report artifact, returns a compact summary, then stops.
 - Long command output and full logs go into the report artifact, not chat.
 - Model overrides are optional and secondary. Use cheaper/faster models for mechanical planning, cleanup, ledger
@@ -45,6 +45,43 @@ context from quietly overriding the active ledger.
   security-sensitive work.
 - If a tool cannot enforce `fork_context: false`, the worker prompt must still state that prior chat is not evidence and
   all decisions must be grounded in the supplied ledger/spec paths.
+
+## Current Context Hot Slice
+
+The append-only delivery ledger remains the source of truth, but it is not the default worker input. Before each worker
+phase, derive `docs/ai/ACEF_CURRENT_CONTEXT.md` from the active ledger, Epic Context Pack, exact story artifact, and the
+last phase report. Keep it at 150 lines or fewer and replace it at each phase transition.
+
+The hot slice must contain current work, gate state, allowed scope, relevant acceptance criteria, required commands,
+deferred/out-of-scope work, known pitfalls, artifact paths, and role-specific inputs. It records `source_ledger`,
+`active_story`, `active_phase`, and `last_passed_gate`; the validator reconciles those values to the active ledger.
+
+| Role | Default input |
+|---|---|
+| Planner / story author | Epic Context Pack + exact backlog/story seam |
+| ATDD | context pack slice + acceptance criteria + target test paths |
+| Developer | ATDD artifact + failing summary + target app/test paths |
+| Code Reviewer | targeted diff summary + touched files + acceptance-criteria matrix |
+| Verify-Patch | required review actions + affected paths/tests only |
+| Test Reviewer | changed tests + test strategy + concise command evidence |
+| Story Process Judge | story artifacts + compact ledger slice + command evidence |
+| Epic Process Judge | full ledger + epic artifacts + integration/runtime evidence |
+
+Record the contract in the ledger:
+
+```md
+## Current Context Contract
+status: PASS
+context_path: docs/ai/ACEF_CURRENT_CONTEXT.md
+active_story: story 4.1
+active_phase: development
+worker_role: developer
+full_ledger_access: denied
+max_lines: 150
+```
+
+Ordinary workers use `full_ledger_access: denied`; Story Process Judge uses `story-slice`; only Epic Process Judge uses
+`allowed`. Run `.acef/bin/acef-process-validator --check current-context` before dispatch.
 
 ## Lean Output Budget
 

@@ -26,6 +26,7 @@ Checks:
   actor-separation    For full BMAD, require distinct phase actors with durable provenance evidence
   source-reconciliation For full BMAD, require every planning source to record use/conflict/resolution
   epic-context-pack  Require an epic-level context pack before story workers consume the epic
+  current-context    Require a role-scoped, ledger-reconciled hot context before worker dispatch
   lean-evidence       Require story/epic close evidence to live in artifacts, not chat
   session-handoff     Require a structured Session Handoff block in the delivery ledger
   seeded-epic-gates   Require Epic N Process Judge rows/artifacts for epics mentioned in ledger
@@ -944,6 +945,117 @@ function checkEpicContextPack(repoRoot, ledgerPath) {
   return result("epic-context-pack", true, `${fields.scope} context pack is ready and story-scoped`);
 }
 
+function checkCurrentContext(repoRoot, ledgerPath) {
+  if (!ledgerPath || !exists(ledgerPath)) return result("current-context", false, "Missing ledger path");
+  const ledgerText = read(ledgerPath);
+  if (!isFullBmad(ledgerText)) return result("current-context", true, "Lane is not full BMAD");
+
+  const section = extractSection(ledgerText, "Current Context Contract");
+  if (!section) return result("current-context", false, "Missing ## Current Context Contract section");
+
+  const fields = sessionHandoffFields(section);
+  const required = [
+    "status",
+    "context_path",
+    "active_story",
+    "active_phase",
+    "worker_role",
+    "full_ledger_access",
+    "max_lines",
+  ];
+  const missing = required.filter((field) => !hasMeaningfulValue(fields[field]));
+  if (missing.length) return result("current-context", false, `Missing field(s): ${missing.join(", ")}`);
+
+  const failures = [];
+  if (!/^pass$/i.test(fields.status)) failures.push("status must be PASS");
+
+  const role = fields.worker_role.toLowerCase().replace(/[\s_]+/g, "-");
+  const standardRoles = new Set([
+    "planner",
+    "pm",
+    "atdd",
+    "test-author",
+    "developer",
+    "dev",
+    "code-review",
+    "reviewer",
+    "verify-patch",
+    "test-review",
+  ]);
+  if (role === "epic-judge" || role === "epic-process-judge") {
+    if (!/^(?:allowed|full|yes|true)$/i.test(fields.full_ledger_access)) {
+      failures.push("epic judge requires full_ledger_access: allowed/full");
+    }
+  } else if (role === "process-judge" || role === "story-process-judge") {
+    if (!/^(?:story-slice|story_slice|scoped|compact)$/i.test(fields.full_ledger_access)) {
+      failures.push("story Process Judge requires full_ledger_access: story-slice/scoped");
+    }
+  } else if (standardRoles.has(role)) {
+    if (!/^(?:denied|no|false|blocked|forbidden)$/i.test(fields.full_ledger_access)) {
+      failures.push(`${fields.worker_role} requires full_ledger_access: denied`);
+    }
+  } else {
+    failures.push(`unsupported worker_role: ${fields.worker_role}`);
+  }
+
+  const maxLines = Number(fields.max_lines);
+  if (!Number.isInteger(maxLines) || maxLines < 1 || maxLines > 150) {
+    failures.push("max_lines must be an integer between 1 and 150");
+  }
+
+  const contextPath = resolvePath(fields.context_path, repoRoot);
+  if (!exists(contextPath)) {
+    failures.push(`context_path missing file ${fields.context_path}`);
+  } else {
+    const context = read(contextPath);
+    const lineCount = context.split(/\r?\n/).length;
+    if (Number.isInteger(maxLines) && lineCount > maxLines) failures.push(`context has ${lineCount} lines; max_lines is ${maxLines}`);
+    if (lineCount > 150) failures.push(`context exceeds hard limit of 150 lines (${lineCount})`);
+
+    const contextFields = sessionHandoffFields(context);
+    const contextRequired = ["source_ledger", "active_story", "active_phase", "last_passed_gate"];
+    const contextMissing = contextRequired.filter((field) => !hasMeaningfulValue(contextFields[field]));
+    if (contextMissing.length) failures.push(`context missing field(s): ${contextMissing.join(", ")}`);
+
+    if (hasMeaningfulValue(contextFields.source_ledger)) {
+      const declaredLedger = resolvePath(contextFields.source_ledger, repoRoot);
+      if (path.resolve(declaredLedger) !== path.resolve(ledgerPath)) failures.push("source_ledger does not match active ledger");
+    }
+    if (hasMeaningfulValue(contextFields.active_story)
+      && normalizedFieldValue(contextFields.active_story).toLowerCase() !== normalizedFieldValue(fields.active_story).toLowerCase()) {
+      failures.push("context active_story does not match ledger contract");
+    }
+    if (hasMeaningfulValue(contextFields.active_phase)
+      && normalizedFieldValue(contextFields.active_phase).toLowerCase() !== normalizedFieldValue(fields.active_phase).toLowerCase()) {
+      failures.push("context active_phase does not match ledger contract");
+    }
+
+    const handoff = sessionHandoffFields(extractSection(ledgerText, "Session Handoff"));
+    if (hasMeaningfulValue(handoff.last_passed_gate)
+      && hasMeaningfulValue(contextFields.last_passed_gate)
+      && normalizedFieldValue(handoff.last_passed_gate).toLowerCase() !== normalizedFieldValue(contextFields.last_passed_gate).toLowerCase()) {
+      failures.push("context last_passed_gate does not match Session Handoff");
+    }
+
+    const requiredHeadings = [
+      "Current Work",
+      "Gate State",
+      "Allowed Scope",
+      "Relevant Acceptance Criteria",
+      "Required Commands",
+      "Deferred and Out of Scope",
+      "Known Pitfalls",
+      "Artifact Paths",
+      "Role Inputs",
+    ];
+    const missingHeadings = requiredHeadings.filter((heading) => !new RegExp(`^\\s*#{1,6}\\s+${heading}\\s*$`, "im").test(context));
+    if (missingHeadings.length) failures.push(`context missing heading(s): ${missingHeadings.join(", ")}`);
+  }
+
+  if (failures.length) return result("current-context", false, failures.join("; "));
+  return result("current-context", true, `${fields.active_story}/${fields.active_phase} hot context is reconciled for ${fields.worker_role}`);
+}
+
 function checkGraduationReconciliation(repoRoot, ledgerPath) {
   if (!ledgerPath || !exists(ledgerPath)) return result("graduation-reconciliation", false, "Missing ledger path");
   const findings = extractConformanceFindings(read(ledgerPath)).filter((finding) => needsGraduationReconciliation(finding.text));
@@ -1127,7 +1239,7 @@ function main() {
   const adapter = args.adapter || findAdapter(args.repo);
   const registry = findPatternRegistry(args.repo, adapter);
   const checks = args.check === "all"
-    ? ["clean-tree", "preflight", "claims", "adapter-freshness", "pattern-registry", "reuse-before-create", "do-not-copy", "partial-workshape", "finding-promotion", "graduation-reconciliation", "vertical-slice", "guarded-test-floor", "actor-separation", "source-reconciliation", "epic-context-pack", "lean-evidence", "session-handoff", "seeded-epic-gates", "epic-boundary", "epic-transition-approval", "replan-counter"]
+    ? ["clean-tree", "preflight", "claims", "adapter-freshness", "pattern-registry", "reuse-before-create", "do-not-copy", "partial-workshape", "finding-promotion", "graduation-reconciliation", "vertical-slice", "guarded-test-floor", "actor-separation", "source-reconciliation", "epic-context-pack", "current-context", "lean-evidence", "session-handoff", "seeded-epic-gates", "epic-boundary", "epic-transition-approval", "replan-counter"]
     : [args.check];
 
   const results = checks.map((check) => {
@@ -1146,6 +1258,7 @@ function main() {
     if (check === "actor-separation") return checkActorSeparation(args.repo, ledger);
     if (check === "source-reconciliation") return checkSourceReconciliation(args.repo, ledger);
     if (check === "epic-context-pack") return checkEpicContextPack(args.repo, ledger);
+    if (check === "current-context") return checkCurrentContext(args.repo, ledger);
     if (check === "lean-evidence") return checkLeanEvidence(args.repo, ledger);
     if (check === "session-handoff") return checkSessionHandoff(args.repo, ledger, adapter, registry);
     if (check === "seeded-epic-gates") return checkSeededEpicGates(args.repo, ledger);

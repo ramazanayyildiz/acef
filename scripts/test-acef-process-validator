@@ -202,6 +202,33 @@ try {
     "Story 1.1: service files.",
     "",
   ].join("\n"));
+  fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_CURRENT_CONTEXT.md"), [
+    "# ACEF Current Context",
+    "source_ledger: docs/ai/ACEF_demo_DELIVERY_AUDIT.md",
+    "active_story: story 1.1",
+    "active_phase: development",
+    "last_passed_gate: Preflight PASS",
+    "",
+    "## Current Work",
+    "Implement Story 1.1.",
+    "## Gate State",
+    "Preflight PASS; ATDD is the active phase input.",
+    "## Allowed Scope",
+    "Service implementation and tests.",
+    "## Relevant Acceptance Criteria",
+    "Account update persists through the real service path.",
+    "## Required Commands",
+    "npm test.",
+    "## Deferred and Out of Scope",
+    "Epic 2 work.",
+    "## Known Pitfalls",
+    "Do not use the legacy direct-fetch helper.",
+    "## Artifact Paths",
+    "Epic pack, story artifact, and ATDD report.",
+    "## Role Inputs",
+    "ATDD report, failing summary, target service and test paths.",
+    "",
+  ].join("\n"));
   fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_demo_DELIVERY_AUDIT.md"), [
     "# ACEF Demo Delivery Audit",
     "",
@@ -248,6 +275,15 @@ try {
     "consumed_by_story: story 1.1",
     "worker_input_mode: pack-plus-story",
     "broad_repo_reread: no",
+    "",
+    "## Current Context Contract",
+    "status: PASS",
+    "context_path: docs/ai/ACEF_CURRENT_CONTEXT.md",
+    "active_story: story 1.1",
+    "active_phase: development",
+    "worker_role: developer",
+    "full_ledger_access: denied",
+    "max_lines: 150",
     "",
     "## Lean Evidence Contract",
     "status: PASS",
@@ -299,6 +335,15 @@ try {
     tool_input: {
       file_path: path.join(tmp, "docs", "ai", "ACEF_ACTIVE_LEDGER"),
       content: "docs/ai/ACEF_demo_DELIVERY_AUDIT.md\n",
+    },
+  }, "allow");
+  expectHookDecision("dispatcher can refresh current context hot slice", {
+    tool_name: "Edit",
+    cwd: tmp,
+    tool_input: {
+      file_path: path.join(tmp, "docs", "ai", "ACEF_CURRENT_CONTEXT.md"),
+      old_string: "active_phase: development",
+      new_string: "active_phase: review",
     },
   }, "allow");
   expectHookDecision("dispatcher still cannot author arbitrary docs ai artifact", {
@@ -633,6 +678,44 @@ try {
     "",
   ].join("\n"));
   expectFail("epic-context-pack", ["--repo", tmp, "--check", "epic-context-pack", "--ledger", "docs/ai/ACEF_bad_epic_context_DELIVERY_AUDIT.md"]);
+  expectPass("current-context", ["--repo", tmp, "--check", "current-context", "--ledger", "docs/ai/ACEF_demo_DELIVERY_AUDIT.md"]);
+  const demoLedger = fs.readFileSync(path.join(tmp, "docs", "ai", "ACEF_demo_DELIVERY_AUDIT.md"), "utf8");
+  fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_dev_full_ledger_DELIVERY_AUDIT.md"), demoLedger
+    .replace("full_ledger_access: denied", "full_ledger_access: allowed"));
+  expectFail("current-context", ["--repo", tmp, "--check", "current-context", "--ledger", "docs/ai/ACEF_dev_full_ledger_DELIVERY_AUDIT.md"]);
+  const demoCurrentContext = fs.readFileSync(path.join(tmp, "docs", "ai", "ACEF_CURRENT_CONTEXT.md"), "utf8");
+  fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_STORY_JUDGE_CONTEXT.md"), demoCurrentContext
+    .replace("source_ledger: docs/ai/ACEF_demo_DELIVERY_AUDIT.md", "source_ledger: docs/ai/ACEF_story_judge_context_DELIVERY_AUDIT.md"));
+  fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_story_judge_context_DELIVERY_AUDIT.md"), demoLedger
+    .replace("context_path: docs/ai/ACEF_CURRENT_CONTEXT.md", "context_path: docs/ai/ACEF_STORY_JUDGE_CONTEXT.md")
+    .replace("worker_role: developer", "worker_role: process-judge")
+    .replace("full_ledger_access: denied", "full_ledger_access: story-slice"));
+  expectPass("current-context", ["--repo", tmp, "--check", "current-context", "--ledger", "docs/ai/ACEF_story_judge_context_DELIVERY_AUDIT.md"]);
+  fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_EPIC_JUDGE_CONTEXT.md"), demoCurrentContext
+    .replace("source_ledger: docs/ai/ACEF_demo_DELIVERY_AUDIT.md", "source_ledger: docs/ai/ACEF_epic_judge_context_DELIVERY_AUDIT.md"));
+  fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_epic_judge_context_DELIVERY_AUDIT.md"), demoLedger
+    .replace("context_path: docs/ai/ACEF_CURRENT_CONTEXT.md", "context_path: docs/ai/ACEF_EPIC_JUDGE_CONTEXT.md")
+    .replace("worker_role: developer", "worker_role: epic-process-judge")
+    .replace("full_ledger_access: denied", "full_ledger_access: allowed"));
+  expectPass("current-context", ["--repo", tmp, "--check", "current-context", "--ledger", "docs/ai/ACEF_epic_judge_context_DELIVERY_AUDIT.md"]);
+  fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_bad_current_context_DELIVERY_AUDIT.md"), [
+    "# Bad Current Context",
+    "active_lane: Full BMAD v2",
+    "",
+    "## Current Context Contract",
+    "status: PASS",
+    "context_path: docs/ai/ACEF_CURRENT_CONTEXT.md",
+    "active_story: story 1.2",
+    "active_phase: development",
+    "worker_role: developer",
+    "full_ledger_access: allowed",
+    "max_lines: 500",
+    "",
+    "## Session Handoff",
+    "last_passed_gate: Different gate",
+    "",
+  ].join("\n"));
+  expectFail("current-context", ["--repo", tmp, "--check", "current-context", "--ledger", "docs/ai/ACEF_bad_current_context_DELIVERY_AUDIT.md"]);
   expectPass("lean-evidence", ["--repo", tmp, "--check", "lean-evidence", "--ledger", "docs/ai/ACEF_demo_DELIVERY_AUDIT.md"]);
   fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_lean_bad_DELIVERY_AUDIT.md"), [
     "# Bad Lean Ledger",

@@ -16,10 +16,12 @@ Evidence stays on disk; chat stays small.
 - Summarize test failures by command + failing test names; put rendered HTML, stack traces, full diffs, and broad search
   output in report artifacts.
 - If raw output would exceed ~100 lines, narrow the query or write a derived artifact instead.
-- Workers default to bounded context (`fork_context: false` where supported): pass only repo path, active ledger, spec
-  path, allowed paths, commands/tests, report path, and STOP rule.
+- Workers default to bounded context (`fork_context: false` where supported): pass the role-scoped
+  `docs/ai/ACEF_CURRENT_CONTEXT.md`, exact story/phase artifact, allowed paths, commands/tests, report path, and STOP
+  rule. Do not pass the full ledger to ordinary workers.
 - In full-BMAD epics, create/use an Epic Context Pack before story workers so shared context is read once, not repeated
   every story.
+- Rebuild the current-context hot slice at every phase transition and validate it with `--check current-context`.
 - Never reduce gates, tests, ledgers, or worker evidence to save context.
 
 ## What This Agent Does

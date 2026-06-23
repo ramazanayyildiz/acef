@@ -95,13 +95,20 @@ must not collapse ATDD, dev-story, code-review, verify-patch, test-review, or Pr
 worker context.
 
 Workers run with bounded context by default. Use `fork_context: false` or the tool's closest equivalent; pass only the
-repo path, active ledger, story/spec path, allowed paths, required tests, report artifact path, and final STOP rule.
+repo path, role-scoped current-context hot slice, story/spec path, allowed paths, required tests, report artifact path,
+and final STOP rule.
 Do not pass the parent transcript as evidence. Long outputs belong in the worker report artifact, not chat.
 
 At each epic boundary, create an Epic Context Pack before the first story worker. The pack carries the shared
 architecture/context, source reconciliation summary, golden-neighbor scan, risk list, test strategy, reusable
 fixtures/helpers, exact commands, known pitfalls, and per-story touched surfaces. Per-story workers receive this pack plus
 their narrow story artifact/diff/test files; author/reviewer/judge separation still happens story-by-story.
+
+Before each story phase, derive and validate `docs/ai/ACEF_CURRENT_CONTEXT.md`. Ordinary workers do not receive the full
+delivery ledger: ATDD gets ACs and target tests; development gets ATDD evidence and target paths; review gets the targeted
+diff and AC matrix; verify-patch gets required actions; Story Process Judge gets a compact story ledger slice. Only Epic
+Process Judge may read the full ledger. The hot slice is disposable and must reconcile to the append-only ledger through
+`acef-process-validator --check current-context`.
 
 Full BMAD requires delegation. During capability preflight or active-run bootstrap, record:
 
