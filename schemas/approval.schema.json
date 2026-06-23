@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://acef.local/schemas/approval.schema.json",
+  "title": "ACEF Approval Receipt",
+  "type": "object",
+  "required": ["approvalId", "decision", "scope", "actorType", "statementHash", "repositoryCommit"],
+  "additionalProperties": false,
+  "properties": {
+    "approvalId": { "type": "string", "minLength": 1 },
+    "decision": { "type": "string", "enum": ["APPROVE", "REJECT", "ACCEPT_RISK"] },
+    "scope": { "type": "string", "minLength": 1 },
+    "actorType": { "type": "string", "enum": ["human", "system"] },
+    "userQuote": { "type": ["string", "null"] },
+    "statementHash": { "type": "string", "minLength": 1 },
+    "repositoryCommit": { "type": "string", "minLength": 1 },
+    "sourceChannel": { "type": ["string", "null"] },
+    "createdAt": { "type": ["string", "null"] }
+  }
+}
+

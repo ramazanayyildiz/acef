@@ -2,6 +2,7 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const cp = require("node:child_process");
+const { parseActiveRun } = require("./lib/acef-state-parser");
 
 function usage() {
   console.log(`ACEF process validator
@@ -948,12 +949,29 @@ function checkEpicContextPack(repoRoot, ledgerPath) {
 function checkCurrentContext(repoRoot, ledgerPath) {
   if (!ledgerPath || !exists(ledgerPath)) return result("current-context", false, "Missing ledger path");
   const ledgerText = read(ledgerPath);
-  if (!isFullBmad(ledgerText)) return result("current-context", true, "Lane is not full BMAD");
+  const activeRunPath = path.join(repoRoot, "docs", "ai", "ACEF_ACTIVE_RUN.json");
+  const activeRun = exists(activeRunPath) ? parseActiveRun(activeRunPath) : null;
+  if (activeRun && resolvePath(activeRun.ledgerPath, repoRoot) !== path.resolve(ledgerPath)) {
+    return result("current-context", false, "ACEF_ACTIVE_RUN.json ledgerPath does not match active ledger");
+  }
 
-  const section = extractSection(ledgerText, "Current Context Contract");
-  if (!section) return result("current-context", false, "Missing ## Current Context Contract section");
+  const fields = activeRun ? {
+    status: activeRun.status === "active" ? "PASS" : activeRun.status,
+    context_path: activeRun.contextPath || "",
+    active_story: activeRun.activeStory || "",
+    active_phase: activeRun.activePhase || "",
+    worker_role: activeRun.workerRole || "",
+    full_ledger_access: activeRun.fullLedgerAccess || "",
+    max_lines: activeRun.maxLines === undefined || activeRun.maxLines === null ? "" : String(activeRun.maxLines),
+  } : sessionHandoffFields(extractSection(ledgerText, "Current Context Contract"));
 
-  const fields = sessionHandoffFields(section);
+  const fullBmad = activeRun ? activeRun.lane === "full-bmad" : isFullBmad(ledgerText);
+  if (!fullBmad) return result("current-context", true, "Lane is not full BMAD");
+
+  if (!activeRun && !extractSection(ledgerText, "Current Context Contract")) {
+    return result("current-context", false, "Missing ## Current Context Contract section");
+  }
+
   const required = [
     "status",
     "context_path",

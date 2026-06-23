@@ -698,6 +698,30 @@ try {
     .replace("worker_role: developer", "worker_role: epic-process-judge")
     .replace("full_ledger_access: denied", "full_ledger_access: allowed"));
   expectPass("current-context", ["--repo", tmp, "--check", "current-context", "--ledger", "docs/ai/ACEF_epic_judge_context_DELIVERY_AUDIT.md"]);
+  fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_ACTIVE_RUN.json"), JSON.stringify({
+    runId: "RUN-json-current-context",
+    repo: "demo",
+    lane: "full-bmad",
+    status: "active",
+    activeStory: "story 1.1",
+    activePhase: "development",
+    workerRole: "developer",
+    fullLedgerAccess: "denied",
+    maxLines: 120,
+    ledgerPath: "docs/ai/ACEF_json_current_context_DELIVERY_AUDIT.md",
+    contextPath: "docs/ai/ACEF_JSON_CURRENT_CONTEXT.md",
+  }, null, 2));
+  fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_JSON_CURRENT_CONTEXT.md"), demoCurrentContext
+    .replace("source_ledger: docs/ai/ACEF_demo_DELIVERY_AUDIT.md", "source_ledger: docs/ai/ACEF_json_current_context_DELIVERY_AUDIT.md"));
+  fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_json_current_context_DELIVERY_AUDIT.md"), demoLedger
+    .replace("active_story: story 1.1", "active_story: story 9.9")
+    .replace("context_path: docs/ai/ACEF_CURRENT_CONTEXT.md", "context_path: docs/ai/WRONG_FROM_MARKDOWN.md")
+    .replace("worker_role: developer", "worker_role: epic-process-judge")
+    .replace("full_ledger_access: denied", "full_ledger_access: allowed"));
+  expectPass("current-context", ["--repo", tmp, "--check", "current-context", "--ledger", "docs/ai/ACEF_json_current_context_DELIVERY_AUDIT.md"]);
+  fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_json_mismatch_DELIVERY_AUDIT.md"), demoLedger);
+  expectFail("current-context", ["--repo", tmp, "--check", "current-context", "--ledger", "docs/ai/ACEF_json_mismatch_DELIVERY_AUDIT.md"]);
+  fs.rmSync(path.join(tmp, "docs", "ai", "ACEF_ACTIVE_RUN.json"), { force: true });
   fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_bad_current_context_DELIVERY_AUDIT.md"), [
     "# Bad Current Context",
     "active_lane: Full BMAD v2",

@@ -1,0 +1,103 @@
+#!/usr/bin/env node
+const fs = require("node:fs");
+const os = require("node:os");
+const path = require("node:path");
+
+const {
+  parseActiveRun,
+  parseActorRecord,
+  parseEvidenceManifest,
+  parseGateVerdict,
+  parseApproval,
+  safeRelative,
+} = require("./lib/acef-state-parser");
+
+const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "acef-state-parser-"));
+
+function write(rel, value) {
+  const filePath = path.join(tmp, rel);
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  fs.writeFileSync(filePath, typeof value === "string" ? value : JSON.stringify(value, null, 2));
+  return filePath;
+}
+
+function assertThrows(fn, pattern, label) {
+  try {
+    fn();
+  } catch (error) {
+    if (pattern.test(error.message)) return;
+    throw new Error(`${label} threw wrong error: ${error.message}`);
+  }
+  throw new Error(`${label} did not throw`);
+}
+
+try {
+  const activeRun = write("docs/ai/ACEF_ACTIVE_RUN.json", {
+    runId: "RUN-1",
+    repo: "demo",
+    lane: "full-bmad",
+    status: "active",
+    activeStory: "Story 5.2",
+    activePhase: "developer",
+    ledgerPath: "docs/ai/ACEF_demo_DELIVERY_AUDIT.md",
+  });
+  if (parseActiveRun(activeRun).activeStory !== "Story 5.2") throw new Error("active run parse failed");
+
+  const actor = write("docs/ai/actors/dev-1.json", {
+    actorInstanceId: "dev-1",
+    role: "developer",
+    client: "codex",
+    inputCommit: "abc123",
+    allowedContextProfile: "developer",
+  });
+  if (parseActorRecord(actor).role !== "developer") throw new Error("actor parse failed");
+
+  const evidence = write("docs/ai/evidence/EV-1.json", {
+    evidenceId: "EV-1",
+    kind: "runtime-test",
+    command: "php artisan test",
+    exitCode: 0,
+    repositoryCommit: "abc123",
+    dirtyDigest: null,
+    satisfies: ["AC-5.2.1"],
+  });
+  if (parseEvidenceManifest(evidence).exitCode !== 0) throw new Error("evidence parse failed");
+
+  const gate = write("docs/ai/gates/story-5-2.json", {
+    gateId: "story-5-2-process-judge",
+    scope: "Story 5.2",
+    verdict: "PASS",
+    decidedBy: "judge-1",
+    repositoryCommit: "abc123",
+  });
+  if (parseGateVerdict(gate).verdict !== "PASS") throw new Error("gate parse failed");
+
+  const approval = write("docs/ai/approvals/APP-1.json", {
+    approvalId: "APP-1",
+    decision: "APPROVE",
+    scope: "epic-transition:5->6",
+    actorType: "human",
+    statementHash: "sha256-demo",
+    repositoryCommit: "abc123",
+  });
+  if (parseApproval(approval).scope !== "epic-transition:5->6") throw new Error("approval parse failed");
+
+  write("bad-active.json", { runId: "RUN-2" });
+  assertThrows(() => parseActiveRun(path.join(tmp, "bad-active.json")), /missing required field/, "bad active run");
+  write("bad-evidence.json", {
+    evidenceId: "EV-2",
+    kind: "runtime-test",
+    command: "npm test",
+    exitCode: "0",
+    repositoryCommit: "abc123",
+    dirtyDigest: null,
+    satisfies: ["AC-1"],
+  });
+  assertThrows(() => parseEvidenceManifest(path.join(tmp, "bad-evidence.json")), /integer exitCode/, "bad evidence");
+  assertThrows(() => safeRelative(path.join(tmp, "..", "escape.json"), tmp), /escapes root/, "safeRelative");
+
+  console.log("acef-state-parser tests passed");
+} finally {
+  fs.rmSync(tmp, { recursive: true, force: true });
+}
+

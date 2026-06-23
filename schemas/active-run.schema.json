@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://acef.local/schemas/active-run.schema.json",
+  "title": "ACEF Active Run",
+  "type": "object",
+  "required": ["runId", "repo", "lane", "status", "activeStory", "activePhase", "ledgerPath"],
+  "additionalProperties": false,
+  "properties": {
+    "runId": { "type": "string", "minLength": 1 },
+    "repo": { "type": "string", "minLength": 1 },
+    "lane": { "type": "string", "enum": ["lightweight", "full-bmad", "guarded", "custom"] },
+    "track": { "type": ["string", "null"] },
+    "status": { "type": "string", "enum": ["active", "paused", "blocked", "complete"] },
+    "activeEpic": { "type": ["string", "null"] },
+    "activeStory": { "type": "string", "minLength": 1 },
+    "activePhase": { "type": "string", "minLength": 1 },
+    "workerRole": { "type": ["string", "null"] },
+    "fullLedgerAccess": { "type": ["string", "null"] },
+    "maxLines": { "type": ["integer", "null"], "minimum": 1, "maximum": 150 },
+    "nextAllowedStep": { "type": ["string", "null"] },
+    "ledgerPath": { "type": "string", "minLength": 1 },
+    "contextPath": { "type": ["string", "null"] },
+    "updatedAt": { "type": ["string", "null"] }
+  }
+}

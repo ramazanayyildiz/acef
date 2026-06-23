@@ -1,0 +1,91 @@
+#!/usr/bin/env node
+const fs = require("node:fs");
+const os = require("node:os");
+const path = require("node:path");
+const cp = require("node:child_process");
+
+const repoRoot = path.resolve(__dirname, "..");
+const installer = path.join(repoRoot, "scripts", "install-acef-tools");
+const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "acef-tools-install-"));
+
+function run(command, args, options = {}) {
+  return cp.execFileSync(command, args, {
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+    ...options,
+  });
+}
+
+try {
+  run("node", [installer, "--repo", tmp]);
+
+  const validator = path.join(tmp, ".acef", "bin", "acef-process-validator");
+  const parser = path.join(tmp, ".acef", "bin", "lib", "acef-state-parser.js");
+  const schema = path.join(tmp, ".acef", "schemas", "active-run.schema.json");
+  if (!fs.existsSync(validator)) throw new Error("validator wrapper was not installed");
+  if (!fs.existsSync(parser)) throw new Error("parser support library was not installed");
+  if (!fs.existsSync(schema)) throw new Error("typed-state schemas were not installed");
+
+  fs.mkdirSync(path.join(tmp, "docs", "ai"), { recursive: true });
+  fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_demo_DELIVERY_AUDIT.md"), [
+    "# Demo",
+    "active_lane: Full BMAD v2",
+    "",
+    "## Session Handoff",
+    "last_passed_gate: Story 1.1 ATDD PASS",
+    "",
+  ].join("\n"));
+  fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_CURRENT_CONTEXT.md"), [
+    "source_ledger: docs/ai/ACEF_demo_DELIVERY_AUDIT.md",
+    "active_story: story 1.1",
+    "active_phase: development",
+    "last_passed_gate: Story 1.1 ATDD PASS",
+    "",
+    "## Current Work",
+    "Story 1.1",
+    "## Gate State",
+    "ATDD PASS",
+    "## Allowed Scope",
+    "Scope",
+    "## Relevant Acceptance Criteria",
+    "AC",
+    "## Required Commands",
+    "npm test",
+    "## Deferred and Out of Scope",
+    "None",
+    "## Known Pitfalls",
+    "None",
+    "## Artifact Paths",
+    "docs/ai/ACEF_CURRENT_CONTEXT.md",
+    "## Role Inputs",
+    "Inputs",
+    "",
+  ].join("\n"));
+  fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_ACTIVE_RUN.json"), JSON.stringify({
+    runId: "RUN-install-test",
+    repo: "demo",
+    lane: "full-bmad",
+    status: "active",
+    activeStory: "story 1.1",
+    activePhase: "development",
+    workerRole: "developer",
+    fullLedgerAccess: "denied",
+    maxLines: 120,
+    ledgerPath: "docs/ai/ACEF_demo_DELIVERY_AUDIT.md",
+    contextPath: "docs/ai/ACEF_CURRENT_CONTEXT.md",
+  }, null, 2));
+
+  const output = run(validator, [
+    "--repo", tmp,
+    "--check", "current-context",
+    "--ledger", "docs/ai/ACEF_demo_DELIVERY_AUDIT.md",
+  ]);
+  if (!output.includes("PASS current-context:")) {
+    throw new Error(`installed validator did not use installed parser:\n${output}`);
+  }
+
+  console.log("install-acef-tools tests passed");
+} finally {
+  fs.rmSync(tmp, { recursive: true, force: true });
+}
+

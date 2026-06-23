@@ -56,6 +56,38 @@ function copyTool(name, targetRepo) {
   return target;
 }
 
+function copySupportLibraries(targetRepo) {
+  const sourceDir = path.join(repoRoot, "scripts", "lib");
+  const targetDir = path.join(targetRepo, ".acef", "bin", "lib");
+  if (!fs.existsSync(sourceDir)) return [];
+  fs.mkdirSync(targetDir, { recursive: true });
+  const copied = [];
+  for (const entry of fs.readdirSync(sourceDir).sort((a, b) => a.localeCompare(b))) {
+    const source = path.join(sourceDir, entry);
+    if (!fs.statSync(source).isFile()) continue;
+    const target = path.join(targetDir, entry);
+    fs.copyFileSync(source, target);
+    copied.push(target);
+  }
+  return copied;
+}
+
+function copySchemas(targetRepo) {
+  const sourceDir = path.join(repoRoot, "schemas");
+  const targetDir = path.join(targetRepo, ".acef", "schemas");
+  if (!fs.existsSync(sourceDir)) return [];
+  fs.mkdirSync(targetDir, { recursive: true });
+  const copied = [];
+  for (const entry of fs.readdirSync(sourceDir).sort((a, b) => a.localeCompare(b))) {
+    const source = path.join(sourceDir, entry);
+    if (!fs.statSync(source).isFile()) continue;
+    const target = path.join(targetDir, entry);
+    fs.copyFileSync(source, target);
+    copied.push(target);
+  }
+  return copied;
+}
+
 function copyExperimentFixtures(targetRepo) {
   const sourceDir = path.join(repoRoot, "docs", "experiments", "context-retrieval", "tasks");
   const targetDir = path.join(targetRepo, ".acef", "context-retrieval", "tasks");
@@ -75,6 +107,12 @@ function copyExperimentFixtures(targetRepo) {
 const opts = parseArgs(process.argv.slice(2));
 for (const tool of tools) {
   console.log(`Installed ${tool}: ${copyTool(tool, opts.repo)}`);
+}
+for (const library of copySupportLibraries(opts.repo)) {
+  console.log(`Installed support library: ${library}`);
+}
+for (const schema of copySchemas(opts.repo)) {
+  console.log(`Installed schema: ${schema}`);
 }
 for (const fixture of copyExperimentFixtures(opts.repo)) {
   console.log(`Installed context experiment fixture: ${fixture}`);

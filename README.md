@@ -37,6 +37,11 @@ persona, and a worker that wrote code cannot review, verify, or mark its own wor
 method/      The delivery engine — how the work actually runs
   OPERATING_MODEL.md   personas + tracks (Layer 1)
   CONTEXT_RETRIEVAL.md optional bounded retrieval adapters and acef-query
+  CONTEXT_POLICY.md    role-specific context budgets and worker input policy
+  TYPED_STATE.md       JSON sidecars for machine-readable ACEF state
+  TRUST_MODEL.md       what ACEF guards do and do not guarantee
+  VALIDATION_PLAN.md   empirical thresholds before calling ACEF proven
+  STABILIZATION_ROADMAP.md  phased plan for context diet, typed state, parser, evidence, and measurement
   docs/research/tooling-admission.md measured admission notes for future tools/backends
   TEST_PIPELINE.md     the test/flow skill chain (Layer 2)
   BMAD_V2_LANE.md      the heavy story lifecycle for epics (Layer 3)
@@ -77,6 +82,7 @@ files the agent follows. No build, no npm, no services.
    The tools installer adds repo-local helper CLIs under `.acef/bin/`, including `acef-process-validator`,
    `acef-codex-guard`, `acef-query`, `acef-context-experiment`, `acef-context-experiment-report`,
    `acef-context-actor-prompt`, `acef-context-actor-prompt-batch`, and `acef-context-record-actor-report`.
+   It also installs shared parser support under `.acef/bin/lib/` and typed-state schemas under `.acef/schemas/`.
    Use `--tool codex|claude|opencode` to target one tool, or `--all-core` to copy every skill in this repo.
 
    Global install is still possible, but should stay minimal:

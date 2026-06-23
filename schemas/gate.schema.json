@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://acef.local/schemas/gate.schema.json",
+  "title": "ACEF Gate Verdict",
+  "type": "object",
+  "required": ["gateId", "scope", "verdict", "decidedBy", "repositoryCommit"],
+  "additionalProperties": false,
+  "properties": {
+    "gateId": { "type": "string", "minLength": 1 },
+    "scope": { "type": "string", "minLength": 1 },
+    "verdict": { "type": "string", "enum": ["PASS", "FAIL", "REVISE", "REPLAN", "BLOCKED"] },
+    "decidedBy": { "type": "string", "minLength": 1 },
+    "repositoryCommit": { "type": "string", "minLength": 1 },
+    "evidenceIds": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "notes": { "type": ["string", "null"] },
+    "createdAt": { "type": ["string", "null"] }
+  }
+}
+
