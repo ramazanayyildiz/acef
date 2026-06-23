@@ -16,10 +16,14 @@ The next optimization target is deliberately narrow:
 - narrower file and diff reads;
 - less repeated ledger/artifact loading;
 - better per-role Epic Context Packs.
+- cockpit/context-compiler/tool-proxy design before any custom runtime.
 
 Do not add SQLite, vector, graph, SCIP, Serena, Codebase-Memory, or new retrieval infrastructure during this optimization
 round. First improve the current prompt/context policy, then rerun the 30-run empirical validation matrix and compare
 against the v1 baseline.
+
+See `method/ACEF_COCKPIT.md` for the product direction: ACEF may use external UI/runtime tools as cockpit or execution
+shells, but ACEF keeps gate, evidence, actor, scope, and state authority.
 
 ## Strategic Decision
 
@@ -203,6 +207,7 @@ Allowed work:
 - narrow target-file and diff reads;
 - remove repeated ledger/planning-artifact ingestion from ordinary workers;
 - keep detailed evidence in files, not chat.
+- design and test a cockpit/context-compiler/tool-proxy layer that feeds existing CLIs bounded context.
 
 Not allowed in this phase:
 
@@ -211,6 +216,7 @@ Not allowed in this phase:
 - graph databases;
 - SCIP/Serena/Codebase-Memory default rollout;
 - Context Mode or `acef-query` promotion to default worker context.
+- custom AI runtime before the cockpit/proxy approach is measured.
 
 Exit criteria:
 
