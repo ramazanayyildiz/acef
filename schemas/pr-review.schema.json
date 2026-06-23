@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://acef.local/schemas/pr-review.schema.json",
+  "title": "ACEF Bounded PR Review",
+  "type": "object",
+  "required": ["reviewId", "reviewerActorId", "baseCommit", "headCommit", "changedFiles", "selectedPaths", "workShapes", "inputs", "reviewProfile", "diffArtifact", "reportPath", "writeMode", "qaMode", "maxFiles", "maxDiffLines"],
+  "additionalProperties": false,
+  "properties": {
+    "reviewId": { "type": "string", "minLength": 1 },
+    "reviewerActorId": { "type": "string", "minLength": 1 },
+    "baseCommit": { "type": "string", "minLength": 7 },
+    "headCommit": { "type": "string", "minLength": 7 },
+    "changedFiles": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 } },
+    "selectedPaths": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 } },
+    "workShapes": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 } },
+    "broadReadPaths": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+    "broadReadReason": { "type": ["string", "null"] },
+    "inputs": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["issuePath", "focusedTests", "adapterPath", "patternRegistryPath", "qaEvidencePaths"],
+      "properties": {
+        "issuePath": { "type": "string", "minLength": 1 },
+        "focusedTests": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 } },
+        "adapterPath": { "type": "string", "minLength": 1 },
+        "patternRegistryPath": { "type": "string", "minLength": 1 },
+        "qaEvidencePaths": { "type": "array", "items": { "type": "string", "minLength": 1 } }
+      }
+    },
+    "reviewProfile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256"],
+      "properties": {
+        "path": { "type": "string", "minLength": 1 },
+        "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+      }
+    },
+    "diffArtifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256", "lineCount"],
+      "properties": {
+        "path": { "type": "string", "minLength": 1 },
+        "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "lineCount": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "reportPath": { "type": "string", "minLength": 1 },
+    "writeMode": { "const": "report-only" },
+    "qaMode": { "type": "string", "enum": ["none", "qa-only"] },
+    "lens": { "type": ["string", "null"] },
+    "maxFiles": { "type": "integer", "minimum": 1 },
+    "maxDiffLines": { "type": "integer", "minimum": 1 },
+    "createdAt": { "type": ["string", "null"] }
+  }
+}

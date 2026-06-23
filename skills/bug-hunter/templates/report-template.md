@@ -6,6 +6,7 @@
 - budget:
 - files/lines inspected:
 - issue or acceptance criteria:
+- codemap review profile:
 - focused tests:
 - adapter/pattern slice:
 - coverage limits:
@@ -20,8 +21,8 @@
 
 ## Findings
 
-| Category | Severity | File:line | Impact | Confidence | Evidence | Proposed disposition |
-|---|---|---|---|---|---|---|
+| Finding type | Severity | File:line | Execution path | Impact | Confidence | Evidence | Reproduction/test | Proposed disposition |
+|---|---|---|---|---|---|---|---|---|
 
 ## Open questions
 

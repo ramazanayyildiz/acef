@@ -9,6 +9,9 @@ const {
   parseApproval,
   parseEvidenceManifest,
   parseGateVerdict,
+  parseLightweightRun,
+  parsePrReview,
+  parsePrReviewProfile,
   parseWorkerScope,
   safeRelative,
 } = require("./lib/acef-state-parser");
@@ -40,6 +43,8 @@ Checks:
   source-reconciliation For full BMAD, require every planning source to record use/conflict/resolution
   epic-context-pack  Require an epic-level context pack before story workers consume the epic
   current-context    Require a role-scoped, ledger-reconciled hot context before worker dispatch
+  pr-review          Validate bounded PR-review context and reject reviewer-authored patches
+  lightweight-lifecycle Require the six-step lightweight lifecycle and promotion disposition
   lean-evidence       Require story/epic close evidence to live in artifacts, not chat
   session-handoff     Require a structured Session Handoff block in the delivery ledger
   seeded-epic-gates   Require Epic N Process Judge rows/artifacts for epics mentioned in ledger
@@ -176,6 +181,10 @@ function jsonRecords(dirPath) {
     .filter((entry) => entry.isFile() && entry.name.endsWith(".json"))
     .map((entry) => path.join(dirPath, entry.name))
     .sort();
+}
+
+function sha256(value) {
+  return crypto.createHash("sha256").update(value).digest("hex");
 }
 
 function sha256File(filePath) {
@@ -1531,6 +1540,99 @@ function checkSessionHandoff(repoRoot, ledgerPath, adapterPath, registryPath) {
   return result("session-handoff", true, `Session Handoff ready; next allowed step: ${fields.next_allowed_step}`);
 }
 
+function checkPrReview(repoRoot) {
+  const manifestPath = path.join(repoRoot, "docs", "ai", "ACEF_PR_REVIEW.json");
+  if (!exists(manifestPath)) return result("pr-review", false, "Missing docs/ai/ACEF_PR_REVIEW.json");
+  try {
+    const review = parsePrReview(manifestPath);
+    const failures = [];
+    const head = cp.execFileSync("git", ["rev-parse", "HEAD"], { cwd: repoRoot, encoding: "utf8" }).trim();
+    if (head !== review.headCommit) failures.push(`review HEAD changed from ${review.headCommit} to ${head}`);
+    if (!gitIsAncestor(repoRoot, review.baseCommit, review.headCommit)) failures.push("baseCommit is not an ancestor of headCommit");
+
+    const requiredInputs = [review.inputs.issuePath, review.inputs.adapterPath, review.inputs.patternRegistryPath, ...review.inputs.qaEvidencePaths, ...review.broadReadPaths];
+    for (const input of requiredInputs) {
+      if (!exists(path.join(repoRoot, input))) failures.push(`missing review input ${input}`);
+    }
+    const profilePath = path.join(repoRoot, review.reviewProfile.path);
+    let profile = null;
+    if (!exists(profilePath)) failures.push(`missing review profile ${review.reviewProfile.path}`);
+    else {
+      const profileText = read(profilePath);
+      if (sha256(profileText) !== review.reviewProfile.sha256) failures.push("review profile hash mismatch");
+      try {
+        profile = parsePrReviewProfile(profilePath);
+      } catch (error) {
+        failures.push(`invalid review profile: ${error.message}`);
+      }
+    }
+    if (profile) {
+      if (profile.reviewId !== review.reviewId) failures.push("review profile reviewId mismatch");
+      if (profile.baseCommit !== review.baseCommit) failures.push("review profile baseCommit mismatch");
+      if (profile.headCommit !== review.headCommit) failures.push("review profile headCommit mismatch");
+      if (JSON.stringify(profile.changedFiles) !== JSON.stringify(review.changedFiles)) failures.push("review profile changedFiles mismatch");
+      if (JSON.stringify(profile.selectedPaths) !== JSON.stringify(review.selectedPaths)) failures.push("review profile selectedPaths mismatch");
+      if (JSON.stringify([...profile.workShapes].sort()) !== JSON.stringify([...review.workShapes].sort())) failures.push("review profile workShapes mismatch");
+      const adapterPath = path.join(repoRoot, review.inputs.adapterPath);
+      const registryPath = path.join(repoRoot, review.inputs.patternRegistryPath);
+      if (profile.source.adapter.path !== review.inputs.adapterPath) failures.push("review profile adapter path mismatch");
+      if (profile.source.patternRegistry.path !== review.inputs.patternRegistryPath) failures.push("review profile pattern registry path mismatch");
+      if (exists(adapterPath) && sha256File(adapterPath) !== profile.source.adapter.sha256) failures.push("review profile adapter source hash mismatch");
+      if (exists(registryPath) && sha256File(registryPath) !== profile.source.patternRegistry.sha256) failures.push("review profile pattern registry source hash mismatch");
+      const profileShapes = new Set(profile.selectedPatterns.map((pattern) => pattern.workShape));
+      const missingShapes = review.workShapes.filter((shape) => !profileShapes.has(shape));
+      if (missingShapes.length) failures.push(`review profile missing workShape coverage: ${missingShapes.join(", ")}`);
+      if (profile.genericRulesSupplementOnly !== true) failures.push("review profile must mark generic rules as supplement-only");
+    }
+    const diffPath = path.join(repoRoot, review.diffArtifact.path);
+    if (!exists(diffPath)) failures.push(`missing diff artifact ${review.diffArtifact.path}`);
+    else {
+      if (sha256File(diffPath) !== review.diffArtifact.sha256) failures.push("diff artifact hash mismatch");
+      const lineCount = read(diffPath).split(/\r?\n/).length - (read(diffPath).endsWith("\n") ? 1 : 0);
+      if (lineCount !== review.diffArtifact.lineCount) failures.push("diff artifact lineCount mismatch");
+      if (lineCount > review.maxDiffLines) failures.push(`diff artifact exceeds maxDiffLines ${review.maxDiffLines}`);
+    }
+    if (!exists(path.join(repoRoot, review.reportPath))) failures.push(`missing report ${review.reportPath}`);
+    if (review.selectedPaths.length > review.maxFiles) failures.push(`selected paths exceed maxFiles ${review.maxFiles}`);
+
+    const allowedWrites = new Set([
+      "docs/ai/ACEF_PR_REVIEW.json",
+      review.reviewProfile.path,
+      review.diffArtifact.path,
+      review.reportPath,
+    ]);
+    const status = gitStatusPorcelain(repoRoot);
+    if (status === null) failures.push("unable to inspect git status");
+    else {
+      const authored = status.map((line) => line.slice(3).replace(/^"|"$/g, "")).filter((filePath) => !allowedWrites.has(filePath));
+      if (authored.length) failures.push(`reviewer-authored patch or scope escape: ${authored.slice(0, 8).join(", ")}`);
+    }
+    return failures.length
+      ? result("pr-review", false, failures.join("; "))
+      : result("pr-review", true, `${review.reviewId} is bounded to ${review.selectedPaths.length} changed file(s); reviewer is report-only`);
+  } catch (error) {
+    return result("pr-review", false, error.message);
+  }
+}
+
+function checkLightweightLifecycle(repoRoot) {
+  const statePath = path.join(repoRoot, "docs", "ai", "ACEF_LIGHTWEIGHT_RUN.json");
+  if (!exists(statePath)) return result("lightweight-lifecycle", false, "Missing docs/ai/ACEF_LIGHTWEIGHT_RUN.json");
+  try {
+    const run = parseLightweightRun(statePath);
+    const missing = [];
+    for (const step of run.steps) {
+      for (const evidencePath of step.evidencePaths) {
+        if (!exists(path.join(repoRoot, evidencePath))) missing.push(`${step.name}: ${evidencePath}`);
+      }
+    }
+    if (missing.length) return result("lightweight-lifecycle", false, `missing lifecycle evidence: ${missing.join(", ")}`);
+    return result("lightweight-lifecycle", true, `${run.runId} follows the compact lifecycle with independent review and ${run.promotion.decision}`);
+  } catch (error) {
+    return result("lightweight-lifecycle", false, error.message);
+  }
+}
+
 function main() {
   const args = parseArgs(process.argv);
   if (args.help) {
@@ -1565,6 +1667,8 @@ function main() {
     if (check === "source-reconciliation") return checkSourceReconciliation(args.repo, ledger);
     if (check === "epic-context-pack") return checkEpicContextPack(args.repo, ledger);
     if (check === "current-context") return checkCurrentContext(args.repo, ledger);
+    if (check === "pr-review") return checkPrReview(args.repo);
+    if (check === "lightweight-lifecycle") return checkLightweightLifecycle(args.repo);
     if (check === "lean-evidence") return checkLeanEvidence(args.repo, ledger);
     if (check === "session-handoff") return checkSessionHandoff(args.repo, ledger, adapter, registry);
     if (check === "seeded-epic-gates") return checkSeededEpicGates(args.repo, ledger);

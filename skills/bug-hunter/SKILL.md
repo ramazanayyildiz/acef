@@ -1,7 +1,7 @@
 ---
 name: bug-hunter
 version: 0.1.0
-description: "Use when a Code Reviewer needs a bounded static scan for implementation defects, test gaps, or pattern conformance problems. Triggers: bug hunt, scan this diff, inspect these paths, find code defects, bounded static review."
+description: "Use during PR or lightweight review for report-only static bug analysis of an explicit diff or bounded path set. Triggers: bug hunt, scan this diff, inspect these paths, find behavioral defects. Never edits code or approves gates."
 kind: review-lens
 contract: acef-review-lens-v1
 mode: report-only
@@ -13,44 +13,73 @@ disposition: separate-implementation-or-verify-patch
 
 # Bug Hunter
 
-Apply a bounded static-analysis lens to code already assigned to a Code Reviewer. You advise that actor; you are not a
-new actor or gate.
+Find concrete behavioral defects in changed or explicitly scoped code. You advise an existing Code Reviewer; you are
+not a new actor or gate.
 
-## Required boundary
+## Required inputs
 
-Accept at least one explicit boundary before reading code:
+- changed diff or explicit paths;
+- finite scan budget and maximum findings;
+- relevant acceptance criteria;
+- generated codemap PR Review Profile;
+- matching pattern-registry slice, golden neighbors, and do-not-copy entries;
+- relevant tests and runtime evidence.
 
-- `--diff <base>...<head>` or a supplied targeted diff artifact;
-- one or more `--path <file-or-directory>` values; or
-- `--budget <files-or-lines>` with a finite maximum and an explicit starting surface.
+If scope, budget, or the generated review profile is missing, return `BLOCKED`. Never expand scope silently.
 
-Also honor `--max-findings` when supplied. Never run an unlimited repository scan. Do not widen paths, diff, file count,
-or line budget without a recorded broad-read reason from the review actor. Stop and report `scope_blocked` when the
-requested answer cannot be supported inside the boundary.
+## Look for
 
-## Review procedure
+- incorrect branches and conditions;
+- null, empty, boundary, validation, and error-path failures;
+- state and lifecycle mistakes;
+- incorrect data transformations;
+- race, retry, idempotency, and resource-lifecycle problems;
+- production paths that differ from tested paths;
+- hollow-green tests and framework-fighting workarounds;
+- capabilities required by acceptance criteria but absent from the implementation.
 
-1. Read the issue or acceptance criteria, targeted diff/paths, focused tests, and relevant adapter/pattern slice.
-2. Inspect only the bounded surface and the smallest directly required call sites or contracts.
-3. Verify every reported location by reading it. Never invent or extrapolate `file:line` references.
-4. Separate findings into `defect`, `test-gap`, `conformance`, and `style`. Style is never counted as a defect.
-5. Rank actionable findings `blocker`, `high`, `medium`, then `low`. Prefer a few supported findings over noisy volume.
+## Do not report as bugs
 
-Security scanning is outside this lens. If a possible security concern appears, record only
-`security-review-required` as an open question; do not diagnose, expand, or classify it as a Bug Hunter finding.
+- formatting or style-only concerns;
+- unproven speculation or generic best-practice preferences;
+- repository pattern differences without codemap evidence;
+- security findings owned by a future security lens;
+- product scope not required by the acceptance criteria.
+
+Pattern mismatches are `conformance` findings, not automatically behavioral defects. If a possible security concern
+appears, record only `security-review-required` as an open question; do not diagnose or expand it.
+
+## Evidence rule
+
+Every finding requires a verified `file:line`, finding type, severity, affected execution path, user/system impact,
+concrete evidence, confidence, and a reproduction or regression-test suggestion. No verified line and execution path
+means no finding.
+
+Finding types are `behavioral-defect`, `missing-boundary`, `error-path-gap`, `state-lifecycle`,
+`runtime-test-divergence`, `hollow-green`, `capability-gap`, `conformance`, and `test-gap`.
+
+## Workflow
+
+1. Validate scope, budget, and review-profile freshness.
+2. Load only the generated codemap review-profile and matching registry slice.
+3. Inspect the changed execution paths.
+4. Compare with acceptance criteria, tests, golden neighbors, and do-not-copy rules.
+5. Classify findings; remove duplicates and unsupported speculation.
+6. Write the detailed report and stop.
 
 ## Output
 
-Write the detailed report to the requested artifact path using `templates/report-template.md`. Every actionable finding
-must include verified `file:line`, category, severity, impact, confidence, evidence, and a proposed disposition. Include
-the searched boundary and coverage limits so absence of findings is not presented as proof of repository-wide safety.
+Write the detailed report to the requested artifact path using `templates/report-template.md`. Include the searched
+boundary and coverage limits so absence of findings is not presented as repository-wide safety.
 
-Return to chat only:
+Return only a compact result with:
 
-- counts by category and severity;
-- the top supported finding or `no supported findings in bounded scope`;
-- detailed report path and hash when available;
-- open questions and the next allowed action.
+- `verdict`: `CLEAR`, `FINDINGS`, or `BLOCKED`;
+- short summary and finding counts by severity;
+- report path and SHA-256;
+- reviewed and unreviewed scope;
+- false-positive notes.
 
-Never edit implementation or test files, approve a gate, mark the review complete, expand scope, or spawn workers.
-Required changes move to a separately scoped implementation or `verify-patch` actor.
+Never edit files, commit, spawn workers, approve a gate, or mark work complete. The Code Reviewer owns the verdict;
+findings require disposition; required fixes move to a separate implementation or `verify-patch` actor; the Process
+Judge verifies separation and evidence.

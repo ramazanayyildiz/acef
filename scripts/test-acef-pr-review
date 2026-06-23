@@ -1,0 +1,177 @@
+#!/usr/bin/env node
+const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const os = require("node:os");
+const path = require("node:path");
+const cp = require("node:child_process");
+
+const acefRoot = path.resolve(__dirname, "..");
+const prReview = path.join(acefRoot, "scripts", "acef-pr-review");
+const validator = path.join(acefRoot, "scripts", "acef-process-validator");
+const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "acef-pr-review-"));
+
+function run(cmd, args, opts = {}) {
+  return cp.spawnSync(cmd, args, {
+    cwd: opts.cwd || acefRoot,
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+}
+
+function git(repo, args) {
+  const result = run("git", args, { cwd: repo });
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  return result.stdout.trim();
+}
+
+function write(repo, filePath, text) {
+  const absolute = path.join(repo, filePath);
+  fs.mkdirSync(path.dirname(absolute), { recursive: true });
+  fs.writeFileSync(absolute, text);
+}
+
+function patternRegistry() {
+  return {
+    schemaVersion: 2,
+    repo: "fixture",
+    generatedAt: "2026-06-23T00:00:00.000Z",
+    generatedFromCommit: "base",
+    coveredScopes: ["src/services"],
+    status: "READY",
+    patterns: [
+      {
+        id: "pattern.service-command",
+        workShape: "service",
+        status: "canonical",
+        maturity: "rubric-item",
+        enforcedBy: null,
+        summary: "Service commands validate inputs, use shared helpers, and expose runtime evidence.",
+        evidence: "Two current services follow this command shape.",
+        completionEvidence: {
+          structure: "Service command exports a named function.",
+          registration: "Service is listed in the route/service registry when discoverability is needed.",
+          discoverability: "Callers reach the service through the normal command entrypoint.",
+          runtime: "Focused tests call the production service function.",
+        },
+        sourceEvidence: [{ path: "src/services/existing.js", line: 1 }],
+        goldenNeighbors: [{ path: "src/services/existing.js", why: "Current validated service command" }],
+        reuseProbe: ["normalizeInput", "serviceRegistry"],
+        doNotCopy: ["legacy.service.direct-state"],
+        confidence: "multiple-examples",
+        lastVerifiedAt: "2026-06-23T00:00:00.000Z",
+        lastVerifiedCommit: "base",
+        refreshTriggers: ["service-shape-change"],
+      },
+    ],
+    doNotCopy: [
+      {
+        id: "legacy.service.direct-state",
+        reason: "Bypasses shared normalization and runtime entrypoint.",
+        sourceEvidence: [{ path: "legacy/service.js", line: 9 }],
+        lastVerifiedCommit: "base",
+      },
+    ],
+  };
+}
+
+function makeRepo(name) {
+  const repo = path.join(tmpRoot, name);
+  fs.mkdirSync(repo, { recursive: true });
+  git(repo, ["init"]);
+  git(repo, ["config", "user.email", "acef@example.test"]);
+  git(repo, ["config", "user.name", "ACEF Test"]);
+  write(repo, "src/services/existing.js", "exports.normalizeInput = (value) => String(value || '').trim();\n");
+  write(repo, "src/services/new.js", "const { normalizeInput } = require('./existing');\nexports.run = (value) => normalizeInput(value);\n");
+  write(repo, "tests/service.test.js", "const assert = require('assert');\nconst { run } = require('../src/services/new');\nassert.equal(run(' x '), 'x');\n");
+  write(repo, "docs/issue.md", "# Issue\n\nAC: service trims input through the production entrypoint.\n");
+  write(repo, "docs/adapter.md", [
+    "# Adapter",
+    "- Runtime entrypoint: tests/service.test.js must call src/services/new.js.",
+    "- Registration/discoverability: service registry only when a new public command is added.",
+    "- Risk boundary: do not bypass normalizeInput.",
+    "- Review must compare golden neighbors and do-not-copy examples.",
+    "",
+  ].join("\n"));
+  write(repo, "docs/ai/pattern-registry.json", `${JSON.stringify(patternRegistry(), null, 2)}\n`);
+  git(repo, ["add", "."]);
+  git(repo, ["commit", "-m", "base"]);
+  write(repo, "src/services/new.js", "const { normalizeInput } = require('./existing');\nexports.run = (value) => normalizeInput(value).toUpperCase();\n");
+  git(repo, ["add", "src/services/new.js"]);
+  git(repo, ["commit", "-m", "change service"]);
+  return repo;
+}
+
+function prepare(repo, extra = []) {
+  return run(process.execPath, [
+    prReview,
+    "--repo", repo,
+    "--id", "pr-1",
+    "--base", "HEAD~1",
+    "--reviewer", "reviewer-1",
+    "--issue", "docs/issue.md",
+    "--test-command", "node tests/service.test.js",
+    "--adapter", "docs/adapter.md",
+    "--pattern", "docs/ai/pattern-registry.json",
+    "--work-shape", "service",
+    ...extra,
+  ], { cwd: repo });
+}
+
+try {
+  const green = makeRepo("green");
+  const prepared = prepare(green);
+  assert.equal(prepared.status, 0, prepared.stderr || prepared.stdout);
+  assert.match(prepared.stdout, /PROFILE docs\/ai\/pr-reviews\/pr-1-profile\.json/);
+  const manifest = JSON.parse(fs.readFileSync(path.join(green, "docs/ai/ACEF_PR_REVIEW.json"), "utf8"));
+  assert.deepEqual(manifest.workShapes, ["service"]);
+  assert.equal(manifest.inputs.patternRegistryPath, "docs/ai/pattern-registry.json");
+  assert.equal(manifest.reviewProfile.path, "docs/ai/pr-reviews/pr-1-profile.json");
+  const profile = JSON.parse(fs.readFileSync(path.join(green, manifest.reviewProfile.path), "utf8"));
+  assert.equal(profile.genericRulesSupplementOnly, true);
+  assert.equal(profile.selectedPatterns[0].workShape, "service");
+  const valid = run(process.execPath, [validator, "--repo", green, "--check", "pr-review"], { cwd: green });
+  assert.equal(valid.status, 0, valid.stderr || valid.stdout);
+
+  const scopeEscape = makeRepo("scope-escape");
+  const escaped = prepare(scopeEscape, ["--path", "docs/issue.md"]);
+  assert.notEqual(escaped.status, 0);
+  assert.match(escaped.stderr, /escapes the changed-file scope/);
+
+  const noReason = makeRepo("broad-read-no-reason");
+  const missingReason = prepare(noReason, ["--broad-read", "docs/adapter.md"]);
+  assert.notEqual(missingReason.status, 0);
+  assert.match(missingReason.stderr, /--broad-read requires --broad-read-reason/);
+
+  const noShape = makeRepo("missing-work-shape");
+  const missingShape = run(process.execPath, [
+    prReview,
+    "--repo", noShape,
+    "--id", "pr-1",
+    "--base", "HEAD~1",
+    "--reviewer", "reviewer-1",
+    "--issue", "docs/issue.md",
+    "--test-command", "node tests/service.test.js",
+    "--adapter", "docs/adapter.md",
+    "--pattern", "docs/ai/pattern-registry.json",
+  ], { cwd: noShape });
+  assert.notEqual(missingShape.status, 0);
+  assert.match(missingShape.stderr, /at least one --work-shape is required/);
+
+  const drift = makeRepo("profile-drift");
+  assert.equal(prepare(drift).status, 0);
+  fs.appendFileSync(path.join(drift, "docs/ai/pr-reviews/pr-1-profile.json"), "\n");
+  const driftCheck = run(process.execPath, [validator, "--repo", drift, "--check", "pr-review"], { cwd: drift });
+  assert.notEqual(driftCheck.status, 0);
+  assert.match(driftCheck.stdout, /review profile hash mismatch/);
+
+  const authoredPatch = makeRepo("authored-patch");
+  assert.equal(prepare(authoredPatch).status, 0);
+  fs.appendFileSync(path.join(authoredPatch, "src/services/new.js"), "\n// reviewer edit\n");
+  const authoredCheck = run(process.execPath, [validator, "--repo", authoredPatch, "--check", "pr-review"], { cwd: authoredPatch });
+  assert.notEqual(authoredCheck.status, 0);
+  assert.match(authoredCheck.stdout, /reviewer-authored patch or scope escape/);
+
+  console.log("acef PR review tests passed");
+} finally {
+  fs.rmSync(tmpRoot, { recursive: true, force: true });
+}

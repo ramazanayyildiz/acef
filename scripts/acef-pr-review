@@ -1,0 +1,326 @@
+#!/usr/bin/env node
+const fs = require("node:fs");
+const path = require("node:path");
+const cp = require("node:child_process");
+const crypto = require("node:crypto");
+const { parsePrReview, parsePrReviewProfile, safeRelative } = require("./lib/acef-state-parser");
+
+function usage() {
+  console.log(`Usage: acef-pr-review --repo <path> --id <id> --base <git-ref> --reviewer <actor-id>
+  --issue <path> --test-command <command> --adapter <path> --pattern <path> --work-shape <shape> [options]
+
+Options:
+  --head <git-ref>             default HEAD
+  --path <changed-path>        repeat to narrow the changed surface
+  --work-shape <shape>         repeat; explicit codemap work-shape slice
+  --broad-read <path>          repeat; requires --broad-read-reason
+  --broad-read-reason <text>
+  --qa-evidence <path>         repeat; qa-only evidence input
+  --lens <name>                default bug-hunter
+  --max-files <n>              default 40
+  --max-diff-lines <n>         default 1200
+  --report <path>              default docs/ai/pr-reviews/<id>.md`);
+}
+
+function parseArgs(argv) {
+  const opts = {
+    repo: process.cwd(),
+    head: "HEAD",
+    paths: [],
+    broadReads: [],
+    qaEvidence: [],
+    tests: [],
+    workShapes: [],
+    lens: "bug-hunter",
+    maxFiles: 40,
+    maxDiffLines: 1200,
+  };
+  const listFlags = {
+    "--path": "paths",
+    "--broad-read": "broadReads",
+    "--qa-evidence": "qaEvidence",
+    "--test-command": "tests",
+    "--work-shape": "workShapes",
+  };
+  for (let index = 0; index < argv.length; index += 1) {
+    const arg = argv[index];
+    if (arg === "--help" || arg === "-h") opts.help = true;
+    else if (listFlags[arg]) {
+      const value = argv[++index];
+      if (!value) throw new Error(`Missing value for ${arg}`);
+      opts[listFlags[arg]].push(value);
+    } else if (arg.startsWith("--")) {
+      const value = argv[++index];
+      if (!value) throw new Error(`Missing value for ${arg}`);
+      const key = arg.slice(2).replace(/-([a-z])/g, (_, letter) => letter.toUpperCase());
+      opts[key] = value;
+    } else throw new Error(`Unexpected argument: ${arg}`);
+  }
+  opts.repo = path.resolve(opts.repo);
+  opts.maxFiles = Number(opts.maxFiles);
+  opts.maxDiffLines = Number(opts.maxDiffLines);
+  opts.workShapes = [...new Set(opts.workShapes.map((entry) => String(entry).trim()).filter(Boolean))].sort();
+  return opts;
+}
+
+function git(repo, args) {
+  return cp.execFileSync("git", args, { cwd: repo, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
+}
+
+function relativePath(repo, value, label) {
+  const absolute = path.resolve(repo, value);
+  const relative = safeRelative(absolute, repo).replaceAll(path.sep, "/");
+  if (!fs.existsSync(absolute)) throw new Error(`${label} does not exist: ${relative}`);
+  return relative;
+}
+
+function sha256(value) {
+  return crypto.createHash("sha256").update(value).digest("hex");
+}
+
+function sha256File(filePath) {
+  return sha256(fs.readFileSync(filePath));
+}
+
+function readJson(filePath, label) {
+  try {
+    return JSON.parse(fs.readFileSync(filePath, "utf8"));
+  } catch (error) {
+    throw new Error(`Invalid ${label} JSON: ${error.message}`);
+  }
+}
+
+function compactSourceEntries(entries) {
+  return (entries || []).slice(0, 12).map((entry) => {
+    if (!entry || typeof entry !== "object") return entry;
+    return {
+      path: entry.path,
+      line: entry.line,
+      symbol: entry.symbol,
+      why: entry.why,
+    };
+  });
+}
+
+function compactPattern(pattern) {
+  return {
+    id: pattern.id,
+    workShape: pattern.workShape,
+    status: pattern.status,
+    maturity: pattern.maturity,
+    enforcedBy: pattern.enforcedBy ?? null,
+    summary: pattern.summary || "",
+    evidence: pattern.evidence || "",
+    completionEvidence: {
+      structure: pattern.completionEvidence?.structure || "",
+      registration: pattern.completionEvidence?.registration || "",
+      discoverability: pattern.completionEvidence?.discoverability || "",
+      runtime: pattern.completionEvidence?.runtime || "",
+    },
+    sourceEvidence: compactSourceEntries(pattern.sourceEvidence),
+    goldenNeighbors: compactSourceEntries(pattern.goldenNeighbors),
+    reuseProbe: (pattern.reuseProbe || []).slice(0, 20),
+    doNotCopy: (pattern.doNotCopy || []).slice(0, 20),
+    confidence: pattern.confidence || "",
+    lastVerifiedAt: pattern.lastVerifiedAt || "",
+    lastVerifiedCommit: pattern.lastVerifiedCommit || "",
+    refreshTriggers: (pattern.refreshTriggers || []).slice(0, 20),
+  };
+}
+
+function selectDoNotCopy(registry, selectedPatterns) {
+  const ids = new Set(selectedPatterns.flatMap((pattern) => pattern.doNotCopy || []));
+  return (registry.doNotCopy || [])
+    .filter((entry) => ids.has(entry.id))
+    .map((entry) => ({
+      id: entry.id,
+      reason: entry.reason || "",
+      sourceEvidence: compactSourceEntries(entry.sourceEvidence),
+      lastVerifiedCommit: entry.lastVerifiedCommit || "",
+    }));
+}
+
+function adapterSignals(adapterPath) {
+  const keywords = /\b(review|test|runtime|registration|discoverability|entrypoint|entry point|risk|boundary|golden|do-not-copy|reuse|helper|adapter|pattern|command|evidence)\b/i;
+  const lines = fs.readFileSync(adapterPath, "utf8").split(/\r?\n/);
+  const matches = [];
+  for (const [index, line] of lines.entries()) {
+    const trimmed = line.trim();
+    if (!trimmed || !keywords.test(trimmed)) continue;
+    matches.push({ line: index + 1, text: trimmed.slice(0, 240) });
+    if (matches.length >= 50) break;
+  }
+  if (!matches.length) {
+    for (const [index, line] of lines.entries()) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+      matches.push({ line: index + 1, text: trimmed.slice(0, 240) });
+      if (matches.length >= 20) break;
+    }
+  }
+  return matches;
+}
+
+function buildReviewProfile({ repo, id, baseCommit, headCommit, changedFiles, selectedPaths, workShapes, adapterPath, patternPath }) {
+  const registry = readJson(path.join(repo, patternPath), "pattern registry");
+  if (registry.status === "MISSING") {
+    throw new Error("pattern registry is MISSING; run map-codebase / acef-adapter before PR review");
+  }
+  if (!Array.isArray(registry.patterns) || !registry.patterns.length) {
+    throw new Error("pattern registry has no patterns for PR review");
+  }
+  const selectedPatterns = registry.patterns
+    .filter((pattern) => workShapes.includes(pattern.workShape))
+    .map(compactPattern);
+  const covered = new Set(selectedPatterns.map((pattern) => pattern.workShape));
+  const missing = workShapes.filter((shape) => !covered.has(shape));
+  if (missing.length) throw new Error(`pattern registry lacks PR review work-shape coverage: ${missing.join(", ")}`);
+
+  const adapterAbsolute = path.join(repo, adapterPath);
+  const patternAbsolute = path.join(repo, patternPath);
+  return {
+    profileId: `${id}-profile`,
+    reviewId: id,
+    generatedAt: new Date().toISOString(),
+    baseCommit,
+    headCommit,
+    changedFiles,
+    selectedPaths,
+    workShapes,
+    genericRulesSupplementOnly: true,
+    source: {
+      adapter: {
+        path: adapterPath,
+        sha256: sha256File(adapterAbsolute),
+      },
+      patternRegistry: {
+        path: patternPath,
+        sha256: sha256File(patternAbsolute),
+        status: registry.status,
+        generatedAt: registry.generatedAt || null,
+        generatedFromCommit: registry.generatedFromCommit || null,
+        coveredScopes: Array.isArray(registry.coveredScopes) ? registry.coveredScopes : [],
+      },
+    },
+    adapterSignals: adapterSignals(adapterAbsolute),
+    selectedPatterns,
+    globalDoNotCopy: selectDoNotCopy(registry, selectedPatterns),
+  };
+}
+
+function main() {
+  const opts = parseArgs(process.argv.slice(2));
+  if (opts.help) return usage();
+  for (const key of ["id", "base", "reviewer", "issue", "adapter", "pattern"]) {
+    if (!opts[key]) throw new Error(`--${key} is required`);
+  }
+  if (!opts.tests.length) throw new Error("at least one --test-command is required");
+  if (!opts.workShapes.length) throw new Error("at least one --work-shape is required; PR review must derive a codemap review profile");
+  if (!Number.isInteger(opts.maxFiles) || opts.maxFiles < 1) throw new Error("--max-files must be a positive integer");
+  if (!Number.isInteger(opts.maxDiffLines) || opts.maxDiffLines < 1) throw new Error("--max-diff-lines must be a positive integer");
+  if (opts.broadReads.length && !String(opts.broadReadReason || "").trim()) throw new Error("--broad-read requires --broad-read-reason");
+  if (git(opts.repo, ["status", "--porcelain=v1", "--untracked-files=all"])) throw new Error("PR review init requires a clean working tree");
+
+  const issuePath = relativePath(opts.repo, opts.issue, "issue/AC path");
+  const adapterPath = relativePath(opts.repo, opts.adapter, "adapter path");
+  const patternRegistryPath = relativePath(opts.repo, opts.pattern, "pattern registry path");
+  const qaEvidencePaths = opts.qaEvidence.map((entry) => relativePath(opts.repo, entry, "qa-only evidence path"));
+  const broadReadPaths = opts.broadReads.map((entry) => relativePath(opts.repo, entry, "broad-read path"));
+
+  const baseCommit = git(opts.repo, ["rev-parse", opts.base]);
+  const headCommit = git(opts.repo, ["rev-parse", opts.head]);
+  const changedFiles = git(opts.repo, ["diff", "--name-only", `${baseCommit}...${headCommit}`]).split(/\r?\n/).filter(Boolean);
+  if (!changedFiles.length) throw new Error("PR review diff has no changed files");
+  const selectedPaths = opts.paths.length
+    ? changedFiles.filter((file) => opts.paths.some((entry) => file === entry.replace(/\/$/, "") || file.startsWith(`${entry.replace(/\/$/, "")}/`)))
+    : changedFiles;
+  if (opts.paths.length && opts.paths.some((entry) => !selectedPaths.some((file) => file === entry.replace(/\/$/, "") || file.startsWith(`${entry.replace(/\/$/, "")}/`)))) {
+    throw new Error("requested --path escapes the changed-file scope");
+  }
+  if (!selectedPaths.length) throw new Error("PR review selection is empty");
+  if (selectedPaths.length > opts.maxFiles) throw new Error(`PR review selected ${selectedPaths.length} files; max is ${opts.maxFiles}`);
+
+  const diff = cp.execFileSync("git", ["diff", "--unified=3", `${baseCommit}...${headCommit}`, "--", ...selectedPaths], {
+    cwd: opts.repo,
+    encoding: "utf8",
+    maxBuffer: 100 * 1024 * 1024,
+  });
+  const lineCount = diff.split(/\r?\n/).length - (diff.endsWith("\n") ? 1 : 0);
+  if (lineCount < 1) throw new Error("PR review targeted diff is empty");
+  if (lineCount > opts.maxDiffLines) throw new Error(`PR review diff has ${lineCount} lines; max is ${opts.maxDiffLines}`);
+
+  const reviewDir = path.join(opts.repo, "docs", "ai", "pr-reviews");
+  fs.mkdirSync(reviewDir, { recursive: true });
+  const reportPath = opts.report ? path.resolve(opts.repo, opts.report) : path.join(reviewDir, `${opts.id}.md`);
+  const diffPath = path.join(reviewDir, `${opts.id}.diff`);
+  const profilePath = path.join(reviewDir, `${opts.id}-profile.json`);
+  const manifestPath = path.join(opts.repo, "docs", "ai", "ACEF_PR_REVIEW.json");
+  fs.mkdirSync(path.dirname(reportPath), { recursive: true });
+
+  const profile = buildReviewProfile({
+    repo: opts.repo,
+    id: opts.id,
+    baseCommit,
+    headCommit,
+    changedFiles,
+    selectedPaths,
+    workShapes: opts.workShapes,
+    adapterPath,
+    patternPath: patternRegistryPath,
+  });
+  const profileText = `${JSON.stringify(profile, null, 2)}\n`;
+  parsePrReviewProfile(profile, `${opts.id} review profile`);
+
+  fs.writeFileSync(diffPath, diff);
+  fs.writeFileSync(profilePath, profileText);
+  fs.writeFileSync(reportPath, `# ACEF PR Review ${opts.id}\n\n## Summary\n\nPending bounded review.\n\n## Codemap review profile\n\n- profile: ${safeRelative(profilePath, opts.repo).replaceAll(path.sep, "/")}\n- work shapes: ${opts.workShapes.join(", ")}\n- generic rules: supplement only; repo-specific profile controls conformance review.\n\n## Findings\n\n| Category | Severity | File:line | Impact | Confidence | Evidence | Disposition |\n|---|---|---|---|---|---|---|\n\n## Broad-read reasons\n\n${opts.broadReadReason || "none"}\n\n## Handoff\n\n- reviewer: ${opts.reviewer}\n- write mode: report-only\n- next actor: pending\n`);
+
+  const manifest = {
+    reviewId: opts.id,
+    reviewerActorId: opts.reviewer,
+    baseCommit,
+    headCommit,
+    changedFiles,
+    selectedPaths,
+    workShapes: opts.workShapes,
+    broadReadPaths,
+    broadReadReason: opts.broadReadReason || null,
+    inputs: {
+      issuePath,
+      focusedTests: opts.tests,
+      adapterPath,
+      patternRegistryPath,
+      qaEvidencePaths,
+    },
+    reviewProfile: {
+      path: safeRelative(profilePath, opts.repo).replaceAll(path.sep, "/"),
+      sha256: sha256(profileText),
+    },
+    diffArtifact: {
+      path: safeRelative(diffPath, opts.repo).replaceAll(path.sep, "/"),
+      sha256: sha256(diff),
+      lineCount,
+    },
+    reportPath: safeRelative(reportPath, opts.repo).replaceAll(path.sep, "/"),
+    writeMode: "report-only",
+    qaMode: opts.qaEvidence.length ? "qa-only" : "none",
+    lens: opts.lens || null,
+    maxFiles: opts.maxFiles,
+    maxDiffLines: opts.maxDiffLines,
+    createdAt: new Date().toISOString(),
+  };
+  fs.mkdirSync(path.dirname(manifestPath), { recursive: true });
+  fs.writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+  parsePrReview(manifestPath);
+  console.log(`PREPARED ${safeRelative(manifestPath, opts.repo)} files=${selectedPaths.length} diff_lines=${lineCount}`);
+  console.log(`PROFILE ${manifest.reviewProfile.path} sha256=${manifest.reviewProfile.sha256}`);
+  console.log(`REPORT ${manifest.reportPath}`);
+  console.log(`DIFF ${manifest.diffArtifact.path} sha256=${manifest.diffArtifact.sha256}`);
+}
+
+try {
+  main();
+} catch (error) {
+  console.error(`ACEF_PR_REVIEW_ERROR: ${error.message}`);
+  process.exitCode = 1;
+}
