@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://acef.local/schemas/lightweight-run.schema.json",
+  "title": "ACEF Lightweight Lifecycle",
+  "type": "object",
+  "required": ["runId", "lane", "status", "implementationActorId", "reviewActorId", "steps", "promotion"],
+  "additionalProperties": false,
+  "properties": {
+    "runId": { "type": "string", "minLength": 1 },
+    "lane": { "type": "string", "enum": ["lightweight", "guarded"] },
+    "status": { "type": "string", "enum": ["active", "blocked", "complete"] },
+    "implementationActorId": { "type": "string", "minLength": 1 },
+    "reviewActorId": { "type": "string", "minLength": 1 },
+    "steps": {
+      "type": "array",
+      "minItems": 6,
+      "maxItems": 6,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "status", "evidencePaths"],
+        "properties": {
+          "name": { "type": "string", "minLength": 1 },
+          "status": { "type": "string", "enum": ["PENDING", "PASS", "BLOCKED"] },
+          "evidencePaths": { "type": "array", "items": { "type": "string", "minLength": 1 } }
+        }
+      }
+    },
+    "promotion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["decision", "triggers"],
+      "properties": {
+        "decision": { "type": "string", "enum": ["stay-lightweight", "promote-full-bmad", "human-risk-acceptance"] },
+        "triggers": { "type": "array", "items": { "type": "string", "minLength": 1 } }
+      }
+    },
+    "updatedAt": { "type": ["string", "null"] }
+  }
+}

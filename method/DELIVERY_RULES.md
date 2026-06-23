@@ -91,8 +91,14 @@ A lightweight (usually guarded) task promotes to full BMAD when any of:
 ## PR review and lightweight review contract
 
 PR review is a first-class lightweight entry point, not a shortened full-BMAD imitation. Default input is bounded to
-the changed files/diff, relevant acceptance criteria or issue text, focused tests, and the matching adapter/pattern
-slice. Broad repository reads require a recorded reason.
+the changed files/diff, relevant acceptance criteria or issue text, focused tests, and a generated codemap review
+profile. Broad repository reads require a recorded reason.
+
+The PR review profile is generated, not hand-maintained. `map-codebase` / `acef-adapter` produces
+`docs/ai/pattern-registry.json`; `acef-pr-review` projects only the explicitly requested work-shape slice into
+`docs/ai/pr-reviews/<id>-profile.json`. That profile carries the adapter hash, pattern-registry hash, selected golden
+neighbors, do-not-copy entries, risk/completion evidence, registration/discoverability/runtime expectations, and
+focused adapter signals. Generic review rules supplement this repo-specific profile; they never replace it.
 
 The review actor reports findings and evidence; it does not patch the implementation it reviewed. Every actionable
 finding is dispositioned through a separately scoped implementation or `verify-patch` actor. Runtime/browser QA may be
@@ -101,6 +107,13 @@ supplied by `qa-only`; the combined test-and-fix `qa` skill must not collapse re
 Short specialist lenses such as a future `bug-hunter` may be injected JIT into the review actor. A lens does not become
 a new actor, satisfy independent review by itself, approve a gate, or expand the active scope. Security findings remain
 the responsibility of a separately defined guarded security lens or reviewer contract.
+
+Lightweight work uses a mechanically checkable compact lifecycle:
+
+`preflight-current-context → reuse-before-create → implementation → independent-review → focused-verification → closeout-evidence`
+
+Record it in `docs/ai/ACEF_LIGHTWEIGHT_RUN.json` and run `acef-process-validator --check lightweight-lifecycle`. If risk
+or scope grows, preserve the existing promotion rules: promote to full BMAD or record explicit human risk acceptance.
 
 ## Discipline that travels with both lanes (borrowed IN)
 - **Plan integrity** — no skip / reorder / shrink / expand scope without human approval.

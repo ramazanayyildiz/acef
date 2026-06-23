@@ -1,0 +1,101 @@
+#!/usr/bin/env node
+const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const os = require("node:os");
+const path = require("node:path");
+const cp = require("node:child_process");
+
+const acefRoot = path.resolve(__dirname, "..");
+const validator = path.join(acefRoot, "scripts", "acef-process-validator");
+const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "acef-lightweight-"));
+
+const steps = [
+  "preflight-current-context",
+  "reuse-before-create",
+  "implementation",
+  "independent-review",
+  "focused-verification",
+  "closeout-evidence",
+];
+
+function run(repo) {
+  return cp.spawnSync(process.execPath, [validator, "--repo", repo, "--check", "lightweight-lifecycle"], {
+    cwd: repo,
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+}
+
+function write(repo, filePath, text) {
+  const absolute = path.join(repo, filePath);
+  fs.mkdirSync(path.dirname(absolute), { recursive: true });
+  fs.writeFileSync(absolute, text);
+}
+
+function makeRepo(name, mutate = (record) => record) {
+  const repo = path.join(tmpRoot, name);
+  fs.mkdirSync(repo, { recursive: true });
+  for (const step of steps) write(repo, `docs/ai/evidence/${step}.txt`, `${step}\n`);
+  const record = mutate({
+    runId: name,
+    lane: "lightweight",
+    status: "complete",
+    implementationActorId: "impl-1",
+    reviewActorId: "review-1",
+    steps: steps.map((step) => ({
+      name: step,
+      status: "PASS",
+      evidencePaths: [`docs/ai/evidence/${step}.txt`],
+    })),
+    promotion: {
+      decision: "stay-lightweight",
+      triggers: [],
+    },
+    updatedAt: "2026-06-23T00:00:00.000Z",
+  });
+  write(repo, "docs/ai/ACEF_LIGHTWEIGHT_RUN.json", `${JSON.stringify(record, null, 2)}\n`);
+  return repo;
+}
+
+try {
+  const green = makeRepo("green");
+  const ok = run(green);
+  assert.equal(ok.status, 0, ok.stderr || ok.stdout);
+  assert.match(ok.stdout, /follows the compact lifecycle/);
+
+  const wrongOrder = makeRepo("wrong-order", (record) => {
+    [record.steps[1], record.steps[2]] = [record.steps[2], record.steps[1]];
+    return record;
+  });
+  const wrongOrderResult = run(wrongOrder);
+  assert.notEqual(wrongOrderResult.status, 0);
+  assert.match(wrongOrderResult.stdout, /step 2 must be reuse-before-create/);
+
+  const promotionTrigger = makeRepo("promotion-trigger", (record) => {
+    record.promotion.triggers = ["touches unknown high-risk runtime boundary"];
+    return record;
+  });
+  const triggerResult = run(promotionTrigger);
+  assert.notEqual(triggerResult.status, 0);
+  assert.match(triggerResult.stdout, /promotion triggers require full BMAD promotion/);
+
+  const missingEvidence = makeRepo("missing-evidence", (record) => {
+    record.steps[5].evidencePaths = ["docs/ai/evidence/missing.txt"];
+    return record;
+  });
+  const missingResult = run(missingEvidence);
+  assert.notEqual(missingResult.status, 0);
+  assert.match(missingResult.stdout, /missing lifecycle evidence/);
+
+  const sameActor = makeRepo("same-actor", (record) => {
+    record.reviewActorId = record.implementationActorId;
+    return record;
+  });
+  const sameActorResult = run(sameActor);
+  assert.notEqual(sameActorResult.status, 0);
+  assert.match(sameActorResult.stdout, /independent review actor/);
+
+  console.log("acef lightweight lifecycle tests passed");
+} finally {
+  fs.rmSync(tmpRoot, { recursive: true, force: true });
+}
