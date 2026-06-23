@@ -30,6 +30,25 @@ ACEF is lean by default. Lean mode never removes gates or evidence; it only limi
 - Worker final reports should be complete on disk, but chat summaries should stay under about 20 lines.
 - If details are needed for audit, link the file path and exact command rather than copying the body.
 
+## Lean Evidence Contract
+
+Story and epic close evidence must be artifact-backed so a fresh session can resume without inheriting a bloated parent
+thread. Before a story or epic can close, the delivery ledger records `## Lean Evidence Contract`:
+
+```md
+status: PASS
+scope: story 4.1
+worker_report: docs/ai/reports/story-4.1-worker.md
+review_report: docs/ai/reports/story-4.1-review.md
+process_judge_report: docs/ai/reports/story-4.1-process-judge.md
+session_handoff_updated: yes
+fresh_session_recommended: yes  # required for epic close
+```
+
+The report paths must exist on disk. The conductor chat summary stays compact; the reports contain the complete logs,
+files changed, test evidence, findings, and deferrals. Run `scripts/acef-process-validator --check lean-evidence`
+before story/epic close.
+
 ## Branching and PR targets
 Cut task branches from the repo's **integration branch** (an adapter value — varies per repo), never from the
 protected/release branch. Open PRs against the integration branch unless the Architect/Judge says otherwise. The PR is

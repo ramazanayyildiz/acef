@@ -25,6 +25,7 @@ Checks:
   guarded-test-floor  For guarded work, require a symbol-grounded asserted boundary test and independent Test Author
   actor-separation    For full BMAD, require distinct phase actors with durable provenance evidence
   source-reconciliation For full BMAD, require every planning source to record use/conflict/resolution
+  lean-evidence       Require story/epic close evidence to live in artifacts, not chat
   session-handoff     Require a structured Session Handoff block in the delivery ledger
   seeded-epic-gates   Require Epic N Process Judge rows/artifacts for epics mentioned in ledger
   epic-boundary       Require Epic N-1 Process Judge PASS before target Epic N
@@ -955,6 +956,45 @@ function hasMeaningfulValue(value) {
   return Boolean(value) && !/^(?:none|n\/a|null|unknown|tbd|pending)$/i.test(value);
 }
 
+function pathExistsField(repoRoot, fields, field) {
+  if (!hasMeaningfulValue(fields[field])) return `${field} missing`;
+  const filePath = resolvePath(fields[field], repoRoot);
+  return exists(filePath) ? "" : `${field} missing file ${fields[field]}`;
+}
+
+function checkLeanEvidence(repoRoot, ledgerPath) {
+  if (!ledgerPath || !exists(ledgerPath)) return result("lean-evidence", false, "Missing ledger path");
+  const text = read(ledgerPath);
+  const section = extractSection(text, "Lean Evidence Contract");
+  if (!section) return result("lean-evidence", false, "Missing ## Lean Evidence Contract section");
+
+  const fields = sessionHandoffFields(section);
+  const required = ["status", "scope", "worker_report", "review_report", "process_judge_report", "session_handoff_updated"];
+  const missing = required.filter((field) => !hasMeaningfulValue(fields[field]));
+  if (missing.length) return result("lean-evidence", false, `Missing field(s): ${missing.join(", ")}`);
+
+  const failures = [];
+  for (const field of ["worker_report", "review_report", "process_judge_report"]) {
+    const pathFailure = pathExistsField(repoRoot, fields, field);
+    if (pathFailure) failures.push(pathFailure);
+  }
+
+  if (!/^yes|true|pass$/i.test(fields.session_handoff_updated)) {
+    failures.push("session_handoff_updated must be yes/true/PASS");
+  }
+
+  if (/epic/i.test(fields.scope)) {
+    const recommendation = fields.fresh_session_recommended || fields.fresh_session_handoff;
+    if (!/^yes|true|pass$/i.test(recommendation || "")) {
+      failures.push("epic scope requires fresh_session_recommended: yes");
+    }
+  }
+
+  if (!/^pass$/i.test(fields.status)) failures.push("status must be PASS at close");
+  if (failures.length) return result("lean-evidence", false, failures.join("; "));
+  return result("lean-evidence", true, `${fields.scope} evidence is artifact-backed and handoff is refreshed`);
+}
+
 function checkSessionHandoff(repoRoot, ledgerPath, adapterPath, registryPath) {
   if (!ledgerPath || !exists(ledgerPath)) return result("session-handoff", false, "Missing ledger path");
 
@@ -1008,7 +1048,7 @@ function main() {
   const adapter = args.adapter || findAdapter(args.repo);
   const registry = findPatternRegistry(args.repo, adapter);
   const checks = args.check === "all"
-    ? ["clean-tree", "preflight", "claims", "adapter-freshness", "pattern-registry", "reuse-before-create", "do-not-copy", "partial-workshape", "finding-promotion", "graduation-reconciliation", "vertical-slice", "guarded-test-floor", "actor-separation", "source-reconciliation", "session-handoff", "seeded-epic-gates", "epic-boundary", "epic-transition-approval", "replan-counter"]
+    ? ["clean-tree", "preflight", "claims", "adapter-freshness", "pattern-registry", "reuse-before-create", "do-not-copy", "partial-workshape", "finding-promotion", "graduation-reconciliation", "vertical-slice", "guarded-test-floor", "actor-separation", "source-reconciliation", "lean-evidence", "session-handoff", "seeded-epic-gates", "epic-boundary", "epic-transition-approval", "replan-counter"]
     : [args.check];
 
   const results = checks.map((check) => {
@@ -1026,6 +1066,7 @@ function main() {
     if (check === "guarded-test-floor") return checkGuardedTestFloor(args.repo, ledger);
     if (check === "actor-separation") return checkActorSeparation(args.repo, ledger);
     if (check === "source-reconciliation") return checkSourceReconciliation(args.repo, ledger);
+    if (check === "lean-evidence") return checkLeanEvidence(args.repo, ledger);
     if (check === "session-handoff") return checkSessionHandoff(args.repo, ledger, adapter, registry);
     if (check === "seeded-epic-gates") return checkSeededEpicGates(args.repo, ledger);
     if (check === "epic-boundary") return checkEpicBoundary(args.repo, ledger, args.targetEpic);

@@ -120,6 +120,9 @@ A lightweight (usually guarded) task promotes to full BMAD when any of:
 - **Lean reporting** — every lane writes complete evidence to disk but reports compactly in chat: artifact path,
   verdict, key evidence path/command, and next allowed step. Raw output dumps and full artifact bodies are drift
   risks because they consume context and hide the next gate.
+- **Lean evidence contract** — story/epic close requires artifact paths for worker report, review report, Process Judge
+  report, and a refreshed Session Handoff. Epic close also records `fresh_session_recommended: yes`; continuing the same
+  bloated thread is optional, not the default. Run `--check lean-evidence`.
 - **Process Judge gates** — story/task close and epic close must prove the required steps, skills, and artifacts were
   actually used before status changes to `done`.
 - **Seeded epic gates** — full BMAD epics/stories generation must seed `Epic N Process Judge [PENDING]` rows/artifacts

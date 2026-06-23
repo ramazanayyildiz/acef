@@ -171,6 +171,10 @@ try {
   fs.writeFileSync(path.join(tmp, "docs", "ai", "actor-provenance.md"), [
     "atdd-1", "dev-1", "review-1", "verify-1", "test-review-1", "judge-1", ""
   ].join("\n"));
+  fs.mkdirSync(path.join(tmp, "docs", "ai", "reports"), { recursive: true });
+  fs.writeFileSync(path.join(tmp, "docs", "ai", "reports", "story-1-1-worker.md"), "Worker report\n");
+  fs.writeFileSync(path.join(tmp, "docs", "ai", "reports", "story-1-1-review.md"), "Review report\n");
+  fs.writeFileSync(path.join(tmp, "docs", "ai", "reports", "story-1-1-process-judge.md"), "Process Judge report\n");
   fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_demo_DELIVERY_AUDIT.md"), [
     "# ACEF Demo Delivery Audit",
     "",
@@ -209,6 +213,14 @@ try {
     "|---|---|---|---|---|",
     "| Product brief | `README.md` | USED | aligned | adopted |",
     "| Codebase map | `docs/codebase-map.md` | USED | aligned | adopted |",
+    "",
+    "## Lean Evidence Contract",
+    "status: PASS",
+    "scope: story 1.1",
+    "worker_report: docs/ai/reports/story-1-1-worker.md",
+    "review_report: docs/ai/reports/story-1-1-review.md",
+    "process_judge_report: docs/ai/reports/story-1-1-process-judge.md",
+    "session_handoff_updated: yes",
     "",
   ].join("\n"));
   expectFail("clean-tree", ["--repo", tmp, "--check", "clean-tree"]);
@@ -565,6 +577,20 @@ try {
     .replace("| Codebase map | `docs/codebase-map.md` | USED | aligned | adopted |", "| Backend | `docs/missing-contract.md` | CONFLICT | endpoint differs | pending |");
   fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_open_source_conflict_DELIVERY_AUDIT.md"), openConflictLedger);
   expectFail("source-reconciliation", ["--repo", tmp, "--check", "source-reconciliation", "--ledger", "docs/ai/ACEF_open_source_conflict_DELIVERY_AUDIT.md"]);
+  expectPass("lean-evidence", ["--repo", tmp, "--check", "lean-evidence", "--ledger", "docs/ai/ACEF_demo_DELIVERY_AUDIT.md"]);
+  fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_lean_bad_DELIVERY_AUDIT.md"), [
+    "# Bad Lean Ledger",
+    "",
+    "## Lean Evidence Contract",
+    "status: PASS",
+    "scope: epic 1",
+    "worker_report: docs/ai/reports/story-1-1-worker.md",
+    "review_report: docs/ai/reports/story-1-1-review.md",
+    "process_judge_report: docs/ai/reports/missing.md",
+    "session_handoff_updated: yes",
+    "",
+  ].join("\n"));
+  expectFail("lean-evidence", ["--repo", tmp, "--ledger", "docs/ai/ACEF_lean_bad_DELIVERY_AUDIT.md", "--check", "lean-evidence"]);
   expectPass("session-handoff", ["--repo", tmp, "--check", "session-handoff", "--ledger", "docs/ai/ACEF_demo_DELIVERY_AUDIT.md"]);
   expectPass("claims", ["--repo", tmp, "--check", "claims", "--ledger", "docs/ai/ACEF_demo_DELIVERY_AUDIT.md"]);
   expectPass("seeded-epic-gates", ["--repo", tmp, "--check", "seeded-epic-gates", "--ledger", "docs/ai/ACEF_demo_DELIVERY_AUDIT.md"]);
