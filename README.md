@@ -69,6 +69,9 @@ files the agent follows. No build, no npm, no services.
    ```
    This installs the default local set for Claude, Codex, and OpenCode:
    `acef`, `acef-adapter`, `acef-router`, `acef-test-bootstrap`, and `map-codebase`.
+   For OpenCode, the same installer also writes repo-local slash command wrappers under `.opencode/commands/`
+   (`/acef`, `/acef-adapter`, `/acef-router`, `/acef-test-bootstrap`, `/map-codebase`). OpenCode skills live under
+   `.opencode/skills/`, but slash commands are a separate `.opencode/commands/*.md` mechanism.
    The tools installer adds repo-local helper CLIs under `.acef/bin/`, including `acef-process-validator` and
    `acef-codex-guard`.
    Use `--tool codex|claude|opencode` to target one tool, or `--all-core` to copy every skill in this repo.
@@ -149,6 +152,12 @@ delegation into a blank check.
 OpenCode can load ACEF's normal `AGENTS.md` rules and `SKILL.md` files directly. Its supported skill locations include
 `.opencode/skills/<name>/SKILL.md`, `~/.config/opencode/skills/<name>/SKILL.md`, and Claude-compatible
 `.claude/skills/<name>/SKILL.md` / `~/.claude/skills/<name>/SKILL.md`.
+
+OpenCode slash commands are separate from skills. A skill can be available without `/acef` existing. Run
+`scripts/install-acef-skills --repo <repo> --tool opencode` to install both:
+
+- `.opencode/skills/<name>/SKILL.md` for skill discovery;
+- `.opencode/commands/<name>.md` for slash commands such as `/acef`.
 
 Run the installer in the target repo to copy the ACEF guard plugin into `.opencode/plugins/`. The plugin adapts
 OpenCode's `tool.execute.before` event to the repo-local `.acef/hooks/acef-bmad-hard-wall.mjs` engine. It checks
