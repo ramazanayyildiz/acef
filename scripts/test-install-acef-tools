@@ -24,12 +24,14 @@ try {
   const validator = path.join(tmp, ".acef", "bin", "acef-process-validator");
   const state = path.join(tmp, ".acef", "bin", "acef-state");
   const status = path.join(tmp, ".acef", "bin", "acef-status");
+  const next = path.join(tmp, ".acef", "bin", "acef-next");
   const parser = path.join(tmp, ".acef", "bin", "lib", "acef-state-parser.js");
   const schema = path.join(tmp, ".acef", "schemas", "active-run.schema.json");
   const runtimePackage = path.join(tmp, ".acef", "bin", "package.json");
   if (!fs.existsSync(validator)) throw new Error("validator wrapper was not installed");
   if (!fs.existsSync(state)) throw new Error("typed-state writer was not installed");
   if (!fs.existsSync(status)) throw new Error("status helper was not installed");
+  if (!fs.existsSync(next)) throw new Error("next-action helper was not installed");
   if (!fs.existsSync(parser)) throw new Error("parser support library was not installed");
   if (!fs.existsSync(schema)) throw new Error("typed-state schemas were not installed");
   if (JSON.parse(fs.readFileSync(runtimePackage, "utf8")).type !== "commonjs") throw new Error("ACEF runtime CommonJS boundary was not installed");
@@ -101,6 +103,11 @@ try {
   if (statusJson.status !== "ready") throw new Error(`installed status helper did not report ready:\n${statusOutput}`);
   if (statusJson.activeRun.activeStory !== "story 1.1") throw new Error("installed status helper did not read active run");
   if (!statusJson.readOrder.includes("docs/ai/ACEF_CURRENT_CONTEXT.md")) throw new Error("installed status helper did not include current-context read order");
+  const nextOutput = run(next, ["--repo", tmp, "--format", "json"]);
+  const nextJson = JSON.parse(nextOutput);
+  if (nextJson.status !== "ready") throw new Error(`installed next helper did not report ready:\n${nextOutput}`);
+  if (nextJson.active_state.next_allowed_action !== "implement_to_green") throw new Error("installed next helper did not derive development action");
+  if (!nextJson.forbidden.actions.includes("start_next_story")) throw new Error("installed next helper missing story boundary");
 
   console.log("install-acef-tools tests passed");
 } finally {

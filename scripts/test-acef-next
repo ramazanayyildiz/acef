@@ -1,0 +1,103 @@
+#!/usr/bin/env node
+const fs = require("node:fs");
+const os = require("node:os");
+const path = require("node:path");
+const cp = require("node:child_process");
+
+const repoRoot = path.resolve(__dirname, "..");
+const next = path.join(repoRoot, "scripts", "acef-next");
+const state = path.join(repoRoot, "scripts", "acef-state");
+const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "acef-next-"));
+
+function run(command, args, options = {}) {
+  return cp.spawnSync(command, args, {
+    cwd: tmp,
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+    ...options,
+  });
+}
+
+function mustRun(command, args) {
+  const result = run(command, args);
+  if (result.status !== 0) {
+    throw new Error(`${command} ${args.join(" ")} failed:\n${result.stdout}\n${result.stderr}`);
+  }
+  return result.stdout;
+}
+
+try {
+  fs.writeFileSync(path.join(tmp, "AGENTS.md"), "# Agent entry\n");
+  fs.mkdirSync(path.join(tmp, "docs", "ai"), { recursive: true });
+  mustRun("git", ["init", "-q"]);
+  mustRun("git", ["config", "user.email", "acef@example.test"]);
+  mustRun("git", ["config", "user.name", "ACEF Test"]);
+  fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_demo_DELIVERY_AUDIT.md"), [
+    "# Demo",
+    "",
+    "## Session Handoff",
+    "last_passed_gate: Story 2.1 ATDD PASS",
+    "",
+  ].join("\n"));
+  fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_ACTIVE_LEDGER"), "docs/ai/ACEF_demo_DELIVERY_AUDIT.md\n");
+  fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_CURRENT_CONTEXT.md"), [
+    "source_ledger: docs/ai/ACEF_demo_DELIVERY_AUDIT.md",
+    "active_story: Story 2.2",
+    "active_phase: development",
+    "last_passed_gate: Story 2.1 ATDD PASS",
+    "",
+    "## Current Work",
+    "Story 2.2",
+  ].join("\n"));
+  mustRun("git", ["add", "."]);
+  mustRun("git", ["commit", "-qm", "fixture"]);
+
+  const missing = run(next, ["--repo", tmp]);
+  if (missing.status !== 2) throw new Error("acef-next should exit 2 when active run is missing");
+  const missingJson = JSON.parse(missing.stdout);
+  if (missingJson.schema !== "acef.next.v1") throw new Error("acef-next missing schema");
+  if (missingJson.status !== "blocked") throw new Error("acef-next missing active run should be blocked");
+  if (missingJson.active_state !== null) throw new Error("acef-next should not invent active_state without active run");
+  if (!missingJson.blockers.some((entry) => entry.includes("ACEF_ACTIVE_RUN"))) {
+    throw new Error("acef-next did not explain missing active run");
+  }
+
+  mustRun(state, [
+    "active-run", "--repo", tmp,
+    "--run-id", "RUN-next-test",
+    "--lane", "lightweight",
+    "--status", "active",
+    "--story", "Story 2.2",
+    "--phase", "development",
+    "--worker-role", "developer",
+    "--ledger", "docs/ai/ACEF_demo_DELIVERY_AUDIT.md",
+    "--context", "docs/ai/ACEF_CURRENT_CONTEXT.md",
+    "--last-passed-gate", "Story 2.1 ATDD PASS",
+  ]);
+  mustRun(state, [
+    "worker-scope", "--repo", tmp,
+    "--story", "Story 2.2",
+    "--phase", "development",
+    "--worker-id", "dev-22",
+    "--allow", "tests/Feature/Story22Test.php",
+    "--allow", "app/Story22.php",
+    "--max-commits", "1",
+  ]);
+
+  const ready = mustRun(next, ["--repo", tmp, "--role", "developer"]);
+  const readyJson = JSON.parse(ready);
+  if (readyJson.status !== "ready") throw new Error(`acef-next was not ready:\n${ready}`);
+  if (readyJson.active_state.next_allowed_action !== "implement_to_green") throw new Error("acef-next did not derive dev action");
+  if (readyJson.active_state.story !== "Story 2.2") throw new Error("acef-next lost active story");
+  if (readyJson.allowed.can_write !== true) throw new Error("acef-next should allow scoped dev writes");
+  if (!readyJson.allowed.paths.includes("app/Story22.php")) throw new Error("acef-next lost worker allowed paths");
+  if (!readyJson.forbidden.actions.includes("start_next_story")) throw new Error("acef-next missing no-next-story boundary");
+  if (!readyJson.forbidden.actions.includes("spawn_worker")) throw new Error("acef-next missing no-spawn boundary");
+  if (!readyJson.evidence_required.includes("green_test_command")) throw new Error("acef-next missing dev evidence requirement");
+  if (readyJson.context.ledger !== "docs/ai/ACEF_demo_DELIVERY_AUDIT.md") throw new Error("acef-next lost ledger path");
+  if (readyJson.stop_condition !== "max_1_commit_then_report") throw new Error("acef-next lost worker stop condition");
+
+  console.log("acef-next tests passed");
+} finally {
+  fs.rmSync(tmp, { recursive: true, force: true });
+}

@@ -34,18 +34,21 @@ Any new agent session should begin from the repo-local startup packet:
 
 ```bash
 .acef/bin/acef-status --repo .
+.acef/bin/acef-next --repo .
 ```
 
 The required read order is:
 
 1. `AGENTS.md`
 2. `.acef/bin/acef-status --repo .`
-3. `docs/ai/ACEF_CURRENT_CONTEXT.md`
-4. the active ledger named by `acef-status`
+3. `.acef/bin/acef-next --repo .`
+4. `docs/ai/ACEF_CURRENT_CONTEXT.md`
+5. the active ledger named by `acef-status`
 
 This avoids importing hidden chat memory into a new session. `acef-status` is read-only and only reports the active run,
-current story/phase, next allowed step, ledger/context paths, worker scope, and blockers. It must not advance state or
-replace `acef next`.
+current story/phase, next allowed step, ledger/context paths, worker scope, and blockers. `acef-next` is read-only and
+projects the active state into a small next-action contract: allowed paths, forbidden actions, required evidence, and
+stop condition. Neither command advances state or replaces the ledger, evidence manifests, or Process Judge.
 
 ## Next Optimization Target
 

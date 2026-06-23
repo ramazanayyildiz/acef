@@ -1,0 +1,202 @@
+#!/usr/bin/env node
+const fs = require("node:fs");
+const path = require("node:path");
+const { parseActiveRun, parseWorkerScope } = require("./lib/acef-state-parser");
+
+function usage() {
+  console.log(`Usage: acef-next --repo <path> [--role <role>] [--format json]
+
+Prints the bounded next-action packet for the active ACEF state.
+It is read-only: it does not advance state, edit ledgers, approve gates, or spawn workers.`);
+}
+
+function parseArgs(argv) {
+  const opts = { repo: process.cwd(), role: null, format: "json" };
+  for (let index = 0; index < argv.length; index += 1) {
+    const arg = argv[index];
+    if (arg === "--repo") {
+      opts.repo = argv[++index] || "";
+    } else if (arg === "--role") {
+      opts.role = argv[++index] || "";
+    } else if (arg === "--format") {
+      opts.format = argv[++index] || "";
+    } else if (arg === "--help" || arg === "-h") {
+      opts.help = true;
+    } else {
+      throw new Error(`Unknown argument: ${arg}`);
+    }
+  }
+  if (opts.format !== "json") throw new Error("--format currently supports only json");
+  opts.repo = path.resolve(opts.repo);
+  return opts;
+}
+
+function readTextIfExists(filePath) {
+  return fs.existsSync(filePath) ? fs.readFileSync(filePath, "utf8").trim() : null;
+}
+
+function existsRelative(repo, relativePath) {
+  return Boolean(relativePath) && fs.existsSync(path.join(repo, relativePath));
+}
+
+function loadActiveRun(repo) {
+  const filePath = path.join(repo, "docs", "ai", "ACEF_ACTIVE_RUN.json");
+  if (!fs.existsSync(filePath)) return { path: "docs/ai/ACEF_ACTIVE_RUN.json", exists: false, record: null, error: null };
+  try {
+    return { path: "docs/ai/ACEF_ACTIVE_RUN.json", exists: true, record: parseActiveRun(filePath), error: null };
+  } catch (error) {
+    return { path: "docs/ai/ACEF_ACTIVE_RUN.json", exists: true, record: null, error: error.message };
+  }
+}
+
+function loadWorkerScope(repo) {
+  const filePath = path.join(repo, "docs", "ai", "ACEF_ACTIVE_WORKER_SCOPE.json");
+  if (!fs.existsSync(filePath)) return { path: "docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json", exists: false, record: null, error: null };
+  try {
+    return { path: "docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json", exists: true, record: parseWorkerScope(filePath), error: null };
+  } catch (error) {
+    return { path: "docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json", exists: true, record: null, error: error.message };
+  }
+}
+
+function normalize(value) {
+  return String(value || "").toLowerCase();
+}
+
+function deriveNextAllowedAction(activeRun) {
+  if (activeRun.nextAllowedStep) return activeRun.nextAllowedStep;
+  const phase = normalize(activeRun.activePhase);
+  const role = normalize(activeRun.workerRole);
+  if (phase.includes("atdd") || role.includes("atdd")) return "write_failing_tests";
+  if (phase.includes("dev") || phase.includes("implement") || role.includes("developer")) return "implement_to_green";
+  if (phase.includes("review") || role.includes("reviewer")) return "review_report_only";
+  if (phase.includes("verify") || phase.includes("patch")) return "apply_required_review_patch";
+  if (phase.includes("judge") || phase.includes("process")) return "judge_current_story_or_phase";
+  if (phase.includes("epic")) return "audit_epic_gate_chain";
+  if (phase.includes("plan") || role.includes("planner")) return "write_or_update_story_artifact";
+  return "follow_active_run_next_step";
+}
+
+function evidenceFor(activeRun, roleOverride) {
+  const phase = normalize(activeRun.activePhase);
+  const role = normalize(roleOverride || activeRun.workerRole);
+  if (phase.includes("atdd") || role.includes("atdd")) return [
+    "failing_test_command",
+    "test_intent_matrix",
+    "target_test_paths",
+  ];
+  if (phase.includes("dev") || phase.includes("implement") || role.includes("developer")) return [
+    "failing_before_implementation",
+    "green_test_command",
+    "changed_files_summary",
+  ];
+  if (phase.includes("review") || role.includes("reviewer")) return [
+    "file_line_findings",
+    "AC_trace",
+    "focused_test_evidence",
+  ];
+  if (phase.includes("verify") || phase.includes("patch")) return [
+    "patch_summary",
+    "regression_command",
+    "review_disposition_evidence",
+  ];
+  if (phase.includes("judge") || phase.includes("process")) return [
+    "actor_records",
+    "evidence_manifests",
+    "gate_checklist",
+  ];
+  if (phase.includes("epic")) return [
+    "epic_evidence_trace",
+    "story_gates",
+    "runtime_smoke",
+  ];
+  return ["repo_backed_evidence"];
+}
+
+function phaseCanWrite(activeRun, workerScope) {
+  if (!workerScope.record) return false;
+  const action = normalize(deriveNextAllowedAction(activeRun.record));
+  return [
+    "write_failing_tests",
+    "implement_to_green",
+    "apply_required_review_patch",
+    "write_or_update_story_artifact",
+  ].includes(action);
+}
+
+function buildNext(repo, roleOverride) {
+  const activeRun = loadActiveRun(repo);
+  const workerScope = loadWorkerScope(repo);
+  const activeLedgerPath = readTextIfExists(path.join(repo, "docs", "ai", "ACEF_ACTIVE_LEDGER"));
+  const contextPath = activeRun.record?.contextPath || "docs/ai/ACEF_CURRENT_CONTEXT.md";
+  const ledgerPath = activeRun.record?.ledgerPath || activeLedgerPath || null;
+  const blockers = [];
+
+  if (!fs.existsSync(path.join(repo, "AGENTS.md"))) blockers.push("missing AGENTS.md");
+  if (!activeRun.exists) blockers.push("missing docs/ai/ACEF_ACTIVE_RUN.json");
+  if (activeRun.error) blockers.push(`invalid active run: ${activeRun.error}`);
+  if (activeRun.record && activeRun.record.status !== "active") blockers.push(`active run is not active: ${activeRun.record.status}`);
+  if (!ledgerPath) blockers.push("missing active ledger path");
+  if (ledgerPath && !existsRelative(repo, ledgerPath)) blockers.push(`active ledger not found: ${ledgerPath}`);
+  if (!existsRelative(repo, contextPath)) blockers.push(`current context not found: ${contextPath}`);
+  if (workerScope.error) blockers.push(`invalid worker scope: ${workerScope.error}`);
+
+  const base = {
+    schema: "acef.next.v1",
+    repo,
+    status: blockers.length ? "blocked" : "ready",
+    blockers,
+    active_state: null,
+    allowed: { can_write: false, paths: [], commands: [] },
+    forbidden: {
+      paths: ["docs/ai/ACEF_*"],
+      actions: ["start_next_story", "start_next_epic", "spawn_worker", "push", "approve_gate", "edit_ledger"],
+    },
+    context: {
+      current_context: contextPath,
+      ledger: ledgerPath,
+      worker_scope: workerScope.exists ? workerScope.path : null,
+    },
+    evidence_required: [],
+    stop_condition: "fix_blockers_then_rerun_acef_next",
+  };
+
+  if (!activeRun.record) return base;
+
+  const action = deriveNextAllowedAction(activeRun.record);
+  const role = roleOverride || activeRun.record.workerRole || workerScope.record?.workerId || null;
+  base.active_state = {
+    lane: activeRun.record.lane,
+    phase: activeRun.record.activePhase,
+    story: activeRun.record.activeStory,
+    role,
+    last_passed_gate: activeRun.record.lastPassedGate || null,
+    next_allowed_action: blockers.length ? null : action,
+  };
+  base.allowed = {
+    can_write: !blockers.length && phaseCanWrite(activeRun, workerScope),
+    paths: workerScope.record?.allowedPaths || [],
+    commands: [],
+  };
+  base.evidence_required = blockers.length ? [] : evidenceFor(activeRun.record, roleOverride);
+  base.stop_condition = blockers.length
+    ? "fix_blockers_then_rerun_acef_next"
+    : workerScope.record
+      ? `max_${workerScope.record.maxCommits}_commit_then_report`
+      : "report_then_stop";
+  return base;
+}
+
+try {
+  const opts = parseArgs(process.argv.slice(2));
+  if (opts.help) {
+    usage();
+    process.exit(0);
+  }
+  const next = buildNext(opts.repo, opts.role);
+  console.log(JSON.stringify(next, null, 2));
+  if (next.blockers.length) process.exitCode = 2;
+} catch (error) {
+  console.error(`acef-next: ${error.message}`);
+  process.exitCode = 1;
+}

@@ -21,7 +21,7 @@ The remaining drift usually comes from the moment before work starts:
 State-machine pushed context narrows that moment. Instead of "agent chooses a skill and reads docs", the agent calls:
 
 ```sh
-acef next --repo .
+.acef/bin/acef-next --repo .
 ```
 
 ACEF returns one bounded instruction packet for the active state: role, next allowed action, write boundary, required
@@ -40,26 +40,26 @@ evidence, context artifacts, forbidden actions, and stop condition.
 Skills remain useful as lenses or workflows after the next state is known. They do not decide the active story, gate
 status, next epic, or write boundary.
 
-## Proposed command
+## Command
 
-Future scaffold:
+Current first slice:
 
 ```sh
-acef next --repo . [--role developer] [--format json]
+acef-next --repo . [--role developer] [--format json]
 ```
 
 Expected behavior:
 
 1. Read `docs/ai/ACEF_ACTIVE_RUN.json`.
 2. Read the active ledger pointer (`ACEF_ACTIVE_LEDGER` or `docs/ai/ACEF_ACTIVE_LEDGER`) for canonical run identity.
-3. Read the current actor record and `docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json` when a worker is active.
-4. Validate `docs/ai/ACEF_CURRENT_CONTEXT.md` freshness using the existing current-context validator.
-5. Inspect gate verdicts, evidence manifests, and approval receipts relevant to the active phase.
-6. Emit a bounded JSON instruction packet.
-7. Refuse to emit a forward-moving action when required state, evidence, scope, or approval is missing.
+3. Read `docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json` when a worker is active.
+4. Verify the current context path and active ledger path exist.
+5. Emit a bounded JSON instruction packet.
+6. Refuse to emit a forward-moving action when required active state, current context, ledger, or scope is missing.
 
-`acef next` should be read-only. It should not advance state, edit ledgers, approve gates, run tests, spawn workers, or
-choose the next story.
+`acef-next` is read-only. It does not advance state, edit ledgers, approve gates, run tests, spawn workers, or choose the
+next story. It is intentionally smaller than a Process Judge: it projects the current state into the next safe instruction;
+it does not prove the work is done.
 
 ## Proposed JSON contract
 
@@ -153,19 +153,22 @@ where applicable; their full contents are not embedded.
 | Process Judge | `judge_current_story_or_phase` | judge report/gate artifact | implementation edits, approval fabrication | actor records, evidence manifests, gate checklist | PASS/FAIL/REVISE/BLOCKED verdict |
 | Epic close | `audit_epic_gate_chain` | epic close report/gate artifact | next epic start without approval | full epic evidence trace, story gates, runtime smoke | close epic or request explicit approval |
 
-## Future `scripts/acef-next` scaffold
+## Implemented first slice
 
-Do not build a runtime first. The smallest useful scaffold would be:
+The repo ships `scripts/acef-next`, and `scripts/install-acef-tools` installs it into target repos as
+`.acef/bin/acef-next`.
 
-- schema: `schemas/acef-next.schema.json`;
-- parser helper in `scripts/lib/acef-state-parser.js`;
-- CLI: `scripts/acef-next`;
-- validator checks:
-  - active run exists and is not stale;
-  - current context matches active story/phase and is fresh;
-  - worker scope matches active actor when the phase can write;
-  - required gate/evidence/approval records exist before transitions;
-  - output remains bounded and role-specific.
+The first slice checks:
+
+- active run exists and is `active`;
+- active ledger path exists;
+- current context path exists;
+- worker scope is valid when present;
+- output remains bounded and role-specific enough for the next prompt.
+
+Future hardening can add schema validation, actor-record matching, current-context freshness checks, gate/evidence lookups,
+and explicit approval-record checks before epic transitions. Those are not required for the command to be useful as a
+fresh-session guard today.
 
 ## Intended tests
 
