@@ -1,0 +1,108 @@
+#!/usr/bin/env node
+const fs = require("node:fs");
+const path = require("node:path");
+const cp = require("node:child_process");
+
+const repoRoot = path.basename(path.dirname(__dirname)) === ".acef"
+  ? path.resolve(__dirname, "..", "..")
+  : path.resolve(__dirname, "..");
+const promptScript = path.join(__dirname, "acef-context-actor-prompt");
+
+const tasks = [
+  { taskType: "review", role: "reviewer", fixture: "review.md" },
+  { taskType: "atdd", role: "atdd", fixture: "atdd.md" },
+  { taskType: "dev", role: "developer", fixture: "dev-slice.md" },
+];
+const modes = ["baseline", "files", "context-mode"];
+
+function usage() {
+  console.log(`Usage: acef-context-actor-prompt-batch --repo <path> --story <id> [options]
+
+Options:
+  --output-dir <path>  Prompt output directory (default: docs/experiments/context-retrieval/prompts)
+  --run-output <path>  JSONL path included in generated recording commands
+
+Generates the 3 task x 3 mode ACEF context-retrieval actor prompt matrix.`);
+}
+
+function parseArgs(argv) {
+  const opts = {
+    repo: "",
+    story: "",
+    outputDir: path.join(repoRoot, "docs", "experiments", "context-retrieval", "prompts"),
+    fixtureDir: "",
+    runOutput: "",
+  };
+  for (let index = 0; index < argv.length; index += 1) {
+    const arg = argv[index];
+    if (arg === "--repo") opts.repo = argv[++index] || "";
+    else if (arg === "--story") opts.story = argv[++index] || "";
+    else if (arg === "--output-dir") opts.outputDir = argv[++index] || "";
+    else if (arg === "--fixture-dir") opts.fixtureDir = argv[++index] || "";
+    else if (arg === "--run-output") opts.runOutput = argv[++index] || "";
+    else if (arg === "-h" || arg === "--help") {
+      usage();
+      process.exit(0);
+    } else {
+      throw new Error(`Unknown argument: ${arg}`);
+    }
+  }
+  if (!opts.repo) throw new Error("--repo is required");
+  if (!opts.story) throw new Error("--story is required");
+  opts.repo = path.resolve(opts.repo);
+  opts.outputDir = path.resolve(opts.outputDir);
+  opts.fixtureDir = opts.fixtureDir
+    ? path.resolve(opts.fixtureDir)
+    : defaultFixtureDir();
+  if (opts.runOutput) opts.runOutput = path.resolve(opts.runOutput);
+  if (!fs.existsSync(opts.repo)) throw new Error(`Repository path does not exist: ${opts.repo}`);
+  if (!fs.existsSync(opts.fixtureDir)) throw new Error(`Fixture directory does not exist: ${opts.fixtureDir}`);
+  return opts;
+}
+
+function defaultFixtureDir() {
+  const checkoutDir = path.join(repoRoot, "docs", "experiments", "context-retrieval", "tasks");
+  if (fs.existsSync(checkoutDir)) return checkoutDir;
+  return path.join(repoRoot, ".acef", "context-retrieval", "tasks");
+}
+
+function run(args) {
+  cp.execFileSync(promptScript, args, {
+    cwd: repoRoot,
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+}
+
+function main() {
+  const opts = parseArgs(process.argv.slice(2));
+  fs.mkdirSync(opts.outputDir, { recursive: true });
+  const written = [];
+  for (const task of tasks) {
+    for (const mode of modes) {
+      const fixture = path.join(opts.fixtureDir, task.fixture);
+      const output = path.join(opts.outputDir, `${task.taskType}-${mode}.md`);
+      const args = [
+        "--repo", opts.repo,
+        "--story", opts.story,
+        "--role", task.role,
+        "--task-type", task.taskType,
+        "--mode", mode,
+        "--fixture", fixture,
+        "--output", output,
+      ];
+      if (opts.runOutput) args.push("--run-output", opts.runOutput);
+      run(args);
+      written.push(path.relative(repoRoot, output));
+    }
+  }
+  console.log(`Generated ${written.length} actor prompts:`);
+  for (const filePath of written) console.log(`- ${filePath}`);
+}
+
+try {
+  main();
+} catch (error) {
+  console.error(`ERROR: ${error.message}`);
+  process.exit(1);
+}

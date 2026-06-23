@@ -2,8 +2,8 @@
 
 Repo: /Users/ramazanayyildiz/CODE/OPA/detaysoft2026-context-experiment
 Story: 4.1
-Role: reviewer
-Task type: review
+Role: developer
+Task type: dev
 Mode: files
 
 ## Objective
@@ -21,33 +21,33 @@ Perform this task using only the provided experiment context. This is an ACEF co
 ## Task Fixture
 
 ```markdown
-# Context Retrieval Experiment Task: Review
+# Context Retrieval Experiment Task: Dev Slice
 
-task_type: review
+task_type: dev
 story: fixture-story
-role: reviewer
+role: developer
 
 ## Goal
 
-Review a completed ACEF story slice using only the context mode assigned by the experiment.
+Implement a small, well-scoped ACEF story slice from failing tests and bounded context.
 
 ## Worker Input Contract
 
-- Read the provided context bundle.
-- Read only the changed files or diff paths named by the bundle.
-- Do not read the full delivery ledger unless the experiment mode explicitly provides it.
-- Return a short finding summary and quality metrics.
+- Read the failing-test summary and target files named by the context bundle.
+- Do not read unrelated epic history.
+- Do not patch tests unless the story phase explicitly authorizes a test correction.
+- Keep output short; write detailed evidence to the run artifact.
 
-## Known Finding Classes
+## Known Failure Classes
 
-- Requirement satisfied by artifact existence instead of exercised capability.
-- Runtime path diverges from isolated test path.
-- Scope leakage into another story or epic.
-- Framework-fighting workaround that makes tests green without real product behavior.
+- Framework-fighting code that satisfies tests but breaks real runtime behavior.
+- Story-scope leakage into a future story.
+- Broad refactor unrelated to the current failing tests.
+- Hidden dependency on generated build artifacts or local-only state.
 
 ## Success Signal
 
-The reviewer recalls blocker/high findings already present in the control answer key without adding broad false positives.
+The focused test goes green without wrong-scope changes, stale-story leakage, or hollow green behavior.
 ```
 
 ## Experiment Context
@@ -179,10 +179,10 @@ After the actor report is reviewed, record the row with:
 /Users/ramazanayyildiz/CODE/acef/scripts/acef-context-experiment \
   --repo '/Users/ramazanayyildiz/CODE/OPA/detaysoft2026-context-experiment' \
   --story '4.1' \
-  --role 'reviewer' \
-  --task-type 'review' \
+  --role 'developer' \
+  --task-type 'dev' \
   --mode 'files' \
-  --fixture '/Users/ramazanayyildiz/CODE/acef/docs/experiments/context-retrieval/tasks/review.md' \
+  --fixture '/Users/ramazanayyildiz/CODE/acef/docs/experiments/context-retrieval/tasks/dev-slice.md' \
   --output '/Users/ramazanayyildiz/CODE/acef/docs/experiments/context-retrieval/runs/detaysoft-4-1-actor-runs-2026-06-23.jsonl' \
   --result <pass|fail|invalid> \
   --tests-passed <true|false> \

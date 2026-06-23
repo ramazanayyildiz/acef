@@ -1,0 +1,77 @@
+#!/usr/bin/env node
+const fs = require("node:fs");
+const os = require("node:os");
+const path = require("node:path");
+const cp = require("node:child_process");
+
+const repoRoot = path.resolve(__dirname, "..");
+const script = path.join(repoRoot, "scripts", "acef-context-actor-prompt-batch");
+const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "acef-context-actor-prompt-batch-"));
+const outputDir = fs.mkdtempSync(path.join(os.tmpdir(), "acef-context-actor-prompts-"));
+const fixtureDir = fs.mkdtempSync(path.join(os.tmpdir(), "acef-context-fixtures-"));
+
+function write(rel, content) {
+  const filePath = path.join(tmp, rel);
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  fs.writeFileSync(filePath, content);
+  return filePath;
+}
+
+try {
+  for (const name of ["review.md", "atdd.md", "dev-slice.md"]) {
+    fs.copyFileSync(
+      path.join(repoRoot, "docs", "experiments", "context-retrieval", "tasks", name),
+      path.join(fixtureDir, name),
+    );
+  }
+  write("docs/ai/ACEF_ACTIVE_LEDGER", "docs/ai/ACEF_demo_DELIVERY_AUDIT.md\n");
+  write("docs/ai/ACEF_demo_DELIVERY_AUDIT.md", [
+    "# Delivery Audit",
+    "## Story 5.2",
+    "Acceptance: References and Awards are editable.",
+    "Required command: npm test -- Story52",
+    "## Session Handoff",
+    "current_step: Story 5.2",
+    "next_allowed_step: Story 5.2",
+    "ledger_path: docs/ai/ACEF_demo_DELIVERY_AUDIT.md",
+    "",
+  ].join("\n"));
+  write("docs/ai/ACEF_CURRENT_CONTEXT.md", "active_story: Story 5.2\nactive_phase: review\n");
+  write("docs/ai/epic-5-context-pack.md", "# Epic 5 Context Pack\n| 5.2 | References and Awards |\n");
+  write("_bmad-output/implementation-artifacts/5-2-atdd.md", "# Story 5.2 ATDD\nReferences and Awards are editable.\n");
+
+  cp.execFileSync(process.execPath, [
+    script,
+    "--repo", tmp,
+    "--story", "5.2",
+    "--output-dir", outputDir,
+    "--fixture-dir", fixtureDir,
+    "--run-output", path.join(tmp, "runs.jsonl"),
+  ], { cwd: repoRoot, encoding: "utf8" });
+
+  const files = fs.readdirSync(outputDir).sort();
+  const expected = [
+    "atdd-baseline.md",
+    "atdd-context-mode.md",
+    "atdd-files.md",
+    "dev-baseline.md",
+    "dev-context-mode.md",
+    "dev-files.md",
+    "review-baseline.md",
+    "review-context-mode.md",
+    "review-files.md",
+  ];
+  if (files.join("\n") !== expected.join("\n")) throw new Error(`unexpected prompt matrix:\n${files.join("\n")}`);
+  const sample = fs.readFileSync(path.join(outputDir, "dev-files.md"), "utf8");
+  if (!sample.includes("Task type: dev")
+    || !sample.includes("Mode: files")
+    || !sample.includes("Recording Command")
+    || !sample.includes("--wrong-scope-touch <true|false>")) {
+    throw new Error("generated prompt content is incomplete");
+  }
+  console.log("acef-context-actor-prompt-batch tests passed");
+} finally {
+  fs.rmSync(tmp, { recursive: true, force: true });
+  fs.rmSync(outputDir, { recursive: true, force: true });
+  fs.rmSync(fixtureDir, { recursive: true, force: true });
+}

@@ -10,6 +10,7 @@ const tools = [
   "acef-context-experiment",
   "acef-context-experiment-report",
   "acef-context-actor-prompt",
+  "acef-context-actor-prompt-batch",
 ];
 
 function usage() {
@@ -52,7 +53,26 @@ function copyTool(name, targetRepo) {
   return target;
 }
 
+function copyExperimentFixtures(targetRepo) {
+  const sourceDir = path.join(repoRoot, "docs", "experiments", "context-retrieval", "tasks");
+  const targetDir = path.join(targetRepo, ".acef", "context-retrieval", "tasks");
+  if (!fs.existsSync(sourceDir)) return [];
+  fs.mkdirSync(targetDir, { recursive: true });
+  const copied = [];
+  for (const entry of fs.readdirSync(sourceDir).sort((a, b) => a.localeCompare(b))) {
+    const source = path.join(sourceDir, entry);
+    if (!fs.statSync(source).isFile()) continue;
+    const target = path.join(targetDir, entry);
+    fs.copyFileSync(source, target);
+    copied.push(target);
+  }
+  return copied;
+}
+
 const opts = parseArgs(process.argv.slice(2));
 for (const tool of tools) {
   console.log(`Installed ${tool}: ${copyTool(tool, opts.repo)}`);
+}
+for (const fixture of copyExperimentFixtures(opts.repo)) {
+  console.log(`Installed context experiment fixture: ${fixture}`);
 }

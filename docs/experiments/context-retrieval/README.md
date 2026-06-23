@@ -33,14 +33,10 @@ docs/experiments/context-retrieval/runs/YYYY-MM-DD.jsonl
 Generate the actor prompt first:
 
 ```bash
-scripts/acef-context-actor-prompt \
+scripts/acef-context-actor-prompt-batch \
   --repo /Users/ramazanayyildiz/CODE/OPA/detaysoft2026-context-experiment \
   --story 4.1 \
-  --role reviewer \
-  --task-type review \
-  --mode files \
-  --fixture docs/experiments/context-retrieval/tasks/review.md \
-  --output docs/experiments/context-retrieval/prompts/review-files.md
+  --run-output docs/experiments/context-retrieval/runs/detaysoft-4-1-actor-runs-2026-06-23.jsonl
 ```
 
 After an actor completes the task, record the quality and token fields in the same row shape:
@@ -82,15 +78,22 @@ change from context-surface evidence alone.
 
 ## Prompt Artifacts
 
-The first reusable actor prompt package is checked in under:
+The first reusable actor prompt matrix is checked in under:
 
 ```text
+docs/experiments/context-retrieval/prompts/atdd-baseline.md
+docs/experiments/context-retrieval/prompts/atdd-files.md
+docs/experiments/context-retrieval/prompts/atdd-context-mode.md
+docs/experiments/context-retrieval/prompts/dev-baseline.md
+docs/experiments/context-retrieval/prompts/dev-files.md
+docs/experiments/context-retrieval/prompts/dev-context-mode.md
 docs/experiments/context-retrieval/prompts/review-baseline.md
 docs/experiments/context-retrieval/prompts/review-files.md
 docs/experiments/context-retrieval/prompts/review-context-mode.md
 ```
 
-These prompts are inputs for real actor runs. They are not results.
+These prompts are inputs for real actor runs. They are not results. Each actor must return the metric fields listed in
+the prompt, then the operator records a JSONL row with `acef-context-experiment`.
 
 ## Interpret Carefully
 

@@ -2,8 +2,8 @@
 
 Repo: /Users/ramazanayyildiz/CODE/OPA/detaysoft2026-context-experiment
 Story: 4.1
-Role: reviewer
-Task type: review
+Role: atdd
+Task type: atdd
 Mode: files
 
 ## Objective
@@ -21,33 +21,32 @@ Perform this task using only the provided experiment context. This is an ACEF co
 ## Task Fixture
 
 ```markdown
-# Context Retrieval Experiment Task: Review
+# Context Retrieval Experiment Task: ATDD
 
-task_type: review
+task_type: atdd
 story: fixture-story
-role: reviewer
+role: atdd
 
 ## Goal
 
-Review a completed ACEF story slice using only the context mode assigned by the experiment.
+Write acceptance tests for a narrow ACEF story from the supplied ACs and context bundle.
 
 ## Worker Input Contract
 
-- Read the provided context bundle.
-- Read only the changed files or diff paths named by the bundle.
-- Do not read the full delivery ledger unless the experiment mode explicitly provides it.
-- Return a short finding summary and quality metrics.
+- Read the story ACs and relevant context only.
+- Do not infer APIs from memory; ground on golden-neighbor paths if provided.
+- Tests must exercise real runtime paths where the story requires runtime behavior.
+- Do not implement production code.
 
-## Known Finding Classes
+## Known Failure Classes
 
-- Requirement satisfied by artifact existence instead of exercised capability.
-- Runtime path diverges from isolated test path.
-- Scope leakage into another story or epic.
-- Framework-fighting workaround that makes tests green without real product behavior.
+- Tests assert fake framework APIs or introspection-only behavior.
+- Tests hit the wrong URL when a redirect is the product contract.
+- Tests prove a helper exists but not that the user-visible capability works.
 
 ## Success Signal
 
-The reviewer recalls blocker/high findings already present in the control answer key without adding broad false positives.
+The ATDD slice is red for the right reason and maps ACs to real behavior, not merely class or method existence.
 ```
 
 ## Experiment Context
@@ -179,10 +178,10 @@ After the actor report is reviewed, record the row with:
 /Users/ramazanayyildiz/CODE/acef/scripts/acef-context-experiment \
   --repo '/Users/ramazanayyildiz/CODE/OPA/detaysoft2026-context-experiment' \
   --story '4.1' \
-  --role 'reviewer' \
-  --task-type 'review' \
+  --role 'atdd' \
+  --task-type 'atdd' \
   --mode 'files' \
-  --fixture '/Users/ramazanayyildiz/CODE/acef/docs/experiments/context-retrieval/tasks/review.md' \
+  --fixture '/Users/ramazanayyildiz/CODE/acef/docs/experiments/context-retrieval/tasks/atdd.md' \
   --output '/Users/ramazanayyildiz/CODE/acef/docs/experiments/context-retrieval/runs/detaysoft-4-1-actor-runs-2026-06-23.jsonl' \
   --result <pass|fail|invalid> \
   --tests-passed <true|false> \

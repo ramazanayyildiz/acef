@@ -2,8 +2,8 @@
 
 Repo: /Users/ramazanayyildiz/CODE/OPA/detaysoft2026-context-experiment
 Story: 4.1
-Role: reviewer
-Task type: review
+Role: developer
+Task type: dev
 Mode: context-mode
 
 ## Objective
@@ -21,33 +21,33 @@ Perform this task using only the provided experiment context. This is an ACEF co
 ## Task Fixture
 
 ```markdown
-# Context Retrieval Experiment Task: Review
+# Context Retrieval Experiment Task: Dev Slice
 
-task_type: review
+task_type: dev
 story: fixture-story
-role: reviewer
+role: developer
 
 ## Goal
 
-Review a completed ACEF story slice using only the context mode assigned by the experiment.
+Implement a small, well-scoped ACEF story slice from failing tests and bounded context.
 
 ## Worker Input Contract
 
-- Read the provided context bundle.
-- Read only the changed files or diff paths named by the bundle.
-- Do not read the full delivery ledger unless the experiment mode explicitly provides it.
-- Return a short finding summary and quality metrics.
+- Read the failing-test summary and target files named by the context bundle.
+- Do not read unrelated epic history.
+- Do not patch tests unless the story phase explicitly authorizes a test correction.
+- Keep output short; write detailed evidence to the run artifact.
 
-## Known Finding Classes
+## Known Failure Classes
 
-- Requirement satisfied by artifact existence instead of exercised capability.
-- Runtime path diverges from isolated test path.
-- Scope leakage into another story or epic.
-- Framework-fighting workaround that makes tests green without real product behavior.
+- Framework-fighting code that satisfies tests but breaks real runtime behavior.
+- Story-scope leakage into a future story.
+- Broad refactor unrelated to the current failing tests.
+- Hidden dependency on generated build artifacts or local-only state.
 
 ## Success Signal
 
-The reviewer recalls blocker/high findings already present in the control answer key without adding broad false positives.
+The focused test goes green without wrong-scope changes, stale-story leakage, or hollow green behavior.
 ```
 
 ## Experiment Context
@@ -55,7 +55,7 @@ The reviewer recalls blocker/high findings already present in the control answer
 Mode `context-mode` provides this bounded context bundle.
 Provider: context-mode
 Source bytes: 240399
-Returned bytes: 2596
+Returned bytes: 2612
 Reduction: 98.9%
 
 Source files:
@@ -65,22 +65,22 @@ Source files:
 Context:
 ```text
 ## 1. Story 4.1: Blogs + BlogCategories Capsules — CRUD, Press Category, and Bilingual Slugs > Acceptance Criteria
-Source: acef-query:detaysoft2026-context-experiment:story-4-1:reviewer:d4ada65f0a6a:52c7df5d978f
+Source: acef-query:detaysoft2026-context-experiment:story-4-1:developer:d4ada65f0a6a:52c7df5d978f
 Type: prose
 ## Acceptance Criteria ACs are transcribed verbatim from `_bmad-output/planning-artifacts/epics.md` lines 872–907, then annotated with **scope ownership** (4.1 owns the capsule + data model; public-URL rendering is Story 4.2) and **FR traceability**. | # | Given / When / Then (from epics.md 872–907) | FR | Scope | |---|---|---|---| | AC-1 | **Given** Blogs capsule at `app/Twill/Capsules/Blogs/` (mirrors nexora) and BlogCategories capsule at `app/Twill/Capsules/BlogCategories/`; **When** `php art...
 
-## 2. Story 4.1: Blogs + BlogCategories Capsules — CRUD, Press Category, and Bilingual Slugs > Dev Notes > Previous-story intelligence (Epics 1–3, no prior spec files exist)
-Source: acef-query:detaysoft2026-context-experiment:story-4-1:reviewer:d4ada65f0a6a:52c7df5d978f
+## 2. Story 4.1: Blogs + BlogCategories Capsules — CRUD, Press Category, and Bilingual Slugs > Dev Notes > Golden neighbor references (READ THE CODE — do not work from memory)
+Source: acef-query:detaysoft2026-context-experiment:story-4-1:developer:d4ada65f0a6a:52c7df5d978f
 Type: prose
-### Previous-story intelligence (Epics 1–3, no prior spec files exist) - **Real-runtime smoke gate is ENCODED** (see `memory/acef-real-runtime-smoke-gate.md`): no epic closes without real `db:seed` + real HTTP + positive content + a negative JSON leak-guard. Apply the same bar here. - **Behavioral > source-scan** (`memory/acef-fr-capability-trace-gate.md`): an FR is satisfied by an **exercised capability over the real path**, not by artifact existence. Assert the relation is *queried*, the slug ...
+### Golden neighbor references (READ THE CODE — do not work from memory) - **nexora Blogs capsule:** `/Users/ramazanayyildiz/CODE/OPA/nexora-web/app/Twill/Capsules/Blogs/` — `Models/Blog.php` (traits, `$with=['blog_categories']`, the `belongsToMany` at lines 104–106, `resolveRouteBinding`, `getLocalizedRouteKey`), `Repositories/BlogRepository.php` (lines 23–42: `$relatedBrowsers=['blog_categories']`, `afterSave`→`updateBrowser`, `getFormFields`→`getFormFieldsForRelatedBrowser`), `Http/Controller...
 
 ## 3. ACEF scoped source: _bmad-output/implementation-artifacts/4-1-blogs-blogcategories-capsules.md
-Source: acef-query:detaysoft2026-context-experiment:story-4-1:reviewer:d4ada65f0a6a:52c7df5d978f
+Source: acef-query:detaysoft2026-context-experiment:story-4-1:developer:d4ada65f0a6a:52c7df5d978f
 Type: prose
 # ACEF scoped source: _bmad-output/implementation-artifacts/4-1-blogs-blogcategories-capsules.md
 
 ## 4. Story 4.1: Blogs + BlogCategories Capsules — CRUD, Press Category, and Bilingual Slugs > Dev Agent Record > Debug Log References
-Source: acef-query:detaysoft2026-context-experiment:story-4-1:reviewer:d4ada65f0a6a:52c7df5d978f
+Source: acef-query:detaysoft2026-context-experiment:story-4-1:developer:d4ada65f0a6a:52c7df5d978f
 Type: prose
 ### Debug Log References - `php artisan test tests/Feature/Story41BlogsBlogCategoriesTest.php` → PASS, 9 tests / 46 assertions. - `php artisan test --compact` → PASS, 363 tests / 1738 assertions. - `php artisan route:list --path=admin/sectors` → PASS, `twill.sectors.browser` present. - `php artisan route:list --path=admin/blog` → PASS, Blogs and BlogCategories admin/browser routes present. - PHP lint over touched capsule files → PASS. - `test ! -e app/Twill/Database/migrations/2026_06_23_000000_...
 ```
@@ -113,10 +113,10 @@ After the actor report is reviewed, record the row with:
 /Users/ramazanayyildiz/CODE/acef/scripts/acef-context-experiment \
   --repo '/Users/ramazanayyildiz/CODE/OPA/detaysoft2026-context-experiment' \
   --story '4.1' \
-  --role 'reviewer' \
-  --task-type 'review' \
+  --role 'developer' \
+  --task-type 'dev' \
   --mode 'context-mode' \
-  --fixture '/Users/ramazanayyildiz/CODE/acef/docs/experiments/context-retrieval/tasks/review.md' \
+  --fixture '/Users/ramazanayyildiz/CODE/acef/docs/experiments/context-retrieval/tasks/dev-slice.md' \
   --output '/Users/ramazanayyildiz/CODE/acef/docs/experiments/context-retrieval/runs/detaysoft-4-1-actor-runs-2026-06-23.jsonl' \
   --result <pass|fail|invalid> \
   --tests-passed <true|false> \
