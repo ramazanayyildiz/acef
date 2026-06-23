@@ -88,6 +88,20 @@ A lightweight (usually guarded) task promotes to full BMAD when any of:
 
 `REPLAN` twice on the same scope → stop and escalate to the human.
 
+## PR review and lightweight review contract
+
+PR review is a first-class lightweight entry point, not a shortened full-BMAD imitation. Default input is bounded to
+the changed files/diff, relevant acceptance criteria or issue text, focused tests, and the matching adapter/pattern
+slice. Broad repository reads require a recorded reason.
+
+The review actor reports findings and evidence; it does not patch the implementation it reviewed. Every actionable
+finding is dispositioned through a separately scoped implementation or `verify-patch` actor. Runtime/browser QA may be
+supplied by `qa-only`; the combined test-and-fix `qa` skill must not collapse reviewer and patch roles in an ACEF run.
+
+Short specialist lenses such as a future `bug-hunter` may be injected JIT into the review actor. A lens does not become
+a new actor, satisfy independent review by itself, approve a gate, or expand the active scope. Security findings remain
+the responsibility of a separately defined guarded security lens or reviewer contract.
+
 ## Discipline that travels with both lanes (borrowed IN)
 - **Plan integrity** — no skip / reorder / shrink / expand scope without human approval.
 - **2×REPLAN → escalate** — the circuit breaker.

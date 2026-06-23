@@ -18,6 +18,13 @@ The next optimization target is deliberately narrow:
 - better per-role Epic Context Packs.
 - cockpit/context-compiler/tool-proxy design before any custom runtime.
 
+The next delivery-quality target is also deliberately narrow:
+
+- make PR review a first-class, bounded ACEF entry point;
+- tighten the lightweight lane used for normal bug fixes and small changes;
+- add short JIT review lenses only after they are measured against real defects and token cost;
+- pilot a report-only `bug-hunter` lens before adding broader security, refactor, stack, or observability skill packs.
+
 Do not add SQLite, vector, graph, SCIP, Serena, Codebase-Memory, or new retrieval infrastructure during this optimization
 round. First improve the current prompt/context policy, then rerun the 30-run empirical validation matrix and compare
 against the v1 baseline.
@@ -223,6 +230,46 @@ Exit criteria:
 - rerun the same 30-run empirical validation matrix;
 - median input-token reduction improves against the v1 baseline;
 - pass rate, defect recall, scope violations, and invalid-run count do not regress.
+
+## Phase 6A: PR Review and Lightweight Lane Hardening
+
+Goal: make ACEF useful for the high-frequency work that does not justify a full BMAD story lifecycle.
+
+PR review deliverables:
+
+- a bounded changed-files review entry point driven by the PR diff, relevant acceptance criteria, focused tests, and
+  the matching pattern-registry slice;
+- findings with verified `file:line`, severity, impact, confidence, and evidence;
+- explicit separation between implementation defects, test gaps, conformance findings, security findings, and style;
+- report-only review by default; any required code change moves to a separately scoped implementation or
+  `verify-patch` actor;
+- measured defect recall, false-positive rate, context/token cost, and extra-file-read count.
+
+Lightweight lane deliverables:
+
+- a compact lifecycle for small features and bug fixes: preflight/hot slice, reuse-before-create, implementation,
+  independent review, focused verification, and closeout evidence;
+- no full-ledger or full-planning-artifact reads for ordinary workers;
+- clear promotion rules when scope, risk, source conflict, or repeated review findings exceed the lightweight contract;
+- repo-local markers and typed worker scope enforced consistently across Claude Code, Codex, and OpenCode adapters;
+- benchmark coverage for both standard and guarded lightweight work.
+
+First lens pilot:
+
+- `bug-hunter` is an unprefixed, reusable, report-only workhorse;
+- it accepts a bounded diff, path set, or explicit scan budget rather than performing an unlimited repository scan;
+- every finding requires verified `file:line`, impact, confidence, and evidence;
+- it does not patch code, approve a gate, replace the Code Reviewer, or absorb security scanning;
+- a Code Reviewer may receive it as a short JIT lens, but findings still follow ACEF disposition and actor-separation
+  rules.
+
+Exit criteria:
+
+- at least 10 representative PR/lightweight runs across standard and guarded work;
+- blocker/high defect recall does not regress against the v1 benchmark;
+- false positives and token/context cost are reported, not inferred;
+- no reviewer-authored patch and no scope violation;
+- the lightweight lane stays materially cheaper than full BMAD for eligible work.
 
 ## Phase 7: SQLite Projection, Only If Justified
 
