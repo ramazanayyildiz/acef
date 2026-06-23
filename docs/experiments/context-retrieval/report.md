@@ -116,6 +116,10 @@ Interpretation:
 - Both context-mode ATDD rows are recorded as `result=fail`: they returned ~98.6% less context, but repeatedly omitted
   the detailed testing requirements and previous-story intelligence needed to avoid weak ATDD. This mirrors the
   context-mode reviewer failure pattern.
+- The first baseline dev row is recorded as `result=invalid` and does **not** count toward actor coverage: the detached
+  Detaysoft worktree is already post-Story-4.1, and the prompt does not provide a clean pre-implementation base ref plus
+  failing-test state. A real dev-slice experiment needs an isolated worktree checked out at the red-test point, or a
+  deliberately small unfinished fixture. Recording it as a pass would overstate evidence.
 - All current rows are marked `runner_type=main-codex-self-run`, so they are useful progress but weaker than fresh
   external/subagent runs. The experiment is still intentionally not adoptable.
 
@@ -137,5 +141,6 @@ scripts/acef-context-experiment-report \
   --manifest docs/experiments/context-retrieval/manifests/detaysoft-4-1-18-run-2026-06-23.json
 ```
 
-Expected interpretation for actor rows: not adoptable yet; coverage is `12/18 actor rows`, with context-mode recall
-failures in both review and ATDD, plus lower ATDD recall for files mode.
+Expected interpretation for actor rows: not adoptable yet; coverage is `12/18 actor rows` even if the file has 13 total
+rows, because the first dev-baseline attempt is invalid and excluded from actor coverage. Current evidence shows
+context-mode recall failures in both review and ATDD, plus lower ATDD recall for files mode.
