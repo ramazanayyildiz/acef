@@ -1,0 +1,111 @@
+#!/usr/bin/env node
+const fs = require("node:fs");
+const os = require("node:os");
+const path = require("node:path");
+const cp = require("node:child_process");
+
+const repoRoot = path.resolve(__dirname, "..");
+const script = path.join(repoRoot, "scripts", "acef-context-actor-prompt");
+const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "acef-context-actor-prompt-"));
+
+function write(rel, content) {
+  const filePath = path.join(tmp, rel);
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  fs.writeFileSync(filePath, content);
+  return filePath;
+}
+
+function run(args, env = {}) {
+  return cp.execFileSync(process.execPath, [script, ...args], {
+    cwd: repoRoot,
+    encoding: "utf8",
+    env: { ...process.env, ...env },
+  });
+}
+
+try {
+  write("docs/ai/ACEF_ACTIVE_LEDGER", "docs/ai/ACEF_demo_DELIVERY_AUDIT.md\n");
+  write("docs/ai/ACEF_demo_DELIVERY_AUDIT.md", [
+    "# Delivery Audit",
+    "## Story 5.2",
+    "Acceptance: References and Awards are editable.",
+    "Required command: npm test -- Story52",
+    "## Session Handoff",
+    "current_step: Story 5.2 review",
+    "next_allowed_step: Story 5.2 review",
+    "ledger_path: docs/ai/ACEF_demo_DELIVERY_AUDIT.md",
+    "",
+  ].join("\n"));
+  write("docs/ai/ACEF_CURRENT_CONTEXT.md", [
+    "# Current Context",
+    "active_story: Story 5.2",
+    "active_phase: review",
+    "Pitfall: do not add slugs.",
+    "",
+  ].join("\n"));
+  write("docs/ai/epic-5-context-pack.md", [
+    "# Epic 5 Context Pack",
+    "## Allowed Scope",
+    "| Story | Scope |",
+    "| 5.2 | References and Awards |",
+    "## Known Pitfalls",
+    "Verified.",
+    "",
+  ].join("\n"));
+  write("_bmad-output/implementation-artifacts/5-2-atdd.md", "# Story 5.2 ATDD\nReferences and Awards are editable.\n");
+  const fixture = write("task.md", "# Fixture\nKnown finding: preserve runtime path.\n");
+
+  const filesPrompt = run([
+    "--repo", tmp,
+    "--story", "5.2",
+    "--role", "reviewer",
+    "--task-type", "review",
+    "--mode", "files",
+    "--fixture", fixture,
+  ]);
+  if (!filesPrompt.includes("Mode: files")
+    || !filesPrompt.includes("Experiment Context")
+    || !filesPrompt.includes("Recording Command")
+    || !filesPrompt.includes("--known-findings-recalled <n>")
+    || !filesPrompt.includes("References and Awards are editable")) {
+    throw new Error("files actor prompt is incomplete");
+  }
+
+  const baselinePrompt = run([
+    "--repo", tmp,
+    "--story", "5.2",
+    "--role", "reviewer",
+    "--task-type", "review",
+    "--mode", "baseline",
+    "--fixture", fixture,
+  ]);
+  if (!baselinePrompt.includes("Mode `baseline` permits")
+    || !baselinePrompt.includes("docs/ai/ACEF_demo_DELIVERY_AUDIT.md")
+    || !baselinePrompt.includes("docs/ai/ACEF_CURRENT_CONTEXT.md")) {
+    throw new Error("baseline actor prompt did not list controlled sources");
+  }
+
+  const fakeBin = path.join(tmp, "fake-bin");
+  fs.mkdirSync(fakeBin, { recursive: true });
+  const fakeContextMode = path.join(fakeBin, "context-mode");
+  fs.writeFileSync(fakeContextMode, `#!/bin/sh
+if [ "$1" = "index" ]; then exit 0; fi
+printf 'Scoped Context Mode actor prompt result\\n'
+`);
+  fs.chmodSync(fakeContextMode, 0o755);
+  const contextPrompt = run([
+    "--repo", tmp,
+    "--story", "5.2",
+    "--role", "reviewer",
+    "--task-type", "review",
+    "--mode", "context-mode",
+    "--fixture", fixture,
+  ], { PATH: `${fakeBin}:${process.env.PATH}` });
+  if (!contextPrompt.includes("Provider: context-mode") || !contextPrompt.includes("Scoped Context Mode actor prompt result")) {
+    throw new Error("context-mode actor prompt is incomplete");
+  }
+
+  console.log("acef-context-actor-prompt tests passed");
+} finally {
+  fs.rmSync(tmp, { recursive: true, force: true });
+}

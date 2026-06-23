@@ -1,0 +1,235 @@
+#!/usr/bin/env node
+const fs = require("node:fs");
+const path = require("node:path");
+const cp = require("node:child_process");
+
+const repoRoot = path.basename(path.dirname(__dirname)) === ".acef"
+  ? path.resolve(__dirname, "..", "..")
+  : path.resolve(__dirname, "..");
+const acefExperiment = path.join(__dirname, "acef-context-experiment");
+const acefQuery = path.join(__dirname, "acef-query");
+
+function usage() {
+  console.log(`ACEF context actor prompt
+
+Usage:
+  acef-context-actor-prompt --repo <path> --story <id> --role <role> --task-type <review|atdd|dev> --mode <baseline|files|context-mode> --fixture <path> [options]
+
+Options:
+  --output <path>      Write prompt to file instead of stdout
+  --run-output <path>  JSONL path for the actor's final metric row
+
+Generates a reproducible actor prompt for A/B/C context-retrieval experiments.`);
+}
+
+function parseArgs(argv) {
+  const opts = {
+    repo: "",
+    story: "",
+    role: "",
+    taskType: "",
+    mode: "",
+    fixture: "",
+    output: "",
+    runOutput: "",
+  };
+  for (let index = 0; index < argv.length; index += 1) {
+    const arg = argv[index];
+    if (arg === "--repo") opts.repo = argv[++index] || "";
+    else if (arg === "--story") opts.story = argv[++index] || "";
+    else if (arg === "--role") opts.role = argv[++index] || "";
+    else if (arg === "--task-type") opts.taskType = argv[++index] || "";
+    else if (arg === "--mode") opts.mode = argv[++index] || "";
+    else if (arg === "--fixture") opts.fixture = argv[++index] || "";
+    else if (arg === "--output") opts.output = argv[++index] || "";
+    else if (arg === "--run-output") opts.runOutput = argv[++index] || "";
+    else if (arg === "-h" || arg === "--help") {
+      usage();
+      process.exit(0);
+    } else {
+      throw new Error(`Unknown argument: ${arg}`);
+    }
+  }
+  if (!opts.repo) throw new Error("--repo is required");
+  if (!opts.story) throw new Error("--story is required");
+  if (!opts.role) throw new Error("--role is required");
+  if (!new Set(["review", "atdd", "dev"]).has(opts.taskType)) throw new Error("--task-type must be review, atdd, or dev");
+  if (!new Set(["baseline", "files", "context-mode"]).has(opts.mode)) throw new Error("--mode must be baseline, files, or context-mode");
+  if (!opts.fixture) throw new Error("--fixture is required");
+  opts.repo = path.resolve(opts.repo);
+  opts.fixture = path.resolve(opts.fixture);
+  if (!fs.existsSync(opts.repo)) throw new Error(`Repository path does not exist: ${opts.repo}`);
+  if (!fs.existsSync(opts.fixture)) throw new Error(`Fixture does not exist: ${opts.fixture}`);
+  if (opts.output) opts.output = path.resolve(opts.output);
+  if (opts.runOutput) opts.runOutput = path.resolve(opts.runOutput);
+  return opts;
+}
+
+function run(command, args) {
+  return cp.execFileSync(command, args, {
+    cwd: repoRoot,
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+}
+
+function baselineSourceList(opts) {
+  const probePath = path.join(repoRoot, `.acef-actor-prompt-baseline-probe-${Date.now()}-${Math.random().toString(16).slice(2)}.jsonl`);
+  const output = run(acefExperiment, [
+    "--repo", opts.repo,
+    "--story", opts.story,
+    "--role", opts.role,
+    "--task-type", opts.taskType,
+    "--mode", "baseline",
+    "--fixture", opts.fixture,
+    "--runs", "1",
+    "--output", probePath,
+  ]);
+  const row = JSON.parse(fs.readFileSync(probePath, "utf8").trim().split(/\r?\n/).pop());
+  fs.rmSync(probePath, { force: true });
+  return { output, row };
+}
+
+function contextBundle(opts) {
+  if (opts.mode === "baseline") {
+    const { row } = baselineSourceList(opts);
+    return [
+      "Mode `baseline` permits the controlled broad context source list below.",
+      "Read only these files plus the fixture; do not perform broad repo search.",
+      "",
+      ...row.source_files.map((filePath) => `- ${filePath}`),
+    ].join("\n");
+  }
+  const provider = opts.mode;
+  const json = JSON.parse(run(acefQuery, [
+    "context",
+    "--repo", opts.repo,
+    "--story", opts.story,
+    "--role", opts.role,
+    "--provider", provider,
+    "--format", "json",
+  ]));
+  return [
+    `Mode \`${opts.mode}\` provides this bounded context bundle.`,
+    `Provider: ${json.provider}`,
+    `Source bytes: ${json.source_bytes}`,
+    `Returned bytes: ${json.output_bytes}`,
+    `Reduction: ${json.reduction_percent}%`,
+    "",
+    "Source files:",
+    ...json.source_files.map((filePath) => `- ${filePath}`),
+    "",
+    "Context:",
+    "```text",
+    json.content,
+    "```",
+  ].join("\n");
+}
+
+function recordCommand(opts) {
+  const output = opts.runOutput || path.join(opts.repo, "docs", "experiments", "context-retrieval", "runs", `${new Date().toISOString().slice(0, 10)}-actor.jsonl`);
+  return [
+    `${acefExperiment} \\`,
+    `  --repo ${shell(opts.repo)} \\`,
+    `  --story ${shell(opts.story)} \\`,
+    `  --role ${shell(opts.role)} \\`,
+    `  --task-type ${shell(opts.taskType)} \\`,
+    `  --mode ${shell(opts.mode)} \\`,
+    `  --fixture ${shell(opts.fixture)} \\`,
+    `  --output ${shell(output)} \\`,
+    "  --result <pass|fail|invalid> \\",
+    "  --tests-passed <true|false> \\",
+    "  --input-tokens <number-or-null> \\",
+    "  --cached-input-tokens <number-or-null> \\",
+    "  --output-tokens <number-or-null> \\",
+    "  --cost <number-or-null> \\",
+    "  --known-findings-recalled <n> \\",
+    "  --review-findings-count <n> \\",
+    "  --false-positive-count <n> \\",
+    "  --retry-count <n> \\",
+    "  --stale-story-leak <true|false> \\",
+    "  --wrong-scope-touch <true|false>",
+  ].join("\n");
+}
+
+function shell(value) {
+  return `'${String(value).replace(/'/g, "'\\''")}'`;
+}
+
+function render(opts) {
+  const fixture = fs.readFileSync(opts.fixture, "utf8");
+  return [
+    `# ACEF Context Retrieval Actor Run`,
+    "",
+    `Repo: ${opts.repo}`,
+    `Story: ${opts.story}`,
+    `Role: ${opts.role}`,
+    `Task type: ${opts.taskType}`,
+    `Mode: ${opts.mode}`,
+    "",
+    "## Objective",
+    "",
+    "Perform this task using only the provided experiment context. This is an ACEF context-retrieval experiment, not a delivery gate.",
+    "",
+    "## Hard Rules",
+    "",
+    "- Do not read the full delivery ledger unless the mode is `baseline` and the ledger is listed.",
+    "- Do not perform broad `rg`, `cat`, or directory-wide source reading.",
+    "- Do not touch files outside the stated task unless required to inspect the named context files.",
+    "- Keep the final answer short and include the metric values needed by the recording command.",
+    "- If the context is insufficient, report `result=invalid` and name the missing evidence rather than guessing.",
+    "",
+    "## Task Fixture",
+    "",
+    "```markdown",
+    fixture.trim(),
+    "```",
+    "",
+    "## Experiment Context",
+    "",
+    contextBundle(opts),
+    "",
+    "## Required Final Report",
+    "",
+    "Return these fields:",
+    "",
+    "```text",
+    "result=<pass|fail|invalid>",
+    "tests_passed=<true|false>",
+    "input_tokens=<number-or-null>",
+    "cached_input_tokens=<number-or-null>",
+    "output_tokens=<number-or-null>",
+    "cost=<number-or-null>",
+    "known_findings_recalled=<n>",
+    "review_findings_count=<n>",
+    "false_positive_count=<n>",
+    "retry_count=<n>",
+    "stale_story_leak=<true|false>",
+    "wrong_scope_touch=<true|false>",
+    "short_summary=<one paragraph>",
+    "```",
+    "",
+    "## Recording Command",
+    "",
+    "After the actor report is reviewed, record the row with:",
+    "",
+    "```bash",
+    recordCommand(opts),
+    "```",
+    "",
+  ].join("\n");
+}
+
+try {
+  const opts = parseArgs(process.argv.slice(2));
+  const prompt = render(opts);
+  if (opts.output) {
+    fs.mkdirSync(path.dirname(opts.output), { recursive: true });
+    fs.writeFileSync(opts.output, prompt);
+  } else {
+    process.stdout.write(prompt);
+  }
+} catch (error) {
+  console.error(`ERROR: ${error.message}`);
+  process.exit(1);
+}

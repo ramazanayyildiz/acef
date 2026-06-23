@@ -30,6 +30,19 @@ docs/experiments/context-retrieval/runs/YYYY-MM-DD.jsonl
 
 ## Record a Real Actor Run
 
+Generate the actor prompt first:
+
+```bash
+scripts/acef-context-actor-prompt \
+  --repo /Users/ramazanayyildiz/CODE/OPA/detaysoft2026-context-experiment \
+  --story 4.1 \
+  --role reviewer \
+  --task-type review \
+  --mode files \
+  --fixture docs/experiments/context-retrieval/tasks/review.md \
+  --output docs/experiments/context-retrieval/prompts/review-files.md
+```
+
 After an actor completes the task, record the quality and token fields in the same row shape:
 
 ```bash
@@ -66,6 +79,18 @@ scripts/acef-context-experiment-report \
 
 The report marks whether evidence is only `context-surface`, `actor-quality`, or `actor+token`. ACEF defaults must not
 change from context-surface evidence alone.
+
+## Prompt Artifacts
+
+The first reusable actor prompt package is checked in under:
+
+```text
+docs/experiments/context-retrieval/prompts/review-baseline.md
+docs/experiments/context-retrieval/prompts/review-files.md
+docs/experiments/context-retrieval/prompts/review-context-mode.md
+```
+
+These prompts are inputs for real actor runs. They are not results.
 
 ## Interpret Carefully
 

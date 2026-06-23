@@ -75,7 +75,8 @@ files the agent follows. No build, no npm, no services.
    (`/acef`, `/acef-adapter`, `/acef-router`, `/acef-test-bootstrap`, `/map-codebase`). OpenCode skills live under
    `.opencode/skills/`, but slash commands are a separate `.opencode/commands/*.md` mechanism.
    The tools installer adds repo-local helper CLIs under `.acef/bin/`, including `acef-process-validator`,
-   `acef-codex-guard`, `acef-query`, and `acef-context-experiment`.
+   `acef-codex-guard`, `acef-query`, `acef-context-experiment`, `acef-context-experiment-report`, and
+   `acef-context-actor-prompt`.
    Use `--tool codex|claude|opencode` to target one tool, or `--all-core` to copy every skill in this repo.
 
    Global install is still possible, but should stay minimal:
