@@ -101,8 +101,9 @@ neighbors, do-not-copy entries, risk/completion evidence, registration/discovera
 focused adapter signals. Generic review rules supplement this repo-specific profile; they never replace it.
 
 The review actor reports findings and evidence; it does not patch the implementation it reviewed. Every actionable
-finding is dispositioned through a separately scoped implementation or `verify-patch` actor. Runtime/browser QA may be
-supplied by `qa-only`; the combined test-and-fix `qa` skill must not collapse reviewer and patch roles in an ACEF run.
+finding is dispositioned through a separately scoped implementation or `verify-patch` actor. Runtime/browser QA must be
+supplied by a report-only, ACEF-native lens or an explicitly approved external adapter; the archived gstack `qa` and
+`qa-only` skills are not default ACEF skills and must not collapse reviewer and patch roles in an ACEF run.
 
 `bug-hunter` is the recommended bounded JIT lens for PR/lightweight review when behavioral defects, hollow-green risks,
 or framework-fighting risks are plausible. It stays report-only and is injected into the review actor; it does not become

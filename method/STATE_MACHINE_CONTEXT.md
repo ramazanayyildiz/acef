@@ -35,7 +35,7 @@ evidence, context artifacts, forbidden actions, and stop condition.
 | Authority | Skill prompt can advise behavior | Ledger, typed state, worker scope, gates, and approvals remain authoritative |
 | Scope | Skill may be broad unless constrained | Output is bounded to active story/phase/role |
 | Evidence | Skill may describe what evidence to collect | Evidence still comes from commands, manifests, hashes, and gate records |
-| Tool parity | Skill bodies can drift across clients | `acef next` returns the same JSON contract for Claude, Codex, and OpenCode |
+| Tool parity | Skill bodies can drift across clients | `acef-next` returns the same JSON contract for Claude, Codex, and OpenCode |
 
 Skills remain useful as lenses or workflows after the next state is known. They do not decide the active story, gate
 status, next epic, or write boundary.
@@ -104,7 +104,7 @@ where applicable; their full contents are not embedded.
 
 ## Existing ACEF inputs
 
-`acef next` is a projection over existing ACEF state:
+`acef-next` is a projection over existing ACEF state:
 
 - `ACEF_ACTIVE_RUN.json` provides lane, story, phase, status, and active ledger.
 - `docs/ai/actors/*.json` provides actor identity and allowed context profile.
@@ -119,7 +119,7 @@ where applicable; their full contents are not embedded.
 
 ## Must not do
 
-`acef next` must not:
+`acef-next` must not:
 
 - replace the delivery ledger;
 - replace Story or Epic Process Judge;
@@ -177,7 +177,7 @@ validated graph definition plus `acef-next` projection for fresh-node prompts.
 
 ## Intended tests
 
-Add these before admitting `acef next` as a real command:
+Add these before admitting `acef-next` as a real command:
 
 - no next-epic output without explicit typed approval;
 - no worker story continuation after stop condition;

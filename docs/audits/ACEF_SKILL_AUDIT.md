@@ -4,6 +4,16 @@ Auditor role: skill-quality reviewer (report-only). No skills were rewritten.
 Scope: `acef`, `map-codebase`, `acef-adapter`, `bug-hunter`, `qa-only`, `qa`.
 ACEF values checked against: actor separation, bounded context, evidence-backed gates, report-only review lenses, local-first install, portability (Claude/Codex/OpenCode).
 
+## Resolution status (2026-06-24)
+
+- `qa` and `qa-only` were removed from the active ACEF skill tree and archived under `archive/external-skills/gstack/`.
+  They remain audit evidence only.
+- `bug-hunter` was piloted and is recommended as an optional report-only JIT lens for bounded PR/lightweight review.
+  It is still not part of the minimal default skill install.
+- A native runtime/browser QA report lens remains a future option; it must be report-only, repo-local, and free of hidden
+  global state or fix/commit behavior.
+- Native skill `mode` / `permissions` frontmatter is still a follow-up for the non-lens skills.
+
 Verdict at a glance:
 
 | Skill | Tier | Headline issue |

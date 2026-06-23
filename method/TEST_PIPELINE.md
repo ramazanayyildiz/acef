@@ -19,7 +19,7 @@ Supporting skills:
 - **test-risk-classifier** — rank what must be tested by risk × frequency.
 - **test-coverage-auditor** — find untested behavior / weak coverage on existing tests.
 - **storymap** — story map for planning and as the QA backbone (journeys → testable outcomes).
-- **qa / qa-only** — QA passes.
+- **future/native QA report lens** — runtime/browser QA evidence, report-only, with no hidden global state or fix loop.
 
 ## Bootstrapping when there are zero tests
 Most brownfield repos start with no tests. The first test on a repo runs through `acef-test-bootstrap`:

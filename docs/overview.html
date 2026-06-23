@@ -240,10 +240,11 @@ Captures (each field cites a source path):
             <tr><td><code>acef-test-bootstrap</code></td><td>First approved golden test for a repo with none.</td><td><span class="chip c-draft">DRAFT</span></td></tr>
             <tr><td><code>acef-release-adapter</code></td><td>Release/CD readiness from the repo's real config.</td><td><span class="chip c-draft">DRAFT</span></td></tr>
             <tr><td><code>map-codebase</code></td><td>Auto-generate a code-grounded map and pattern registry of any repo (+ freshness stamp).</td><td><span class="chip c-ready">READY</span></td></tr>
+            <tr><td><code>bug-hunter</code></td><td>Optional report-only JIT lens for bounded PR/lightweight review.</td><td><span class="chip c-ready">MEASURED</span></td></tr>
             <tr><td><code>test-user-flow-mapper</code>, <code>test-case-planner</code></td><td>Turn product/user flows into structured test cases before automation.</td><td><span class="chip c-draft">DRAFT</span></td></tr>
             <tr><td><code>test-browser-generator</code>, <code>test-gen</code>, <code>test-generator</code></td><td>Generate browser/E2E and unit/integration tests from approved cases and adapter evidence.</td><td><span class="chip c-draft">DRAFT</span></td></tr>
             <tr><td><code>test-strategy</code>, <code>test-risk-classifier</code>, <code>test-coverage-auditor</code></td><td>Pick test levels, rank risky behavior, and find weak or missing coverage.</td><td><span class="chip c-draft">DRAFT</span></td></tr>
-            <tr><td><code>flow-document-composer</code>, <code>flow-suite-composer</code>, <code>storymap</code>, <code>qa</code></td><td>Compose flow docs, QA suites, story maps, and QA passes.</td><td><span class="chip c-draft">DRAFT</span></td></tr>
+            <tr><td><code>flow-document-composer</code>, <code>flow-suite-composer</code>, <code>storymap</code></td><td>Compose flow docs, QA suites, story maps, and testable journeys.</td><td><span class="chip c-draft">DRAFT</span></td></tr>
           </table>
           <p class="muted">Plus BMAD-METHOD for Route B when installed. ACEF does not accept "BMAD-like" generic
             subagents as BMAD; the real BMAD conductor/skills must resolve first.</p>
@@ -258,9 +259,10 @@ Captures (each field cites a source path):
             <div class="card" style="border-left-color:var(--amber)"><span class="chip c-draft">DRAFT</span><p style="margin-top:.5rem">Written, research-informed definition — <em>not yet tested on a real project</em>.</p></div>
             <div class="card" style="border-left-color:var(--rose)"><span class="chip c-missing">MISSING</span><p style="margin-top:.5rem">Not built or not found yet.</p></div>
           </div>
-          <p class="muted">Today the orchestrator and helper skills are <span class="chip c-draft">DRAFT</span>; the
-            methodology docs are written; <code>map-codebase</code> is <span class="chip c-ready">READY</span>. The next
-            step is using the agent on a real case — after that, DRAFT skills can be promoted to READY.</p>
+          <p class="muted">Today the methodology, repo-local helper CLIs, typed-state/context policy, and workflow
+            guardrails have real repo evidence behind them. <code>map-codebase</code> is <span class="chip c-ready">READY</span>;
+            <code>bug-hunter</code> is measured as an optional JIT review lens; the remaining DRAFT skills stay labeled until
+            they are proven by focused pilots.</p>
         </section>
 
         <section id="setup"><h2><span class="ic" style="background:#e3f7ec">📦</span>Setup</h2>
@@ -274,8 +276,8 @@ Captures (each field cites a source path):
   acef-test-bootstrap/   # first golden test for a repo with no tests
   acef-release-adapter/  # release / CD readiness
   map-codebase/          # auto-generate a code-grounded map + pattern registry
-  test-*/ flow-*/        # user flows, test cases, risk, generators, QA passes
-  storymap/ qa/          # planning + QA workhorses</code></pre>
+  test-*/ flow-*/        # user flows, test cases, risk, generators, test suites
+  storymap/ bug-hunter/  # planning + optional bounded review lens</code></pre>
           <p>Nothing in the skills is project-specific — every stack value comes from the adapter you extract per repo.</p>
           <p>ACEF ships a portable BMAD guard hook in
             <code>claude-plugins/acef-bmad-guard/</code>. Clone users can install it with
