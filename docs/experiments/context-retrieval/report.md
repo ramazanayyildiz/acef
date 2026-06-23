@@ -196,3 +196,22 @@ Expected interpretation for Story 5.2 dev rows: manifest coverage is complete at
 has the stable comparator cost (`153979` median input tokens) but includes one questionable implementation shape; files mode
 has the lowest median actor input tokens (`126331`) but one safety leak in two runs; context-mode has the smallest returned
 context (`3355` bytes) but the highest median actor input tokens (`212919`). Do not change ACEF defaults from this evidence.
+
+## Pilot Decision
+
+The small pilot has enough actor evidence to reject an immediate default switch:
+
+- Review and ATDD actor rows from Story 4.1 show that `context-mode` can lose important review/test-design recall even while
+  returning the smallest context.
+- Dev actor rows from Story 5.2 show that returned-byte reduction does not predict end-to-end actor tokens: `context-mode`
+  returned ~98.4% fewer bytes but used more actor input tokens than baseline.
+- `files` is the only mode that showed actor-token savings in the dev slice, but it also produced one wrong-scope run out of
+  two. That fails the safety threshold for default adoption.
+- Baseline remains the comparator, not the target architecture: it also produced one questionable implementation shape, which
+  means future experiments should add an explicit `hollow_green` or implementation-quality field instead of relying only on
+  `tests_passed`.
+
+Decision: keep ACEF worker defaults unchanged. Continue using `ACEF_CURRENT_CONTEXT.md`, Epic Context Pack, short prompts,
+targeted diffs, and short failure summaries as the safe token optimizations. Treat `acef-query --provider files` as an
+optional bounded-context input for low-risk roles only after the worker scope is explicit. Keep `context-mode` experimental
+for this workflow until it improves recall and reduces real actor tokens, not just returned bytes.
