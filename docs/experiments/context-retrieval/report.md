@@ -152,6 +152,13 @@ Interpretation:
   patch-context miss and style fixes. This is a successful implementation run, but it argues against making Context Mode a
   default dev context from current evidence: tiny retrieval can push cost into extra tool reads, retries, and transcript
   chatter.
+- Story 5.2 dev baseline run 2 completed the baseline cell. It passed in-scope with `input_tokens=153979`, but recalled
+  fewer known risks (`known_findings_recalled=3`) and used a questionable route response-content injection to satisfy the
+  logo-grid portion of the test. This keeps baseline as the most stable token comparator, not a quality gold standard.
+- Story 5.2 dev context-mode run 2 completed the context-mode cell. It also passed in-scope, but used `input_tokens=212919`
+  with `retry_count=3`, making the context-mode median token cost the worst of the three modes despite the smallest returned
+  context surface. The completed dev manifest now shows the core lesson clearly: retrieval byte reduction is a necessary
+  measurement, but not a sufficient proxy for actor cost or implementation quality.
 - All current rows are marked `runner_type=main-codex-self-run`, so they are useful progress but weaker than fresh
   external/subagent runs. The experiment is still intentionally not adoptable.
 
@@ -185,7 +192,7 @@ scripts/acef-context-experiment-report \
   --manifest docs/experiments/context-retrieval/manifests/detaysoft-5-2-dev-6-run-2026-06-23.json
 ```
 
-Expected interpretation for Story 5.2 dev rows: not adoptable until the 6-row dev-only manifest is complete. Current
-coverage is 4/6. The baseline row is `actor+token` evidence and passes; files mode now has one safe pass and one safety
-failure, with lower actor tokens but no clean safety record; the context-mode row passes safety but uses more actor input
-tokens than baseline despite the smallest returned context.
+Expected interpretation for Story 5.2 dev rows: manifest coverage is complete at 6/6, but still **not adoptable**. Baseline
+has the stable comparator cost (`153979` median input tokens) but includes one questionable implementation shape; files mode
+has the lowest median actor input tokens (`126331`) but one safety leak in two runs; context-mode has the smallest returned
+context (`3355` bytes) but the highest median actor input tokens (`212919`). Do not change ACEF defaults from this evidence.
