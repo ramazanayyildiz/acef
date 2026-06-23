@@ -1,0 +1,200 @@
+#!/usr/bin/env node
+const fs = require("node:fs");
+const path = require("node:path");
+const crypto = require("node:crypto");
+const {
+  parseWorkerExecution,
+  parseWorkerResult,
+  parseWorkerRollup,
+  safeRelative,
+} = require("./lib/acef-state-parser");
+
+function usage() {
+  console.log(`Usage:
+  acef-worker-result validate --repo <path> --contract <path> --result <path>
+  acef-worker-result rollup --repo <path> --output <path> <result.json> [result.json ...]
+
+Validates filesystem-backed worker results and creates deterministic compact roll-ups.
+It does not execute workers, retry providers, or manage a runtime.`);
+}
+
+function parseArgs(argv) {
+  const opts = { repo: process.cwd(), results: [] };
+  const command = argv.shift();
+  if (!command || command === "--help" || command === "-h") return { help: true };
+  opts.command = command;
+  for (let index = 0; index < argv.length; index += 1) {
+    const arg = argv[index];
+    if (arg === "--help" || arg === "-h") opts.help = true;
+    else if (arg === "--repo" || arg === "--contract" || arg === "--result" || arg === "--output") {
+      const value = argv[++index];
+      if (!value) throw new Error(`Missing value for ${arg}`);
+      opts[arg.slice(2)] = value;
+    } else if (arg.startsWith("--")) {
+      throw new Error(`Unknown option: ${arg}`);
+    } else {
+      opts.results.push(arg);
+    }
+  }
+  opts.repo = path.resolve(opts.repo);
+  return opts;
+}
+
+function sha256(value) {
+  return crypto.createHash("sha256").update(value).digest("hex");
+}
+
+function sha256File(filePath) {
+  return sha256(fs.readFileSync(filePath));
+}
+
+function resolveWithinRepo(repo, value, label) {
+  const absolute = path.resolve(repo, value);
+  safeRelative(absolute, repo);
+  if (!fs.existsSync(absolute)) throw new Error(`${label} does not exist: ${value}`);
+  return absolute;
+}
+
+function resultFile(repo, value, label) {
+  return path.isAbsolute(value) ? value : resolveWithinRepo(repo, value, label);
+}
+
+function transcriptFile(repo, transcript) {
+  if (!transcript) return null;
+  if (!path.isAbsolute(transcript.path)) throw new Error("worker transcript path must be absolute and outside the repository");
+  const rel = path.relative(repo, transcript.path);
+  if (rel === "" || (!rel.startsWith("..") && !path.isAbsolute(rel))) {
+    throw new Error("worker transcript path must stay outside the repository");
+  }
+  if (!fs.existsSync(transcript.path)) throw new Error(`worker transcript does not exist: ${transcript.path}`);
+  return transcript.path;
+}
+
+function validateArtifacts(repo, result) {
+  const artifact = resolveWithinRepo(repo, result.artifact.path, "worker artifact");
+  if (sha256File(artifact) !== result.artifact.sha256) throw new Error("worker artifact hash mismatch");
+  const transcript = transcriptFile(repo, result.transcript);
+  if (transcript && sha256File(transcript) !== result.transcript.sha256) throw new Error("worker transcript hash mismatch");
+}
+
+function observedValue(usage, key) {
+  if (key === "maxRuntimeMs") return usage.runtimeMs;
+  if (key === "maxToolCalls") return usage.toolCalls;
+  if (key === "maxTokens") return usage.totalTokens;
+  if (key === "maxCostUsd") return usage.costUsd;
+  return undefined;
+}
+
+function validateBudgets(contract, result) {
+  const failures = [];
+  if (contract.taskId !== result.taskId) failures.push("taskId mismatch");
+  if (contract.workerId !== result.workerId) failures.push("workerId mismatch");
+  for (const limitKey of ["maxRuntimeMs", "maxToolCalls", "maxTokens", "maxCostUsd"]) {
+    const limit = contract.limits[limitKey];
+    if (!limit) continue;
+    const observed = observedValue(result.usage, limitKey);
+    if (observed === undefined) {
+      failures.push(`missing observed usage for ${limitKey}`);
+      continue;
+    }
+    if (observed > limit.value && !(result.status !== "succeeded" && result.failureKind === "budget_timeout")) {
+      failures.push(`over-budget worker result: ${limitKey} observed ${observed} > ${limit.value} (${limit.enforcement})`);
+    }
+  }
+  if (failures.length) throw new Error(failures.join("; "));
+}
+
+function validateCommand(opts) {
+  if (!opts.contract) throw new Error("--contract is required");
+  if (!opts.result) throw new Error("--result is required");
+  const contractPath = resultFile(opts.repo, opts.contract, "worker execution contract");
+  const resultPath = resultFile(opts.repo, opts.result, "worker result");
+  const contract = parseWorkerExecution(contractPath);
+  const result = parseWorkerResult(resultPath);
+  validateArtifacts(opts.repo, result);
+  validateBudgets(contract, result);
+  console.log(`PASS worker-result ${safeRelative(resultPath, opts.repo).replaceAll(path.sep, "/")} status=${result.status} verdict=${result.verdict}`);
+}
+
+function sourceResult(repo, filePath) {
+  const absolute = resultFile(repo, filePath, "worker result");
+  const result = parseWorkerResult(absolute);
+  validateArtifacts(repo, result);
+  return {
+    absolute,
+    path: safeRelative(absolute, repo).replaceAll(path.sep, "/"),
+    sha256: sha256File(absolute),
+    answerKey: result.answerKey,
+    workerId: result.workerId,
+    status: result.status,
+    verdict: result.verdict,
+    summary: result.summary,
+    artifact: result.artifact,
+    openQuestions: result.openQuestions || [],
+  };
+}
+
+function rollupCommand(opts) {
+  if (!opts.output) throw new Error("--output is required");
+  if (!opts.results.length) throw new Error("at least one worker result is required");
+  const sourceResults = opts.results.map((entry) => sourceResult(opts.repo, entry))
+    .sort((a, b) => `${a.answerKey}\0${a.workerId}\0${a.path}`.localeCompare(`${b.answerKey}\0${b.workerId}\0${b.path}`));
+  const groups = new Map();
+  for (const item of sourceResults) {
+    if (!groups.has(item.answerKey)) groups.set(item.answerKey, []);
+    groups.get(item.answerKey).push(item);
+  }
+  const consensus = [];
+  const conflicts = [];
+  for (const [answerKey, items] of [...groups.entries()].sort((a, b) => a[0].localeCompare(b[0]))) {
+    const verdicts = [...new Set(items.map((item) => item.verdict))].sort();
+    if (verdicts.length === 1) {
+      consensus.push({ answerKey, verdict: verdicts[0], count: items.length });
+    } else {
+      conflicts.push({
+        answerKey,
+        verdicts,
+        workers: items.map((item) => item.workerId).sort(),
+      });
+    }
+  }
+  const openQuestions = sourceResults
+    .flatMap((item) => item.openQuestions.map((question) => `${item.answerKey}: ${question}`))
+    .sort();
+  let recommendedNextAction = "proceed to closeout evidence";
+  if (conflicts.length) recommendedNextAction = "resolve conflicting worker verdicts before acting";
+  else if (sourceResults.some((item) => item.status !== "succeeded" || item.verdict !== "pass")) {
+    recommendedNextAction = "dispatch a scoped follow-up actor for unresolved findings";
+  }
+
+  const rollup = {
+    contractVersion: "acef-worker-rollup-v1",
+    generatedAt: new Date().toISOString(),
+    sourceResults: sourceResults.map(({ absolute, openQuestions: _openQuestions, ...item }) => item),
+    consensus,
+    conflicts,
+    openQuestions,
+    recommendedNextAction,
+  };
+  const outputPath = path.resolve(opts.repo, opts.output);
+  safeRelative(outputPath, opts.repo);
+  fs.mkdirSync(path.dirname(outputPath), { recursive: true });
+  fs.writeFileSync(outputPath, `${JSON.stringify(rollup, null, 2)}\n`);
+  parseWorkerRollup(outputPath);
+  console.log(`WROTE ${safeRelative(outputPath, opts.repo).replaceAll(path.sep, "/")} consensus=${consensus.length} conflicts=${conflicts.length}`);
+}
+
+function main() {
+  const opts = parseArgs(process.argv.slice(2));
+  if (opts.help) return usage();
+  if (opts.command === "validate") return validateCommand(opts);
+  if (opts.command === "rollup") return rollupCommand(opts);
+  throw new Error(`Unknown command: ${opts.command}`);
+}
+
+try {
+  main();
+} catch (error) {
+  console.error(`ACEF_WORKER_RESULT_ERROR: ${error.message}`);
+  process.exitCode = 1;
+}

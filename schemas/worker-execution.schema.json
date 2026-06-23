@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://acef.local/schemas/worker-execution.schema.json",
+  "title": "ACEF Worker Execution Contract",
+  "type": "object",
+  "required": ["contractVersion", "taskId", "workerId", "role", "limits", "writeMode", "stopCondition", "createdAt"],
+  "additionalProperties": false,
+  "properties": {
+    "contractVersion": { "const": "acef-worker-execution-v1" },
+    "taskId": { "type": "string", "minLength": 1 },
+    "workerId": { "type": "string", "minLength": 1 },
+    "role": { "type": "string", "minLength": 1 },
+    "scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "allowedPaths": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+        "deniedPaths": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+        "notes": { "type": "string" }
+      }
+    },
+    "limits": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["maxRuntimeMs", "maxToolCalls"],
+      "properties": {
+        "maxRuntimeMs": { "$ref": "#/$defs/limit" },
+        "maxToolCalls": { "$ref": "#/$defs/limit" },
+        "maxTokens": { "$ref": "#/$defs/limit" },
+        "maxCostUsd": { "$ref": "#/$defs/limit" }
+      }
+    },
+    "writeMode": { "type": "string", "enum": ["read-only", "report-only", "scoped-write"] },
+    "stopCondition": { "type": "string", "minLength": 1 },
+    "createdAt": { "type": "string", "minLength": 1 }
+  },
+  "$defs": {
+    "limit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["value", "enforcement"],
+      "properties": {
+        "value": { "type": "number", "exclusiveMinimum": 0 },
+        "enforcement": { "type": "string", "enum": ["declared", "observed", "mechanically_enforced"] },
+        "source": { "type": "string" },
+        "note": { "type": "string" }
+      }
+    }
+  }
+}

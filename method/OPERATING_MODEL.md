@@ -40,6 +40,13 @@ context from quietly overriding the active ledger.
   path, story/spec path, allowed paths, required commands/tests, report artifact path, and the explicit STOP rule.
 - One worker owns one phase of one story. It writes one report artifact, returns a compact summary, then stops.
 - Long command output and full logs go into the report artifact, not chat.
+- Worker execution inputs are recorded with `acef-worker-execution-v1`: maximum runtime, maximum tool calls, optional
+  token/cost budget, write mode, stop condition, and whether each limit is `declared`, `observed`, or
+  `mechanically_enforced`. Do not claim mechanical enforcement where the client only supports prompt-level or
+  after-the-fact observation.
+- Worker results use `acef-worker-result-v1`: status, normalized failure kind, short summary, detailed artifact path and
+  SHA-256, optional transcript path and SHA-256, usage metrics, answer key, and verdict. Transcripts stay outside Git;
+  the repo stores only their path/hash reference.
 - Model overrides are optional and secondary. Use cheaper/faster models for mechanical planning, cleanup, ledger
   formatting, and simple ATDD; use the parent/stronger model for development, review, Process Judge, and guarded or
   security-sensitive work.
@@ -61,7 +68,7 @@ deferred/out-of-scope work, known pitfalls, artifact paths, and role-specific in
 | Planner / story author | Epic Context Pack + exact backlog/story seam |
 | ATDD | context pack slice + acceptance criteria + target test paths |
 | Developer | ATDD artifact + failing summary + target app/test paths |
-| Code Reviewer | targeted diff summary + touched files + acceptance-criteria matrix |
+| Code Reviewer | targeted diff summary + touched files + acceptance-criteria matrix + generated PR review profile |
 | Verify-Patch | required review actions + affected paths/tests only |
 | Test Reviewer | changed tests + test strategy + concise command evidence |
 | Story Process Judge | story artifacts + compact ledger slice + command evidence |
@@ -93,6 +100,9 @@ rendered HTML. ACEF treats those as evidence artifacts, not chat content.
 - Test output is summarized in chat as command + pass/fail + failing test names. Full logs, rendered HTML, stack traces,
   and response bodies stay in a report artifact.
 - Worker reports contain enough detail for audit, but final chat reports stay compact.
+- Multiple worker results can be rolled up by answer key without loading long output into chat. `acef-worker-result
+  rollup` reads result JSON files, keeps detailed artifacts by path/hash, and emits consensus, conflicts, open questions,
+  and the recommended next action.
 - If a failure needs a large HTML/JSON/body dump, store it under `docs/ai/reports/` or another explicit artifact path and
   cite that path.
 

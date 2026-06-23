@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://acef.local/schemas/worker-result.schema.json",
+  "title": "ACEF Worker Result",
+  "type": "object",
+  "required": ["contractVersion", "taskId", "workerId", "answerKey", "status", "summary", "verdict", "artifact", "usage", "createdAt"],
+  "additionalProperties": false,
+  "properties": {
+    "contractVersion": { "const": "acef-worker-result-v1" },
+    "taskId": { "type": "string", "minLength": 1 },
+    "workerId": { "type": "string", "minLength": 1 },
+    "answerKey": { "type": "string", "minLength": 1 },
+    "status": { "type": "string", "enum": ["succeeded", "failed", "blocked", "cancelled"] },
+    "failureKind": {
+      "type": ["string", "null"],
+      "enum": ["provider_rate_limit", "provider_auth", "context_overflow", "budget_timeout", "tool_failed", "empty_response", "scope_blocked", "cancelled", "unknown", null]
+    },
+    "summary": { "type": "string", "minLength": 1 },
+    "verdict": { "type": "string", "enum": ["pass", "fail", "blocked", "inconclusive"] },
+    "artifact": { "$ref": "#/$defs/artifact" },
+    "transcript": {
+      "type": ["object", "null"],
+      "required": ["path", "sha256"],
+      "properties": {
+        "path": { "type": "string", "minLength": 1 },
+        "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+      }
+    },
+    "usage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["runtimeMs", "toolCalls"],
+      "properties": {
+        "runtimeMs": { "type": "number", "minimum": 0 },
+        "toolCalls": { "type": "integer", "minimum": 0 },
+        "inputTokens": { "type": "integer", "minimum": 0 },
+        "outputTokens": { "type": "integer", "minimum": 0 },
+        "totalTokens": { "type": "integer", "minimum": 0 },
+        "costUsd": { "type": "number", "minimum": 0 }
+      }
+    },
+    "openQuestions": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+    "createdAt": { "type": "string", "minLength": 1 }
+  },
+  "$defs": {
+    "artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256"],
+      "properties": {
+        "path": { "type": "string", "minLength": 1 },
+        "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+      }
+    }
+  }
+}

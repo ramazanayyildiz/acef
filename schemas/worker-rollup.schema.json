@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://acef.local/schemas/worker-rollup.schema.json",
+  "title": "ACEF Worker Result Roll-up",
+  "type": "object",
+  "required": ["contractVersion", "generatedAt", "sourceResults", "consensus", "conflicts", "openQuestions", "recommendedNextAction"],
+  "additionalProperties": false,
+  "properties": {
+    "contractVersion": { "const": "acef-worker-rollup-v1" },
+    "generatedAt": { "type": "string", "minLength": 1 },
+    "sourceResults": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path", "sha256", "answerKey", "workerId", "status", "verdict", "summary", "artifact"],
+        "properties": {
+          "path": { "type": "string", "minLength": 1 },
+          "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+          "answerKey": { "type": "string", "minLength": 1 },
+          "workerId": { "type": "string", "minLength": 1 },
+          "status": { "type": "string", "minLength": 1 },
+          "verdict": { "type": "string", "minLength": 1 },
+          "summary": { "type": "string", "minLength": 1 },
+          "artifact": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["path", "sha256"],
+            "properties": {
+              "path": { "type": "string", "minLength": 1 },
+              "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+            }
+          }
+        }
+      }
+    },
+    "consensus": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["answerKey", "verdict", "count"],
+        "properties": {
+          "answerKey": { "type": "string", "minLength": 1 },
+          "verdict": { "type": "string", "minLength": 1 },
+          "count": { "type": "integer", "minimum": 1 }
+        }
+      }
+    },
+    "conflicts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["answerKey", "verdicts", "workers"],
+        "properties": {
+          "answerKey": { "type": "string", "minLength": 1 },
+          "verdicts": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+          "workers": { "type": "array", "items": { "type": "string", "minLength": 1 } }
+        }
+      }
+    },
+    "openQuestions": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+    "recommendedNextAction": { "type": "string", "minLength": 1 }
+  }
+}

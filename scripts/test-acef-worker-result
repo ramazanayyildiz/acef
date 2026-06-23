@@ -1,0 +1,189 @@
+#!/usr/bin/env node
+const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const os = require("node:os");
+const path = require("node:path");
+const cp = require("node:child_process");
+const crypto = require("node:crypto");
+
+const acefRoot = path.resolve(__dirname, "..");
+const workerCli = path.join(acefRoot, "scripts", "acef-worker-result");
+const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "acef-worker-result-"));
+
+function sha256(text) {
+  return crypto.createHash("sha256").update(text).digest("hex");
+}
+
+function sha256File(filePath) {
+  return crypto.createHash("sha256").update(fs.readFileSync(filePath)).digest("hex");
+}
+
+function write(repo, filePath, text) {
+  const absolute = path.join(repo, filePath);
+  fs.mkdirSync(path.dirname(absolute), { recursive: true });
+  fs.writeFileSync(absolute, text);
+  return absolute;
+}
+
+function run(repo, args) {
+  return cp.spawnSync(process.execPath, [workerCli, ...args], {
+    cwd: repo,
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+}
+
+function makeRepo(name) {
+  const repo = path.join(tmpRoot, name);
+  fs.mkdirSync(repo, { recursive: true });
+  return repo;
+}
+
+function contract(overrides = {}) {
+  return {
+    contractVersion: "acef-worker-execution-v1",
+    taskId: "task-1",
+    workerId: "worker-1",
+    role: "code-review",
+    scope: { allowedPaths: ["src"], deniedPaths: [] },
+    limits: {
+      maxRuntimeMs: { value: 1000, enforcement: "declared", note: "client prompt limit" },
+      maxToolCalls: { value: 5, enforcement: "observed", note: "counted from transcript" },
+      maxTokens: { value: 1000, enforcement: "declared" },
+      maxCostUsd: { value: 1, enforcement: "declared" },
+    },
+    writeMode: "report-only",
+    stopCondition: "Write the report artifact and stop.",
+    createdAt: "2026-06-23T00:00:00.000Z",
+    ...overrides,
+  };
+}
+
+function result(repo, overrides = {}) {
+  const artifactText = `artifact for ${overrides.workerId || "worker-1"}\n`;
+  const artifactPath = `docs/ai/workers/${overrides.workerId || "worker-1"}-artifact.md`;
+  write(repo, artifactPath, artifactText);
+  return {
+    contractVersion: "acef-worker-result-v1",
+    taskId: "task-1",
+    workerId: "worker-1",
+    answerKey: "review.verdict",
+    status: "succeeded",
+    failureKind: null,
+    summary: "No issues found.",
+    verdict: "pass",
+    artifact: {
+      path: artifactPath,
+      sha256: sha256(artifactText),
+    },
+    transcript: null,
+    usage: {
+      runtimeMs: 100,
+      toolCalls: 2,
+      inputTokens: 100,
+      outputTokens: 50,
+      totalTokens: 150,
+      costUsd: 0.01,
+    },
+    openQuestions: [],
+    createdAt: "2026-06-23T00:00:00.000Z",
+    ...overrides,
+  };
+}
+
+function writeJson(repo, filePath, value) {
+  return write(repo, filePath, `${JSON.stringify(value, null, 2)}\n`);
+}
+
+try {
+  const green = makeRepo("green");
+  const transcriptPath = path.join(tmpRoot, "transcripts", "green.txt");
+  fs.mkdirSync(path.dirname(transcriptPath), { recursive: true });
+  fs.writeFileSync(transcriptPath, "full transcript outside git\n");
+  writeJson(green, "docs/ai/workers/contract.json", contract());
+  writeJson(green, "docs/ai/workers/result.json", result(green, {
+    transcript: { path: transcriptPath, sha256: sha256File(transcriptPath) },
+  }));
+  const ok = run(green, ["validate", "--repo", green, "--contract", "docs/ai/workers/contract.json", "--result", "docs/ai/workers/result.json"]);
+  assert.equal(ok.status, 0, ok.stderr || ok.stdout);
+  assert.match(ok.stdout, /PASS worker-result/);
+
+  const unknownFailure = makeRepo("unknown-failure");
+  writeJson(unknownFailure, "docs/ai/workers/contract.json", contract());
+  writeJson(unknownFailure, "docs/ai/workers/result.json", result(unknownFailure, {
+    status: "failed",
+    verdict: "blocked",
+    failureKind: "provider_mystery",
+  }));
+  const unknown = run(unknownFailure, ["validate", "--repo", unknownFailure, "--contract", "docs/ai/workers/contract.json", "--result", "docs/ai/workers/result.json"]);
+  assert.notEqual(unknown.status, 0);
+  assert.match(unknown.stderr, /failureKind must be one of/);
+
+  const missingHash = makeRepo("missing-hash");
+  writeJson(missingHash, "docs/ai/workers/contract.json", contract());
+  const missingHashResult = result(missingHash);
+  delete missingHashResult.artifact.sha256;
+  writeJson(missingHash, "docs/ai/workers/result.json", missingHashResult);
+  const missing = run(missingHash, ["validate", "--repo", missingHash, "--contract", "docs/ai/workers/contract.json", "--result", "docs/ai/workers/result.json"]);
+  assert.notEqual(missing.status, 0);
+  assert.match(missing.stderr, /artifact missing required field/);
+
+  const overBudget = makeRepo("over-budget");
+  writeJson(overBudget, "docs/ai/workers/contract.json", contract({ limits: { maxRuntimeMs: { value: 10, enforcement: "declared" }, maxToolCalls: { value: 5, enforcement: "observed" } } }));
+  writeJson(overBudget, "docs/ai/workers/result.json", result(overBudget, { usage: { runtimeMs: 11, toolCalls: 1 } }));
+  const over = run(overBudget, ["validate", "--repo", overBudget, "--contract", "docs/ai/workers/contract.json", "--result", "docs/ai/workers/result.json"]);
+  assert.notEqual(over.status, 0);
+  assert.match(over.stderr, /over-budget worker result/);
+
+  const budgetTimeout = makeRepo("budget-timeout");
+  writeJson(budgetTimeout, "docs/ai/workers/contract.json", contract({ limits: { maxRuntimeMs: { value: 10, enforcement: "declared" }, maxToolCalls: { value: 5, enforcement: "observed" } } }));
+  writeJson(budgetTimeout, "docs/ai/workers/result.json", result(budgetTimeout, {
+    status: "failed",
+    verdict: "blocked",
+    failureKind: "budget_timeout",
+    usage: { runtimeMs: 11, toolCalls: 1 },
+  }));
+  const timeout = run(budgetTimeout, ["validate", "--repo", budgetTimeout, "--contract", "docs/ai/workers/contract.json", "--result", "docs/ai/workers/result.json"]);
+  assert.equal(timeout.status, 0, timeout.stderr || timeout.stdout);
+
+  const rollup = makeRepo("rollup");
+  const a = result(rollup, { workerId: "worker-a", summary: "A passes." });
+  const b = result(rollup, { workerId: "worker-b", summary: "B passes." });
+  const c = result(rollup, {
+    workerId: "worker-c",
+    answerKey: "review.risk",
+    summary: "Risk remains.",
+    verdict: "fail",
+    openQuestions: ["Need verify-patch disposition."],
+  });
+  const d = result(rollup, {
+    workerId: "worker-d",
+    answerKey: "review.risk",
+    summary: "Risk looks clear.",
+    verdict: "pass",
+  });
+  writeJson(rollup, "docs/ai/workers/a.json", a);
+  writeJson(rollup, "docs/ai/workers/b.json", b);
+  writeJson(rollup, "docs/ai/workers/c.json", c);
+  writeJson(rollup, "docs/ai/workers/d.json", d);
+  const rolled = run(rollup, [
+    "rollup",
+    "--repo", rollup,
+    "--output", "docs/ai/workers/rollup.json",
+    "docs/ai/workers/d.json",
+    "docs/ai/workers/b.json",
+    "docs/ai/workers/c.json",
+    "docs/ai/workers/a.json",
+  ]);
+  assert.equal(rolled.status, 0, rolled.stderr || rolled.stdout);
+  const rollupJson = JSON.parse(fs.readFileSync(path.join(rollup, "docs/ai/workers/rollup.json"), "utf8"));
+  assert.deepEqual(rollupJson.consensus, [{ answerKey: "review.verdict", verdict: "pass", count: 2 }]);
+  assert.equal(rollupJson.conflicts[0].answerKey, "review.risk");
+  assert.deepEqual(rollupJson.conflicts[0].verdicts, ["fail", "pass"]);
+  assert.match(rollupJson.recommendedNextAction, /resolve conflicting worker verdicts/);
+  assert.deepEqual(rollupJson.openQuestions, ["review.risk: Need verify-patch disposition."]);
+
+  console.log("acef worker result tests passed");
+} finally {
+  fs.rmSync(tmpRoot, { recursive: true, force: true });
+}

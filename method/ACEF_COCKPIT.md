@@ -108,6 +108,20 @@ Default rules:
 - reject unbounded full-repo dumps by default;
 - record tool calls, bytes, token metrics when available, and hashes.
 
+## Worker Result Substrate
+
+The first Cockpit-displayable substrate is filesystem-only:
+
+- execution contracts record declared, observed, and mechanically enforced limits separately;
+- worker results return summary, answer key, verdict, usage metrics, artifact path/hash, and optional transcript
+  path/hash;
+- long output and transcripts stay outside chat; transcripts stay outside Git;
+- deterministic roll-ups group results by answer key and expose consensus, conflicts, open questions, and the next
+  recommended action.
+
+This is enough for a future Cockpit to display worker provenance without adding SQLite, vectors, graphs, automatic
+fleets, or a custom ACEF runtime.
+
 ## Code Search Policy
 
 `grep`, `git grep`, and `rg` are not bad. Unbounded output is bad.
