@@ -25,6 +25,7 @@ Checks:
   guarded-test-floor  For guarded work, require a symbol-grounded asserted boundary test and independent Test Author
   actor-separation    For full BMAD, require distinct phase actors with durable provenance evidence
   source-reconciliation For full BMAD, require every planning source to record use/conflict/resolution
+  epic-context-pack  Require an epic-level context pack before story workers consume the epic
   lean-evidence       Require story/epic close evidence to live in artifacts, not chat
   session-handoff     Require a structured Session Handoff block in the delivery ledger
   seeded-epic-gates   Require Epic N Process Judge rows/artifacts for epics mentioned in ledger
@@ -896,6 +897,53 @@ function checkSourceReconciliation(repoRoot, ledgerPath) {
   return result("source-reconciliation", true, `${table.rows.length} planning source(s) reconciled`);
 }
 
+function checkEpicContextPack(repoRoot, ledgerPath) {
+  if (!ledgerPath || !exists(ledgerPath)) return result("epic-context-pack", false, "Missing ledger path");
+  const text = read(ledgerPath);
+  if (!isFullBmad(text)) return result("epic-context-pack", true, "Lane is not full BMAD");
+  const section = extractSection(text, "Epic Context Pack");
+  if (!section) return result("epic-context-pack", false, "Missing ## Epic Context Pack section");
+
+  const fields = sessionHandoffFields(section);
+  const required = ["status", "scope", "pack_path", "consumed_by_story", "worker_input_mode", "broad_repo_reread"];
+  const missing = required.filter((field) => !hasMeaningfulValue(fields[field]));
+  if (missing.length) return result("epic-context-pack", false, `Missing field(s): ${missing.join(", ")}`);
+
+  const failures = [];
+  if (!/^pass$/i.test(fields.status)) failures.push("status must be PASS");
+  if (!/pack.*story|story.*pack|pack-plus-story|pack_only|pack-only/i.test(fields.worker_input_mode)) {
+    failures.push("worker_input_mode must declare pack + narrow story input");
+  }
+  if (!/^(?:no|false|blocked|forbidden)$/i.test(fields.broad_repo_reread || "")) {
+    failures.push("broad_repo_reread must be no/false/blocked/forbidden");
+  }
+
+  const packPath = resolvePath(fields.pack_path, repoRoot);
+  if (!exists(packPath)) {
+    failures.push(`pack_path missing file ${fields.pack_path}`);
+  } else {
+    const pack = read(packPath);
+    const requiredHeadings = [
+      "Resolved Patterns",
+      "Golden Neighbors",
+      "Source Reconciliation Summary",
+      "Risk List",
+      "Test Strategy",
+      "Reusable Fixtures",
+      "Allowed Scope",
+      "Deferred Scope",
+      "Exact Commands",
+      "Known Pitfalls",
+      "Per-Story Touched Surfaces",
+    ];
+    const missingHeadings = requiredHeadings.filter((heading) => !new RegExp(`^\\s*#{1,6}\\s+${heading}\\s*$`, "im").test(pack));
+    if (missingHeadings.length) failures.push(`pack missing heading(s): ${missingHeadings.join(", ")}`);
+  }
+
+  if (failures.length) return result("epic-context-pack", false, failures.join("; "));
+  return result("epic-context-pack", true, `${fields.scope} context pack is ready and story-scoped`);
+}
+
 function checkGraduationReconciliation(repoRoot, ledgerPath) {
   if (!ledgerPath || !exists(ledgerPath)) return result("graduation-reconciliation", false, "Missing ledger path");
   const findings = extractConformanceFindings(read(ledgerPath)).filter((finding) => needsGraduationReconciliation(finding.text));
@@ -1067,7 +1115,7 @@ function main() {
   const adapter = args.adapter || findAdapter(args.repo);
   const registry = findPatternRegistry(args.repo, adapter);
   const checks = args.check === "all"
-    ? ["clean-tree", "preflight", "claims", "adapter-freshness", "pattern-registry", "reuse-before-create", "do-not-copy", "partial-workshape", "finding-promotion", "graduation-reconciliation", "vertical-slice", "guarded-test-floor", "actor-separation", "source-reconciliation", "lean-evidence", "session-handoff", "seeded-epic-gates", "epic-boundary", "epic-transition-approval", "replan-counter"]
+    ? ["clean-tree", "preflight", "claims", "adapter-freshness", "pattern-registry", "reuse-before-create", "do-not-copy", "partial-workshape", "finding-promotion", "graduation-reconciliation", "vertical-slice", "guarded-test-floor", "actor-separation", "source-reconciliation", "epic-context-pack", "lean-evidence", "session-handoff", "seeded-epic-gates", "epic-boundary", "epic-transition-approval", "replan-counter"]
     : [args.check];
 
   const results = checks.map((check) => {
@@ -1085,6 +1133,7 @@ function main() {
     if (check === "guarded-test-floor") return checkGuardedTestFloor(args.repo, ledger);
     if (check === "actor-separation") return checkActorSeparation(args.repo, ledger);
     if (check === "source-reconciliation") return checkSourceReconciliation(args.repo, ledger);
+    if (check === "epic-context-pack") return checkEpicContextPack(args.repo, ledger);
     if (check === "lean-evidence") return checkLeanEvidence(args.repo, ledger);
     if (check === "session-handoff") return checkSessionHandoff(args.repo, ledger, adapter, registry);
     if (check === "seeded-epic-gates") return checkSeededEpicGates(args.repo, ledger);

@@ -175,6 +175,33 @@ try {
   fs.writeFileSync(path.join(tmp, "docs", "ai", "reports", "story-1-1-worker.md"), "Worker report\n");
   fs.writeFileSync(path.join(tmp, "docs", "ai", "reports", "story-1-1-review.md"), "Review report\n");
   fs.writeFileSync(path.join(tmp, "docs", "ai", "reports", "story-1-1-process-judge.md"), "Process Judge report\n");
+  fs.writeFileSync(path.join(tmp, "docs", "ai", "epic-1-context-pack.md"), [
+    "# Epic 1 Context Pack",
+    "",
+    "## Resolved Patterns",
+    "Use the service pattern.",
+    "## Golden Neighbors",
+    "Account module.",
+    "## Source Reconciliation Summary",
+    "README and codemap aligned.",
+    "## Risk List",
+    "No guarded risks.",
+    "## Test Strategy",
+    "Feature tests first.",
+    "## Reusable Fixtures",
+    "Account fixture.",
+    "## Allowed Scope",
+    "Story 1.1 only.",
+    "## Deferred Scope",
+    "None.",
+    "## Exact Commands",
+    "npm test.",
+    "## Known Pitfalls",
+    "Do not use legacy direct fetch.",
+    "## Per-Story Touched Surfaces",
+    "Story 1.1: service files.",
+    "",
+  ].join("\n"));
   fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_demo_DELIVERY_AUDIT.md"), [
     "# ACEF Demo Delivery Audit",
     "",
@@ -213,6 +240,14 @@ try {
     "|---|---|---|---|---|",
     "| Product brief | `README.md` | USED | aligned | adopted |",
     "| Codebase map | `docs/codebase-map.md` | USED | aligned | adopted |",
+    "",
+    "## Epic Context Pack",
+    "status: PASS",
+    "scope: Epic 1",
+    "pack_path: docs/ai/epic-1-context-pack.md",
+    "consumed_by_story: story 1.1",
+    "worker_input_mode: pack-plus-story",
+    "broad_repo_reread: no",
     "",
     "## Lean Evidence Contract",
     "status: PASS",
@@ -580,6 +615,21 @@ try {
     .replace("| Codebase map | `docs/codebase-map.md` | USED | aligned | adopted |", "| Backend | `docs/missing-contract.md` | CONFLICT | endpoint differs | pending |");
   fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_open_source_conflict_DELIVERY_AUDIT.md"), openConflictLedger);
   expectFail("source-reconciliation", ["--repo", tmp, "--check", "source-reconciliation", "--ledger", "docs/ai/ACEF_open_source_conflict_DELIVERY_AUDIT.md"]);
+  expectPass("epic-context-pack", ["--repo", tmp, "--check", "epic-context-pack", "--ledger", "docs/ai/ACEF_demo_DELIVERY_AUDIT.md"]);
+  fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_bad_epic_context_DELIVERY_AUDIT.md"), [
+    "# Bad Epic Context",
+    "active_lane: Full BMAD v2",
+    "",
+    "## Epic Context Pack",
+    "status: PASS",
+    "scope: Epic 1",
+    "pack_path: docs/ai/missing-pack.md",
+    "consumed_by_story: story 1.1",
+    "worker_input_mode: full transcript",
+    "broad_repo_reread: yes",
+    "",
+  ].join("\n"));
+  expectFail("epic-context-pack", ["--repo", tmp, "--check", "epic-context-pack", "--ledger", "docs/ai/ACEF_bad_epic_context_DELIVERY_AUDIT.md"]);
   expectPass("lean-evidence", ["--repo", tmp, "--check", "lean-evidence", "--ledger", "docs/ai/ACEF_demo_DELIVERY_AUDIT.md"]);
   fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_lean_bad_DELIVERY_AUDIT.md"), [
     "# Bad Lean Ledger",

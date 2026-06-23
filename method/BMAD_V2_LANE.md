@@ -98,6 +98,11 @@ Workers run with bounded context by default. Use `fork_context: false` or the to
 repo path, active ledger, story/spec path, allowed paths, required tests, report artifact path, and final STOP rule.
 Do not pass the parent transcript as evidence. Long outputs belong in the worker report artifact, not chat.
 
+At each epic boundary, create an Epic Context Pack before the first story worker. The pack carries the shared
+architecture/context, source reconciliation summary, golden-neighbor scan, risk list, test strategy, reusable
+fixtures/helpers, exact commands, known pitfalls, and per-story touched surfaces. Per-story workers receive this pack plus
+their narrow story artifact/diff/test files; author/reviewer/judge separation still happens story-by-story.
+
 Full BMAD requires delegation. During capability preflight or active-run bootstrap, record:
 
 ```md

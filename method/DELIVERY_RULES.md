@@ -124,6 +124,10 @@ A lightweight (usually guarded) task promotes to full BMAD when any of:
   report, worker-context budget fields (`worker_context: bounded`, `fork_context: false`, `raw_output_policy:
   artifact-only`), and a refreshed Session Handoff. Epic close also records `fresh_session_recommended: yes`; continuing
   the same bloated thread is optional, not the default. Run `--check lean-evidence`.
+- **Epic context pack** — before the first story worker in a full-BMAD epic, write a compact context pack with resolved
+  patterns, golden neighbors, source reconciliation summary, shared risks, test strategy, fixtures, scope boundaries,
+  exact commands, pitfalls, and per-story touched surfaces. Story workers consume the pack plus narrow story inputs; broad
+  repo re-reading is blocked unless the story introduces a new/guarded/risky surface. Run `--check epic-context-pack`.
 - **Process Judge gates** — story/task close and epic close must prove the required steps, skills, and artifacts were
   actually used before status changes to `done`.
 - **Seeded epic gates** — full BMAD epics/stories generation must seed `Epic N Process Judge [PENDING]` rows/artifacts

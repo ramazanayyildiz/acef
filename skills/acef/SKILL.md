@@ -16,6 +16,8 @@ Evidence stays on disk; chat stays small.
 - If raw output would exceed ~100 lines, narrow the query or write a derived artifact instead.
 - Workers default to bounded context (`fork_context: false` where supported): pass only repo path, active ledger, spec
   path, allowed paths, commands/tests, report path, and STOP rule.
+- In full-BMAD epics, create/use an Epic Context Pack before story workers so shared context is read once, not repeated
+  every story.
 - Never reduce gates, tests, ledgers, or worker evidence to save context.
 
 ## What This Agent Does

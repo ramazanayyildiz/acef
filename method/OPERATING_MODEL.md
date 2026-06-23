@@ -46,6 +46,39 @@ context from quietly overriding the active ledger.
 - If a tool cannot enforce `fork_context: false`, the worker prompt must still state that prior chat is not evidence and
   all decisions must be grounded in the supplied ledger/spec paths.
 
+## Epic Context Pack
+
+Full-BMAD epics amortize shared context at the epic boundary. Before the first story worker in an epic, create an
+`Epic Context Pack` artifact and record it in the delivery ledger. Story workers consume the pack plus their exact story
+artifact/diff/test files; they do not re-read the whole repo unless the story touches a new, guarded, or risky surface.
+
+The pack contains:
+
+- resolved patterns;
+- golden neighbors;
+- source reconciliation summary;
+- shared risk list;
+- test strategy;
+- reusable fixtures/helpers;
+- allowed and deferred scope;
+- exact commands;
+- known pitfalls;
+- per-story touched surfaces.
+
+The delivery ledger records:
+
+```md
+## Epic Context Pack
+status: PASS
+scope: Epic 4
+pack_path: docs/ai/epic-4-context-pack.md
+consumed_by_story: story 4.1
+worker_input_mode: pack-plus-story
+broad_repo_reread: no
+```
+
+Run `.acef/bin/acef-process-validator --check epic-context-pack` before dispatching the first story worker in an epic.
+
 ## Lean Evidence Contract
 
 Story and epic close evidence must be artifact-backed so a fresh session can resume without inheriting a bloated parent
