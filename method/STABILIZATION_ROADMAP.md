@@ -16,6 +16,7 @@ The next optimization target is deliberately narrow:
 - narrower file and diff reads;
 - less repeated ledger/artifact loading;
 - better per-role Epic Context Packs.
+- state-machine pushed context (`acef next`) after the context retrieval/context-policy pilot;
 - cockpit/context-compiler/tool-proxy design before any custom runtime.
 
 The next delivery-quality target is also deliberately narrow:
@@ -271,6 +272,30 @@ Exit criteria:
 - no reviewer-authored patch and no scope violation;
 - the lightweight lane stays materially cheaper than full BMAD for eligible work.
 
+## Phase 6B: State-Machine Pushed Context
+
+Goal: reduce drift and token load by making agents ask ACEF for the next small instruction instead of selecting skills or
+rereading large docs themselves.
+
+This follows the context retrieval/context-policy pilot. It does not admit a new retrieval backend, runtime, database, or
+UI. It projects existing typed state, ledger pointer, current context, worker scope, evidence, gates, and approvals into
+one bounded instruction packet.
+
+Deliverables:
+
+- document the `acef next` state-machine pushed-context design in `method/STATE_MACHINE_CONTEXT.md`;
+- define the `acef.next.v1` JSON output shape;
+- specify that retrieval/current-context is context only, never evidence;
+- specify that next-epic and human-gated transitions require typed approval receipts;
+- specify future tests for stale current-context, story-continuation escape, fake approval, role-specific bounded output,
+  and missing worker scope.
+
+Exit criteria before implementation:
+
+- the design preserves ledger, Process Judge, evidence, gate, and actor-separation authority;
+- the proposed output is small enough to use across Claude, Codex, and OpenCode;
+- no custom runtime or dependency is required.
+
 ## Phase 7: SQLite Projection, Only If Justified
 
 Goal: query structured ACEF state faster without changing source of truth.
@@ -301,7 +326,8 @@ Do not add a tool because it may help someday. Add it only after a concrete repe
 5. Add evidence manifest writing to a real ACEF run. **Done.**
 6. Run a 30-task validation round. **Done.**
 7. Tighten prompt/context policy and rerun the 30-task validation matrix.
-8. Decide whether SQLite projection is justified only after the rerun.
+8. Design state-machine pushed context (`acef next`) as the next bounded-context optimization.
+9. Decide whether SQLite projection is justified only after the rerun.
 
 ## Non-Goals For The Current Cycle
 

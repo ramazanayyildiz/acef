@@ -57,6 +57,7 @@ method/      The delivery engine — how the work actually runs
   OPERATING_MODEL.md   personas + tracks (Layer 1)
   CONTEXT_RETRIEVAL.md optional bounded retrieval adapters and acef-query
   CONTEXT_POLICY.md    role-specific context budgets and worker input policy
+  STATE_MACHINE_CONTEXT.md proposed acef next state-machine pushed context contract
   ACEF_COCKPIT.md      product direction for cockpit + context compiler + tool proxy
   TYPED_STATE.md       JSON sidecars for machine-readable ACEF state
   TRUST_MODEL.md       what ACEF guards do and do not guarantee
