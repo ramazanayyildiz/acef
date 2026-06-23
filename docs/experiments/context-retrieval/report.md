@@ -62,3 +62,38 @@ Smoke run on Detaysoft Story 4.1 reviewer context, recorded in `runs/2026-06-23.
 
 This smoke validates the measurement harness and context-surface reduction only. It does not prove billing reduction or
 worker quality; those require repeated actor runs with finding recall and retry metrics.
+
+## Mini Pilot: Detaysoft Story 4.1
+
+Evidence: `runs/detaysoft-4-1-mini-pilot-2026-06-23.jsonl`
+
+Shape:
+
+```text
+3 task types × 3 modes × 2 runs = 18 rows
+task types: review, atdd, dev
+story: 4.1
+repo: detached Detaysoft worktree at commit d4ada65
+```
+
+Median context-surface results:
+
+| Task | Mode | Provider | Median source bytes | Median returned bytes | Median reduction |
+|---|---|---|---:|---:|---:|
+| review | baseline | baseline | 274,966 | 274,966 | 0.0% |
+| review | files | files | 241,300 | 10,416 | 95.7% |
+| review | context-mode | context-mode | 241,300 | 3,497 | 98.6% |
+| atdd | baseline | baseline | 274,899 | 274,899 | 0.0% |
+| atdd | files | files | 241,233 | 10,349 | 95.7% |
+| atdd | context-mode | context-mode | 241,233 | 3,373 | 98.6% |
+| dev | baseline | baseline | 274,959 | 274,959 | 0.0% |
+| dev | files | files | 241,293 | 10,409 | 95.7% |
+| dev | context-mode | context-mode | 241,293 | 3,506 | 98.5% |
+
+Interpretation:
+
+- The mini pilot confirms large context-surface reduction across all three worker shapes.
+- It still does not prove billing reduction because token/cost fields are null.
+- It still does not prove worker quality because no live actor performed the tasks in this pilot; quality fields remain
+  placeholders.
+- Next evidence step is actor-based A/B/C runs that fill finding recall, retries, false positives, and task result.
