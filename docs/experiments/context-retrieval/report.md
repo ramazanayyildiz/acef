@@ -102,12 +102,12 @@ Interpretation:
 - Next evidence step is actor-based A/B/C runs that fill finding recall, retries, false positives, and task result.
 - The first actor prompt matrix is ready for Story 4.1 review, ATDD, and dev tasks across all three modes, but no actor
   result rows have been recorded yet.
-- The manifest now makes actor coverage explicit. Current actor coverage is 5/18. Baseline and files review rows recalled
-  the known Story 4.1 control findings without stale-story leakage or wrong-scope touch. Files mode preserved recall while
-  returning ~95.7% less context for this reviewer fixture.
-- The first context-mode review row is intentionally recorded as `result=fail`: it returned ~98.6% less context but lost
-  the explicit review-chain/process-drift findings, dropping known-finding recall from 4 to 2. That is exactly the kind of
-  quality regression this experiment is meant to catch.
+- The manifest now makes actor coverage explicit. Current actor coverage is 6/18. The review task is fully populated:
+  baseline and files review rows recalled the known Story 4.1 control findings without stale-story leakage or wrong-scope
+  touch. Files mode preserved recall while returning ~95.7% less context for this reviewer fixture.
+- Both context-mode review rows are intentionally recorded as `result=fail`: they returned ~98.6% less context but lost
+  the explicit review-chain/process-drift findings, dropping average known-finding recall from 4 to 2. That repeatable
+  quality regression means Context Mode should not become the default reviewer context from this evidence.
 - All current rows are marked `runner_type=main-codex-self-run`, so they are useful progress but weaker than fresh
   external/subagent runs. The experiment is still intentionally not adoptable.
 
@@ -129,5 +129,5 @@ scripts/acef-context-experiment-report \
   --manifest docs/experiments/context-retrieval/manifests/detaysoft-4-1-18-run-2026-06-23.json
 ```
 
-Expected interpretation for actor rows: not adoptable yet; coverage is `5/18 actor rows`, with one context-mode recall
-failure.
+Expected interpretation for actor rows: not adoptable yet; coverage is `6/18 actor rows`, with two context-mode review
+recall failures.
