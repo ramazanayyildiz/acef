@@ -79,6 +79,11 @@ The manifest is the completion contract for the experiment. The default pilot sh
 Context-surface probe rows do not satisfy this contract. A run file can show large byte reduction and still have
 `coverage_complete: no` until actual actor rows are recorded for every task/mode cell.
 
+Dev-task rows have an additional validity rule: they must run from a clean isolated worktree at a real pre-dev point
+where ATDD tests already exist and are red. The prompt must name the base ref, failing test command, and allowed
+implementation paths. If the repo is already post-implementation, record the row as `result=invalid`; do not count it as
+developer-quality evidence.
+
 Use the manifest to get the next missing actor slot:
 
 ```bash

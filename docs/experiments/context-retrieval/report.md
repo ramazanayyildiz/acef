@@ -120,6 +120,10 @@ Interpretation:
   Detaysoft worktree is already post-Story-4.1, and the prompt does not provide a clean pre-implementation base ref plus
   failing-test state. A real dev-slice experiment needs an isolated worktree checked out at the red-test point, or a
   deliberately small unfinished fixture. Recording it as a pass would overstate evidence.
+- Candidate replacement for real dev measurement: Detaysoft Story 5.2 has a usable commit cut-line (`2f8f570` adds
+  `tests/Feature/Story52ReferencesAwardsTest.php`, `136c516` records dev scope, `fbd54f4` lands implementation). A valid
+  dev A/B/C run should use an isolated worktree at the red-test/dev-scope point and keep the active implementation branch
+  untouched.
 - All current rows are marked `runner_type=main-codex-self-run`, so they are useful progress but weaker than fresh
   external/subagent runs. The experiment is still intentionally not adoptable.
 

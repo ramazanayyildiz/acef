@@ -8,6 +8,18 @@ role: developer
 
 Implement a small, well-scoped ACEF story slice from failing tests and bounded context.
 
+## Required Precondition
+
+A dev-slice experiment is valid only when the actor starts from a clean isolated worktree at the real pre-dev point:
+
+- the story ATDD/failing tests already exist;
+- the focused story test is red for the expected missing implementation;
+- the implementation commit for that story is not present in the worktree;
+- the prompt names the base ref, failing test command, and allowed implementation paths.
+
+If any of these are missing, record `result=invalid` instead of pretending a post-implementation tree measures developer
+quality.
+
 ## Worker Input Contract
 
 - Read the failing-test summary and target files named by the context bundle.
