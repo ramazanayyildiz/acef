@@ -1,0 +1,109 @@
+#!/usr/bin/env node
+const fs = require("node:fs");
+const path = require("node:path");
+const cp = require("node:child_process");
+
+const repoRoot = path.basename(path.dirname(__dirname)) === ".acef"
+  ? path.resolve(__dirname, "..", "..")
+  : path.resolve(__dirname, "..");
+
+const tasks = [
+  { task_type: "review", role: "reviewer" },
+  { task_type: "atdd", role: "atdd" },
+  { task_type: "dev", role: "developer" },
+];
+const modes = ["baseline", "files", "context-mode"];
+
+function usage() {
+  console.log(`Usage: acef-context-experiment-manifest --repo <path> --story <id> [options]
+
+Options:
+  --runs-per-cell <n>  Expected runs per task/mode cell (default: 2)
+  --output <path>     Manifest output path
+
+Creates a manifest for ACEF context retrieval actor experiments.`);
+}
+
+function parseArgs(argv) {
+  const opts = {
+    repo: "",
+    story: "",
+    runsPerCell: 2,
+    output: "",
+  };
+  for (let index = 0; index < argv.length; index += 1) {
+    const arg = argv[index];
+    if (arg === "--repo") opts.repo = argv[++index] || "";
+    else if (arg === "--story") opts.story = argv[++index] || "";
+    else if (arg === "--runs-per-cell") opts.runsPerCell = Number(argv[++index]);
+    else if (arg === "--output") opts.output = argv[++index] || "";
+    else if (arg === "-h" || arg === "--help") {
+      usage();
+      process.exit(0);
+    } else {
+      throw new Error(`Unknown argument: ${arg}`);
+    }
+  }
+  if (!opts.repo) throw new Error("--repo is required");
+  if (!opts.story) throw new Error("--story is required");
+  if (!Number.isInteger(opts.runsPerCell) || opts.runsPerCell < 1 || opts.runsPerCell > 20) {
+    throw new Error("--runs-per-cell must be between 1 and 20");
+  }
+  opts.repo = path.resolve(opts.repo);
+  if (!fs.existsSync(opts.repo)) throw new Error(`Repository path does not exist: ${opts.repo}`);
+  if (!opts.output) {
+    opts.output = path.join(repoRoot, "docs", "experiments", "context-retrieval", "manifests", `${path.basename(opts.repo)}-${opts.story.replace(/\./g, "-")}-${opts.runsPerCell}x.json`);
+  } else {
+    opts.output = path.resolve(opts.output);
+  }
+  return opts;
+}
+
+function gitHead(repo) {
+  try {
+    return cp.execFileSync("git", ["-C", repo, "rev-parse", "HEAD"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
+  } catch {
+    return null;
+  }
+}
+
+function main() {
+  const opts = parseArgs(process.argv.slice(2));
+  const runs = [];
+  for (const task of tasks) {
+    for (const mode of modes) {
+      for (let index = 1; index <= opts.runsPerCell; index += 1) {
+        runs.push({
+          id: `${task.task_type}-${mode}-${index}`,
+          story: opts.story,
+          task_type: task.task_type,
+          role: task.role,
+          mode,
+          prompt_path: `docs/experiments/context-retrieval/prompts/${task.task_type}-${mode}.md`,
+        });
+      }
+    }
+  }
+  const manifest = {
+    schema: "acef-context-experiment-manifest/v1",
+    created_at: new Date().toISOString(),
+    repo: path.basename(opts.repo),
+    repo_path: opts.repo,
+    repo_head: gitHead(opts.repo),
+    story: opts.story,
+    runs_per_cell: opts.runsPerCell,
+    expected_runs: runs.length,
+    runs,
+  };
+  fs.mkdirSync(path.dirname(opts.output), { recursive: true });
+  fs.writeFileSync(opts.output, `${JSON.stringify(manifest, null, 2)}\n`);
+  console.log(`Wrote manifest: ${opts.output}`);
+  console.log(`expected_runs: ${runs.length}`);
+}
+
+try {
+  main();
+} catch (error) {
+  console.error(`ERROR: ${error.message}`);
+  process.exit(1);
+}

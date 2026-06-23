@@ -66,6 +66,7 @@ worker quality; those require repeated actor runs with finding recall and retry 
 ## Mini Pilot: Detaysoft Story 4.1
 
 Evidence: `runs/detaysoft-4-1-mini-pilot-2026-06-23.jsonl`
+Manifest: `manifests/detaysoft-4-1-18-run-2026-06-23.json`
 Actor prompt package: `prompts/{review,atdd,dev}-{baseline,files,context-mode}.md`
 
 Shape:
@@ -100,12 +101,15 @@ Interpretation:
 - Next evidence step is actor-based A/B/C runs that fill finding recall, retries, false positives, and task result.
 - The first actor prompt matrix is ready for Story 4.1 review, ATDD, and dev tasks across all three modes, but no actor
   result rows have been recorded yet.
+- The manifest now makes that incompleteness explicit: the pilot has 18 context-surface rows, but 0/18 required actor
+  rows. It is intentionally not adoptable.
 
 Summarizer verdict:
 
 ```bash
 scripts/acef-context-experiment-report \
-  --input docs/experiments/context-retrieval/runs/detaysoft-4-1-mini-pilot-2026-06-23.jsonl
+  --input docs/experiments/context-retrieval/runs/detaysoft-4-1-mini-pilot-2026-06-23.jsonl \
+  --manifest docs/experiments/context-retrieval/manifests/detaysoft-4-1-18-run-2026-06-23.json
 ```
 
-Expected interpretation: not adoptable yet; evidence level is `context-surface`.
+Expected interpretation: not adoptable yet; evidence level is `context-surface`; coverage is `0/18 actor rows`.

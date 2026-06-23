@@ -1,0 +1,70 @@
+#!/usr/bin/env node
+const fs = require("node:fs");
+const os = require("node:os");
+const path = require("node:path");
+const cp = require("node:child_process");
+
+const repoRoot = path.resolve(__dirname, "..");
+const manifestScript = path.join(repoRoot, "scripts", "acef-context-experiment-manifest");
+const reportScript = path.join(repoRoot, "scripts", "acef-context-experiment-report");
+const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "acef-context-manifest-"));
+
+function run(command, args) {
+  return cp.execFileSync(process.execPath, [command, ...args], {
+    cwd: repoRoot,
+    encoding: "utf8",
+  });
+}
+
+try {
+  const manifestPath = path.join(tmp, "manifest.json");
+  run(manifestScript, [
+    "--repo", tmp,
+    "--story", "5.2",
+    "--runs-per-cell", "2",
+    "--output", manifestPath,
+  ]);
+  const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+  if (manifest.expected_runs !== 18 || manifest.runs.length !== 18) {
+    throw new Error("manifest did not create the 18-run matrix");
+  }
+  if (!manifest.runs.some((entry) => entry.id === "review-files-1" && entry.role === "reviewer")) {
+    throw new Error("manifest missing review/files cell");
+  }
+
+  const runsPath = path.join(tmp, "runs.jsonl");
+  fs.writeFileSync(runsPath, [
+    JSON.stringify({
+      task_type: "review",
+      mode: "files",
+      provider: "files",
+      role: "reviewer",
+      reduction_pct: 95,
+      returned_bytes: 100,
+      source_bytes: 2000,
+      input_tokens: 1000,
+      result: "pass",
+      known_findings_recalled: 2,
+      retry_count: 0,
+      stale_story_leak: false,
+      wrong_scope_touch: false,
+    }),
+    "",
+  ].join("\n"));
+  const summary = JSON.parse(run(reportScript, [
+    "--input", runsPath,
+    "--manifest", manifestPath,
+    "--format", "json",
+  ]));
+  if (summary.coverage.expected_runs !== 18 || summary.coverage.actual_actor_runs !== 1 || summary.coverage.actual_rows !== 1 || summary.coverage.complete !== false) {
+    throw new Error("coverage summary did not detect missing runs");
+  }
+  const reviewFiles = summary.coverage.cells.find((cell) => cell.task_type === "review" && cell.mode === "files");
+  if (!reviewFiles || reviewFiles.expected !== 2 || reviewFiles.actual !== 1 || reviewFiles.missing !== 1) {
+    throw new Error("coverage cell counts are wrong");
+  }
+
+  console.log("acef-context-experiment-manifest tests passed");
+} finally {
+  fs.rmSync(tmp, { recursive: true, force: true });
+}

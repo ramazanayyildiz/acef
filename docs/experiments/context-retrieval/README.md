@@ -58,11 +58,33 @@ context-surface evidence only.
 `acef-context-record-actor-report` validates that every required field is present before appending the JSONL row. Do not
 hand-edit experiment rows except to remove an explicitly invalid run.
 
+## Track Actor Coverage
+
+Generate a manifest before running actors:
+
+```bash
+scripts/acef-context-experiment-manifest \
+  --repo /Users/ramazanayyildiz/CODE/OPA/detaysoft2026-context-experiment \
+  --story 4.1 \
+  --runs-per-cell 2 \
+  --output docs/experiments/context-retrieval/manifests/detaysoft-4-1-18-run-2026-06-23.json
+```
+
+The manifest is the completion contract for the experiment. The default pilot shape is:
+
+```text
+3 task types x 3 modes x 2 runs = 18 actor rows
+```
+
+Context-surface probe rows do not satisfy this contract. A run file can show large byte reduction and still have
+`coverage_complete: no` until actual actor rows are recorded for every task/mode cell.
+
 ## Summarize a Run File
 
 ```bash
 scripts/acef-context-experiment-report \
-  --input docs/experiments/context-retrieval/runs/detaysoft-4-1-mini-pilot-2026-06-23.jsonl
+  --input docs/experiments/context-retrieval/runs/detaysoft-4-1-mini-pilot-2026-06-23.jsonl \
+  --manifest docs/experiments/context-retrieval/manifests/detaysoft-4-1-18-run-2026-06-23.json
 ```
 
 The report marks whether evidence is only `context-surface`, `actor-quality`, or `actor+token`. ACEF defaults must not

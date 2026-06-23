@@ -3,16 +3,17 @@ const fs = require("node:fs");
 const path = require("node:path");
 
 function usage() {
-  console.log(`Usage: acef-context-experiment-report --input <runs.jsonl> [--format markdown|json]
+  console.log(`Usage: acef-context-experiment-report --input <runs.jsonl> [--manifest <manifest.json>] [--format markdown|json]
 
 Summarizes ACEF context experiment JSONL and reports whether the data is still context-surface-only or actor evidence.`);
 }
 
 function parseArgs(argv) {
-  const opts = { input: "", format: "markdown" };
+  const opts = { input: "", manifest: "", format: "markdown" };
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
     if (arg === "--input") opts.input = argv[++index] || "";
+    else if (arg === "--manifest") opts.manifest = argv[++index] || "";
     else if (arg === "--format") opts.format = argv[++index] || "";
     else if (arg === "-h" || arg === "--help") {
       usage();
@@ -25,6 +26,10 @@ function parseArgs(argv) {
   if (!new Set(["markdown", "json"]).has(opts.format)) throw new Error("--format must be markdown or json");
   opts.input = path.resolve(opts.input);
   if (!fs.existsSync(opts.input)) throw new Error(`Input does not exist: ${opts.input}`);
+  if (opts.manifest) {
+    opts.manifest = path.resolve(opts.manifest);
+    if (!fs.existsSync(opts.manifest)) throw new Error(`Manifest does not exist: ${opts.manifest}`);
+  }
   return opts;
 }
 
@@ -55,7 +60,53 @@ function readRows(filePath) {
   });
 }
 
-function summarize(rows) {
+function readManifest(filePath) {
+  if (!filePath) return null;
+  const parsed = JSON.parse(fs.readFileSync(filePath, "utf8"));
+  if (!Array.isArray(parsed.runs)) throw new Error("Manifest must contain a runs array");
+  return parsed;
+}
+
+function runKey(row) {
+  return `${row.task_type}/${row.mode}/${row.role}`;
+}
+
+function coverage(rows, manifest) {
+  if (!manifest) return null;
+  const actual = new Map();
+  const actorRows = rows.filter((row) => row.result !== "invalid");
+  for (const row of actorRows) {
+    const key = runKey(row);
+    actual.set(key, (actual.get(key) || 0) + 1);
+  }
+  const expected = new Map();
+  for (const run of manifest.runs) {
+    const key = runKey(run);
+    expected.set(key, (expected.get(key) || 0) + 1);
+  }
+  const cells = [...expected.entries()].sort(([left], [right]) => left.localeCompare(right)).map(([key, expectedCount]) => {
+    const actualCount = actual.get(key) || 0;
+    const [taskType, mode, role] = key.split("/");
+    return {
+      task_type: taskType,
+      mode,
+      role,
+      expected: expectedCount,
+      actual: actualCount,
+      missing: Math.max(0, expectedCount - actualCount),
+    };
+  });
+  return {
+    expected_runs: manifest.runs.length,
+    actual_rows: rows.length,
+    actual_actor_runs: actorRows.length,
+    missing_runs: cells.reduce((total, cell) => total + cell.missing, 0),
+    complete: cells.every((cell) => cell.missing === 0),
+    cells,
+  };
+}
+
+function summarize(rows, manifest = null) {
   const groups = new Map();
   for (const row of rows) {
     const key = `${row.task_type}/${row.mode}/${row.provider || row.mode}`;
@@ -108,6 +159,7 @@ function summarize(rows) {
     rows: rows.length,
     summaries,
     threshold,
+    coverage: coverage(rows, manifest),
   };
 }
 
@@ -126,12 +178,25 @@ function renderMarkdown(result) {
   lines.push("");
   lines.push(`adoptable: ${result.threshold.adoptable ? "yes" : "no"}`);
   lines.push(`reason: ${result.threshold.adoptable ? "actor quality and token data present with safety clean" : "needs actor quality plus token/cost evidence before changing defaults"}`);
+  if (result.coverage) {
+    lines.push("");
+    lines.push(`coverage: ${result.coverage.actual_actor_runs}/${result.coverage.expected_runs} actor rows (${result.coverage.actual_rows} total rows)`);
+    lines.push(`coverage_complete: ${result.coverage.complete ? "yes" : "no"}`);
+    if (!result.coverage.complete) {
+      lines.push("");
+      lines.push("| Task | Mode | Role | Expected | Actual | Missing |");
+      lines.push("|---|---|---|---:|---:|---:|");
+      for (const cell of result.coverage.cells.filter((item) => item.missing > 0)) {
+        lines.push(`| ${cell.task_type} | ${cell.mode} | ${cell.role} | ${cell.expected} | ${cell.actual} | ${cell.missing} |`);
+      }
+    }
+  }
   return `${lines.join("\n")}\n`;
 }
 
 try {
   const opts = parseArgs(process.argv.slice(2));
-  const result = summarize(readRows(opts.input));
+  const result = summarize(readRows(opts.input), readManifest(opts.manifest));
   if (opts.format === "json") console.log(JSON.stringify(result, null, 2));
   else process.stdout.write(renderMarkdown(result));
 } catch (error) {
