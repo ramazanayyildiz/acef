@@ -134,6 +134,13 @@ Interpretation:
   the bounded References/Awards slice, and is recorded with wrapper-observed Codex usage (`input_tokens=153606`). This is
   useful baseline evidence, not an adoption signal: the dev-only manifest is still 1/6 rows, with files and context-mode
   dev runs missing.
+- Story 5.2 dev files-mode run 1 is now recorded from the same isolated worktree. It also produced a green focused suite
+  (8 passed / 202 assertions), but is correctly recorded as `result=fail` because it touched out-of-scope logo-grid block
+  files (`app/View/Components/Twill/Blocks/Logos.php`, `resources/views/components/sections/logo-grid.blade.php`) while
+  trying to complete the integration. The run returned 96.6% fewer context bytes (`7,226` vs `243,595`) but wrapper-observed
+  actor input tokens only dropped from `153606` to `126331` (~17.8%), below the 25% adoption threshold, and safety failed
+  with `wrong_scope_touch=true`. This is the clearest evidence so far that returned-byte reduction is not the same thing as
+  end-to-end token or delivery-quality improvement.
 - All current rows are marked `runner_type=main-codex-self-run`, so they are useful progress but weaker than fresh
   external/subagent runs. The experiment is still intentionally not adoptable.
 
@@ -168,4 +175,5 @@ scripts/acef-context-experiment-report \
 ```
 
 Expected interpretation for Story 5.2 dev rows: not adoptable until the 6-row dev-only manifest is complete. Current
-baseline row is `actor+token` evidence, but manifest coverage is only 1/6.
+coverage is 2/6. The baseline row is `actor+token` evidence and passes; the files row reduces returned context but fails
+the safety gate (`wrong_scope_touch=true`) and does not reach the 25% actor-token reduction threshold.
