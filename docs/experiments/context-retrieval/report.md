@@ -141,6 +141,10 @@ Interpretation:
   actor input tokens only dropped from `153606` to `126331` (~17.8%), below the 25% adoption threshold, and safety failed
   with `wrong_scope_touch=true`. This is the clearest evidence so far that returned-byte reduction is not the same thing as
   end-to-end token or delivery-quality improvement.
+- Story 5.2 dev files-mode run 2 repeated the same prompt from the reset isolated worktree and succeeded within the allowed
+  path set. It used `122779` actor input tokens, got the focused suite green, and reported `retry_count=3`. This makes the
+  files-mode result mixed rather than simply bad: it can complete the slice with lower token use than baseline, but the
+  2-run cell still has one safety leak and relatively high retry variance.
 - Story 5.2 dev context-mode run 1 is also recorded. It returned the smallest context bundle (`3,355` bytes, 98.4%
   reduction) and stayed inside the allowed path set while getting the focused suite green (8 passed / 202 assertions), but
   wrapper-observed actor input tokens increased to `189593` (~23.4% higher than baseline). The actor had to read the
@@ -182,6 +186,6 @@ scripts/acef-context-experiment-report \
 ```
 
 Expected interpretation for Story 5.2 dev rows: not adoptable until the 6-row dev-only manifest is complete. Current
-coverage is 3/6. The baseline row is `actor+token` evidence and passes; the files row reduces returned context but fails
-the safety gate (`wrong_scope_touch=true`) and does not reach the 25% actor-token reduction threshold; the context-mode row
-passes safety but uses more actor input tokens than baseline despite the smallest returned context.
+coverage is 4/6. The baseline row is `actor+token` evidence and passes; files mode now has one safe pass and one safety
+failure, with lower actor tokens but no clean safety record; the context-mode row passes safety but uses more actor input
+tokens than baseline despite the smallest returned context.
