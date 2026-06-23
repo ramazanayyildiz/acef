@@ -1,0 +1,143 @@
+#!/usr/bin/env node
+const fs = require("node:fs");
+const os = require("node:os");
+const path = require("node:path");
+const cp = require("node:child_process");
+
+const repoRoot = path.resolve(__dirname, "..");
+const script = path.join(repoRoot, "scripts", "acef-context-experiment");
+const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "acef-context-experiment-"));
+const repoTmp = fs.mkdtempSync(path.join(repoRoot, ".acef-context-experiment-test-"));
+
+function write(rel, content) {
+  const filePath = path.join(tmp, rel);
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  fs.writeFileSync(filePath, content);
+  return filePath;
+}
+
+function run(args, env = {}) {
+  return cp.execFileSync(process.execPath, [script, ...args], {
+    cwd: repoRoot,
+    encoding: "utf8",
+    env: { ...process.env, ...env },
+  });
+}
+
+function readJsonl(filePath) {
+  return fs.readFileSync(filePath, "utf8").trim().split(/\r?\n/).map((line) => JSON.parse(line));
+}
+
+try {
+  write("docs/ai/ACEF_ACTIVE_LEDGER", "docs/ai/ACEF_demo_DELIVERY_AUDIT.md\n");
+  write("docs/ai/ACEF_demo_DELIVERY_AUDIT.md", [
+    "# Delivery Audit",
+    "## Story 5.1",
+    "OLD_STORY_SECRET",
+    "## Story 5.2",
+    "Required command: npm test -- Story52",
+    "Acceptance: References and Awards are editable.",
+    "## Session Handoff",
+    "current_step: Story 5.2 developer",
+    "next_allowed_step: Story 5.2 developer",
+    "ledger_path: docs/ai/ACEF_demo_DELIVERY_AUDIT.md",
+    "",
+  ].join("\n"));
+  write("docs/ai/ACEF_CURRENT_CONTEXT.md", [
+    "# Current Context",
+    "active_story: Story 5.2",
+    "active_phase: development",
+    "Pitfall: do not add slugs.",
+    "",
+  ].join("\n"));
+  write("docs/ai/pattern-registry.json", JSON.stringify({
+    patterns: [{ id: "fixture.pattern", goldenNeighbors: ["app/Foo.php"] }],
+  }, null, 2));
+  write("docs/ai/epic-5-context-pack.md", [
+    "# Epic 5 Context Pack",
+    "## Story 5.1 Scope",
+    "NEIGHBOR_STORY_SECRET",
+    "## Allowed Scope",
+    "| Story | Scope |",
+    "| 5.2 | References and Awards |",
+    "## Known Pitfalls",
+    "Verified 2026-06-23.",
+    "",
+  ].join("\n"));
+  write("_bmad-output/implementation-artifacts/5-2-atdd.md", "# Story 5.2 ATDD\nReferences and Awards are editable.\n");
+  write("_bmad-output/implementation-artifacts/5-20-prefix-collision.md", "# Story 5.20\nPREFIX_COLLISION_SECRET\n");
+  const fixture = write("docs/experiments/context-retrieval/tasks/dev-slice.md", [
+    "# Dev Slice Fixture",
+    "task_type: dev",
+    "story: 5.2",
+    "known_findings:",
+    "- preserve route behavior",
+    "",
+  ].join("\n"));
+
+  const out = path.join(repoTmp, "runs.jsonl");
+  const common = [
+    "--repo", tmp,
+    "--story", "5.2",
+    "--role", "developer",
+    "--task-type", "dev",
+    "--fixture", fixture,
+    "--output", out,
+    "--result", "pass",
+    "--tests-passed", "true",
+    "--runs", "1",
+  ];
+  run([...common, "--mode", "baseline"]);
+  run([...common, "--mode", "files"]);
+
+  const rows = readJsonl(out);
+  if (rows.length !== 2) throw new Error(`expected 2 rows, got ${rows.length}`);
+  const [baseline, files] = rows;
+  if (baseline.mode !== "baseline" || baseline.reduction_pct !== 0) throw new Error("baseline row is invalid");
+  if (files.mode !== "files" || files.reduction_pct <= 0) throw new Error("files row is invalid");
+  if (!files.source_files.includes("docs/ai/ACEF_demo_DELIVERY_AUDIT.md")) throw new Error("active ledger source missing");
+  if (files.source_files.some((source) => source.includes("5-20"))) throw new Error("prefix collision source leaked");
+  if (files.fixture_bytes <= 0 || !files.fixture_path.endsWith("dev-slice.md")) throw new Error("fixture was not counted");
+  if (files.tests_passed !== true || files.result !== "pass") throw new Error("quality fields were not recorded");
+
+  const escaped = cp.spawnSync(process.execPath, [
+    script,
+    "--repo", tmp,
+    "--story", "5.2",
+    "--role", "developer",
+    "--task-type", "dev",
+    "--mode", "files",
+    "--output", path.join(repoRoot, "..", "escape.jsonl"),
+  ], { cwd: repoRoot, encoding: "utf8" });
+  if (escaped.status === 0 || !escaped.stderr.includes("must stay inside")) {
+    throw new Error("repo-external output path was not blocked");
+  }
+
+  const fakeBin = path.join(tmp, "fake-bin");
+  fs.mkdirSync(fakeBin, { recursive: true });
+  const fakeContextMode = path.join(fakeBin, "context-mode");
+  fs.writeFileSync(fakeContextMode, `#!/bin/sh
+if [ "$1" = "index" ]; then
+  if grep -Eq 'NEIGHBOR_STORY_SECRET|PREFIX_COLLISION_SECRET|OLD_STORY_SECRET' "$2"; then
+    echo "unscoped source reached Context Mode" >&2
+    exit 9
+  fi
+  exit 0
+fi
+printf 'Scoped Story 5.2 context-mode result\\n'
+`);
+  fs.chmodSync(fakeContextMode, 0o755);
+  const out2 = path.join(repoTmp, "runs-context-mode.jsonl");
+  run([...common, "--mode", "context-mode", "--output", out2], {
+    PATH: `${fakeBin}:${process.env.PATH}`,
+  });
+  const contextModeRow = readJsonl(out2)[0];
+  if (contextModeRow.provider !== "context-mode" || contextModeRow.reduction_pct <= 0) {
+    throw new Error("context-mode row is invalid");
+  }
+
+  console.log("acef-context-experiment tests passed");
+} finally {
+  fs.rmSync(tmp, { recursive: true, force: true });
+  fs.rmSync(repoTmp, { recursive: true, force: true });
+}

@@ -37,6 +37,7 @@ persona, and a worker that wrote code cannot review, verify, or mark its own wor
 method/      The delivery engine — how the work actually runs
   OPERATING_MODEL.md   personas + tracks (Layer 1)
   CONTEXT_RETRIEVAL.md optional bounded retrieval adapters and acef-query
+  docs/research/tooling-admission.md measured admission notes for future tools/backends
   TEST_PIPELINE.md     the test/flow skill chain (Layer 2)
   BMAD_V2_LANE.md      the heavy story lifecycle for epics (Layer 3)
   ADAPTER_MEMORY.md    snapshot vs adapter memory vs run ledger state
@@ -74,7 +75,7 @@ files the agent follows. No build, no npm, no services.
    (`/acef`, `/acef-adapter`, `/acef-router`, `/acef-test-bootstrap`, `/map-codebase`). OpenCode skills live under
    `.opencode/skills/`, but slash commands are a separate `.opencode/commands/*.md` mechanism.
    The tools installer adds repo-local helper CLIs under `.acef/bin/`, including `acef-process-validator`,
-   `acef-codex-guard`, and `acef-query`.
+   `acef-codex-guard`, `acef-query`, and `acef-context-experiment`.
    Use `--tool codex|claude|opencode` to target one tool, or `--all-core` to copy every skill in this repo.
 
    Global install is still possible, but should stay minimal:
@@ -201,6 +202,16 @@ Optional bounded retrieval is available through:
 Pack, current-context file, and matching story artifacts under a content-hashed source label. It falls back to a
 deterministic file slice when Context Mode is absent or fails. Context Mode remains optional: retrieval output is a
 candidate input, never a gate verdict or source of truth.
+
+Measure retrieval modes before changing worker defaults:
+
+```bash
+.acef/bin/acef-context-experiment --repo /path/to/repo --story 5.2 --role reviewer --task-type review --mode files
+```
+
+The experiment compares controlled `baseline`, `files`, and `context-mode` modes and records JSONL metrics under
+`docs/experiments/context-retrieval/runs/`. Byte reduction is not billing proof; token/cost fields require client usage
+data.
 
 Do not paste full PRDs, story specs, ledgers, broad `rg` output, or long logs into chat unless the user asks for detail.
 

@@ -52,7 +52,27 @@ Source selection is exact and deterministic:
 - Workers still receive the validated `ACEF_CURRENT_CONTEXT.md`; `acef-query` supplies bounded source material for
   creating or refreshing it.
 
+## Measurement before policy
+
+Byte reduction is only a leading signal. Before changing ACEF worker defaults, run the controlled experiment harness:
+
+```bash
+scripts/acef-context-experiment \
+  --repo /path/to/repo \
+  --story 5.2 \
+  --role reviewer \
+  --task-type review \
+  --mode files
+```
+
+Compare `baseline`, `files`, and `context-mode` on the same task fixtures. A retrieval mode may become the default only
+when it reduces returned context without lowering task quality: no stale-story leakage, no wrong-scope touch, no drop in
+blocker/high finding recall, and no material retry increase. Token/cost fields remain null until client usage data is
+available; do not treat byte reduction as billing proof.
+
 ## Admission rule for more backends
 
 Do not add SQLite, AST, or vector backends until real queries show a gap that Context Mode plus file slicing cannot
 solve. New providers must preserve the same CLI and prove lower context cost without changing gate verdicts.
+
+See `docs/research/tooling-admission.md` for the current candidate-tool register and admission triggers.

@@ -133,6 +133,10 @@ Captures (each field cites a source path):
             story slice; only Epic Process Judge reads the full ledger.</p>
           <p><code>acef-query context</code> can supply bounded source material for that hot slice. It uses Context Mode
             when available and a deterministic file fallback otherwise; retrieval is optional and cannot satisfy a gate.</p>
+          <p><code>acef-context-experiment</code> measures baseline, file fallback, and Context Mode retrieval with JSONL
+            metrics before ACEF changes worker defaults. Byte reduction is treated as a lead, not billing proof.</p>
+          <p>Future tooling is gated by measured admission. Symbol search, graph memory, structural rule engines, MCP
+            runtime controls, and eval frameworks stay candidates until ACEF records a real gap they solve.</p>
           <p>The <code>acef</code> front-door skill is compact and loads detailed reference files just-in-time, so
             routine runs do not pay for the full method body upfront.</p>
           <p>An ACEF run must bootstrap its target state before worker fan-out: create <code>docs/ai/</code>, create the
