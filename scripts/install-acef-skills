@@ -69,6 +69,33 @@ function copyDir(source, target) {
   fs.cpSync(source, target, { recursive: true });
 }
 
+function commandBody(skill) {
+  return `---
+description: Use the ${skill} ACEF skill in this repo
+---
+
+Use the \`${skill}\` skill for this request.
+
+Load the project-local skill from this repo, follow its instructions, and keep the response lean:
+- use the active repo ledger and local ACEF files;
+- do not paste large artifacts or logs into chat;
+- write durable evidence to disk when the skill requires it.
+
+User request:
+{{args}}
+`;
+}
+
+function installOpenCodeCommands(repo, skills) {
+  const commandDir = path.join(repo, ".opencode", "commands");
+  fs.mkdirSync(commandDir, { recursive: true });
+  for (const skill of skills) {
+    const file = path.join(commandDir, `${skill}.md`);
+    fs.writeFileSync(file, commandBody(skill));
+  }
+  console.log(`Installed ${skills.length} OpenCode command(s): ${commandDir}`);
+}
+
 function selectedTools(tools) {
   const values = tools.includes("all") ? Object.keys(toolSkillDirs) : tools;
   for (const tool of values) {
@@ -96,4 +123,7 @@ for (const tool of tools) {
     copyDir(path.join(sourceSkillsDir, skill), path.join(targetBase, skill));
   }
   console.log(`Installed ${skills.length} ACEF skill(s) for ${tool}: ${targetBase}`);
+  if (tool === "opencode") {
+    installOpenCodeCommands(opts.repo, skills);
+  }
 }
