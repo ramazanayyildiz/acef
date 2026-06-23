@@ -1027,6 +1027,9 @@ function checkLeanEvidence(repoRoot, ledgerPath) {
     "worker_context",
     "fork_context",
     "raw_output_policy",
+    "diff_policy",
+    "test_output_policy",
+    "search_output_policy",
   ];
   const missing = required.filter((field) => !hasMeaningfulValue(fields[field]));
   if (missing.length) return result("lean-evidence", false, `Missing field(s): ${missing.join(", ")}`);
@@ -1048,6 +1051,15 @@ function checkLeanEvidence(repoRoot, ledgerPath) {
   }
   if (!/^(artifact-only|artifact_only|disk|disk-only|disk_only)$/i.test(fields.raw_output_policy || "")) {
     failures.push("raw_output_policy must be artifact-only/disk-only");
+  }
+  if (!/^(targeted|path-scoped|path_scoped|commit-scoped|commit_scoped|summary-only|summary_only)$/i.test(fields.diff_policy || "")) {
+    failures.push("diff_policy must be targeted/path-scoped/commit-scoped/summary-only");
+  }
+  if (!/^(summary-only|summary_only|artifact-only|artifact_only|disk-only|disk_only)$/i.test(fields.test_output_policy || "")) {
+    failures.push("test_output_policy must be summary-only/artifact-only/disk-only");
+  }
+  if (!/^(summarized|summary-only|summary_only|targeted|artifact-only|artifact_only)$/i.test(fields.search_output_policy || "")) {
+    failures.push("search_output_policy must be summarized/targeted/artifact-only");
   }
 
   if (/epic/i.test(fields.scope)) {

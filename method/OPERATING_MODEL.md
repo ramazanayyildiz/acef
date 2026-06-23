@@ -46,6 +46,19 @@ context from quietly overriding the active ledger.
 - If a tool cannot enforce `fork_context: false`, the worker prompt must still state that prior chat is not evidence and
   all decisions must be grounded in the supplied ledger/spec paths.
 
+## Lean Output Budget
+
+The largest token spikes usually come from raw diffs, broad searches, full ledgers, and framework test failures that dump
+rendered HTML. ACEF treats those as evidence artifacts, not chat content.
+
+- Diffs are targeted by path or commit range; full `git diff` output belongs in a report artifact.
+- Searches are narrowed by path/pattern; broad `rg` dumps are summarized into a report artifact.
+- Test output is summarized in chat as command + pass/fail + failing test names. Full logs, rendered HTML, stack traces,
+  and response bodies stay in a report artifact.
+- Worker reports contain enough detail for audit, but final chat reports stay compact.
+- If a failure needs a large HTML/JSON/body dump, store it under `docs/ai/reports/` or another explicit artifact path and
+  cite that path.
+
 ## Epic Context Pack
 
 Full-BMAD epics amortize shared context at the epic boundary. Before the first story worker in an epic, create an
@@ -94,6 +107,9 @@ session_handoff_updated: yes
 worker_context: bounded
 fork_context: false
 raw_output_policy: artifact-only
+diff_policy: targeted
+test_output_policy: summary-only
+search_output_policy: summarized
 fresh_session_recommended: yes  # required for epic close
 ```
 

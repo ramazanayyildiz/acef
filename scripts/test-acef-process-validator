@@ -259,6 +259,9 @@ try {
     "worker_context: bounded",
     "fork_context: false",
     "raw_output_policy: artifact-only",
+    "diff_policy: targeted",
+    "test_output_policy: summary-only",
+    "search_output_policy: summarized",
     "",
   ].join("\n"));
   expectFail("clean-tree", ["--repo", tmp, "--check", "clean-tree"]);
@@ -644,6 +647,9 @@ try {
     "worker_context: bounded",
     "fork_context: false",
     "raw_output_policy: artifact-only",
+    "diff_policy: targeted",
+    "test_output_policy: summary-only",
+    "search_output_policy: summarized",
     "",
   ].join("\n"));
   expectFail("lean-evidence", ["--repo", tmp, "--ledger", "docs/ai/ACEF_lean_bad_DELIVERY_AUDIT.md", "--check", "lean-evidence"]);
@@ -660,6 +666,9 @@ try {
     "worker_context: full-transcript",
     "fork_context: true",
     "raw_output_policy: chat-dump",
+    "diff_policy: full",
+    "test_output_policy: html-dump",
+    "search_output_policy: broad-rg",
     "",
   ].join("\n"));
   expectFail("lean-evidence", ["--repo", tmp, "--ledger", "docs/ai/ACEF_lean_context_bad_DELIVERY_AUDIT.md", "--check", "lean-evidence"]);
