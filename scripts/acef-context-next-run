@@ -1,0 +1,124 @@
+#!/usr/bin/env node
+const fs = require("node:fs");
+const path = require("node:path");
+
+function usage() {
+  console.log(`Usage: acef-context-next-run --manifest <manifest.json> --runs <runs.jsonl> [--format text|json]
+
+Prints the next missing actor run from an ACEF context retrieval experiment manifest.`);
+}
+
+function parseArgs(argv) {
+  const opts = { manifest: "", runs: "", format: "text" };
+  for (let index = 0; index < argv.length; index += 1) {
+    const arg = argv[index];
+    if (arg === "--manifest") opts.manifest = argv[++index] || "";
+    else if (arg === "--runs") opts.runs = argv[++index] || "";
+    else if (arg === "--format") opts.format = argv[++index] || "";
+    else if (arg === "-h" || arg === "--help") {
+      usage();
+      process.exit(0);
+    } else {
+      throw new Error(`Unknown argument: ${arg}`);
+    }
+  }
+  if (!opts.manifest) throw new Error("--manifest is required");
+  if (!opts.runs) throw new Error("--runs is required");
+  if (!new Set(["text", "json"]).has(opts.format)) throw new Error("--format must be text or json");
+  opts.manifest = path.resolve(opts.manifest);
+  opts.runs = path.resolve(opts.runs);
+  if (!fs.existsSync(opts.manifest)) throw new Error(`Manifest does not exist: ${opts.manifest}`);
+  return opts;
+}
+
+function readManifest(filePath) {
+  const manifest = JSON.parse(fs.readFileSync(filePath, "utf8"));
+  if (!Array.isArray(manifest.runs)) throw new Error("Manifest must contain a runs array");
+  return manifest;
+}
+
+function readRows(filePath) {
+  if (!fs.existsSync(filePath)) return [];
+  return fs.readFileSync(filePath, "utf8")
+    .split(/\r?\n/)
+    .filter(Boolean)
+    .map((line, index) => {
+      try {
+        return JSON.parse(line);
+      } catch (error) {
+        throw new Error(`Invalid JSONL at line ${index + 1}: ${error.message}`);
+      }
+    });
+}
+
+function runKey(row) {
+  return `${row.task_type}/${row.mode}/${row.role}`;
+}
+
+function buildCounts(rows) {
+  const counts = new Map();
+  for (const row of rows) {
+    if (row.result === "invalid") continue;
+    const key = runKey(row);
+    counts.set(key, (counts.get(key) || 0) + 1);
+  }
+  return counts;
+}
+
+function nextRun(manifest, rows) {
+  const actual = buildCounts(rows);
+  const consumed = new Map();
+  for (const run of manifest.runs) {
+    const key = runKey(run);
+    const seen = actual.get(key) || 0;
+    const used = consumed.get(key) || 0;
+    consumed.set(key, used + 1);
+    if (used >= seen) return run;
+  }
+  return null;
+}
+
+function renderText(run, manifest, opts) {
+  if (!run) return "All manifest actor runs are recorded.\n";
+  const lines = [];
+  lines.push(`next_run: ${run.id}`);
+  lines.push(`story: ${run.story}`);
+  lines.push(`task_type: ${run.task_type}`);
+  lines.push(`role: ${run.role}`);
+  lines.push(`mode: ${run.mode}`);
+  lines.push(`prompt_path: ${run.prompt_path}`);
+  lines.push("");
+  lines.push("After the actor finishes, save its report to a file and record it with:");
+  lines.push("```bash");
+  lines.push([
+    "scripts/acef-context-record-actor-report",
+    `--repo ${shellQuote(manifest.repo_path || "<repo-path>")}`,
+    `--story ${shellQuote(run.story)}`,
+    `--role ${shellQuote(run.role)}`,
+    `--task-type ${shellQuote(run.task_type)}`,
+    `--mode ${shellQuote(run.mode)}`,
+    `--fixture ${shellQuote(`docs/experiments/context-retrieval/tasks/${run.task_type === "dev" ? "dev-slice" : run.task_type}.md`)}`,
+    "--report <actor-report.txt>",
+    `--output ${shellQuote(opts.runs)}`,
+  ].join(" \\\n  "));
+  lines.push("```");
+  return `${lines.join("\n")}\n`;
+}
+
+function shellQuote(value) {
+  return `'${String(value).replace(/'/g, "'\\''")}'`;
+}
+
+try {
+  const opts = parseArgs(process.argv.slice(2));
+  const manifest = readManifest(opts.manifest);
+  const run = nextRun(manifest, readRows(opts.runs));
+  if (opts.format === "json") {
+    console.log(JSON.stringify({ complete: run === null, next_run: run }, null, 2));
+  } else {
+    process.stdout.write(renderText(run, manifest, opts));
+  }
+} catch (error) {
+  console.error(`ERROR: ${error.message}`);
+  process.exit(1);
+}

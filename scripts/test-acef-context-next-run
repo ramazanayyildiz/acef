@@ -1,0 +1,61 @@
+#!/usr/bin/env node
+const fs = require("node:fs");
+const os = require("node:os");
+const path = require("node:path");
+const cp = require("node:child_process");
+
+const repoRoot = path.resolve(__dirname, "..");
+const nextRunScript = path.join(repoRoot, "scripts", "acef-context-next-run");
+const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "acef-context-next-run-"));
+
+function run(args) {
+  return cp.execFileSync(process.execPath, [nextRunScript, ...args], {
+    cwd: repoRoot,
+    encoding: "utf8",
+  });
+}
+
+try {
+  const manifestPath = path.join(tmp, "manifest.json");
+  const runsPath = path.join(tmp, "runs.jsonl");
+  fs.writeFileSync(manifestPath, `${JSON.stringify({
+    schema: "acef-context-experiment-manifest/v1",
+    repo_path: "/tmp/example-repo",
+    runs: [
+      { id: "review-files-1", story: "4.1", task_type: "review", role: "reviewer", mode: "files", prompt_path: "docs/experiments/context-retrieval/prompts/review-files.md" },
+      { id: "review-files-2", story: "4.1", task_type: "review", role: "reviewer", mode: "files", prompt_path: "docs/experiments/context-retrieval/prompts/review-files.md" },
+      { id: "atdd-files-1", story: "4.1", task_type: "atdd", role: "atdd", mode: "files", prompt_path: "docs/experiments/context-retrieval/prompts/atdd-files.md" },
+    ],
+  }, null, 2)}\n`);
+
+  let output = JSON.parse(run(["--manifest", manifestPath, "--runs", runsPath, "--format", "json"]));
+  if (output.complete !== false || output.next_run.id !== "review-files-1") {
+    throw new Error("empty run file should select the first manifest run");
+  }
+
+  fs.writeFileSync(runsPath, `${JSON.stringify({ task_type: "review", role: "reviewer", mode: "files", result: "pass" })}\n`);
+  output = JSON.parse(run(["--manifest", manifestPath, "--runs", runsPath, "--format", "json"]));
+  if (output.next_run.id !== "review-files-2") {
+    throw new Error("one review/files row should select the second review/files run");
+  }
+
+  fs.appendFileSync(runsPath, `${JSON.stringify({ task_type: "review", role: "reviewer", mode: "files", result: "invalid" })}\n`);
+  output = JSON.parse(run(["--manifest", manifestPath, "--runs", runsPath, "--format", "json"]));
+  if (output.next_run.id !== "review-files-2") {
+    throw new Error("invalid rows must not count toward manifest coverage");
+  }
+
+  fs.appendFileSync(runsPath, [
+    JSON.stringify({ task_type: "review", role: "reviewer", mode: "files", result: "pass" }),
+    JSON.stringify({ task_type: "atdd", role: "atdd", mode: "files", result: "pass" }),
+    "",
+  ].join("\n"));
+  output = JSON.parse(run(["--manifest", manifestPath, "--runs", runsPath, "--format", "json"]));
+  if (output.complete !== true || output.next_run !== null) {
+    throw new Error("complete manifest should return no next run");
+  }
+
+  console.log("acef-context-next-run tests passed");
+} finally {
+  fs.rmSync(tmp, { recursive: true, force: true });
+}

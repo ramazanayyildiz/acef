@@ -79,6 +79,16 @@ The manifest is the completion contract for the experiment. The default pilot sh
 Context-surface probe rows do not satisfy this contract. A run file can show large byte reduction and still have
 `coverage_complete: no` until actual actor rows are recorded for every task/mode cell.
 
+Use the manifest to get the next missing actor slot:
+
+```bash
+scripts/acef-context-next-run \
+  --manifest docs/experiments/context-retrieval/manifests/detaysoft-4-1-18-run-2026-06-23.json \
+  --runs docs/experiments/context-retrieval/runs/detaysoft-4-1-actor-runs-2026-06-23.jsonl
+```
+
+This prevents ad-hoc actor selection from accidentally over-sampling one mode while leaving another cell empty.
+
 ## Summarize a Run File
 
 ```bash
