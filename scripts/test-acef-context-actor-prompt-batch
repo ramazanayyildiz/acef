@@ -66,7 +66,8 @@ try {
   if (!sample.includes("Task type: dev")
     || !sample.includes("Mode: files")
     || !sample.includes("Recording Command")
-    || !sample.includes("--wrong-scope-touch <true|false>")) {
+    || !sample.includes("acef-context-record-actor-report")
+    || !sample.includes("--report <actor-report.txt>")) {
     throw new Error("generated prompt content is incomplete");
   }
   console.log("acef-context-actor-prompt-batch tests passed");

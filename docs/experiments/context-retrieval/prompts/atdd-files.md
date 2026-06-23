@@ -172,10 +172,10 @@ short_summary=<one paragraph>
 
 ## Recording Command
 
-After the actor report is reviewed, record the row with:
+After the actor report is reviewed, save it to a text file and record the row with:
 
 ```bash
-/Users/ramazanayyildiz/CODE/acef/scripts/acef-context-experiment \
+/Users/ramazanayyildiz/CODE/acef/scripts/acef-context-record-actor-report \
   --repo '/Users/ramazanayyildiz/CODE/OPA/detaysoft2026-context-experiment' \
   --story '4.1' \
   --role 'atdd' \
@@ -183,16 +183,5 @@ After the actor report is reviewed, record the row with:
   --mode 'files' \
   --fixture '/Users/ramazanayyildiz/CODE/acef/docs/experiments/context-retrieval/tasks/atdd.md' \
   --output '/Users/ramazanayyildiz/CODE/acef/docs/experiments/context-retrieval/runs/detaysoft-4-1-actor-runs-2026-06-23.jsonl' \
-  --result <pass|fail|invalid> \
-  --tests-passed <true|false> \
-  --input-tokens <number-or-null> \
-  --cached-input-tokens <number-or-null> \
-  --output-tokens <number-or-null> \
-  --cost <number-or-null> \
-  --known-findings-recalled <n> \
-  --review-findings-count <n> \
-  --false-positive-count <n> \
-  --retry-count <n> \
-  --stale-story-leak <true|false> \
-  --wrong-scope-touch <true|false>
+  --report <actor-report.txt>
 ```

@@ -1,0 +1,91 @@
+#!/usr/bin/env node
+const fs = require("node:fs");
+const os = require("node:os");
+const path = require("node:path");
+const cp = require("node:child_process");
+
+const repoRoot = path.resolve(__dirname, "..");
+const script = path.join(repoRoot, "scripts", "acef-context-record-actor-report");
+const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "acef-context-record-"));
+const repoTmp = fs.mkdtempSync(path.join(repoRoot, ".acef-context-record-test-"));
+
+function write(rel, content) {
+  const filePath = path.join(tmp, rel);
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  fs.writeFileSync(filePath, content);
+  return filePath;
+}
+
+function run(args) {
+  return cp.execFileSync(process.execPath, [script, ...args], {
+    cwd: repoRoot,
+    encoding: "utf8",
+  });
+}
+
+try {
+  write("docs/ai/ACEF_ACTIVE_LEDGER", "docs/ai/ACEF_demo_DELIVERY_AUDIT.md\n");
+  write("docs/ai/ACEF_demo_DELIVERY_AUDIT.md", [
+    "# Delivery Audit",
+    "## Story 5.2",
+    "Acceptance: References and Awards are editable.",
+    "## Session Handoff",
+    "next_allowed_step: Story 5.2 review",
+    "",
+  ].join("\n"));
+  write("docs/ai/ACEF_CURRENT_CONTEXT.md", "active_story: Story 5.2\nactive_phase: review\n");
+  write("_bmad-output/implementation-artifacts/5-2-atdd.md", "# Story 5.2 ATDD\nReferences and Awards are editable.\n");
+  const fixture = write("fixture.md", "# Fixture\n");
+  const report = write("actor-report.txt", [
+    "result=pass",
+    "tests_passed=true",
+    "input_tokens=1200",
+    "cached_input_tokens=100",
+    "output_tokens=300",
+    "cost=0.012",
+    "known_findings_recalled=2",
+    "review_findings_count=2",
+    "false_positive_count=0",
+    "retry_count=0",
+    "stale_story_leak=false",
+    "wrong_scope_touch=false",
+    "short_summary=Looks good.",
+    "",
+  ].join("\n"));
+  const output = path.join(repoTmp, "runs.jsonl");
+  run([
+    "--repo", tmp,
+    "--story", "5.2",
+    "--role", "reviewer",
+    "--task-type", "review",
+    "--mode", "files",
+    "--fixture", fixture,
+    "--report", report,
+    "--output", output,
+  ]);
+  const row = JSON.parse(fs.readFileSync(output, "utf8").trim());
+  if (row.result !== "pass" || row.input_tokens !== 1200 || row.known_findings_recalled !== 2 || row.stale_story_leak !== false) {
+    throw new Error("actor report was not recorded correctly");
+  }
+
+  const badReport = write("bad-report.txt", "result=pass\n");
+  const bad = cp.spawnSync(process.execPath, [
+    script,
+    "--repo", tmp,
+    "--story", "5.2",
+    "--role", "reviewer",
+    "--task-type", "review",
+    "--mode", "files",
+    "--fixture", fixture,
+    "--report", badReport,
+    "--output", path.join(repoTmp, "bad.jsonl"),
+  ], { cwd: repoRoot, encoding: "utf8" });
+  if (bad.status === 0 || !bad.stderr.includes("missing required field")) {
+    throw new Error("invalid actor report was not rejected");
+  }
+
+  console.log("acef-context-record-actor-report tests passed");
+} finally {
+  fs.rmSync(tmp, { recursive: true, force: true });
+  fs.rmSync(repoTmp, { recursive: true, force: true });
+}

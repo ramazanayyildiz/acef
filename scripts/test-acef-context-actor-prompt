@@ -66,7 +66,8 @@ try {
   if (!filesPrompt.includes("Mode: files")
     || !filesPrompt.includes("Experiment Context")
     || !filesPrompt.includes("Recording Command")
-    || !filesPrompt.includes("--known-findings-recalled <n>")
+    || !filesPrompt.includes("acef-context-record-actor-report")
+    || !filesPrompt.includes("--report <actor-report.txt>")
     || !filesPrompt.includes("References and Awards are editable")) {
     throw new Error("files actor prompt is incomplete");
   }

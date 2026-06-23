@@ -1,0 +1,154 @@
+#!/usr/bin/env node
+const fs = require("node:fs");
+const path = require("node:path");
+const cp = require("node:child_process");
+
+const repoRoot = path.basename(path.dirname(__dirname)) === ".acef"
+  ? path.resolve(__dirname, "..", "..")
+  : path.resolve(__dirname, "..");
+const experimentScript = path.join(__dirname, "acef-context-experiment");
+
+const required = [
+  "result",
+  "tests_passed",
+  "input_tokens",
+  "cached_input_tokens",
+  "output_tokens",
+  "cost",
+  "known_findings_recalled",
+  "review_findings_count",
+  "false_positive_count",
+  "retry_count",
+  "stale_story_leak",
+  "wrong_scope_touch",
+];
+
+function usage() {
+  console.log(`Usage: acef-context-record-actor-report --repo <path> --story <id> --role <role> --task-type <review|atdd|dev> --mode <baseline|files|context-mode> --fixture <path> --report <path> [--output <path>]
+
+Parses an actor final report and appends a validated ACEF context experiment JSONL row.`);
+}
+
+function parseArgs(argv) {
+  const opts = {
+    repo: "",
+    story: "",
+    role: "",
+    taskType: "",
+    mode: "",
+    fixture: "",
+    report: "",
+    output: "",
+  };
+  for (let index = 0; index < argv.length; index += 1) {
+    const arg = argv[index];
+    if (arg === "--repo") opts.repo = argv[++index] || "";
+    else if (arg === "--story") opts.story = argv[++index] || "";
+    else if (arg === "--role") opts.role = argv[++index] || "";
+    else if (arg === "--task-type") opts.taskType = argv[++index] || "";
+    else if (arg === "--mode") opts.mode = argv[++index] || "";
+    else if (arg === "--fixture") opts.fixture = argv[++index] || "";
+    else if (arg === "--report") opts.report = argv[++index] || "";
+    else if (arg === "--output") opts.output = argv[++index] || "";
+    else if (arg === "-h" || arg === "--help") {
+      usage();
+      process.exit(0);
+    } else {
+      throw new Error(`Unknown argument: ${arg}`);
+    }
+  }
+  if (!opts.repo) throw new Error("--repo is required");
+  if (!opts.story) throw new Error("--story is required");
+  if (!opts.role) throw new Error("--role is required");
+  if (!new Set(["review", "atdd", "dev"]).has(opts.taskType)) throw new Error("--task-type must be review, atdd, or dev");
+  if (!new Set(["baseline", "files", "context-mode"]).has(opts.mode)) throw new Error("--mode must be baseline, files, or context-mode");
+  if (!opts.fixture) throw new Error("--fixture is required");
+  if (!opts.report) throw new Error("--report is required");
+  opts.repo = path.resolve(opts.repo);
+  opts.fixture = path.resolve(opts.fixture);
+  opts.report = path.resolve(opts.report);
+  if (opts.output) opts.output = path.resolve(opts.output);
+  for (const [name, filePath] of [["repo", opts.repo], ["fixture", opts.fixture], ["report", opts.report]]) {
+    if (!fs.existsSync(filePath)) throw new Error(`${name} does not exist: ${filePath}`);
+  }
+  return opts;
+}
+
+function parseReport(filePath) {
+  const text = fs.readFileSync(filePath, "utf8");
+  const fields = {};
+  for (const line of text.split(/\r?\n/)) {
+    const match = line.match(/^\s*([a-z_]+)\s*=\s*(.*?)\s*$/);
+    if (!match) continue;
+    fields[match[1]] = match[2];
+  }
+  const missing = required.filter((key) => !(key in fields));
+  if (missing.length) throw new Error(`Actor report missing required field(s): ${missing.join(", ")}`);
+  validate(fields);
+  return fields;
+}
+
+function validate(fields) {
+  if (!new Set(["pass", "fail", "invalid"]).has(fields.result)) throw new Error("result must be pass, fail, or invalid");
+  for (const key of ["tests_passed", "stale_story_leak", "wrong_scope_touch"]) parseBool(fields[key], key);
+  for (const key of ["known_findings_recalled", "review_findings_count", "false_positive_count", "retry_count"]) {
+    parseInteger(fields[key], key);
+  }
+  for (const key of ["input_tokens", "cached_input_tokens", "output_tokens", "cost"]) parseNumberOrNull(fields[key], key);
+}
+
+function parseBool(value, key) {
+  if (value === "true" || value === "false") return value;
+  throw new Error(`${key} must be true or false`);
+}
+
+function parseInteger(value, key) {
+  if (/^[0-9]+$/.test(value)) return value;
+  throw new Error(`${key} must be a non-negative integer`);
+}
+
+function parseNumberOrNull(value, key) {
+  if (value === "null") return value;
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < 0) throw new Error(`${key} must be a non-negative number or null`);
+  return value;
+}
+
+function main() {
+  const opts = parseArgs(process.argv.slice(2));
+  const fields = parseReport(opts.report);
+  const args = [
+    "--repo", opts.repo,
+    "--story", opts.story,
+    "--role", opts.role,
+    "--task-type", opts.taskType,
+    "--mode", opts.mode,
+    "--fixture", opts.fixture,
+    "--result", fields.result,
+    "--tests-passed", fields.tests_passed,
+    "--input-tokens", fields.input_tokens,
+    "--cached-input-tokens", fields.cached_input_tokens,
+    "--output-tokens", fields.output_tokens,
+    "--cost", fields.cost,
+    "--known-findings-recalled", fields.known_findings_recalled,
+    "--review-findings-count", fields.review_findings_count,
+    "--false-positive-count", fields.false_positive_count,
+    "--retry-count", fields.retry_count,
+    "--stale-story-leak", fields.stale_story_leak,
+    "--wrong-scope-touch", fields.wrong_scope_touch,
+  ];
+  if (opts.output) args.push("--output", opts.output);
+  const stdout = cp.execFileSync(experimentScript, args, {
+    cwd: repoRoot,
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  process.stdout.write(stdout);
+}
+
+try {
+  main();
+} catch (error) {
+  console.error(`ERROR: ${error.message}`);
+  process.exit(1);
+}

@@ -8,6 +8,7 @@ const repoRoot = path.basename(path.dirname(__dirname)) === ".acef"
   : path.resolve(__dirname, "..");
 const acefExperiment = path.join(__dirname, "acef-context-experiment");
 const acefQuery = path.join(__dirname, "acef-query");
+const recordActorReport = path.join(__dirname, "acef-context-record-actor-report");
 
 function usage() {
   console.log(`ACEF context actor prompt
@@ -129,7 +130,7 @@ function contextBundle(opts) {
 function recordCommand(opts) {
   const output = opts.runOutput || path.join(opts.repo, "docs", "experiments", "context-retrieval", "runs", `${new Date().toISOString().slice(0, 10)}-actor.jsonl`);
   return [
-    `${acefExperiment} \\`,
+    `${recordActorReport} \\`,
     `  --repo ${shell(opts.repo)} \\`,
     `  --story ${shell(opts.story)} \\`,
     `  --role ${shell(opts.role)} \\`,
@@ -137,18 +138,7 @@ function recordCommand(opts) {
     `  --mode ${shell(opts.mode)} \\`,
     `  --fixture ${shell(opts.fixture)} \\`,
     `  --output ${shell(output)} \\`,
-    "  --result <pass|fail|invalid> \\",
-    "  --tests-passed <true|false> \\",
-    "  --input-tokens <number-or-null> \\",
-    "  --cached-input-tokens <number-or-null> \\",
-    "  --output-tokens <number-or-null> \\",
-    "  --cost <number-or-null> \\",
-    "  --known-findings-recalled <n> \\",
-    "  --review-findings-count <n> \\",
-    "  --false-positive-count <n> \\",
-    "  --retry-count <n> \\",
-    "  --stale-story-leak <true|false> \\",
-    "  --wrong-scope-touch <true|false>",
+    "  --report <actor-report.txt>",
   ].join("\n");
 }
 
@@ -211,7 +201,7 @@ function render(opts) {
     "",
     "## Recording Command",
     "",
-    "After the actor report is reviewed, record the row with:",
+    "After the actor report is reviewed, save it to a text file and record the row with:",
     "",
     "```bash",
     recordCommand(opts),

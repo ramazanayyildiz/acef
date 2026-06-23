@@ -42,29 +42,21 @@ scripts/acef-context-actor-prompt-batch \
 After an actor completes the task, record the quality and token fields in the same row shape:
 
 ```bash
-scripts/acef-context-experiment \
+scripts/acef-context-record-actor-report \
   --repo /Users/ramazanayyildiz/CODE/OPA/detaysoft2026-context-experiment \
   --story 4.1 \
   --role reviewer \
   --task-type review \
   --mode files \
   --fixture docs/experiments/context-retrieval/tasks/review.md \
-  --result pass \
-  --tests-passed true \
-  --input-tokens 1200 \
-  --cached-input-tokens 100 \
-  --output-tokens 300 \
-  --cost 0.012 \
-  --known-findings-recalled 2 \
-  --review-findings-count 2 \
-  --false-positive-count 0 \
-  --retry-count 0 \
-  --stale-story-leak false \
-  --wrong-scope-touch false
+  --report /path/to/actor-report.txt
 ```
 
 Use `null` or omit token/cost fields when the client has no usage export. Rows without actor result fields remain
 context-surface evidence only.
+
+`acef-context-record-actor-report` validates that every required field is present before appending the JSONL row. Do not
+hand-edit experiment rows except to remove an explicitly invalid run.
 
 ## Summarize a Run File
 
