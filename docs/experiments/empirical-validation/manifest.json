@@ -1,0 +1,216 @@
+{
+  "schemaVersion": 1,
+  "experimentId": "acef-empirical-2026-06-23",
+  "lanes": [
+    "baseline",
+    "lightweight",
+    "guarded"
+  ],
+  "clients": [
+    "codex",
+    "opencode"
+  ],
+  "tasks": [
+    {
+      "id": "detaysoft-content-language",
+      "repo": "detaysoft2026",
+      "stack": "php-laravel",
+      "source": "/Users/ramazanayyildiz/CODE/OPA/detaysoft2026",
+      "commit": "aaf9d6bd5bb5dab571e485d12a9f4c06d0a3fc09",
+      "taskType": "small-feature",
+      "risk": "standard",
+      "workShape": "middleware",
+      "prompt": "Add a Content-Language response header in SetLocale. It must equal the locale resolved by the middleware for English-prefixed and canonical Turkish requests. Preserve existing routing and locale behavior.",
+      "allowedPaths": [
+        "app/Http/Middleware/SetLocale.php"
+      ],
+      "setup": [
+        {
+          "type": "copy-fixture",
+          "fixture": "BenchmarkContentLanguageTest.php",
+          "path": "tests/Feature/BenchmarkContentLanguageTest.php"
+        }
+      ],
+      "verify": [
+        "php",
+        "artisan",
+        "test",
+        "--compact",
+        "--filter",
+        "BenchmarkContentLanguageTest"
+      ],
+      "expected": [
+        {
+          "path": "app/Http/Middleware/SetLocale.php",
+          "contains": "Content-Language"
+        }
+      ]
+    },
+    {
+      "id": "detaysoft-download-traversal",
+      "repo": "detaysoft2026",
+      "stack": "php-laravel",
+      "source": "/Users/ramazanayyildiz/CODE/OPA/detaysoft2026",
+      "commit": "aaf9d6bd5bb5dab571e485d12a9f4c06d0a3fc09",
+      "taskType": "guarded-security-fix",
+      "risk": "guarded",
+      "workShape": "controller",
+      "prompt": "Fix the signed private-document download path traversal regression. Keep the existing ownership, publication, signed-route, and local/S3 portability behavior. Do not weaken the test or broaden the download surface.",
+      "allowedPaths": [
+        "app/Http/Controllers/DocumentDownloadController.php"
+      ],
+      "setup": [
+        {
+          "type": "copy-fixture",
+          "fixture": "BenchmarkDocumentDownloadTraversalTest.php",
+          "path": "tests/Feature/BenchmarkDocumentDownloadTraversalTest.php"
+        },
+        {
+          "type": "replace",
+          "path": "app/Http/Controllers/DocumentDownloadController.php",
+          "from": "            && ! preg_match('#(^|/)\\.\\.(/|$)#', $path);",
+          "to": "            && true; // ACEF benchmark regression: traversal segment check removed",
+          "count": 1
+        }
+      ],
+      "verify": [
+        "php",
+        "artisan",
+        "test",
+        "--compact",
+        "--filter",
+        "test_benchmark_document_download_rejects_traversal_segments"
+      ],
+      "expected": [
+        {
+          "path": "app/Http/Controllers/DocumentDownloadController.php",
+          "contains": "preg_match('#(^|/)\\.\\.(/|$)#'"
+        },
+        {
+          "path": "app/Http/Controllers/DocumentDownloadController.php",
+          "notContains": "ACEF benchmark regression"
+        }
+      ]
+    },
+    {
+      "id": "browser-rts-combat-hp-clamp",
+      "repo": "browser-rts",
+      "stack": "typescript-vite",
+      "source": "/Users/ramazanayyildiz/CODE/browser-rts",
+      "commit": "34a38aab02984b249e3ce3c99311c6cb7faf3d8b",
+      "taskType": "bug-fix",
+      "risk": "standard",
+      "workShape": "simulation-system",
+      "prompt": "Fix the combat regression that allows lethal damage to leave unit HP below zero. Preserve the current damage, armor, bonus, effects, and sound behavior.",
+      "allowedPaths": [
+        "packages/sim/src/ecs/systems/CombatSystem.ts"
+      ],
+      "setup": [
+        {
+          "type": "replace",
+          "path": "packages/sim/src/ecs/systems/CombatSystem.ts",
+          "from": "    target.hp = Math.max(0, target.hp - damage);",
+          "to": "    target.hp = target.hp - damage; // ACEF benchmark regression",
+          "count": 1
+        },
+        {
+          "type": "copy-fixture",
+          "fixture": "run-benchmark-combat-clamp.mjs",
+          "path": "scripts/run-benchmark-combat-clamp.mjs"
+        }
+      ],
+      "verify": [
+        "node",
+        "scripts/run-benchmark-combat-clamp.mjs"
+      ],
+      "expected": [
+        {
+          "path": "packages/sim/src/ecs/systems/CombatSystem.ts",
+          "contains": "Math.max(0, target.hp - damage)"
+        },
+        {
+          "path": "packages/sim/src/ecs/systems/CombatSystem.ts",
+          "notContains": "ACEF benchmark regression"
+        }
+      ]
+    },
+    {
+      "id": "mvt-bff-internal-prefix",
+      "repo": "mvt-nextjs",
+      "stack": "typescript-nextjs",
+      "source": "/Users/ramazanayyildiz/CODE/Ram/mvt/nextjs-app",
+      "commit": "e64ec5898b3e70b6f7e1317c8cd4b6fc412126c0",
+      "taskType": "guarded-security-fix",
+      "risk": "guarded",
+      "workShape": "api-route",
+      "prompt": "Fix the BFF proxy security regression that exposes the internal API prefix. Preserve existing public proxy behavior and all other blocked prefixes.",
+      "allowedPaths": [
+        "app/api/app/[...path]/route.ts"
+      ],
+      "setup": [
+        {
+          "type": "replace",
+          "path": "app/api/app/[...path]/route.ts",
+          "from": "const BLOCKED_PREFIXES = [\"admin\", \"auth\", \"app\", \"internal\"];",
+          "to": "const BLOCKED_PREFIXES = [\"admin\", \"auth\", \"app\"]; // ACEF benchmark regression",
+          "count": 1
+        }
+      ],
+      "verify": [
+        "npx",
+        "vitest",
+        "run",
+        "app/api/app/__tests__/bff-proxy.test.ts"
+      ],
+      "expected": [
+        {
+          "path": "app/api/app/[...path]/route.ts",
+          "contains": "\"internal\""
+        },
+        {
+          "path": "app/api/app/[...path]/route.ts",
+          "notContains": "ACEF benchmark regression"
+        }
+      ]
+    },
+    {
+      "id": "mvt-people-soft-delete",
+      "repo": "mvt-nextjs",
+      "stack": "typescript-nextjs",
+      "source": "/Users/ramazanayyildiz/CODE/Ram/mvt/nextjs-app",
+      "commit": "e64ec5898b3e70b6f7e1317c8cd4b6fc412126c0",
+      "taskType": "bug-fix",
+      "risk": "standard",
+      "workShape": "api-route",
+      "prompt": "Fix the admin person-detail regression that returns soft-deleted people. Preserve the existing permission, 404, query shape, and update/archive behavior.",
+      "allowedPaths": [
+        "app/api/admin/people/[id]/route.ts"
+      ],
+      "setup": [
+        {
+          "type": "replace",
+          "path": "app/api/admin/people/[id]/route.ts",
+          "from": "        WHERE p.id = $1 AND p.deleted_at IS NULL",
+          "to": "        WHERE p.id = $1 /* ACEF benchmark regression: deleted rows leak */",
+          "count": 1
+        }
+      ],
+      "verify": [
+        "npx",
+        "vitest",
+        "run",
+        "app/api/admin/__tests__/people-route.test.ts"
+      ],
+      "expected": [
+        {
+          "path": "app/api/admin/people/[id]/route.ts",
+          "contains": "WHERE p.id = $1 AND p.deleted_at IS NULL"
+        },
+        {
+          "path": "app/api/admin/people/[id]/route.ts",
+          "notContains": "ACEF benchmark regression"
+        }
+      ]
+    }
+  ]
+}

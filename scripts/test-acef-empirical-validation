@@ -1,0 +1,99 @@
+#!/usr/bin/env node
+"use strict";
+
+const assert = require("assert");
+const fs = require("fs");
+const os = require("os");
+const path = require("path");
+const { spawnSync } = require("child_process");
+
+const root = path.resolve(__dirname, "..");
+const { codexMetrics, opencodeMetrics, isAllowedPath } = require("./lib/acef-empirical");
+const { buildRuns, changedPaths } = require("./acef-empirical-validation");
+
+function run(command, args, opts = {}) {
+  const result = spawnSync(command, args, { encoding: "utf8", ...opts });
+  if (result.status !== 0) {
+    throw new Error(`${command} ${args.join(" ")} failed\n${result.stdout}\n${result.stderr}`);
+  }
+  return result.stdout;
+}
+
+function testManifestExpansion() {
+  const manifest = JSON.parse(fs.readFileSync(path.join(root, "docs/experiments/empirical-validation/manifest.json"), "utf8"));
+  const runs = buildRuns(manifest);
+  const unique = (key) => [...new Set(runs.map((run) => run[key] ?? run.task[key]))].sort();
+  assert.strictEqual(runs.length, 30);
+  assert.deepStrictEqual(unique("repo"), ["browser-rts", "detaysoft2026", "mvt-nextjs"]);
+  assert.deepStrictEqual(unique("stack"), ["php-laravel", "typescript-nextjs", "typescript-vite"]);
+  assert.deepStrictEqual(unique("lane"), ["baseline", "guarded", "lightweight"]);
+  assert.deepStrictEqual(unique("client"), ["codex", "opencode"]);
+  assert.deepStrictEqual(unique("taskType"), ["bug-fix", "guarded-security-fix", "small-feature"]);
+}
+
+function testMetricsParsers() {
+  const codex = codexMetrics([
+    { type: "item.started", item: { type: "command_execution", command: "rg foo" } },
+    { type: "item.completed", item: { type: "command_execution", exit_code: 1 } },
+    { type: "item.completed", item: { type: "agent_message", text: "done" } },
+    { type: "turn.completed", usage: { input_tokens: 11, cached_input_tokens: 2, output_tokens: 3 } },
+  ]);
+  assert.strictEqual(codex.input_tokens, 11);
+  assert.strictEqual(codex.cached_input_tokens, 2);
+  assert.strictEqual(codex.output_tokens, 3);
+  assert.strictEqual(codex.extra_file_reads, 1);
+  assert.strictEqual(codex.retry_count, 1);
+  assert.match(codex.final_text, /done/);
+
+  const opencode = opencodeMetrics([
+    { type: "event", part: { type: "tool", state: { input: { command: "sed -n 1,2p file" }, status: "error" } } },
+    { type: "text", part: { text: "finished" } },
+    { type: "step_finish", part: { tokens: { input: 19, output: 4, cache: { read: 5 } }, cost: 0.001 } },
+  ]);
+  assert.strictEqual(opencode.input_tokens, 19);
+  assert.strictEqual(opencode.cached_input_tokens, 5);
+  assert.strictEqual(opencode.output_tokens, 4);
+  assert.strictEqual(opencode.tool_calls, 1);
+  assert.strictEqual(opencode.extra_file_reads, 1);
+  assert.strictEqual(opencode.retry_count, 1);
+  assert.match(opencode.final_text, /finished/);
+}
+
+function testScopeMatching() {
+  assert.strictEqual(isAllowedPath("app/api/app/[...path]/route.ts", ["app/api/app/[...path]/route.ts"]), true);
+  assert.strictEqual(isAllowedPath("app/api/app/foo/route.ts", ["app/api/app/[...path]/route.ts"]), false);
+  assert.strictEqual(isAllowedPath("app/Twill/Capsules/Blogs/Models/Blog.php", ["app/Twill/Capsules/Blogs/**"]), true);
+}
+
+function testChangedPathsPreservesPorcelainFilenames() {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "acef-empirical-test-"));
+  try {
+    run("git", ["init", "-q"], { cwd: tmp });
+    run("git", ["config", "user.email", "acef-test@example.invalid"], { cwd: tmp });
+    run("git", ["config", "user.name", "ACEF Test"], { cwd: tmp });
+    fs.writeFileSync(path.join(tmp, "alpha.txt"), "base\n");
+    run("git", ["add", "alpha.txt"], { cwd: tmp });
+    run("git", ["commit", "-q", "-m", "base"], { cwd: tmp });
+    const base = run("git", ["rev-parse", "HEAD"], { cwd: tmp }).trim();
+    fs.writeFileSync(path.join(tmp, "alpha.txt"), "changed\n");
+    fs.writeFileSync(path.join(tmp, "zulu.txt"), "new\n");
+    assert.deepStrictEqual(changedPaths(tmp, base), ["alpha.txt", "zulu.txt"]);
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+}
+
+function testPlanCli() {
+  const stdout = run("node", ["scripts/acef-empirical-validation", "--plan"], { cwd: root });
+  const plan = JSON.parse(stdout);
+  assert.strictEqual(plan.count, 30);
+  assert.strictEqual(plan.runs.length, 30);
+}
+
+testManifestExpansion();
+testMetricsParsers();
+testScopeMatching();
+testChangedPathsPreservesPorcelainFilenames();
+testPlanCli();
+
+console.log("acef-empirical-validation tests passed");

@@ -1,0 +1,193 @@
+#!/usr/bin/env node
+"use strict";
+
+const fs = require("fs");
+const path = require("path");
+const { median } = require("./lib/acef-empirical");
+
+const root = path.resolve(__dirname, "..");
+const resultsPath = path.join(root, "docs/experiments/empirical-validation/runs/results.jsonl");
+const reportPath = path.join(root, "docs/experiments/empirical-validation/report.md");
+
+function rows() {
+  return fs.readFileSync(resultsPath, "utf8").trim().split(/\n/).filter(Boolean).map(JSON.parse);
+}
+
+function pct(value) {
+  return `${Math.round(value * 10) / 10}%`;
+}
+
+function deltaPct(next, base) {
+  if (!Number.isFinite(next) || !Number.isFinite(base) || base === 0) return "n/a";
+  const delta = ((next - base) / base) * 100;
+  return `${delta >= 0 ? "+" : ""}${pct(delta)}`;
+}
+
+function groupBy(items, keyFn) {
+  const groups = new Map();
+  for (const item of items) {
+    const key = keyFn(item);
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(item);
+  }
+  return groups;
+}
+
+function summarize(items) {
+  const knownTotal = items.reduce((sum, row) => sum + Number(row.known_findings_total || 0), 0);
+  const knownRecalled = items.reduce((sum, row) => sum + Number(row.known_findings_recalled || 0), 0);
+  const scopeViolations = items.reduce((sum, row) => sum + Number(row.scope_violations?.length || 0), 0);
+  return {
+    count: items.length,
+    pass: items.filter((row) => row.result === "pass").length,
+    fail: items.filter((row) => row.result === "fail").length,
+    invalid: items.filter((row) => row.result === "invalid").length,
+    medianInput: median(items.map((row) => row.input_tokens)),
+    medianCached: median(items.map((row) => row.cached_input_tokens)),
+    medianOutput: median(items.map((row) => row.output_tokens)),
+    medianRuntime: median(items.map((row) => row.runtime_seconds)),
+    toolCalls: items.reduce((sum, row) => sum + Number(row.tool_calls || 0), 0),
+    extraReads: items.reduce((sum, row) => sum + Number(row.extra_file_reads || 0), 0),
+    retries: items.reduce((sum, row) => sum + Number(row.retry_count || 0), 0),
+    scopeViolations,
+    contextMisses: items.filter((row) => row.context_miss).length,
+    knownTotal,
+    knownRecalled,
+  };
+}
+
+function table(headers, rowsData) {
+  return [
+    `| ${headers.join(" | ")} |`,
+    `| ${headers.map(() => "---").join(" | ")} |`,
+    ...rowsData.map((row) => `| ${row.join(" | ")} |`),
+  ].join("\n");
+}
+
+function byKeyMarkdown(title, items, keyName, keyFn, baselineSummary = null) {
+  const rowsData = [...groupBy(items, keyFn)]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([key, group]) => {
+      const s = summarize(group);
+      const baseline = baselineSummary && baselineSummary.get(key);
+      return [
+        key,
+        String(s.count),
+        `${s.pass}/${s.count}`,
+        `${s.knownRecalled}/${s.knownTotal}`,
+        String(s.scopeViolations),
+        String(s.medianInput ?? "n/a"),
+        baseline ? deltaPct(s.medianInput, baseline.medianInput) : "n/a",
+        String(s.medianCached ?? "n/a"),
+        String(s.medianRuntime ?? "n/a"),
+        String(s.contextMisses),
+      ];
+    });
+  return `## ${title}\n\n${table([keyName, "Runs", "Pass", "Recall", "Scope violations", "Median input", "Input vs baseline", "Median cached", "Median seconds", "Context misses"], rowsData)}`;
+}
+
+function pairedLaneDeltas(items) {
+  const byTaskClient = groupBy(items, (row) => `${row.task_id}|${row.client}`);
+  const rowsData = [];
+  for (const [pair, group] of [...byTaskClient].sort(([a], [b]) => a.localeCompare(b))) {
+    const baseline = group.find((row) => row.lane === "baseline");
+    if (!baseline) continue;
+    for (const lane of ["lightweight", "guarded"]) {
+      const row = group.find((item) => item.lane === lane);
+      if (!row) continue;
+      rowsData.push([
+        pair.replace("|", " / "),
+        lane,
+        row.result,
+        deltaPct(row.input_tokens, baseline.input_tokens),
+        `${row.known_findings_recalled || 0}/${row.known_findings_total || 0}`,
+        String(row.scope_violations?.length || 0),
+      ]);
+    }
+  }
+  return table(["Task / client", "Lane", "Result", "Input delta vs baseline", "Recall", "Scope violations"], rowsData);
+}
+
+function main() {
+  const data = rows();
+  const total = summarize(data);
+  const byLane = new Map([...groupBy(data, (row) => row.lane)].map(([key, group]) => [key, summarize(group)]));
+  const baselineByLane = new Map([["baseline", byLane.get("baseline")]]);
+  const date = new Date().toISOString().slice(0, 10);
+
+  const decision = [
+    "# ACEF Empirical Validation Report",
+    "",
+    `Generated: ${date}`,
+    "",
+    "## Decision",
+    "",
+    "Do not change ACEF defaults to claim token reduction from the current lightweight or guarded lanes. In this 30-run measurement, ACEF lanes improved completion quality and defect recall, but they increased median input-token consumption versus baseline.",
+    "",
+    "Keep the current safe defaults: compact current context, epic context packs, short role-specific prompts, targeted reads, and short failure summaries. Do not add SQLite, vector, graph, SCIP, Serena, or Codebase-Memory infrastructure from this result. The next optimization should reduce ACEF prompt/tool overhead inside the existing lane, not introduce a new retrieval backend.",
+    "",
+    "## Scope",
+    "",
+    "- 30 external-agent runs completed.",
+    "- 3 repositories: Detaysoft CMS, Browser RTS, MVT Next.js.",
+    "- 3 stacks: Laravel/PHP, TypeScript/Vite, TypeScript/Next.js.",
+    "- 2 clients: Codex and OpenCode.",
+    "- 3 lanes: baseline, lightweight ACEF, guarded ACEF.",
+    "- Active product worktrees were not modified; runs used isolated clones.",
+    "",
+    "## Headline Metrics",
+    "",
+    table(
+      ["Metric", "Value"],
+      [
+        ["Total runs", String(total.count)],
+        ["Invalid runs", String(total.invalid)],
+        ["Overall pass rate", `${total.pass}/${total.count}`],
+        ["Overall known finding recall", `${total.knownRecalled}/${total.knownTotal}`],
+        ["Scope violations", String(total.scopeViolations)],
+        ["Median input tokens", String(total.medianInput)],
+        ["Median cached input tokens", String(total.medianCached)],
+      ],
+    ),
+    "",
+    byKeyMarkdown("By Lane", data, "Lane", (row) => row.lane, baselineByLane),
+    "",
+    byKeyMarkdown("By Client", data, "Client", (row) => row.client),
+    "",
+    byKeyMarkdown("By Task", data, "Task", (row) => row.task_id),
+    "",
+    "## Paired ACEF Deltas",
+    "",
+    pairedLaneDeltas(data),
+    "",
+    "## Interpretation",
+    "",
+    "- Baseline passed 6/10 with 6/10 known findings recalled.",
+    "- Lightweight ACEF passed 8/10 with 8/10 known findings recalled.",
+    "- Guarded ACEF passed 8/10 with 8/10 known findings recalled.",
+    "- Scope violations were 0 across all lanes.",
+    "- Median input tokens increased from baseline to lightweight and guarded lanes. The quality gain is real, but it is not a token-saving result.",
+    "- The Detaysoft traversal task failed in every lane. That is a signal that the security-fix prompt/context still does not force restoration of the canonical validation expression, even when tests pass. Treat it as a follow-up benchmark improvement target, not as evidence for a new retrieval backend.",
+    "- OpenCode used far fewer measured input tokens than Codex in this run, while achieving the same pass count. This is client-specific overhead evidence, not an ACEF-method conclusion.",
+    "",
+    "## Final Policy",
+    "",
+    "- ACEF empirical validation supports keeping ACEF for quality and process control.",
+    "- ACEF empirical validation does not support claiming ACEF currently reduces token cost.",
+    "- Do not promote `acef-query`, Context Mode, SQLite, vector, or graph storage to default worker context policy from this result.",
+    "- Continue optimizing inside the existing file/artifact model: shorter worker prompts, narrower target-file reads, better per-role context packs, and less repeated ledger/artifact ingestion.",
+    "",
+    "## Evidence",
+    "",
+    `- Raw result log: \`${path.relative(root, resultsPath)}\``,
+    "- Raw transcripts are intentionally outside git under the experiment workspace and referenced by SHA-256 in the JSONL rows.",
+    "- Harness: `scripts/acef-empirical-validation`",
+    "- Harness tests: `scripts/test-acef-empirical-validation`",
+    "",
+  ].join("\n");
+
+  fs.writeFileSync(reportPath, decision);
+  console.log(reportPath);
+}
+
+main();

@@ -1,0 +1,471 @@
+#!/usr/bin/env node
+const fs = require("node:fs");
+const os = require("node:os");
+const path = require("node:path");
+const cp = require("node:child_process");
+const crypto = require("node:crypto");
+const { parseJsonLines, codexMetrics, opencodeMetrics, isAllowedPath } = require("./lib/acef-empirical");
+
+const acefRoot = path.resolve(__dirname, "..");
+const defaultManifest = path.join(acefRoot, "docs", "experiments", "empirical-validation", "manifest.json");
+const defaultResults = path.join(acefRoot, "docs", "experiments", "empirical-validation", "runs", "results.jsonl");
+const fixtureRoot = path.join(acefRoot, "docs", "experiments", "empirical-validation", "fixtures");
+
+function usage() {
+  console.log(`Usage: acef-empirical-validation [--manifest <path>] [--results <path>] [--workspace <path>] [--run-id <id>] [--limit <n>] [--plan] [--keep]
+
+Runs controlled external-agent tasks in disposable local clones. Existing run IDs in the JSONL results file are skipped.`);
+}
+
+function parseArgs(argv) {
+  const opts = {
+    manifest: defaultManifest,
+    results: defaultResults,
+    workspace: path.join(os.tmpdir(), "acef-empirical-validation"),
+    runId: "",
+    limit: Infinity,
+    plan: false,
+    keep: false,
+  };
+  for (let index = 0; index < argv.length; index += 1) {
+    const arg = argv[index];
+    if (arg === "--help" || arg === "-h") { usage(); process.exit(0); }
+    if (arg === "--plan") opts.plan = true;
+    else if (arg === "--keep") opts.keep = true;
+    else if (arg === "--manifest") opts.manifest = path.resolve(argv[++index]);
+    else if (arg === "--results") opts.results = path.resolve(argv[++index]);
+    else if (arg === "--workspace") opts.workspace = path.resolve(argv[++index]);
+    else if (arg === "--run-id") opts.runId = argv[++index] || "";
+    else if (arg === "--limit") opts.limit = Number(argv[++index]);
+    else throw new Error(`Unknown argument: ${arg}`);
+  }
+  return opts;
+}
+
+function execute(command, args, options = {}) {
+  const started = Date.now();
+  const result = cp.spawnSync(command, args, {
+    cwd: options.cwd,
+    env: options.env || process.env,
+    encoding: "utf8",
+    maxBuffer: options.maxBuffer || 100 * 1024 * 1024,
+    timeout: options.timeout || 0,
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  return {
+    status: Number.isInteger(result.status) ? result.status : 1,
+    stdout: result.stdout || "",
+    stderr: result.stderr || result.error?.message || "",
+    runtimeMs: Date.now() - started,
+    signal: result.signal || null,
+  };
+}
+
+function must(command, args, options = {}) {
+  const result = execute(command, args, options);
+  if (result.status !== 0) throw new Error(`${command} ${args.join(" ")} failed (${result.status}):\n${result.stderr || result.stdout}`);
+  return result.stdout.trim();
+}
+
+function hash(value) {
+  return crypto.createHash("sha256").update(value).digest("hex");
+}
+
+function write(filePath, value) {
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  fs.writeFileSync(filePath, value);
+}
+
+function readJson(filePath) {
+  return JSON.parse(fs.readFileSync(filePath, "utf8"));
+}
+
+function buildRuns(manifest) {
+  const runs = [];
+  for (const task of manifest.tasks) {
+    for (const lane of manifest.lanes) {
+      for (const client of manifest.clients) {
+        runs.push({
+          runId: `${task.id}--${lane}--${client}`,
+          task,
+          lane,
+          client,
+        });
+      }
+    }
+  }
+  return runs;
+}
+
+function existingRunIds(resultsPath) {
+  if (!fs.existsSync(resultsPath)) return new Set();
+  return new Set(fs.readFileSync(resultsPath, "utf8").split(/\r?\n/).filter(Boolean).map((line) => JSON.parse(line).run_id));
+}
+
+function applySetup(repo, task) {
+  for (const operation of task.setup || []) {
+    const target = path.join(repo, operation.path);
+    if (operation.type === "copy-fixture") {
+      fs.mkdirSync(path.dirname(target), { recursive: true });
+      fs.copyFileSync(path.join(fixtureRoot, operation.fixture), target);
+      continue;
+    }
+    if (operation.type === "replace") {
+      const text = fs.readFileSync(target, "utf8");
+      const occurrences = text.split(operation.from).length - 1;
+      if (occurrences !== Number(operation.count || 1)) {
+        throw new Error(`${task.id}: expected ${operation.count || 1} occurrence(s) in ${operation.path}, found ${occurrences}`);
+      }
+      fs.writeFileSync(target, text.replace(operation.from, operation.to));
+      continue;
+    }
+    throw new Error(`${task.id}: unsupported setup operation ${operation.type}`);
+  }
+}
+
+function linkDependencies(repo, task) {
+  if (task.stack === "php-laravel") {
+    const sourceVendor = path.join(task.source, "vendor");
+    if (!fs.existsSync(sourceVendor)) throw new Error(`${task.id}: source vendor directory missing`);
+    fs.cpSync(sourceVendor, path.join(repo, "vendor"), { recursive: true });
+    const sourceEnv = path.join(task.source, ".env");
+    if (fs.existsSync(sourceEnv)) fs.copyFileSync(sourceEnv, path.join(repo, ".env"));
+    fs.mkdirSync(path.join(repo, "database"), { recursive: true });
+    fs.closeSync(fs.openSync(path.join(repo, "database", "database.sqlite"), "a"));
+    must("composer", ["dump-autoload", "-q"], { cwd: repo, timeout: 3 * 60 * 1000 });
+  } else if (task.stack.startsWith("typescript-")) {
+    const sourceModules = path.join(task.source, "node_modules");
+    if (!fs.existsSync(sourceModules)) throw new Error(`${task.id}: source node_modules missing`);
+    fs.symlinkSync(sourceModules, path.join(repo, "node_modules"), "dir");
+  }
+}
+
+function commitAll(repo, message) {
+  must("git", ["add", "-A"], { cwd: repo });
+  const status = must("git", ["status", "--porcelain"], { cwd: repo });
+  if (status) must("git", ["commit", "-qm", message], { cwd: repo });
+  return must("git", ["rev-parse", "HEAD"], { cwd: repo });
+}
+
+function patternRegistry(task, commit) {
+  const target = task.allowedPaths[0];
+  return {
+    schemaVersion: 2,
+    repo: task.repo,
+    generatedAt: new Date().toISOString(),
+    generatedFromCommit: commit,
+    coveredScopes: task.allowedPaths,
+    status: "COMPLETE",
+    patterns: [{
+      id: `benchmark.${task.workShape}`,
+      workShape: task.workShape,
+      status: "canonical",
+      maturity: "rubric-item",
+      enforcedBy: null,
+      summary: `Use the existing ${task.workShape} implementation and focused test as the benchmark neighbor.`,
+      evidence: `Pinned benchmark source at ${task.commit}.`,
+      completionEvidence: {
+        structure: `${target} exists at the pinned commit.`,
+        registration: "Existing repository registration remains authoritative.",
+        discoverability: "The task prompt and current-context name the target path.",
+        runtime: task.verify.join(" "),
+      },
+      sourceEvidence: [{ path: target, line: 1 }],
+      goldenNeighbors: [{ path: target, why: "existing production implementation" }],
+      reuseProbe: [target, task.workShape],
+      doNotCopy: ["benchmark.regression.marker"],
+      confidence: "verified",
+      lastVerifiedAt: new Date().toISOString(),
+      lastVerifiedCommit: commit,
+      refreshTriggers: ["touched-scope-change"],
+    }],
+    doNotCopy: [{
+      id: "benchmark.regression.marker",
+      reason: "The seeded regression exists only to test defect recovery.",
+      sourceEvidence: [{ path: target, line: 1 }],
+      lastVerifiedCommit: commit,
+    }],
+  };
+}
+
+function installAcef(repo, run) {
+  const tool = run.client === "opencode" ? "opencode" : "codex";
+  must("node", [path.join(acefRoot, "scripts", "install-acef-tools"), "--repo", repo]);
+  must("node", [path.join(acefRoot, "scripts", "install-acef-skills"), "--repo", repo, "--tool", tool, "--skill", "acef"]);
+
+  const docs = path.join(repo, "docs", "ai");
+  fs.mkdirSync(docs, { recursive: true });
+  const ledger = "docs/ai/ACEF_benchmark_DELIVERY_AUDIT.md";
+  write(path.join(repo, ledger), [
+    "# ACEF Empirical Validation Run",
+    `active_lane: ${run.lane}`,
+    `track: ${run.task.risk === "guarded" || run.lane === "guarded" ? "guarded" : "standard"}`,
+    `workShape: ${run.task.workShape}`,
+    "Reuse-before-create:",
+    `- Checked \`${run.task.allowedPaths[0]}\` and the existing ${run.task.workShape} implementation.`,
+    "- Do-not-copy: rejected `benchmark.regression.marker`.",
+    "Human risk acceptance: this isolated benchmark run is authorized to repair only the seeded task regression.",
+    "",
+    "## Session Handoff",
+    "status: ready",
+    `current_step: ${run.task.id}`,
+    "last_passed_gate: benchmark precondition FAIL confirmed",
+    `next_allowed_step: implement ${run.task.id} and run the focused verification`,
+    `active_lane: ${run.lane}`,
+    `active_track: ${run.task.risk === "guarded" || run.lane === "guarded" ? "guarded" : "standard"}`,
+    `ledger_path: ${ledger}`,
+    "blocked_on: none",
+    "do_not_continue_without: focused verification",
+    "",
+  ].join("\n"));
+  write(path.join(docs, "ACEF_ACTIVE_LEDGER"), `${ledger}\n`);
+  write(path.join(docs, "pattern-registry.json"), `${JSON.stringify(patternRegistry(run.task, must("git", ["rev-parse", "HEAD"], { cwd: repo })), null, 2)}\n`);
+  write(path.join(docs, "ACEF_CURRENT_CONTEXT.md"), [
+    "# ACEF Current Context",
+    `source_ledger: ${ledger}`,
+    `active_story: ${run.task.id}`,
+    "active_phase: development",
+    "last_passed_gate: benchmark precondition FAIL confirmed",
+    "",
+    "## Current Work",
+    run.task.prompt,
+    "## Gate State",
+    "Focused verification is red before implementation and must be green after.",
+    "## Allowed Scope",
+    ...run.task.allowedPaths.map((entry) => `- ${entry}`),
+    "## Relevant Acceptance Criteria",
+    "- Repair the seeded behavior through the real implementation path.",
+    "- Do not modify tests or unrelated files.",
+    "## Required Commands",
+    run.task.verify.join(" "),
+    "## Deferred and Out of Scope",
+    "All other repository work, dependency changes, commits, pushes, and refactors.",
+    "## Known Pitfalls",
+    "Do not preserve the ACEF benchmark regression marker. Do not make tests green with shims or test edits.",
+    "## Artifact Paths",
+    `${ledger}; docs/ai/pattern-registry.json`,
+    "## Role Inputs",
+    `Developer actor; workShape ${run.task.workShape}; pinned source ${run.task.commit}.`,
+    "",
+  ].join("\n"));
+  write(path.join(repo, run.lane === "guarded" ? ".acef-lane" : ".acef-lightweight-lane"), `${run.lane}\n`);
+
+  if (run.lane === "guarded") {
+    must("node", [path.join(acefRoot, "scripts", "install-acef-bmad-guard"), "--repo", repo]);
+  }
+
+  commitAll(repo, `chore: prepare ACEF ${run.lane} benchmark`);
+
+  if (run.lane === "guarded") {
+    const state = path.join(repo, ".acef", "bin", "acef-state");
+    const base = must("git", ["rev-parse", "HEAD"], { cwd: repo });
+    must(state, ["actor", "--repo", repo, "--id", "ACEF_BMAD_WORKER", "--story", run.task.id, "--phase", "development", "--role", "developer", "--client", run.client, "--context-profile", "developer", "--input-commit", base], { cwd: repo });
+    const scopeArgs = ["worker-scope", "--repo", repo, "--story", run.task.id, "--phase", "development", "--worker-id", "ACEF_BMAD_WORKER", "--base-ref", base];
+    for (const allowed of run.task.allowedPaths) scopeArgs.push("--allow", allowed);
+    must(state, scopeArgs, { cwd: repo });
+    must(state, ["active-run", "--repo", repo, "--run-id", run.runId, "--lane", "guarded", "--track", "guarded", "--status", "active", "--story", run.task.id, "--phase", "development", "--ledger", ledger, "--worker-role", "developer", "--actor", "ACEF_BMAD_WORKER", "--worker-scope", "docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json", "--context", "docs/ai/ACEF_CURRENT_CONTEXT.md", "--full-ledger-access", "denied", "--max-lines", "150"], { cwd: repo });
+    must(state, ["approval", "--repo", repo, "--id", `approval-${run.task.id}`, "--decision", "ACCEPT_RISK", "--scope", run.task.id, "--quote", `Approve guarded benchmark ${run.task.id}`, "--source-channel", "empirical-validation"], { cwd: repo });
+    commitAll(repo, "chore: bind guarded benchmark actor scope");
+  }
+}
+
+function promptFor(run) {
+  const laneText = run.lane === "baseline"
+    ? "Use the repository's native conventions. Do not invoke or simulate ACEF."
+    : run.lane === "lightweight"
+      ? "Use the repo-local ACEF lightweight workflow. Read docs/ai/ACEF_CURRENT_CONTEXT.md; do not read the full delivery ledger."
+      : "You are the scoped ACEF developer actor ACEF_BMAD_WORKER in a guarded run. Read docs/ai/ACEF_CURRENT_CONTEXT.md and obey the repo-local scope hook. Do not act as reviewer or Process Judge.";
+  return [
+    "Complete one controlled benchmark task in this disposable clone.",
+    laneText,
+    `Task: ${run.task.prompt}`,
+    `Allowed implementation paths: ${run.task.allowedPaths.join(", ")}`,
+    `Required verification: ${run.task.verify.join(" ")}`,
+    "Do not install dependencies, change tests, commit, push, spawn/delegate, or touch unrelated files.",
+    "Inspect only what is needed, implement the smallest production fix, run the exact verification, and stop.",
+    "Your final response must be concise and state RESULT=PASS or RESULT=FAIL, changed paths, verification result, retries, and any unresolved risk.",
+  ].join("\n");
+}
+
+function launchClient(repo, run, rawPath) {
+  const prompt = promptFor(run);
+  const env = { ...process.env };
+  if (run.lane === "guarded") {
+    env.ACEF_BMAD_WORKER = "1";
+    env.ACEF_ROLE = "worker";
+    env.AGENT_NAME = "ACEF_BMAD_WORKER";
+  }
+  let command;
+  let args;
+  if (run.client === "codex") {
+    command = "codex";
+    args = ["exec", "--json", "--ephemeral", "--dangerously-bypass-approvals-and-sandbox", "--dangerously-bypass-hook-trust", "-C", repo];
+    if (run.lane === "baseline") args.push("--ignore-rules");
+    args.push(prompt);
+  } else if (run.client === "opencode") {
+    command = "opencode";
+    args = ["run", "--format", "json", "--dir", repo];
+    if (run.lane === "baseline") args.push("--pure");
+    args.push(prompt);
+  } else {
+    throw new Error(`Unsupported client: ${run.client}`);
+  }
+  const result = execute(command, args, { cwd: repo, env, timeout: 15 * 60 * 1000 });
+  write(rawPath, result.stdout);
+  write(`${rawPath}.stderr`, result.stderr);
+  const rows = parseJsonLines(rawPath);
+  const metrics = run.client === "codex" ? codexMetrics(rows) : opencodeMetrics(rows);
+  return { ...result, ...metrics, transcriptHash: hash(result.stdout), stderrHash: hash(result.stderr) };
+}
+
+function changedPaths(repo, baseRef) {
+  const committed = must("git", ["diff", "--name-only", `${baseRef}..HEAD`], { cwd: repo }).split(/\r?\n/).filter(Boolean);
+  const workingStatus = execute("git", ["status", "--porcelain=v1", "--untracked-files=all"], { cwd: repo });
+  if (workingStatus.status !== 0) throw new Error(`git status failed: ${workingStatus.stderr || workingStatus.stdout}`);
+  const working = workingStatus.stdout
+    .split(/\r?\n/).filter(Boolean).map((line) => line.slice(3));
+  return [...new Set([...committed, ...working])].sort();
+}
+
+function expectedPass(repo, task) {
+  const failures = [];
+  for (const expectation of task.expected || []) {
+    const text = fs.readFileSync(path.join(repo, expectation.path), "utf8");
+    if (expectation.contains && !text.includes(expectation.contains)) failures.push(`${expectation.path} missing expected text`);
+    if (expectation.notContains && text.includes(expectation.notContains)) failures.push(`${expectation.path} retains forbidden text`);
+  }
+  return failures;
+}
+
+function appendResult(filePath, row) {
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  fs.appendFileSync(filePath, `${JSON.stringify(row)}\n`);
+}
+
+function prepareClone(run, clonePath) {
+  fs.rmSync(clonePath, { recursive: true, force: true });
+  fs.mkdirSync(path.dirname(clonePath), { recursive: true });
+  must("git", ["clone", "-q", "--shared", "--no-hardlinks", run.task.source, clonePath]);
+  must("git", ["checkout", "-q", "--detach", run.task.commit], { cwd: clonePath });
+  must("git", ["config", "user.email", "acef-benchmark@example.invalid"], { cwd: clonePath });
+  must("git", ["config", "user.name", "ACEF Benchmark"], { cwd: clonePath });
+  linkDependencies(clonePath, run.task);
+  applySetup(clonePath, run.task);
+  commitAll(clonePath, `test: seed ${run.task.id} benchmark`);
+}
+
+function runOne(run, opts) {
+  const clonePath = path.join(opts.workspace, "clones", run.runId);
+  const rawPath = path.join(opts.workspace, "raw", `${run.runId}.jsonl`);
+  console.log(`START ${run.runId}`);
+  const startedAt = new Date().toISOString();
+  let row;
+  try {
+    prepareClone(run, clonePath);
+    const precondition = execute(run.task.verify[0], run.task.verify.slice(1), { cwd: clonePath, timeout: 5 * 60 * 1000 });
+    if (precondition.status === 0) throw new Error("benchmark precondition is not red");
+    if (run.lane !== "baseline") installAcef(clonePath, run);
+    const baseRef = must("git", ["rev-parse", "HEAD"], { cwd: clonePath });
+    const actor = launchClient(clonePath, run, rawPath);
+    const verification = execute(run.task.verify[0], run.task.verify.slice(1), { cwd: clonePath, timeout: 5 * 60 * 1000 });
+    const paths = changedPaths(clonePath, baseRef);
+    const scopeViolations = paths.filter((filePath) => !isAllowedPath(filePath, run.task.allowedPaths));
+    const expectationFailures = expectedPass(clonePath, run.task);
+    const passed = actor.status === 0 && verification.status === 0 && !scopeViolations.length && !expectationFailures.length;
+    row = {
+      run_id: run.runId,
+      experiment_id: readJson(opts.manifest).experimentId,
+      repo: run.task.repo,
+      source_commit: run.task.commit,
+      stack: run.task.stack,
+      task_id: run.task.id,
+      task_type: run.task.taskType,
+      lane: run.lane,
+      client: run.client,
+      runner_type: "external-agent",
+      started_at: startedAt,
+      finished_at: new Date().toISOString(),
+      input_tokens: actor.input_tokens,
+      cached_input_tokens: actor.cached_input_tokens,
+      output_tokens: actor.output_tokens,
+      cost: actor.cost,
+      tool_calls: actor.tool_calls,
+      extra_file_reads: actor.extra_file_reads,
+      runtime_seconds: Math.round(actor.runtimeMs / 100) / 10,
+      retry_count: actor.retry_count,
+      human_interventions: 0,
+      precondition_failed: precondition.status !== 0,
+      tests_passed: verification.status === 0,
+      known_findings_recalled: verification.status === 0 && !expectationFailures.length ? 1 : 0,
+      known_findings_total: 1,
+      false_positive_count: 0,
+      escaped_defects: passed ? 0 : 1,
+      context_miss: actor.retry_count > 0 && actor.extra_file_reads > 4,
+      wrong_scope_touch: scopeViolations.length > 0,
+      scope_violations: scopeViolations,
+      changed_paths: paths,
+      expectation_failures: expectationFailures,
+      implementation_quality: passed ? "sound" : verification.status === 0 ? "questionable" : "hollow_green",
+      result: passed ? "pass" : "fail",
+      actor_exit_code: actor.status,
+      verify_exit_code: verification.status,
+      transcript_sha256: actor.transcriptHash,
+      transcript_path: rawPath,
+      verify_output_sha256: hash(`${verification.stdout}\n${verification.stderr}`),
+      final_report_sha256: hash(actor.final_text),
+    };
+  } catch (error) {
+    row = {
+      run_id: run.runId,
+      experiment_id: readJson(opts.manifest).experimentId,
+      repo: run.task.repo,
+      source_commit: run.task.commit,
+      stack: run.task.stack,
+      task_id: run.task.id,
+      task_type: run.task.taskType,
+      lane: run.lane,
+      client: run.client,
+      runner_type: "external-agent",
+      started_at: startedAt,
+      finished_at: new Date().toISOString(),
+      result: "invalid",
+      error: error.message,
+    };
+  } finally {
+    if (!opts.keep) fs.rmSync(clonePath, { recursive: true, force: true });
+  }
+  appendResult(opts.results, row);
+  console.log(`DONE ${run.runId} ${row.result}${row.error ? `: ${row.error.split("\n")[0]}` : ""}`);
+  return row;
+}
+
+function main() {
+  const opts = parseArgs(process.argv.slice(2));
+  const manifest = readJson(opts.manifest);
+  const allRuns = buildRuns(manifest);
+  if (allRuns.length !== 30) throw new Error(`Manifest must produce exactly 30 runs; got ${allRuns.length}`);
+  if (opts.plan) {
+    console.log(JSON.stringify({ experimentId: manifest.experimentId, count: allRuns.length, runs: allRuns.map((run) => ({ run_id: run.runId, repo: run.task.repo, stack: run.task.stack, lane: run.lane, client: run.client, task_type: run.task.taskType })) }, null, 2));
+    return;
+  }
+  const done = existingRunIds(opts.results);
+  let pending = allRuns.filter((run) => !done.has(run.runId));
+  if (opts.runId) pending = pending.filter((run) => run.runId === opts.runId);
+  pending = pending.slice(0, opts.limit);
+  if (!pending.length) {
+    console.log("No pending empirical validation runs.");
+    return;
+  }
+  for (const run of pending) runOne(run, opts);
+}
+
+if (require.main === module) {
+  try {
+    main();
+  } catch (error) {
+    console.error(`ACEF_EMPIRICAL_ERROR: ${error.message}`);
+    process.exitCode = 1;
+  }
+}
+
+module.exports = { buildRuns, changedPaths, expectedPass, promptFor };
