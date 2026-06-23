@@ -141,6 +141,13 @@ Interpretation:
   actor input tokens only dropped from `153606` to `126331` (~17.8%), below the 25% adoption threshold, and safety failed
   with `wrong_scope_touch=true`. This is the clearest evidence so far that returned-byte reduction is not the same thing as
   end-to-end token or delivery-quality improvement.
+- Story 5.2 dev context-mode run 1 is also recorded. It returned the smallest context bundle (`3,355` bytes, 98.4%
+  reduction) and stayed inside the allowed path set while getting the focused suite green (8 passed / 202 assertions), but
+  wrapper-observed actor input tokens increased to `189593` (~23.4% higher than baseline). The actor had to read the
+  focused test, partial capsule files, route/config files, component views, and Twill vendor internals, then recover from a
+  patch-context miss and style fixes. This is a successful implementation run, but it argues against making Context Mode a
+  default dev context from current evidence: tiny retrieval can push cost into extra tool reads, retries, and transcript
+  chatter.
 - All current rows are marked `runner_type=main-codex-self-run`, so they are useful progress but weaker than fresh
   external/subagent runs. The experiment is still intentionally not adoptable.
 
@@ -175,5 +182,6 @@ scripts/acef-context-experiment-report \
 ```
 
 Expected interpretation for Story 5.2 dev rows: not adoptable until the 6-row dev-only manifest is complete. Current
-coverage is 2/6. The baseline row is `actor+token` evidence and passes; the files row reduces returned context but fails
-the safety gate (`wrong_scope_touch=true`) and does not reach the 25% actor-token reduction threshold.
+coverage is 3/6. The baseline row is `actor+token` evidence and passes; the files row reduces returned context but fails
+the safety gate (`wrong_scope_touch=true`) and does not reach the 25% actor-token reduction threshold; the context-mode row
+passes safety but uses more actor input tokens than baseline despite the smallest returned context.
