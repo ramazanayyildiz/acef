@@ -94,6 +94,10 @@ The conductor is a lifecycle coordinator, not an implementing or reviewing actor
 must not collapse ATDD, dev-story, code-review, verify-patch, test-review, or Process Judge into one self-reviewing
 worker context.
 
+Workers run with bounded context by default. Use `fork_context: false` or the tool's closest equivalent; pass only the
+repo path, active ledger, story/spec path, allowed paths, required tests, report artifact path, and final STOP rule.
+Do not pass the parent transcript as evidence. Long outputs belong in the worker report artifact, not chat.
+
 Full BMAD requires delegation. During capability preflight or active-run bootstrap, record:
 
 ```md

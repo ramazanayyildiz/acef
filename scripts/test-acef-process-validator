@@ -221,6 +221,9 @@ try {
     "review_report: docs/ai/reports/story-1-1-review.md",
     "process_judge_report: docs/ai/reports/story-1-1-process-judge.md",
     "session_handoff_updated: yes",
+    "worker_context: bounded",
+    "fork_context: false",
+    "raw_output_policy: artifact-only",
     "",
   ].join("\n"));
   expectFail("clean-tree", ["--repo", tmp, "--check", "clean-tree"]);
@@ -588,9 +591,28 @@ try {
     "review_report: docs/ai/reports/story-1-1-review.md",
     "process_judge_report: docs/ai/reports/missing.md",
     "session_handoff_updated: yes",
+    "worker_context: bounded",
+    "fork_context: false",
+    "raw_output_policy: artifact-only",
     "",
   ].join("\n"));
   expectFail("lean-evidence", ["--repo", tmp, "--ledger", "docs/ai/ACEF_lean_bad_DELIVERY_AUDIT.md", "--check", "lean-evidence"]);
+  fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_lean_context_bad_DELIVERY_AUDIT.md"), [
+    "# Bad Lean Context Ledger",
+    "",
+    "## Lean Evidence Contract",
+    "status: PASS",
+    "scope: story 1.1",
+    "worker_report: docs/ai/reports/story-1-1-worker.md",
+    "review_report: docs/ai/reports/story-1-1-review.md",
+    "process_judge_report: docs/ai/reports/story-1-1-process-judge.md",
+    "session_handoff_updated: yes",
+    "worker_context: full-transcript",
+    "fork_context: true",
+    "raw_output_policy: chat-dump",
+    "",
+  ].join("\n"));
+  expectFail("lean-evidence", ["--repo", tmp, "--ledger", "docs/ai/ACEF_lean_context_bad_DELIVERY_AUDIT.md", "--check", "lean-evidence"]);
   expectPass("session-handoff", ["--repo", tmp, "--check", "session-handoff", "--ledger", "docs/ai/ACEF_demo_DELIVERY_AUDIT.md"]);
   expectPass("claims", ["--repo", tmp, "--check", "claims", "--ledger", "docs/ai/ACEF_demo_DELIVERY_AUDIT.md"]);
   expectPass("seeded-epic-gates", ["--repo", tmp, "--check", "seeded-epic-gates", "--ledger", "docs/ai/ACEF_demo_DELIVERY_AUDIT.md"]);

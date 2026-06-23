@@ -30,6 +30,22 @@ ACEF is lean by default. Lean mode never removes gates or evidence; it only limi
 - Worker final reports should be complete on disk, but chat summaries should stay under about 20 lines.
 - If details are needed for audit, link the file path and exact command rather than copying the body.
 
+## Worker Context Budget
+
+Persona workers should start with a bounded prompt, not the parent thread. This keeps cost predictable and prevents old
+context from quietly overriding the active ledger.
+
+- Default worker context is `fork_context: false` or the closest equivalent the tool supports.
+- Do not pass the parent transcript to workers. Pass only: repo path, active ledger path, story/spec path, allowed paths,
+  required commands/tests, report artifact path, and the explicit STOP rule.
+- One worker owns one phase of one story. It writes one report artifact, returns a compact summary, then stops.
+- Long command output and full logs go into the report artifact, not chat.
+- Model overrides are optional and secondary. Use cheaper/faster models for mechanical planning, cleanup, ledger
+  formatting, and simple ATDD; use the parent/stronger model for development, review, Process Judge, and guarded or
+  security-sensitive work.
+- If a tool cannot enforce `fork_context: false`, the worker prompt must still state that prior chat is not evidence and
+  all decisions must be grounded in the supplied ledger/spec paths.
+
 ## Lean Evidence Contract
 
 Story and epic close evidence must be artifact-backed so a fresh session can resume without inheriting a bloated parent
@@ -42,6 +58,9 @@ worker_report: docs/ai/reports/story-4.1-worker.md
 review_report: docs/ai/reports/story-4.1-review.md
 process_judge_report: docs/ai/reports/story-4.1-process-judge.md
 session_handoff_updated: yes
+worker_context: bounded
+fork_context: false
+raw_output_policy: artifact-only
 fresh_session_recommended: yes  # required for epic close
 ```
 

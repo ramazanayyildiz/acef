@@ -969,7 +969,17 @@ function checkLeanEvidence(repoRoot, ledgerPath) {
   if (!section) return result("lean-evidence", false, "Missing ## Lean Evidence Contract section");
 
   const fields = sessionHandoffFields(section);
-  const required = ["status", "scope", "worker_report", "review_report", "process_judge_report", "session_handoff_updated"];
+  const required = [
+    "status",
+    "scope",
+    "worker_report",
+    "review_report",
+    "process_judge_report",
+    "session_handoff_updated",
+    "worker_context",
+    "fork_context",
+    "raw_output_policy",
+  ];
   const missing = required.filter((field) => !hasMeaningfulValue(fields[field]));
   if (missing.length) return result("lean-evidence", false, `Missing field(s): ${missing.join(", ")}`);
 
@@ -981,6 +991,15 @@ function checkLeanEvidence(repoRoot, ledgerPath) {
 
   if (!/^yes|true|pass$/i.test(fields.session_handoff_updated)) {
     failures.push("session_handoff_updated must be yes/true/PASS");
+  }
+  if (!/^(bounded|minimal|scoped)$/i.test(fields.worker_context || "")) {
+    failures.push("worker_context must be bounded/minimal/scoped");
+  }
+  if (!/^(false|no|off|disabled)$/i.test(fields.fork_context || "")) {
+    failures.push("fork_context must be false/no/off/disabled");
+  }
+  if (!/^(artifact-only|artifact_only|disk|disk-only|disk_only)$/i.test(fields.raw_output_policy || "")) {
+    failures.push("raw_output_policy must be artifact-only/disk-only");
   }
 
   if (/epic/i.test(fields.scope)) {

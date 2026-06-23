@@ -14,6 +14,8 @@ Evidence stays on disk; chat stays small.
 - Return only path + verdict + key evidence + next step unless the user asks for detail.
 - Do not paste full artifacts, broad `rg` output, long logs, or long worker reports into chat.
 - If raw output would exceed ~100 lines, narrow the query or write a derived artifact instead.
+- Workers default to bounded context (`fork_context: false` where supported): pass only repo path, active ledger, spec
+  path, allowed paths, commands/tests, report path, and STOP rule.
 - Never reduce gates, tests, ledgers, or worker evidence to save context.
 
 ## What This Agent Does
