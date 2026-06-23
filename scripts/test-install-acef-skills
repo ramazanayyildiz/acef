@@ -1,0 +1,33 @@
+#!/usr/bin/env node
+const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const os = require("node:os");
+const path = require("node:path");
+const cp = require("node:child_process");
+
+const repoRoot = path.resolve(__dirname, "..");
+const installer = path.join(repoRoot, "scripts", "install-acef-skills");
+const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "acef-skills-"));
+
+function run(args) {
+  return cp.execFileSync(process.execPath, [installer, ...args], { cwd: repoRoot, encoding: "utf8" });
+}
+
+try {
+  run(["--repo", tmp]);
+  for (const toolDir of [[".codex", "skills"], [".claude", "skills"], [".opencode", "skills"]]) {
+    assert.ok(fs.existsSync(path.join(tmp, ...toolDir, "acef", "SKILL.md")));
+    assert.ok(!fs.existsSync(path.join(tmp, ...toolDir, "bug-hunter")), "bug-hunter must not enter minimal default");
+  }
+
+  run(["--repo", tmp, "--review-lenses"]);
+  for (const toolDir of [[".codex", "skills"], [".claude", "skills"], [".opencode", "skills"]]) {
+    assert.ok(fs.existsSync(path.join(tmp, ...toolDir, "bug-hunter", "SKILL.md")));
+    assert.ok(fs.existsSync(path.join(tmp, ...toolDir, "bug-hunter", "templates", "report-template.md")));
+  }
+  assert.ok(fs.existsSync(path.join(tmp, ".opencode", "commands", "bug-hunter.md")));
+
+  console.log("acef skill installer tests passed");
+} finally {
+  fs.rmSync(tmp, { recursive: true, force: true });
+}

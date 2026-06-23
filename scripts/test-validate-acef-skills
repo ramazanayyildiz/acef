@@ -13,11 +13,17 @@ assert.deepEqual(valid.errors, []);
 const invalid = validateSkillMetadata(path.join(fixtures, "missing-name", "SKILL.md"), "missing-name");
 assert.match(invalid.errors.join("; "), /name must be/);
 
+const invalidLens = validateSkillMetadata(path.join(fixtures, "invalid-review-lens", "SKILL.md"), "invalid-review-lens");
+assert.match(invalidLens.errors.join("; "), /review lens permissions must be advise-only/);
+
+const bugHunter = validateSkillMetadata(path.join(repoRoot, "skills", "bug-hunter", "SKILL.md"), "bug-hunter");
+assert.deepEqual(bugHunter.errors, []);
+
 const run = cp.spawnSync(process.execPath, [path.join(repoRoot, "scripts", "validate-acef-skills")], {
   cwd: repoRoot,
   encoding: "utf8",
 });
 assert.equal(run.status, 0, run.stderr || run.stdout);
-assert.match(run.stdout, /Validated 20 ACEF skill metadata record/);
+assert.match(run.stdout, /Validated 21 ACEF skill metadata record/);
 
 console.log("acef skill metadata tests passed");

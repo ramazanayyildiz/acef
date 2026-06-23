@@ -74,6 +74,19 @@ function validateSkillMetadata(filePath, expectedName = path.basename(path.dirna
   if (!/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(metadata.version || "")) {
     errors.push("version must be informational semver (for example 1.0.0)");
   }
+  if (metadata.kind === "review-lens") {
+    const requiredLensFields = {
+      contract: "acef-review-lens-v1",
+      mode: "report-only",
+      scope: "bounded",
+      permissions: "advise-only",
+      "finding-contract": "file-line-severity-impact-confidence-evidence",
+      disposition: "separate-implementation-or-verify-patch",
+    };
+    for (const [field, expected] of Object.entries(requiredLensFields)) {
+      if (metadata[field] !== expected) errors.push(`review lens ${field} must be ${expected}`);
+    }
+  }
   return { metadata, errors };
 }
 

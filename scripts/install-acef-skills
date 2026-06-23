@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 const fs = require("node:fs");
 const path = require("node:path");
+const { validateSkillMetadata } = require("./lib/acef-skill-metadata");
 
 const repoRoot = path.resolve(__dirname, "..");
 const sourceSkillsDir = path.join(repoRoot, "skills");
@@ -11,6 +12,7 @@ const defaultSkills = [
   "acef-test-bootstrap",
   "map-codebase",
 ];
+const reviewLensSkills = ["bug-hunter"];
 
 const toolSkillDirs = {
   codex: [".codex", "skills"],
@@ -19,7 +21,7 @@ const toolSkillDirs = {
 };
 
 function usage() {
-  console.log(`Usage: scripts/install-acef-skills --repo <path> [--tool codex|claude|opencode|all] [--skill name ...] [--all-core]
+  console.log(`Usage: scripts/install-acef-skills --repo <path> [--tool codex|claude|opencode|all] [--skill name ...] [--review-lenses] [--all-core]
 
 Installs ACEF skills repo-locally. Defaults:
   --tool all
@@ -27,6 +29,7 @@ Installs ACEF skills repo-locally. Defaults:
 
 Examples:
   scripts/install-acef-skills --repo /path/to/repo
+  scripts/install-acef-skills --repo /path/to/repo --review-lenses
   scripts/install-acef-skills --repo /path/to/repo --tool codex --skill acef --skill map-codebase
   scripts/install-acef-skills --repo /path/to/repo --all-core`);
 }
@@ -36,6 +39,7 @@ function parseArgs(argv) {
     repo: "",
     tools: ["all"],
     skills: [],
+    reviewLenses: false,
     allCore: false,
   };
 
@@ -49,6 +53,8 @@ function parseArgs(argv) {
       opts.skills.push(argv[++i]);
     } else if (arg === "--all-core") {
       opts.allCore = true;
+    } else if (arg === "--review-lenses") {
+      opts.reviewLenses = true;
     } else if (arg === "-h" || arg === "--help") {
       usage();
       process.exit(0);
@@ -110,12 +116,21 @@ function selectedSkills(opts) {
       .filter((name) => fs.existsSync(path.join(sourceSkillsDir, name, "SKILL.md")))
       .sort();
   }
-  return opts.skills.length ? opts.skills : defaultSkills;
+  const selected = opts.skills.length ? [...opts.skills] : [...defaultSkills];
+  if (opts.reviewLenses) selected.push(...reviewLensSkills);
+  return [...new Set(selected)].sort();
 }
 
 const opts = parseArgs(process.argv.slice(2));
 const tools = selectedTools(opts.tools);
 const skills = selectedSkills(opts);
+
+for (const skill of skills) {
+  const source = path.join(sourceSkillsDir, skill, "SKILL.md");
+  if (!fs.existsSync(source)) throw new Error(`Skill source not found: ${source}`);
+  const { errors } = validateSkillMetadata(source, skill);
+  if (errors.length) throw new Error(`Invalid skill metadata for ${skill}: ${errors.join("; ")}`);
+}
 
 for (const tool of tools) {
   const targetBase = path.join(opts.repo, ...toolSkillDirs[tool]);
