@@ -111,6 +111,8 @@ Interpretation:
 - The first baseline ATDD row derived a behavior-first red-test slice from the broad context. It is recorded with
   `tests_passed=false` because ATDD should be red on a pre-implementation tree; it did not mutate the active Detaysoft app.
   The second baseline ATDD row repeated the same behavior-first mapping, so the baseline ATDD cell is now complete.
+- The first files-mode ATDD row derived the core AC tests with ~95.7% returned-context reduction, but its recall is lower
+  than baseline because the detailed real-runtime smoke and negative-leak guard text was not present in the bounded bundle.
 - All current rows are marked `runner_type=main-codex-self-run`, so they are useful progress but weaker than fresh
   external/subagent runs. The experiment is still intentionally not adoptable.
 
@@ -132,5 +134,5 @@ scripts/acef-context-experiment-report \
   --manifest docs/experiments/context-retrieval/manifests/detaysoft-4-1-18-run-2026-06-23.json
 ```
 
-Expected interpretation for actor rows: not adoptable yet; coverage is `8/18 actor rows`, with two context-mode review
-recall failures and a complete baseline ATDD cell.
+Expected interpretation for actor rows: not adoptable yet; coverage is `9/18 actor rows`, with two context-mode review
+recall failures and lower ATDD recall for the first files-mode row.
