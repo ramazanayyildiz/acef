@@ -16,6 +16,10 @@ assert.match(invalid.errors.join("; "), /name must be/);
 const invalidLens = validateSkillMetadata(path.join(fixtures, "invalid-review-lens", "SKILL.md"), "invalid-review-lens");
 assert.match(invalidLens.errors.join("; "), /review lens permissions must be advise-only/);
 
+const foreignRuntime = validateSkillMetadata(path.join(fixtures, "foreign-runtime", "SKILL.md"), "foreign-runtime");
+assert.match(foreignRuntime.errors.join("; "), /foreign skill runtime metadata/);
+assert.match(foreignRuntime.errors.join("; "), /foreign gstack/);
+
 const bugHunter = validateSkillMetadata(path.join(repoRoot, "skills", "bug-hunter", "SKILL.md"), "bug-hunter");
 assert.deepEqual(bugHunter.errors, []);
 
@@ -24,6 +28,6 @@ const run = cp.spawnSync(process.execPath, [path.join(repoRoot, "scripts", "vali
   encoding: "utf8",
 });
 assert.equal(run.status, 0, run.stderr || run.stdout);
-assert.match(run.stdout, /Validated 21 ACEF skill metadata record/);
+assert.match(run.stdout, /Validated 19 ACEF skill metadata record/);
 
 console.log("acef skill metadata tests passed");

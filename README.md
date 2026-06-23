@@ -75,7 +75,8 @@ skills/      The ACEF agent skills you install into Claude Code
   map-codebase/                                                          codemap + pattern registry / repo grounding (Layer 4)
   test-user-flow-mapper/ test-case-planner/ test-browser-generator/
   test-gen/ test-generator/ test-coverage-auditor/ test-strategy/ test-risk-classifier/
-  flow-document-composer/ flow-suite-composer/ storymap/ qa/ qa-only/    test & flow workhorses (Layer 2)
+  flow-document-composer/ flow-suite-composer/ storymap/ bug-hunter/      test, flow, and review workhorses (Layer 2)
+archive/external-skills/  Non-ACEF third-party skill snapshots kept for reference only, not installed as ACEF skills
 docs/        The developer-guide website (also published via GitHub Pages)
 README.md
 ```

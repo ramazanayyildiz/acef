@@ -58,6 +58,7 @@ function parseSkillFrontmatter(filePath) {
 }
 
 function validateSkillMetadata(filePath, expectedName = path.basename(path.dirname(filePath))) {
+  const text = fs.readFileSync(filePath, "utf8");
   const metadata = parseSkillFrontmatter(filePath);
   const errors = [];
   if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(metadata.name || "")) {
@@ -86,6 +87,12 @@ function validateSkillMetadata(filePath, expectedName = path.basename(path.dirna
     for (const [field, expected] of Object.entries(requiredLensFields)) {
       if (metadata[field] !== expected) errors.push(`review lens ${field} must be ${expected}`);
     }
+  }
+  if (metadata["preamble-tier"] !== undefined) {
+    errors.push("preamble-tier is foreign skill runtime metadata and is not allowed in ACEF skills");
+  }
+  if (/(?:^|\n)```bash[\s\S]*~\/\.gstack|~\/\.claude\/skills\/gstack|gstack-telemetry|gstack-config|gstack-update-check/.test(text)) {
+    errors.push("foreign gstack/global-state runtime hooks are not allowed in ACEF skills");
   }
   return { metadata, errors };
 }
