@@ -113,6 +113,9 @@ Interpretation:
   The second baseline ATDD row repeated the same behavior-first mapping, so the baseline ATDD cell is now complete.
 - Both files-mode ATDD rows derived the core AC tests with ~95.7% returned-context reduction, but recall is lower than
   baseline because the detailed real-runtime smoke and negative-leak guard text was not present in the bounded bundle.
+- The first context-mode ATDD row is also recorded as `result=fail`: it returned ~98.6% less context, but omitted the
+  detailed testing requirements and previous-story intelligence needed to avoid weak ATDD. This mirrors the context-mode
+  reviewer failure pattern.
 - All current rows are marked `runner_type=main-codex-self-run`, so they are useful progress but weaker than fresh
   external/subagent runs. The experiment is still intentionally not adoptable.
 
@@ -134,5 +137,5 @@ scripts/acef-context-experiment-report \
   --manifest docs/experiments/context-retrieval/manifests/detaysoft-4-1-18-run-2026-06-23.json
 ```
 
-Expected interpretation for actor rows: not adoptable yet; coverage is `10/18 actor rows`, with two context-mode review
-recall failures and lower ATDD recall for files mode.
+Expected interpretation for actor rows: not adoptable yet; coverage is `11/18 actor rows`, with context-mode recall
+failures in both review and ATDD, plus lower ATDD recall for files mode.
