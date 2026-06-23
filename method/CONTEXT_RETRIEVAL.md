@@ -33,6 +33,15 @@ Those files receive a source label containing repository, story, role, Git HEAD,
 to that source. The full pattern registry is not indexed in this first slice because a large JSON entry can dominate
 ranking; a future pattern query must retrieve a work-shape-specific slice.
 
+Source selection is exact and deterministic:
+
+- current-context is included only when both story and role/phase match;
+- story IDs use numeric boundaries, so `5.2` cannot select `5.20`;
+- ledger and epic-pack content is materialized into temporary story-scoped input before Context Mode indexing;
+- neighbor-story sections/table rows are excluded;
+- artifact paths are sorted before digesting and querying;
+- Test Reviewer uses a dedicated quality, negative-path, boundary, production-path, and fixture-hygiene query profile.
+
 ## Safety and authority
 
 - Markdown/JSON/Git remain authoritative.

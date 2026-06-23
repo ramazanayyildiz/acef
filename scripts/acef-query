@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 const fs = require("node:fs");
+const os = require("node:os");
 const path = require("node:path");
 const cp = require("node:child_process");
 const crypto = require("node:crypto");
@@ -102,7 +103,9 @@ function activeLedger(repoRoot) {
 function walk(root, maxDepth = 4, depth = 0) {
   if (!exists(root) || depth > maxDepth) return [];
   const output = [];
-  for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
+  const entries = fs.readdirSync(root, { withFileTypes: true })
+    .sort((left, right) => left.name.localeCompare(right.name));
+  for (const entry of entries) {
     const filePath = path.join(root, entry.name);
     if (entry.isDirectory()) output.push(...walk(filePath, maxDepth, depth + 1));
     else if (entry.isFile()) output.push(filePath);
@@ -110,35 +113,61 @@ function walk(root, maxDepth = 4, depth = 0) {
   return output;
 }
 
-function storyTokens(story) {
+function storyPattern(story) {
   const normalized = String(story).trim().replace(/^story\s+/i, "");
-  return [...new Set([normalized, normalized.replaceAll(".", "-"), `story-${normalized.replaceAll(".", "-")}`])];
+  const parts = normalized.split(/[.-]/).map((part) => part.replace(/[^0-9A-Za-z_-]/g, ""));
+  const joined = parts.map((part) => part.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("[.-]");
+  return new RegExp(`(^|[^0-9])(?:story[-_\\s]*)?${joined}(?![0-9])`, "i");
 }
 
-function selectSources(repoRoot, story) {
+function field(text, name) {
+  const match = text.match(new RegExp(`^\\s*(?:[-*]\\s*)?${name}\\s*:\\s*(.+?)\\s*$`, "im"));
+  return match ? match[1].trim() : "";
+}
+
+function rolePhasePattern(role) {
+  const normalized = String(role).toLowerCase().replace(/[\s_]+/g, "-");
+  if (/test-review/.test(normalized)) return /test[-_\s]*review/i;
+  if (/verify-patch/.test(normalized)) return /verify[-_\s]*patch/i;
+  if (/process-judge|judge/.test(normalized)) return /process[-_\s]*judge|judge/i;
+  if (/atdd|test-author/.test(normalized)) return /atdd|test[-_\s]*author/i;
+  if (/review/.test(normalized)) return /code[-_\s]*review|review/i;
+  if (/planner|pm/.test(normalized)) return /planner|planning|pm|story[-_\s]*author/i;
+  return /dev|development|developer/i;
+}
+
+function currentContextMatches(filePath, story, role) {
+  if (!exists(filePath)) return false;
+  const text = fs.readFileSync(filePath, "utf8");
+  return storyPattern(story).test(field(text, "active_story"))
+    && rolePhasePattern(role).test(field(text, "active_phase"));
+}
+
+function selectSources(repoRoot, story, role) {
   const sources = [];
   const ledger = activeLedger(repoRoot);
   if (ledger) sources.push(ledger);
 
   const currentContext = path.join(repoRoot, "docs", "ai", "ACEF_CURRENT_CONTEXT.md");
-  if (exists(currentContext)) sources.push(currentContext);
+  if (currentContextMatches(currentContext, story, role)) sources.push(currentContext);
 
   const epic = String(story).trim().replace(/^story\s+/i, "").split(".")[0];
   const epicPack = path.join(repoRoot, "docs", "ai", `epic-${epic}-context-pack.md`);
   if (exists(epicPack)) sources.push(epicPack);
 
-  const tokens = storyTokens(story).map((value) => value.toLowerCase());
+  const exactStory = storyPattern(story);
   const artifactRoots = [
     path.join(repoRoot, "_bmad-output", "implementation-artifacts"),
     path.join(repoRoot, "docs", "ai", "reports"),
   ];
+  const artifacts = [];
   for (const root of artifactRoots) {
     for (const filePath of walk(root)) {
-      const name = path.basename(filePath).toLowerCase();
-      if (tokens.some((token) => name.includes(token))) sources.push(filePath);
+      if (exactStory.test(path.basename(filePath))) artifacts.push(filePath);
     }
   }
 
+  sources.push(...artifacts.sort((left, right) => left.localeCompare(right)));
   return [...new Set(sources)].filter(exists);
 }
 
@@ -165,6 +194,7 @@ function roleQuery(story, role) {
   const common = `Story ${story} current gate allowed scope acceptance criteria required commands deferred scope known pitfalls artifact paths`;
   const normalized = role.toLowerCase();
   if (/atdd|test-author/.test(normalized)) return `${common} failing tests target test paths boundary cases`;
+  if (/test-review/.test(normalized)) return `${common} test quality mutation negative-path boundary coverage production-path exercise false-positive fixture hygiene`;
   if (/review/.test(normalized) && !/test-review/.test(normalized)) return `${common} changed files diff findings conformance acceptance matrix`;
   if (/verify-patch/.test(normalized)) return `${common} required patch actions affected paths regression tests`;
   if (/process-judge|judge/.test(normalized)) return `${common} phase evidence actor separation command evidence verdict`;
@@ -182,24 +212,33 @@ function runContextMode(args, files) {
     sourceDigest(files),
   ].join(":");
 
-  for (const filePath of files) {
-    const indexed = cp.spawnSync("context-mode", ["index", filePath, "--project", args.repo, "--source", source], {
-      cwd: args.repo,
-      encoding: "utf8",
-    });
-    if (indexed.status !== 0) throw new Error(indexed.stderr.trim() || `Context Mode failed to index ${filePath}`);
-  }
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "acef-query-context-mode-"));
+  try {
+    const ledger = activeLedger(args.repo);
+    for (let index = 0; index < files.length; index += 1) {
+      const filePath = files[index];
+      const scopedPath = path.join(tempDir, `${String(index).padStart(2, "0")}-${path.basename(filePath)}`);
+      fs.writeFileSync(scopedPath, scopedSourceContent(args, filePath, ledger));
+      const indexed = cp.spawnSync("context-mode", ["index", scopedPath, "--project", args.repo, "--source", source], {
+        cwd: args.repo,
+        encoding: "utf8",
+      });
+      if (indexed.status !== 0) throw new Error(indexed.stderr.trim() || `Context Mode failed to index ${path.relative(args.repo, filePath)}`);
+    }
 
-  const searched = cp.spawnSync("context-mode", [
-    "search",
-    "--project", args.repo,
-    "--source", source,
-    "--limit", String(args.limit),
-    roleQuery(args.story, args.role),
-  ], { cwd: args.repo, encoding: "utf8" });
-  if (searched.status !== 0) throw new Error(searched.stderr.trim() || "Context Mode search failed");
-  if (!searched.stdout.trim()) throw new Error("Context Mode returned no scoped results");
-  return searched.stdout.trim();
+    const searched = cp.spawnSync("context-mode", [
+      "search",
+      "--project", args.repo,
+      "--source", source,
+      "--limit", String(args.limit),
+      roleQuery(args.story, args.role),
+    ], { cwd: args.repo, encoding: "utf8" });
+    if (searched.status !== 0) throw new Error(searched.stderr.trim() || "Context Mode search failed");
+    if (!searched.stdout.trim()) throw new Error("Context Mode returned no scoped results");
+    return searched.stdout.trim();
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
 }
 
 function extractSection(text, title) {
@@ -236,11 +275,11 @@ function extractHandoffSummary(text) {
 
 function extractStorySections(text, story) {
   const lines = text.split(/\r?\n/);
-  const tokens = storyTokens(story).map((token) => token.toLowerCase());
+  const exactStory = storyPattern(story);
   const sections = [];
   for (let start = 0; start < lines.length; start += 1) {
     const heading = lines[start].match(/^\s*(#{1,6})\s+(.+?)\s*$/);
-    if (!heading || !tokens.some((token) => heading[2].toLowerCase().includes(token))) continue;
+    if (!heading || !exactStory.test(heading[2])) continue;
     const level = heading[1].length;
     let end = lines.length;
     for (let index = start + 1; index < lines.length; index += 1) {
@@ -278,6 +317,54 @@ function extractRelevantSections(text) {
   return sections;
 }
 
+function normalizedStory(story) {
+  return String(story).trim().replace(/^story\s+/i, "").replace("-", ".");
+}
+
+function storyReferences(text) {
+  const references = [];
+  const pattern = /(?:story\s*([0-9]+)[.-]([0-9]+)(?![0-9])|\b([0-9]+)\.([0-9]+)\b)/gi;
+  for (const match of String(text).matchAll(pattern)) references.push(`${match[1] || match[3]}.${match[2] || match[4]}`);
+  return references;
+}
+
+function scopeEpicPack(text, story) {
+  const target = normalizedStory(story);
+  const lines = text.split(/\r?\n/);
+  const output = [];
+  for (let index = 0; index < lines.length; index += 1) {
+    const heading = lines[index].match(/^\s*(#{1,6})\s+(.+?)\s*$/);
+    if (heading) {
+      const refs = storyReferences(heading[2]);
+      if (refs.some((ref) => ref !== target)) {
+        const level = heading[1].length;
+        while (index + 1 < lines.length) {
+          const next = lines[index + 1].match(/^\s*(#{1,6})\s+/);
+          if (next && next[1].length <= level) break;
+          index += 1;
+        }
+        continue;
+      }
+    }
+    const refs = storyReferences(lines[index]);
+    if (refs.some((ref) => ref !== target)) continue;
+    output.push(lines[index]);
+  }
+  return output.join("\n");
+}
+
+function scopedSourceContent(args, filePath, ledgerPath) {
+  const rel = path.relative(args.repo, filePath);
+  const text = fs.readFileSync(filePath, "utf8");
+  let content = text;
+  if (filePath === ledgerPath) {
+    content = [...extractHandoffSummary(text), ...extractStorySections(text, args.story)].join("\n");
+  } else if (/^epic-[0-9]+-context-pack\.md$/i.test(path.basename(filePath))) {
+    content = scopeEpicPack(text, args.story);
+  }
+  return `# ACEF scoped source: ${rel}\n\n${content}\n`;
+}
+
 function runFileFallback(args, files) {
   const chunks = [];
   const ledger = activeLedger(args.repo);
@@ -291,9 +378,12 @@ function runFileFallback(args, files) {
         ...extractStorySections(text, args.story),
       ];
     } else {
-      lines = extractRelevantSections(text).slice(0, 60);
+      const scopedText = /^epic-[0-9]+-context-pack\.md$/i.test(path.basename(filePath))
+        ? scopeEpicPack(text, args.story)
+        : text;
+      lines = extractRelevantSections(scopedText).slice(0, 60);
       if (!lines.length) {
-        lines = text.split(/\r?\n/).filter((line) => /accept|command|scope|pitfall|defer|next|verdict|fail|test/i.test(line)).slice(0, 40);
+        lines = scopedText.split(/\r?\n/).filter((line) => /accept|command|scope|pitfall|defer|next|verdict|fail|test/i.test(line)).slice(0, 40);
       }
     }
     if (lines.length) chunks.push(`## ${rel}\n${lines.join("\n")}`);
@@ -347,7 +437,7 @@ function main() {
     return;
   }
 
-  const files = selectSources(args.repo, args.story);
+  const files = selectSources(args.repo, args.story, args.role);
   if (!files.length) throw new Error("No active ledger or story context sources found");
 
   let provider = args.provider;

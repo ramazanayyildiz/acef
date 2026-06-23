@@ -12,6 +12,10 @@ The `auto` provider uses Context Mode when available and deterministic file slic
 the active ledger, matching Epic Context Pack, current-context file, and matching story artifacts under a source label
 bound to repo, story, role, Git HEAD, and content digest. Never query general session memory for story context.
 
+Require exact story boundaries, matching current-context role/phase, neighbor-story filtering, and deterministic source
+ordering. Test Reviewer retrieval must emphasize test quality, negative paths, boundary coverage, production paths, and
+fixture hygiene.
+
 The result is bounded candidate input for refreshing `ACEF_CURRENT_CONTEXT.md`; it is not evidence and cannot satisfy a
 gate, FR, approval, test, or runtime obligation. Do not index the full pattern registry in the story-context query. Add
 SQLite, AST, or vector providers only after measured retrieval failures justify them.

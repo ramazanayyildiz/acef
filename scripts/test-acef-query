@@ -43,17 +43,56 @@ try {
     "ledger_path: docs/ai/ACEF_demo_DELIVERY_AUDIT.md",
     "",
   ].join("\n"));
-  write("docs/ai/epic-5-context-pack.md", "# Epic 5 Context Pack\n## Allowed Scope\nStory 5.2 References and Awards.\n## Known Pitfalls\nDo not add slugs.\n");
+  write("docs/ai/ACEF_CURRENT_CONTEXT.md", [
+    "# Stale Current Context",
+    "active_story: Story 5.1",
+    "active_phase: development",
+    "STALE_CURRENT_CONTEXT_SECRET",
+    "",
+  ].join("\n"));
+  write("docs/ai/epic-5-context-pack.md", [
+    "# Epic 5 Context Pack",
+    "## Story 5.1 Scope",
+    "NEIGHBOR_STORY_SECRET",
+    "## Allowed Scope",
+    "| Story | Scope |",
+    "|---|---|",
+    "| 5.1 | Neighbor scope must not leak |",
+    "| 5.2 | References and Awards |",
+    "| 5.3 | Future scope must not leak |",
+    "## Known Pitfalls",
+    "Verified 2026-06-23.",
+    "Do not add slugs.",
+    "",
+  ].join("\n"));
   write("_bmad-output/implementation-artifacts/5-2-atdd.md", "# Story 5.2 ATDD\n## Acceptance coverage\nReferences and Awards are editable.\n## Verification Commands\nnpm test -- Story52\n## Next\nDeveloper implements against RED tests.\n");
+  write("_bmad-output/implementation-artifacts/5-2-a-report.md", "# Story 5.2 A Report\n## Result\nA report.\n");
+  write("_bmad-output/implementation-artifacts/5-2-z-report.md", "# Story 5.2 Z Report\n## Result\nZ report.\n");
+  write("_bmad-output/implementation-artifacts/5-20-prefix-collision.md", "# Story 5.20\nPREFIX_COLLISION_SECRET\n");
 
   const fallback = run(["context", "--repo", tmp, "--story", "5.2", "--role", "developer", "--provider", "files"]);
   if (!fallback.includes("provider: files")
     || !fallback.includes("Story 5.2")
     || !fallback.includes("References and Awards are editable")
+    || !fallback.includes("Verified 2026-06-23")
     || !fallback.includes("Do not add slugs")
-    || fallback.includes("OLD_SECRET")) {
+    || fallback.includes("OLD_SECRET")
+    || fallback.includes("STALE_CURRENT_CONTEXT_SECRET")
+    || fallback.includes("NEIGHBOR_STORY_SECRET")
+    || fallback.includes("Neighbor scope must not leak")
+    || fallback.includes("Future scope must not leak")
+    || fallback.includes("PREFIX_COLLISION_SECRET")) {
     throw new Error(`file fallback did not remain story-scoped:\n${fallback}`);
   }
+  write("docs/ai/ACEF_CURRENT_CONTEXT.md", [
+    "# Wrong-role Current Context",
+    "active_story: Story 5.2",
+    "active_phase: code-review",
+    "WRONG_ROLE_CONTEXT_SECRET",
+    "",
+  ].join("\n"));
+  const wrongRoleFallback = run(["context", "--repo", tmp, "--story", "5.2", "--role", "developer", "--provider", "files"]);
+  if (wrongRoleFallback.includes("WRONG_ROLE_CONTEXT_SECRET")) throw new Error("wrong-role current context was selected");
   const autoFallback = run(["context", "--repo", tmp, "--story", "5.2", "--role", "developer", "--provider", "auto"], {
     PATH: "/usr/bin:/bin",
   });
@@ -62,7 +101,16 @@ try {
   const fakeBin = path.join(tmp, "fake-bin");
   fs.mkdirSync(fakeBin, { recursive: true });
   const fakeContextMode = path.join(fakeBin, "context-mode");
-  fs.writeFileSync(fakeContextMode, `#!/bin/sh\nif [ "$1" = "index" ]; then exit 0; fi\ncat <<'EOF'\n## 1. Scoped Story 5.2 result\nSource: acef-query:fixture\nAcceptance criteria and required command for Story 5.2 developer.\nEOF\n`);
+  fs.writeFileSync(fakeContextMode, `#!/bin/sh
+if [ "$1" = "index" ]; then
+  if grep -Eq 'STALE_CURRENT_CONTEXT_SECRET|WRONG_ROLE_CONTEXT_SECRET|NEIGHBOR_STORY_SECRET|PREFIX_COLLISION_SECRET|Neighbor scope must not leak|Future scope must not leak' "$2"; then
+    echo "unscoped source reached Context Mode" >&2
+    exit 9
+  fi
+  exit 0
+fi
+printf '## 1. Scoped Story 5.2 result\nSource: acef-query:fixture\nQuery: %s\nAcceptance criteria and required command for Story 5.2 developer.\n' "$*"
+`);
   fs.chmodSync(fakeContextMode, 0o755);
   const contextMode = run(["context", "--repo", tmp, "--story", "5.2", "--role", "developer", "--provider", "context-mode"], {
     PATH: `${fakeBin}:${process.env.PATH}`,
@@ -71,9 +119,25 @@ try {
     throw new Error("Context Mode adapter did not return scoped retrieval");
   }
 
+  const testReviewContext = run(["context", "--repo", tmp, "--story", "5.2", "--role", "test-reviewer", "--provider", "context-mode"], {
+    PATH: `${fakeBin}:${process.env.PATH}`,
+  });
+  if (!/test quality mutation negative-path boundary coverage production-path/.test(testReviewContext)) {
+    throw new Error("Test Reviewer query profile is not quality/boundary focused");
+  }
+
   const json = JSON.parse(run(["context", "--repo", tmp, "--story", "5.2", "--role", "reviewer", "--provider", "files", "--format", "json"]));
   if (json.story !== "5.2" || json.role !== "reviewer" || json.reduction_percent <= 0) {
     throw new Error("JSON output or reduction metrics are invalid");
+  }
+  const artifactSources = json.source_files.filter((filePath) => filePath.startsWith("_bmad-output/"));
+  const sortedArtifactSources = [...artifactSources].sort((left, right) => left.localeCompare(right));
+  if (artifactSources.join("\n") !== sortedArtifactSources.join("\n") || artifactSources.some((filePath) => filePath.includes("5-20"))) {
+    throw new Error("story artifact source order or exact-prefix filtering is invalid");
+  }
+  const jsonAgain = JSON.parse(run(["context", "--repo", tmp, "--story", "5.2", "--role", "reviewer", "--provider", "files", "--format", "json"]));
+  if (JSON.stringify(json.source_files) !== JSON.stringify(jsonAgain.source_files) || json.content !== jsonAgain.content) {
+    throw new Error("file provider output is not deterministic");
   }
 
   let escapedOutputBlocked = false;
