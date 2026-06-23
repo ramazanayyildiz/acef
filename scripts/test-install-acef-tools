@@ -17,14 +17,19 @@ function run(command, args, options = {}) {
 }
 
 try {
+  fs.writeFileSync(path.join(tmp, "package.json"), JSON.stringify({ private: true, type: "module" }, null, 2));
   run("node", [installer, "--repo", tmp]);
 
   const validator = path.join(tmp, ".acef", "bin", "acef-process-validator");
+  const state = path.join(tmp, ".acef", "bin", "acef-state");
   const parser = path.join(tmp, ".acef", "bin", "lib", "acef-state-parser.js");
   const schema = path.join(tmp, ".acef", "schemas", "active-run.schema.json");
+  const runtimePackage = path.join(tmp, ".acef", "bin", "package.json");
   if (!fs.existsSync(validator)) throw new Error("validator wrapper was not installed");
+  if (!fs.existsSync(state)) throw new Error("typed-state writer was not installed");
   if (!fs.existsSync(parser)) throw new Error("parser support library was not installed");
   if (!fs.existsSync(schema)) throw new Error("typed-state schemas were not installed");
+  if (JSON.parse(fs.readFileSync(runtimePackage, "utf8")).type !== "commonjs") throw new Error("ACEF runtime CommonJS boundary was not installed");
 
   fs.mkdirSync(path.join(tmp, "docs", "ai"), { recursive: true });
   fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_demo_DELIVERY_AUDIT.md"), [
@@ -61,19 +66,24 @@ try {
     "Inputs",
     "",
   ].join("\n"));
-  fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_ACTIVE_RUN.json"), JSON.stringify({
-    runId: "RUN-install-test",
-    repo: "demo",
-    lane: "full-bmad",
-    status: "active",
-    activeStory: "story 1.1",
-    activePhase: "development",
-    workerRole: "developer",
-    fullLedgerAccess: "denied",
-    maxLines: 120,
-    ledgerPath: "docs/ai/ACEF_demo_DELIVERY_AUDIT.md",
-    contextPath: "docs/ai/ACEF_CURRENT_CONTEXT.md",
-  }, null, 2));
+  run("git", ["init", "-q"], { cwd: tmp });
+  run("git", ["config", "user.email", "acef@example.test"], { cwd: tmp });
+  run("git", ["config", "user.name", "ACEF Test"], { cwd: tmp });
+  run("git", ["add", "."], { cwd: tmp });
+  run("git", ["commit", "-qm", "fixture"], { cwd: tmp });
+  run(state, [
+    "active-run", "--repo", tmp,
+    "--run-id", "RUN-install-test",
+    "--lane", "full-bmad",
+    "--status", "active",
+    "--story", "story 1.1",
+    "--phase", "development",
+    "--worker-role", "developer",
+    "--full-ledger-access", "denied",
+    "--max-lines", "120",
+    "--ledger", "docs/ai/ACEF_demo_DELIVERY_AUDIT.md",
+    "--context", "docs/ai/ACEF_CURRENT_CONTEXT.md",
+  ]);
 
   const output = run(validator, [
     "--repo", tmp,
@@ -88,4 +98,3 @@ try {
 } finally {
   fs.rmSync(tmp, { recursive: true, force: true });
 }
-

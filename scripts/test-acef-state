@@ -1,0 +1,64 @@
+#!/usr/bin/env node
+const fs = require("node:fs");
+const os = require("node:os");
+const path = require("node:path");
+const cp = require("node:child_process");
+
+const repoRoot = path.resolve(__dirname, "..");
+const state = path.join(repoRoot, "scripts", "acef-state");
+const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "acef-state-cli-"));
+
+function run(command, args, options = {}) {
+  return cp.execFileSync(command, args, {
+    cwd: tmp,
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+    ...options,
+  });
+}
+
+function runState(args, options = {}) {
+  return run("node", [state, ...args], options);
+}
+
+function readJson(rel) {
+  return JSON.parse(fs.readFileSync(path.join(tmp, rel), "utf8"));
+}
+
+try {
+  run("git", ["init", "-q"]);
+  run("git", ["config", "user.email", "acef@example.test"]);
+  run("git", ["config", "user.name", "ACEF Test"]);
+  fs.mkdirSync(path.join(tmp, "app"), { recursive: true });
+  fs.writeFileSync(path.join(tmp, "app", "demo.js"), "module.exports = true;\n");
+  fs.mkdirSync(path.join(tmp, "docs", "ai"), { recursive: true });
+  fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_demo_DELIVERY_AUDIT.md"), "# Demo\nactive_lane: Full BMAD v2\n");
+  run("git", ["add", "."]);
+  run("git", ["commit", "-qm", "fixture"]);
+
+  const actorPhases = ["atdd", "development", "code-review", "verify-patch", "test-review", "process-judge"];
+  for (const phase of actorPhases) {
+    runState(["actor", "--repo", tmp, "--id", phase, "--story", "Story 1.1", "--phase", phase, "--role", phase, "--client", "codex", "--context-profile", phase]);
+  }
+
+  runState(["worker-scope", "--repo", tmp, "--story", "Story 1.1", "--phase", "process-judge", "--worker-id", "process-judge", "--allow", "app/**", "--allow", "tests/**"]);
+  runState(["active-run", "--repo", tmp, "--run-id", "RUN-1", "--lane", "full-bmad", "--status", "active", "--story", "Story 1.1", "--phase", "process-judge", "--ledger", "docs/ai/ACEF_demo_DELIVERY_AUDIT.md", "--worker-role", "process-judge", "--actor", "process-judge", "--worker-scope", "docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json"]);
+  runState(["approval", "--repo", tmp, "--id", "APP-2", "--decision", "APPROVE", "--scope", "epic:2", "--target-epic", "2", "--quote", "Start Epic 2", "--source-channel", "test"]);
+  runState(["evidence-run", "--repo", tmp, "--id", "EV-1", "--kind", "runtime-test", "--actor", "development", "--story", "Story 1.1", "--satisfies", "AC-1", "--", process.execPath, "-e", "console.log('real path ok')"]);
+  runState(["gate", "--repo", tmp, "--id", "GATE-1", "--scope", "Story 1.1", "--verdict", "PASS", "--decided-by", "process-judge", "--evidence", "EV-1"]);
+
+  if (readJson("docs/ai/ACEF_ACTIVE_RUN.json").activeActorId !== "process-judge") throw new Error("active-run actor binding missing");
+  if (readJson("docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json").canSpawnAgents !== false) throw new Error("worker scope is not fail-closed");
+  if (readJson("docs/ai/approvals/APP-2.json").targetEpic !== 2) throw new Error("approval target epic missing");
+  const evidence = readJson("docs/ai/evidence/EV-1.json");
+  if (evidence.exitCode !== 0 || !fs.existsSync(path.join(tmp, evidence.rawArtifact.path))) throw new Error("evidence capture failed");
+  if (readJson("docs/ai/gates/GATE-1.json").evidenceIds[0] !== "EV-1") throw new Error("gate evidence binding failed");
+
+  const failed = cp.spawnSync(process.execPath, [state, "evidence-run", "--repo", tmp, "--id", "EV-fail", "--kind", "static-check", "--actor", "development", "--story", "Story 1.1", "--satisfies", "AC-fail", "--", process.execPath, "-e", "process.exit(7)"], { encoding: "utf8" });
+  if (failed.status !== 7) throw new Error(`failed evidence did not preserve exit code: ${failed.status}`);
+  if (readJson("docs/ai/evidence/EV-fail.json").exitCode !== 7) throw new Error("failed evidence manifest was not recorded");
+
+  console.log("acef-state tests passed");
+} finally {
+  fs.rmSync(tmp, { recursive: true, force: true });
+}

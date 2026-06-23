@@ -30,7 +30,7 @@ treated as enforcement.
 | 2x `REPLAN` escalates to human | validator CLI | machinery | `.acef/bin/acef-process-validator --check replan-counter`; hook/CI wiring still pending. | P0 |
 | Artifact-claim reconciliation | validator CLI | machinery | `.acef/bin/acef-process-validator --check claims`; hook/CI wiring still pending. | P0 |
 | Epic N+1 blocked until Epic N Process Judge is `PASS` | hook partial + validator CLI | machinery | Hook exists for story commands; `--check epic-boundary` validates ledger/artifacts. | P0 |
-| Epic N+1 requires explicit human transition approval | hook + validator CLI | machinery | `--check epic-transition-approval --target-epic N`; hook blocks story commands and worker scopes for Epic N without exact approval quote. Generic "go on/devam/tamamla" is invalid. | P0 |
+| Epic N+1 requires explicit human transition approval | typed receipt + hook + validator CLI | machinery | `acef-state approval --target-epic N --quote "Start Epic N"`; `--check epic-transition-approval --target-epic N` prefers the hashed human receipt. Generic "go on/devam/tamamla" is invalid. | Done |
 | Seeded epic gates exist before implementation | validator CLI | machinery | `.acef/bin/acef-process-validator --check seeded-epic-gates`; hook/CI wiring still pending. | P0 |
 | Adapter fresh before any route | validator CLI | machinery | `.acef/bin/acef-process-validator --check adapter-freshness`; hook/CI wiring still pending. | P0 |
 | Preflight `PASS` before planning/implementation | validator CLI | machinery | `.acef/bin/acef-process-validator --check preflight`; hook/CI wiring still pending. | P0 |
@@ -40,7 +40,10 @@ treated as enforcement.
 | External framework API assumptions grounded before ATDD | shard + Process Judge | shard + machinery | Stories using third-party framework APIs require a spike/reference implementation before ATDD; fake descriptors, vendor overrides, monkey patches, and test-only shims are REPLAN triggers. | P1 |
 | Runtime shortcuts cannot replace production entrypoint tests | shard + Process Judge | shard + machinery | Story/epic close requires real HTTP/CLI/queue/scheduler/CMS-runtime smoke with content or negative assertions when that runtime path owns behavior. | P1 |
 | FRs trace to exercised capabilities, not artifacts | validator CLI + Process Judge | machinery | `--check vertical-slice` requires actor -> surface/entrypoint -> application path -> existing runtime evidence; artifact existence and manual-QA polish deferrals cannot satisfy missing user actions. | P1 |
-| Actor separation | validator CLI + provenance artifact | machinery | `--check actor-separation` requires six distinct full-BMAD actors and `path#actor` evidence. | P1 |
+| Actor separation | typed sidecars + validator CLI | machinery | `acef-state actor` records story/phase actors; `--check actor-separation` requires six distinct full-BMAD actor records for typed runs. | Done |
+| Worker scope identity | typed sidecar + hook/guard + validator | machinery | `acef-state worker-scope` writes the fail-closed scope; `--check worker-scope` reconciles story, phase, actor, base ref, and allowed paths. | Done |
+| Runtime evidence integrity | typed sidecar + validator | machinery | `acef-state evidence-run` captures raw output/hash/commit/actor; `--check evidence-manifest` rejects stale, missing, escaped, or tampered evidence. | Done |
+| Gate verdict integrity | typed sidecar + validator | machinery | `acef-state gate` requires evidence for PASS; `--check gate-verdict` reconciles Process Judge identity and successful evidence. | Done |
 | Source reconciliation | validator CLI + planning shard | machinery + shard | `--check source-reconciliation` requires existing source paths and closed USED/NOT USED/CONFLICT decisions. | P1 |
 | Subagent claims are not evidence | documentation-only | machinery + shard | Cited-path/command/artifact validator plus Process Judge. | P1 |
 | Reuse-before-create | documentation-only | jit + shard | Write-time block plus conformance reviewer. | P1 |

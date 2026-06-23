@@ -116,6 +116,15 @@ files the agent follows. No build, no npm, no services.
    `docs/ai/ACEF_ACTIVE_LEDGER`.
    For implementation workers, also write `docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json` before dispatch. It binds the worker
    to one story/phase, narrow `allowedPaths`, one commit budget, no ledger edits, and no subagent spawning.
+   Prefer the installed typed-state writer over hand-authored JSON:
+   ```bash
+   .acef/bin/acef-state actor --repo . --id dev-4-1 --story "Story 4.1" --phase development \
+     --role developer --client codex --context-profile developer
+   .acef/bin/acef-state worker-scope --repo . --story "Story 4.1" --phase development \
+     --worker-id dev-4-1 --allow 'app/**' --allow 'tests/**'
+   ```
+   The same CLI captures hashed runtime evidence, Process Judge gate verdicts, and exact human approval receipts.
+   See [`method/TYPED_STATE.md`](method/TYPED_STATE.md).
    Generate `docs/ai/ACEF_CURRENT_CONTEXT.md` at each phase transition and run
    `.acef/bin/acef-process-validator --check current-context`. This file is a maximum-150-line, role-specific hot slice;
    the append-only ledger remains authoritative. Ordinary workers do not receive the full ledger, Story Process Judge
@@ -244,6 +253,9 @@ ACEF ships a stack-agnostic process validator for cheap mechanical gates:
 .acef/bin/acef-process-validator --repo /path/to/repo --check vertical-slice --ledger docs/ai/ACEF_feature_DELIVERY_AUDIT.md
 .acef/bin/acef-process-validator --repo /path/to/repo --check guarded-test-floor --ledger docs/ai/ACEF_feature_DELIVERY_AUDIT.md
 .acef/bin/acef-process-validator --repo /path/to/repo --check actor-separation --ledger docs/ai/ACEF_feature_DELIVERY_AUDIT.md
+.acef/bin/acef-process-validator --repo /path/to/repo --check worker-scope --ledger docs/ai/ACEF_feature_DELIVERY_AUDIT.md
+.acef/bin/acef-process-validator --repo /path/to/repo --check evidence-manifest --ledger docs/ai/ACEF_feature_DELIVERY_AUDIT.md
+.acef/bin/acef-process-validator --repo /path/to/repo --check gate-verdict --ledger docs/ai/ACEF_feature_DELIVERY_AUDIT.md
 .acef/bin/acef-process-validator --repo /path/to/repo --check source-reconciliation --ledger docs/ai/ACEF_feature_DELIVERY_AUDIT.md
 .acef/bin/acef-process-validator --repo /path/to/repo --check epic-context-pack --ledger docs/ai/ACEF_feature_DELIVERY_AUDIT.md
 .acef/bin/acef-process-validator --repo /path/to/repo --check current-context --ledger docs/ai/ACEF_feature_DELIVERY_AUDIT.md
@@ -292,6 +304,7 @@ node scripts/smoke-acef-opencode-plugin
 GitHub Actions runs the regression test from `.github/workflows/validate.yml`.
 
 Current capstone review: `docs/capstone-review-2026-06-21.md`.
+Typed-state real-project evidence: `docs/dogfood-typed-state-detaysoft-2026-06-23.md`.
 
 ## Dependency: BMAD (large-feature flow only)
 

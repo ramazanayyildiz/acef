@@ -3,10 +3,12 @@
   "$id": "https://acef.local/schemas/actor.schema.json",
   "title": "ACEF Actor Record",
   "type": "object",
-  "required": ["actorInstanceId", "role", "client", "inputCommit", "allowedContextProfile"],
+  "required": ["actorInstanceId", "story", "phase", "role", "client", "inputCommit", "allowedContextProfile"],
   "additionalProperties": false,
   "properties": {
     "actorInstanceId": { "type": "string", "minLength": 1 },
+    "story": { "type": "string", "minLength": 1 },
+    "phase": { "type": "string", "minLength": 1 },
     "role": { "type": "string", "minLength": 1 },
     "client": { "type": "string", "minLength": 1 },
     "model": { "type": ["string", "null"] },
@@ -20,4 +22,3 @@
     "createdAt": { "type": ["string", "null"] }
   }
 }
-

@@ -23,6 +23,8 @@ Evidence stays on disk; chat stays small.
   every story.
 - Rebuild the current-context hot slice at every phase transition and validate it with `--check current-context`.
 - Never reduce gates, tests, ledgers, or worker evidence to save context.
+- In typed runs, use `.acef/bin/acef-state` for actor, worker-scope, evidence, gate, and approval records. JSON sidecars
+  are machine truth; the Markdown ledger remains the human chronology.
 
 ## What This Agent Does
 

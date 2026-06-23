@@ -1,0 +1,96 @@
+#!/usr/bin/env node
+const fs = require("node:fs");
+const os = require("node:os");
+const path = require("node:path");
+const cp = require("node:child_process");
+const crypto = require("node:crypto");
+
+const repoRoot = path.resolve(__dirname, "..");
+const state = path.join(repoRoot, "scripts", "acef-state");
+const validator = path.join(repoRoot, "scripts", "acef-process-validator");
+const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "acef-typed-validator-"));
+
+function run(command, args, options = {}) {
+  return cp.execFileSync(command, args, { cwd: tmp, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], ...options });
+}
+
+function writeJson(rel, value) {
+  const filePath = path.join(tmp, rel);
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  fs.writeFileSync(filePath, `${JSON.stringify(value, null, 2)}\n`);
+}
+
+function readJson(rel) {
+  return JSON.parse(fs.readFileSync(path.join(tmp, rel), "utf8"));
+}
+
+function stateRun(args) {
+  return run("node", [state, ...args]);
+}
+
+function validate(check, extra = []) {
+  return cp.spawnSync(process.execPath, [validator, "--repo", tmp, "--check", check, "--ledger", "docs/ai/ACEF_demo_DELIVERY_AUDIT.md", ...extra], { cwd: tmp, encoding: "utf8" });
+}
+
+function expectPass(check, extra = []) {
+  const result = validate(check, extra);
+  if (result.status !== 0 || !result.stdout.includes(`PASS ${check}:`)) throw new Error(`${check} should pass:\n${result.stdout}${result.stderr}`);
+}
+
+function expectFail(check, pattern, extra = []) {
+  const result = validate(check, extra);
+  const output = `${result.stdout}${result.stderr}`;
+  if (result.status === 0 || !pattern.test(output)) throw new Error(`${check} should fail with ${pattern}:\n${output}`);
+}
+
+try {
+  run("git", ["init", "-q"]);
+  run("git", ["config", "user.email", "acef@example.test"]);
+  run("git", ["config", "user.name", "ACEF Test"]);
+  fs.mkdirSync(path.join(tmp, "app"), { recursive: true });
+  fs.writeFileSync(path.join(tmp, "app", "demo.js"), "module.exports = true;\n");
+  fs.mkdirSync(path.join(tmp, "docs", "ai"), { recursive: true });
+  fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_demo_DELIVERY_AUDIT.md"), "# Demo\nTyped run owns lane state.\n");
+  run("git", ["add", "."]);
+  run("git", ["commit", "-qm", "fixture"]);
+
+  for (const phase of ["atdd", "development", "code-review", "verify-patch", "test-review", "process-judge"]) {
+    stateRun(["actor", "--repo", tmp, "--id", phase, "--story", "Story 1.1", "--phase", phase, "--role", phase, "--client", "codex", "--context-profile", phase]);
+  }
+  stateRun(["worker-scope", "--repo", tmp, "--story", "Story 1.1", "--phase", "process-judge", "--worker-id", "process-judge", "--allow", "app/**"]);
+  stateRun(["active-run", "--repo", tmp, "--run-id", "RUN-1", "--lane", "full-bmad", "--status", "active", "--story", "Story 1.1", "--phase", "process-judge", "--ledger", "docs/ai/ACEF_demo_DELIVERY_AUDIT.md", "--worker-role", "process-judge", "--actor", "process-judge", "--worker-scope", "docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json"]);
+  stateRun(["approval", "--repo", tmp, "--id", "APP-2", "--decision", "APPROVE", "--scope", "epic:2", "--target-epic", "2", "--quote", "Start Epic 2"]);
+  stateRun(["evidence-run", "--repo", tmp, "--id", "EV-1", "--kind", "runtime-test", "--actor", "development", "--story", "Story 1.1", "--satisfies", "AC-1", "--", process.execPath, "-e", "console.log('ok')"]);
+  stateRun(["gate", "--repo", tmp, "--id", "GATE-1", "--scope", "Story 1.1", "--verdict", "PASS", "--decided-by", "process-judge", "--evidence", "EV-1"]);
+
+  expectPass("actor-separation");
+  expectPass("worker-scope");
+  expectPass("evidence-manifest");
+  expectPass("gate-verdict");
+  expectPass("epic-transition-approval", ["--target-epic", "2"]);
+
+  const scope = readJson("docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json");
+  scope.activeStory = "Story 9.9";
+  writeJson("docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json", scope);
+  expectFail("worker-scope", /activeStory does not match/);
+  scope.activeStory = "Story 1.1";
+  writeJson("docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json", scope);
+
+  const approval = readJson("docs/ai/approvals/APP-2.json");
+  approval.userQuote = "go on";
+  approval.statementHash = crypto.createHash("sha256").update(approval.userQuote).digest("hex");
+  writeJson("docs/ai/approvals/APP-2.json", approval);
+  expectFail("epic-transition-approval", /lacks an explicit Epic 2 approval quote/, ["--target-epic", "2"]);
+  approval.userQuote = "Start Epic 2";
+  approval.statementHash = crypto.createHash("sha256").update(approval.userQuote).digest("hex");
+  writeJson("docs/ai/approvals/APP-2.json", approval);
+
+  const rawPath = path.join(tmp, readJson("docs/ai/evidence/EV-1.json").rawArtifact.path);
+  fs.appendFileSync(rawPath, "tampered\n");
+  expectFail("evidence-manifest", /raw artifact hash mismatch/);
+  expectFail("gate-verdict", /raw artifact hash mismatch/);
+
+  console.log("acef typed-state validator tests passed");
+} finally {
+  fs.rmSync(tmp, { recursive: true, force: true });
+}

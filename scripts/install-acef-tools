@@ -4,6 +4,7 @@ const path = require("node:path");
 
 const repoRoot = path.resolve(__dirname, "..");
 const tools = [
+  "acef-state",
   "acef-process-validator",
   "acef-codex-guard",
   "acef-query",
@@ -72,6 +73,14 @@ function copySupportLibraries(targetRepo) {
   return copied;
 }
 
+function writeRuntimePackage(targetRepo) {
+  const targetDir = path.join(targetRepo, ".acef", "bin");
+  fs.mkdirSync(targetDir, { recursive: true });
+  const target = path.join(targetDir, "package.json");
+  fs.writeFileSync(target, `${JSON.stringify({ private: true, type: "commonjs" }, null, 2)}\n`);
+  return target;
+}
+
 function copySchemas(targetRepo) {
   const sourceDir = path.join(repoRoot, "schemas");
   const targetDir = path.join(targetRepo, ".acef", "schemas");
@@ -105,6 +114,7 @@ function copyExperimentFixtures(targetRepo) {
 }
 
 const opts = parseArgs(process.argv.slice(2));
+console.log(`Installed ACEF runtime package boundary: ${writeRuntimePackage(opts.repo)}`);
 for (const tool of tools) {
   console.log(`Installed ${tool}: ${copyTool(tool, opts.repo)}`);
 }

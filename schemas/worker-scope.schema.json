@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://acef.local/schemas/worker-scope.schema.json",
+  "title": "ACEF Worker Scope",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["activeStory", "phase", "workerId", "allowedPaths", "baseRef", "maxCommits", "canEditLedger", "canSpawnAgents"],
+  "properties": {
+    "activeStory": { "type": "string", "minLength": 1 },
+    "phase": { "type": "string", "minLength": 1 },
+    "workerId": { "type": "string", "minLength": 1 },
+    "allowedPaths": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 } },
+    "baseRef": { "type": "string", "minLength": 1 },
+    "maxCommits": { "type": "integer", "minimum": 1 },
+    "canEditLedger": { "const": false },
+    "canSpawnAgents": { "const": false },
+    "createdAt": { "type": ["string", "null"] }
+  }
+}

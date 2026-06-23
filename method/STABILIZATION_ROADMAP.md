@@ -61,6 +61,9 @@ Exit criteria:
 
 ## Phase 2: Typed JSON Sidecars
 
+Status: **IMPLEMENTED** (2026-06-23). Schemas plus the `acef-state` operational writer cover active run, actors,
+worker scope, evidence, gate verdicts, and approval receipts.
+
 Goal: stop treating Markdown prose as the only machine state.
 
 Deliverables:
@@ -87,6 +90,9 @@ Exit criteria:
 - validators can prefer JSON records over Markdown parsing.
 
 ## Phase 3: Shared Parser
+
+Status: **IMPLEMENTED** (2026-06-23). The process validator and Codex guard use the shared parser; the Claude/OpenCode
+hard wall loads the repo-local parser when installed and fails closed with an equivalent contract otherwise.
 
 Goal: make hook, validator, and query interpret ACEF state the same way.
 
@@ -216,4 +222,3 @@ Do not add a tool because it may help someday. Add it only after a concrete repe
 - no new orchestration framework;
 - no default Context Mode dependency;
 - no full SQLite migration before JSON ownership is proven.
-

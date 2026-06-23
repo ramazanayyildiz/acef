@@ -178,6 +178,11 @@ A lightweight (usually guarded) task promotes to full BMAD when any of:
   blocks worker writes outside `allowedPaths`, worker edits to `docs/ai/ACEF_*`, worker-spawned subagents, and commits
   that do not cite the active story. Planning personas may still write legitimate BMAD artifacts; do not solve worker
   drift by broadly blocking `_bmad-output/`.
+- **Typed run state** — new ACEF runs write machine state with `.acef/bin/acef-state`: actor identity under
+  `docs/ai/actors/`, the active worker boundary in `ACEF_ACTIVE_WORKER_SCOPE.json`, hashed command evidence under
+  `docs/ai/evidence/`, Process Judge verdicts under `docs/ai/gates/`, and exact human approvals under
+  `docs/ai/approvals/`. Validators prefer these JSON records; the ledger remains the human chronology. A `PASS` gate
+  without successful, hash-verified evidence is invalid.
 - **Accelerated cadence is bounded** — independent stories/spikes may run in parallel only when dependencies and likely
   touched files do not overlap. Workers must emit complete final reports inline. Mechanical/low-risk work may use a
   combined independent review-and-judge worker only when the author is separate and the ledger records the waiver.

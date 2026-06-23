@@ -1,0 +1,343 @@
+#!/usr/bin/env node
+const fs = require("node:fs");
+const path = require("node:path");
+const cp = require("node:child_process");
+const crypto = require("node:crypto");
+const os = require("node:os");
+const {
+  parseActiveRun,
+  parseActorRecord,
+  parseApproval,
+  parseEvidenceManifest,
+  parseGateVerdict,
+  parseWorkerScope,
+} = require("./lib/acef-state-parser");
+
+function usage() {
+  console.log(`ACEF typed-state writer
+
+Usage:
+  acef-state active-run --repo <path> --run-id <id> --lane <lane> --status <status> --story <scope> --phase <phase> --ledger <path> [options]
+  acef-state actor --repo <path> --id <id> --story <scope> --phase <phase> --role <role> --client <client> --context-profile <profile> [options]
+  acef-state worker-scope --repo <path> --story <scope> --phase <phase> --worker-id <id> --allow <glob>... [options]
+  acef-state approval --repo <path> --id <id> --decision APPROVE|REJECT|ACCEPT_RISK --scope <scope> --quote <exact human words> [options]
+  acef-state evidence-run --repo <path> --id <id> --kind <kind> --actor <id> --story <scope> --satisfies <id>... -- <command> [args...]
+  acef-state gate --repo <path> --id <id> --scope <scope> --verdict <verdict> --decided-by <actor-id> [--evidence <id>...] [options]
+
+Record files are written under docs/ai. Immutable records refuse overwrite; active-run and worker-scope are atomic singletons.`);
+}
+
+function parseArgs(argv) {
+  const [command, ...rest] = argv;
+  const opts = { command, repo: process.cwd(), allow: [], satisfies: [], evidence: [], commandArgv: [] };
+  for (let index = 0; index < rest.length; index += 1) {
+    const arg = rest[index];
+    if (arg === "--") {
+      opts.commandArgv = rest.slice(index + 1);
+      break;
+    }
+    if (!arg.startsWith("--")) throw new Error(`Unexpected argument: ${arg}`);
+    const key = arg.slice(2).replace(/-([a-z])/g, (_, letter) => letter.toUpperCase());
+    if (["force"].includes(key)) {
+      opts[key] = true;
+      continue;
+    }
+    const value = rest[index + 1];
+    if (value === undefined || value.startsWith("--")) throw new Error(`Missing value for ${arg}`);
+    index += 1;
+    if (["allow", "satisfies", "evidence"].includes(key)) opts[key].push(value);
+    else opts[key] = value;
+  }
+  opts.repo = path.resolve(opts.repo);
+  return opts;
+}
+
+function required(opts, fields) {
+  const missing = fields.filter((field) => opts[field] === undefined || opts[field] === "");
+  if (missing.length) throw new Error(`Missing option(s): ${missing.map((field) => `--${field.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`)}`).join(", ")}`);
+}
+
+function safeId(value, label) {
+  if (!/^[A-Za-z0-9._-]+$/.test(String(value || ""))) throw new Error(`${label} must use only letters, numbers, dot, underscore, or dash`);
+  return String(value);
+}
+
+function runGit(repo, args) {
+  return cp.execFileSync("git", args, { cwd: repo, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
+}
+
+function gitCommit(repo) {
+  return runGit(repo, ["rev-parse", "HEAD"]);
+}
+
+function gitTree(repo) {
+  return runGit(repo, ["rev-parse", "HEAD^{tree}"]);
+}
+
+function sha256(value) {
+  return crypto.createHash("sha256").update(value).digest("hex");
+}
+
+function dirtyDigest(repo) {
+  const status = cp.execFileSync("git", ["status", "--porcelain=v1", "-z"], {
+    cwd: repo,
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  return status ? sha256(status) : "clean";
+}
+
+function isControlPath(filePath) {
+  const normalized = filePath.replaceAll(path.sep, "/");
+  return /^docs\/ai\/(?:actors|evidence|gates|approvals)\//.test(normalized)
+    || /^docs\/ai\/ACEF_(?:ACTIVE_RUN|ACTIVE_WORKER_SCOPE|CURRENT_CONTEXT|ACTIVE_LEDGER)(?:\.json)?$/.test(normalized)
+    || /^docs\/ai\/ACEF_.*_DELIVERY_AUDIT\.md$/.test(normalized);
+}
+
+function dirtyApplicationPaths(repo) {
+  const output = cp.execFileSync("git", ["status", "--porcelain=v1"], {
+    cwd: repo,
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  return output.split(/\r?\n/).filter(Boolean).map((line) => line.slice(3)).filter((filePath) => !isControlPath(filePath));
+}
+
+function atomicJson(filePath, record, { overwrite = false, validate = null } = {}) {
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  if (!overwrite && fs.existsSync(filePath)) throw new Error(`Refusing to overwrite immutable record: ${filePath}`);
+  const tmp = `${filePath}.${process.pid}.tmp`;
+  try {
+    fs.writeFileSync(tmp, `${JSON.stringify(record, null, 2)}\n`);
+    if (validate) validate(tmp);
+    fs.renameSync(tmp, filePath);
+  } finally {
+    fs.rmSync(tmp, { force: true });
+  }
+}
+
+function relative(repo, filePath) {
+  return path.relative(repo, filePath).replaceAll(path.sep, "/");
+}
+
+function actorPath(repo, actorId) {
+  return path.join(repo, "docs", "ai", "actors", `${safeId(actorId, "actor id")}.json`);
+}
+
+function evidencePath(repo, evidenceId) {
+  return path.join(repo, "docs", "ai", "evidence", `${safeId(evidenceId, "evidence id")}.json`);
+}
+
+function rawEvidencePath(repo, evidenceId) {
+  return path.join(repo, "docs", "ai", "evidence", "raw", `${safeId(evidenceId, "evidence id")}.log`);
+}
+
+function quoteArg(value) {
+  return /^[A-Za-z0-9_./:@%+=,-]+$/.test(value) ? value : `'${value.replaceAll("'", `'\\''`)}'`;
+}
+
+function writeActiveRun(opts) {
+  required(opts, ["runId", "lane", "status", "story", "phase", "ledger"]);
+  const record = {
+    runId: opts.runId,
+    repo: path.basename(opts.repo),
+    lane: opts.lane,
+    track: opts.track || null,
+    status: opts.status,
+    activeEpic: opts.epic || null,
+    activeStory: opts.story,
+    activePhase: opts.phase,
+    workerRole: opts.workerRole || null,
+    activeActorId: opts.actor || null,
+    workerScopePath: opts.workerScope || null,
+    fullLedgerAccess: opts.fullLedgerAccess || null,
+    maxLines: opts.maxLines ? Number(opts.maxLines) : null,
+    nextAllowedStep: opts.nextAllowedStep || null,
+    ledgerPath: opts.ledger,
+    contextPath: opts.context || null,
+    updatedAt: new Date().toISOString(),
+  };
+  const target = path.join(opts.repo, "docs", "ai", "ACEF_ACTIVE_RUN.json");
+  atomicJson(target, record, { overwrite: true, validate: parseActiveRun });
+  console.log(`WROTE active-run ${relative(opts.repo, target)}`);
+}
+
+function writeActor(opts) {
+  required(opts, ["id", "story", "phase", "role", "client", "contextProfile"]);
+  const record = {
+    actorInstanceId: opts.id,
+    story: opts.story,
+    phase: opts.phase,
+    role: opts.role,
+    client: opts.client,
+    model: opts.model || null,
+    sessionId: opts.sessionId || null,
+    parentSessionId: opts.parentSessionId || null,
+    promptArtifactHash: opts.promptHash || null,
+    inputCommit: opts.inputCommit || gitCommit(opts.repo),
+    inputTree: opts.inputTree || gitTree(opts.repo),
+    allowedContextProfile: opts.contextProfile,
+    producedArtifactHash: opts.artifactHash || null,
+    createdAt: new Date().toISOString(),
+  };
+  const target = actorPath(opts.repo, opts.id);
+  atomicJson(target, record, { validate: parseActorRecord });
+  console.log(`WROTE actor ${relative(opts.repo, target)}`);
+}
+
+function writeWorkerScope(opts) {
+  required(opts, ["story", "phase", "workerId"]);
+  if (!opts.allow.length) throw new Error("worker-scope requires at least one --allow path");
+  const record = {
+    activeStory: opts.story,
+    phase: opts.phase,
+    workerId: opts.workerId,
+    allowedPaths: opts.allow,
+    baseRef: opts.baseRef || gitCommit(opts.repo),
+    maxCommits: opts.maxCommits ? Number(opts.maxCommits) : 1,
+    canEditLedger: false,
+    canSpawnAgents: false,
+    createdAt: new Date().toISOString(),
+  };
+  const target = path.join(opts.repo, "docs", "ai", "ACEF_ACTIVE_WORKER_SCOPE.json");
+  atomicJson(target, record, { overwrite: true, validate: parseWorkerScope });
+  console.log(`WROTE worker-scope ${relative(opts.repo, target)}`);
+}
+
+function writeApproval(opts) {
+  required(opts, ["id", "decision", "scope", "quote"]);
+  const record = {
+    approvalId: opts.id,
+    decision: opts.decision,
+    scope: opts.scope,
+    targetEpic: opts.targetEpic ? Number(opts.targetEpic) : null,
+    actorType: "human",
+    userQuote: opts.quote,
+    statementHash: sha256(opts.quote),
+    repositoryCommit: gitCommit(opts.repo),
+    sourceChannel: opts.sourceChannel || null,
+    createdAt: new Date().toISOString(),
+  };
+  const target = path.join(opts.repo, "docs", "ai", "approvals", `${safeId(opts.id, "approval id")}.json`);
+  atomicJson(target, record, { validate: parseApproval });
+  console.log(`WROTE approval ${relative(opts.repo, target)}`);
+}
+
+function writeEvidence(opts) {
+  required(opts, ["id", "kind", "actor", "story"]);
+  if (!opts.satisfies.length) throw new Error("evidence-run requires at least one --satisfies value");
+  if (!opts.commandArgv.length) throw new Error("evidence-run requires a command after --");
+  const actor = parseActorRecord(actorPath(opts.repo, opts.actor));
+  if (actor.story !== opts.story) throw new Error(`actor story ${actor.story} does not match evidence story ${opts.story}`);
+  const beforeDirty = dirtyApplicationPaths(opts.repo);
+  if (beforeDirty.length) throw new Error(`Refusing evidence run with dirty application paths: ${beforeDirty.join(", ")}`);
+
+  const commandText = opts.commandArgv.map(quoteArg).join(" ");
+  const startedAt = new Date().toISOString();
+  const execution = cp.spawnSync(opts.commandArgv[0], opts.commandArgv.slice(1), {
+    cwd: opts.repo,
+    encoding: "utf8",
+    env: process.env,
+    maxBuffer: 100 * 1024 * 1024,
+  });
+  const finishedAt = new Date().toISOString();
+  const exitCode = Number.isInteger(execution.status) ? execution.status : 1;
+  const raw = [
+    `command: ${commandText}`,
+    `started_at: ${startedAt}`,
+    `finished_at: ${finishedAt}`,
+    `exit_code: ${exitCode}`,
+    execution.signal ? `signal: ${execution.signal}` : "",
+    "",
+    "--- stdout ---",
+    execution.stdout || "",
+    "--- stderr ---",
+    execution.stderr || execution.error?.message || "",
+  ].filter((line) => line !== "").join("\n");
+  const rawPath = rawEvidencePath(opts.repo, opts.id);
+  fs.mkdirSync(path.dirname(rawPath), { recursive: true });
+  if (fs.existsSync(rawPath) || fs.existsSync(evidencePath(opts.repo, opts.id))) {
+    throw new Error(`Refusing to overwrite immutable evidence ${opts.id}`);
+  }
+  fs.writeFileSync(rawPath, `${raw}\n`);
+
+  const afterDirty = dirtyApplicationPaths(opts.repo);
+  const record = {
+    evidenceId: opts.id,
+    kind: opts.kind,
+    command: commandText,
+    exitCode,
+    startedAt,
+    finishedAt,
+    repositoryCommit: gitCommit(opts.repo),
+    repositoryTree: gitTree(opts.repo),
+    dirtyDigest: dirtyDigest(opts.repo),
+    environmentDigest: sha256(`${process.platform}\n${process.arch}\n${process.version}\n${os.release()}`),
+    actorInstanceId: opts.actor,
+    story: opts.story,
+    rawArtifact: { path: relative(opts.repo, rawPath), sha256: sha256(fs.readFileSync(rawPath)) },
+    satisfies: opts.satisfies,
+  };
+  const target = evidencePath(opts.repo, opts.id);
+  atomicJson(target, record, { validate: parseEvidenceManifest });
+  console.log(`WROTE evidence ${relative(opts.repo, target)} exit=${exitCode} raw=${record.rawArtifact.path}`);
+  if (afterDirty.length) {
+    console.error(`Evidence command dirtied application paths: ${afterDirty.join(", ")}`);
+    process.exitCode = exitCode || 70;
+  } else if (exitCode !== 0) {
+    process.exitCode = exitCode;
+  }
+}
+
+function writeGate(opts) {
+  required(opts, ["id", "scope", "verdict", "decidedBy"]);
+  const judge = parseActorRecord(actorPath(opts.repo, opts.decidedBy));
+  if (/^\s*story\b/i.test(opts.scope) && judge.story.toLowerCase().replace(/[^a-z0-9]+/g, "") !== opts.scope.toLowerCase().replace(/[^a-z0-9]+/g, "")) {
+    throw new Error(`gate actor ${opts.decidedBy} belongs to ${judge.story}, not ${opts.scope}`);
+  }
+  if (opts.verdict === "PASS" && !opts.evidence.length) throw new Error("PASS gate requires at least one --evidence id");
+  for (const evidenceId of opts.evidence) {
+    const evidence = parseEvidenceManifest(evidencePath(opts.repo, evidenceId));
+    if (opts.verdict === "PASS" && evidence.exitCode !== 0) throw new Error(`PASS gate cannot cite failed evidence ${evidenceId}`);
+    if (/^\s*story\b/i.test(opts.scope) && evidence.story.toLowerCase().replace(/[^a-z0-9]+/g, "") !== opts.scope.toLowerCase().replace(/[^a-z0-9]+/g, "")) {
+      throw new Error(`gate evidence ${evidenceId} belongs to ${evidence.story}, not ${opts.scope}`);
+    }
+    const rawPath = path.resolve(opts.repo, evidence.rawArtifact.path);
+    if (!fs.existsSync(rawPath) || sha256(fs.readFileSync(rawPath)) !== evidence.rawArtifact.sha256) {
+      throw new Error(`Evidence ${evidenceId} raw artifact hash mismatch`);
+    }
+  }
+  const record = {
+    gateId: opts.id,
+    scope: opts.scope,
+    verdict: opts.verdict,
+    decidedBy: opts.decidedBy,
+    repositoryCommit: gitCommit(opts.repo),
+    evidenceIds: opts.evidence,
+    notes: opts.notes || null,
+    createdAt: new Date().toISOString(),
+  };
+  const target = path.join(opts.repo, "docs", "ai", "gates", `${safeId(opts.id, "gate id")}.json`);
+  atomicJson(target, record, { validate: parseGateVerdict });
+  console.log(`WROTE gate ${relative(opts.repo, target)} verdict=${opts.verdict}`);
+}
+
+function main() {
+  const opts = parseArgs(process.argv.slice(2));
+  if (!opts.command || opts.command === "help" || opts.command === "--help") return usage();
+  runGit(opts.repo, ["rev-parse", "--git-dir"]);
+  if (opts.command === "active-run") return writeActiveRun(opts);
+  if (opts.command === "actor") return writeActor(opts);
+  if (opts.command === "worker-scope") return writeWorkerScope(opts);
+  if (opts.command === "approval") return writeApproval(opts);
+  if (opts.command === "evidence-run") return writeEvidence(opts);
+  if (opts.command === "gate") return writeGate(opts);
+  throw new Error(`Unknown command: ${opts.command}`);
+}
+
+try {
+  main();
+} catch (error) {
+  console.error(`ACEF_STATE_ERROR: ${error.message}`);
+  process.exitCode = 1;
+}

@@ -9,6 +9,8 @@ const {
   parseEvidenceManifest,
   parseGateVerdict,
   parseApproval,
+  parseWorkerScope,
+  parseFreshness,
   safeRelative,
 } = require("./lib/acef-state-parser");
 
@@ -45,6 +47,8 @@ try {
 
   const actor = write("docs/ai/actors/dev-1.json", {
     actorInstanceId: "dev-1",
+    story: "Story 5.2",
+    phase: "development",
     role: "developer",
     client: "codex",
     inputCommit: "abc123",
@@ -59,6 +63,9 @@ try {
     exitCode: 0,
     repositoryCommit: "abc123",
     dirtyDigest: null,
+    actorInstanceId: "dev-1",
+    story: "Story 5.2",
+    rawArtifact: { path: "docs/ai/evidence/raw/EV-1.log", sha256: "sha256-demo" },
     satisfies: ["AC-5.2.1"],
   });
   if (parseEvidenceManifest(evidence).exitCode !== 0) throw new Error("evidence parse failed");
@@ -69,6 +76,7 @@ try {
     verdict: "PASS",
     decidedBy: "judge-1",
     repositoryCommit: "abc123",
+    evidenceIds: ["EV-1"],
   });
   if (parseGateVerdict(gate).verdict !== "PASS") throw new Error("gate parse failed");
 
@@ -77,10 +85,29 @@ try {
     decision: "APPROVE",
     scope: "epic-transition:5->6",
     actorType: "human",
+    userQuote: "Start Epic 6",
     statementHash: "sha256-demo",
     repositoryCommit: "abc123",
   });
   if (parseApproval(approval).scope !== "epic-transition:5->6") throw new Error("approval parse failed");
+
+  const workerScope = write("docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json", {
+    activeStory: "Story 5.2",
+    phase: "development",
+    workerId: "dev-1",
+    allowedPaths: ["app/**", "tests/**"],
+    baseRef: "abc123",
+    maxCommits: 1,
+    canEditLedger: false,
+    canSpawnAgents: false,
+  });
+  if (parseWorkerScope(workerScope).workerId !== "dev-1") throw new Error("worker scope parse failed");
+  const unsafeScope = { ...JSON.parse(fs.readFileSync(workerScope, "utf8")), allowedPaths: ["../outside/**"] };
+  write("unsafe-scope.json", unsafeScope);
+  assertThrows(() => parseWorkerScope(path.join(tmp, "unsafe-scope.json")), /repo-relative/, "unsafe worker scope");
+  if (parseFreshness({ commit: "abc123", verifiedAt: "2026-06-23T00:00:00Z", scope: "app/**" }).commit !== "abc123") {
+    throw new Error("freshness parse failed");
+  }
 
   write("bad-active.json", { runId: "RUN-2" });
   assertThrows(() => parseActiveRun(path.join(tmp, "bad-active.json")), /missing required field/, "bad active run");
@@ -91,6 +118,9 @@ try {
     exitCode: "0",
     repositoryCommit: "abc123",
     dirtyDigest: null,
+    actorInstanceId: "dev-1",
+    story: "Story 5.2",
+    rawArtifact: { path: "raw.log", sha256: "demo" },
     satisfies: ["AC-1"],
   });
   assertThrows(() => parseEvidenceManifest(path.join(tmp, "bad-evidence.json")), /integer exitCode/, "bad evidence");
@@ -100,4 +130,3 @@ try {
 } finally {
   fs.rmSync(tmp, { recursive: true, force: true });
 }
-

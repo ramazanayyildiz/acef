@@ -3,7 +3,7 @@
   "$id": "https://acef.local/schemas/evidence.schema.json",
   "title": "ACEF Evidence Manifest",
   "type": "object",
-  "required": ["evidenceId", "kind", "command", "exitCode", "repositoryCommit", "dirtyDigest", "satisfies"],
+  "required": ["evidenceId", "kind", "command", "exitCode", "repositoryCommit", "dirtyDigest", "actorInstanceId", "story", "rawArtifact", "satisfies"],
   "additionalProperties": false,
   "properties": {
     "evidenceId": { "type": "string", "minLength": 1 },
@@ -15,9 +15,11 @@
     "repositoryCommit": { "type": "string", "minLength": 1 },
     "repositoryTree": { "type": ["string", "null"] },
     "dirtyDigest": { "type": ["string", "null"] },
+    "actorInstanceId": { "type": "string", "minLength": 1 },
+    "story": { "type": "string", "minLength": 1 },
     "environmentDigest": { "type": ["string", "null"] },
     "rawArtifact": {
-      "type": ["object", "null"],
+      "type": "object",
       "additionalProperties": false,
       "properties": {
         "path": { "type": "string", "minLength": 1 },
@@ -27,8 +29,8 @@
     },
     "satisfies": {
       "type": "array",
+      "minItems": 1,
       "items": { "type": "string", "minLength": 1 }
     }
   }
 }
-

@@ -2,6 +2,7 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const cp = require("node:child_process");
+const { parseWorkerScope } = require("./lib/acef-state-parser");
 
 function usage() {
   console.log(`ACEF Codex guard
@@ -200,7 +201,12 @@ function main() {
 
   const scopePath = path.join(args.repo, "docs", "ai", "ACEF_ACTIVE_WORKER_SCOPE.json");
   if (!exists(scopePath)) fail("missing docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json for worker role");
-  const scope = readJson(scopePath);
+  let scope;
+  try {
+    scope = parseWorkerScope(scopePath);
+  } catch (error) {
+    fail(`invalid active worker scope: ${error.message}`);
+  }
 
   if (args.story && String(scope.activeStory || "") !== args.story) {
     fail(`activeStory ${scope.activeStory || "missing"} does not match --story ${args.story}`);

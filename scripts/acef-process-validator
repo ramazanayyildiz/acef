@@ -2,7 +2,16 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const cp = require("node:child_process");
-const { parseActiveRun } = require("./lib/acef-state-parser");
+const crypto = require("node:crypto");
+const {
+  parseActiveRun,
+  parseActorRecord,
+  parseApproval,
+  parseEvidenceManifest,
+  parseGateVerdict,
+  parseWorkerScope,
+  safeRelative,
+} = require("./lib/acef-state-parser");
 
 function usage() {
   console.log(`ACEF process validator
@@ -25,6 +34,9 @@ Checks:
   vertical-slice      Require capabilities to trace actor -> real surface/entrypoint -> application path -> runtime evidence
   guarded-test-floor  For guarded work, require a symbol-grounded asserted boundary test and independent Test Author
   actor-separation    For full BMAD, require distinct phase actors with durable provenance evidence
+  worker-scope       Require active worker identity and write scope to match the typed active run
+  evidence-manifest  Validate typed evidence provenance, hashes, actor binding, and source freshness
+  gate-verdict       Require the active scope to have a typed PASS verdict backed by successful evidence
   source-reconciliation For full BMAD, require every planning source to record use/conflict/resolution
   epic-context-pack  Require an epic-level context pack before story workers consume the epic
   current-context    Require a role-scoped, ledger-reconciled hot context before worker dispatch
@@ -139,7 +151,7 @@ function gitChangedFiles(repoRoot, fromRef, toRef) {
       encoding: "utf8",
       stdio: ["ignore", "pipe", "ignore"],
     });
-    return output.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+    return output.split(/\r?\n/).filter(Boolean);
   } catch {
     return [];
   }
@@ -152,10 +164,93 @@ function gitStatusPorcelain(repoRoot) {
       encoding: "utf8",
       stdio: ["ignore", "pipe", "ignore"],
     });
-    return output.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+    return output.split(/\r?\n/).filter(Boolean);
   } catch {
     return null;
   }
+}
+
+function jsonRecords(dirPath) {
+  if (!exists(dirPath)) return [];
+  return fs.readdirSync(dirPath, { withFileTypes: true })
+    .filter((entry) => entry.isFile() && entry.name.endsWith(".json"))
+    .map((entry) => path.join(dirPath, entry.name))
+    .sort();
+}
+
+function sha256File(filePath) {
+  return crypto.createHash("sha256").update(fs.readFileSync(filePath)).digest("hex");
+}
+
+function normalizedScope(value) {
+  return String(value || "").trim().toLowerCase().replace(/[^a-z0-9]+/g, "");
+}
+
+function stateControlPath(filePath) {
+  const normalized = String(filePath || "").replaceAll(path.sep, "/");
+  return /^docs\/ai\/(?:actors|evidence|gates|approvals)\//.test(normalized)
+    || /^docs\/ai\/ACEF_(?:ACTIVE_RUN|ACTIVE_WORKER_SCOPE|CURRENT_CONTEXT|ACTIVE_LEDGER)(?:\.json)?$/.test(normalized)
+    || /^docs\/ai\/ACEF_.*_DELIVERY_AUDIT\.md$/.test(normalized);
+}
+
+function ancestorCommitError(repoRoot, commit, label) {
+  const head = gitHead(repoRoot);
+  if (!commit || !gitIsAncestor(repoRoot, commit, head)) return `${label} commit ${commit || "missing"} is not an ancestor of HEAD ${head}`;
+  return "";
+}
+
+function recordCommitError(repoRoot, commit, label) {
+  const ancestorError = ancestorCommitError(repoRoot, commit, label);
+  if (ancestorError) return ancestorError;
+  const head = gitHead(repoRoot);
+  const changed = gitChangedFiles(repoRoot, commit, head).filter((filePath) => !stateControlPath(filePath));
+  if (changed.length) return `${label} is stale; application paths changed since ${commit}: ${changed.slice(0, 8).join(", ")}`;
+  return "";
+}
+
+function workingApplicationChanges(repoRoot) {
+  const lines = gitStatusPorcelain(repoRoot) || [];
+  return lines.map((line) => line.slice(3)).filter((filePath) => filePath && !stateControlPath(filePath));
+}
+
+function actorRecordById(repoRoot, actorId) {
+  const filePath = path.join(repoRoot, "docs", "ai", "actors", `${actorId}.json`);
+  if (!exists(filePath)) throw new Error(`Missing actor record ${actorId}`);
+  const actor = parseActorRecord(filePath);
+  if (actor.actorInstanceId !== actorId) throw new Error(`Actor filename/id mismatch for ${actorId}`);
+  return actor;
+}
+
+function evidenceRecordById(repoRoot, evidenceId) {
+  const filePath = path.join(repoRoot, "docs", "ai", "evidence", `${evidenceId}.json`);
+  if (!exists(filePath)) throw new Error(`Missing evidence manifest ${evidenceId}`);
+  const evidence = parseEvidenceManifest(filePath);
+  if (evidence.evidenceId !== evidenceId) throw new Error(`Evidence filename/id mismatch for ${evidenceId}`);
+  return evidence;
+}
+
+function validateEvidenceRecord(repoRoot, evidence) {
+  const failures = [];
+  const commitError = recordCommitError(repoRoot, evidence.repositoryCommit, `evidence ${evidence.evidenceId}`);
+  if (commitError) failures.push(commitError);
+  try {
+    const actor = actorRecordById(repoRoot, evidence.actorInstanceId);
+    if (normalizedScope(actor.story) !== normalizedScope(evidence.story)) failures.push(`evidence ${evidence.evidenceId} actor story mismatch`);
+  } catch (error) {
+    failures.push(error.message);
+  }
+  try {
+    const rawPath = path.resolve(repoRoot, evidence.rawArtifact.path);
+    safeRelative(rawPath, repoRoot);
+    if (!exists(rawPath)) failures.push(`evidence ${evidence.evidenceId} raw artifact is missing`);
+    else {
+      safeRelative(fs.realpathSync(rawPath), fs.realpathSync(repoRoot));
+      if (sha256File(rawPath) !== evidence.rawArtifact.sha256) failures.push(`evidence ${evidence.evidenceId} raw artifact hash mismatch`);
+    }
+  } catch (error) {
+    failures.push(`evidence ${evidence.evidenceId}: ${error.message}`);
+  }
+  return failures;
 }
 
 function checkCleanTree(repoRoot) {
@@ -443,9 +538,51 @@ function hasEpicTransitionApproval(text, targetEpic) {
   return statusApproved && explicitEpicApprovalQuote(searchText, targetEpic);
 }
 
+function explicitEpicApprovalQuoteValue(quote, targetEpic) {
+  const text = String(quote || "");
+  const epicMention = new RegExp(`\\b(?:Epic|E)\\s*[-_ ]?${targetEpic}\\b`, "i");
+  const approvalVerb = /\b(start|begin|launch|approve|approved|approval|başla|basla|başlat|baslat|geç|gec|onay|onayla|onaylandı|onaylandi)\b/i;
+  const genericOnly = /^\s*(?:go on|continue|devam|tamamla|bunları tamamla|proceed|ilerle)[.!\s]*$/i;
+  return epicMention.test(text) && approvalVerb.test(text) && !genericOnly.test(text);
+}
+
+function checkTypedEpicTransitionApproval(repoRoot, targetEpic) {
+  const files = jsonRecords(path.join(repoRoot, "docs", "ai", "approvals"));
+  const failures = [];
+  let matched = null;
+  for (const filePath of files) {
+    try {
+      const approval = parseApproval(filePath);
+      if (approval.targetEpic !== targetEpic) continue;
+      if (approval.actorType !== "human" || approval.decision !== "APPROVE") continue;
+      if (!explicitEpicApprovalQuoteValue(approval.userQuote, targetEpic)) {
+        failures.push(`${approval.approvalId} lacks an explicit Epic ${targetEpic} approval quote`);
+        continue;
+      }
+      if (crypto.createHash("sha256").update(approval.userQuote).digest("hex") !== approval.statementHash) {
+        failures.push(`${approval.approvalId} statementHash mismatch`);
+        continue;
+      }
+      const commitError = ancestorCommitError(repoRoot, approval.repositoryCommit, `approval ${approval.approvalId}`);
+      if (commitError) {
+        failures.push(commitError);
+        continue;
+      }
+      matched = approval;
+    } catch (error) {
+      failures.push(`${path.relative(repoRoot, filePath)}: ${error.message}`);
+    }
+  }
+  if (matched) return result("epic-transition-approval", true, `Typed human approval ${matched.approvalId} authorizes Epic ${targetEpic}`);
+  return result("epic-transition-approval", false, failures.length
+    ? failures.join("; ")
+    : `Epic ${targetEpic} requires a typed human approval receipt`);
+}
+
 function checkEpicTransitionApproval(repoRoot, ledgerPath, targetEpic) {
   if (!targetEpic || targetEpic <= 1) return result("epic-transition-approval", true, "No explicit transition approval required for Epic 1");
   if (!ledgerPath || !exists(ledgerPath)) return result("epic-transition-approval", false, "Missing ledger path");
+  if (typedActiveRun(repoRoot)) return checkTypedEpicTransitionApproval(repoRoot, targetEpic);
   const text = allArtifactText(repoRoot, ledgerPath);
   if (hasEpicTransitionApproval(text, targetEpic)) {
     return result("epic-transition-approval", true, `Explicit human approval found for Epic ${targetEpic}`);
@@ -832,9 +969,60 @@ function normalizedPhase(value) {
   return String(value || "").toLowerCase().replace(/[^a-z0-9]+/g, "");
 }
 
+function canonicalPhase(value) {
+  const phase = normalizedPhase(value);
+  const aliases = {
+    dev: "development",
+    developer: "development",
+    review: "codereview",
+    reviewer: "codereview",
+    codereviewer: "codereview",
+    verifier: "verifypatch",
+    testreviewer: "testreview",
+    judge: "processjudge",
+    storyprocessjudge: "processjudge",
+  };
+  return aliases[phase] || phase;
+}
+
+function typedActiveRun(repoRoot) {
+  const activeRunPath = path.join(repoRoot, "docs", "ai", "ACEF_ACTIVE_RUN.json");
+  return exists(activeRunPath) ? parseActiveRun(activeRunPath) : null;
+}
+
+function checkTypedActorSeparation(repoRoot, activeRun) {
+  const actorFiles = jsonRecords(path.join(repoRoot, "docs", "ai", "actors"));
+  const actors = actorFiles.map(parseActorRecord).filter((actor) => normalizedScope(actor.story) === normalizedScope(activeRun.activeStory));
+  const requiredPhases = ["atdd", "development", "codereview", "verifypatch", "testreview", "processjudge"];
+  const byPhase = new Map();
+  for (const actor of actors) {
+    const phase = canonicalPhase(actor.phase);
+    if (!byPhase.has(phase)) byPhase.set(phase, actor);
+  }
+  const missing = requiredPhases.filter((phase) => !byPhase.has(phase));
+  if (missing.length) return result("actor-separation", false, `Typed actor records missing phase(s): ${missing.join(", ")}`);
+  const ids = requiredPhases.map((phase) => byPhase.get(phase).actorInstanceId);
+  const duplicates = ids.filter((id, index) => ids.indexOf(id) !== index);
+  if (duplicates.length) return result("actor-separation", false, `Typed phase actors must be distinct: ${[...new Set(duplicates)].join(", ")}`);
+  const failures = [];
+  for (const phase of requiredPhases) {
+    const actor = byPhase.get(phase);
+    if (/^(?:conductor|dispatcher|orchestrator|main|general-purpose)$/i.test(actor.role)) failures.push(`${phase}: invalid role ${actor.role}`);
+    const commitError = ancestorCommitError(repoRoot, actor.inputCommit, `actor ${actor.actorInstanceId}`);
+    if (commitError) failures.push(commitError);
+  }
+  if (failures.length) return result("actor-separation", false, failures.join("; "));
+  return result("actor-separation", true, `Six typed full-BMAD phase actors are distinct for ${activeRun.activeStory}`);
+}
+
 function checkActorSeparation(repoRoot, ledgerPath) {
   if (!ledgerPath || !exists(ledgerPath)) return result("actor-separation", false, "Missing ledger path");
   const text = read(ledgerPath);
+  const activeRun = typedActiveRun(repoRoot);
+  if (activeRun) {
+    if (activeRun.lane !== "full-bmad") return result("actor-separation", true, "Typed lane is not full BMAD");
+    return checkTypedActorSeparation(repoRoot, activeRun);
+  }
   if (!isFullBmad(text)) return result("actor-separation", true, "Lane is not full BMAD");
   const section = extractSection(text, "Actor Separation");
   if (!section) return result("actor-separation", false, "Missing ## Actor Separation section");
@@ -867,6 +1055,103 @@ function checkActorSeparation(repoRoot, ledgerPath) {
   if (duplicates.length) failures.push(`actors must be distinct: ${[...new Set(duplicates)].join(", ")}`);
   if (failures.length) return result("actor-separation", false, failures.join("; "));
   return result("actor-separation", true, "Six full-BMAD phases have distinct actors and durable evidence");
+}
+
+function checkWorkerScope(repoRoot) {
+  const activeRun = typedActiveRun(repoRoot);
+  if (!activeRun) return result("worker-scope", true, "No typed active run; legacy scope checks remain in guards");
+  if (!activeRun.workerRole || /^(?:conductor|dispatcher|orchestrator)$/i.test(activeRun.workerRole)) {
+    return result("worker-scope", true, "Active run is not assigned to a worker");
+  }
+  const scopePath = resolvePath(activeRun.workerScopePath || "docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json", repoRoot);
+  if (!exists(scopePath)) return result("worker-scope", false, `Missing worker scope ${path.relative(repoRoot, scopePath)}`);
+  try {
+    const scope = parseWorkerScope(scopePath);
+    const failures = [];
+    if (normalizedScope(scope.activeStory) !== normalizedScope(activeRun.activeStory)) failures.push("activeStory does not match active run");
+    if (canonicalPhase(scope.phase) !== canonicalPhase(activeRun.activePhase)) failures.push("phase does not match active run");
+    if (activeRun.activeActorId && scope.workerId !== activeRun.activeActorId) failures.push("workerId does not match activeActorId");
+    const actor = actorRecordById(repoRoot, scope.workerId);
+    if (normalizedScope(actor.story) !== normalizedScope(scope.activeStory)) failures.push("worker actor story does not match scope");
+    if (canonicalPhase(actor.phase) !== canonicalPhase(scope.phase)) failures.push("worker actor phase does not match scope");
+    if (!gitIsAncestor(repoRoot, scope.baseRef, gitHead(repoRoot))) failures.push(`baseRef ${scope.baseRef} is not an ancestor of HEAD`);
+    return failures.length
+      ? result("worker-scope", false, failures.join("; "))
+      : result("worker-scope", true, `${scope.workerId} is bound to ${scope.activeStory}/${scope.phase}`);
+  } catch (error) {
+    return result("worker-scope", false, error.message);
+  }
+}
+
+function checkEvidenceManifests(repoRoot) {
+  const activeRun = typedActiveRun(repoRoot);
+  if (!activeRun) return result("evidence-manifest", true, "No typed active run; legacy evidence checks remain active");
+  const files = jsonRecords(path.join(repoRoot, "docs", "ai", "evidence"));
+  const records = [];
+  const failures = [];
+  for (const filePath of files) {
+    try {
+      const evidence = parseEvidenceManifest(filePath);
+      if (normalizedScope(evidence.story) !== normalizedScope(activeRun.activeStory)) continue;
+      records.push(evidence);
+      failures.push(...validateEvidenceRecord(repoRoot, evidence));
+    } catch (error) {
+      failures.push(`${path.relative(repoRoot, filePath)}: ${error.message}`);
+    }
+  }
+  const dirty = workingApplicationChanges(repoRoot);
+  if (dirty.length) failures.push(`working tree has application changes: ${dirty.slice(0, 8).join(", ")}`);
+  if (!records.length) failures.push(`No typed evidence manifests for ${activeRun.activeStory}`);
+  return failures.length
+    ? result("evidence-manifest", false, failures.join("; "))
+    : result("evidence-manifest", true, `${records.length} typed evidence manifest(s) verified for ${activeRun.activeStory}`);
+}
+
+function checkGateVerdict(repoRoot) {
+  const activeRun = typedActiveRun(repoRoot);
+  if (!activeRun) return result("gate-verdict", true, "No typed active run; legacy gate checks remain active");
+  const files = jsonRecords(path.join(repoRoot, "docs", "ai", "gates"));
+  const matching = [];
+  const failures = [];
+  for (const filePath of files) {
+    try {
+      const gate = parseGateVerdict(filePath);
+      if (normalizedScope(gate.scope) === normalizedScope(activeRun.activeStory)) matching.push(gate);
+    } catch (error) {
+      failures.push(`${path.relative(repoRoot, filePath)}: ${error.message}`);
+    }
+  }
+  const gate = matching.filter((record) => record.verdict === "PASS").sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")))[0];
+  if (!gate) failures.push(`No typed PASS gate verdict for ${activeRun.activeStory}`);
+  if (gate) {
+    try {
+      const actor = actorRecordById(repoRoot, gate.decidedBy);
+      if (normalizedScope(actor.story) !== normalizedScope(activeRun.activeStory)) failures.push(`gate actor ${gate.decidedBy} story mismatch`);
+      if (canonicalPhase(actor.phase) !== "processjudge" && canonicalPhase(actor.phase) !== "epicprocessjudge") {
+        failures.push(`gate actor ${gate.decidedBy} is not a Process Judge`);
+      }
+    } catch (error) {
+      failures.push(error.message);
+    }
+    const commitError = recordCommitError(repoRoot, gate.repositoryCommit, `gate ${gate.gateId}`);
+    if (commitError) failures.push(commitError);
+    for (const evidenceId of gate.evidenceIds || []) {
+      try {
+        const evidence = evidenceRecordById(repoRoot, evidenceId);
+        if (evidence.exitCode !== 0) failures.push(`PASS gate cites failed evidence ${evidenceId}`);
+        if (/^\s*story\b/i.test(activeRun.activeStory)
+          && normalizedScope(evidence.story) !== normalizedScope(activeRun.activeStory)) {
+          failures.push(`PASS gate cites evidence ${evidenceId} from another story`);
+        }
+        failures.push(...validateEvidenceRecord(repoRoot, evidence));
+      } catch (error) {
+        failures.push(error.message);
+      }
+    }
+  }
+  return failures.length
+    ? result("gate-verdict", false, failures.join("; "))
+    : result("gate-verdict", true, `${gate.gateId} PASS is actor-bound and evidence-backed`);
 }
 
 function checkSourceReconciliation(repoRoot, ledgerPath) {
@@ -1257,7 +1542,7 @@ function main() {
   const adapter = args.adapter || findAdapter(args.repo);
   const registry = findPatternRegistry(args.repo, adapter);
   const checks = args.check === "all"
-    ? ["clean-tree", "preflight", "claims", "adapter-freshness", "pattern-registry", "reuse-before-create", "do-not-copy", "partial-workshape", "finding-promotion", "graduation-reconciliation", "vertical-slice", "guarded-test-floor", "actor-separation", "source-reconciliation", "epic-context-pack", "current-context", "lean-evidence", "session-handoff", "seeded-epic-gates", "epic-boundary", "epic-transition-approval", "replan-counter"]
+    ? ["clean-tree", "preflight", "claims", "adapter-freshness", "pattern-registry", "reuse-before-create", "do-not-copy", "partial-workshape", "finding-promotion", "graduation-reconciliation", "vertical-slice", "guarded-test-floor", "actor-separation", "worker-scope", "evidence-manifest", "gate-verdict", "source-reconciliation", "epic-context-pack", "current-context", "lean-evidence", "session-handoff", "seeded-epic-gates", "epic-boundary", "epic-transition-approval", "replan-counter"]
     : [args.check];
 
   const results = checks.map((check) => {
@@ -1274,6 +1559,9 @@ function main() {
     if (check === "vertical-slice") return checkVerticalSlice(args.repo, ledger);
     if (check === "guarded-test-floor") return checkGuardedTestFloor(args.repo, ledger);
     if (check === "actor-separation") return checkActorSeparation(args.repo, ledger);
+    if (check === "worker-scope") return checkWorkerScope(args.repo);
+    if (check === "evidence-manifest") return checkEvidenceManifests(args.repo);
+    if (check === "gate-verdict") return checkGateVerdict(args.repo);
     if (check === "source-reconciliation") return checkSourceReconciliation(args.repo, ledger);
     if (check === "epic-context-pack") return checkEpicContextPack(args.repo, ledger);
     if (check === "current-context") return checkCurrentContext(args.repo, ledger);

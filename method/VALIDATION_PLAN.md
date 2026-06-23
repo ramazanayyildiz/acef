@@ -62,3 +62,27 @@ ACEF can be called empirically proven for a lane only when:
 - lightweight wall-clock overhead is below 30%;
 - final evidence binds to the right tree/commit in 100% of runs.
 
+## Typed-State Acceptance Matrix
+
+Before the 30-run measurement round, each installed client must pass this deterministic matrix in an isolated clone or
+worktree:
+
+| Contract | Positive case | Required negative case |
+|---|---|---|
+| Actor separation | six distinct story-phase actors | duplicate or missing phase is rejected |
+| Worker scope | active run, actor, story, phase, and base ref reconcile | mismatched story/actor is rejected |
+| Evidence | real argv command, raw output hash, actor and Git provenance reconcile | tampered raw output is rejected |
+| Gate | Process Judge PASS cites successful evidence | failed or missing evidence cannot satisfy PASS |
+| Epic approval | exact human quote names and starts/approves the target epic | generic `go on`/`continue` is rejected |
+
+Run the built-in coverage first:
+
+```bash
+node scripts/test-acef-state
+node scripts/test-acef-typed-state-validator
+node scripts/test-install-acef-tools
+```
+
+Then install into a disposable clone of a real ACEF project and repeat the record/validate loop. Do not write dogfood
+sidecars into an active product worktree. Record the source commit, disposable path, commands, positive verdicts, and
+at least one intentional negative catch in `docs/dogfood-typed-state-YYYY-MM-DD.md`.

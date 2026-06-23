@@ -180,6 +180,9 @@ Captures (each field cites a source path):
             checks clean-tree certification state, preflight PASS, claimed output paths, adapter freshness, registry shape, reuse-before-create,
             do-not-copy misuse, partial work-shape permission, finding promotion, graduation reconciliation, probed vertical-slice completeness,
             guarded boundary tests, actor separation, source reconciliation, session handoff, epic gates, and REPLAN count.</p></div>
+            <div class="card" style="border-left-color:var(--green)"><h3>Typed evidence</h3><p><code>acef-state</code>
+              writes actor, worker-scope, hashed command evidence, gate verdict, and approval JSON sidecars. Validators
+              bind PASS to the right actor, Git state, raw output hash, and explicit human approval.</p></div>
             <div class="card" style="border-left-color:var(--rose)"><h3>Process gates</h3><p><code>ACEF_PREFLIGHT.md</code>
               must PASS before planning or implementation; Process Judge and Epic Process Judge verify skills, phase
               order, artifacts, and evidence before <code>done</code>.</p></div>
@@ -301,6 +304,7 @@ Captures (each field cites a source path):
             <div class="card" style="border-left-color:var(--violet)"><h3>Epic Process Judge</h3><p>Before epic close, verify drift audit, trace, epic test-review, E2E/user-flow evidence, manual QA ledger, product-done audit, retrospective, and status close.</p></div>
             <div class="card" style="border-left-color:var(--teal)"><h3>Test cases first</h3><p>For risky/large work, user flows become test cases before automation and before final story slicing.</p></div>
             <div class="card" style="border-left-color:var(--amber)"><h3>Separation of powers</h3><p>The conductor routes the lifecycle. Test Author, Developer, Code Reviewer, Verify-Patch Reviewer, Test Reviewer, and Process Judge are separate actors. A worker cannot approve its own output.</p></div>
+            <div class="card" style="border-left-color:var(--green)"><h3>Typed gate evidence</h3><p><code>acef-state</code> records each actor and worker scope, captures command output with a hash, and requires Process Judge PASS to cite successful evidence. Epic transitions use an exact hashed human approval quote.</p></div>
             <div class="card" style="border-left-color:var(--blue)"><h3>Seeded epic gates</h3><p>Epics/stories generation creates every <code>Epic N Process Judge [PENDING]</code> row up front. The next epic cannot start until the prior epic gate is <code>PASS</code>.</p></div>
           </div>
         </section>

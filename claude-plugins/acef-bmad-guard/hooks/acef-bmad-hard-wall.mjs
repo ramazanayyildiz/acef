@@ -2,6 +2,9 @@
 import fs from "node:fs";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
+import { createRequire } from "node:module";
+
+const require = createRequire(import.meta.url);
 
 function readStdin() {
   return new Promise((resolve) => {
@@ -568,8 +571,22 @@ function readActiveWorkerScope(repoRoot) {
   const filePath = activeWorkerScopePath(repoRoot);
   if (!filePath) return null;
   try {
+    const parserPath = path.join(repoRoot, ".acef", "bin", "lib", "acef-state-parser.js");
+    if (exists(parserPath)) return require(parserPath).parseWorkerScope(filePath);
     const parsed = JSON.parse(fs.readFileSync(filePath, "utf8"));
-    return parsed && typeof parsed === "object" ? parsed : null;
+    const valid = parsed
+      && typeof parsed === "object"
+      && parsed.activeStory
+      && parsed.phase
+      && parsed.workerId
+      && parsed.baseRef
+      && Number.isInteger(parsed.maxCommits)
+      && parsed.maxCommits > 0
+      && Array.isArray(parsed.allowedPaths)
+      && parsed.allowedPaths.length > 0
+      && parsed.canEditLedger === false
+      && parsed.canSpawnAgents === false;
+    return valid ? parsed : { invalid: true };
   } catch {
     return { invalid: true };
   }

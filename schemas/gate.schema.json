@@ -17,6 +17,14 @@
     },
     "notes": { "type": ["string", "null"] },
     "createdAt": { "type": ["string", "null"] }
-  }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "verdict": { "const": "PASS" } } },
+      "then": {
+        "required": ["evidenceIds"],
+        "properties": { "evidenceIds": { "minItems": 1 } }
+      }
+    }
+  ]
 }
-

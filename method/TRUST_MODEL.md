@@ -21,6 +21,7 @@ sandbox or malicious-code security boundary.
 | User disables hooks or local plugins | no guarantee; CLI validators remain a backstop |
 | Malicious process bypasses tool hooks | no OS-level guarantee |
 | Agent forges editable prose | typed sidecars reduce but do not cryptographically eliminate risk |
+| Agent fabricates a human approval receipt | no cryptographic guarantee; preserve the exact quote and source channel, and reconcile it to the client transcript at guarded/epic gates |
 | Runtime environment lies about command output | require raw evidence hashes and reproducible command records |
 
 ## Evidence Standard
@@ -28,7 +29,7 @@ sandbox or malicious-code security boundary.
 An ACEF evidence record should bind the result to:
 
 - repository commit or tree;
-- dirty-worktree digest, or `null` if clean;
+- dirty-worktree digest, or the literal `clean` state;
 - exact command;
 - exit code;
 - relevant runtime/tool versions when available;
@@ -36,4 +37,3 @@ An ACEF evidence record should bind the result to:
 - ACs or gates it satisfies.
 
 `UNKNOWN`, `STALE`, and `PARTIAL` are not hard-gate PASS states.
-

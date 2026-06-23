@@ -9,12 +9,21 @@
     "approvalId": { "type": "string", "minLength": 1 },
     "decision": { "type": "string", "enum": ["APPROVE", "REJECT", "ACCEPT_RISK"] },
     "scope": { "type": "string", "minLength": 1 },
+    "targetEpic": { "type": ["integer", "null"], "minimum": 1 },
     "actorType": { "type": "string", "enum": ["human", "system"] },
     "userQuote": { "type": ["string", "null"] },
     "statementHash": { "type": "string", "minLength": 1 },
     "repositoryCommit": { "type": "string", "minLength": 1 },
     "sourceChannel": { "type": ["string", "null"] },
     "createdAt": { "type": ["string", "null"] }
-  }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "actorType": { "const": "human" } } },
+      "then": {
+        "required": ["userQuote"],
+        "properties": { "userQuote": { "type": "string", "minLength": 1 } }
+      }
+    }
+  ]
 }
-
