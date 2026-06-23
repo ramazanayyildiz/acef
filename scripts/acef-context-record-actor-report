@@ -137,6 +137,7 @@ function main() {
     "--stale-story-leak", fields.stale_story_leak,
     "--wrong-scope-touch", fields.wrong_scope_touch,
   ];
+  if (fields.runner_type) args.push("--runner-type", fields.runner_type);
   if (opts.output) args.push("--output", opts.output);
   const stdout = cp.execFileSync(experimentScript, args, {
     cwd: repoRoot,

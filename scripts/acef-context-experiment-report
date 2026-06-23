@@ -106,6 +106,18 @@ function coverage(rows, manifest) {
   };
 }
 
+function runnerTypes(rows) {
+  const counts = new Map();
+  for (const row of rows) {
+    if (row.result === "invalid") continue;
+    const key = row.runner_type || "unspecified";
+    counts.set(key, (counts.get(key) || 0) + 1);
+  }
+  return [...counts.entries()]
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([runner_type, count]) => ({ runner_type, count }));
+}
+
 function summarize(rows, manifest = null) {
   const groups = new Map();
   for (const row of rows) {
@@ -160,6 +172,7 @@ function summarize(rows, manifest = null) {
     summaries,
     threshold,
     coverage: coverage(rows, manifest),
+    runner_types: runnerTypes(rows),
   };
 }
 
@@ -178,6 +191,12 @@ function renderMarkdown(result) {
   lines.push("");
   lines.push(`adoptable: ${result.threshold.adoptable ? "yes" : "no"}`);
   lines.push(`reason: ${result.threshold.adoptable ? "actor quality and token data present with safety clean" : "needs actor quality plus token/cost evidence before changing defaults"}`);
+  if (result.runner_types.length) {
+    lines.push("");
+    lines.push("| Runner type | Actor rows |");
+    lines.push("|---|---:|");
+    for (const item of result.runner_types) lines.push(`| ${item.runner_type} | ${item.count} |`);
+  }
   if (result.coverage) {
     lines.push("");
     lines.push(`coverage: ${result.coverage.actual_actor_runs}/${result.coverage.expected_runs} actor rows (${result.coverage.actual_rows} total rows)`);

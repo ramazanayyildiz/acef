@@ -33,6 +33,7 @@ Options:
   --false-positive-count <n>    Manually recorded false positive count (default: 0)
   --stale-story-leak <true|false> Recorded stale-story leakage (default: false)
   --wrong-scope-touch <true|false> Recorded wrong-scope touch (default: false)
+  --runner-type <type>    Actor runner identity class (default: unspecified)
 
 This harness measures context surface and records quality fields. It does not satisfy ACEF gates.`);
 }
@@ -61,6 +62,7 @@ function parseArgs(argv) {
     falsePositiveCount: 0,
     staleStoryLeak: false,
     wrongScopeTouch: false,
+    runnerType: "unspecified",
   };
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
@@ -86,6 +88,7 @@ function parseArgs(argv) {
     else if (arg === "--false-positive-count") opts.falsePositiveCount = Number(argv[++index]);
     else if (arg === "--stale-story-leak") opts.staleStoryLeak = parseBool(argv[++index]);
     else if (arg === "--wrong-scope-touch") opts.wrongScopeTouch = parseBool(argv[++index]);
+    else if (arg === "--runner-type") opts.runnerType = argv[++index] || "";
     else if (arg === "-h" || arg === "--help") {
       usage();
       process.exit(0);
@@ -99,6 +102,7 @@ function parseArgs(argv) {
   if (!opts.role) throw new Error("--role is required");
   if (!new Set(["review", "atdd", "dev"]).has(opts.taskType)) throw new Error("--task-type must be review, atdd, or dev");
   if (!new Set(["baseline", "files", "context-mode"]).has(opts.mode)) throw new Error("--mode must be baseline, files, or context-mode");
+  if (!/^[a-z0-9_.-]+$/i.test(opts.runnerType)) throw new Error("--runner-type must be a simple identifier");
   if (!Number.isInteger(opts.runs) || opts.runs < 1 || opts.runs > 50) throw new Error("--runs must be between 1 and 50");
   if (!new Set(["pass", "fail", "invalid"]).has(opts.result)) throw new Error("--result must be pass, fail, or invalid");
   for (const key of ["extraFileReads", "toolCalls", "retryCount", "knownFindingsRecalled", "reviewFindingsCount", "falsePositiveCount"]) {
@@ -289,6 +293,7 @@ function record(opts, metrics, runtimeMs) {
     provider: metrics.provider,
     story: opts.story,
     role: opts.role,
+    runner_type: opts.runnerType,
     input_tokens: opts.inputTokens,
     cached_input_tokens: opts.cachedInputTokens,
     output_tokens: opts.outputTokens,

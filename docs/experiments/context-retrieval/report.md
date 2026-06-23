@@ -103,7 +103,9 @@ Interpretation:
 - The first actor prompt matrix is ready for Story 4.1 review, ATDD, and dev tasks across all three modes, but no actor
   result rows have been recorded yet.
 - The manifest now makes actor coverage explicit. Current actor coverage is 1/18: `review-baseline-1` recalled the known
-  Story 4.1 control findings without stale-story leakage or wrong-scope touch. It is still intentionally not adoptable.
+  Story 4.1 control findings without stale-story leakage or wrong-scope touch. It is marked
+  `runner_type=main-codex-self-run`, so it is useful progress but weaker than a fresh external/subagent run. The experiment
+  is still intentionally not adoptable.
 
 Summarizer verdict:
 

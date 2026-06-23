@@ -43,6 +43,7 @@ try {
     "cached_input_tokens=100",
     "output_tokens=300",
     "cost=0.012",
+    "runner_type=subagent",
     "known_findings_recalled=2",
     "review_findings_count=2",
     "false_positive_count=0",
@@ -67,6 +68,7 @@ try {
   if (row.result !== "pass" || row.input_tokens !== 1200 || row.known_findings_recalled !== 2 || row.stale_story_leak !== false) {
     throw new Error("actor report was not recorded correctly");
   }
+  if (row.runner_type !== "subagent") throw new Error("runner_type was not forwarded");
 
   const badReport = write("bad-report.txt", "result=pass\n");
   const bad = cp.spawnSync(process.execPath, [

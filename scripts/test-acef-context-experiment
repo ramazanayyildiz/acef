@@ -96,6 +96,7 @@ try {
     "--retry-count", "0",
     "--stale-story-leak", "false",
     "--wrong-scope-touch", "false",
+    "--runner-type", "subagent",
     "--runs", "1",
   ];
   run([...common, "--mode", "baseline"]);
@@ -109,6 +110,7 @@ try {
   if (files.input_tokens !== 1200 || files.cached_input_tokens !== 100 || files.output_tokens !== 300 || files.cost !== 0.012) {
     throw new Error("token/cost fields were not recorded");
   }
+  if (files.runner_type !== "subagent") throw new Error("runner_type was not recorded");
   if (!files.source_files.includes("docs/ai/ACEF_demo_DELIVERY_AUDIT.md")) throw new Error("active ledger source missing");
   if (files.source_files.some((source) => source.includes("5-20"))) throw new Error("prefix collision source leaked");
   if (files.fixture_bytes <= 0 || !files.fixture_path.endsWith("dev-slice.md")) throw new Error("fixture was not counted");
@@ -160,6 +162,9 @@ printf 'Scoped Story 5.2 context-mode result\\n'
   const parsedSummary = JSON.parse(summary);
   if (parsedSummary.rows !== 2 || parsedSummary.threshold.has_actor_quality !== true || parsedSummary.threshold.has_token_data !== true) {
     throw new Error("summary did not detect actor/token evidence");
+  }
+  if (!parsedSummary.runner_types.some((item) => item.runner_type === "subagent" && item.count === 2)) {
+    throw new Error("summary did not report runner_type counts");
   }
 
   console.log("acef-context-experiment tests passed");
