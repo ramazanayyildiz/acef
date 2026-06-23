@@ -35,6 +35,7 @@ Checks:
   finding-promotion   Require each conformance finding to record a patch/registry/check/defer disposition
   graduation-reconciliation Require promoted findings to reconcile to a real file or enforcedBy value
   vertical-slice      Require capabilities to trace actor -> real surface/entrypoint -> application path -> runtime evidence
+  test-authenticity   Reject fake-green tests: warnings-as-pass, silent catch/continue, self-asserts, and status-only smoke
   guarded-test-floor  For guarded work, require a symbol-grounded asserted boundary test and independent Test Author
   actor-separation    For full BMAD, require distinct phase actors with durable provenance evidence
   worker-scope       Require active worker identity and write scope to match the typed active run
@@ -944,6 +945,105 @@ function checkVerticalSlice(repoRoot, ledgerPath) {
   return result("vertical-slice", true, `${table.rows.length} capability slice(s) reconcile to real surfaces and runtime evidence`);
 }
 
+function testFileCandidates(repoRoot) {
+  const roots = ["tests", "test", "__tests__", "spec"].map((dir) => path.join(repoRoot, dir)).filter(exists);
+  return roots.flatMap((root) => listFiles(root))
+    .filter((filePath) => /\.(?:php|js|jsx|ts|tsx|mjs|cjs|py|rb|go|rs)$/i.test(filePath))
+    .sort();
+}
+
+function splitTopLevelArguments(argsText) {
+  const args = [];
+  let current = "";
+  let quote = "";
+  let depth = 0;
+  for (let index = 0; index < argsText.length; index += 1) {
+    const char = argsText[index];
+    const prev = argsText[index - 1];
+    if (quote) {
+      current += char;
+      if (char === quote && prev !== "\\") quote = "";
+      continue;
+    }
+    if (char === "\"" || char === "'" || char === "`") {
+      quote = char;
+      current += char;
+      continue;
+    }
+    if ("([{".includes(char)) depth += 1;
+    if (")]}".includes(char)) depth -= 1;
+    if (char === "," && depth === 0) {
+      args.push(current.trim());
+      current = "";
+      continue;
+    }
+    current += char;
+  }
+  if (current.trim()) args.push(current.trim());
+  return args;
+}
+
+function simpleSelfAssertFailure(text, lineNumber) {
+  const line = text.split(/\r?\n/)[lineNumber - 1] || "";
+  const match = line.match(/\b(?:assertSame|assertEquals|toEqual|toBe|equal|deepEqual|strictEqual)\s*\((.*)\)/);
+  if (!match) return "";
+  const args = splitTopLevelArguments(match[1]);
+  if (args.length < 2) return "";
+  const left = args[0].replace(/\s+/g, " ");
+  const right = args[1].replace(/\s+/g, " ");
+  if (left && left === right) return "self-referential assertion compares a value with itself";
+  return "";
+}
+
+function statusOnlySmokeFailure(block) {
+  const nameLooksRuntime = /\b(?:smoke|runtime|gate|real[-_ ]?path|entrypoint|admin[-_ ]?route|cms[-_ ]?runtime)\b/i.test(block);
+  if (!nameLooksRuntime) return "";
+  const hasStatus = /(?:->assert(?:Ok|Status\s*\(\s*200)|\bassertStatus\s*\(\s*200|\bassertOk\s*\()/i.test(block);
+  if (!hasStatus) return "";
+  const hasMeaningfulAssertion = /(?:assertSee|assertDontSee|assertSeeText|assertJson|assertDatabase|assertRedirect|assertHeader|assertDownload|assertFile|assertMissing|assertExists|assertQueued|assertDispatched|assertSent|assertForbidden|assertUnauthorized|assertNotFound|assertNoContent|assertSessionHasErrors|assertInvalid|assertValid|expect\([^)]*\)->(?:toContain|not->toContain|toMatch|toHave)|assertStringContains|assertMatchesRegularExpression)/i.test(block);
+  if (!hasMeaningfulAssertion) return "runtime/smoke/gate test checks only HTTP/status without content, negative, DB, storage, queue, or dispatch proof";
+  return "";
+}
+
+function checkTestAuthenticity(repoRoot) {
+  const files = testFileCandidates(repoRoot);
+  if (!files.length) return result("test-authenticity", true, "No test files found");
+  const failures = [];
+
+  for (const filePath of files) {
+    const relative = path.relative(repoRoot, filePath);
+    const text = read(filePath);
+    const lines = text.split(/\r?\n/);
+    lines.forEach((line, index) => {
+      const lineNumber = index + 1;
+      if (/\baddWarning\s*\(/.test(line)) failures.push(`${relative}:${lineNumber} uses addWarning, which can turn a gate failure into a warning`);
+      const selfAssert = simpleSelfAssertFailure(text, lineNumber);
+      if (selfAssert) failures.push(`${relative}:${lineNumber} ${selfAssert}`);
+    });
+
+    for (const match of text.matchAll(/catch\s*\([^)]*\)\s*\{([\s\S]*?)\}/g)) {
+      const block = match[1] || "";
+      if (/\bcontinue\s*;/.test(block) || /\breturn\s*;/.test(block)) {
+        const lineNumber = text.slice(0, match.index).split(/\r?\n/).length;
+        failures.push(`${relative}:${lineNumber} catch block silently continues/returns; gate tests must fail or explicitly skip with a blocker`);
+      }
+    }
+
+    const chunks = text.split(/\n\s*(?:public\s+)?function\s+|(?:^|\n)\s*(?:it|test)\s*\(/);
+    for (const chunk of chunks.slice(1)) {
+      const failure = statusOnlySmokeFailure(chunk);
+      if (failure) {
+        const prefix = text.slice(0, text.indexOf(chunk));
+        const lineNumber = prefix ? prefix.split(/\r?\n/).length : 1;
+        failures.push(`${relative}:${lineNumber} ${failure}`);
+      }
+    }
+  }
+
+  if (failures.length) return result("test-authenticity", false, failures.slice(0, 12).join("; "));
+  return result("test-authenticity", true, `${files.length} test file(s) have no fake-green gate patterns`);
+}
+
 function isFullBmad(text) {
   return /\b(?:active_?lane|lane)\s*:\s*[^\n]*(?:full\s+)?bmad\b/i.test(text)
     || /\bfull\s+bmad\s+v?2\b/i.test(text);
@@ -1644,7 +1744,7 @@ function main() {
   const adapter = args.adapter || findAdapter(args.repo);
   const registry = findPatternRegistry(args.repo, adapter);
   const checks = args.check === "all"
-    ? ["clean-tree", "preflight", "claims", "adapter-freshness", "pattern-registry", "reuse-before-create", "do-not-copy", "partial-workshape", "finding-promotion", "graduation-reconciliation", "vertical-slice", "guarded-test-floor", "actor-separation", "worker-scope", "evidence-manifest", "gate-verdict", "source-reconciliation", "epic-context-pack", "current-context", "lean-evidence", "session-handoff", "seeded-epic-gates", "epic-boundary", "epic-transition-approval", "replan-counter"]
+    ? ["clean-tree", "preflight", "claims", "adapter-freshness", "pattern-registry", "reuse-before-create", "do-not-copy", "partial-workshape", "finding-promotion", "graduation-reconciliation", "vertical-slice", "test-authenticity", "guarded-test-floor", "actor-separation", "worker-scope", "evidence-manifest", "gate-verdict", "source-reconciliation", "epic-context-pack", "current-context", "lean-evidence", "session-handoff", "seeded-epic-gates", "epic-boundary", "epic-transition-approval", "replan-counter"]
     : [args.check];
 
   const results = checks.map((check) => {
@@ -1659,6 +1759,7 @@ function main() {
     if (check === "finding-promotion") return checkFindingPromotion(ledger);
     if (check === "graduation-reconciliation") return checkGraduationReconciliation(args.repo, ledger);
     if (check === "vertical-slice") return checkVerticalSlice(args.repo, ledger);
+    if (check === "test-authenticity") return checkTestAuthenticity(args.repo);
     if (check === "guarded-test-floor") return checkGuardedTestFloor(args.repo, ledger);
     if (check === "actor-separation") return checkActorSeparation(args.repo, ledger);
     if (check === "worker-scope") return checkWorkerScope(args.repo);

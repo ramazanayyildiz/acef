@@ -72,6 +72,20 @@ still be `200`.
 
 A discovered runtime-smoke gap is a test gap: write the failing real-entrypoint test first, then fix.
 
+## Test authenticity
+Gate tests must fail loudly when the capability is missing. They must not turn missing runtime behavior into warnings,
+silent skips, or circular green checks.
+
+Disallowed fake-green patterns:
+- `addWarning()` or equivalent warning-as-pass in a gate/runtime test;
+- `catch (...) { continue; }` or `catch (...) { return; }` around required runtime evidence;
+- self-referential assertions such as `assertSame($value, $value)`;
+- runtime/smoke/gate tests that assert only `200` / `OK` without content, negative, DB, storage, queue, dispatch, or
+  route-specific proof.
+
+Run `.acef/bin/acef-process-validator --check test-authenticity` before story or epic close. If it fails, treat it as a
+test gap: write a real failing capability test first, then fix the product or mark an explicit blocker.
+
 ## Capability trace
 Functional requirements are satisfied by exercised capabilities, not by artifact existence. A class, form definition,
 route file, migration, seed, or helper may support a requirement, but it does not prove the requirement unless a test or

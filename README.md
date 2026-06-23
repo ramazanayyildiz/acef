@@ -293,6 +293,7 @@ ACEF ships a stack-agnostic process validator for cheap mechanical gates:
 .acef/bin/acef-process-validator --repo /path/to/repo --check finding-promotion --ledger docs/ai/ACEF_feature_DELIVERY_AUDIT.md
 .acef/bin/acef-process-validator --repo /path/to/repo --check graduation-reconciliation --ledger docs/ai/ACEF_feature_DELIVERY_AUDIT.md
 .acef/bin/acef-process-validator --repo /path/to/repo --check vertical-slice --ledger docs/ai/ACEF_feature_DELIVERY_AUDIT.md
+.acef/bin/acef-process-validator --repo /path/to/repo --check test-authenticity
 .acef/bin/acef-process-validator --repo /path/to/repo --check guarded-test-floor --ledger docs/ai/ACEF_feature_DELIVERY_AUDIT.md
 .acef/bin/acef-process-validator --repo /path/to/repo --check actor-separation --ledger docs/ai/ACEF_feature_DELIVERY_AUDIT.md
 .acef/bin/acef-process-validator --repo /path/to/repo --check worker-scope --ledger docs/ai/ACEF_feature_DELIVERY_AUDIT.md
@@ -320,6 +321,8 @@ evidence; they are a REPLAN signal.
 When behavior depends on a runtime entrypoint, include a real-runtime smoke: hit the real HTTP route, command, queue,
 scheduler, CMS/admin runtime, or template path and assert meaningful content or a negative guard. Status-only checks and
 isolated helper/component tests do not prove the production path.
+Run `test-authenticity` before story/epic close to reject warning-as-pass, silent catch/continue, self-referential
+assertions, and status-only runtime smoke.
 Every FR assigned to an epic must trace to an owning story and an exercised capability. A supporting artifact such as a
 form definition, model, seeder, or route file is not enough. Vertical-slice evidence uses `source/path#probe` and
 `test/path#probe`; the production source must contain the entrypoint probe and the test must contain the runtime probe

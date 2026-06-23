@@ -213,6 +213,8 @@ stabilization · product-done audit · retrospective.
 Epic close must include a real-runtime smoke slice for each user-visible/runtime-wired surface class the epic claims:
 real HTTP route plus content assertion, real CLI command, real queue/scheduler path, real CMS/admin/runtime render path,
 or an explicit deferral/blocker. Green isolated unit/component tests do not satisfy this gate by themselves.
+Epic close must also pass `acef-process-validator --check test-authenticity`; warning-as-pass, silent catch/continue,
+self-referential assertions, and status-only runtime smoke are not valid done evidence.
 
 Epic close must also include an FR-capability trace:
 - every FR assigned to the epic maps to at least one owning story;

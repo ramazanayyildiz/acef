@@ -620,6 +620,48 @@ try {
   expectPass("finding-promotion", ["--repo", tmp, "--check", "finding-promotion", "--ledger", "docs/ai/ACEF_demo_DELIVERY_AUDIT.md"]);
   expectPass("graduation-reconciliation", ["--repo", tmp, "--check", "graduation-reconciliation", "--ledger", "docs/ai/ACEF_demo_DELIVERY_AUDIT.md"]);
   expectPass("vertical-slice", ["--repo", tmp, "--check", "vertical-slice", "--ledger", "docs/ai/ACEF_demo_DELIVERY_AUDIT.md"]);
+  expectPass("test-authenticity", ["--repo", tmp, "--check", "test-authenticity"]);
+  const fakeGreenTestPath = path.join(tmp, "tests", "Feature", "FakeGreenSmokeTest.php");
+  fs.writeFileSync(fakeGreenTestPath, [
+    "<?php",
+    "",
+    "final class FakeGreenSmokeTest extends TestCase",
+    "{",
+    "    public function test_runtime_smoke_silently_skips_failures(): void",
+    "    {",
+    "        try {",
+    "            $this->get('/admin/menus')->assertOk();",
+    "        } catch (Throwable $error) {",
+    "            $this->addWarning('admin route unavailable');",
+    "            continue;",
+    "        }",
+    "    }",
+    "",
+    "    public function test_self_referential_gate(): void",
+    "    {",
+    "        $count = 42;",
+    "        $this->assertSame($count, $count);",
+    "    }",
+    "}",
+    "",
+  ].join("\n"));
+  expectFail("test-authenticity", ["--repo", tmp, "--check", "test-authenticity"]);
+  fs.writeFileSync(fakeGreenTestPath, [
+    "<?php",
+    "",
+    "final class RealSmokeTest extends TestCase",
+    "{",
+    "    public function test_runtime_smoke_proves_content_and_negative_guard(): void",
+    "    {",
+    "        $this->get('/account')",
+    "            ->assertOk()",
+    "            ->assertSee('Account')",
+    "            ->assertDontSee('Exception');",
+    "    }",
+    "}",
+    "",
+  ].join("\n"));
+  expectPass("test-authenticity", ["--repo", tmp, "--check", "test-authenticity"]);
   fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_backend_only_DELIVERY_AUDIT.md"), [
     "# Backend-only false completion",
     "",
