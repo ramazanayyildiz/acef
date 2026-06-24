@@ -216,6 +216,14 @@ or an explicit deferral/blocker. Green isolated unit/component tests do not sati
 Epic close must also pass `acef-process-validator --check test-authenticity`; warning-as-pass, silent catch/continue,
 self-referential assertions, and status-only runtime smoke are not valid done evidence.
 
+Epic and story close must preserve the story-level chain in the canonical ledger, not only in side reports:
+- if ATDD was used, record the test-only artifact/commit, expected-fail command, observed red result, and later
+  implementation commit;
+- record the actor identity for each phase that ran, including Planner, ATDD/Test Author, Developer, Code Reviewer,
+  Verify-Patch, Test Reviewer, and Process Judge as applicable;
+- a lean chain can be authorized for low-risk stories, but it still requires red-before-dev evidence and a distinct
+  Process Judge identity; guarded work cannot be closed with the lean chain.
+
 Epic close must also include an FR-capability trace:
 - every FR assigned to the epic maps to at least one owning story;
 - the story's deliverable is the capability the user performs, not only a supporting class, form, model, route, or

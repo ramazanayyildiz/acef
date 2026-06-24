@@ -164,6 +164,21 @@ The report paths must exist on disk. The conductor chat summary stays compact; t
 files changed, test evidence, findings, and deferrals. Run `.acef/bin/acef-process-validator --check lean-evidence`
 before story/epic close.
 
+## Story-close evidence minimums
+
+Every story close must include two canonical ledger facts, even when the full evidence lives in separate judge reports:
+
+1. **ATDD red-before-dev evidence.** If a story uses ATDD, the ledger or story Process Judge row records the test-only
+   commit/artifact, the expected-fail command, the observed failing count or failure summary, and the development commit
+   that followed it. A passing final suite is not enough; the run must prove the test was red before implementation.
+2. **Actor identity summary.** The canonical ledger row records the actor identity for each phase that ran: Planner,
+   ATDD/Test Author, Developer, Code Reviewer, Verify-Patch, Test Reviewer, and Process Judge as applicable. It may link
+   to detailed reports, but the ledger row must be enough to see that the author did not approve its own work.
+
+Lean chains may omit optional review phases only when explicitly authorized for low-risk work. They still require
+red-before-dev evidence when ATDD is used and a distinct Process Judge identity in the canonical ledger. Guarded work
+cannot use the lean chain.
+
 ## Branching and PR targets
 Cut task branches from the repo's **integration branch** (an adapter value — varies per repo), never from the
 protected/release branch. Open PRs against the integration branch unless the Architect/Judge says otherwise. The PR is

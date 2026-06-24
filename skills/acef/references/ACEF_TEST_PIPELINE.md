@@ -86,6 +86,18 @@ Disallowed fake-green patterns:
 Run `.acef/bin/acef-process-validator --check test-authenticity` before story or epic close. If it fails, treat it as a
 test gap: write a real failing capability test first, then fix the product or mark an explicit blocker.
 
+## Red-before-dev evidence
+
+ATDD is only useful if the acceptance test was actually red before implementation. For every ATDD story, the canonical
+ledger or Process Judge row must record:
+
+- the test-only artifact or commit;
+- the command that was expected to fail;
+- the observed failing count or concise failure summary;
+- the implementation commit/artifact that followed the red test.
+
+Do not accept "tests exist" or "final tests pass" as a substitute for red-before-dev proof.
+
 ## Capability trace
 Functional requirements are satisfied by exercised capabilities, not by artifact existence. A class, form definition,
 route file, migration, seed, or helper may support a requirement, but it does not prove the requirement unless a test or

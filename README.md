@@ -323,6 +323,10 @@ scheduler, CMS/admin runtime, or template path and assert meaningful content or 
 isolated helper/component tests do not prove the production path.
 Run `test-authenticity` before story/epic close to reject warning-as-pass, silent catch/continue, self-referential
 assertions, and status-only runtime smoke.
+
+Story close also requires canonical ledger evidence for ATDD ordering and actor separation: record the red-before-dev
+test artifact/commit, expected-fail command, observed red result, later implementation commit, and the actor identities
+for every phase that ran. Detailed reports can live elsewhere, but the ledger row must show the chain at a glance.
 Every FR assigned to an epic must trace to an owning story and an exercised capability. A supporting artifact such as a
 form definition, model, seeder, or route file is not enough. Vertical-slice evidence uses `source/path#probe` and
 `test/path#probe`; the production source must contain the entrypoint probe and the test must contain the runtime probe
