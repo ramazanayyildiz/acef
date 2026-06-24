@@ -220,6 +220,17 @@ or an explicit deferral/blocker. Green isolated unit/component tests do not sati
 Epic close must also pass `acef-process-validator --check test-authenticity`; warning-as-pass, silent catch/continue,
 self-referential assertions, and status-only runtime smoke are not valid done evidence.
 
+Story close must also classify the changed capability by surface (`ui`, `admin`, `mobile`, `api`, `cli`, `queue`,
+`scheduler`, `storage`, `email`, `webhook`, `integration`, `library/internal`). If the story creates the first reusable
+surface/runtime pattern in that area, it cannot close with isolated or supporting-artifact tests only. It needs a small
+round-trip proof through the real surface before other stories may reuse the pattern. Reuse stories can use lighter
+evidence only when the reusable pattern contract is already proven and still exercised by a contract test.
+
+If the story creates or changes author-controlled inputs that feed another surface, the first closeout must also prove
+the input-output binding. The proof must use a non-default value through the real input surface and assert that the
+runtime output consumed that value. Placeholder/default visuals, seeded defaults, mocks, or stale cached content are
+explicit masking risks; mark them in the worker scope and require evidence that the default path was rejected.
+
 Epic and story close must preserve the story-level chain in the canonical ledger, not only in side reports:
 - if ATDD was used, record the test-only artifact/commit, expected-fail command, observed red result, and later
   implementation commit;
@@ -234,6 +245,7 @@ Epic close must also include an FR-capability trace:
   seeder;
 - each FR has a green real-path capability test or an explicit blocker/defer;
 - admin/editor capabilities include an admin route/edit-screen smoke when the FR promises editability;
+- UI-visible epics include at least one E2E/browser/screen user-flow proof at epic close;
 - manual-QA deferrals may cover polish only after automated evidence proves the entrypoint exists.
 
 When epics/stories are generated, the conductor must also seed one durable `Epic N Process Judge [PENDING]` gate row or

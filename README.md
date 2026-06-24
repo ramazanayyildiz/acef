@@ -321,6 +321,13 @@ evidence; they are a REPLAN signal.
 When behavior depends on a runtime entrypoint, include a real-runtime smoke: hit the real HTTP route, command, queue,
 scheduler, CMS/admin runtime, or template path and assert meaningful content or a negative guard. Status-only checks and
 isolated helper/component tests do not prove the production path.
+When a story establishes the first reusable UI/runtime pattern for a surface, it needs a small round-trip proof through
+that surface before later stories reuse it. Reuse stories can stay lighter, but the first pattern must prove the real
+entry path, state change, reload/re-entry, and runtime output. UI-visible claims cannot close on non-UI evidence alone.
+When a story adds author-controlled input that should affect another surface, prove the binding with a non-default value:
+enter it through the real input surface, save/dispatch through the normal path, reload the consuming surface, and assert
+the authored value appears. Defaults, placeholders, stock images/data, mocks, and stale caches are masking risks; they
+must be explicitly rejected in the evidence.
 Run `test-authenticity` before story/epic close to reject warning-as-pass, silent catch/continue, self-referential
 assertions, and status-only runtime smoke.
 
@@ -392,6 +399,7 @@ ACEF separates implementation review from process review:
   cannot be waived on guarded stories.
 - **Epic Process Judge** verifies epic closeout gates before an epic is product-done: drift audit when needed, trace,
   epic test-review, E2E/user-flow evidence, manual QA ledger, product-done audit, retrospective, and final status close.
+  If the epic contains UI/user-facing claims, it needs at least one representative E2E/browser/screen flow at epic close.
 - **Epic boundary** is mechanical: `continue without me` may skip waiting for a human checkpoint, but it never skips the
   seeded Epic Process Judge gate. Starting Epic N+1 also requires explicit `Epic Transition Approval` with an exact
   human quote naming the target epic; generic continuation phrases (`go on`, `continue`, `devam`, `tamamla`) are not

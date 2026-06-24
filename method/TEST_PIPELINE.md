@@ -72,6 +72,69 @@ still be `200`.
 
 A discovered runtime-smoke gap is a test gap: write the failing real-entrypoint test first, then fix.
 
+## Surface-realism gate
+
+Every requirement is consumed through a surface. ACEF closeout evidence must exercise that surface, not only the
+supporting implementation artifact.
+
+| Surface | Minimum real-path proof |
+| --- | --- |
+| `ui` / `admin` / `mobile` | Browser/screen-level smoke for the user action, or an explicit blocker when the tool is unavailable. |
+| `api` / `http` | Real HTTP request through routing, middleware, validation, and response assertions. |
+| `cli` | Real command invocation with side-effect or output assertions. |
+| `queue` / `job` | Dispatch or handle through the configured job path with side-effect assertions. |
+| `scheduler` | Real scheduled command/job path or the exact command it schedules. |
+| `storage` | Real upload/download/delete path against the configured disk or a documented test disk equivalent. |
+| `email` / `notification` | Queued/sent message assertion including recipient and content boundary. |
+| `webhook` / `integration` | Real signed/validated request or connector callback plus side-effect assertion. |
+| `library` / `internal` | Consumer-contract test through the public API that downstream code actually calls. |
+
+UI-visible claims cannot close on non-UI evidence alone. Unit, feature, or isolated component tests may support the
+claim, but they do not replace a browser/screen-level smoke when the requirement is that a human can use a visible
+surface.
+
+## Pattern-first round trip
+
+Do not require full E2E for every story. Require it when a story creates the first reusable surface/runtime pattern that
+later stories will copy or build on: a new editor/admin pattern, page/screen pattern, form submission path, upload/download
+path, navigation pattern, auth/role boundary, payment/webview flow, queue/mail pattern, or external callback pattern.
+
+The first-use story must prove the pattern by round trip:
+
+1. enter through the real surface;
+2. perform the user/system action;
+3. persist or dispatch the intended state;
+4. reload or re-enter through the real path;
+5. verify the runtime output or side effect.
+
+Later stories that reuse the already-proven pattern may use lighter focused tests, as long as the pattern contract test
+continues to run and the story does not change the underlying surface contract.
+
+## Input-to-output binding gate
+
+When a story adds or changes author-controlled input, closeout must prove that input reaches the surface that consumes
+it. This covers admin fields, settings, uploaded media, CMS blocks, mobile forms, API payloads, configuration toggles,
+and any equivalent project surface. A field existing in a form, schema, model, or fixture is supporting structure; it is
+not proof that users can save the value or that runtime code consumes it.
+
+For each binding, record the source input surface, consuming output surface, field name, and whether defaults/placeholders
+can mask the failure. A valid gate cites evidence that:
+
+1. enters through the real input surface;
+2. writes a non-default value;
+3. persists or dispatches it through the normal path;
+4. reloads or executes the consuming surface;
+5. proves the output uses the authored value, not a placeholder, fallback, stock image, seed default, mock, or stale cache.
+
+Examples:
+- an admin image upload must render that uploaded image on the public page, not a default hero image;
+- a settings toggle must affect the page, command, API, or UI that reads it;
+- a mobile form value must survive save/reopen or appear in the downstream API/state it claims to drive;
+- a queue/email field must be visible in the queued job/message payload or side effect.
+
+Mechanically, typed worker scopes can declare `inputOutputBindings`; PASS gates cite `inputOutputEvidence` with
+`nonDefaultValue=true`. If `defaultMaskingRisk=true`, the evidence must also carry `defaultRejected=true`.
+
 ## Test authenticity
 Gate tests must fail loudly when the capability is missing. They must not turn missing runtime behavior into warnings,
 silent skips, or circular green checks.

@@ -418,10 +418,19 @@ ledger/run-control files, and must report then stop.
    rather than editing the files itself?
 10. If the story claims a user-visible, runtime-wired, admin/editor, API, CLI, queue, scheduler, or framework-integrated
    capability, did evidence exercise the real entrypoint/capability instead of only supporting artifacts or isolated helpers?
-11. Do required artifacts include the real workflow evidence/manifest, not only files shaped like the expected output?
-12. If a required gate is missing, did the work return to the right phase instead of being marked done?
-13. Does the delivery ledger contain a step entry for every transition since preflight?
-14. If a drift fix was applied, was the failed gate rerun from the start after the fix?
+11. Which surface class did the story touch (`ui`, `admin`, `mobile`, `api`, `cli`, `queue`, `scheduler`, `storage`,
+    `email`, `webhook`, `integration`, `library/internal`), and is the cited evidence from that same surface?
+12. Is this the first reusable surface/runtime pattern for the repo or epic? If yes, did it include round-trip evidence
+    before being made available for reuse?
+13. If a golden neighbor uses a native framework primitive, did the implementation reuse that primitive? If it introduced
+    a wrapper/helper/adapter instead, was that treated as a new pattern with explicit grounding and runtime proof?
+14. If the story adds author-controlled input, did the gate prove a non-default value entered through the input surface
+    and appeared on the consuming runtime surface? If defaults/placeholders could mask the failure, did evidence reject
+    the default path?
+15. Do required artifacts include the real workflow evidence/manifest, not only files shaped like the expected output?
+16. If a required gate is missing, did the work return to the right phase instead of being marked done?
+17. Does the delivery ledger contain a step entry for every transition since preflight?
+18. If a drift fix was applied, was the failed gate rerun from the start after the fix?
 
 **Story/task verdict:** `PASS`, `FAIL: <missing gate/evidence>`, or `HALT: <human decision needed>`.
 

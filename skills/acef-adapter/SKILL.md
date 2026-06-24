@@ -32,8 +32,16 @@ when the existing map conflicts with the repo. **Do not** re-run for every small
 5. **Test setup** — do tests exist? · framework(s) · test folders/naming · test command · fixture/mock/data setup · unit/component/integration/e2e split · best test neighbor. *No tests → record `no accepted test neighbor`, identify likely bootstrap surface, do NOT pick a framework without evidence/approval.*
 6. **CI/CD** — workflow files · required checks · build/test/lint/typecheck gates · deploy workflows · environments · manual approvals. *A deploy workflow is NOT automatically a test gate — record what it actually checks.*
 7. **Golden neighbors + pattern registry** — per common work (feature/endpoint/screen/store-hook/test/migration): path · why it qualifies · what to copy · what NOT to copy · twins to check · **the consumed contract** (the exact symbols the neighbor depends on — hook return shape, function signature, exported types, constants — with `path:line`). Cite neighbors at SYMBOL level, not just file level: a file-level pointer ("the pull-to-refresh screen", "the lang validator") hides contract mismatches. *No qualified neighbor → mark new-pattern / needs decision.*
-8. **Risk surface** — point to the files/folders indicating: auth/permissions · payment/billing · data model/migrations · external integrations · generated client · shared/core packages · deploy/env config · tenant boundaries · feature flags/rollout · observability/error handling.
-9. **Adapter memory schema** — every living entry that can guide implementation/review must include:
+8. **Project how-it-is-done inventory** — identify repeatable local workflows that are worth turning into tutorials or
+   compact context packs after human confirmation. This is not a gate. It is an inventory of how the project appears to
+   create common things: CMS/admin modules, mobile screens, API endpoints, dashboard tables, payment/webview flows,
+   settings/menu/navigation wiring, queue/mail jobs, package public APIs, or any project-specific equivalent. For each
+   candidate, record evidence count, representative files, key symbols/framework primitives, project surface, and why it
+   is likely to recur. If the workflow creates author-controlled input that should appear or take effect elsewhere, also
+   record the input-output binding to prove: input surface, consuming output surface, field/value, and defaults,
+   placeholders, stock data/media, mocks, or cache paths that could mask a broken binding.
+9. **Risk surface** — point to the files/folders indicating: auth/permissions · payment/billing · data model/migrations · external integrations · generated client · shared/core packages · deploy/env config · tenant boundaries · feature flags/rollout · observability/error handling.
+10. **Adapter memory schema** — every living entry that can guide implementation/review must include:
    - source evidence (`path:line` or command),
    - confidence (`statistical-strong`, `multiple-examples`, `single-example`, `inferred`, `needs-verification`),
    - freshness (verified date + commit/revision + scope),
@@ -108,6 +116,26 @@ notes: "Short rule."
 
 If an adapter entry lacks source evidence, confidence, and freshness, treat it as a lead, not a conformance rule.
 For `pattern-registry.json`, follow `PATTERN_REGISTRY.md`.
+
+## Tutorial discovery interview
+
+After the first adapter/codemap pass, present a short candidate list instead of generating large tutorials immediately:
+
+```text
+I found these repeatable local workflows:
+1. <candidate> — evidence: <N examples>; why it matters: <short reason>
+2. <candidate> — evidence: <N examples>; why it matters: <short reason>
+
+Should any project-critical flows be added, removed, or prioritized before I generate tutorials?
+```
+
+This catches low-frequency but business-critical flows (payment, auth, import/export, release, admin operations) that may
+not score highly from code repetition alone. Human confirmation decides priority; ACEF delivery gates decide whether later
+implementation work followed the chosen pattern.
+
+Confirmed tutorials should include the proof recipe, not just the files to create. When the pattern accepts authored
+values, the recipe must use a non-default value through the real input surface and verify the consuming runtime surface
+uses that value. Defaults, placeholders, stock media/data, mocks, and stale cache are masking risks and must be called out.
 
 ## Memory lifecycle
 

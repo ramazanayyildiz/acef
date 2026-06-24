@@ -42,6 +42,11 @@ Do-not-copy starts as a section in this JSON. Split it into a separate file only
         "discoverability": "The intended user/editor/developer can find it through the normal UI/CLI/API.",
         "runtime": "A real entrypoint or smoke test exercises the capability."
       },
+      "surfaces": ["api"],
+      "firstUseRequiresRoundTrip": false,
+      "proofRecipe": "Real HTTP request exercises validation, controller, service, persistence, and response envelope.",
+      "nativeNeighborContract": ["useMutation", "apiClient.post", "queryClient.invalidateQueries"],
+      "knownTraps": ["Do not call fetch directly; do not invalidate broad query roots."],
       "sourceEvidence": [
         { "path": "modules/account/hooks/use-update-profile.ts", "line": 12 },
         { "path": "modules/account/query-keys.ts", "line": 1 }
@@ -89,6 +94,21 @@ Every `patterns[]` entry must include:
 - `refreshTriggers`
 
 `goldenNeighbors` are examples. `evidence` is the proof that the pattern is accepted.
+
+Optional fields should be filled when known:
+
+- `surfaces`: where the pattern is consumed (`ui`, `admin`, `mobile`, `api`, `cli`, `queue`, `scheduler`, `storage`,
+  `email`, `webhook`, `integration`, `library/internal`).
+- `firstUseRequiresRoundTrip`: `true` when the first implementation of this pattern must prove a real surface/runtime
+  round trip before other stories can reuse it.
+- `inputOutputBindings`: the author-controlled values this pattern accepts and the runtime surfaces that must consume
+  them, e.g. `admin>ui:image`, `config>http:featureFlag`, or `mobile>api:payloadField`.
+- `defaultMaskingRisks`: placeholders, stock data, seed defaults, cached content, fallback views, or mocks that could make
+  the feature look correct while ignoring authored input.
+- `proofRecipe`: the concise, repo-specific way to prove the pattern works. This is guidance for test design, not a gate
+  verdict. For input-output patterns, include a non-default round trip and a default/placeholder rejection.
+- `nativeNeighborContract`: the framework primitives, public APIs, symbols, or command surfaces the golden neighbor uses.
+- `knownTraps`: common mistakes observed in this repo or stack.
 
 `completionEvidence` records what "done" means for the pattern. It should separate supporting structure from registration,
 discoverability, and real runtime proof when the work shape has those concerns. Local generation docs, skills, stubs, and

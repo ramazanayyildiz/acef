@@ -1219,6 +1219,14 @@ function checkEvidenceManifests(repoRoot) {
 function checkGateVerdict(repoRoot) {
   const activeRun = typedActiveRun(repoRoot);
   if (!activeRun) return result("gate-verdict", true, "No typed active run; legacy gate checks remain active");
+  let activeScope = null;
+  if (activeRun.workerScopePath) {
+    try {
+      activeScope = parseWorkerScope(resolvePath(activeRun.workerScopePath, repoRoot));
+    } catch {
+      activeScope = null;
+    }
+  }
   const files = jsonRecords(path.join(repoRoot, "docs", "ai", "gates"));
   const matching = [];
   const failures = [];
@@ -1255,6 +1263,64 @@ function checkGateVerdict(repoRoot) {
         failures.push(...validateEvidenceRecord(repoRoot, evidence));
       } catch (error) {
         failures.push(error.message);
+      }
+    }
+    for (const surfaceEntry of gate.surfaceEvidence || []) {
+      try {
+        const evidence = evidenceRecordById(repoRoot, surfaceEntry.evidenceId);
+        if (evidence.exitCode !== 0) failures.push(`surface ${surfaceEntry.surface} cites failed evidence ${surfaceEntry.evidenceId}`);
+        if (!gate.evidenceIds?.includes(surfaceEntry.evidenceId)) {
+          failures.push(`surface ${surfaceEntry.surface} cites evidence ${surfaceEntry.evidenceId} not listed in evidenceIds`);
+        }
+        if (surfaceEntry.firstUsePattern && !surfaceEntry.roundTrip) {
+          failures.push(`surface ${surfaceEntry.surface} first-use pattern requires roundTrip=true`);
+        }
+      } catch (error) {
+        failures.push(error.message);
+      }
+    }
+    for (const bindingEntry of gate.inputOutputEvidence || []) {
+      const label = `${bindingEntry.inputSurface}>${bindingEntry.outputSurface}:${bindingEntry.field}`;
+      try {
+        const evidence = evidenceRecordById(repoRoot, bindingEntry.evidenceId);
+        if (evidence.exitCode !== 0) failures.push(`binding ${label} cites failed evidence ${bindingEntry.evidenceId}`);
+        if (!gate.evidenceIds?.includes(bindingEntry.evidenceId)) {
+          failures.push(`binding ${label} cites evidence ${bindingEntry.evidenceId} not listed in evidenceIds`);
+        }
+      } catch (error) {
+        failures.push(error.message);
+      }
+    }
+    const scopeRequiresRoundTrip = activeScope
+      && (activeScope.requiresRoundTrip === true || activeScope.patternUse === "new-reusable-pattern");
+    if (scopeRequiresRoundTrip) {
+      const roundTripSurfaces = new Set((gate.surfaceEvidence || [])
+        .filter((entry) => entry.roundTrip === true)
+        .map((entry) => entry.surface));
+      const requiredSurfaces = activeScope.surfaces?.length ? activeScope.surfaces : ["surface"];
+      for (const surface of requiredSurfaces) {
+        if (!roundTripSurfaces.has(surface)) {
+          failures.push(`scope requires round-trip surface evidence for ${surface}`);
+        }
+      }
+    }
+    if (activeScope?.inputOutputBindings?.length) {
+      const bindingEvidence = gate.inputOutputEvidence || [];
+      for (const binding of activeScope.inputOutputBindings) {
+        const label = `${binding.inputSurface}>${binding.outputSurface}:${binding.field}`;
+        const match = bindingEvidence.find((entry) => entry.inputSurface === binding.inputSurface
+          && entry.outputSurface === binding.outputSurface
+          && entry.field === binding.field);
+        if (!match) {
+          failures.push(`scope requires input-output binding evidence for ${label}`);
+          continue;
+        }
+        if (match.nonDefaultValue !== true) {
+          failures.push(`binding ${label} requires nonDefaultValue=true`);
+        }
+        if (binding.defaultMaskingRisk === true && match.defaultRejected !== true) {
+          failures.push(`binding ${label} has default masking risk and requires defaultRejected=true`);
+        }
       }
     }
   }

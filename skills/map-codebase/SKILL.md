@@ -83,6 +83,24 @@ If you cannot verify it, label it low-confidence or omit it from hard rules.
 >
 > For each convention, note whether it's Canonical (>=80% of code follows it) or Aspirational (docs say it, code doesn't consistently do it)."
 
+Also identify **Project How-It-Is-Done tutorial candidates**. Do not turn these into gates. This is an inventory of
+repeatable local workflows that future humans/agents may need to copy. Candidate patterns are strong when they have
+multiple examples, require several coordinated files/symbols, are likely to be created again, or break a real runtime
+surface when implemented incorrectly.
+
+For each candidate, report:
+- tutorial name ("Create a CMS module", "Add a mobile screen", "Add an API endpoint", "Add a payment WebView flow");
+- project type/surface (`cms/admin`, `mobile`, `backend-api`, `dashboard`, `package`, `payment`, etc.);
+- evidence count and representative files;
+- key symbols/framework primitives used by the examples;
+- why it is worth documenting;
+- whether it appears to be first-use/risky or a mature reuse pattern.
+- input-output bindings to prove when the workflow creates author-controlled values: input surface, consuming output
+  surface, field/value, and defaults/placeholders that could mask a broken binding.
+
+Ask for human confirmation before writing a long tutorial set: "I found these tutorial candidates; should any be added,
+removed, or prioritized?"
+
 ### Agent 4: CONCERNS
 
 > "Analyze CONCERNS in this repository — things a new contributor or AI agent must know to avoid mistakes. Report:
@@ -133,6 +151,13 @@ If you cannot verify it, label it low-confidence or omit it from hard rules.
 {Agent 3 output with file:line citations}
 {Canonical vs Aspirational labels}
 
+## HOW-IT-IS-DONE TUTORIAL CANDIDATES
+Short inventory of repeatable local workflows the repo appears to teach through code. These are leads for human
+confirmation and later tutorial generation, not gates.
+
+| Candidate | Project surface | Evidence | Key symbols/primitives | Why document | Confidence |
+| --- | --- | --- | --- | --- | --- |
+
 ## PATTERN REGISTRY
 Small conformance map for implementation and review. Keep it terse and evidence-linked.
 
@@ -152,6 +177,9 @@ code after extraction, rerun the relevant evidence checks before reusing the reg
 - Before adding a helper/service/component/hook, search the registry's probe terms and golden neighbors.
 - If a matching local abstraction exists, reuse it or record why it does not fit.
 - If creating a new pattern, mark it `Needs decision` unless it clearly extends an accepted pattern.
+- If the pattern accepts author/editor/user input and renders, sends, stores, queues, or otherwise consumes it elsewhere,
+  the tutorial candidate must include a proof recipe using a non-default authored value. Do not let defaults, placeholder
+  content, seed data, stock media, mocks, or stale cache make the path look green.
 
 ### Pattern labels
 - `Canonical` — code evidence shows this is the dominant accepted pattern.

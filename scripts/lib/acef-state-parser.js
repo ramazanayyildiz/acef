@@ -1,6 +1,11 @@
 const fs = require("node:fs");
 const path = require("node:path");
 
+const SURFACE_VALUES = new Set([
+  "ui", "admin", "mobile", "api", "http", "cli", "queue", "job", "scheduler", "storage",
+  "email", "notification", "webhook", "integration", "config", "database", "library", "internal",
+]);
+
 function readJson(filePath) {
   const text = fs.readFileSync(filePath, "utf8");
   try {
@@ -26,6 +31,21 @@ function requireStringArray(record, field, label, { nonEmpty = false } = {}) {
     throw new Error(`${label} ${field} must be an array of non-empty strings`);
   }
   if (nonEmpty && !record[field].length) throw new Error(`${label} ${field} must not be empty`);
+}
+
+function requireSurface(value, label) {
+  if (!SURFACE_VALUES.has(value)) throw new Error(`${label} has unknown surface ${value}`);
+}
+
+function validateBindingEntry(item, index, label, { requireEvidence = false } = {}) {
+  if (!item || typeof item !== "object") throw new Error(`${label}[${index}] must be an object`);
+  requireFields(item, requireEvidence ? ["inputSurface", "outputSurface", "field", "evidenceId"] : ["inputSurface", "outputSurface", "field"], `${label}[${index}]`);
+  requireSurface(item.inputSurface, `${label}[${index}].inputSurface`);
+  requireSurface(item.outputSurface, `${label}[${index}].outputSurface`);
+  if (typeof item.field !== "string" || !item.field.trim()) throw new Error(`${label}[${index}].field must be a non-empty string`);
+  if (item.defaultMaskingRisk !== undefined && typeof item.defaultMaskingRisk !== "boolean") throw new Error(`${label}[${index}].defaultMaskingRisk must be boolean`);
+  if (item.nonDefaultValue !== undefined && typeof item.nonDefaultValue !== "boolean") throw new Error(`${label}[${index}].nonDefaultValue must be boolean`);
+  if (item.defaultRejected !== undefined && typeof item.defaultRejected !== "boolean") throw new Error(`${label}[${index}].defaultRejected must be boolean`);
 }
 
 function parseActiveRun(filePath) {
@@ -62,6 +82,22 @@ function parseGateVerdict(filePath) {
   requireFields(record, ["gateId", "scope", "verdict", "decidedBy", "repositoryCommit"], "gate verdict");
   requireEnum(record, "verdict", ["PASS", "FAIL", "REVISE", "REPLAN", "BLOCKED"], "gate verdict");
   if (record.evidenceIds !== undefined) requireStringArray(record, "evidenceIds", "gate verdict");
+  if (record.surfaceEvidence !== undefined) {
+    if (!Array.isArray(record.surfaceEvidence)) throw new Error("gate verdict surfaceEvidence must be an array");
+    for (const [index, item] of record.surfaceEvidence.entries()) {
+      if (!item || typeof item !== "object") throw new Error(`gate verdict surfaceEvidence[${index}] must be an object`);
+      requireFields(item, ["surface", "evidenceId"], `gate verdict surfaceEvidence[${index}]`);
+      requireSurface(item.surface, `gate verdict surfaceEvidence[${index}]`);
+      if (item.roundTrip !== undefined && typeof item.roundTrip !== "boolean") throw new Error(`gate verdict surfaceEvidence[${index}].roundTrip must be boolean`);
+      if (item.firstUsePattern !== undefined && typeof item.firstUsePattern !== "boolean") throw new Error(`gate verdict surfaceEvidence[${index}].firstUsePattern must be boolean`);
+    }
+  }
+  if (record.inputOutputEvidence !== undefined) {
+    if (!Array.isArray(record.inputOutputEvidence)) throw new Error("gate verdict inputOutputEvidence must be an array");
+    for (const [index, item] of record.inputOutputEvidence.entries()) {
+      validateBindingEntry(item, index, "gate verdict inputOutputEvidence", { requireEvidence: true });
+    }
+  }
   if (record.verdict === "PASS" && (!Array.isArray(record.evidenceIds) || !record.evidenceIds.length)) {
     throw new Error("PASS gate verdict requires evidenceIds");
   }
@@ -92,6 +128,24 @@ function parseWorkerScope(filePath) {
   }
   if (!Number.isInteger(record.maxCommits) || record.maxCommits < 1) {
     throw new Error("worker scope maxCommits must be a positive integer");
+  }
+  if (record.surfaces !== undefined) {
+    requireStringArray(record, "surfaces", "worker scope");
+    for (const surface of record.surfaces) {
+      requireSurface(surface, "worker scope");
+    }
+  }
+  if (record.patternUse !== undefined) {
+    requireEnum(record, "patternUse", ["new-reusable-pattern", "reuse-existing-pattern", "one-off", "unknown"], "worker scope");
+  }
+  if (record.requiresRoundTrip !== undefined && typeof record.requiresRoundTrip !== "boolean") {
+    throw new Error("worker scope requiresRoundTrip must be boolean");
+  }
+  if (record.inputOutputBindings !== undefined) {
+    if (!Array.isArray(record.inputOutputBindings)) throw new Error("worker scope inputOutputBindings must be an array");
+    for (const [index, item] of record.inputOutputBindings.entries()) {
+      validateBindingEntry(item, index, "worker scope inputOutputBindings");
+    }
   }
   if (record.canEditLedger !== false) throw new Error("worker scope canEditLedger must be false");
   if (record.canSpawnAgents !== false) throw new Error("worker scope canSpawnAgents must be false");

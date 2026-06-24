@@ -89,6 +89,17 @@
         "maturity": { "type": "string", "minLength": 1 },
         "enforcedBy": { "type": ["string", "null"] },
         "summary": { "type": "string" },
+        "surfaces": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": ["ui", "admin", "mobile", "api", "http", "cli", "queue", "job", "scheduler", "storage", "email", "notification", "webhook", "integration", "config", "database", "library", "internal"]
+          }
+        },
+        "firstUseRequiresRoundTrip": { "type": "boolean" },
+        "proofRecipe": { "type": "string" },
+        "nativeNeighborContract": { "type": "array", "items": { "type": "string" } },
+        "knownTraps": { "type": "array", "items": { "type": "string" } },
         "evidence": { "type": "string" },
         "completionEvidence": {
           "type": "object",

@@ -15,6 +15,46 @@
       "type": "array",
       "items": { "type": "string", "minLength": 1 }
     },
+    "surfaceEvidence": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["surface", "evidenceId"],
+        "properties": {
+          "surface": {
+            "type": "string",
+            "enum": ["ui", "admin", "mobile", "api", "http", "cli", "queue", "job", "scheduler", "storage", "email", "notification", "webhook", "integration", "config", "database", "library", "internal"]
+          },
+          "evidenceId": { "type": "string", "minLength": 1 },
+          "roundTrip": { "type": "boolean" },
+          "firstUsePattern": { "type": "boolean" },
+          "notes": { "type": "string" }
+        }
+      }
+    },
+    "inputOutputEvidence": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["inputSurface", "outputSurface", "field", "evidenceId"],
+        "properties": {
+          "inputSurface": {
+            "type": "string",
+            "enum": ["ui", "admin", "mobile", "api", "http", "cli", "queue", "job", "scheduler", "storage", "email", "notification", "webhook", "integration", "config", "database", "library", "internal"]
+          },
+          "outputSurface": {
+            "type": "string",
+            "enum": ["ui", "admin", "mobile", "api", "http", "cli", "queue", "job", "scheduler", "storage", "email", "notification", "webhook", "integration", "config", "database", "library", "internal"]
+          },
+          "field": { "type": "string", "minLength": 1 },
+          "evidenceId": { "type": "string", "minLength": 1 },
+          "nonDefaultValue": { "type": "boolean" },
+          "defaultRejected": { "type": "boolean" }
+        }
+      }
+    },
     "notes": { "type": ["string", "null"] },
     "createdAt": { "type": ["string", "null"] }
   },

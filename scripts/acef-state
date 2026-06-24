@@ -19,17 +19,17 @@ function usage() {
 Usage:
   acef-state active-run --repo <path> --run-id <id> --lane <lane> --status <status> --story <scope> --phase <phase> --ledger <path> [--workflow <path> --workflow-node <id>] [options]
   acef-state actor --repo <path> --id <id> --story <scope> --phase <phase> --role <role> --client <client> --context-profile <profile> [options]
-  acef-state worker-scope --repo <path> --story <scope> --phase <phase> --worker-id <id> --allow <glob>... [options]
+  acef-state worker-scope --repo <path> --story <scope> --phase <phase> --worker-id <id> --allow <glob>... [--surface <name>...] [--pattern-use <kind>] [--requires-round-trip true|false] [--binding <input>><output>:<field>[:defaultMaskingRisk]] [options]
   acef-state approval --repo <path> --id <id> --decision APPROVE|REJECT|ACCEPT_RISK --scope <scope> --quote <exact human words> [options]
   acef-state evidence-run --repo <path> --id <id> --kind <kind> --actor <id> --story <scope> --satisfies <id>... -- <command> [args...]
-  acef-state gate --repo <path> --id <id> --scope <scope> --verdict <verdict> --decided-by <actor-id> [--evidence <id>...] [options]
+  acef-state gate --repo <path> --id <id> --scope <scope> --verdict <verdict> --decided-by <actor-id> [--evidence <id>...] [--surface-evidence <surface:evidenceId[:roundTrip][:firstUse]>...] [--binding-evidence <input>><output>:<field>:<evidenceId>[:nonDefaultValue][:defaultRejected]] [options]
 
 Record files are written under docs/ai. Immutable records refuse overwrite; active-run and worker-scope are atomic singletons.`);
 }
 
 function parseArgs(argv) {
   const [command, ...rest] = argv;
-  const opts = { command, repo: process.cwd(), allow: [], satisfies: [], evidence: [], commandArgv: [] };
+  const opts = { command, repo: process.cwd(), allow: [], satisfies: [], evidence: [], surface: [], surfaceEvidence: [], binding: [], bindingEvidence: [], commandArgv: [] };
   for (let index = 0; index < rest.length; index += 1) {
     const arg = rest[index];
     if (arg === "--") {
@@ -45,7 +45,7 @@ function parseArgs(argv) {
     const value = rest[index + 1];
     if (value === undefined || value.startsWith("--")) throw new Error(`Missing value for ${arg}`);
     index += 1;
-    if (["allow", "satisfies", "evidence"].includes(key)) opts[key].push(value);
+    if (["allow", "satisfies", "evidence", "surface", "surfaceEvidence", "binding", "bindingEvidence"].includes(key)) opts[key].push(value);
     else opts[key] = value;
   }
   opts.repo = path.resolve(opts.repo);
@@ -60,6 +60,61 @@ function required(opts, fields) {
 function safeId(value, label) {
   if (!/^[A-Za-z0-9._-]+$/.test(String(value || ""))) throw new Error(`${label} must use only letters, numbers, dot, underscore, or dash`);
   return String(value);
+}
+
+function parseBoolean(value, label) {
+  if (value === true || value === "true") return true;
+  if (value === false || value === "false") return false;
+  throw new Error(`${label} must be true or false`);
+}
+
+function parseSurfaceEvidence(entries) {
+  if (!entries.length) return undefined;
+  return entries.map((entry) => {
+    const [surface, evidenceId, roundTrip, firstUsePattern] = String(entry).split(":");
+    if (!surface || !evidenceId) {
+      throw new Error("--surface-evidence must be surface:evidenceId[:roundTrip][:firstUse]");
+    }
+    const record = { surface, evidenceId };
+    if (roundTrip !== undefined && roundTrip !== "") record.roundTrip = parseBoolean(roundTrip, "--surface-evidence roundTrip");
+    if (firstUsePattern !== undefined && firstUsePattern !== "") record.firstUsePattern = parseBoolean(firstUsePattern, "--surface-evidence firstUse");
+    return record;
+  });
+}
+
+function parseBinding(entries) {
+  if (!entries.length) return undefined;
+  return entries.map((entry) => {
+    const [surfacePair, field, defaultMaskingRisk] = String(entry).split(":");
+    const [inputSurface, outputSurface] = String(surfacePair || "").split(">");
+    if (!inputSurface || !outputSurface || !field) {
+      throw new Error("--binding must be inputSurface>outputSurface:field[:defaultMaskingRisk]");
+    }
+    const record = { inputSurface, outputSurface, field };
+    if (defaultMaskingRisk !== undefined && defaultMaskingRisk !== "") {
+      record.defaultMaskingRisk = parseBoolean(defaultMaskingRisk, "--binding defaultMaskingRisk");
+    }
+    return record;
+  });
+}
+
+function parseBindingEvidence(entries) {
+  if (!entries.length) return undefined;
+  return entries.map((entry) => {
+    const [surfacePair, field, evidenceId, nonDefaultValue, defaultRejected] = String(entry).split(":");
+    const [inputSurface, outputSurface] = String(surfacePair || "").split(">");
+    if (!inputSurface || !outputSurface || !field || !evidenceId) {
+      throw new Error("--binding-evidence must be inputSurface>outputSurface:field:evidenceId[:nonDefaultValue][:defaultRejected]");
+    }
+    const record = { inputSurface, outputSurface, field, evidenceId };
+    if (nonDefaultValue !== undefined && nonDefaultValue !== "") {
+      record.nonDefaultValue = parseBoolean(nonDefaultValue, "--binding-evidence nonDefaultValue");
+    }
+    if (defaultRejected !== undefined && defaultRejected !== "") {
+      record.defaultRejected = parseBoolean(defaultRejected, "--binding-evidence defaultRejected");
+    }
+    return record;
+  });
 }
 
 function runGit(repo, args) {
@@ -190,11 +245,16 @@ function writeActor(opts) {
 function writeWorkerScope(opts) {
   required(opts, ["story", "phase", "workerId"]);
   if (!opts.allow.length) throw new Error("worker-scope requires at least one --allow path");
+  const requiresRoundTrip = opts.requiresRoundTrip === undefined ? undefined : parseBoolean(opts.requiresRoundTrip, "--requires-round-trip");
   const record = {
     activeStory: opts.story,
     phase: opts.phase,
     workerId: opts.workerId,
     allowedPaths: opts.allow,
+    surfaces: opts.surface.length ? opts.surface : undefined,
+    patternUse: opts.patternUse || undefined,
+    requiresRoundTrip,
+    inputOutputBindings: parseBinding(opts.binding),
     baseRef: opts.baseRef || gitCommit(opts.repo),
     maxCommits: opts.maxCommits ? Number(opts.maxCommits) : 1,
     canEditLedger: false,
@@ -316,6 +376,8 @@ function writeGate(opts) {
     decidedBy: opts.decidedBy,
     repositoryCommit: gitCommit(opts.repo),
     evidenceIds: opts.evidence,
+    surfaceEvidence: parseSurfaceEvidence(opts.surfaceEvidence),
+    inputOutputEvidence: parseBindingEvidence(opts.bindingEvidence),
     notes: opts.notes || null,
     createdAt: new Date().toISOString(),
   };
