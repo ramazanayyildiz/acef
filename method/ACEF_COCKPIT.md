@@ -49,6 +49,25 @@ task/story selected
 
 This is a cockpit plus context compiler plus tool proxy. It is not a general autonomous agent manager.
 
+## Human Visibility Layer
+
+The cockpit must solve the operator's real pain before it grows execution features: many projects and many agents run at
+once, and the human cannot easily see who is doing what, which subagents exist, what stage each story is in, where the
+plan lives, whether notes were captured, or what the next allowed step is.
+
+The first useful screen is a mission-control view:
+
+- active projects/repos, branches, dirty/clean state, ahead/behind;
+- active ACEF run per repo: epic/story, lane/track, last passed gate, next allowed step, required human approval;
+- worker/subagent cards: actor id, role, story, phase, status, allowed scope, start/end time, report path, commit id;
+- subagent provenance: who spawned it, what it was allowed to do, whether it wrote files, whether it committed;
+- plan and note surfaces: active ledger, current context, epic context pack, story artifact, known-open items, blockers;
+- human decisions panel: exact approval quotes, deferrals, push approvals, scope changes, and timestamp/source;
+- timeline: tool/worker/gate events collapsed into readable checkpoints, with raw transcripts stored outside chat.
+
+The cockpit should make "what is happening right now?" answerable without opening the chat transcript, grepping the
+ledger, or asking the agent to reconstruct state from memory.
+
 ## What To Borrow
 
 Borrow ideas, not authority.
@@ -61,6 +80,31 @@ Borrow ideas, not authority.
 | Multica | task board, assignment UX, managed-agent visibility | no Multica squads/autopilot as ACEF state |
 | Agent Kanban | actor identity and provenance ideas | no worker-created subtasks or auto-merge |
 | Goose / OpenHands / WrongStack | open runtime hooks and tool control | later runtime option, not v1 cockpit |
+| Obsidian Atlas / vault skills | session start/end, breadcrumb, topic, todo, project status, activity feed, decision capture | personal knowledge workflow only; ACEF still owns delivery state |
+
+## Obsidian Atlas Audit Notes
+
+Local inspection found the relevant Atlas surfaces in the user's Obsidian/Claude setup:
+
+- Atlas agent: `~/.claude/agents/atlas.md` — PM/brainstorm/co-architect, not an execution bot. Its session flow reads
+  Backlog, Questions & Notes, latest Session Log, then suggests priorities; session end updates Backlog, Changelog, and
+  Session Log.
+- Atlas Partner: `~/.claude/agents/atlas-partner.md` — read-only thinking partner with append-only journals under
+  `~/.claude/partner/`.
+- Vault-local Claude skills:
+  `/Users/ramazanayyildiz/Library/Mobile Documents/iCloud~md~obsidian/Documents/Ram/.claude/skills/`.
+
+Observed skill families useful for ACEF Cockpit design:
+
+- session control: `session-start`, `session-end`, `session-breadcrumb`, `session-topic`, `session-todo`;
+- project visibility: `project-status`, `activity-feed`, `project-creator`;
+- capture and knowledge hygiene: `quick-note`, `triage-notes`, `anchor-list`;
+- review/research lenses: `review-tool`, `review-pipeline`, `research`, `think`;
+- bookmark/content pipelines: `sync-bookmarks`, `x-bookmarks`, `yt-playlists`, `youtube-summary`, `enrich-bookmarks`.
+
+ACEF should not copy the vault workflow wholesale. The useful extraction is the UX pattern: explicit session start/end,
+current topic, human-readable breadcrumbs, cross-project activity feed, and durable decision capture. These become cockpit
+views backed by ACEF state files and evidence artifacts, not free-form memory.
 
 ## What Not To Borrow
 
