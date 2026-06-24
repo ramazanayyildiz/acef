@@ -35,6 +35,13 @@ informational semantic `version` remain required for every skill.
 An actionable finding is dispositioned by the Code Reviewer. Any required edit moves to a separately identified,
 scoped implementation or `verify-patch` actor. The author of the reviewed change cannot use a lens to self-approve.
 
+## Source comment hygiene
+
+Review lenses treat ACEF/BMAD process evidence in source comments as a maintainability finding. Comments such as
+`Story 2.4`, `AC3`, `GUARDED`, `Process Judge`, `ATDD`, `test seam`, or gate-pass explanations belong in ACEF artifacts,
+not production code. Keep comments that explain durable technical invariants, external API quirks, ordering/race
+constraints, security/privacy constraints, or data-integrity risks.
+
 ## Bounded input
 
 A lens receives at least one explicit boundary: a targeted diff, a finite path set, or a numeric scan budget. It also

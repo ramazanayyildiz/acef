@@ -68,11 +68,15 @@ risk acceptance for the unresolved items.
    version's real API with a spike/reference implementation before writing failing tests. Wrong framework assumptions
    produce hollow greens; the correct result is `REPLAN`.
 5. **ATDD** — failing tests land **before** implementation, as their own commit. Every test fails on HEAD first.
-6. **Dev-story** — implement until the ATDD tests go green.
+6. **Dev-story** — implement until the ATDD tests go green. Developer prompts must keep ACEF/BMAD evidence out of
+   source comments: Story/Epic/AC/NFR/OD labels, gate-pass proof, reviewer/judge language, and implementation history
+   belong in the ledger or story artifact. Source comments may only carry durable technical invariants a maintainer
+   needs at the code site.
 7. **Code-review** — multi-layer adversarial review (e.g. correctness + conformance + blind-spot + edge-case + acceptance-auditor
    lenses). Reviewer returns `MERGE` / `REVISE` / `REPLAN` (findings classed Patch / Decision / Defer / Dismiss).
    Every conformance finding becomes a code patch, pattern-registry update, do-not-copy update, proposed mechanical
-   check, or explicit human deferral.
+   check, or explicit human deferral. Reviewer must reject or patch process/evidence comments that leak into source
+   code.
 8. **Verify-patch** — after every REVISE, fresh-context verifiers re-read each patch's acceptance criteria + domain
    contract + the actual diff, and check the patch claim **and** adjacent invariants it could affect. The conductor does
    not apply review patches. A `REVISE`, `BLOCK`, or `MERGE WITH REQUIRED PATCH` verdict creates

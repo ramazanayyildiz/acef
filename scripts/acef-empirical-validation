@@ -282,6 +282,7 @@ function promptFor(run) {
     `Allowed implementation paths: ${run.task.allowedPaths.join(", ")}`,
     `Required verification: ${run.task.verify.join(" ")}`,
     "Do not install dependencies, change tests, commit, push, spawn/delegate, or touch unrelated files.",
+    "Do not write ACEF/BMAD process evidence into source comments. Put Story/Epic/AC/NFR/gate evidence in artifacts; source comments only explain durable technical invariants.",
     "Inspect only what is needed, implement the smallest production fix, run the exact verification, and stop.",
     "Your final response must be concise and state RESULT=PASS or RESULT=FAIL, changed paths, verification result, retries, and any unresolved risk.",
   ].join("\n");

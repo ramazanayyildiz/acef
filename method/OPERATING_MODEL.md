@@ -490,12 +490,36 @@ Mechanical tasks may go `in-progress → done` on passing validation (no Judge).
   a lessons/registry update entry (or "none") · on MERGE, close the task in the artifact.
 - **Docs Drift Note** (when needed): docs updated · why · what was not changed.
 
+## Source comment policy
+
+Developer prompts must keep ACEF/BMAD evidence out of source code. Source comments are for durable technical invariants,
+not delivery history.
+
+Allowed in source comments:
+- non-obvious runtime constraints;
+- race conditions or ordering constraints;
+- external API quirks;
+- security, privacy, or data-integrity warnings;
+- concise rationale that a maintainer needs while changing the code.
+
+Not allowed in source comments:
+- Story/Epic/AC/NFR/OD references;
+- `Process Judge`, `Reviewer`, `ATDD`, `guarded`, `test seam`, or gate-pass evidence;
+- implementation history or why the story was accepted;
+- explanations meant for the delivery ledger, story artifact, review report, process judge report, codemap, or pattern
+  registry.
+
+Rule of thumb: if the comment explains why the code must behave this way, it may stay. If it explains why the delivery
+process accepted the story, move it to an ACEF artifact. Reviewers reject or patch source diffs that leak process/evidence
+language into code.
+
 Conformance lens:
 
 - Did the change use the right pattern-registry entry or explain why none applies?
 - Did it check and reuse a qualified golden neighbor?
 - Did it avoid do-not-copy entries and stale/legacy exemplars?
 - Did it introduce a new helper/component/service/dependency/pattern without a decision?
+- Did source comments avoid ACEF/BMAD process evidence and keep only durable technical invariants?
 - For architecture/planning artifacts: did every codemap/adapter-derived claim cite current source evidence rather
   than memory or a worker summary?
 - For architecture/planning artifacts: were source conflicts recorded as discrepancies, and were counts/inventories
