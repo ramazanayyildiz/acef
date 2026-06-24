@@ -166,6 +166,153 @@ The first Cockpit-displayable substrate is filesystem-only:
 This is enough for a future Cockpit to display worker provenance without adding SQLite, vectors, graphs, automatic
 fleets, or a custom ACEF runtime.
 
+## First Sprint Contract
+
+Start with a CLI cockpit, not a web UI.
+
+The first shippable slice is:
+
+\`\`\`text
+acef-cockpit-status --repo /path/to/repo
+acef-cockpit-status --all
+acef-cockpit
+\`\`\`
+
+\`acef-cockpit-status --repo\` should emit one bounded JSON object:
+
+\`\`\`json
+{
+  "repo": "/path/to/repo",
+  "branch": "feature/example",
+  "git": {
+    "dirty": false,
+    "ahead": 0,
+    "behind": 0
+  },
+  "acef": {
+    "active": true,
+    "ledger_path": "docs/ai/ACEF_example_DELIVERY_AUDIT.md",
+    "current_context_path": "docs/ai/ACEF_CURRENT_CONTEXT.md",
+    "epic_context_pack_path": "docs/ai/epic-4-context-pack.md",
+    "last_passed_gate": "Epic 3 Process Judge PASS",
+    "next_allowed_step": "Human checkpoint before Epic 4",
+    "lane": "Full BMAD v2",
+    "track": "per-story"
+  },
+  "worker": {
+    "active_scope_path": "docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json",
+    "actor_id": "codex-story-4-1-dev",
+    "role": "developer",
+    "story": "4.1",
+    "phase": "implementation",
+    "allowed_paths": []
+  },
+  "human": {
+    "pending_approval": true,
+    "approval_needed_for": "Start Epic 4",
+    "last_decision": "Epic 3 approved, stop before Epic 4"
+  },
+  "artifacts": {
+    "planning": "_bmad-output/planning-artifacts",
+    "latest_worker_report": null,
+    "latest_rollup": null
+  }
+}
+\`\`\`
+
+\`acef-cockpit-status --all\` should read a repo registry and return one status object per repo. The registry may be
+project-local or user-local, but it must only list repos; it must not become a second source of delivery truth.
+
+\`acef-cockpit\` should render the same data as a compact terminal dashboard:
+
+\`\`\`text
+repo | branch | dirty | epic/story | phase | next allowed step | pending approval | active worker
+\`\`\`
+
+The terminal dashboard is intentionally boring. If the JSON is correct, a web UI can be built later without changing the
+state model.
+
+## Repo Registry
+
+The cockpit may use a small registry such as:
+
+\`\`\`json
+{
+  "repos": [
+    {
+      "name": "detaysoft2026",
+      "path": "/Users/ramazanayyildiz/CODE/OPA/detaysoft2026"
+    },
+    {
+      "name": "acef",
+      "path": "/Users/ramazanayyildiz/CODE/acef"
+    }
+  ]
+}
+\`\`\`
+
+Allowed locations, in priority order:
+
+1. repo-local \`docs/ai/ACEF_COCKPIT_REPOS.json\` when the repo owns a project group;
+2. user-local \`~/.acef/cockpit-repos.json\` for a personal multi-project view.
+
+The registry is navigation metadata only. Ledger, current context, worker scope, and gate state remain in each target
+repo.
+
+## Human Decisions Panel
+
+The cockpit should extract human decisions from canonical ACEF files, not chat memory.
+
+Minimum extracted fields:
+
+- exact approval text when present;
+- approved scope;
+- denied or deferred scope;
+- push permission;
+- current stop condition;
+- next human checkpoint.
+
+When the data is ambiguous, the cockpit should display \`unknown\` or \`approval_required\`; it must not infer approval from
+phrases such as \`go on\`, \`continue\`, or \`tamamla\`.
+
+## Worker Timeline
+
+The cockpit should show worker activity as a timeline, not as a raw transcript dump.
+
+Each worker event should reduce to:
+
+\`\`\`json
+{
+  "actor_id": "codex-story-4-1-reviewer",
+  "role": "reviewer",
+  "story": "4.1",
+  "phase": "independent_review",
+  "status": "pass",
+  "started_at": null,
+  "ended_at": null,
+  "commit": null,
+  "report_path": "docs/ai/workers/story-4-1-review.md",
+  "scope_path": "docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json"
+}
+\`\`\`
+
+Raw transcripts may be stored outside Git and linked by hash. They should not be printed into normal model context.
+
+## Out Of Scope For V1
+
+Do not build these until the CLI cockpit proves useful:
+
+- custom web application;
+- SQLite state store;
+- vector or graph database;
+- direct model API runtime;
+- multi-agent scheduler;
+- auto-spawning workers;
+- auto-merge or auto-push;
+- replacing existing Claude/Codex/OpenCode clients.
+
+The v1 cockpit is a state viewer and context/proxy foundation. It is not a new orchestrator.
+
 ## Code Search Policy
 
 `grep`, `git grep`, and `rg` are not bad. Unbounded output is bad.
