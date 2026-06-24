@@ -12,6 +12,7 @@ const {
   parseLightweightRun,
   parsePrReview,
   parsePrReviewProfile,
+  parseCapabilityChange,
   parseWorkerScope,
   safeRelative,
 } = require("./lib/acef-state-parser");
@@ -47,6 +48,7 @@ Checks:
   pr-review          Validate bounded PR-review context and reject reviewer-authored patches
   lightweight-lifecycle Require the six-step lightweight lifecycle and promotion disposition
   lean-evidence       Require story/epic close evidence to live in artifacts, not chat
+  capability-change   Require ACEF flow/gate/capability changes to declare documented/wired/enforced/proven layers
   session-handoff     Require a structured Session Handoff block in the delivery ledger
   seeded-epic-gates   Require Epic N Process Judge rows/artifacts for epics mentioned in ledger
   epic-boundary       Require Epic N-1 Process Judge PASS before target Epic N
@@ -1799,6 +1801,86 @@ function checkLightweightLifecycle(repoRoot) {
   }
 }
 
+function capabilityChangePaths(repoRoot) {
+  const paths = [];
+  const single = path.join(repoRoot, "docs", "ai", "ACEF_CAPABILITY_CHANGE.json");
+  if (exists(single)) paths.push(single);
+  const dir = path.join(repoRoot, "docs", "ai", "capabilities");
+  if (exists(dir)) paths.push(...jsonRecords(dir));
+  return paths.sort();
+}
+
+function isCapabilityRelevantPath(filePath) {
+  const normalized = String(filePath || "").replaceAll(path.sep, "/");
+  return normalized === "README.md"
+    || normalized === "AGENTS.md"
+    || normalized.startsWith("method/")
+    || normalized.startsWith("skills/")
+    || normalized.startsWith("schemas/")
+    || normalized.startsWith("scripts/")
+    || normalized.startsWith("workflows/")
+    || normalized.startsWith("claude-plugins/")
+    || /^docs\/(?:overview|print|sdlc|roles|index)\.html$/.test(normalized);
+}
+
+function changedCapabilityFiles(repoRoot) {
+  const status = gitStatusPorcelain(repoRoot);
+  if (status === null) return [];
+  return status
+    .map((line) => line.slice(3).replace(/^"|"$/g, ""))
+    .filter(Boolean)
+    .filter(isCapabilityRelevantPath)
+    .filter((filePath) => filePath !== "docs/ai/ACEF_CAPABILITY_CHANGE.json")
+    .filter((filePath) => !filePath.startsWith("docs/ai/capabilities/"));
+}
+
+function capabilityRefExists(repoRoot, ref) {
+  const value = String(ref || "").trim();
+  if (!value || /^(cmd|commit|external|note):/i.test(value)) return true;
+  if (/^(https?:)?\/\//i.test(value)) return true;
+  const candidate = value.split("#")[0].replace(/:\d+(?::\d+)?$/, "");
+  if (!candidate) return true;
+  const resolved = resolvePath(candidate, repoRoot);
+  return resolved.startsWith(`${repoRoot}${path.sep}`) && exists(resolved);
+}
+
+function checkCapabilityChange(repoRoot) {
+  const relevantChanges = changedCapabilityFiles(repoRoot);
+  const capabilityFiles = capabilityChangePaths(repoRoot);
+  if (!relevantChanges.length && !capabilityFiles.length) {
+    return result("capability-change", true, "No active ACEF capability change");
+  }
+  const failures = [];
+  if (relevantChanges.length && !capabilityFiles.length) {
+    failures.push(`ACEF capability-relevant files changed without docs/ai/ACEF_CAPABILITY_CHANGE.json or docs/ai/capabilities/*.json: ${relevantChanges.slice(0, 12).join(", ")}`);
+  }
+  for (const filePath of capabilityFiles) {
+    try {
+      const record = parseCapabilityChange(filePath);
+      if (record.status === "documented-only") {
+        const nonDocLayers = Object.entries(record.implementedLayers || {})
+          .filter(([layer, refs]) => layer !== "docs" && Array.isArray(refs) && refs.length)
+          .map(([layer]) => layer);
+        if (nonDocLayers.length) {
+          failures.push(`${path.relative(repoRoot, filePath)} status documented-only cannot list non-doc implemented layers: ${nonDocLayers.join(", ")}`);
+        }
+      }
+      for (const [layer, refs] of Object.entries(record.implementedLayers || {})) {
+        for (const ref of refs) {
+          if (!capabilityRefExists(repoRoot, ref)) {
+            failures.push(`${path.relative(repoRoot, filePath)} ${layer} evidence missing: ${ref}`);
+          }
+        }
+      }
+    } catch (error) {
+      failures.push(`${path.relative(repoRoot, filePath)}: ${error.message}`);
+    }
+  }
+  return failures.length
+    ? result("capability-change", false, failures.join("; "))
+    : result("capability-change", true, `${capabilityFiles.length} capability change record(s) classify implemented layers`);
+}
+
 function main() {
   const args = parseArgs(process.argv);
   if (args.help) {
@@ -1810,7 +1892,7 @@ function main() {
   const adapter = args.adapter || findAdapter(args.repo);
   const registry = findPatternRegistry(args.repo, adapter);
   const checks = args.check === "all"
-    ? ["clean-tree", "preflight", "claims", "adapter-freshness", "pattern-registry", "reuse-before-create", "do-not-copy", "partial-workshape", "finding-promotion", "graduation-reconciliation", "vertical-slice", "test-authenticity", "guarded-test-floor", "actor-separation", "worker-scope", "evidence-manifest", "gate-verdict", "source-reconciliation", "epic-context-pack", "current-context", "lean-evidence", "session-handoff", "seeded-epic-gates", "epic-boundary", "epic-transition-approval", "replan-counter"]
+    ? ["clean-tree", "preflight", "claims", "adapter-freshness", "pattern-registry", "reuse-before-create", "do-not-copy", "partial-workshape", "finding-promotion", "graduation-reconciliation", "vertical-slice", "test-authenticity", "guarded-test-floor", "actor-separation", "worker-scope", "evidence-manifest", "gate-verdict", "source-reconciliation", "epic-context-pack", "current-context", "lean-evidence", "capability-change", "session-handoff", "seeded-epic-gates", "epic-boundary", "epic-transition-approval", "replan-counter"]
     : [args.check];
 
   const results = checks.map((check) => {
@@ -1837,6 +1919,7 @@ function main() {
     if (check === "pr-review") return checkPrReview(args.repo);
     if (check === "lightweight-lifecycle") return checkLightweightLifecycle(args.repo);
     if (check === "lean-evidence") return checkLeanEvidence(args.repo, ledger);
+    if (check === "capability-change") return checkCapabilityChange(args.repo);
     if (check === "session-handoff") return checkSessionHandoff(args.repo, ledger, adapter, registry);
     if (check === "seeded-epic-gates") return checkSeededEpicGates(args.repo, ledger);
     if (check === "epic-boundary") return checkEpicBoundary(args.repo, ledger, args.targetEpic);

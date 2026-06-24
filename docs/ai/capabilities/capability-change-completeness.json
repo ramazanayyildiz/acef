@@ -1,0 +1,60 @@
+{
+  "capabilityId": "capability-change-completeness",
+  "requestedIntent": "Prevent ACEF flow, gate, role, hook, validator, and enforcement changes from being reported as implemented when they are only documented.",
+  "status": "proven",
+  "requiredLayers": [
+    "docs",
+    "schema",
+    "validator",
+    "tests",
+    "installer"
+  ],
+  "implementedLayers": {
+    "docs": [
+      "AGENTS.md",
+      "CHANGELOG.md",
+      "README.md#Process validators",
+      "docs/index.html",
+      "docs/overview.html",
+      "docs/print.html",
+      "method/OPERATING_MODEL.md#ACEF Capability Change Completeness",
+      "skills/acef/references/ACEF_OPERATING_MODEL.md#ACEF Capability Change Completeness"
+    ],
+    "schema": [
+      "schemas/capability-change.schema.json"
+    ],
+    "validator": [
+      "scripts/acef-process-validator#checkCapabilityChange",
+      "scripts/lib/acef-state-parser.js#parseCapabilityChange"
+    ],
+    "tests": [
+      "scripts/test-acef-capability-change"
+    ],
+    "installer": [
+      "scripts/install-acef-tools"
+    ]
+  },
+  "limitations": [
+    "The check validates changed ACEF capability files and manifests; it does not read chat final answers.",
+    "Agents must still run the validator before claiming an ACEF flow capability is implemented."
+  ],
+  "evidence": [
+    {
+      "layer": "schema",
+      "ref": "schemas/capability-change.schema.json"
+    },
+    {
+      "layer": "validator",
+      "ref": "scripts/acef-process-validator#checkCapabilityChange"
+    },
+    {
+      "layer": "tests",
+      "ref": "scripts/test-acef-capability-change"
+    },
+    {
+      "layer": "installer",
+      "ref": "scripts/install-acef-tools"
+    }
+  ],
+  "createdAt": "2026-06-25"
+}

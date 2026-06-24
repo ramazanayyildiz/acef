@@ -1,0 +1,118 @@
+#!/usr/bin/env node
+const fs = require("node:fs");
+const os = require("node:os");
+const path = require("node:path");
+const cp = require("node:child_process");
+
+const repoRoot = path.resolve(__dirname, "..");
+const validator = path.join(repoRoot, "scripts", "acef-process-validator");
+const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "acef-capability-change-"));
+
+function run(command, args, options = {}) {
+  return cp.spawnSync(command, args, {
+    cwd: tmp,
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+    ...options,
+  });
+}
+
+function git(args) {
+  const proc = run("git", args);
+  if (proc.status !== 0) {
+    throw new Error(`git ${args.join(" ")} failed:\n${proc.stderr || proc.stdout}`);
+  }
+  return proc.stdout;
+}
+
+function validatorRun() {
+  return run("node", [validator, "--repo", tmp, "--check", "capability-change"]);
+}
+
+function expectFail(pattern, label) {
+  const proc = validatorRun();
+  const output = `${proc.stdout}\n${proc.stderr}`;
+  if (proc.status === 0) {
+    throw new Error(`${label}: expected failure, got success:\n${output}`);
+  }
+  if (!pattern.test(output)) {
+    throw new Error(`${label}: expected ${pattern}, got:\n${output}`);
+  }
+}
+
+function expectPass(label) {
+  const proc = validatorRun();
+  const output = `${proc.stdout}\n${proc.stderr}`;
+  if (proc.status !== 0 || !output.includes("PASS capability-change:")) {
+    throw new Error(`${label}: expected pass, got:\n${output}`);
+  }
+}
+
+function writeJson(filePath, record) {
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  fs.writeFileSync(filePath, `${JSON.stringify(record, null, 2)}\n`);
+}
+
+function capabilityRecord(overrides = {}) {
+  return {
+    capabilityId: "code-quality-gate",
+    requestedIntent: "Add code quality review to ACEF gates.",
+    status: "documented-only",
+    requiredLayers: ["docs", "validator", "tests"],
+    implementedLayers: {
+      docs: ["method/OPERATING_MODEL.md#Code Quality Gate"],
+    },
+    limitations: ["Docs only."],
+    evidence: [
+      { layer: "docs", ref: "method/OPERATING_MODEL.md#Code Quality Gate" },
+    ],
+    ...overrides,
+  };
+}
+
+try {
+  fs.mkdirSync(path.join(tmp, "method"), { recursive: true });
+  fs.writeFileSync(path.join(tmp, "method", "OPERATING_MODEL.md"), "# Operating Model\n");
+  git(["init", "-q"]);
+  git(["config", "user.email", "acef@example.test"]);
+  git(["config", "user.name", "ACEF Test"]);
+  git(["add", "."]);
+  git(["commit", "-qm", "base"]);
+
+  fs.appendFileSync(path.join(tmp, "method", "OPERATING_MODEL.md"), "\n## Code Quality Gate\n\nReview shape before close.\n");
+  expectFail(/capability-relevant files changed without docs\/ai\/ACEF_CAPABILITY_CHANGE\.json or docs\/ai\/capabilities\/\*\.json/, "docs-only change without capability record");
+
+  const recordPath = path.join(tmp, "docs", "ai", "capabilities", "code-quality-gate.json");
+  writeJson(recordPath, capabilityRecord());
+  expectPass("documented-only capability record");
+
+  writeJson(recordPath, capabilityRecord({ status: "proven" }));
+  expectFail(/missing implemented layer\(s\): validator, tests/, "overclaimed proven record without layers");
+
+  writeJson(recordPath, capabilityRecord({
+    status: "proven",
+    implementedLayers: {
+      docs: ["method/OPERATING_MODEL.md#Code Quality Gate"],
+      validator: ["scripts/quality-validator"],
+      tests: ["scripts/test-quality-validator"],
+    },
+  }));
+  expectFail(/evidence missing: scripts\/quality-validator/, "missing referenced implementation files");
+
+  fs.mkdirSync(path.join(tmp, "scripts"), { recursive: true });
+  fs.writeFileSync(path.join(tmp, "scripts", "quality-validator"), "#!/usr/bin/env node\n");
+  fs.writeFileSync(path.join(tmp, "scripts", "test-quality-validator"), "#!/usr/bin/env node\n");
+  expectPass("proven capability record with real refs");
+
+  writeJson(recordPath, capabilityRecord({
+    implementedLayers: {
+      docs: ["method/OPERATING_MODEL.md#Code Quality Gate"],
+      validator: ["scripts/quality-validator"],
+    },
+  }));
+  expectFail(/status documented-only cannot list non-doc implemented layers: validator/, "documented-only record with non-doc layer");
+
+  console.log("acef capability-change tests passed");
+} finally {
+  fs.rmSync(tmp, { recursive: true, force: true });
+}

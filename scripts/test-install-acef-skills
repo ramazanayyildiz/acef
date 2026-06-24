@@ -18,14 +18,18 @@ try {
   for (const toolDir of [[".codex", "skills"], [".claude", "skills"], [".opencode", "skills"]]) {
     assert.ok(fs.existsSync(path.join(tmp, ...toolDir, "acef", "SKILL.md")));
     assert.ok(!fs.existsSync(path.join(tmp, ...toolDir, "bug-hunter")), "bug-hunter must not enter minimal default");
+    assert.ok(!fs.existsSync(path.join(tmp, ...toolDir, "implementation-shape-review")), "shape review must not enter minimal default");
   }
 
   run(["--repo", tmp, "--review-lenses"]);
   for (const toolDir of [[".codex", "skills"], [".claude", "skills"], [".opencode", "skills"]]) {
     assert.ok(fs.existsSync(path.join(tmp, ...toolDir, "bug-hunter", "SKILL.md")));
     assert.ok(fs.existsSync(path.join(tmp, ...toolDir, "bug-hunter", "templates", "report-template.md")));
+    assert.ok(fs.existsSync(path.join(tmp, ...toolDir, "implementation-shape-review", "SKILL.md")));
+    assert.ok(fs.existsSync(path.join(tmp, ...toolDir, "implementation-shape-review", "templates", "report-template.md")));
   }
   assert.ok(fs.existsSync(path.join(tmp, ".opencode", "commands", "bug-hunter.md")));
+  assert.ok(fs.existsSync(path.join(tmp, ".opencode", "commands", "implementation-shape-review.md")));
 
   console.log("acef skill installer tests passed");
 } finally {

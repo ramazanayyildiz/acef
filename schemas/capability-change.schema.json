@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://acef.local/schemas/capability-change.schema.json",
+  "title": "ACEF Capability Change",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["capabilityId", "requestedIntent", "status", "requiredLayers", "implementedLayers"],
+  "properties": {
+    "capabilityId": { "type": "string", "minLength": 1 },
+    "requestedIntent": { "type": "string", "minLength": 1 },
+    "status": {
+      "type": "string",
+      "enum": ["documented-only", "specified", "wired", "enforced", "proven", "installed"]
+    },
+    "requiredLayers": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/layer" }
+    },
+    "implementedLayers": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "docs": { "$ref": "#/$defs/refs" },
+        "schema": { "$ref": "#/$defs/refs" },
+        "cli": { "$ref": "#/$defs/refs" },
+        "validator": { "$ref": "#/$defs/refs" },
+        "hook": { "$ref": "#/$defs/refs" },
+        "workflow": { "$ref": "#/$defs/refs" },
+        "actor": { "$ref": "#/$defs/refs" },
+        "artifact": { "$ref": "#/$defs/refs" },
+        "tests": { "$ref": "#/$defs/refs" },
+        "installer": { "$ref": "#/$defs/refs" },
+        "targetRepo": { "$ref": "#/$defs/refs" }
+      }
+    },
+    "limitations": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "evidence": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["layer", "ref"],
+        "properties": {
+          "layer": { "$ref": "#/$defs/layer" },
+          "ref": { "type": "string", "minLength": 1 },
+          "note": { "type": "string" }
+        }
+      }
+    },
+    "createdAt": { "type": ["string", "null"] }
+  },
+  "$defs": {
+    "layer": {
+      "type": "string",
+      "enum": ["docs", "schema", "cli", "validator", "hook", "workflow", "actor", "artifact", "tests", "installer", "targetRepo"]
+    },
+    "refs": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 }
+    }
+  }
+}

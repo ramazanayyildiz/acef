@@ -464,6 +464,54 @@ function parseWorkerRollup(filePath) {
   return record;
 }
 
+const CAPABILITY_LAYERS = new Set([
+  "docs",
+  "schema",
+  "cli",
+  "validator",
+  "hook",
+  "workflow",
+  "actor",
+  "artifact",
+  "tests",
+  "installer",
+  "targetRepo",
+]);
+
+function parseCapabilityChange(filePath) {
+  const record = readJson(filePath);
+  requireFields(record, ["capabilityId", "requestedIntent", "status", "requiredLayers", "implementedLayers"], "capability change");
+  requireEnum(record, "status", ["documented-only", "specified", "wired", "enforced", "proven", "installed"], "capability change");
+  requireStringArray(record, "requiredLayers", "capability change", { nonEmpty: true });
+  for (const layer of record.requiredLayers) {
+    if (!CAPABILITY_LAYERS.has(layer)) throw new Error(`capability change requiredLayers has unknown layer ${layer}`);
+  }
+  if (!record.implementedLayers || typeof record.implementedLayers !== "object" || Array.isArray(record.implementedLayers)) {
+    throw new Error("capability change implementedLayers must be an object");
+  }
+  for (const [layer, entries] of Object.entries(record.implementedLayers)) {
+    if (!CAPABILITY_LAYERS.has(layer)) throw new Error(`capability change implementedLayers has unknown layer ${layer}`);
+    if (!Array.isArray(entries) || entries.some((entry) => typeof entry !== "string" || !entry.trim())) {
+      throw new Error(`capability change implementedLayers.${layer} must be an array of non-empty strings`);
+    }
+  }
+  if (record.status !== "documented-only") {
+    const missing = record.requiredLayers.filter((layer) => !record.implementedLayers[layer]?.length);
+    if (missing.length) throw new Error(`capability change status ${record.status} is missing implemented layer(s): ${missing.join(", ")}`);
+  }
+  if (record.limitations !== undefined) requireStringArray(record, "limitations", "capability change");
+  if (record.evidence !== undefined) {
+    if (!Array.isArray(record.evidence)) throw new Error("capability change evidence must be an array");
+    for (const [index, item] of record.evidence.entries()) {
+      if (!item || typeof item !== "object") throw new Error(`capability change evidence[${index}] must be an object`);
+      requireFields(item, ["layer", "ref"], `capability change evidence[${index}]`);
+      if (!CAPABILITY_LAYERS.has(item.layer)) throw new Error(`capability change evidence[${index}] has unknown layer ${item.layer}`);
+      if (typeof item.ref !== "string" || !item.ref.trim()) throw new Error(`capability change evidence[${index}].ref must be a non-empty string`);
+    }
+  }
+  return record;
+}
+
 function parseFreshness(record, label = "freshness") {
   if (!record || typeof record !== "object") throw new Error(`${label} must be an object`);
   requireFields(record, ["commit", "verifiedAt", "scope"], label);
@@ -492,6 +540,7 @@ module.exports = {
   parseWorkerExecution,
   parseWorkerResult,
   parseWorkerRollup,
+  parseCapabilityChange,
   parseFreshness,
   safeRelative,
 };

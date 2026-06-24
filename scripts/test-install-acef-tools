@@ -28,6 +28,7 @@ try {
   const workflowValidate = path.join(tmp, ".acef", "bin", "acef-workflow-validate");
   const parser = path.join(tmp, ".acef", "bin", "lib", "acef-state-parser.js");
   const schema = path.join(tmp, ".acef", "schemas", "active-run.schema.json");
+  const capabilitySchema = path.join(tmp, ".acef", "schemas", "capability-change.schema.json");
   const workflowSchema = path.join(tmp, ".acef", "schemas", "workflow.schema.json");
   const workflow = path.join(tmp, ".acef", "workflows", "lightweight-review.yaml");
   const runtimePackage = path.join(tmp, ".acef", "bin", "package.json");
@@ -38,6 +39,7 @@ try {
   if (!fs.existsSync(workflowValidate)) throw new Error("workflow validator was not installed");
   if (!fs.existsSync(parser)) throw new Error("parser support library was not installed");
   if (!fs.existsSync(schema)) throw new Error("typed-state schemas were not installed");
+  if (!fs.existsSync(capabilitySchema)) throw new Error("capability-change schema was not installed");
   if (!fs.existsSync(workflowSchema)) throw new Error("workflow schema was not installed");
   if (!fs.existsSync(workflow)) throw new Error("lightweight workflow was not installed");
   if (JSON.parse(fs.readFileSync(runtimePackage, "utf8")).type !== "commonjs") throw new Error("ACEF runtime CommonJS boundary was not installed");

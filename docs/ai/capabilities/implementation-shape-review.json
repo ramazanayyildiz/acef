@@ -1,0 +1,68 @@
+{
+  "capabilityId": "implementation-shape-review",
+  "requestedIntent": "Add implementation shape review to ACEF flow.",
+  "status": "wired",
+  "requiredLayers": [
+    "docs",
+    "actor",
+    "artifact",
+    "tests",
+    "installer"
+  ],
+  "implementedLayers": {
+    "docs": [
+      "method/OPERATING_MODEL.md#Implementation Shape Review",
+      "skills/acef/references/ACEF_OPERATING_MODEL.md#Implementation Shape Review"
+    ],
+    "actor": [
+      "skills/implementation-shape-review/SKILL.md"
+    ],
+    "artifact": [
+      "skills/implementation-shape-review/templates/report-template.md"
+    ],
+    "tests": [
+      "scripts/test-install-acef-skills",
+      "scripts/test-validate-acef-skills"
+    ],
+    "installer": [
+      "scripts/install-acef-skills"
+    ]
+  },
+  "limitations": [
+    "This is an optional review lens installed with --review-lenses, not part of the minimal default skill install.",
+    "No process validator or workflow node currently requires Implementation Shape Review evidence before story or epic close.",
+    "The report content is not yet machine-validated beyond skill metadata and installer coverage.",
+    "A separate implementation or verify-patch actor is still required before any suggested simplification is applied."
+  ],
+  "evidence": [
+    {
+      "layer": "docs",
+      "ref": "method/OPERATING_MODEL.md#Implementation Shape Review"
+    },
+    {
+      "layer": "docs",
+      "ref": "skills/acef/references/ACEF_OPERATING_MODEL.md#Implementation Shape Review"
+    },
+    {
+      "layer": "actor",
+      "ref": "skills/implementation-shape-review/SKILL.md"
+    },
+    {
+      "layer": "artifact",
+      "ref": "skills/implementation-shape-review/templates/report-template.md"
+    },
+    {
+      "layer": "tests",
+      "ref": "scripts/test-install-acef-skills"
+    },
+    {
+      "layer": "tests",
+      "ref": "scripts/test-validate-acef-skills"
+    },
+    {
+      "layer": "installer",
+      "ref": "scripts/install-acef-skills"
+    }
+  ],
+  "createdAt": "2026-06-25"
+}

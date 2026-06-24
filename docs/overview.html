@@ -200,7 +200,11 @@ Captures (each field cites a source path):
             checks clean-tree certification state, preflight PASS, claimed output paths, adapter freshness, registry shape, reuse-before-create,
             do-not-copy misuse, partial work-shape permission, finding promotion, graduation reconciliation, probed vertical-slice completeness,
             guarded boundary tests, actor separation, source reconciliation, epic/current context contracts, session handoff,
-            epic gates, and REPLAN count.</p></div>
+            epic gates, capability-change classification, and REPLAN count.</p></div>
+            <div class="card" style="border-left-color:var(--amber)"><h3>Capability ledger</h3><p><code>CHANGELOG.md</code>
+              explains what changed for humans; <code>docs/ai/capabilities/*.json</code> records whether each ACEF
+              capability is documented-only, wired, enforced, proven, or installed. Markdown-only changes cannot be
+              reported as implemented.</p></div>
             <div class="card" style="border-left-color:var(--green)"><h3>Typed evidence</h3><p><code>acef-state</code>
               writes actor, worker-scope, hashed command evidence, gate verdict, and approval JSON sidecars. Validators
               bind PASS to the right actor, Git state, raw output hash, and explicit human approval.</p></div>
@@ -241,6 +245,7 @@ Captures (each field cites a source path):
             <tr><td><code>acef-release-adapter</code></td><td>Release/CD readiness from the repo's real config.</td><td><span class="chip c-draft">DRAFT</span></td></tr>
             <tr><td><code>map-codebase</code></td><td>Auto-generate a code-grounded map and pattern registry of any repo (+ freshness stamp).</td><td><span class="chip c-ready">READY</span></td></tr>
             <tr><td><code>bug-hunter</code></td><td>Optional report-only JIT lens for bounded PR/lightweight review.</td><td><span class="chip c-ready">MEASURED</span></td></tr>
+            <tr><td><code>implementation-shape-review</code></td><td>Optional report-only lens for finding simplification targets before a separate patch actor changes code.</td><td><span class="chip c-draft">WIRED</span></td></tr>
             <tr><td><code>test-user-flow-mapper</code>, <code>test-case-planner</code></td><td>Turn product/user flows into structured test cases before automation.</td><td><span class="chip c-draft">DRAFT</span></td></tr>
             <tr><td><code>test-browser-generator</code>, <code>test-gen</code>, <code>test-generator</code></td><td>Generate browser/E2E and unit/integration tests from approved cases and adapter evidence.</td><td><span class="chip c-draft">DRAFT</span></td></tr>
             <tr><td><code>test-strategy</code>, <code>test-risk-classifier</code>, <code>test-coverage-auditor</code></td><td>Pick test levels, rank risky behavior, and find weak or missing coverage.</td><td><span class="chip c-draft">DRAFT</span></td></tr>
@@ -261,8 +266,9 @@ Captures (each field cites a source path):
           </div>
           <p class="muted">Today the methodology, repo-local helper CLIs, typed-state/context policy, and workflow
             guardrails have real repo evidence behind them. <code>map-codebase</code> is <span class="chip c-ready">READY</span>;
-            <code>bug-hunter</code> is measured as an optional JIT review lens; the remaining DRAFT skills stay labeled until
-            they are proven by focused pilots.</p>
+            <code>bug-hunter</code> is measured as an optional JIT review lens; <code>implementation-shape-review</code>
+            is wired as an optional review lens but not enforced as a required gate. Capability records prevent those
+            states from being blurred.</p>
         </section>
 
         <section id="setup"><h2><span class="ic" style="background:#e3f7ec">📦</span>Setup</h2>

@@ -80,6 +80,7 @@ skills/      The ACEF agent skills you install into Claude Code
 archive/external-skills/  Non-ACEF third-party skill snapshots kept for reference only, not installed as ACEF skills
 docs/        The developer-guide website (also published via GitHub Pages)
 README.md
+CHANGELOG.md Curated human-readable history of ACEF framework changes
 ```
 
 Naming convention: `acef-*` skills are ACEF-specific orchestration/core skills. Unprefixed skills such as
@@ -108,7 +109,8 @@ files the agent follows. No build, no npm, no services.
    `acef-context-actor-prompt`, `acef-context-actor-prompt-batch`, and `acef-context-record-actor-report`.
    It also installs shared parser support under `.acef/bin/lib/` and typed-state schemas under `.acef/schemas/`.
    Use `--tool codex|claude|opencode` to target one tool, or `--all-core` to copy every skill in this repo.
-   Optional measured review lenses such as `bug-hunter` stay out of the minimal default install; add them explicitly:
+   Optional measured review lenses such as `bug-hunter` and `implementation-shape-review` stay out of the minimal
+   default install; add them explicitly:
    ```bash
    scripts/install-acef-skills --repo /path/to/your/repo --review-lenses
    ```
@@ -302,12 +304,16 @@ ACEF ships a stack-agnostic process validator for cheap mechanical gates:
 .acef/bin/acef-process-validator --repo /path/to/repo --check source-reconciliation --ledger docs/ai/ACEF_feature_DELIVERY_AUDIT.md
 .acef/bin/acef-process-validator --repo /path/to/repo --check epic-context-pack --ledger docs/ai/ACEF_feature_DELIVERY_AUDIT.md
 .acef/bin/acef-process-validator --repo /path/to/repo --check current-context --ledger docs/ai/ACEF_feature_DELIVERY_AUDIT.md
+.acef/bin/acef-process-validator --repo /path/to/repo --check capability-change
 .acef/bin/acef-process-validator --repo /path/to/repo --check session-handoff --ledger docs/ai/ACEF_feature_DELIVERY_AUDIT.md
 .acef/bin/acef-process-validator --repo /path/to/repo --check epic-boundary --ledger docs/ai/ACEF_feature_DELIVERY_AUDIT.md --target-epic 2
 .acef/bin/acef-process-validator --repo /path/to/repo --check epic-transition-approval --ledger docs/ai/ACEF_feature_DELIVERY_AUDIT.md --target-epic 2
 ```
 
 These checks are the first step in moving ACEF rules out of agent memory and into machinery.
+`capability-change` is the freshness check for ACEF itself: if an agent changes ACEF flows, gates, roles, checks, hooks,
+or enforcement, it must add a capability record that states whether the change is only documented or actually wired,
+enforced, proven, and installed. A method-doc edit alone must be reported as `documented-only`.
 Run `clean-tree` before certification, Process Judge, or external verifier handoff so a verifier never certifies commit
 N while the builder has uncommitted N+1 edits layered on top.
 The P1 conformance checks are deliberately mechanical: the registry must satisfy the contract, the ledger must record

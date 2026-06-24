@@ -23,11 +23,17 @@ assert.match(foreignRuntime.errors.join("; "), /foreign gstack/);
 const bugHunter = validateSkillMetadata(path.join(repoRoot, "skills", "bug-hunter", "SKILL.md"), "bug-hunter");
 assert.deepEqual(bugHunter.errors, []);
 
+const shapeReview = validateSkillMetadata(
+  path.join(repoRoot, "skills", "implementation-shape-review", "SKILL.md"),
+  "implementation-shape-review"
+);
+assert.deepEqual(shapeReview.errors, []);
+
 const run = cp.spawnSync(process.execPath, [path.join(repoRoot, "scripts", "validate-acef-skills")], {
   cwd: repoRoot,
   encoding: "utf8",
 });
 assert.equal(run.status, 0, run.stderr || run.stdout);
-assert.match(run.stdout, /Validated 19 ACEF skill metadata record/);
+assert.match(run.stdout, /Validated 20 ACEF skill metadata record/);
 
 console.log("acef skill metadata tests passed");

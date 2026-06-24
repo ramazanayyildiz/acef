@@ -171,6 +171,79 @@ Lean chains may omit optional review phases only when explicitly authorized for 
 red-before-dev evidence when ATDD is used and a distinct Process Judge identity in the canonical ledger. Guarded work
 cannot use the lean chain.
 
+## Implementation Shape Review
+
+ACEF separates **finding a better shape** from **executing a simplification**. A simplifier should not be asked to
+"simplify this feature" until a reviewer has named the concrete runtime-code shape to improve.
+
+Story-level shape review is conditional. Run it after Developer validation and before the main Code Reviewer when any
+of these triggers are present:
+
+- a new module, screen family, service, hook family, job, or domain contract was introduced;
+- the story touched several related files or crossed a local pattern boundary;
+- similar logic appears in two or more new/changed surfaces;
+- tests gained repeated fixtures, mocks, render wrappers, or setup blocks;
+- the implementation is a working first pass but feels heavier than nearby golden neighbors;
+- the production diff is large enough that the Code Reviewer may focus on correctness and miss structure.
+
+Epic-level shape review is required before Epic Process Judge. It aggregates patterns across stories and asks whether
+the epic has now earned a shared helper, component, service, fixture factory, domain-contract home, or documentation
+update that was not visible inside a single story.
+
+The shape reviewer is report-only unless a separate implementation actor is explicitly scoped. Its report names
+candidates, not patches:
+
+```md
+## Implementation Shape Review
+scope: story 4.3 | epic 4
+status: PASS | CANDIDATES | DEFER
+
+### Candidate
+kind: shared-hook | shared-component | test-helper | domain-contract | service-boundary | state-shape | no-change
+evidence:
+- repeated intent or missed local abstraction
+- paths inspected
+expected_benefit: lower duplication | clearer ownership | safer contract | smaller tests
+risk: low | medium | high
+suggested_patch_scope:
+gate: focused lint/test commands
+disposition: apply-now | defer-to-epic | reject
+```
+
+The reviewer should prefer small, evidence-backed opportunities: duplicate package or route resolution, shared summary
+cards, repeated test harness setup, identical callbacks, scattered DTO/enum contracts, or state names that encode a
+temporary story flow rather than durable behavior. If no concrete runtime/test-structure opportunity exists, record
+`kind: no-change` and stop.
+
+## ACEF Capability Change Completeness
+
+Requests that add or change ACEF flows, gates, lanes, checks, reviewers, worker roles, or enforcement are capability
+changes unless the human explicitly scopes the request as documentation-only. A capability change is not "implemented"
+just because a method document says it exists.
+
+Every ACEF capability change must have a JSON record under `docs/ai/capabilities/` or
+`docs/ai/ACEF_CAPABILITY_CHANGE.json` that declares:
+
+- the requested intent;
+- the required layers for the capability;
+- which layers are actually implemented;
+- the current status: `documented-only`, `specified`, `wired`, `enforced`, `proven`, or `installed`;
+- limitations that a fresh agent must not overclaim.
+
+The human-readable change must also be summarized in `CHANGELOG.md`. The changelog explains what changed; the
+capability record proves what layer is actually implemented.
+
+Use the smallest honest status. If only method text changed, record `status: documented-only` and report it that way.
+Do not call a capability `wired`, `enforced`, `proven`, or `installed` unless the corresponding workflow, actor/lens,
+artifact, schema, CLI, validator, hook, tests, installer, or target-repo layer exists on disk and is referenced in the
+capability record.
+
+Before claiming that an ACEF capability change is implemented, run:
+
+```bash
+.acef/bin/acef-process-validator --check capability-change
+```
+
 ## Branching and PR targets
 Cut task branches from the repo's **integration branch** (an adapter value — varies per repo), never from the
 protected/release branch. Open PRs against the integration branch unless the Architect/Judge says otherwise. The PR is
