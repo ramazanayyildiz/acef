@@ -15,6 +15,16 @@ function run(args) {
 
 try {
   run(["--repo", tmp]);
+  let installation = JSON.parse(fs.readFileSync(path.join(tmp, "docs", "ai", "ACEF_INSTALLATION.json"), "utf8"));
+  assert.equal(installation.schema, "acef.installation.v1");
+  assert.ok(installation.acefVersion.sourceCommit);
+  assert.deepEqual(installation.components.skills.skills, [
+    "acef",
+    "acef-adapter",
+    "acef-router",
+    "acef-test-bootstrap",
+    "map-codebase",
+  ]);
   for (const toolDir of [[".codex", "skills"], [".claude", "skills"], [".opencode", "skills"]]) {
     assert.ok(fs.existsSync(path.join(tmp, ...toolDir, "acef", "SKILL.md")));
     assert.ok(!fs.existsSync(path.join(tmp, ...toolDir, "bug-hunter")), "bug-hunter must not enter minimal default");
@@ -22,6 +32,10 @@ try {
   }
 
   run(["--repo", tmp, "--review-lenses"]);
+  installation = JSON.parse(fs.readFileSync(path.join(tmp, "docs", "ai", "ACEF_INSTALLATION.json"), "utf8"));
+  assert.equal(installation.components.skills.reviewLenses, true);
+  assert.ok(installation.components.skills.skills.includes("bug-hunter"));
+  assert.ok(installation.components.skills.skills.includes("implementation-shape-review"));
   for (const toolDir of [[".codex", "skills"], [".claude", "skills"], [".opencode", "skills"]]) {
     assert.ok(fs.existsSync(path.join(tmp, ...toolDir, "bug-hunter", "SKILL.md")));
     assert.ok(fs.existsSync(path.join(tmp, ...toolDir, "bug-hunter", "templates", "report-template.md")));

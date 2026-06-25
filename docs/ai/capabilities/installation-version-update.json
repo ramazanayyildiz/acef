@@ -1,0 +1,66 @@
+{
+  "capabilityId": "installation-version-update",
+  "requestedIntent": "Installed target repos must show which ACEF source version they use and have a mechanical update path.",
+  "status": "installed",
+  "requiredLayers": [
+    "docs",
+    "cli",
+    "installer",
+    "tests",
+    "targetRepo"
+  ],
+  "implementedLayers": {
+    "docs": [
+      "CHANGELOG.md#Installation versioning and update path",
+      "README.md#Install & use"
+    ],
+    "cli": [
+      "scripts/acef-status",
+      "scripts/update-acef-installation"
+    ],
+    "installer": [
+      "scripts/lib/acef-installation.js",
+      "scripts/install-acef-tools",
+      "scripts/install-acef-skills",
+      "scripts/install-acef-bmad-guard"
+    ],
+    "tests": [
+      "scripts/test-install-acef-tools",
+      "scripts/test-install-acef-skills"
+    ],
+    "targetRepo": [
+      "docs/ai/installation-evidence/pilaner-acef-installation.json"
+    ]
+  },
+  "limitations": [
+    "ACEF does not yet have a semantic release number; the installed version is the source checkout path plus git commit and dirty/clean state.",
+    "The target-local update command requires the recorded source checkout path to remain available."
+  ],
+  "evidence": [
+    {
+      "layer": "installer",
+      "ref": "scripts/lib/acef-installation.js"
+    },
+    {
+      "layer": "cli",
+      "ref": "scripts/update-acef-installation"
+    },
+    {
+      "layer": "cli",
+      "ref": "scripts/acef-status"
+    },
+    {
+      "layer": "tests",
+      "ref": "scripts/test-install-acef-tools"
+    },
+    {
+      "layer": "tests",
+      "ref": "scripts/test-install-acef-skills"
+    },
+    {
+      "layer": "targetRepo",
+      "ref": "docs/ai/installation-evidence/pilaner-acef-installation.json"
+    }
+  ],
+  "createdAt": "2026-06-25"
+}

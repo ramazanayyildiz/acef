@@ -9,6 +9,18 @@ or evidence contract. Do not use it to claim implementation status; link to the 
 
 ## Unreleased
 
+### Installation versioning and update path
+
+- Added `docs/ai/ACEF_INSTALLATION.json` as the target-repo ACEF installation stamp. Repo-local tool, skill, and guard
+  installers update the same manifest with the ACEF source path, source commit, branch, dirty/clean source state,
+  installed components, and refresh command.
+- Added `scripts/update-acef-installation` and installed it into target repos as `.acef/bin/update-acef-installation`.
+  The target-local updater resolves the original ACEF checkout from `ACEF_INSTALLATION.json` and refreshes tools,
+  skills, guard hooks, schemas, workflows, and the stamp.
+- Updated `acef-status` to report the installed ACEF source version and installed components, and to block readiness when
+  the installation manifest is missing or invalid.
+- Added installer tests proving both the manifest stamp and the target-local update command.
+
 ### Lane and surface enforcement
 
 - Added runner-proof validation for typed evidence manifests and lightweight surface evidence. Evidence artifacts must now

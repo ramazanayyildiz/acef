@@ -9,11 +9,17 @@ const installer = path.join(repoRoot, "scripts", "install-acef-tools");
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "acef-tools-install-"));
 
 function run(command, args, options = {}) {
-  return cp.execFileSync(command, args, {
-    encoding: "utf8",
-    stdio: ["ignore", "pipe", "pipe"],
-    ...options,
-  });
+  const { allowFailure = false, ...execOptions } = options;
+  try {
+    return cp.execFileSync(command, args, {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+      ...execOptions,
+    });
+  } catch (error) {
+    if (allowFailure) return error.stdout || "";
+    throw error;
+  }
 }
 
 try {
@@ -25,8 +31,10 @@ try {
   const state = path.join(tmp, ".acef", "bin", "acef-state");
   const status = path.join(tmp, ".acef", "bin", "acef-status");
   const next = path.join(tmp, ".acef", "bin", "acef-next");
+  const updater = path.join(tmp, ".acef", "bin", "update-acef-installation");
   const workflowValidate = path.join(tmp, ".acef", "bin", "acef-workflow-validate");
   const parser = path.join(tmp, ".acef", "bin", "lib", "acef-state-parser.js");
+  const installationHelper = path.join(tmp, ".acef", "bin", "lib", "acef-installation.js");
   const schema = path.join(tmp, ".acef", "schemas", "active-run.schema.json");
   const capabilitySchema = path.join(tmp, ".acef", "schemas", "capability-change.schema.json");
   const workflowSchema = path.join(tmp, ".acef", "schemas", "workflow.schema.json");
@@ -36,13 +44,22 @@ try {
   if (!fs.existsSync(state)) throw new Error("typed-state writer was not installed");
   if (!fs.existsSync(status)) throw new Error("status helper was not installed");
   if (!fs.existsSync(next)) throw new Error("next-action helper was not installed");
+  if (!fs.existsSync(updater)) throw new Error("ACEF update helper was not installed");
   if (!fs.existsSync(workflowValidate)) throw new Error("workflow validator was not installed");
   if (!fs.existsSync(parser)) throw new Error("parser support library was not installed");
+  if (!fs.existsSync(installationHelper)) throw new Error("installation support library was not installed");
   if (!fs.existsSync(schema)) throw new Error("typed-state schemas were not installed");
   if (!fs.existsSync(capabilitySchema)) throw new Error("capability-change schema was not installed");
   if (!fs.existsSync(workflowSchema)) throw new Error("workflow schema was not installed");
   if (!fs.existsSync(workflow)) throw new Error("lightweight workflow was not installed");
   if (JSON.parse(fs.readFileSync(runtimePackage, "utf8")).type !== "commonjs") throw new Error("ACEF runtime CommonJS boundary was not installed");
+  const installationManifest = path.join(tmp, "docs", "ai", "ACEF_INSTALLATION.json");
+  if (!fs.existsSync(installationManifest)) throw new Error("ACEF installation manifest was not written");
+  const installation = JSON.parse(fs.readFileSync(installationManifest, "utf8"));
+  if (installation.schema !== "acef.installation.v1") throw new Error("installation manifest schema missing");
+  if (!installation.acefVersion?.sourceCommit) throw new Error("installation manifest missing source commit");
+  if (!installation.components?.tools) throw new Error("installation manifest missing tools component");
+  if (!installation.components.tools.tools.includes("update-acef-installation")) throw new Error("tools component missing updater");
 
   fs.mkdirSync(path.join(tmp, "docs", "ai"), { recursive: true });
   fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_demo_DELIVERY_AUDIT.md"), [
@@ -111,6 +128,13 @@ try {
   if (statusJson.status !== "ready") throw new Error(`installed status helper did not report ready:\n${statusOutput}`);
   if (statusJson.activeRun.activeStory !== "story 1.1") throw new Error("installed status helper did not read active run");
   if (!statusJson.readOrder.includes("docs/ai/ACEF_CURRENT_CONTEXT.md")) throw new Error("installed status helper did not include current-context read order");
+  if (statusJson.installation.sourceCommit !== installation.acefVersion.sourceCommit) throw new Error("installed status helper did not report ACEF installation version");
+  if (!statusJson.installation.components.includes("tools")) throw new Error("installed status helper missing installed components");
+  fs.writeFileSync(installationManifest, "{}\n");
+  const invalidStatus = run(status, ["--repo", tmp, "--format", "json"], { allowFailure: true });
+  const invalidJson = JSON.parse(invalidStatus);
+  if (invalidJson.status !== "needs-attention") throw new Error("installed status helper accepted an invalid ACEF installation manifest");
+  fs.writeFileSync(installationManifest, `${JSON.stringify(installation, null, 2)}\n`);
   const nextOutput = run(next, ["--repo", tmp, "--format", "json"]);
   const nextJson = JSON.parse(nextOutput);
   if (nextJson.status !== "ready") throw new Error(`installed next helper did not report ready:\n${nextOutput}`);
@@ -118,6 +142,12 @@ try {
   if (!nextJson.forbidden.actions.includes("start_next_story")) throw new Error("installed next helper missing story boundary");
   const workflowOutput = run(workflowValidate, ["--repo", tmp, "--workflow", ".acef/workflows/lightweight-review.yaml"]);
   if (!workflowOutput.includes("PASS workflow lightweight-review:")) throw new Error("installed workflow validator did not validate installed workflow");
+  run(updater, ["--repo", tmp, "--review-lenses"]);
+  if (!fs.existsSync(path.join(tmp, ".acef", "hooks", "acef-bmad-hard-wall.mjs"))) throw new Error("installed updater did not refresh guard hook");
+  if (!fs.existsSync(path.join(tmp, ".codex", "skills", "acef", "SKILL.md"))) throw new Error("installed updater did not refresh Codex skills");
+  const refreshedInstallation = JSON.parse(fs.readFileSync(installationManifest, "utf8"));
+  if (!refreshedInstallation.components?.bmadGuard) throw new Error("installed updater did not record guard component");
+  if (!refreshedInstallation.components?.skills?.skills?.includes("bug-hunter")) throw new Error("installed updater did not record refreshed review lenses");
 
   console.log("install-acef-tools tests passed");
 } finally {

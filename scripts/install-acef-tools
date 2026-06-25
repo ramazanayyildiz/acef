@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 const fs = require("node:fs");
 const path = require("node:path");
+const { writeInstallationManifest } = require("./lib/acef-installation");
 
 const repoRoot = path.resolve(__dirname, "..");
 const tools = [
@@ -20,6 +21,7 @@ const tools = [
   "acef-context-record-actor-report",
   "acef-pr-review",
   "acef-worker-result",
+  "update-acef-installation",
 ];
 
 function usage() {
@@ -151,3 +153,8 @@ for (const fixture of copyExperimentFixtures(opts.repo)) {
 for (const workflow of copyWorkflows(opts.repo)) {
   console.log(`Installed workflow: ${workflow}`);
 }
+console.log(`Updated ACEF installation manifest: ${writeInstallationManifest(opts.repo, repoRoot, "tools", {
+  tools,
+  schemas: fs.existsSync(path.join(repoRoot, "schemas")),
+  workflows: fs.existsSync(path.join(repoRoot, "workflows")),
+})}`);

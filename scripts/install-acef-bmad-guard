@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 const fs = require("node:fs");
 const path = require("node:path");
+const { writeInstallationManifest } = require("./lib/acef-installation");
 
 const repoRoot = path.resolve(__dirname, "..");
 const sourceHook = path.join(repoRoot, "claude-plugins", "acef-bmad-guard", "hooks", "acef-bmad-hard-wall.mjs");
@@ -163,6 +164,11 @@ assertFile(sourceOpenCodePlugin);
 
 const opts = parseArgs(process.argv.slice(2));
 installLocal(opts.repo);
+console.log(`Updated ACEF installation manifest: ${writeInstallationManifest(opts.repo, repoRoot, "bmadGuard", {
+  localHook: true,
+  localOpenCodePlugin: true,
+  globalDispatcher: opts.globalDispatcher,
+})}`);
 if (opts.globalDispatcher) {
   installGlobalDispatchers();
 } else {

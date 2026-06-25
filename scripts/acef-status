@@ -67,9 +67,28 @@ function loadWorkerScope(repo) {
   }
 }
 
+function loadInstallation(repo) {
+  const filePath = path.join(repo, "docs", "ai", "ACEF_INSTALLATION.json");
+  if (!fs.existsSync(filePath)) return { path: "docs/ai/ACEF_INSTALLATION.json", exists: false, record: null, error: null };
+  try {
+    const record = JSON.parse(fs.readFileSync(filePath, "utf8"));
+    const missing = [];
+    if (record.schema !== "acef.installation.v1") missing.push("schema");
+    if (!record.acefVersion?.sourceCommit) missing.push("acefVersion.sourceCommit");
+    if (!record.acefVersion?.sourcePath) missing.push("acefVersion.sourcePath");
+    if (!record.updateCommand) missing.push("updateCommand");
+    if (!record.components || !Object.keys(record.components).length) missing.push("components");
+    if (missing.length) throw new Error(`missing required field(s): ${missing.join(", ")}`);
+    return { path: "docs/ai/ACEF_INSTALLATION.json", exists: true, record, error: null };
+  } catch (error) {
+    return { path: "docs/ai/ACEF_INSTALLATION.json", exists: true, record: null, error: error.message };
+  }
+}
+
 function buildStatus(repo) {
   const activeRun = loadActiveRun(repo);
   const workerScope = loadWorkerScope(repo);
+  const installation = loadInstallation(repo);
   const activeLedgerPath = readTextIfExists(path.join(repo, "docs", "ai", "ACEF_ACTIVE_LEDGER"));
   const contextPath = activeRun.record?.contextPath || "docs/ai/ACEF_CURRENT_CONTEXT.md";
   const ledgerPath = activeRun.record?.ledgerPath || activeLedgerPath || null;
@@ -83,6 +102,8 @@ function buildStatus(repo) {
   if (ledgerPath && !existsRelative(repo, ledgerPath)) blockers.push(`active ledger not found: ${ledgerPath}`);
   if (!existsRelative(repo, contextPath)) blockers.push(`current context not found: ${contextPath}`);
   if (workerScope.error) blockers.push(`invalid worker scope: ${workerScope.error}`);
+  if (!installation.exists) blockers.push("missing docs/ai/ACEF_INSTALLATION.json");
+  if (installation.error) blockers.push(`invalid ACEF installation manifest: ${installation.error}`);
 
   const nextAllowedStep = activeRun.record?.nextAllowedStep || null;
   return {
@@ -110,6 +131,17 @@ function buildStatus(repo) {
       nextAllowedStep,
       ledgerPath,
       contextPath,
+    } : null,
+    installation: installation.record ? {
+      path: installation.path,
+      sourceCommit: installation.record.acefVersion?.sourceCommit ?? null,
+      sourceShortCommit: installation.record.acefVersion?.sourceShortCommit ?? null,
+      sourceBranch: installation.record.acefVersion?.sourceBranch ?? null,
+      sourceTreeState: installation.record.acefVersion?.sourceTreeState ?? null,
+      sourcePath: installation.record.acefVersion?.sourcePath ?? null,
+      lastUpdatedAt: installation.record.lastUpdatedAt ?? installation.record.installedAt ?? null,
+      components: Object.keys(installation.record.components || {}).sort(),
+      updateCommand: installation.record.updateCommand ?? null,
     } : null,
     workerScope: workerScope.record ? {
       activeStory: workerScope.record.activeStory,
@@ -150,6 +182,13 @@ function printText(status) {
     if (status.activeRun.nextAllowedStep) console.log(`- next allowed step: ${status.activeRun.nextAllowedStep}`);
     console.log(`- ledger: ${status.activeRun.ledgerPath}`);
     console.log(`- context: ${status.activeRun.contextPath}`);
+  }
+  if (status.installation) {
+    console.log("ACEF installation:");
+    console.log(`- source: ${status.installation.sourceShortCommit || status.installation.sourceCommit || "unknown"} (${status.installation.sourceBranch || "unknown"}, ${status.installation.sourceTreeState || "unknown"})`);
+    console.log(`- updated: ${status.installation.lastUpdatedAt || "unknown"}`);
+    console.log(`- components: ${status.installation.components.join(", ") || "none"}`);
+    if (status.installation.updateCommand) console.log(`- update: ${status.installation.updateCommand}`);
   }
   if (status.workerScope) {
     console.log("worker scope:");

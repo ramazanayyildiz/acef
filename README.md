@@ -106,8 +106,11 @@ files the agent follows. No build, no npm, no services.
    The tools installer adds repo-local helper CLIs under `.acef/bin/`, including `acef-status`, `acef-next`,
    `acef-workflow-validate`, `acef-process-validator`,
    `acef-codex-guard`, `acef-query`, `acef-context-experiment`, `acef-context-experiment-report`,
-   `acef-context-actor-prompt`, `acef-context-actor-prompt-batch`, and `acef-context-record-actor-report`.
+   `acef-context-actor-prompt`, `acef-context-actor-prompt-batch`, `acef-context-record-actor-report`, and
+   `update-acef-installation`.
    It also installs shared parser support under `.acef/bin/lib/` and typed-state schemas under `.acef/schemas/`.
+   Every local install writes `docs/ai/ACEF_INSTALLATION.json` with the source checkout path, commit, branch,
+   dirty/clean source state, installed components, and the update command.
    Use `--tool codex|claude|opencode` to target one tool, or `--all-core` to copy every skill in this repo.
    Optional measured review lenses such as `bug-hunter` and `implementation-shape-review` stay out of the minimal
    default install; add them explicitly:
@@ -139,6 +142,12 @@ files the agent follows. No build, no npm, no services.
    ```bash
    .acef/bin/acef-workflow-validate --repo . --workflow .acef/workflows/lightweight-review.yaml
    ```
+   To refresh a repo from the recorded ACEF checkout, run:
+   ```bash
+   .acef/bin/update-acef-installation --repo . --review-lenses
+   ```
+   Re-run `./.acef/bin/acef-status --repo .` afterward. A ready status includes the installed source commit and
+   component list.
 
 4. **Optional hard wall for BMAD lanes** — install the ACEF/BMAD guard locally in each repo so the dispatcher or
    conductor cannot write implementation files or BMAD artifacts during an ACEF lane:

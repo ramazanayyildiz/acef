@@ -1,0 +1,88 @@
+#!/usr/bin/env node
+const cp = require("node:child_process");
+const fs = require("node:fs");
+const path = require("node:path");
+
+const defaultSourceRoot = path.resolve(__dirname, "..");
+
+function usage() {
+  console.log(`Usage: scripts/update-acef-installation --repo <path> [--review-lenses] [--all-core] [--global-dispatcher]
+
+Refreshes a target repo from this ACEF checkout:
+  1. repo-local ACEF tools, schemas, workflows, and support libraries
+  2. repo-local ACEF skills for Codex, Claude, and OpenCode
+  3. repo-local BMAD hard-wall guard
+  4. docs/ai/ACEF_INSTALLATION.json source/version stamp
+
+The stamp records this ACEF checkout path, commit, branch, dirty/clean state, installed components, and the update command.`);
+}
+
+function parseArgs(argv) {
+  const opts = {
+    repo: "",
+    reviewLenses: false,
+    allCore: false,
+    globalDispatcher: false,
+  };
+  for (let index = 0; index < argv.length; index += 1) {
+    const arg = argv[index];
+    if (arg === "--repo" || arg === "--target") {
+      opts.repo = argv[++index] || "";
+    } else if (arg === "--review-lenses") {
+      opts.reviewLenses = true;
+    } else if (arg === "--all-core") {
+      opts.allCore = true;
+    } else if (arg === "--global-dispatcher") {
+      opts.globalDispatcher = true;
+    } else if (arg === "-h" || arg === "--help") {
+      usage();
+      process.exit(0);
+    } else {
+      throw new Error(`Unknown argument: ${arg}`);
+    }
+  }
+  if (!opts.repo) throw new Error("--repo is required");
+  opts.repo = path.resolve(opts.repo);
+  return opts;
+}
+
+function resolveSourceRoot(targetRepo) {
+  const directInstaller = path.join(defaultSourceRoot, "scripts", "install-acef-tools");
+  if (fs.existsSync(directInstaller)) return defaultSourceRoot;
+
+  const manifestPath = path.join(targetRepo, "docs", "ai", "ACEF_INSTALLATION.json");
+  if (!fs.existsSync(manifestPath)) {
+    throw new Error("cannot locate ACEF source checkout; missing docs/ai/ACEF_INSTALLATION.json");
+  }
+  const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+  const sourcePath = manifest.acefVersion?.sourcePath;
+  if (!sourcePath || !fs.existsSync(path.join(sourcePath, "scripts", "install-acef-tools"))) {
+    throw new Error("ACEF_INSTALLATION.json does not point at a usable ACEF source checkout");
+  }
+  return sourcePath;
+}
+
+function run(sourceRoot, script, args) {
+  const output = cp.execFileSync(process.execPath, [path.join(sourceRoot, "scripts", script), ...args], {
+    cwd: sourceRoot,
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  process.stdout.write(output);
+}
+
+try {
+  const opts = parseArgs(process.argv.slice(2));
+  const sourceRoot = resolveSourceRoot(opts.repo);
+  run(sourceRoot, "install-acef-tools", ["--repo", opts.repo]);
+  const skillArgs = ["--repo", opts.repo];
+  if (opts.reviewLenses) skillArgs.push("--review-lenses");
+  if (opts.allCore) skillArgs.push("--all-core");
+  run(sourceRoot, "install-acef-skills", skillArgs);
+  const guardArgs = ["--repo", opts.repo];
+  if (opts.globalDispatcher) guardArgs.push("--global-dispatcher");
+  run(sourceRoot, "install-acef-bmad-guard", guardArgs);
+} catch (error) {
+  console.error(`update-acef-installation: ${error.message}`);
+  process.exitCode = 1;
+}

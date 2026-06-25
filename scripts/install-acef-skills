@@ -2,6 +2,7 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const { validateSkillMetadata } = require("./lib/acef-skill-metadata");
+const { writeInstallationManifest } = require("./lib/acef-installation");
 
 const repoRoot = path.resolve(__dirname, "..");
 const sourceSkillsDir = path.join(repoRoot, "skills");
@@ -142,3 +143,9 @@ for (const tool of tools) {
     installOpenCodeCommands(opts.repo, skills);
   }
 }
+console.log(`Updated ACEF installation manifest: ${writeInstallationManifest(opts.repo, repoRoot, "skills", {
+  tools,
+  skills,
+  reviewLenses: opts.reviewLenses,
+  allCore: opts.allCore,
+})}`);
