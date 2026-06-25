@@ -415,6 +415,31 @@ function parseLightweightRun(filePath) {
         requireRelativePaths([record.quickFix[field]], `quick-fix ${field}`);
       }
     }
+    if (record.quickFix.envelope !== undefined) {
+      if (!record.quickFix.envelope || typeof record.quickFix.envelope !== "object") throw new Error("quick-fix envelope must be an object");
+      requireFields(record.quickFix.envelope, ["source", "implementationPaths", "testPaths", "sharedResources"], "quick-fix envelope");
+      requireEnum(record.quickFix.envelope, "source", ["computed", "declared", "accepted-risk"], "quick-fix envelope");
+      for (const field of ["implementationPaths", "testPaths", "fixturePaths", "smokePaths"]) {
+        if (record.quickFix.envelope[field] !== undefined) {
+          requireStringArray(record.quickFix.envelope, field, "quick-fix envelope");
+          requireRelativePaths(record.quickFix.envelope[field], `quick-fix envelope ${field}`);
+        }
+      }
+      requireStringArray(record.quickFix.envelope, "sharedResources", "quick-fix envelope");
+    }
+    if (record.quickFix.testIntegrity !== undefined) {
+      if (!Array.isArray(record.quickFix.testIntegrity)) throw new Error("quick-fix testIntegrity must be an array");
+      for (const [index, item] of record.quickFix.testIntegrity.entries()) {
+        if (!item || typeof item !== "object") throw new Error(`quick-fix testIntegrity[${index}] must be an object`);
+        requireFields(item, ["testPath", "implementationReference", "beforeAssertionCount", "afterAssertionCount", "evidencePath"], `quick-fix testIntegrity[${index}]`);
+        requireRelativePaths([item.testPath, item.evidencePath], `quick-fix testIntegrity[${index}]`);
+        if (typeof item.implementationReference !== "string" || !item.implementationReference.trim()) throw new Error(`quick-fix testIntegrity[${index}].implementationReference must be a non-empty string`);
+        if (!Number.isInteger(item.beforeAssertionCount) || item.beforeAssertionCount < 0) throw new Error(`quick-fix testIntegrity[${index}].beforeAssertionCount must be a non-negative integer`);
+        if (!Number.isInteger(item.afterAssertionCount) || item.afterAssertionCount < 0) throw new Error(`quick-fix testIntegrity[${index}].afterAssertionCount must be a non-negative integer`);
+        if (item.forbiddenPatternsAdded !== undefined && typeof item.forbiddenPatternsAdded !== "boolean") throw new Error(`quick-fix testIntegrity[${index}].forbiddenPatternsAdded must be boolean`);
+        if (item.matcherLoosening !== undefined && typeof item.matcherLoosening !== "boolean") throw new Error(`quick-fix testIntegrity[${index}].matcherLoosening must be boolean`);
+      }
+    }
   }
   if (record.lane === "quick-fix" && record.status === "complete" && !record.quickFix) {
     throw new Error("complete quick-fix run requires quickFix evidence");

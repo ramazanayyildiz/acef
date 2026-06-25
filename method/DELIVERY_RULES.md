@@ -37,7 +37,7 @@ Adapter/pattern-registry status controls what can proceed:
 
 | Lane | Use for | Engine |
 |---|---|---|
-| **Quick-fix lane** | narrow reproduced bug fixes with clear before/after evidence | compact lifecycle with independent review, repro evidence, before/after patch evidence, touched-surface validation, and promotion triggers |
+| **Quick-fix lane** | narrow reproduced bug fixes with clear before/after evidence | compact lifecycle with independent review, repro evidence, before/after patch evidence, computed fix envelope, test-integrity validation, touched-surface validation, and promotion triggers |
 | **Lightweight lane** | small / scoped / ongoing non-bugfix work | the operating model (Layer 1): track → personas → Judge, evidence in the artifact + PR, borrowing review discipline without a full story lifecycle |
 | **Full BMAD v2** | epics, large features, core-behavior change, multi-module, new patterns, or broad refactors | the heavy story lifecycle (Layer 3) |
 | **Guarded lane** | auth, payment, security, data deletion/migration, permissions, irreversible side effects, or high-risk boundaries | full typed closeout plus guarded test floor and independent boundary test author |
@@ -85,6 +85,20 @@ tests pulls the test skills in under the lightweight lane; an epic needing E2E p
 A quick-fix promotes to full BMAD or guarded when the repro is unclear, the patch expands beyond the stated scope, the
 touched surface is high-risk, the fix creates a new pattern, or after-patch evidence does not directly cover the
 reproduced failure.
+
+Quick-fix scope is an envelope, not a narrow file hallway. At dispatch, compute and record implementation paths, tests
+that import/exercise those symbols or hit the route/runtime path, fixtures/snapshots, route or smoke files, and shared
+resources such as seeds, migrations, settings groups, shared UI sections, or global fixtures. The human approves that
+envelope once. Workers may edit inside it without another approval.
+
+If a quick-fix worker edits tests, `docs/ai/ACEF_LIGHTWEIGHT_RUN.json` must record `quickFix.testIntegrity` and the
+validator must pass: assertion count does not drop, no new skip/only/todo/xfail style pattern appears, matcher-loosening
+is not flagged, and the touched test still names the implementation symbol, route, or behavior surface through
+`implementationReference`.
+
+Parallel quick-fix workers require disjoint file scopes and disjoint shared resources. Non-overlapping files are not
+enough when workers touch the same seed, migration, settings group, fixture, shared component section, or other global
+state.
 
 A lightweight task promotes to full BMAD when any of:
 - it adds new product scope,
@@ -222,8 +236,8 @@ or scope grows, preserve the existing promotion rules: promote to full BMAD or r
   `docs/ai/evidence/`, Process Judge verdicts under `docs/ai/gates/`, and exact human approvals under
   `docs/ai/approvals/`. Validators prefer these JSON records; the ledger remains the human chronology. A `PASS` gate
   without successful, hash-verified evidence is invalid.
-- **Accelerated cadence is bounded** — independent stories/spikes may run in parallel only when dependencies and likely
-  touched files do not overlap. Workers must emit complete final reports inline. Mechanical/low-risk work may use a
+- **Accelerated cadence is bounded** — independent stories/spikes may run in parallel only when dependencies, likely
+  touched files, and shared resources do not overlap. Workers must emit complete final reports inline. Mechanical/low-risk work may use a
   combined independent review-and-judge worker only when the author is separate and the ledger records the waiver.
   Guarded/security/routing/storage/KVKK/data-migration/source-conflict work keeps separate reviewer and Process Judge.
 - **Done = user-visible** — for user-facing work, prove the owning persona can reach and use the surface, not just a green unit test.

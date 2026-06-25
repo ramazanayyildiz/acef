@@ -67,6 +67,36 @@ function lightweightSurfaceProof(entry, artifactText) {
   };
 }
 
+function quickFixEvidence(overrides = {}) {
+  return {
+    intent: "Fix API 500 for missing optional field.",
+    scope: "API handler, regression test, and local fixture envelope.",
+    envelope: {
+      source: "computed",
+      implementationPaths: ["src/api/handler.ts"],
+      testPaths: ["tests/api/handler.test.ts"],
+      fixturePaths: ["tests/fixtures/api.json"],
+      smokePaths: [],
+      sharedResources: ["api:handler"],
+    },
+    testIntegrity: [
+      {
+        testPath: "tests/api/handler.test.ts",
+        implementationReference: "src/api/handler.ts#handleRequest",
+        beforeAssertionCount: 1,
+        afterAssertionCount: 1,
+        forbiddenPatternsAdded: false,
+        matcherLoosening: false,
+        evidencePath: "docs/ai/evidence/test-integrity.txt",
+      },
+    ],
+    reproEvidencePath: "docs/ai/evidence/repro.txt",
+    beforePatchEvidencePath: "docs/ai/evidence/before-patch.txt",
+    afterPatchEvidencePath: "docs/ai/evidence/after-patch.txt",
+    ...overrides,
+  };
+}
+
 function makeRepo(name, mutate = (record) => record) {
   const repo = path.join(tmpRoot, name);
   fs.mkdirSync(repo, { recursive: true });
@@ -83,6 +113,7 @@ function makeRepo(name, mutate = (record) => record) {
   write(repo, "docs/ai/evidence/repro.txt", "bug reproduced\n");
   write(repo, "docs/ai/evidence/before-patch.txt", "before patch failing\n");
   write(repo, "docs/ai/evidence/after-patch.txt", "after patch passing\n");
+  write(repo, "docs/ai/evidence/test-integrity.txt", "assertions preserved; no skip/only/todo added\n");
   const record = mutate({
     runId: name,
     lane: "lightweight",
@@ -219,13 +250,7 @@ try {
 
   const quickFix = makeRepo("quick-fix", (record) => {
     record.lane = "quick-fix";
-    record.quickFix = {
-      intent: "Fix API 500 for missing optional field.",
-      scope: "Only the API handler and regression test.",
-      reproEvidencePath: "docs/ai/evidence/repro.txt",
-      beforePatchEvidencePath: "docs/ai/evidence/before-patch.txt",
-      afterPatchEvidencePath: "docs/ai/evidence/after-patch.txt",
-    };
+    record.quickFix = quickFixEvidence();
     return record;
   });
   const quickFixResult = run(quickFix);
@@ -248,13 +273,10 @@ try {
 
   const hiddenRisk = makeRepo("hidden-risk", (record) => {
     record.lane = "quick-fix";
-    record.quickFix = {
+    record.quickFix = quickFixEvidence({
       intent: "Fix reproduced auth-related defect.",
       scope: "Auth route patch.",
-      reproEvidencePath: "docs/ai/evidence/repro.txt",
-      beforePatchEvidencePath: "docs/ai/evidence/before-patch.txt",
-      afterPatchEvidencePath: "docs/ai/evidence/after-patch.txt",
-    };
+    });
     return record;
   });
   initGit(hiddenRisk);
@@ -276,13 +298,10 @@ try {
 
   const guardedMisroute = makeRepo("guarded-misroute", (record) => {
     record.lane = "quick-fix";
-    record.quickFix = {
+    record.quickFix = quickFixEvidence({
       intent: "Patch auth bypass.",
       scope: "Auth middleware.",
-      reproEvidencePath: "docs/ai/evidence/repro.txt",
-      beforePatchEvidencePath: "docs/ai/evidence/before-patch.txt",
-      afterPatchEvidencePath: "docs/ai/evidence/after-patch.txt",
-    };
+    });
     return record;
   });
   write(guardedMisroute, "docs/ai/ACEF_ACTIVE_RUN.json", `${JSON.stringify({
@@ -310,18 +329,63 @@ try {
 
   const missingAfterPatch = makeRepo("missing-after-patch", (record) => {
     record.lane = "quick-fix";
-    record.quickFix = {
-      intent: "Fix API 500 for missing optional field.",
-      scope: "Only the API handler and regression test.",
-      reproEvidencePath: "docs/ai/evidence/repro.txt",
-      beforePatchEvidencePath: "docs/ai/evidence/before-patch.txt",
+    record.quickFix = quickFixEvidence({
       afterPatchEvidencePath: "docs/ai/evidence/missing-after-patch.txt",
-    };
+    });
     return record;
   });
   const missingAfterPatchResult = run(missingAfterPatch);
   assert.notEqual(missingAfterPatchResult.status, 0);
   assert.match(missingAfterPatchResult.stdout, /afterPatchEvidencePath/);
+
+  const testOutsideEnvelope = makeRepo("test-outside-envelope", (record) => {
+    record.lane = "quick-fix";
+    record.quickFix = quickFixEvidence({
+      envelope: {
+        source: "computed",
+        implementationPaths: ["src/api/handler.ts"],
+        testPaths: ["tests/api/other.test.ts"],
+        sharedResources: ["api:handler"],
+      },
+      testIntegrity: [],
+    });
+    return record;
+  });
+  initGit(testOutsideEnvelope);
+  write(testOutsideEnvelope, "tests/api/handler.test.ts", [
+    "import { handleRequest } from '../../src/api/handler';",
+    "test('handles missing optional field', () => {",
+    "  expect(handleRequest({})).toEqual({ ok: true });",
+    "});",
+    "",
+  ].join("\n"));
+  const testOutsideEnvelopeResult = run(testOutsideEnvelope);
+  assert.notEqual(testOutsideEnvelopeResult.status, 0);
+  assert.match(testOutsideEnvelopeResult.stdout, /test outside envelope/);
+
+  const guttedTest = makeRepo("gutted-test", (record) => {
+    record.lane = "quick-fix";
+    record.quickFix = quickFixEvidence();
+    return record;
+  });
+  write(guttedTest, "tests/api/handler.test.ts", [
+    "import { handleRequest } from '../../src/api/handler';",
+    "test('handles missing optional field', () => {",
+    "  expect(handleRequest({})).toEqual({ ok: true });",
+    "});",
+    "",
+  ].join("\n"));
+  initGit(guttedTest);
+  write(guttedTest, "tests/api/handler.test.ts", [
+    "import { handleRequest } from '../../src/api/handler';",
+    "test.skip('handles missing optional field', () => {",
+    "  handleRequest({});",
+    "});",
+    "",
+  ].join("\n"));
+  const guttedTestResult = run(guttedTest);
+  assert.notEqual(guttedTestResult.status, 0);
+  assert.match(guttedTestResult.stdout, /skip\/only\/todo|assertion count appears to drop/);
 
   const sameActor = makeRepo("same-actor", (record) => {
     record.reviewActorId = record.implementationActorId;

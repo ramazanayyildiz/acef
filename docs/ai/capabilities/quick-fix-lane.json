@@ -11,7 +11,9 @@
   "implementedLayers": {
     "docs": [
       "method/OPERATING_MODEL.md#Lanes",
-      "skills/acef/references/ACEF_OPERATING_MODEL.md#Lanes"
+      "method/DELIVERY_RULES.md#Promotion",
+      "skills/acef/references/ACEF_OPERATING_MODEL.md#Lanes",
+      "skills/acef/references/ACEF_DELIVERY_RULES.md#Promotion"
     ],
     "workflow": [
       "schemas/active-run.schema.json",
@@ -20,7 +22,8 @@
       "scripts/lib/acef-state-parser.js#parseLightweightRun"
     ],
     "validator": [
-      "scripts/acef-process-validator#checkLightweightLifecycle"
+      "scripts/acef-process-validator#checkLightweightLifecycle",
+      "scripts/acef-process-validator#testEditIntegrityFailures"
     ],
     "tests": [
       "scripts/test-acef-lightweight-lifecycle"
@@ -29,6 +32,7 @@
   "limitations": [
     "Quick Fix uses the compact lifecycle artifact docs/ai/ACEF_LIGHTWEIGHT_RUN.json.",
     "The validator checks declared quick-fix evidence paths and touched-surface evidence, plus heuristic path-name inference for obvious hidden risk and surface expansion.",
+    "The validator enforces changed test files against the quick-fix envelope and blocks obvious test-gutting patterns; symbol graph envelope derivation is still recorded by the conductor rather than fully inferred by the validator.",
     "High-risk or expanding fixes must promote to full-bmad or guarded."
   ],
   "evidence": [
@@ -41,8 +45,16 @@
       "ref": "schemas/lightweight-run.schema.json"
     },
     {
+      "layer": "workflow",
+      "ref": "scripts/lib/acef-state-parser.js#parseLightweightRun"
+    },
+    {
       "layer": "validator",
       "ref": "scripts/acef-process-validator#checkLightweightLifecycle"
+    },
+    {
+      "layer": "validator",
+      "ref": "scripts/acef-process-validator#testEditIntegrityFailures"
     },
     {
       "layer": "tests",

@@ -9,6 +9,16 @@ or evidence contract. Do not use it to claim implementation status; link to the 
 
 ## Unreleased
 
+### Quick-fix envelope and test-integrity gate
+
+- Expanded quick-fix from a narrow file fence to a computed fix envelope: implementation paths, relevant tests, fixtures,
+  smoke/route files, and shared resources.
+- Added quick-fix test-integrity metadata to `ACEF_LIGHTWEIGHT_RUN.json` and validator checks for edited tests: tests
+  must be inside the envelope, assertion counts cannot drop, skip/only/todo/xfail patterns are rejected, matcher
+  loosening can be flagged, and each test edit must name the implementation reference it still exercises.
+- Tightened parallel quick-fix guidance: workers need disjoint files and disjoint shared resources, not just
+  non-overlapping filenames.
+
 ### Installation versioning and update path
 
 - Added `docs/ai/ACEF_INSTALLATION.json` as the target-repo ACEF installation stamp. Repo-local tool, skill, and guard

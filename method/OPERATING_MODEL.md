@@ -314,7 +314,7 @@ typed proof so quick fixes do not become unreviewed drive-by patches.
 
 | Lane | Use for | Mechanical controls |
 |---|---|---|
-| `quick-fix` | BMAD-style Quick Dev / Quick Fix work: narrow bug fixes, tiny regressions, localized patches. | Compact lifecycle, independent review actor, repro evidence, before/after patch evidence, touched-surface validation, promotion triggers. |
+| `quick-fix` | BMAD-style Quick Dev / Quick Fix work: narrow bug fixes, tiny regressions, localized patches. | Compact lifecycle, independent review actor, computed fix envelope, repro evidence, before/after patch evidence, test-integrity validation, touched-surface validation, promotion triggers. |
 | `lightweight` | Low-risk compact feature/config/doc/mechanical work that is not primarily a defect fix. | Compact lifecycle, independent review actor, touched-surface validation, promotion triggers. |
 | `full-bmad` | Normal feature/story work needing full planning, phase separation, and Process Judge close. | Current context, epic context pack when applicable, actor separation, worker scope, evidence manifests, gate verdict, source reconciliation. |
 | `guarded` | Auth, payment, security, data migration/deletion, permissions, irreversible side effects, or high-risk boundaries. | Full typed closeout plus guarded test floor and independent boundary test author. |
@@ -322,6 +322,16 @@ typed proof so quick fixes do not become unreviewed drive-by patches.
 Quick fixes must promote to `full-bmad` or `guarded` when reproduction is unclear, the patch expands beyond the stated
 scope, the touched surface is high-risk, the fix creates a new pattern, or the after-patch evidence does not directly
 cover the reproduced failure.
+
+Quick-fix scope is intentionally wider than one implementation file. The conductor records a computed envelope in
+`docs/ai/ACEF_LIGHTWEIGHT_RUN.json`: implementation paths, tests that exercise the touched symbols/routes, fixtures,
+snapshots, smoke/route files, and shared resources. The human approves this envelope once. Workers do not stop for a new
+chat approval when they edit tests inside it; instead, any test edit must pass the test-integrity gate: no assertion
+drop, no new skip/only/todo/xfail, no matcher loosening, and a recorded implementation reference tying the test to the
+bug surface.
+
+Parallel quick-fix workers need disjoint files and disjoint shared resources. Shared seeds, migrations, settings groups,
+fixtures, and shared UI sections count as conflicts even when filenames differ.
 
 Lane choice is a mechanical gate, not only a planning note. Typed active runs record `laneRationale` and `riskTriggers`.
 Run `acef-process-validator --check lane-selection` before dispatch or closeout; auth, payment, migration, deletion,

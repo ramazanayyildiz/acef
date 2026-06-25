@@ -77,6 +77,38 @@
       "properties": {
         "intent": { "type": "string", "minLength": 1 },
         "scope": { "type": "string", "minLength": 1 },
+        "envelope": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["source", "implementationPaths", "testPaths", "sharedResources"],
+          "properties": {
+            "source": { "type": "string", "enum": ["computed", "declared", "accepted-risk"] },
+            "implementationPaths": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+            "testPaths": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+            "fixturePaths": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+            "smokePaths": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+            "sharedResources": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+            "notes": { "type": "string" }
+          }
+        },
+        "testIntegrity": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["testPath", "implementationReference", "beforeAssertionCount", "afterAssertionCount", "evidencePath"],
+            "properties": {
+              "testPath": { "type": "string", "minLength": 1 },
+              "implementationReference": { "type": "string", "minLength": 1 },
+              "beforeAssertionCount": { "type": "integer", "minimum": 0 },
+              "afterAssertionCount": { "type": "integer", "minimum": 0 },
+              "forbiddenPatternsAdded": { "type": "boolean" },
+              "matcherLoosening": { "type": "boolean" },
+              "evidencePath": { "type": "string", "minLength": 1 },
+              "notes": { "type": "string" }
+            }
+          }
+        },
         "reproEvidencePath": { "type": "string", "minLength": 1 },
         "beforePatchEvidencePath": { "type": "string", "minLength": 1 },
         "afterPatchEvidencePath": { "type": "string", "minLength": 1 },

@@ -264,6 +264,55 @@ function workingApplicationChanges(repoRoot) {
   return lines.map((line) => line.slice(3)).filter((filePath) => filePath && !stateControlPath(filePath));
 }
 
+function isTestPath(filePath) {
+  return /(^|\/)(__tests__|tests?|specs?)(\/|$)|(\.|-)(test|spec)\.[cm]?[jt]sx?$|Test\.(php|py|rb|cs)$/i.test(String(filePath || ""));
+}
+
+function changedTestPaths(repoRoot) {
+  return pathHints(repoRoot).filter(isTestPath);
+}
+
+function gitDiff(repoRoot, filePath) {
+  try {
+    return cp.execFileSync("git", ["diff", "--unified=0", "--", filePath], {
+      cwd: repoRoot,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    });
+  } catch {
+    return "";
+  }
+}
+
+function testEditIntegrityFailures(repoRoot, testPath) {
+  const diff = gitDiff(repoRoot, testPath);
+  if (!diff) return [];
+  const failures = [];
+  const added = [];
+  const removed = [];
+  for (const line of diff.split(/\r?\n/)) {
+    if (line.startsWith("+++") || line.startsWith("---")) continue;
+    if (line.startsWith("+")) added.push(line.slice(1));
+    if (line.startsWith("-")) removed.push(line.slice(1));
+  }
+  const addedText = added.join("\n");
+  const removedText = removed.join("\n");
+  if (/\b(?:describe|context|it|test)\.(?:skip|only|todo)\b|\b(?:xit|xtest|xdescribe)\s*\(|markTestSkipped\s*\(|@pytest\.mark\.skip|pytest\.skip\s*\(|\bxfail\b/i.test(addedText)) {
+    failures.push(`${testPath}: added skip/only/todo/xfail pattern`);
+  }
+  const assertionPattern = /\b(?:expect|assert|assertEquals|assertSame|assertTrue|assertFalse|assertNot|toBe|toEqual|toMatch|toContain|toHave|should|must|verify)\b/i;
+  const removedAssertions = removed.filter((line) => assertionPattern.test(line)).length;
+  const addedAssertions = added.filter((line) => assertionPattern.test(line)).length;
+  if (removedAssertions > addedAssertions) {
+    failures.push(`${testPath}: assertion count appears to drop in diff (${removedAssertions} removed, ${addedAssertions} added)`);
+  }
+  if (/\btoBeTruthy\s*\(|\btoBeDefined\s*\(|\btoBeGreaterThanOrEqual\s*\(\s*0\s*\)|assertTrue\s*\(\s*true\s*\)/i.test(addedText)
+    && /\btoEqual\s*\(|\btoMatchObject\s*\(|\btoContain\s*\(|\btoHaveLength\s*\(|assertSame\s*\(|assertEquals\s*\(/i.test(removedText)) {
+    failures.push(`${testPath}: matcher appears loosened`);
+  }
+  return failures;
+}
+
 function pathHints(repoRoot, activeScope = null) {
   const paths = new Set(workingApplicationChanges(repoRoot));
   if (activeScope?.baseRef && gitIsAncestor(repoRoot, activeScope.baseRef, gitHead(repoRoot))) {
@@ -1968,6 +2017,36 @@ function checkLightweightLifecycle(repoRoot) {
           for (const field of ["reproEvidencePath", "beforePatchEvidencePath", "afterPatchEvidencePath"]) {
             const evidencePath = run.quickFix[field];
             if (!exists(path.join(repoRoot, evidencePath))) missing.push(`quick-fix ${field}: ${evidencePath}`);
+          }
+          if (!run.quickFix.envelope) {
+            missing.push("quick-fix envelope");
+          } else {
+            const envelopeTestPaths = new Set(run.quickFix.envelope.testPaths || []);
+            const integrityByPath = new Map((run.quickFix.testIntegrity || []).map((entry) => [entry.testPath, entry]));
+            for (const testPath of changedTestPaths(repoRoot)) {
+              if (!envelopeTestPaths.has(testPath)) {
+                missing.push(`quick-fix test outside envelope: ${testPath}`);
+                continue;
+              }
+              const integrity = integrityByPath.get(testPath);
+              if (!integrity) {
+                missing.push(`quick-fix test integrity evidence for ${testPath}`);
+                continue;
+              }
+              if (!exists(path.join(repoRoot, integrity.evidencePath))) {
+                missing.push(`quick-fix test integrity evidence path: ${integrity.evidencePath}`);
+              }
+              if (integrity.afterAssertionCount < integrity.beforeAssertionCount) {
+                missing.push(`quick-fix test assertions decreased for ${testPath}`);
+              }
+              if (integrity.forbiddenPatternsAdded) {
+                missing.push(`quick-fix test forbidden pattern flag for ${testPath}`);
+              }
+              if (integrity.matcherLoosening) {
+                missing.push(`quick-fix test matcher loosening flag for ${testPath}`);
+              }
+              missing.push(...testEditIntegrityFailures(repoRoot, testPath));
+            }
           }
         }
       }
