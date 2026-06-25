@@ -18,8 +18,8 @@ const steps = [
   "closeout-evidence",
 ];
 
-function run(repo) {
-  return cp.spawnSync(process.execPath, [validator, "--repo", repo, "--check", "lightweight-lifecycle"], {
+function run(repo, check = "lightweight-lifecycle") {
+  return cp.spawnSync(process.execPath, [validator, "--repo", repo, "--check", check], {
     cwd: repo,
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"],
@@ -36,6 +36,10 @@ function makeRepo(name, mutate = (record) => record) {
   const repo = path.join(tmpRoot, name);
   fs.mkdirSync(repo, { recursive: true });
   for (const step of steps) write(repo, `docs/ai/evidence/${step}.txt`, `${step}\n`);
+  write(repo, "docs/ai/evidence/api-surface.txt", "api surface PASS\n");
+  write(repo, "docs/ai/evidence/repro.txt", "bug reproduced\n");
+  write(repo, "docs/ai/evidence/before-patch.txt", "before patch failing\n");
+  write(repo, "docs/ai/evidence/after-patch.txt", "after patch passing\n");
   const record = mutate({
     runId: name,
     lane: "lightweight",
@@ -51,10 +55,54 @@ function makeRepo(name, mutate = (record) => record) {
       decision: "stay-lightweight",
       triggers: [],
     },
+    surfaces: ["api"],
+    surfaceEvidence: [
+      {
+        surface: "api",
+        evidencePath: "docs/ai/evidence/api-surface.txt",
+        command: "npm run test:api -- story",
+        exitCode: 0,
+      },
+    ],
     updatedAt: "2026-06-23T00:00:00.000Z",
   });
   write(repo, "docs/ai/ACEF_LIGHTWEIGHT_RUN.json", `${JSON.stringify(record, null, 2)}\n`);
+  write(repo, "docs/ai/ACEF_test_DELIVERY_AUDIT.md", [
+    "# Test Delivery Audit",
+    "",
+    "## Lean Evidence Contract",
+    "status: PASS",
+    "scope: story 1.1",
+    "worker_report: docs/ai/evidence/implementation.txt",
+    "review_report: docs/ai/evidence/independent-review.txt",
+    "process_judge_report: docs/ai/evidence/closeout-evidence.txt",
+    "session_handoff_updated: yes",
+    "worker_context: bounded",
+    "fork_context: false",
+    "raw_output_policy: artifact-only",
+    "diff_policy: targeted",
+    "test_output_policy: summary-only",
+    "search_output_policy: summarized",
+    "",
+    "## Session Handoff",
+    "status: ready",
+    "current_step: closeout",
+    "last_passed_gate: lightweight-lifecycle PASS",
+    "next_allowed_step: done",
+    `active_lane: ${record.lane}`,
+    "active_track: standard",
+    "ledger_path: docs/ai/ACEF_test_DELIVERY_AUDIT.md",
+    "",
+  ].join("\n"));
   return repo;
+}
+
+function initGit(repo) {
+  cp.execFileSync("git", ["init"], { cwd: repo, stdio: "ignore" });
+  cp.execFileSync("git", ["config", "user.email", "acef@example.invalid"], { cwd: repo, stdio: "ignore" });
+  cp.execFileSync("git", ["config", "user.name", "ACEF Test"], { cwd: repo, stdio: "ignore" });
+  cp.execFileSync("git", ["add", "."], { cwd: repo, stdio: "ignore" });
+  cp.execFileSync("git", ["commit", "-m", "baseline"], { cwd: repo, stdio: "ignore" });
 }
 
 try {
@@ -86,6 +134,144 @@ try {
   const missingResult = run(missingEvidence);
   assert.notEqual(missingResult.status, 0);
   assert.match(missingResult.stdout, /missing lifecycle evidence/);
+
+  const missingSurfaceDeclaration = makeRepo("missing-surface-declaration", (record) => {
+    delete record.surfaces;
+    delete record.surfaceEvidence;
+    return record;
+  });
+  const missingSurfaceDeclarationResult = run(missingSurfaceDeclaration);
+  assert.notEqual(missingSurfaceDeclarationResult.status, 0);
+  assert.match(missingSurfaceDeclarationResult.stdout, /surface declaration/);
+
+  const missingSurfaceEvidence = makeRepo("missing-surface-evidence", (record) => {
+    record.surfaceEvidence = [];
+    return record;
+  });
+  const missingSurfaceEvidenceResult = run(missingSurfaceEvidence);
+  assert.notEqual(missingSurfaceEvidenceResult.status, 0);
+  assert.match(missingSurfaceEvidenceResult.stdout, /surface evidence for api/);
+
+  const hiddenSurface = makeRepo("hidden-surface");
+  initGit(hiddenSurface);
+  write(hiddenSurface, "src/components/GiftSummary.tsx", "export function GiftSummary() { return null; }\n");
+  const hiddenSurfaceResult = run(hiddenSurface);
+  assert.notEqual(hiddenSurfaceResult.status, 0);
+  assert.match(hiddenSurfaceResult.stdout, /surface inferred from changed paths but not declared: ui/);
+
+  const failedSurfaceEvidence = makeRepo("failed-surface-evidence", (record) => {
+    record.surfaceEvidence[0].exitCode = 1;
+    return record;
+  });
+  const failedSurfaceEvidenceResult = run(failedSurfaceEvidence);
+  assert.notEqual(failedSurfaceEvidenceResult.status, 0);
+  assert.match(failedSurfaceEvidenceResult.stdout, /successful surface evidence for api/);
+
+  const quickFix = makeRepo("quick-fix", (record) => {
+    record.lane = "quick-fix";
+    record.quickFix = {
+      intent: "Fix API 500 for missing optional field.",
+      scope: "Only the API handler and regression test.",
+      reproEvidencePath: "docs/ai/evidence/repro.txt",
+      beforePatchEvidencePath: "docs/ai/evidence/before-patch.txt",
+      afterPatchEvidencePath: "docs/ai/evidence/after-patch.txt",
+    };
+    return record;
+  });
+  const quickFixResult = run(quickFix);
+  assert.equal(quickFixResult.status, 0, quickFixResult.stderr || quickFixResult.stdout);
+  write(quickFix, "docs/ai/ACEF_ACTIVE_RUN.json", `${JSON.stringify({
+    runId: "RUN-quick-fix",
+    repo: "quick-fix",
+    lane: "quick-fix",
+    laneRationale: "Narrow reproduced defect with localized patch.",
+    riskTriggers: ["bugfix"],
+    status: "active",
+    activeStory: "story 1.1",
+    activePhase: "closeout",
+    ledgerPath: "docs/ai/ACEF_test_DELIVERY_AUDIT.md",
+  }, null, 2)}\n`);
+  const quickFixSelection = run(quickFix, "lane-selection");
+  assert.equal(quickFixSelection.status, 0, quickFixSelection.stderr || quickFixSelection.stdout);
+  const quickFixCloseout = run(quickFix, "lane-closeout");
+  assert.equal(quickFixCloseout.status, 0, quickFixCloseout.stderr || quickFixCloseout.stdout);
+
+  const hiddenRisk = makeRepo("hidden-risk", (record) => {
+    record.lane = "quick-fix";
+    record.quickFix = {
+      intent: "Fix reproduced auth-related defect.",
+      scope: "Auth route patch.",
+      reproEvidencePath: "docs/ai/evidence/repro.txt",
+      beforePatchEvidencePath: "docs/ai/evidence/before-patch.txt",
+      afterPatchEvidencePath: "docs/ai/evidence/after-patch.txt",
+    };
+    return record;
+  });
+  initGit(hiddenRisk);
+  write(hiddenRisk, "src/auth/session.ts", "export const patched = true;\n");
+  write(hiddenRisk, "docs/ai/ACEF_ACTIVE_RUN.json", `${JSON.stringify({
+    runId: "RUN-hidden-risk",
+    repo: "hidden-risk",
+    lane: "quick-fix",
+    laneRationale: "Narrow reproduced defect with localized patch.",
+    riskTriggers: ["bugfix"],
+    status: "active",
+    activeStory: "story 1.1",
+    activePhase: "closeout",
+    ledgerPath: "docs/ai/ACEF_test_DELIVERY_AUDIT.md",
+  }, null, 2)}\n`);
+  const hiddenRiskSelection = run(hiddenRisk, "lane-selection");
+  assert.notEqual(hiddenRiskSelection.status, 0);
+  assert.match(hiddenRiskSelection.stdout, /risk trigger inferred from changed paths but not declared: auth/);
+
+  const guardedMisroute = makeRepo("guarded-misroute", (record) => {
+    record.lane = "quick-fix";
+    record.quickFix = {
+      intent: "Patch auth bypass.",
+      scope: "Auth middleware.",
+      reproEvidencePath: "docs/ai/evidence/repro.txt",
+      beforePatchEvidencePath: "docs/ai/evidence/before-patch.txt",
+      afterPatchEvidencePath: "docs/ai/evidence/after-patch.txt",
+    };
+    return record;
+  });
+  write(guardedMisroute, "docs/ai/ACEF_ACTIVE_RUN.json", `${JSON.stringify({
+    runId: "RUN-guarded-misroute",
+    repo: "guarded-misroute",
+    lane: "quick-fix",
+    laneRationale: "Incorrectly treated auth as quick fix.",
+    riskTriggers: ["bugfix", "auth"],
+    status: "active",
+    activeStory: "story 1.1",
+    activePhase: "closeout",
+    ledgerPath: "docs/ai/ACEF_test_DELIVERY_AUDIT.md",
+  }, null, 2)}\n`);
+  const guardedMisrouteResult = run(guardedMisroute, "lane-selection");
+  assert.notEqual(guardedMisrouteResult.status, 0);
+  assert.match(guardedMisrouteResult.stdout, /requires guarded lane/);
+
+  const missingQuickFix = makeRepo("missing-quick-fix", (record) => {
+    record.lane = "quick-fix";
+    return record;
+  });
+  const missingQuickFixResult = run(missingQuickFix);
+  assert.notEqual(missingQuickFixResult.status, 0);
+  assert.match(missingQuickFixResult.stdout, /quickFix evidence|quick-fix evidence/);
+
+  const missingAfterPatch = makeRepo("missing-after-patch", (record) => {
+    record.lane = "quick-fix";
+    record.quickFix = {
+      intent: "Fix API 500 for missing optional field.",
+      scope: "Only the API handler and regression test.",
+      reproEvidencePath: "docs/ai/evidence/repro.txt",
+      beforePatchEvidencePath: "docs/ai/evidence/before-patch.txt",
+      afterPatchEvidencePath: "docs/ai/evidence/missing-after-patch.txt",
+    };
+    return record;
+  });
+  const missingAfterPatchResult = run(missingAfterPatch);
+  assert.notEqual(missingAfterPatchResult.status, 0);
+  assert.match(missingAfterPatchResult.stdout, /afterPatchEvidencePath/);
 
   const sameActor = makeRepo("same-actor", (record) => {
     record.reviewActorId = record.implementationActorId;

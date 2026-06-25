@@ -51,11 +51,18 @@ function validateBindingEntry(item, index, label, { requireEvidence = false } = 
 function parseActiveRun(filePath) {
   const record = readJson(filePath);
   requireFields(record, ["runId", "repo", "lane", "status", "activeStory", "activePhase", "ledgerPath"], "active run");
-  requireEnum(record, "lane", ["lightweight", "full-bmad", "guarded", "custom"], "active run");
+  requireEnum(record, "lane", ["quick-fix", "lightweight", "full-bmad", "guarded", "custom"], "active run");
   requireEnum(record, "status", ["active", "paused", "blocked", "complete"], "active run");
   if (record.maxLines !== undefined && record.maxLines !== null
     && (!Number.isInteger(record.maxLines) || record.maxLines < 1 || record.maxLines > 150)) {
     throw new Error("active run maxLines must be an integer between 1 and 150");
+  }
+  if (record.laneRationale !== undefined && record.laneRationale !== null
+    && (typeof record.laneRationale !== "string" || !record.laneRationale.trim())) {
+    throw new Error("active run laneRationale must be a non-empty string");
+  }
+  if (record.riskTriggers !== undefined) {
+    requireStringArray(record, "riskTriggers", "active run");
   }
   return record;
 }
@@ -345,7 +352,7 @@ function parsePrReviewProfile(input, label = "PR review profile") {
 function parseLightweightRun(filePath) {
   const record = readJson(filePath);
   requireFields(record, ["runId", "lane", "status", "implementationActorId", "reviewActorId", "steps", "promotion"], "lightweight run");
-  requireEnum(record, "lane", ["lightweight", "guarded"], "lightweight run");
+  requireEnum(record, "lane", ["quick-fix", "lightweight", "guarded"], "lightweight run");
   requireEnum(record, "status", ["active", "blocked", "complete"], "lightweight run");
   if (record.implementationActorId === record.reviewActorId) throw new Error("lightweight run requires an independent review actor");
   const expected = ["preflight-current-context", "reuse-before-create", "implementation", "independent-review", "focused-verification", "closeout-evidence"];
@@ -367,6 +374,40 @@ function parseLightweightRun(filePath) {
   requireStringArray(record.promotion, "triggers", "lightweight promotion");
   if (record.promotion.triggers.length && record.promotion.decision === "stay-lightweight") {
     throw new Error("lightweight promotion triggers require full BMAD promotion or human risk acceptance");
+  }
+  if (record.surfaces !== undefined) {
+    requireStringArray(record, "surfaces", "lightweight run");
+    for (const surface of record.surfaces) {
+      requireSurface(surface, "lightweight run");
+    }
+  }
+  if (record.surfaceEvidence !== undefined) {
+    if (!Array.isArray(record.surfaceEvidence)) throw new Error("lightweight run surfaceEvidence must be an array");
+    for (const [index, item] of record.surfaceEvidence.entries()) {
+      if (!item || typeof item !== "object") throw new Error(`lightweight run surfaceEvidence[${index}] must be an object`);
+      requireFields(item, ["surface", "evidencePath", "command", "exitCode"], `lightweight run surfaceEvidence[${index}]`);
+      requireSurface(item.surface, `lightweight run surfaceEvidence[${index}]`);
+      if (typeof item.evidencePath !== "string" || !item.evidencePath.trim()) throw new Error(`lightweight run surfaceEvidence[${index}].evidencePath must be a non-empty string`);
+      requireRelativePaths([item.evidencePath], `lightweight run surfaceEvidence[${index}]`);
+      if (typeof item.command !== "string" || !item.command.trim()) throw new Error(`lightweight run surfaceEvidence[${index}].command must be a non-empty string`);
+      if (!Number.isInteger(item.exitCode)) throw new Error(`lightweight run surfaceEvidence[${index}].exitCode must be integer`);
+    }
+  }
+  if (record.quickFix !== undefined) {
+    if (!record.quickFix || typeof record.quickFix !== "object") throw new Error("lightweight run quickFix must be an object");
+    requireFields(record.quickFix, ["intent", "scope", "reproEvidencePath", "beforePatchEvidencePath", "afterPatchEvidencePath"], "quick-fix");
+    for (const field of ["intent", "scope"]) {
+      if (typeof record.quickFix[field] !== "string" || !record.quickFix[field].trim()) throw new Error(`quick-fix ${field} must be a non-empty string`);
+    }
+    for (const field of ["reproEvidencePath", "beforePatchEvidencePath", "afterPatchEvidencePath", "deferredWorkPath"]) {
+      if (record.quickFix[field] !== undefined) {
+        if (typeof record.quickFix[field] !== "string" || !record.quickFix[field].trim()) throw new Error(`quick-fix ${field} must be a non-empty string`);
+        requireRelativePaths([record.quickFix[field]], `quick-fix ${field}`);
+      }
+    }
+  }
+  if (record.lane === "quick-fix" && record.status === "complete" && !record.quickFix) {
+    throw new Error("complete quick-fix run requires quickFix evidence");
   }
   return record;
 }

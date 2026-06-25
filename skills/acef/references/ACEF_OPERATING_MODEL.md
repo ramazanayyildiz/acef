@@ -25,6 +25,9 @@ ACEF is lean by default. Lean mode never removes gates or evidence; it only limi
 - Write artifacts, gate reports, worker reports, and audits to disk.
 - In chat, return only the artifact path, verdict, key evidence command/path, next allowed step, and any decision needed.
 - Do not paste full PRDs, story specs, ledgers, broad search output, or long test logs into chat unless the user asks.
+- Lean mode does not downgrade validation surface. If work changed UI, run the UI-facing test or manual/runtime check; if
+  it changed an API, run the API/integration check; if it changed a worker, command, hook, or job, run that executable
+  surface. Unit tests alone are not sufficient when the changed behavior lives at a broader surface.
 - Prefer targeted reads/searches. If a command would return more than roughly 100 lines, narrow it or write a derived
   summary artifact instead.
 - Worker final reports should be complete on disk, but chat summaries should stay under about 20 lines.
@@ -166,6 +169,14 @@ Every story close must include two canonical ledger facts, even when the full ev
 2. **Actor identity summary.** The canonical ledger row records the actor identity for each phase that ran: Planner,
    ATDD/Test Author, Developer, Code Reviewer, Verify-Patch, Test Reviewer, and Process Judge as applicable. It may link
    to detailed reports, but the ledger row must be enough to see that the author did not approve its own work.
+3. **Surface validation evidence.** Lightweight, full BMAD, and guarded close all require touched-surface validation.
+   Full BMAD and guarded story close require typed worker-scope `surfaces` and a typed PASS gate whose
+   `surfaceEvidence` covers every touched surface. If the story changed UI, API, worker, command, hook, job, or
+   integration behavior, the Process Judge must cite successful evidence for that surface before closing. Lightweight
+   close requires the same declaration in `docs/ai/ACEF_LIGHTWEIGHT_RUN.json`: `surfaces` names every touched surface and
+   `surfaceEvidence` records the command, evidence path, and success result for each one.
+   Validators also infer obvious surfaces from changed path names and fail if those surfaces were not declared; this is a
+   guardrail, not a replacement for honest surface declaration.
 
 Lean chains may omit optional review phases only when explicitly authorized for low-risk work. They still require
 red-before-dev evidence when ATDD is used and a distinct Process Judge identity in the canonical ledger. Guarded work
@@ -287,6 +298,33 @@ Planner → Test Author + Developer (parallel) → Judge (full pipeline).
 
 Every implementation track uses the reuse-before-create gate. The gate can be tiny for mechanical/lightweight work, but
 it must exist before new helpers, components, services, hooks, APIs, or patterns are written.
+
+## Lanes
+
+The lane sets process weight; the track sets risk and persona participation. ACEF keeps BMAD's Quick Fix idea, but adds
+typed proof so quick fixes do not become unreviewed drive-by patches.
+
+| Lane | Use for | Mechanical controls |
+|---|---|---|
+| `quick-fix` | BMAD-style Quick Dev / Quick Fix work: narrow bug fixes, tiny regressions, localized patches. | Compact lifecycle, independent review actor, repro evidence, before/after patch evidence, touched-surface validation, promotion triggers. |
+| `lightweight` | Low-risk compact feature/config/doc/mechanical work that is not primarily a defect fix. | Compact lifecycle, independent review actor, touched-surface validation, promotion triggers. |
+| `full-bmad` | Normal feature/story work needing full planning, phase separation, and Process Judge close. | Current context, epic context pack when applicable, actor separation, worker scope, evidence manifests, gate verdict, source reconciliation. |
+| `guarded` | Auth, payment, security, data migration/deletion, permissions, irreversible side effects, or high-risk boundaries. | Full typed closeout plus guarded test floor and independent boundary test author. |
+
+Quick fixes must promote to `full-bmad` or `guarded` when reproduction is unclear, the patch expands beyond the stated
+scope, the touched surface is high-risk, the fix creates a new pattern, or the after-patch evidence does not directly
+cover the reproduced failure.
+
+Lane choice is a mechanical gate, not only a planning note. Typed active runs record `laneRationale` and `riskTriggers`.
+Run `acef-process-validator --check lane-selection` before dispatch or closeout; auth, payment, migration, deletion,
+security, token/session, webhook, tenant, PII, or irreversible triggers require `guarded`, while new patterns, broad
+refactors, multi-surface work, unclear reproduction, or feature work require `full-bmad` or `guarded`.
+The validator also infers obvious risk triggers from changed path names and fails when those inferred triggers were not
+declared.
+
+Closeout is also bundled by lane. Run `acef-process-validator --check lane-closeout` before reporting done. The
+meta-check invokes the required validator set for the active lane so a worker cannot pass one convenient check and skip
+the rest.
 
 ## Process gates
 

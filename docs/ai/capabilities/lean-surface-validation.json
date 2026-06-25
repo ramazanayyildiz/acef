@@ -1,0 +1,56 @@
+{
+  "capabilityId": "lean-surface-validation",
+  "requestedIntent": "Make lean/light ACEF flows preserve the validation surface of the changed behavior.",
+  "status": "proven",
+  "requiredLayers": [
+    "docs",
+    "workflow",
+    "validator",
+    "tests"
+  ],
+  "implementedLayers": {
+    "docs": [
+      "method/OPERATING_MODEL.md#Lean Runtime Default",
+      "method/OPERATING_MODEL.md#Story-close evidence minimums",
+      "skills/acef/references/ACEF_OPERATING_MODEL.md#Lean Runtime Default",
+      "skills/acef/references/ACEF_OPERATING_MODEL.md#Story-close evidence minimums"
+    ],
+    "workflow": [
+      "schemas/lightweight-run.schema.json"
+    ],
+    "validator": [
+      "scripts/acef-process-validator#checkLightweightLifecycle",
+      "scripts/lib/acef-state-parser.js#parseLightweightRun"
+    ],
+    "tests": [
+      "scripts/test-acef-lightweight-lifecycle"
+    ]
+  },
+  "limitations": [
+    "The validator checks that declared lightweight surfaces have successful surfaceEvidence and uses path-name inference to catch obvious underdeclared surfaces; inference is heuristic.",
+    "Agents must choose the correct UI, API, worker, command, hook, job, or integration validation command for each touched surface."
+  ],
+  "evidence": [
+    {
+      "layer": "docs",
+      "ref": "method/OPERATING_MODEL.md#Lean Runtime Default"
+    },
+    {
+      "layer": "docs",
+      "ref": "skills/acef/references/ACEF_OPERATING_MODEL.md#Lean Runtime Default"
+    },
+    {
+      "layer": "workflow",
+      "ref": "schemas/lightweight-run.schema.json"
+    },
+    {
+      "layer": "validator",
+      "ref": "scripts/acef-process-validator#checkLightweightLifecycle"
+    },
+    {
+      "layer": "tests",
+      "ref": "scripts/test-acef-lightweight-lifecycle"
+    }
+  ],
+  "createdAt": "2026-06-25"
+}

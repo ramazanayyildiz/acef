@@ -1,0 +1,58 @@
+{
+  "capabilityId": "lane-selection-closeout",
+  "requestedIntent": "Make ACEF lane choice and lane-specific closeout mechanically enforced instead of relying on agent judgment.",
+  "status": "proven",
+  "requiredLayers": [
+    "docs",
+    "workflow",
+    "validator",
+    "tests"
+  ],
+  "implementedLayers": {
+    "docs": [
+      "method/OPERATING_MODEL.md#Lanes",
+      "skills/acef/references/ACEF_OPERATING_MODEL.md#Lanes"
+    ],
+    "workflow": [
+      "schemas/active-run.schema.json",
+      "scripts/lib/acef-state-parser.js#parseActiveRun",
+      "scripts/acef-state#writeActiveRun"
+    ],
+    "validator": [
+      "scripts/acef-process-validator#checkLaneSelection",
+      "scripts/acef-process-validator#checkLaneCloseout"
+    ],
+    "tests": [
+      "scripts/test-acef-lightweight-lifecycle",
+      "scripts/test-acef-process-validator",
+      "scripts/test-acef-typed-state-validator"
+    ]
+  },
+  "limitations": [
+    "Lane selection checks recorded riskTriggers and path-name risk inference; inference is heuristic and does not replace human review for unusual domain risks.",
+    "Lane closeout bundles existing validator checks; future lane-specific rules must be added to the bundle explicitly."
+  ],
+  "evidence": [
+    {
+      "layer": "docs",
+      "ref": "method/OPERATING_MODEL.md#Lanes"
+    },
+    {
+      "layer": "workflow",
+      "ref": "schemas/active-run.schema.json"
+    },
+    {
+      "layer": "validator",
+      "ref": "scripts/acef-process-validator#checkLaneSelection"
+    },
+    {
+      "layer": "validator",
+      "ref": "scripts/acef-process-validator#checkLaneCloseout"
+    },
+    {
+      "layer": "tests",
+      "ref": "scripts/test-acef-lightweight-lifecycle"
+    }
+  ],
+  "createdAt": "2026-06-25"
+}

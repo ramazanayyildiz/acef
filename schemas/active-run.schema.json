@@ -8,7 +8,7 @@
   "properties": {
     "runId": { "type": "string", "minLength": 1 },
     "repo": { "type": "string", "minLength": 1 },
-    "lane": { "type": "string", "enum": ["lightweight", "full-bmad", "guarded", "custom"] },
+    "lane": { "type": "string", "enum": ["quick-fix", "lightweight", "full-bmad", "guarded", "custom"] },
     "track": { "type": ["string", "null"] },
     "status": { "type": "string", "enum": ["active", "paused", "blocked", "complete"] },
     "activeEpic": { "type": ["string", "null"] },
@@ -16,6 +16,11 @@
     "activePhase": { "type": "string", "minLength": 1 },
     "workerRole": { "type": ["string", "null"] },
     "activeActorId": { "type": ["string", "null"] },
+    "laneRationale": { "type": ["string", "null"] },
+    "riskTriggers": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 }
+    },
     "workerScopePath": { "type": ["string", "null"] },
     "workflowPath": { "type": ["string", "null"] },
     "workflowNodeId": { "type": ["string", "null"] },

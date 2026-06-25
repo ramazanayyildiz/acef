@@ -9,6 +9,18 @@ or evidence contract. Do not use it to claim implementation status; link to the 
 
 ## Unreleased
 
+### Lane and surface enforcement
+
+- Added the `quick-fix` lane for BMAD-style narrow bug fixes, with required repro, before-patch, after-patch, independent
+  review, and touched-surface evidence in `docs/ai/ACEF_LIGHTWEIGHT_RUN.json`.
+- Added `lane-selection` and `lane-closeout` validator checks so quick-fix, lightweight, full-BMAD, and guarded lanes
+  have mechanical selection and closeout bundles.
+- Added touched-surface validation for lightweight runs and typed full-BMAD/guarded PASS gates.
+- Added path-name inference for obvious undeclared surfaces and high-risk triggers so hidden UI/API/auth/payment-style
+  changes cannot pass solely by omitting them from the run declaration.
+- Tightened guarded closeout so guarded work inherits full typed closeout checks plus the guarded test floor.
+- Added capability records for quick-fix, lane closeout, lean surface validation, and full-flow surface validation.
+
 ### Capability completeness
 
 - Added `capability-change` validation so ACEF flow/gate/role/enforcement changes must declare their implemented layers

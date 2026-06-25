@@ -7,7 +7,7 @@
   "additionalProperties": false,
   "properties": {
     "runId": { "type": "string", "minLength": 1 },
-    "lane": { "type": "string", "enum": ["lightweight", "guarded"] },
+    "lane": { "type": "string", "enum": ["quick-fix", "lightweight", "guarded"] },
     "status": { "type": "string", "enum": ["active", "blocked", "complete"] },
     "implementationActorId": { "type": "string", "minLength": 1 },
     "reviewActorId": { "type": "string", "minLength": 1 },
@@ -35,6 +35,58 @@
         "triggers": { "type": "array", "items": { "type": "string", "minLength": 1 } }
       }
     },
+    "surfaces": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": ["ui", "admin", "mobile", "api", "http", "cli", "queue", "job", "scheduler", "storage", "email", "notification", "webhook", "integration", "config", "database", "library", "internal"]
+      }
+    },
+    "surfaceEvidence": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["surface", "evidencePath", "command", "exitCode"],
+        "properties": {
+          "surface": {
+            "type": "string",
+            "enum": ["ui", "admin", "mobile", "api", "http", "cli", "queue", "job", "scheduler", "storage", "email", "notification", "webhook", "integration", "config", "database", "library", "internal"]
+          },
+          "evidencePath": { "type": "string", "minLength": 1 },
+          "command": { "type": "string" },
+          "exitCode": { "type": "integer" },
+          "notes": { "type": "string" }
+        }
+      }
+    },
+    "quickFix": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["intent", "scope", "reproEvidencePath", "beforePatchEvidencePath", "afterPatchEvidencePath"],
+      "properties": {
+        "intent": { "type": "string", "minLength": 1 },
+        "scope": { "type": "string", "minLength": 1 },
+        "reproEvidencePath": { "type": "string", "minLength": 1 },
+        "beforePatchEvidencePath": { "type": "string", "minLength": 1 },
+        "afterPatchEvidencePath": { "type": "string", "minLength": 1 },
+        "deferredWorkPath": { "type": "string", "minLength": 1 },
+        "notes": { "type": "string" }
+      }
+    },
     "updatedAt": { "type": ["string", "null"] }
-  }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "lane": { "const": "quick-fix" },
+          "status": { "const": "complete" }
+        }
+      },
+      "then": {
+        "required": ["quickFix"]
+      }
+    }
+  ]
 }

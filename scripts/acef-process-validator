@@ -41,12 +41,14 @@ Checks:
   actor-separation    For full BMAD, require distinct phase actors with durable provenance evidence
   worker-scope       Require active worker identity and write scope to match the typed active run
   evidence-manifest  Validate typed evidence provenance, hashes, actor binding, and source freshness
-  gate-verdict       Require the active scope to have a typed PASS verdict backed by successful evidence
+  gate-verdict       Require the active scope to have a typed PASS verdict backed by successful surface evidence
   source-reconciliation For full BMAD, require every planning source to record use/conflict/resolution
   epic-context-pack  Require an epic-level context pack before story workers consume the epic
   current-context    Require a role-scoped, ledger-reconciled hot context before worker dispatch
   pr-review          Validate bounded PR-review context and reject reviewer-authored patches
-  lightweight-lifecycle Require the six-step lightweight lifecycle and promotion disposition
+  lane-selection     Require active lane choice to match recorded risk triggers
+  lane-closeout      Require the active lane's complete validator bundle before close
+  lightweight-lifecycle Require the six-step lightweight lifecycle, promotion disposition, and surface evidence
   lean-evidence       Require story/epic close evidence to live in artifacts, not chat
   capability-change   Require ACEF flow/gate/capability changes to declare documented/wired/enforced/proven layers
   session-handoff     Require a structured Session Handoff block in the delivery ledger
@@ -223,6 +225,53 @@ function recordCommitError(repoRoot, commit, label) {
 function workingApplicationChanges(repoRoot) {
   const lines = gitStatusPorcelain(repoRoot) || [];
   return lines.map((line) => line.slice(3)).filter((filePath) => filePath && !stateControlPath(filePath));
+}
+
+function pathHints(repoRoot, activeScope = null) {
+  const paths = new Set(workingApplicationChanges(repoRoot));
+  if (activeScope?.baseRef && gitIsAncestor(repoRoot, activeScope.baseRef, gitHead(repoRoot))) {
+    for (const filePath of gitChangedFiles(repoRoot, activeScope.baseRef, "HEAD")) {
+      if (!stateControlPath(filePath)) paths.add(filePath);
+    }
+  }
+  return [...paths].map((filePath) => filePath.replaceAll(path.sep, "/"));
+}
+
+function inferredSurfaces(paths) {
+  const surfaces = new Set();
+  for (const filePath of paths) {
+    if (/(^|\/)(components|pages|screens|views|ui|frontend)(\/|$)|\.(tsx|jsx|vue|svelte)$/i.test(filePath)) surfaces.add("ui");
+    if (/(^|\/)(app|mobile)(\/|$)|\.(swift|kt)$/i.test(filePath)) surfaces.add("mobile");
+    if (/(^|\/)(routes|controllers|api|http|server)(\/|$)|route|controller/i.test(filePath)) surfaces.add("api");
+    if (/webhook/i.test(filePath)) surfaces.add("webhook");
+    if (/(^|\/)(jobs|workers)(\/|$)|job/i.test(filePath)) surfaces.add("job");
+    if (/(^|\/)(queues|queue)(\/|$)/i.test(filePath)) surfaces.add("queue");
+    if (/(^|\/)(scheduler|cron)(\/|$)|schedule/i.test(filePath)) surfaces.add("scheduler");
+    if (/(^|\/)(migrations|database|schema)(\/|$)/i.test(filePath)) surfaces.add("database");
+    if (/(^|\/)(config|configs)(\/|$)|\.ya?ml$|\.toml$|\.env/i.test(filePath)) surfaces.add("config");
+    if (/(^|\/)(cli|bin|commands?)(\/|$)|command/i.test(filePath)) surfaces.add("cli");
+    if (/(^|\/)(lib|src|packages|modules)(\/|$)/i.test(filePath) && !surfaces.size) surfaces.add("library");
+  }
+  return [...surfaces];
+}
+
+function inferredRiskTriggers(paths) {
+  const triggers = new Set();
+  for (const filePath of paths) {
+    if (/auth|authorization|permission|roles?/i.test(filePath)) triggers.add("auth");
+    if (/payment|billing|invoice|checkout|subscription/i.test(filePath)) triggers.add("payment");
+    if (/migration|delete|destroy|purge|truncate/i.test(filePath)) triggers.add("migration");
+    if (/security|token|session|secret|credential/i.test(filePath)) triggers.add("security");
+    if (/webhook/i.test(filePath)) triggers.add("webhook");
+    if (/tenant|privacy|pii|personal[-_]?data/i.test(filePath)) triggers.add("tenant-privacy");
+  }
+  return [...triggers];
+}
+
+function missingInferredSurfaces(repoRoot, declared, activeScope = null) {
+  const inferred = inferredSurfaces(pathHints(repoRoot, activeScope));
+  const declaredSet = new Set(declared || []);
+  return inferred.filter((surface) => !declaredSet.has(surface));
 }
 
 function actorRecordById(repoRoot, actorId) {
@@ -1131,7 +1180,7 @@ function checkActorSeparation(repoRoot, ledgerPath) {
   const text = read(ledgerPath);
   const activeRun = typedActiveRun(repoRoot);
   if (activeRun) {
-    if (activeRun.lane !== "full-bmad") return result("actor-separation", true, "Typed lane is not full BMAD");
+    if (!["full-bmad", "guarded"].includes(activeRun.lane)) return result("actor-separation", true, "Typed lane is not full BMAD/guarded");
     return checkTypedActorSeparation(repoRoot, activeRun);
   }
   if (!isFullBmad(text)) return result("actor-separation", true, "Lane is not full BMAD");
@@ -1267,6 +1316,36 @@ function checkGateVerdict(repoRoot) {
         failures.push(error.message);
       }
     }
+    const fullSurfaceValidation = ["full-bmad", "guarded"].includes(activeRun.lane);
+    if (fullSurfaceValidation && !activeScope?.surfaces?.length) {
+      failures.push(`${activeRun.lane} PASS gate requires active worker scope surfaces`);
+    }
+    if (fullSurfaceValidation && activeScope?.surfaces?.length) {
+      for (const surface of missingInferredSurfaces(repoRoot, activeScope.surfaces, activeScope)) {
+        failures.push(`surface inferred from changed paths but not declared in active worker scope: ${surface}`);
+      }
+      const surfaceEvidence = gate.surfaceEvidence || [];
+      for (const surface of activeScope.surfaces) {
+        const match = surfaceEvidence.find((entry) => entry.surface === surface);
+        if (!match) {
+          failures.push(`${activeRun.lane} PASS gate requires surface evidence for ${surface}`);
+          continue;
+        }
+        try {
+          const evidence = evidenceRecordById(repoRoot, match.evidenceId);
+          if (evidence.exitCode !== 0) failures.push(`surface ${surface} cites failed evidence ${match.evidenceId}`);
+          if (!gate.evidenceIds?.includes(match.evidenceId)) {
+            failures.push(`surface ${surface} cites evidence ${match.evidenceId} not listed in evidenceIds`);
+          }
+          if (/^\s*story\b/i.test(activeRun.activeStory)
+            && normalizedScope(evidence.story) !== normalizedScope(activeRun.activeStory)) {
+            failures.push(`surface ${surface} cites evidence ${match.evidenceId} from another story`);
+          }
+        } catch (error) {
+          failures.push(error.message);
+        }
+      }
+    }
     for (const surfaceEntry of gate.surfaceEvidence || []) {
       try {
         const evidence = evidenceRecordById(repoRoot, surfaceEntry.evidenceId);
@@ -1334,7 +1413,11 @@ function checkGateVerdict(repoRoot) {
 function checkSourceReconciliation(repoRoot, ledgerPath) {
   if (!ledgerPath || !exists(ledgerPath)) return result("source-reconciliation", false, "Missing ledger path");
   const text = read(ledgerPath);
-  if (!isFullBmad(text)) return result("source-reconciliation", true, "Lane is not full BMAD");
+  const activeRun = typedActiveRun(repoRoot);
+  if (activeRun && !["full-bmad", "guarded"].includes(activeRun.lane)) {
+    return result("source-reconciliation", true, "Lane is not full BMAD/guarded");
+  }
+  if (!activeRun && !isFullBmad(text)) return result("source-reconciliation", true, "Lane is not full BMAD");
   const section = extractSection(text, "Source Reconciliation");
   if (!section) return result("source-reconciliation", false, "Missing ## Source Reconciliation section");
   const table = markdownTable(section);
@@ -1427,8 +1510,8 @@ function checkCurrentContext(repoRoot, ledgerPath) {
     max_lines: activeRun.maxLines === undefined || activeRun.maxLines === null ? "" : String(activeRun.maxLines),
   } : sessionHandoffFields(extractSection(ledgerText, "Current Context Contract"));
 
-  const fullBmad = activeRun ? activeRun.lane === "full-bmad" : isFullBmad(ledgerText);
-  if (!fullBmad) return result("current-context", true, "Lane is not full BMAD");
+  const fullBmad = activeRun ? ["full-bmad", "guarded"].includes(activeRun.lane) : isFullBmad(ledgerText);
+  if (!fullBmad) return result("current-context", true, "Lane is not full BMAD/guarded");
 
   if (!activeRun && !extractSection(ledgerText, "Current Context Contract")) {
     return result("current-context", false, "Missing ## Current Context Contract section");
@@ -1794,11 +1877,137 @@ function checkLightweightLifecycle(repoRoot) {
         if (!exists(path.join(repoRoot, evidencePath))) missing.push(`${step.name}: ${evidencePath}`);
       }
     }
+    if (run.status === "complete") {
+      if (!Array.isArray(run.surfaces) || !run.surfaces.length) {
+        missing.push("surface declaration");
+      }
+      for (const surface of missingInferredSurfaces(repoRoot, run.surfaces || [])) {
+        missing.push(`surface inferred from changed paths but not declared: ${surface}`);
+      }
+      const surfaceEvidence = Array.isArray(run.surfaceEvidence) ? run.surfaceEvidence : [];
+      for (const surface of run.surfaces || []) {
+        const match = surfaceEvidence.find((entry) => entry.surface === surface);
+        if (!match) {
+          missing.push(`surface evidence for ${surface}`);
+          continue;
+        }
+        if (!exists(path.join(repoRoot, match.evidencePath))) missing.push(`${surface}: ${match.evidencePath}`);
+        if (!match.command || !String(match.command).trim()) {
+          missing.push(`surface evidence command for ${surface}`);
+        }
+        if (match.exitCode !== 0) {
+          missing.push(`successful surface evidence for ${surface}`);
+        }
+      }
+      if (run.lane === "quick-fix") {
+        if (!run.quickFix) {
+          missing.push("quick-fix evidence");
+        } else {
+          for (const field of ["reproEvidencePath", "beforePatchEvidencePath", "afterPatchEvidencePath"]) {
+            const evidencePath = run.quickFix[field];
+            if (!exists(path.join(repoRoot, evidencePath))) missing.push(`quick-fix ${field}: ${evidencePath}`);
+          }
+        }
+      }
+    }
     if (missing.length) return result("lightweight-lifecycle", false, `missing lifecycle evidence: ${missing.join(", ")}`);
     return result("lightweight-lifecycle", true, `${run.runId} follows the compact lifecycle with independent review and ${run.promotion.decision}`);
   } catch (error) {
     return result("lightweight-lifecycle", false, error.message);
   }
+}
+
+function checkLaneSelection(repoRoot) {
+  const activeRun = typedActiveRun(repoRoot);
+  if (!activeRun) return result("lane-selection", true, "No typed active run; legacy lane selection checks remain active");
+  const failures = [];
+  const triggers = (activeRun.riskTriggers || []).map((item) => String(item).toLowerCase());
+  let activeScope = null;
+  if (activeRun.workerScopePath) {
+    try {
+      activeScope = parseWorkerScope(resolvePath(activeRun.workerScopePath, repoRoot));
+    } catch {
+      activeScope = null;
+    }
+  }
+  const inferredTriggers = inferredRiskTriggers(pathHints(repoRoot, activeScope));
+  for (const trigger of inferredTriggers) {
+    if (!triggers.includes(trigger)) failures.push(`risk trigger inferred from changed paths but not declared: ${trigger}`);
+  }
+  const allTriggers = [...new Set([...triggers, ...inferredTriggers])];
+  if (!activeRun.laneRationale || !String(activeRun.laneRationale).trim()) {
+    failures.push("active run requires laneRationale");
+  }
+  const guardedTerms = /(auth|authorization|permission|role|payment|billing|invoice|migration|delete|destructive|security|token|session|webhook|irreversible|tenant|privacy|pii)/i;
+  const fullTerms = /(new-pattern|new abstraction|shared abstraction|multi-surface|unclear repro|scope expansion|broad refactor|feature)/i;
+  const guardedTrigger = allTriggers.find((item) => guardedTerms.test(item));
+  const fullTrigger = allTriggers.find((item) => fullTerms.test(item));
+  if (guardedTrigger && activeRun.lane !== "guarded") {
+    failures.push(`risk trigger requires guarded lane: ${guardedTrigger}`);
+  }
+  if (fullTrigger && ["quick-fix", "lightweight"].includes(activeRun.lane)) {
+    failures.push(`risk trigger requires full-bmad or guarded lane: ${fullTrigger}`);
+  }
+  if (activeRun.lane === "quick-fix" && !triggers.includes("bugfix") && !triggers.includes("bug-fix") && !triggers.includes("defect")) {
+    failures.push("quick-fix lane requires bugfix/defect risk trigger");
+  }
+  return failures.length
+    ? result("lane-selection", false, failures.join("; "))
+    : result("lane-selection", true, `${activeRun.lane} lane selection is justified`);
+}
+
+function closeoutResultFailure(item) {
+  return item.ok ? "" : `${item.name}: ${item.message}`;
+}
+
+function checkLaneCloseout(repoRoot, ledgerPath, adapterPath, registryPath) {
+  const activeRun = typedActiveRun(repoRoot);
+  let lane = activeRun?.lane || "";
+  if (!lane) {
+    const lightweightPath = path.join(repoRoot, "docs", "ai", "ACEF_LIGHTWEIGHT_RUN.json");
+    if (exists(lightweightPath)) lane = parseLightweightRun(lightweightPath).lane;
+  }
+  if (!lane) return result("lane-closeout", false, "Missing typed active run or lightweight run lane");
+
+  const checks = [];
+  if (lane === "quick-fix") {
+    checks.push(checkLaneSelection(repoRoot));
+    checks.push(checkLightweightLifecycle(repoRoot));
+    checks.push(checkLeanEvidence(repoRoot, ledgerPath));
+    checks.push(checkSessionHandoff(repoRoot, ledgerPath, adapterPath, registryPath));
+  } else if (lane === "lightweight") {
+    checks.push(checkLaneSelection(repoRoot));
+    checks.push(checkLightweightLifecycle(repoRoot));
+    checks.push(checkLeanEvidence(repoRoot, ledgerPath));
+    checks.push(checkSessionHandoff(repoRoot, ledgerPath, adapterPath, registryPath));
+  } else if (lane === "full-bmad") {
+    checks.push(checkLaneSelection(repoRoot));
+    checks.push(checkCurrentContext(repoRoot, ledgerPath));
+    checks.push(checkActorSeparation(repoRoot, ledgerPath));
+    checks.push(checkWorkerScope(repoRoot));
+    checks.push(checkEvidenceManifests(repoRoot));
+    checks.push(checkGateVerdict(repoRoot));
+    checks.push(checkSourceReconciliation(repoRoot, ledgerPath));
+    checks.push(checkLeanEvidence(repoRoot, ledgerPath));
+    checks.push(checkSessionHandoff(repoRoot, ledgerPath, adapterPath, registryPath));
+  } else if (lane === "guarded") {
+    checks.push(checkLaneSelection(repoRoot));
+    checks.push(checkCurrentContext(repoRoot, ledgerPath));
+    checks.push(checkActorSeparation(repoRoot, ledgerPath));
+    checks.push(checkWorkerScope(repoRoot));
+    checks.push(checkEvidenceManifests(repoRoot));
+    checks.push(checkGateVerdict(repoRoot));
+    checks.push(checkSourceReconciliation(repoRoot, ledgerPath));
+    checks.push(checkGuardedTestFloor(repoRoot, ledgerPath));
+    checks.push(checkLeanEvidence(repoRoot, ledgerPath));
+    checks.push(checkSessionHandoff(repoRoot, ledgerPath, adapterPath, registryPath));
+  } else {
+    return result("lane-closeout", false, `Unsupported closeout lane: ${lane}`);
+  }
+  const failures = checks.map(closeoutResultFailure).filter(Boolean);
+  return failures.length
+    ? result("lane-closeout", false, failures.join("; "))
+    : result("lane-closeout", true, `${lane} closeout bundle passed`);
 }
 
 function capabilityChangePaths(repoRoot) {
@@ -1892,7 +2101,7 @@ function main() {
   const adapter = args.adapter || findAdapter(args.repo);
   const registry = findPatternRegistry(args.repo, adapter);
   const checks = args.check === "all"
-    ? ["clean-tree", "preflight", "claims", "adapter-freshness", "pattern-registry", "reuse-before-create", "do-not-copy", "partial-workshape", "finding-promotion", "graduation-reconciliation", "vertical-slice", "test-authenticity", "guarded-test-floor", "actor-separation", "worker-scope", "evidence-manifest", "gate-verdict", "source-reconciliation", "epic-context-pack", "current-context", "lean-evidence", "capability-change", "session-handoff", "seeded-epic-gates", "epic-boundary", "epic-transition-approval", "replan-counter"]
+    ? ["clean-tree", "preflight", "claims", "adapter-freshness", "pattern-registry", "reuse-before-create", "do-not-copy", "partial-workshape", "finding-promotion", "graduation-reconciliation", "vertical-slice", "test-authenticity", "guarded-test-floor", "actor-separation", "worker-scope", "evidence-manifest", "gate-verdict", "source-reconciliation", "epic-context-pack", "current-context", "pr-review", "lane-selection", "lane-closeout", "lightweight-lifecycle", "lean-evidence", "capability-change", "session-handoff", "seeded-epic-gates", "epic-boundary", "epic-transition-approval", "replan-counter"]
     : [args.check];
 
   const results = checks.map((check) => {
@@ -1917,6 +2126,8 @@ function main() {
     if (check === "epic-context-pack") return checkEpicContextPack(args.repo, ledger);
     if (check === "current-context") return checkCurrentContext(args.repo, ledger);
     if (check === "pr-review") return checkPrReview(args.repo);
+    if (check === "lane-selection") return checkLaneSelection(args.repo);
+    if (check === "lane-closeout") return checkLaneCloseout(args.repo, ledger, adapter, registry);
     if (check === "lightweight-lifecycle") return checkLightweightLifecycle(args.repo);
     if (check === "lean-evidence") return checkLeanEvidence(args.repo, ledger);
     if (check === "capability-change") return checkCapabilityChange(args.repo);

@@ -111,7 +111,6 @@ try {
   const originalInputOutputBindings = scopeForReuse.inputOutputBindings;
   delete scopeForReuse.inputOutputBindings;
   writeJson("docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json", scopeForReuse);
-  delete gate.surfaceEvidence;
   delete gate.inputOutputEvidence;
   writeJson("docs/ai/gates/GATE-1.json", gate);
   expectPass("gate-verdict");

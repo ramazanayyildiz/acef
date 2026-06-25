@@ -3,6 +3,7 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const cp = require("node:child_process");
+const crypto = require("node:crypto");
 
 const repoRoot = path.resolve(__dirname, "..");
 const validator = path.join(repoRoot, "scripts", "acef-process-validator");
@@ -20,6 +21,10 @@ function run(command, args, options = {}) {
 
 function runValidator(args, options = {}) {
   return run("node", [validator, ...args], options);
+}
+
+function sha256File(filePath) {
+  return crypto.createHash("sha256").update(fs.readFileSync(filePath)).digest("hex");
 }
 
 function expectPass(label, args) {
@@ -823,6 +828,118 @@ try {
     "",
   ].join("\n"));
   expectFail("lean-evidence", ["--repo", tmp, "--ledger", "docs/ai/ACEF_lean_context_bad_DELIVERY_AUDIT.md", "--check", "lean-evidence"]);
+
+  fs.mkdirSync(path.join(tmp, "docs", "ai", "actors"), { recursive: true });
+  fs.mkdirSync(path.join(tmp, "docs", "ai", "evidence"), { recursive: true });
+  fs.mkdirSync(path.join(tmp, "docs", "ai", "gates"), { recursive: true });
+  const surfaceArtifact = path.join(tmp, "docs", "ai", "reports", "story-1-1-surface-test.log");
+  const apiSurfaceArtifact = path.join(tmp, "docs", "ai", "reports", "story-1-1-api-surface-test.log");
+  fs.writeFileSync(surfaceArtifact, "PASS ui surface test\n");
+  fs.writeFileSync(apiSurfaceArtifact, "PASS api surface test\n");
+  fs.writeFileSync(path.join(tmp, "docs", "ai", "actors", "dev-surface.json"), JSON.stringify({
+    actorInstanceId: "dev-surface",
+    story: "story 1.1",
+    phase: "development",
+    role: "Developer",
+    client: "fixture",
+    inputCommit: head,
+    allowedContextProfile: "bounded",
+  }, null, 2));
+  fs.writeFileSync(path.join(tmp, "docs", "ai", "actors", "judge-surface.json"), JSON.stringify({
+    actorInstanceId: "judge-surface",
+    story: "story 1.1",
+    phase: "process-judge",
+    role: "Process Judge",
+    client: "fixture",
+    inputCommit: head,
+    allowedContextProfile: "story-slice",
+  }, null, 2));
+  fs.writeFileSync(path.join(tmp, "docs", "ai", "evidence", "evidence-ui.json"), JSON.stringify({
+    evidenceId: "evidence-ui",
+    kind: "runtime-test",
+    command: "npm run test:ui -- story-1-1",
+    exitCode: 0,
+    repositoryCommit: head,
+    dirtyDigest: null,
+    actorInstanceId: "dev-surface",
+    story: "story 1.1",
+    rawArtifact: {
+      path: "docs/ai/reports/story-1-1-surface-test.log",
+      sha256: sha256File(surfaceArtifact),
+    },
+    satisfies: ["ui surface validation"],
+  }, null, 2));
+  fs.writeFileSync(path.join(tmp, "docs", "ai", "evidence", "evidence-api.json"), JSON.stringify({
+    evidenceId: "evidence-api",
+    kind: "runtime-test",
+    command: "npm run test:api -- story-1-1",
+    exitCode: 0,
+    repositoryCommit: head,
+    dirtyDigest: null,
+    actorInstanceId: "dev-surface",
+    story: "story 1.1",
+    rawArtifact: {
+      path: "docs/ai/reports/story-1-1-api-surface-test.log",
+      sha256: sha256File(apiSurfaceArtifact),
+    },
+    satisfies: ["api surface validation"],
+  }, null, 2));
+  fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_ACTIVE_WORKER_SCOPE.json"), JSON.stringify({
+    activeStory: "story 1.1",
+    phase: "process-judge",
+    workerId: "judge-surface",
+    allowedPaths: ["src/**", "tests/**"],
+    surfaces: ["ui", "api"],
+    baseRef: head,
+    maxCommits: 1,
+    canEditLedger: false,
+    canSpawnAgents: false,
+  }, null, 2));
+  fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_ACTIVE_RUN.json"), JSON.stringify({
+    runId: "RUN-surface-validation",
+    repo: "demo",
+    lane: "full-bmad",
+    status: "active",
+    activeStory: "story 1.1",
+    activePhase: "process-judge",
+    workerScopePath: "docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json",
+    ledgerPath: "docs/ai/ACEF_demo_DELIVERY_AUDIT.md",
+    contextPath: "docs/ai/ACEF_CURRENT_CONTEXT.md",
+  }, null, 2));
+  fs.writeFileSync(path.join(tmp, "docs", "ai", "gates", "story-1-1.json"), JSON.stringify({
+    gateId: "story-1-1",
+    scope: "story 1.1",
+    verdict: "PASS",
+    decidedBy: "judge-surface",
+    repositoryCommit: head,
+    evidenceIds: ["evidence-ui", "evidence-api"],
+  }, null, 2));
+  expectFail("gate-verdict", ["--repo", tmp, "--check", "gate-verdict"]);
+  fs.writeFileSync(path.join(tmp, "docs", "ai", "gates", "story-1-1.json"), JSON.stringify({
+    gateId: "story-1-1",
+    scope: "story 1.1",
+    verdict: "PASS",
+    decidedBy: "judge-surface",
+    repositoryCommit: head,
+    evidenceIds: ["evidence-ui", "evidence-api"],
+    surfaceEvidence: [
+      {
+        surface: "ui",
+        evidenceId: "evidence-ui",
+      },
+      {
+        surface: "api",
+        evidenceId: "evidence-api",
+      },
+    ],
+  }, null, 2));
+  expectPass("gate-verdict", ["--repo", tmp, "--check", "gate-verdict"]);
+  fs.rmSync(path.join(tmp, "docs", "ai", "ACEF_ACTIVE_RUN.json"), { force: true });
+  fs.rmSync(path.join(tmp, "docs", "ai", "ACEF_ACTIVE_WORKER_SCOPE.json"), { force: true });
+  fs.rmSync(path.join(tmp, "docs", "ai", "actors"), { recursive: true, force: true });
+  fs.rmSync(path.join(tmp, "docs", "ai", "evidence"), { recursive: true, force: true });
+  fs.rmSync(path.join(tmp, "docs", "ai", "gates"), { recursive: true, force: true });
+
   expectPass("session-handoff", ["--repo", tmp, "--check", "session-handoff", "--ledger", "docs/ai/ACEF_demo_DELIVERY_AUDIT.md"]);
   expectPass("claims", ["--repo", tmp, "--check", "claims", "--ledger", "docs/ai/ACEF_demo_DELIVERY_AUDIT.md"]);
   expectPass("seeded-epic-gates", ["--repo", tmp, "--check", "seeded-epic-gates", "--ledger", "docs/ai/ACEF_demo_DELIVERY_AUDIT.md"]);

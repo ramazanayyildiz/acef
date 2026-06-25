@@ -1,0 +1,53 @@
+{
+  "capabilityId": "quick-fix-lane",
+  "requestedIntent": "Add a BMAD-aligned Quick Fix lane with ACEF mechanical controls for narrow bug fixes.",
+  "status": "proven",
+  "requiredLayers": [
+    "docs",
+    "workflow",
+    "validator",
+    "tests"
+  ],
+  "implementedLayers": {
+    "docs": [
+      "method/OPERATING_MODEL.md#Lanes",
+      "skills/acef/references/ACEF_OPERATING_MODEL.md#Lanes"
+    ],
+    "workflow": [
+      "schemas/active-run.schema.json",
+      "schemas/lightweight-run.schema.json",
+      "scripts/lib/acef-state-parser.js#parseActiveRun",
+      "scripts/lib/acef-state-parser.js#parseLightweightRun"
+    ],
+    "validator": [
+      "scripts/acef-process-validator#checkLightweightLifecycle"
+    ],
+    "tests": [
+      "scripts/test-acef-lightweight-lifecycle"
+    ]
+  },
+  "limitations": [
+    "Quick Fix uses the compact lifecycle artifact docs/ai/ACEF_LIGHTWEIGHT_RUN.json.",
+    "The validator checks declared quick-fix evidence paths and touched-surface evidence, plus heuristic path-name inference for obvious hidden risk and surface expansion.",
+    "High-risk or expanding fixes must promote to full-bmad or guarded."
+  ],
+  "evidence": [
+    {
+      "layer": "docs",
+      "ref": "method/OPERATING_MODEL.md#Lanes"
+    },
+    {
+      "layer": "workflow",
+      "ref": "schemas/lightweight-run.schema.json"
+    },
+    {
+      "layer": "validator",
+      "ref": "scripts/acef-process-validator#checkLightweightLifecycle"
+    },
+    {
+      "layer": "tests",
+      "ref": "scripts/test-acef-lightweight-lifecycle"
+    }
+  ],
+  "createdAt": "2026-06-25"
+}
