@@ -174,7 +174,7 @@ Every story close must include two canonical ledger facts, even when the full ev
    `surfaceEvidence` covers every touched surface. If the story changed UI, API, worker, command, hook, job, or
    integration behavior, the Process Judge must cite successful evidence for that surface before closing. Lightweight
    close requires the same declaration in `docs/ai/ACEF_LIGHTWEIGHT_RUN.json`: `surfaces` names every touched surface and
-   `surfaceEvidence` records the command, evidence path, and success result for each one.
+   `surfaceEvidence` records the command, evidence path, success result, and runner proof for each one.
    Validators also infer obvious surfaces from changed path names and fail if those surfaces were not declared; this is a
    guardrail, not a replacement for honest surface declaration.
 

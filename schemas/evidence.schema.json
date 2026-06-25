@@ -3,7 +3,7 @@
   "$id": "https://acef.local/schemas/evidence.schema.json",
   "title": "ACEF Evidence Manifest",
   "type": "object",
-  "required": ["evidenceId", "kind", "command", "exitCode", "repositoryCommit", "dirtyDigest", "actorInstanceId", "story", "rawArtifact", "satisfies"],
+  "required": ["evidenceId", "kind", "command", "exitCode", "repositoryCommit", "dirtyDigest", "actorInstanceId", "story", "rawArtifact", "runnerProof", "satisfies"],
   "additionalProperties": false,
   "properties": {
     "evidenceId": { "type": "string", "minLength": 1 },
@@ -26,6 +26,16 @@
         "sha256": { "type": "string", "minLength": 1 }
       },
       "required": ["path", "sha256"]
+    },
+    "runnerProof": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "runner", "sha256"],
+      "properties": {
+        "schema": { "type": "string", "const": "acef-evidence-runner-proof-v1" },
+        "runner": { "type": "string", "minLength": 1 },
+        "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+      }
     },
     "satisfies": {
       "type": "array",

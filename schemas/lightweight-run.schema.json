@@ -47,7 +47,7 @@
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["surface", "evidencePath", "command", "exitCode"],
+        "required": ["surface", "evidencePath", "command", "exitCode", "runnerProof"],
         "properties": {
           "surface": {
             "type": "string",
@@ -56,6 +56,16 @@
           "evidencePath": { "type": "string", "minLength": 1 },
           "command": { "type": "string" },
           "exitCode": { "type": "integer" },
+          "runnerProof": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["schema", "runner", "sha256"],
+            "properties": {
+              "schema": { "type": "string", "const": "acef-lightweight-surface-proof-v1" },
+              "runner": { "type": "string", "minLength": 1 },
+              "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+            }
+          },
           "notes": { "type": "string" }
         }
       }

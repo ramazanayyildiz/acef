@@ -22,7 +22,7 @@ sandbox or malicious-code security boundary.
 | Malicious process bypasses tool hooks | no OS-level guarantee |
 | Agent forges editable prose | typed sidecars reduce but do not cryptographically eliminate risk |
 | Agent fabricates a human approval receipt | no cryptographic guarantee; preserve the exact quote and source channel, and reconcile it to the client transcript at guarded/epic gates |
-| Runtime environment lies about command output | require raw evidence hashes and reproducible command records |
+| Runtime environment lies about command output | require raw evidence hashes, runner headers, runner proofs, and reproducible command records |
 
 ## Evidence Standard
 
@@ -32,6 +32,7 @@ An ACEF evidence record should bind the result to:
 - dirty-worktree digest, or the literal `clean` state;
 - exact command;
 - exit code;
+- runner proof generated from command, exit code, actor/story, repository state, and raw artifact hash;
 - relevant runtime/tool versions when available;
 - raw output artifact path and hash when output is large;
 - ACs or gates it satisfies.

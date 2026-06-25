@@ -196,6 +196,43 @@ function sha256File(filePath) {
   return crypto.createHash("sha256").update(fs.readFileSync(filePath)).digest("hex");
 }
 
+function evidenceRunnerProof(record) {
+  return sha256(JSON.stringify({
+    schema: "acef-evidence-runner-proof-v1",
+    runner: "acef-state evidence-run",
+    evidenceId: record.evidenceId,
+    kind: record.kind,
+    command: record.command,
+    exitCode: record.exitCode,
+    startedAt: record.startedAt || null,
+    finishedAt: record.finishedAt || null,
+    repositoryCommit: record.repositoryCommit,
+    repositoryTree: record.repositoryTree || null,
+    dirtyDigest: record.dirtyDigest,
+    environmentDigest: record.environmentDigest || null,
+    actorInstanceId: record.actorInstanceId,
+    story: record.story,
+    rawArtifact: record.rawArtifact,
+    satisfies: record.satisfies,
+  }));
+}
+
+function lightweightSurfaceProof(entry, artifactSha256) {
+  return sha256(JSON.stringify({
+    schema: "acef-lightweight-surface-proof-v1",
+    runner: "acef-lightweight-surface-evidence",
+    surface: entry.surface,
+    evidencePath: entry.evidencePath,
+    command: entry.command,
+    exitCode: entry.exitCode,
+    artifactSha256,
+  }));
+}
+
+function artifactHasRunnerHeader(text, command, exitCode) {
+  return text.includes(`command: ${command}\n`) && text.includes(`exit_code: ${exitCode}\n`);
+}
+
 function normalizedScope(value) {
   return String(value || "").trim().toLowerCase().replace(/[^a-z0-9]+/g, "");
 }
@@ -307,9 +344,20 @@ function validateEvidenceRecord(repoRoot, evidence) {
     else {
       safeRelative(fs.realpathSync(rawPath), fs.realpathSync(repoRoot));
       if (sha256File(rawPath) !== evidence.rawArtifact.sha256) failures.push(`evidence ${evidence.evidenceId} raw artifact hash mismatch`);
+      const rawText = read(rawPath);
+      if (!artifactHasRunnerHeader(rawText, evidence.command, evidence.exitCode)) {
+        failures.push(`evidence ${evidence.evidenceId} raw artifact missing runner command/exit header`);
+      }
     }
   } catch (error) {
     failures.push(`evidence ${evidence.evidenceId}: ${error.message}`);
+  }
+  if (evidence.runnerProof?.schema !== "acef-evidence-runner-proof-v1") {
+    failures.push(`evidence ${evidence.evidenceId} runnerProof schema mismatch`);
+  } else if (evidence.runnerProof?.runner !== "acef-state evidence-run") {
+    failures.push(`evidence ${evidence.evidenceId} runnerProof runner mismatch`);
+  } else if (evidence.runnerProof?.sha256 !== evidenceRunnerProof(evidence)) {
+    failures.push(`evidence ${evidence.evidenceId} runnerProof hash mismatch`);
   }
   return failures;
 }
@@ -1891,7 +1939,21 @@ function checkLightweightLifecycle(repoRoot) {
           missing.push(`surface evidence for ${surface}`);
           continue;
         }
-        if (!exists(path.join(repoRoot, match.evidencePath))) missing.push(`${surface}: ${match.evidencePath}`);
+        const evidencePath = path.join(repoRoot, match.evidencePath);
+        if (!exists(evidencePath)) {
+          missing.push(`${surface}: ${match.evidencePath}`);
+        } else {
+          const artifactSha256 = sha256File(evidencePath);
+          const artifactText = read(evidencePath);
+          if (!artifactHasRunnerHeader(artifactText, match.command, match.exitCode)) {
+            missing.push(`runner command/exit header for ${surface}`);
+          }
+          if (match.runnerProof?.schema !== "acef-lightweight-surface-proof-v1"
+            || match.runnerProof?.runner !== "acef-lightweight-surface-evidence"
+            || match.runnerProof?.sha256 !== lightweightSurfaceProof(match, artifactSha256)) {
+            missing.push(`runner proof for ${surface}`);
+          }
+        }
         if (!match.command || !String(match.command).trim()) {
           missing.push(`surface evidence command for ${surface}`);
         }

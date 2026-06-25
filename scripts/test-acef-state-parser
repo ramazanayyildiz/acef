@@ -67,6 +67,11 @@ try {
     actorInstanceId: "dev-1",
     story: "Story 5.2",
     rawArtifact: { path: "docs/ai/evidence/raw/EV-1.log", sha256: "sha256-demo" },
+    runnerProof: {
+      schema: "acef-evidence-runner-proof-v1",
+      runner: "acef-state evidence-run",
+      sha256: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    },
     satisfies: ["AC-5.2.1"],
   });
   if (parseEvidenceManifest(evidence).exitCode !== 0) throw new Error("evidence parse failed");
@@ -144,6 +149,11 @@ try {
     actorInstanceId: "dev-1",
     story: "Story 5.2",
     rawArtifact: { path: "raw.log", sha256: "demo" },
+    runnerProof: {
+      schema: "acef-evidence-runner-proof-v1",
+      runner: "acef-state evidence-run",
+      sha256: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    },
     satisfies: ["AC-1"],
   });
   assertThrows(() => parseEvidenceManifest(path.join(tmp, "bad-evidence.json")), /integer exitCode/, "bad evidence");

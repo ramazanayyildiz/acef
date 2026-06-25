@@ -27,6 +27,49 @@ function sha256File(filePath) {
   return crypto.createHash("sha256").update(fs.readFileSync(filePath)).digest("hex");
 }
 
+function sha256(value) {
+  return crypto.createHash("sha256").update(value).digest("hex");
+}
+
+function runnerArtifact(command, exitCode, body) {
+  return [
+    `command: ${command}`,
+    "started_at: 2026-06-25T00:00:00.000Z",
+    "finished_at: 2026-06-25T00:00:01.000Z",
+    `exit_code: ${exitCode}`,
+    "",
+    "--- stdout ---",
+    body,
+    "--- stderr ---",
+    "",
+  ].join("\n");
+}
+
+function evidenceRunnerProof(record) {
+  return {
+    schema: "acef-evidence-runner-proof-v1",
+    runner: "acef-state evidence-run",
+    sha256: sha256(JSON.stringify({
+      schema: "acef-evidence-runner-proof-v1",
+      runner: "acef-state evidence-run",
+      evidenceId: record.evidenceId,
+      kind: record.kind,
+      command: record.command,
+      exitCode: record.exitCode,
+      startedAt: record.startedAt || null,
+      finishedAt: record.finishedAt || null,
+      repositoryCommit: record.repositoryCommit,
+      repositoryTree: record.repositoryTree || null,
+      dirtyDigest: record.dirtyDigest,
+      environmentDigest: record.environmentDigest || null,
+      actorInstanceId: record.actorInstanceId,
+      story: record.story,
+      rawArtifact: record.rawArtifact,
+      satisfies: record.satisfies,
+    })),
+  };
+}
+
 function expectPass(label, args) {
   const output = runValidator(args);
   if (!output.includes(`PASS ${label}:`)) {
@@ -834,8 +877,10 @@ try {
   fs.mkdirSync(path.join(tmp, "docs", "ai", "gates"), { recursive: true });
   const surfaceArtifact = path.join(tmp, "docs", "ai", "reports", "story-1-1-surface-test.log");
   const apiSurfaceArtifact = path.join(tmp, "docs", "ai", "reports", "story-1-1-api-surface-test.log");
-  fs.writeFileSync(surfaceArtifact, "PASS ui surface test\n");
-  fs.writeFileSync(apiSurfaceArtifact, "PASS api surface test\n");
+  const uiCommand = "npm run test:ui -- story-1-1";
+  const apiCommand = "npm run test:api -- story-1-1";
+  fs.writeFileSync(surfaceArtifact, runnerArtifact(uiCommand, 0, "PASS ui surface test\n"));
+  fs.writeFileSync(apiSurfaceArtifact, runnerArtifact(apiCommand, 0, "PASS api surface test\n"));
   fs.writeFileSync(path.join(tmp, "docs", "ai", "actors", "dev-surface.json"), JSON.stringify({
     actorInstanceId: "dev-surface",
     story: "story 1.1",
@@ -854,10 +899,10 @@ try {
     inputCommit: head,
     allowedContextProfile: "story-slice",
   }, null, 2));
-  fs.writeFileSync(path.join(tmp, "docs", "ai", "evidence", "evidence-ui.json"), JSON.stringify({
+  const uiEvidence = {
     evidenceId: "evidence-ui",
     kind: "runtime-test",
-    command: "npm run test:ui -- story-1-1",
+    command: uiCommand,
     exitCode: 0,
     repositoryCommit: head,
     dirtyDigest: null,
@@ -868,11 +913,13 @@ try {
       sha256: sha256File(surfaceArtifact),
     },
     satisfies: ["ui surface validation"],
-  }, null, 2));
-  fs.writeFileSync(path.join(tmp, "docs", "ai", "evidence", "evidence-api.json"), JSON.stringify({
+  };
+  uiEvidence.runnerProof = evidenceRunnerProof(uiEvidence);
+  fs.writeFileSync(path.join(tmp, "docs", "ai", "evidence", "evidence-ui.json"), JSON.stringify(uiEvidence, null, 2));
+  const apiEvidence = {
     evidenceId: "evidence-api",
     kind: "runtime-test",
-    command: "npm run test:api -- story-1-1",
+    command: apiCommand,
     exitCode: 0,
     repositoryCommit: head,
     dirtyDigest: null,
@@ -883,7 +930,9 @@ try {
       sha256: sha256File(apiSurfaceArtifact),
     },
     satisfies: ["api surface validation"],
-  }, null, 2));
+  };
+  apiEvidence.runnerProof = evidenceRunnerProof(apiEvidence);
+  fs.writeFileSync(path.join(tmp, "docs", "ai", "evidence", "evidence-api.json"), JSON.stringify(apiEvidence, null, 2));
   fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_ACTIVE_WORKER_SCOPE.json"), JSON.stringify({
     activeStory: "story 1.1",
     phase: "process-judge",
@@ -934,6 +983,18 @@ try {
     ],
   }, null, 2));
   expectPass("gate-verdict", ["--repo", tmp, "--check", "gate-verdict"]);
+
+  const originalApiArtifact = fs.readFileSync(apiSurfaceArtifact, "utf8");
+  const originalApiEvidence = JSON.parse(fs.readFileSync(path.join(tmp, "docs", "ai", "evidence", "evidence-api.json"), "utf8"));
+  fs.writeFileSync(apiSurfaceArtifact, "PASS but not produced by the runner\n");
+  const fakeApiEvidence = { ...originalApiEvidence, rawArtifact: { ...originalApiEvidence.rawArtifact, sha256: sha256File(apiSurfaceArtifact) } };
+  fakeApiEvidence.runnerProof = evidenceRunnerProof(fakeApiEvidence);
+  fs.writeFileSync(path.join(tmp, "docs", "ai", "evidence", "evidence-api.json"), JSON.stringify(fakeApiEvidence, null, 2));
+  expectFail("evidence-manifest", ["--repo", tmp, "--check", "evidence-manifest"]);
+  expectFail("gate-verdict", ["--repo", tmp, "--check", "gate-verdict"]);
+  fs.writeFileSync(apiSurfaceArtifact, originalApiArtifact);
+  fs.writeFileSync(path.join(tmp, "docs", "ai", "evidence", "evidence-api.json"), JSON.stringify(originalApiEvidence, null, 2));
+
   fs.rmSync(path.join(tmp, "docs", "ai", "ACEF_ACTIVE_RUN.json"), { force: true });
   fs.rmSync(path.join(tmp, "docs", "ai", "ACEF_ACTIVE_WORKER_SCOPE.json"), { force: true });
   fs.rmSync(path.join(tmp, "docs", "ai", "actors"), { recursive: true, force: true });

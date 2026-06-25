@@ -133,6 +133,27 @@ function sha256(value) {
   return crypto.createHash("sha256").update(value).digest("hex");
 }
 
+function evidenceRunnerProof(record) {
+  return sha256(JSON.stringify({
+    schema: "acef-evidence-runner-proof-v1",
+    runner: "acef-state evidence-run",
+    evidenceId: record.evidenceId,
+    kind: record.kind,
+    command: record.command,
+    exitCode: record.exitCode,
+    startedAt: record.startedAt || null,
+    finishedAt: record.finishedAt || null,
+    repositoryCommit: record.repositoryCommit,
+    repositoryTree: record.repositoryTree || null,
+    dirtyDigest: record.dirtyDigest,
+    environmentDigest: record.environmentDigest || null,
+    actorInstanceId: record.actorInstanceId,
+    story: record.story,
+    rawArtifact: record.rawArtifact,
+    satisfies: record.satisfies,
+  }));
+}
+
 function dirtyDigest(repo) {
   const status = cp.execFileSync("git", ["status", "--porcelain=v1", "-z"], {
     cwd: repo,
@@ -341,6 +362,11 @@ function writeEvidence(opts) {
     story: opts.story,
     rawArtifact: { path: relative(opts.repo, rawPath), sha256: sha256(fs.readFileSync(rawPath)) },
     satisfies: opts.satisfies,
+  };
+  record.runnerProof = {
+    schema: "acef-evidence-runner-proof-v1",
+    runner: "acef-state evidence-run",
+    sha256: evidenceRunnerProof(record),
   };
   const target = evidencePath(opts.repo, opts.id);
   atomicJson(target, record, { validate: parseEvidenceManifest });

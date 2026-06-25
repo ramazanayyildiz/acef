@@ -75,12 +75,13 @@ function parseActorRecord(filePath) {
 
 function parseEvidenceManifest(filePath) {
   const record = readJson(filePath);
-  requireFields(record, ["evidenceId", "kind", "command", "repositoryCommit", "actorInstanceId", "story", "rawArtifact", "satisfies"], "evidence manifest");
+  requireFields(record, ["evidenceId", "kind", "command", "repositoryCommit", "actorInstanceId", "story", "rawArtifact", "runnerProof", "satisfies"], "evidence manifest");
   requireEnum(record, "kind", ["runtime-test", "static-check", "manual-smoke", "build", "lint", "typecheck", "other"], "evidence manifest");
   if (!Number.isInteger(record.exitCode)) throw new Error("evidence manifest missing integer exitCode");
   requireStringArray(record, "satisfies", "evidence manifest", { nonEmpty: true });
   if (!record.rawArtifact || typeof record.rawArtifact !== "object") throw new Error("evidence manifest missing rawArtifact");
   requireFields(record.rawArtifact, ["path", "sha256"], "evidence rawArtifact");
+  requireRunnerProof(record.runnerProof, "evidence runnerProof");
   return record;
 }
 
@@ -308,6 +309,14 @@ function requireShaArtifact(record, label) {
   if (!/^[a-f0-9]{64}$/.test(record.sha256)) throw new Error(`${label} sha256 must be a SHA-256 hex digest`);
 }
 
+function requireRunnerProof(record, label) {
+  if (!record || typeof record !== "object" || Array.isArray(record)) throw new Error(`${label} must be an object`);
+  requireFields(record, ["schema", "runner", "sha256"], label);
+  if (typeof record.schema !== "string" || !record.schema.trim()) throw new Error(`${label}.schema must be a non-empty string`);
+  if (typeof record.runner !== "string" || !record.runner.trim()) throw new Error(`${label}.runner must be a non-empty string`);
+  if (!/^[a-f0-9]{64}$/.test(record.sha256)) throw new Error(`${label}.sha256 must be a SHA-256 hex digest`);
+}
+
 function parsePrReviewProfile(input, label = "PR review profile") {
   const record = recordFromPathOrObject(input, label);
   requireFields(record, ["profileId", "reviewId", "generatedAt", "baseCommit", "headCommit", "changedFiles", "selectedPaths", "workShapes", "genericRulesSupplementOnly", "source", "adapterSignals", "selectedPatterns", "globalDoNotCopy"], label);
@@ -385,12 +394,13 @@ function parseLightweightRun(filePath) {
     if (!Array.isArray(record.surfaceEvidence)) throw new Error("lightweight run surfaceEvidence must be an array");
     for (const [index, item] of record.surfaceEvidence.entries()) {
       if (!item || typeof item !== "object") throw new Error(`lightweight run surfaceEvidence[${index}] must be an object`);
-      requireFields(item, ["surface", "evidencePath", "command", "exitCode"], `lightweight run surfaceEvidence[${index}]`);
+      requireFields(item, ["surface", "evidencePath", "command", "exitCode", "runnerProof"], `lightweight run surfaceEvidence[${index}]`);
       requireSurface(item.surface, `lightweight run surfaceEvidence[${index}]`);
       if (typeof item.evidencePath !== "string" || !item.evidencePath.trim()) throw new Error(`lightweight run surfaceEvidence[${index}].evidencePath must be a non-empty string`);
       requireRelativePaths([item.evidencePath], `lightweight run surfaceEvidence[${index}]`);
       if (typeof item.command !== "string" || !item.command.trim()) throw new Error(`lightweight run surfaceEvidence[${index}].command must be a non-empty string`);
       if (!Number.isInteger(item.exitCode)) throw new Error(`lightweight run surfaceEvidence[${index}].exitCode must be integer`);
+      requireRunnerProof(item.runnerProof, `lightweight run surfaceEvidence[${index}].runnerProof`);
     }
   }
   if (record.quickFix !== undefined) {

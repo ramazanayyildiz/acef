@@ -11,6 +11,8 @@ or evidence contract. Do not use it to claim implementation status; link to the 
 
 ### Lane and surface enforcement
 
+- Added runner-proof validation for typed evidence manifests and lightweight surface evidence. Evidence artifacts must now
+  carry command/exit metadata and a deterministic runner proof, so fake prose logs cannot pass merely by matching a hash.
 - Added the `quick-fix` lane for BMAD-style narrow bug fixes, with required repro, before-patch, after-patch, independent
   review, and touched-surface evidence in `docs/ai/ACEF_LIGHTWEIGHT_RUN.json`.
 - Added `lane-selection` and `lane-closeout` validator checks so quick-fix, lightweight, full-BMAD, and guarded lanes

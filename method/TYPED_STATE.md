@@ -63,8 +63,9 @@ scripts/install-acef-tools --repo /path/to/repo
 
 `evidence-run` executes an argv command without a shell, stores stdout/stderr under
 `docs/ai/evidence/raw/`, hashes the raw artifact, records the Git commit/tree and actor, and preserves the command's
-exit code. It refuses to start when application paths are already dirty. A `PASS` gate must cite at least one
-successful evidence manifest whose raw hash still matches.
+exit code. It also writes a deterministic `runnerProof` over the command, exit code, repository state, actor, story,
+raw artifact hash, and satisfied checks. It refuses to start when application paths are already dirty. A `PASS` gate must
+cite at least one successful evidence manifest whose raw hash, runner header, and runner proof still match.
 
 Actor, evidence, gate, and approval records are immutable. `ACEF_ACTIVE_RUN.json` and
 `ACEF_ACTIVE_WORKER_SCOPE.json` are atomic singletons and may be replaced only as the run advances.

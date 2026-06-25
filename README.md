@@ -327,6 +327,8 @@ evidence; they are a REPLAN signal.
 When behavior depends on a runtime entrypoint, include a real-runtime smoke: hit the real HTTP route, command, queue,
 scheduler, CMS/admin runtime, or template path and assert meaningful content or a negative guard. Status-only checks and
 isolated helper/component tests do not prove the production path.
+Typed evidence and lightweight surface evidence must also carry runner-shaped command/exit metadata and runner proof.
+Plain prose logs, even with matching hashes, do not satisfy the evidence contract.
 When a story establishes the first reusable UI/runtime pattern for a surface, it needs a small round-trip proof through
 that surface before later stories reuse it. Reuse stories can stay lighter, but the first pattern must prove the real
 entry path, state change, reload/re-entry, and runtime output. UI-visible claims cannot close on non-UI evidence alone.

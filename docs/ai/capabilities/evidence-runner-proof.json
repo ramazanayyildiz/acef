@@ -1,0 +1,69 @@
+{
+  "capabilityId": "evidence-runner-proof",
+  "requestedIntent": "Reject fake evidence artifacts that only claim a command passed without runner-shaped command and exit metadata.",
+  "status": "proven",
+  "requiredLayers": [
+    "docs",
+    "workflow",
+    "validator",
+    "tests"
+  ],
+  "implementedLayers": {
+    "docs": [
+      "CHANGELOG.md#Lane and surface enforcement",
+      "method/TYPED_STATE.md#Typed State CLI",
+      "method/TRUST_MODEL.md#Evidence Standard",
+      "method/OPERATING_MODEL.md#Story-close evidence minimums",
+      "skills/acef/references/ACEF_OPERATING_MODEL.md#Story-close evidence minimums"
+    ],
+    "workflow": [
+      "schemas/evidence.schema.json",
+      "schemas/lightweight-run.schema.json",
+      "scripts/acef-state#evidence-run",
+      "scripts/lib/acef-state-parser.js#parseEvidenceManifest",
+      "scripts/lib/acef-state-parser.js#parseLightweightRun"
+    ],
+    "validator": [
+      "scripts/acef-process-validator#validateEvidenceRecord",
+      "scripts/acef-process-validator#checkLightweightLifecycle"
+    ],
+    "tests": [
+      "scripts/test-acef-state",
+      "scripts/test-acef-state-parser",
+      "scripts/test-acef-process-validator",
+      "scripts/test-acef-lightweight-lifecycle",
+      "scripts/test-acef-typed-state-validator"
+    ]
+  },
+  "limitations": [
+    "Runner proofs are deterministic local hashes, not cryptographic signatures; a malicious actor with write access can still fabricate matching records.",
+    "This blocks stale or plain fake logs by requiring runner headers and proof hashes, and leaves a clear upgrade path for signed evidence later."
+  ],
+  "evidence": [
+    {
+      "layer": "workflow",
+      "ref": "schemas/evidence.schema.json"
+    },
+    {
+      "layer": "workflow",
+      "ref": "scripts/acef-state#evidence-run"
+    },
+    {
+      "layer": "validator",
+      "ref": "scripts/acef-process-validator#validateEvidenceRecord"
+    },
+    {
+      "layer": "validator",
+      "ref": "scripts/acef-process-validator#checkLightweightLifecycle"
+    },
+    {
+      "layer": "tests",
+      "ref": "scripts/test-acef-process-validator"
+    },
+    {
+      "layer": "tests",
+      "ref": "scripts/test-acef-lightweight-lifecycle"
+    }
+  ],
+  "createdAt": "2026-06-25"
+}

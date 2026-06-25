@@ -4,6 +4,7 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const cp = require("node:child_process");
+const crypto = require("node:crypto");
 
 const acefRoot = path.resolve(__dirname, "..");
 const validator = path.join(acefRoot, "scripts", "acef-process-validator");
@@ -32,11 +33,53 @@ function write(repo, filePath, text) {
   fs.writeFileSync(absolute, text);
 }
 
+function sha256(value) {
+  return crypto.createHash("sha256").update(value).digest("hex");
+}
+
+function surfaceArtifact(command, exitCode, body) {
+  return [
+    `command: ${command}`,
+    "started_at: 2026-06-25T00:00:00.000Z",
+    "finished_at: 2026-06-25T00:00:01.000Z",
+    `exit_code: ${exitCode}`,
+    "",
+    "--- stdout ---",
+    body,
+    "--- stderr ---",
+    "",
+  ].join("\n");
+}
+
+function lightweightSurfaceProof(entry, artifactText) {
+  return {
+    schema: "acef-lightweight-surface-proof-v1",
+    runner: "acef-lightweight-surface-evidence",
+    sha256: sha256(JSON.stringify({
+      schema: "acef-lightweight-surface-proof-v1",
+      runner: "acef-lightweight-surface-evidence",
+      surface: entry.surface,
+      evidencePath: entry.evidencePath,
+      command: entry.command,
+      exitCode: entry.exitCode,
+      artifactSha256: sha256(artifactText),
+    })),
+  };
+}
+
 function makeRepo(name, mutate = (record) => record) {
   const repo = path.join(tmpRoot, name);
   fs.mkdirSync(repo, { recursive: true });
   for (const step of steps) write(repo, `docs/ai/evidence/${step}.txt`, `${step}\n`);
-  write(repo, "docs/ai/evidence/api-surface.txt", "api surface PASS\n");
+  const surfaceEntry = {
+    surface: "api",
+    evidencePath: "docs/ai/evidence/api-surface.txt",
+    command: "npm run test:api -- story",
+    exitCode: 0,
+  };
+  const apiSurfaceArtifact = surfaceArtifact(surfaceEntry.command, surfaceEntry.exitCode, "api surface PASS\n");
+  surfaceEntry.runnerProof = lightweightSurfaceProof(surfaceEntry, apiSurfaceArtifact);
+  write(repo, surfaceEntry.evidencePath, apiSurfaceArtifact);
   write(repo, "docs/ai/evidence/repro.txt", "bug reproduced\n");
   write(repo, "docs/ai/evidence/before-patch.txt", "before patch failing\n");
   write(repo, "docs/ai/evidence/after-patch.txt", "after patch passing\n");
@@ -56,14 +99,7 @@ function makeRepo(name, mutate = (record) => record) {
       triggers: [],
     },
     surfaces: ["api"],
-    surfaceEvidence: [
-      {
-        surface: "api",
-        evidencePath: "docs/ai/evidence/api-surface.txt",
-        command: "npm run test:api -- story",
-        exitCode: 0,
-      },
-    ],
+    surfaceEvidence: [surfaceEntry],
     updatedAt: "2026-06-23T00:00:00.000Z",
   });
   write(repo, "docs/ai/ACEF_LIGHTWEIGHT_RUN.json", `${JSON.stringify(record, null, 2)}\n`);
@@ -151,6 +187,20 @@ try {
   const missingSurfaceEvidenceResult = run(missingSurfaceEvidence);
   assert.notEqual(missingSurfaceEvidenceResult.status, 0);
   assert.match(missingSurfaceEvidenceResult.stdout, /surface evidence for api/);
+
+  const missingRunnerProof = makeRepo("missing-runner-proof", (record) => {
+    delete record.surfaceEvidence[0].runnerProof;
+    return record;
+  });
+  const missingRunnerProofResult = run(missingRunnerProof);
+  assert.notEqual(missingRunnerProofResult.status, 0);
+  assert.match(missingRunnerProofResult.stdout, /runnerProof/);
+
+  const fakeRunnerArtifact = makeRepo("fake-runner-artifact");
+  write(fakeRunnerArtifact, "docs/ai/evidence/api-surface.txt", "PASS but not produced by runner\n");
+  const fakeRunnerArtifactResult = run(fakeRunnerArtifact);
+  assert.notEqual(fakeRunnerArtifactResult.status, 0);
+  assert.match(fakeRunnerArtifactResult.stdout, /runner command\/exit header|runner proof/);
 
   const hiddenSurface = makeRepo("hidden-surface");
   initGit(hiddenSurface);

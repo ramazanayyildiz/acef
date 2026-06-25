@@ -167,8 +167,9 @@ Captures (each field cites a source path):
           <div class="grid">
             <div class="card" style="border-left-color:var(--blue)"><h3>Operating model</h3><p>Planner, Developer,
               Judge, Test Author, Documentation Maintainer, plus mechanical/standard/guarded tracks.</p></div>
-            <div class="card" style="border-left-color:var(--violet)"><h3>Two lanes</h3><p>Small/ongoing work uses the
-              lightweight lane. Epics and risky large work use full BMAD v2.</p></div>
+            <div class="card" style="border-left-color:var(--violet)"><h3>Four lanes</h3><p><code>quick-fix</code>,
+              <code>lightweight</code>, <code>full-bmad</code>, and <code>guarded</code> each have mechanical lane
+              selection and closeout bundles.</p></div>
             <div class="card" style="border-left-color:var(--blue)"><h3>Adapter memory</h3><p>Codemap snapshot,
               adapter living-knowledge, and run ledger stay separate so repo memory stays grounded and small.</p></div>
             <div class="card" style="border-left-color:var(--teal)"><h3>Conformance loop</h3><p>Reuse-before-create
@@ -179,14 +180,16 @@ Captures (each field cites a source path):
             <div class="card" style="border-left-color:var(--blue)"><h3>Process validator</h3><p><code>scripts/acef-process-validator</code>
             checks clean-tree certification state, preflight PASS, claimed output paths, adapter freshness, registry shape, reuse-before-create,
             do-not-copy misuse, partial work-shape permission, finding promotion, graduation reconciliation, probed vertical-slice completeness,
-            guarded boundary tests, actor separation, source reconciliation, session handoff, epic gates, capability-change
-            classification, and REPLAN count.</p></div>
+            guarded boundary tests, actor separation, source reconciliation, lane selection/closeout, touched-surface
+            evidence, runner-proof evidence, session handoff, epic gates, capability-change classification, and REPLAN
+            count.</p></div>
             <div class="card" style="border-left-color:var(--amber)"><h3>Capability ledger</h3><p><code>CHANGELOG.md</code>
               explains what changed for humans; <code>docs/ai/capabilities/*.json</code> records whether each ACEF
               capability is documented-only, wired, enforced, proven, or installed.</p></div>
             <div class="card" style="border-left-color:var(--green)"><h3>Typed evidence</h3><p><code>acef-state</code>
               writes actor, worker-scope, hashed command evidence, gate verdict, and approval JSON sidecars. Validators
-              bind PASS to the right actor, Git state, raw output hash, and explicit human approval.</p></div>
+              bind PASS to the right actor, Git state, raw output hash, runner command/exit header, runner proof, and
+              explicit human approval.</p></div>
             <div class="card" style="border-left-color:var(--rose)"><h3>Process gates</h3><p><code>ACEF_PREFLIGHT.md</code>
               must PASS before planning or implementation; Process Judge and Epic Process Judge verify skills, phase
               order, artifacts, and evidence before <code>done</code>.</p></div>
@@ -234,7 +237,9 @@ Captures (each field cites a source path):
           <p class="muted">Today the methodology, repo-local helper CLIs, typed-state/context policy, and workflow
             guardrails have real repo evidence behind them. <code>map-codebase</code> is <span class="chip c-ready">READY</span>;
             <code>bug-hunter</code> is measured as an optional JIT review lens; <code>implementation-shape-review</code>
-            is wired as an optional review lens but not enforced as a required gate.</p>
+            is wired as an optional review lens but not enforced as a required gate. Quick-fix, lane closeout,
+            touched-surface validation, and evidence runner proof are recorded as <code>proven</code> capability
+            records.</p>
         </section>
 
         <section id="setup"><h2><span class="ic" style="background:#e3f7ec">📦</span>Setup</h2>
