@@ -17,7 +17,7 @@ function usage() {
   console.log(`ACEF typed-state writer
 
 Usage:
-  acef-state active-run --repo <path> --run-id <id> --lane <lane> --status <status> --story <scope> --phase <phase> --ledger <path> [--workflow <path> --workflow-node <id>] [options]
+  acef-state active-run --repo <path> --run-id <id> --lane <lane> --status <status> --story <scope> --phase <phase> --ledger <path> [--route <route> --route-confidence low|medium|high] [options]
   acef-state actor --repo <path> --id <id> --story <scope> --phase <phase> --role <role> --client <client> --context-profile <profile> [options]
   acef-state worker-scope --repo <path> --story <scope> --phase <phase> --worker-id <id> --allow <glob>... [--surface <name>...] [--pattern-use <kind>] [--requires-round-trip true|false] [--binding <input>><output>:<field>[:defaultMaskingRisk]] [options]
   acef-state approval --repo <path> --id <id> --decision APPROVE|REJECT|ACCEPT_RISK --scope <scope> --quote <exact human words> [options]
@@ -29,7 +29,7 @@ Record files are written under docs/ai. Immutable records refuse overwrite; acti
 
 function parseArgs(argv) {
   const [command, ...rest] = argv;
-  const opts = { command, repo: process.cwd(), allow: [], satisfies: [], evidence: [], surface: [], surfaceEvidence: [], binding: [], bindingEvidence: [], riskTrigger: [], commandArgv: [] };
+  const opts = { command, repo: process.cwd(), allow: [], satisfies: [], evidence: [], surface: [], surfaceEvidence: [], binding: [], bindingEvidence: [], riskTrigger: [], clarifyingQuestion: [], inferredAnswer: [], unresolvedQuestion: [], commandArgv: [] };
   for (let index = 0; index < rest.length; index += 1) {
     const arg = rest[index];
     if (arg === "--") {
@@ -45,7 +45,7 @@ function parseArgs(argv) {
     const value = rest[index + 1];
     if (value === undefined || value.startsWith("--")) throw new Error(`Missing value for ${arg}`);
     index += 1;
-    if (["allow", "satisfies", "evidence", "surface", "surfaceEvidence", "binding", "bindingEvidence", "riskTrigger"].includes(key)) opts[key].push(value);
+    if (["allow", "satisfies", "evidence", "surface", "surfaceEvidence", "binding", "bindingEvidence", "riskTrigger", "clarifyingQuestion", "inferredAnswer", "unresolvedQuestion"].includes(key)) opts[key].push(value);
     else opts[key] = value;
   }
   opts.repo = path.resolve(opts.repo);
@@ -66,6 +66,21 @@ function parseBoolean(value, label) {
   if (value === true || value === "true") return true;
   if (value === false || value === "false") return false;
   throw new Error(`${label} must be true or false`);
+}
+
+function intakeDecision(opts) {
+  if (!opts.route && !opts.routeConfidence && !opts.clarifyingQuestion.length && !opts.inferredAnswer.length && !opts.unresolvedQuestion.length) return null;
+  const record = {
+    route: opts.route || "",
+    confidence: opts.routeConfidence || "medium",
+    clarifyingQuestions: opts.clarifyingQuestion,
+    inferredAnswers: opts.inferredAnswer,
+    unresolvedQuestions: opts.unresolvedQuestion,
+  };
+  if (opts.approvalRequired !== undefined) record.approvalRequired = parseBoolean(opts.approvalRequired, "--approval-required");
+  if (opts.executionApproved !== undefined) record.executionApproved = parseBoolean(opts.executionApproved, "--execution-approved");
+  if (opts.briefApproved !== undefined) record.briefApproved = parseBoolean(opts.briefApproved, "--brief-approved");
+  return record;
 }
 
 function parseSurfaceEvidence(entries) {
@@ -226,6 +241,7 @@ function writeActiveRun(opts) {
     workerRole: opts.workerRole || null,
     activeActorId: opts.actor || null,
     laneRationale: opts.laneRationale || null,
+    intakeDecision: intakeDecision(opts),
     riskTriggers: opts.riskTrigger.length ? opts.riskTrigger : [],
     workerScopePath: opts.workerScope || null,
     workflowPath: opts.workflow || null,

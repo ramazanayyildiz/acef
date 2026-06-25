@@ -9,6 +9,18 @@ or evidence contract. Do not use it to claim implementation status; link to the 
 
 ## Unreleased
 
+### Intake decision gate
+
+- Added `intakeDecision` to typed active runs so planning/execution phases must record the selected route, confidence,
+  clarifying questions asked, inferred answers, unresolved questions, and execution approval state.
+- Tightened `lane-selection` so typed runs in planning/execution fail when intake was skipped or unresolved questions are
+  marked execution-approved.
+- Tightened raw feature handling: low/medium-confidence work must record clarifying questions, full-BMAD/guarded work
+  must record an approved interview brief, and CRM/notes/tracking/accounting/finance signals route upward instead of
+  letting agents invent specs from a thin prompt.
+- Added `docs/ai/capabilities/intake-decision-gate.json` with status `enforced`; target repos must refresh ACEF before
+  the gate is installed there.
+
 ### Quick-fix envelope and test-integrity gate
 
 - Expanded quick-fix from a narrow file fence to a computed fix envelope: implementation paths, relevant tests, fixtures,

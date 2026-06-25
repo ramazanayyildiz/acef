@@ -61,6 +61,19 @@ function parseActiveRun(filePath) {
     && (typeof record.laneRationale !== "string" || !record.laneRationale.trim())) {
     throw new Error("active run laneRationale must be a non-empty string");
   }
+  if (record.intakeDecision !== undefined && record.intakeDecision !== null) {
+    const decision = record.intakeDecision;
+    requireFields(decision, ["route", "confidence"], "active run intakeDecision");
+    requireEnum(decision, "confidence", ["low", "medium", "high"], "active run intakeDecision");
+    for (const field of ["clarifyingQuestions", "inferredAnswers", "unresolvedQuestions"]) {
+      if (decision[field] !== undefined) requireStringArray(decision, field, "active run intakeDecision");
+    }
+    for (const field of ["briefApproved", "approvalRequired", "executionApproved"]) {
+      if (decision[field] !== undefined && typeof decision[field] !== "boolean") {
+        throw new Error(`active run intakeDecision ${field} must be boolean`);
+      }
+    }
+  }
   if (record.riskTriggers !== undefined) {
     requireStringArray(record, "riskTriggers", "active run");
   }

@@ -67,9 +67,11 @@ Internal behavior:
 1. Check whether the project adapter exists and is fresh.
 2. If the adapter is missing or stale, propose adapter extraction before route execution.
 3. Select the route from the router questions.
-4. Use only the SDLC steps required by that route.
-5. Preserve READY / DRAFT / MISSING honesty labels when discussing capabilities.
-6. Never present a document-only idea as an implemented skill.
+4. Record `intakeDecision` in `docs/ai/ACEF_ACTIVE_RUN.json` before planning or execution. Include route, confidence,
+   questions asked, facts inferred without asking, and unresolved questions.
+5. Use only the SDLC steps required by that route.
+6. Preserve READY / DRAFT / MISSING honesty labels when discussing capabilities.
+7. Never present a document-only idea as an implemented skill.
 
 Minimal user prompts by route:
 - Small feature: goal, acceptance criteria, likely repo/module if known.

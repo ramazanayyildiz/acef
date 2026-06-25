@@ -28,6 +28,12 @@ Do not start implementation, tests, installs, or broad repo scans unless the use
 Ask at most three yes/no clarifying questions before choosing a provisional route. If confidence is low or risk is
 high, route upward to the safer/larger path; never route downward to reduce ceremony.
 
+Before planning, dispatch, or implementation, record the route decision in `docs/ai/ACEF_ACTIVE_RUN.json` as
+`intakeDecision`: selected route, confidence, clarifying questions asked, facts inferred without asking, unresolved
+questions, interview brief approval, and execution approval. If no question was needed, record the inference. If the
+idea is thin, broad, CRM/notes/tracking/reporting/accounting/finance-related, or medium/low confidence, interview for
+details before producing a spec or plan. If unresolved questions remain, do not mark execution approved.
+
 ## Procedure
 
 1. Ask only what cannot be inferred:

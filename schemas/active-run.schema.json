@@ -17,6 +17,30 @@
     "workerRole": { "type": ["string", "null"] },
     "activeActorId": { "type": ["string", "null"] },
     "laneRationale": { "type": ["string", "null"] },
+    "intakeDecision": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["route", "confidence"],
+      "properties": {
+        "route": { "type": "string", "minLength": 1 },
+        "confidence": { "type": "string", "enum": ["low", "medium", "high"] },
+        "clarifyingQuestions": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "inferredAnswers": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "unresolvedQuestions": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "briefApproved": { "type": "boolean" },
+        "approvalRequired": { "type": "boolean" },
+        "executionApproved": { "type": "boolean" }
+      }
+    },
     "riskTriggers": {
       "type": "array",
       "items": { "type": "string", "minLength": 1 }

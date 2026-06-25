@@ -345,7 +345,7 @@ function inferredRiskTriggers(paths) {
   const triggers = new Set();
   for (const filePath of paths) {
     if (/auth|authorization|permission|roles?/i.test(filePath)) triggers.add("auth");
-    if (/payment|billing|invoice|checkout|subscription/i.test(filePath)) triggers.add("payment");
+    if (/payment|billing|invoice|checkout|subscription|accounting|finance|financial|revenue|expense|tax|ledger|muhasebe/i.test(filePath)) triggers.add("financial");
     if (/migration|delete|destroy|purge|truncate/i.test(filePath)) triggers.add("migration");
     if (/security|token|session|secret|credential/i.test(filePath)) triggers.add("security");
     if (/webhook/i.test(filePath)) triggers.add("webhook");
@@ -2062,6 +2062,36 @@ function checkLaneSelection(repoRoot) {
   const activeRun = typedActiveRun(repoRoot);
   if (!activeRun) return result("lane-selection", true, "No typed active run; legacy lane selection checks remain active");
   const failures = [];
+  const planningOrExecutionPhases = new Set(["planning", "atdd", "development", "code-review", "verify-patch", "test-review", "process-judge", "closeout"]);
+  const phase = String(activeRun.activePhase || "").toLowerCase();
+  if (planningOrExecutionPhases.has(phase)) {
+    const decision = activeRun.intakeDecision || null;
+    if (!decision) {
+      failures.push("planning/execution requires recorded intakeDecision before dispatch");
+    } else {
+      const clarifyingQuestions = decision.clarifyingQuestions || [];
+      const inferredAnswers = decision.inferredAnswers || [];
+      const unresolvedQuestions = decision.unresolvedQuestions || [];
+      if (!clarifyingQuestions.length && !inferredAnswers.length) {
+        failures.push("intakeDecision must record clarifying questions asked or facts inferred without asking");
+      }
+      if (decision.confidence !== "high" && !clarifyingQuestions.length) {
+        failures.push("low/medium-confidence intakeDecision requires clarifying questions before planning/execution");
+      }
+      if (decision.confidence === "low" && !unresolvedQuestions.length) {
+        failures.push("low-confidence intakeDecision must record unresolvedQuestions");
+      }
+      if (unresolvedQuestions.length && decision.executionApproved === true) {
+        failures.push("execution cannot be approved while intakeDecision has unresolvedQuestions");
+      }
+      if (decision.executionApproved !== true) {
+        failures.push("planning/execution requires explicit execution approval in intakeDecision");
+      }
+      if (["full-bmad", "guarded"].includes(activeRun.lane) && decision.briefApproved !== true) {
+        failures.push(`${activeRun.lane} planning/execution requires approved interview brief before spec or plan`);
+      }
+    }
+  }
   const triggers = (activeRun.riskTriggers || []).map((item) => String(item).toLowerCase());
   let activeScope = null;
   if (activeRun.workerScopePath) {
@@ -2079,8 +2109,8 @@ function checkLaneSelection(repoRoot) {
   if (!activeRun.laneRationale || !String(activeRun.laneRationale).trim()) {
     failures.push("active run requires laneRationale");
   }
-  const guardedTerms = /(auth|authorization|permission|role|payment|billing|invoice|migration|delete|destructive|security|token|session|webhook|irreversible|tenant|privacy|pii)/i;
-  const fullTerms = /(new-pattern|new abstraction|shared abstraction|multi-surface|unclear repro|scope expansion|broad refactor|feature)/i;
+  const guardedTerms = /(auth|authorization|permission|role|payment|billing|invoice|accounting|finance|financial|revenue|expense|tax|ledger|muhasebe|migration|delete|destructive|security|token|session|webhook|irreversible|tenant|privacy|pii)/i;
+  const fullTerms = /(new-pattern|new abstraction|shared abstraction|multi-surface|unclear repro|scope expansion|broad refactor|feature|crm|notes?|workflow|reporting|dashboard|tracking)/i;
   const guardedTrigger = allTriggers.find((item) => guardedTerms.test(item));
   const fullTrigger = allTriggers.find((item) => fullTerms.test(item));
   if (guardedTrigger && activeRun.lane !== "guarded") {

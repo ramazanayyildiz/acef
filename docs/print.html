@@ -193,6 +193,9 @@ Captures (each field cites a source path):
             <div class="card" style="border-left-color:var(--rose)"><h3>Process gates</h3><p><code>ACEF_PREFLIGHT.md</code>
               must PASS before planning or implementation; Process Judge and Epic Process Judge verify skills, phase
               order, artifacts, and evidence before <code>done</code>.</p></div>
+            <div class="card" style="border-left-color:var(--blue)"><h3>Intake decision</h3><p>Typed runs entering
+              planning or execution must record route, confidence, asked questions or inferred answers, and unresolved
+              questions in <code>ACEF_ACTIVE_RUN.json</code>; <code>lane-selection</code> fails if this was skipped.</p></div>
             <div class="card" style="border-left-color:var(--amber)"><h3>Actor separation</h3><p>Full BMAD story evidence
               records ATDD actor, Developer actor, Code Review actor, Verify-Patch actor, Test Review actor, and Process
               Judge actor. Self-review is invalid.</p></div>
@@ -315,6 +318,7 @@ Captures (each field cites a source path):
           </table>
           <div class="grid">
             <div class="card" style="border-left-color:var(--rose)"><h3>Preflight + Story Judge</h3><p><code>ACEF_PREFLIGHT.md</code> must PASS before planning or implementation. Before a story/task is <code>done</code>, verify route, lane, track, skill paths, phase order, artifacts, and evidence.</p></div>
+            <div class="card" style="border-left-color:var(--teal)"><h3>Intake decision</h3><p>Before planning or execution, typed runs record the route decision, confidence, questions asked or inferred answers, and unresolved questions.</p></div>
             <div class="card" style="border-left-color:var(--violet)"><h3>Epic Process Judge</h3><p>Before epic close, verify drift audit, trace, epic test-review, E2E/user-flow evidence, manual QA ledger, product-done audit, retrospective, and status close.</p></div>
             <div class="card" style="border-left-color:var(--blue)"><h3>Surface-realism</h3><p>When a story creates the first reusable UI/runtime pattern, it needs a round-trip proof through the real surface before other stories reuse it. UI epics need representative E2E at close.</p></div>
             <div class="card" style="border-left-color:var(--teal)"><h3>Test cases first</h3><p>For risky/large work, user flows become test cases before automation and before final story slicing.</p></div>

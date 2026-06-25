@@ -326,11 +326,19 @@ Parallel quick-fix workers need disjoint files and disjoint shared resources. Sh
 fixtures, and shared UI sections count as conflicts even when filenames differ.
 
 Lane choice is a mechanical gate, not only a planning note. Typed active runs record `laneRationale` and `riskTriggers`.
-Run `acef-process-validator --check lane-selection` before dispatch or closeout; auth, payment, migration, deletion,
-security, token/session, webhook, tenant, PII, or irreversible triggers require `guarded`, while new patterns, broad
-refactors, multi-surface work, unclear reproduction, or feature work require `full-bmad` or `guarded`.
+Run `acef-process-validator --check lane-selection` before dispatch or closeout; auth, payment, accounting/finance,
+invoice/billing, migration, deletion, security, token/session, webhook, tenant, PII, or irreversible triggers require
+`guarded`, while new patterns, broad refactors, CRM/notes/tracking/reporting workflows, multi-surface work, unclear
+reproduction, or feature work require `full-bmad` or `guarded`.
 The validator also infers obvious risk triggers from changed path names and fails when those inferred triggers were not
 declared.
+
+Planning or execution phases must also record the intake decision in `docs/ai/ACEF_ACTIVE_RUN.json`. The decision names
+the route, confidence, clarifying questions that were asked, facts inferred without asking, and any unresolved questions.
+If no question was needed, the inference must be written down. Low/medium-confidence work must ask clarifying questions.
+`full-bmad` and `guarded` planning/execution require an approved interview brief and explicit execution approval. If
+unresolved questions remain, execution cannot be approved. This keeps router/intake from being skipped when agents are
+eager to start or tempted to invent a spec from a thin prompt.
 
 Closeout is also bundled by lane. Run `acef-process-validator --check lane-closeout` before reporting done. The
 meta-check invokes the required validator set for the active lane so a worker cannot pass one convenient check and skip

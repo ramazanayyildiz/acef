@@ -260,6 +260,15 @@ try {
     repo: "quick-fix",
     lane: "quick-fix",
     laneRationale: "Narrow reproduced defect with localized patch.",
+    intakeDecision: {
+      route: "C",
+      confidence: "high",
+      clarifyingQuestions: ["Is this a reproduced defect?"],
+      inferredAnswers: ["The scope is localized from the fixture."],
+      unresolvedQuestions: [],
+      approvalRequired: false,
+      executionApproved: true,
+    },
     riskTriggers: ["bugfix"],
     status: "active",
     activeStory: "story 1.1",
@@ -270,6 +279,54 @@ try {
   assert.equal(quickFixSelection.status, 0, quickFixSelection.stderr || quickFixSelection.stdout);
   const quickFixCloseout = run(quickFix, "lane-closeout");
   assert.equal(quickFixCloseout.status, 0, quickFixCloseout.stderr || quickFixCloseout.stdout);
+
+  const missingIntake = makeRepo("missing-intake", (record) => {
+    record.lane = "quick-fix";
+    record.quickFix = quickFixEvidence();
+    return record;
+  });
+  write(missingIntake, "docs/ai/ACEF_ACTIVE_RUN.json", `${JSON.stringify({
+    runId: "RUN-missing-intake",
+    repo: "missing-intake",
+    lane: "quick-fix",
+    laneRationale: "Narrow reproduced defect with localized patch.",
+    riskTriggers: ["bugfix"],
+    status: "active",
+    activeStory: "story 1.1",
+    activePhase: "development",
+    ledgerPath: "docs/ai/ACEF_test_DELIVERY_AUDIT.md",
+  }, null, 2)}\n`);
+  const missingIntakeSelection = run(missingIntake, "lane-selection");
+  assert.notEqual(missingIntakeSelection.status, 0);
+  assert.match(missingIntakeSelection.stdout, /requires recorded intakeDecision/);
+
+  const missingBriefApproval = makeRepo("missing-brief-approval", (record) => {
+    record.lane = "lightweight";
+    return record;
+  });
+  write(missingBriefApproval, "docs/ai/ACEF_ACTIVE_RUN.json", `${JSON.stringify({
+    runId: "RUN-missing-brief-approval",
+    repo: "missing-brief-approval",
+    lane: "full-bmad",
+    laneRationale: "Raw CRM/accounting feature idea needs interview and full planning.",
+    intakeDecision: {
+      route: "B",
+      confidence: "medium",
+      clarifyingQuestions: ["Which CRM entities and accounting records are in scope?"],
+      inferredAnswers: ["The request mentions CRM notes and accounting tracking."],
+      unresolvedQuestions: [],
+      approvalRequired: true,
+      executionApproved: false,
+    },
+    riskTriggers: ["feature", "crm", "financial"],
+    status: "active",
+    activeStory: "CRM/accounting brief",
+    activePhase: "planning",
+    ledgerPath: "docs/ai/ACEF_test_DELIVERY_AUDIT.md",
+  }, null, 2)}\n`);
+  const missingBriefApprovalSelection = run(missingBriefApproval, "lane-selection");
+  assert.notEqual(missingBriefApprovalSelection.status, 0);
+  assert.match(missingBriefApprovalSelection.stdout, /explicit execution approval|approved interview brief/);
 
   const hiddenRisk = makeRepo("hidden-risk", (record) => {
     record.lane = "quick-fix";
@@ -286,6 +343,15 @@ try {
     repo: "hidden-risk",
     lane: "quick-fix",
     laneRationale: "Narrow reproduced defect with localized patch.",
+    intakeDecision: {
+      route: "C",
+      confidence: "high",
+      clarifyingQuestions: ["Is this a reproduced defect?"],
+      inferredAnswers: ["The fixture scope is localized."],
+      unresolvedQuestions: [],
+      approvalRequired: false,
+      executionApproved: true,
+    },
     riskTriggers: ["bugfix"],
     status: "active",
     activeStory: "story 1.1",
@@ -309,6 +375,15 @@ try {
     repo: "guarded-misroute",
     lane: "quick-fix",
     laneRationale: "Incorrectly treated auth as quick fix.",
+    intakeDecision: {
+      route: "C",
+      confidence: "medium",
+      clarifyingQuestions: ["Is this a reproduced defect?"],
+      inferredAnswers: ["Auth appears in the stated scope."],
+      unresolvedQuestions: [],
+      approvalRequired: true,
+      executionApproved: true,
+    },
     riskTriggers: ["bugfix", "auth"],
     status: "active",
     activeStory: "story 1.1",

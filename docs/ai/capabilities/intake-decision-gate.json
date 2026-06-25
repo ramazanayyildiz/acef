@@ -1,0 +1,51 @@
+{
+  "capabilityId": "intake-decision-gate",
+  "requestedIntent": "Prevent ACEF agents from entering planning or execution before recording the route/intake decision, clarifying questions or inferred answers, approved interview brief, and execution approval.",
+  "status": "enforced",
+  "requiredLayers": [
+    "docs",
+    "workflow",
+    "validator",
+    "tests"
+  ],
+  "implementedLayers": {
+    "docs": [
+      "method/OPERATING_MODEL.md#Lanes",
+      "skills/acef/references/ACEF_OPERATING_MODEL.md#Lanes",
+      "skills/acef-router/SKILL.md",
+      "skills/acef/references/ACEF_BROWNFIELD_ROUTES.md"
+    ],
+    "workflow": [
+      "schemas/active-run.schema.json",
+      "scripts/lib/acef-state-parser.js#parseActiveRun",
+      "scripts/acef-state#writeActiveRun"
+    ],
+    "validator": [
+      "scripts/acef-process-validator#checkLaneSelection"
+    ],
+    "tests": [
+      "scripts/test-acef-lightweight-lifecycle",
+      "scripts/test-acef-state",
+      "scripts/test-acef-typed-state-validator"
+    ]
+  },
+  "limitations": [
+    "The gate enforces recorded intake, interview brief approval, and execution approval for typed active runs in planning/execution phases; it does not prove that the human conversation actually happened outside recorded artifacts.",
+    "Target repositories must refresh their ACEF installation before this gate is installed there."
+  ],
+  "evidence": [
+    {
+      "layer": "workflow",
+      "ref": "schemas/active-run.schema.json"
+    },
+    {
+      "layer": "validator",
+      "ref": "scripts/acef-process-validator#checkLaneSelection"
+    },
+    {
+      "layer": "tests",
+      "ref": "scripts/test-acef-lightweight-lifecycle"
+    }
+  ],
+  "createdAt": "2026-06-25"
+}
