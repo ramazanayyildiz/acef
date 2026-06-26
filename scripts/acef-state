@@ -161,6 +161,8 @@ function evidenceRunnerProof(record) {
     repositoryCommit: record.repositoryCommit,
     repositoryTree: record.repositoryTree || null,
     dirtyDigest: record.dirtyDigest,
+    dirtyApplicationPathsBefore: record.dirtyApplicationPathsBefore || [],
+    dirtyApplicationPathsAfter: record.dirtyApplicationPathsAfter || [],
     environmentDigest: record.environmentDigest || null,
     actorInstanceId: record.actorInstanceId,
     story: record.story,
@@ -331,7 +333,6 @@ function writeEvidence(opts) {
   const actor = parseActorRecord(actorPath(opts.repo, opts.actor));
   if (actor.story !== opts.story) throw new Error(`actor story ${actor.story} does not match evidence story ${opts.story}`);
   const beforeDirty = dirtyApplicationPaths(opts.repo);
-  if (beforeDirty.length) throw new Error(`Refusing evidence run with dirty application paths: ${beforeDirty.join(", ")}`);
 
   const commandText = opts.commandArgv.map(quoteArg).join(" ");
   const startedAt = new Date().toISOString();
@@ -373,6 +374,8 @@ function writeEvidence(opts) {
     repositoryCommit: gitCommit(opts.repo),
     repositoryTree: gitTree(opts.repo),
     dirtyDigest: dirtyDigest(opts.repo),
+    dirtyApplicationPathsBefore: beforeDirty,
+    dirtyApplicationPathsAfter: afterDirty,
     environmentDigest: sha256(`${process.platform}\n${process.arch}\n${process.version}\n${os.release()}`),
     actorInstanceId: opts.actor,
     story: opts.story,
@@ -388,9 +391,9 @@ function writeEvidence(opts) {
   atomicJson(target, record, { validate: parseEvidenceManifest });
   console.log(`WROTE evidence ${relative(opts.repo, target)} exit=${exitCode} raw=${record.rawArtifact.path}`);
   if (afterDirty.length) {
-    console.error(`Evidence command dirtied application paths: ${afterDirty.join(", ")}`);
-    process.exitCode = exitCode || 70;
-  } else if (exitCode !== 0) {
+    console.error(`Evidence captured with dirty application paths: ${afterDirty.join(", ")}`);
+  }
+  if (exitCode !== 0) {
     process.exitCode = exitCode;
   }
 }

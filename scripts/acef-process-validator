@@ -209,6 +209,8 @@ function evidenceRunnerProof(record) {
     repositoryCommit: record.repositoryCommit,
     repositoryTree: record.repositoryTree || null,
     dirtyDigest: record.dirtyDigest,
+    dirtyApplicationPathsBefore: record.dirtyApplicationPathsBefore || [],
+    dirtyApplicationPathsAfter: record.dirtyApplicationPathsAfter || [],
     environmentDigest: record.environmentDigest || null,
     actorInstanceId: record.actorInstanceId,
     story: record.story,
@@ -1598,7 +1600,7 @@ function checkCurrentContext(repoRoot, ledgerPath) {
   }
 
   const fields = activeRun ? {
-    status: activeRun.status === "active" ? "PASS" : activeRun.status,
+    status: ["active", "complete"].includes(activeRun.status) ? "PASS" : activeRun.status,
     context_path: activeRun.contextPath || "",
     active_story: activeRun.activeStory || "",
     active_phase: activeRun.activePhase || "",

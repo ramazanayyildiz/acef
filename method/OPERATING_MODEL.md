@@ -33,6 +33,11 @@ ACEF is lean by default. Lean mode never removes gates or evidence; it only limi
 - Worker final reports should be complete on disk, but chat summaries should stay under about 20 lines.
 - If details are needed for audit, link the file path and exact command rather than copying the body.
 
+Use the heaviest guarded/full-BMAD profile only where it pays for itself: money movement, RBAC/authorization, payout,
+PII, migrations, destructive actions, cross-module contracts, or new product workflows that need interview and brief
+approval. Small UI copy, labels, local text, and already-patterned mechanical edits should use quick-fix or lightweight
+profiles with the same evidence discipline but fewer artifacts.
+
 ## Worker Context Budget
 
 Persona workers should start with a bounded prompt, not the parent thread. This keeps cost predictable and prevents old
@@ -489,7 +494,9 @@ the delivery ledger proves that the feature keeps following the lane until compl
 
 Before any certification, Process Judge, Epic Process Judge, or external verifier handoff, run
 `.acef/bin/acef-process-validator --check clean-tree`. A verifier must not certify one commit while uncommitted follow-on
-work is layered on top.
+work is layered on top. Runtime evidence may be captured before commit; when it is, `acef-state evidence-run` records
+the dirty application paths in the evidence manifest so the later clean-tree gate remains honest without blocking useful
+pre-commit feedback.
 
 ### Seeded Epic Gates
 

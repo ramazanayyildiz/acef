@@ -9,6 +9,15 @@ or evidence contract. Do not use it to claim implementation status; link to the 
 
 ## Unreleased
 
+### Operational friction reduction
+
+- Allowed `acef-state evidence-run` to capture evidence while application paths are dirty, recording
+  `dirtyApplicationPathsBefore` and `dirtyApplicationPathsAfter` in the evidence manifest instead of refusing to run.
+  `clean-tree` remains the certification/Process Judge cleanliness gate.
+- Fixed current-context semantics so typed active runs with `status: complete` can still satisfy `current-context`
+  instead of failing only because the run is closed.
+- Added `docs/ai/capabilities/operational-friction-reduction.json` to classify these friction fixes as `enforced`.
+
 ### Intake decision gate
 
 - Added `intakeDecision` to typed active runs so planning/execution phases must record the selected route, confidence,

@@ -61,6 +61,8 @@ function evidenceRunnerProof(record) {
       repositoryCommit: record.repositoryCommit,
       repositoryTree: record.repositoryTree || null,
       dirtyDigest: record.dirtyDigest,
+      dirtyApplicationPathsBefore: record.dirtyApplicationPathsBefore || [],
+      dirtyApplicationPathsAfter: record.dirtyApplicationPathsAfter || [],
       environmentDigest: record.environmentDigest || null,
       actorInstanceId: record.actorInstanceId,
       story: record.story,
@@ -813,6 +815,10 @@ try {
   expectPass("current-context", ["--repo", tmp, "--check", "current-context", "--ledger", "docs/ai/ACEF_json_current_context_DELIVERY_AUDIT.md"]);
   fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_json_mismatch_DELIVERY_AUDIT.md"), demoLedger);
   expectFail("current-context", ["--repo", tmp, "--check", "current-context", "--ledger", "docs/ai/ACEF_json_mismatch_DELIVERY_AUDIT.md"]);
+  const completeRun = JSON.parse(fs.readFileSync(path.join(tmp, "docs", "ai", "ACEF_ACTIVE_RUN.json"), "utf8"));
+  completeRun.status = "complete";
+  fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_ACTIVE_RUN.json"), JSON.stringify(completeRun, null, 2));
+  expectPass("current-context", ["--repo", tmp, "--check", "current-context", "--ledger", "docs/ai/ACEF_json_current_context_DELIVERY_AUDIT.md"]);
   fs.rmSync(path.join(tmp, "docs", "ai", "ACEF_ACTIVE_RUN.json"), { force: true });
   fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_bad_current_context_DELIVERY_AUDIT.md"), [
     "# Bad Current Context",

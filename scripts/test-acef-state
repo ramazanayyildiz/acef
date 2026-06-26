@@ -60,6 +60,9 @@ try {
   if (readJson("docs/ai/approvals/APP-2.json").targetEpic !== 2) throw new Error("approval target epic missing");
   const evidence = readJson("docs/ai/evidence/EV-1.json");
   if (evidence.exitCode !== 0 || !fs.existsSync(path.join(tmp, evidence.rawArtifact.path))) throw new Error("evidence capture failed");
+  if (!Array.isArray(evidence.dirtyApplicationPathsBefore) || !Array.isArray(evidence.dirtyApplicationPathsAfter)) {
+    throw new Error("evidence dirty path snapshots missing");
+  }
   const gate = readJson("docs/ai/gates/GATE-1.json");
   if (gate.evidenceIds[0] !== "EV-1") throw new Error("gate evidence binding failed");
   if (gate.surfaceEvidence[0].surface !== "ui" || gate.surfaceEvidence[0].roundTrip !== true || gate.surfaceEvidence[0].firstUsePattern !== true) {
@@ -72,6 +75,12 @@ try {
   const failed = cp.spawnSync(process.execPath, [state, "evidence-run", "--repo", tmp, "--id", "EV-fail", "--kind", "static-check", "--actor", "development", "--story", "Story 1.1", "--satisfies", "AC-fail", "--", process.execPath, "-e", "process.exit(7)"], { encoding: "utf8" });
   if (failed.status !== 7) throw new Error(`failed evidence did not preserve exit code: ${failed.status}`);
   if (readJson("docs/ai/evidence/EV-fail.json").exitCode !== 7) throw new Error("failed evidence manifest was not recorded");
+
+  fs.writeFileSync(path.join(tmp, "app", "dirty-before.js"), "module.exports = 'dirty';\n");
+  const dirty = cp.spawnSync(process.execPath, [state, "evidence-run", "--repo", tmp, "--id", "EV-dirty", "--kind", "runtime-test", "--actor", "development", "--story", "Story 1.1", "--satisfies", "AC-dirty", "--", process.execPath, "-e", "console.log('ok with dirty tree')"], { encoding: "utf8" });
+  if (dirty.status !== 0) throw new Error(`dirty evidence should preserve command success:\n${dirty.stdout}${dirty.stderr}`);
+  const dirtyEvidence = readJson("docs/ai/evidence/EV-dirty.json");
+  if (!dirtyEvidence.dirtyApplicationPathsBefore.includes("app/dirty-before.js")) throw new Error("dirty evidence did not record pre-existing dirty app path");
 
   console.log("acef-state tests passed");
 } finally {

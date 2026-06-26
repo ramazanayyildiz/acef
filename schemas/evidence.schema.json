@@ -15,6 +15,14 @@
     "repositoryCommit": { "type": "string", "minLength": 1 },
     "repositoryTree": { "type": ["string", "null"] },
     "dirtyDigest": { "type": ["string", "null"] },
+    "dirtyApplicationPathsBefore": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "dirtyApplicationPathsAfter": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 }
+    },
     "actorInstanceId": { "type": "string", "minLength": 1 },
     "story": { "type": "string", "minLength": 1 },
     "environmentDigest": { "type": ["string", "null"] },

@@ -92,6 +92,9 @@ function parseEvidenceManifest(filePath) {
   requireEnum(record, "kind", ["runtime-test", "static-check", "manual-smoke", "build", "lint", "typecheck", "other"], "evidence manifest");
   if (!Number.isInteger(record.exitCode)) throw new Error("evidence manifest missing integer exitCode");
   requireStringArray(record, "satisfies", "evidence manifest", { nonEmpty: true });
+  for (const field of ["dirtyApplicationPathsBefore", "dirtyApplicationPathsAfter"]) {
+    if (record[field] !== undefined) requireStringArray(record, field, "evidence manifest");
+  }
   if (!record.rawArtifact || typeof record.rawArtifact !== "object") throw new Error("evidence manifest missing rawArtifact");
   requireFields(record.rawArtifact, ["path", "sha256"], "evidence rawArtifact");
   requireRunnerProof(record.runnerProof, "evidence runnerProof");

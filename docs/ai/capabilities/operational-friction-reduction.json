@@ -1,0 +1,57 @@
+{
+  "capabilityId": "operational-friction-reduction",
+  "requestedIntent": "Reduce ACEF friction found in real guarded product work without weakening evidence, especially around dirty-tree evidence capture and completed active-run context validation.",
+  "status": "enforced",
+  "requiredLayers": [
+    "docs",
+    "workflow",
+    "validator",
+    "tests"
+  ],
+  "implementedLayers": {
+    "docs": [
+      "method/OPERATING_MODEL.md#Lean Runtime Default",
+      "skills/acef/references/ACEF_OPERATING_MODEL.md#Lean Runtime Default"
+    ],
+    "workflow": [
+      "schemas/evidence.schema.json",
+      "scripts/acef-state#writeEvidence"
+    ],
+    "validator": [
+      "scripts/acef-process-validator#checkCurrentContext",
+      "scripts/acef-process-validator#validateEvidenceRecord"
+    ],
+    "tests": [
+      "scripts/test-acef-state",
+      "scripts/test-acef-process-validator"
+    ]
+  },
+  "limitations": [
+    "This preserves clean-tree as the certification gate; it only allows evidence capture during a dirty working tree by recording dirty application paths in the evidence manifest.",
+    "Conductor/worker separation still depends on worker scope hooks and Process Judge checks; this change does not make every client runtime enforce persona isolation automatically.",
+    "Lean profile selection is documented guidance unless paired with lane-selection and closeout validators in the target repo."
+  ],
+  "evidence": [
+    {
+      "layer": "workflow",
+      "ref": "schemas/evidence.schema.json"
+    },
+    {
+      "layer": "workflow",
+      "ref": "scripts/acef-state#writeEvidence"
+    },
+    {
+      "layer": "validator",
+      "ref": "scripts/acef-process-validator#checkCurrentContext"
+    },
+    {
+      "layer": "tests",
+      "ref": "scripts/test-acef-state"
+    },
+    {
+      "layer": "tests",
+      "ref": "scripts/test-acef-process-validator"
+    }
+  ],
+  "createdAt": "2026-06-26"
+}
