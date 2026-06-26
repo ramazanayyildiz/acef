@@ -77,6 +77,37 @@ function parseActiveRun(filePath) {
   if (record.riskTriggers !== undefined) {
     requireStringArray(record, "riskTriggers", "active run");
   }
+  if (record.activeGoal !== undefined && record.activeGoal !== null) {
+    if (typeof record.activeGoal !== "object" || Array.isArray(record.activeGoal)) {
+      throw new Error("active run activeGoal must be an object");
+    }
+    if (record.activeGoal.description !== undefined && (typeof record.activeGoal.description !== "string" || !record.activeGoal.description.trim())) {
+      throw new Error("active run activeGoal.description must be a non-empty string");
+    }
+    if (record.activeGoal.userFacing !== undefined && typeof record.activeGoal.userFacing !== "boolean") {
+      throw new Error("active run activeGoal.userFacing must be boolean");
+    }
+    if (record.activeGoal.completionMode !== undefined) {
+      requireEnum(record.activeGoal, "completionMode", ["backend-capability", "product-workspace", "internal"], "active run activeGoal");
+    }
+  }
+  if (record.goalCoverage !== undefined && record.goalCoverage !== null) {
+    const coverage = record.goalCoverage;
+    if (typeof coverage !== "object" || Array.isArray(coverage)) throw new Error("active run goalCoverage must be an object");
+    if (coverage.status !== undefined) requireEnum(coverage, "status", ["PASS", "INCOMPLETE"], "active run goalCoverage");
+    if (coverage.storyType !== undefined) {
+      requireEnum(coverage, "storyType", ["foundation", "backend-capability", "ui-surface", "integration", "closeout"], "active run goalCoverage");
+    }
+    for (const field of ["requiredSurfaces", "coveredSurfaces"]) {
+      if (coverage[field] !== undefined) {
+        requireStringArray(coverage, field, "active run goalCoverage");
+        for (const surface of coverage[field]) requireSurface(surface, `active run goalCoverage.${field}`);
+      }
+    }
+    for (const field of ["evidenceRefs", "missing"]) {
+      if (coverage[field] !== undefined) requireStringArray(coverage, field, "active run goalCoverage");
+    }
+  }
   return record;
 }
 

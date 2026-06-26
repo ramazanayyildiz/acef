@@ -182,6 +182,12 @@ Every story close must include two canonical ledger facts, even when the full ev
    `surfaceEvidence` records the command, evidence path, success result, and runner proof for each one.
    Validators also infer obvious surfaces from changed path names and fail if those surfaces were not declared; this is a
    guardrail, not a replacement for honest surface declaration.
+4. **Goal coverage evidence.** A story may close as a foundation/backend slice, but it cannot close the user's original
+   product goal unless `docs/ai/ACEF_ACTIVE_RUN.json` records `activeGoal` and `goalCoverage`. For user-facing goals,
+   `goalCoverage.status` must be `PASS`, `storyType` cannot be `foundation` or `backend-capability`, required visible
+   surfaces must be covered, and `evidenceRefs` must point to real route/component/action/runtime evidence. Run
+   `.acef/bin/acef-process-validator --check goal-coverage` before saying a workspace, console, staff flow, CRM, finance
+   screen, capture, manage, or tracking goal is complete.
 
 Lean chains may omit optional review phases only when explicitly authorized for low-risk work. They still require
 red-before-dev evidence when ATDD is used and a distinct Process Judge identity in the canonical ledger. Guarded work

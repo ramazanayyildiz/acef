@@ -1078,6 +1078,40 @@ try {
     ],
   }, null, 2));
   expectPass("gate-verdict", ["--repo", tmp, "--check", "gate-verdict"]);
+  const activeRunForGoalCoverage = JSON.parse(fs.readFileSync(path.join(tmp, "docs", "ai", "ACEF_ACTIVE_RUN.json"), "utf8"));
+  activeRunForGoalCoverage.status = "complete";
+  activeRunForGoalCoverage.activeGoal = {
+    description: "Staff can capture and manage CRM notes in a workspace",
+    userFacing: true,
+    completionMode: "product-workspace",
+  };
+  delete activeRunForGoalCoverage.goalCoverage;
+  fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_ACTIVE_RUN.json"), JSON.stringify(activeRunForGoalCoverage, null, 2));
+  expectFail("goal-coverage", ["--repo", tmp, "--check", "goal-coverage"]);
+  activeRunForGoalCoverage.goalCoverage = {
+    status: "PASS",
+    storyType: "backend-capability",
+    requiredSurfaces: ["ui"],
+    coveredSurfaces: ["api"],
+    evidenceRefs: ["tests/Feature/ServiceCapabilityTest.php#/account"],
+    missing: [],
+  };
+  fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_ACTIVE_RUN.json"), JSON.stringify(activeRunForGoalCoverage, null, 2));
+  expectFail("goal-coverage", ["--repo", tmp, "--check", "goal-coverage"]);
+  activeRunForGoalCoverage.goalCoverage = {
+    status: "PASS",
+    storyType: "ui-surface",
+    requiredSurfaces: ["ui", "http"],
+    coveredSurfaces: ["ui", "http", "api"],
+    evidenceRefs: ["routes/web.php#/account", "docs/ai/reports/story-1-1-surface-test.log"],
+    missing: [],
+  };
+  fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_ACTIVE_RUN.json"), JSON.stringify(activeRunForGoalCoverage, null, 2));
+  expectPass("goal-coverage", ["--repo", tmp, "--check", "goal-coverage"]);
+  activeRunForGoalCoverage.status = "active";
+  delete activeRunForGoalCoverage.activeGoal;
+  delete activeRunForGoalCoverage.goalCoverage;
+  fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_ACTIVE_RUN.json"), JSON.stringify(activeRunForGoalCoverage, null, 2));
 
   const originalApiArtifact = fs.readFileSync(apiSurfaceArtifact, "utf8");
   const originalApiEvidence = JSON.parse(fs.readFileSync(path.join(tmp, "docs", "ai", "evidence", "evidence-api.json"), "utf8"));

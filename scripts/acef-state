@@ -17,7 +17,7 @@ function usage() {
   console.log(`ACEF typed-state writer
 
 Usage:
-  acef-state active-run --repo <path> --run-id <id> --lane <lane> --status <status> --story <scope> --phase <phase> --ledger <path> [--route <route> --route-confidence low|medium|high] [options]
+  acef-state active-run --repo <path> --run-id <id> --lane <lane> --status <status> --story <scope> --phase <phase> --ledger <path> [--route <route> --route-confidence low|medium|high] [--goal-description <text> --goal-user-facing true|false --goal-completion-mode backend-capability|product-workspace|internal] [options]
   acef-state actor --repo <path> --id <id> --story <scope> --phase <phase> --role <role> --client <client> --context-profile <profile> [options]
   acef-state worker-scope --repo <path> --story <scope> --phase <phase> --worker-id <id> --allow <glob>... [--surface <name>...] [--pattern-use <kind>] [--requires-round-trip true|false] [--binding <input>><output>:<field>[:defaultMaskingRisk]] [options]
   acef-state approval --repo <path> --id <id> --decision APPROVE|REJECT|ACCEPT_RISK --scope <scope> --quote <exact human words> [options]
@@ -29,7 +29,7 @@ Record files are written under docs/ai. Immutable records refuse overwrite; acti
 
 function parseArgs(argv) {
   const [command, ...rest] = argv;
-  const opts = { command, repo: process.cwd(), allow: [], satisfies: [], evidence: [], surface: [], surfaceEvidence: [], binding: [], bindingEvidence: [], riskTrigger: [], clarifyingQuestion: [], inferredAnswer: [], unresolvedQuestion: [], commandArgv: [] };
+  const opts = { command, repo: process.cwd(), allow: [], satisfies: [], evidence: [], surface: [], surfaceEvidence: [], binding: [], bindingEvidence: [], riskTrigger: [], clarifyingQuestion: [], inferredAnswer: [], unresolvedQuestion: [], requiredSurface: [], coveredSurface: [], goalEvidence: [], goalMissing: [], commandArgv: [] };
   for (let index = 0; index < rest.length; index += 1) {
     const arg = rest[index];
     if (arg === "--") {
@@ -45,7 +45,7 @@ function parseArgs(argv) {
     const value = rest[index + 1];
     if (value === undefined || value.startsWith("--")) throw new Error(`Missing value for ${arg}`);
     index += 1;
-    if (["allow", "satisfies", "evidence", "surface", "surfaceEvidence", "binding", "bindingEvidence", "riskTrigger", "clarifyingQuestion", "inferredAnswer", "unresolvedQuestion"].includes(key)) opts[key].push(value);
+    if (["allow", "satisfies", "evidence", "surface", "surfaceEvidence", "binding", "bindingEvidence", "riskTrigger", "clarifyingQuestion", "inferredAnswer", "unresolvedQuestion", "requiredSurface", "coveredSurface", "goalEvidence", "goalMissing"].includes(key)) opts[key].push(value);
     else opts[key] = value;
   }
   opts.repo = path.resolve(opts.repo);
@@ -80,6 +80,28 @@ function intakeDecision(opts) {
   if (opts.approvalRequired !== undefined) record.approvalRequired = parseBoolean(opts.approvalRequired, "--approval-required");
   if (opts.executionApproved !== undefined) record.executionApproved = parseBoolean(opts.executionApproved, "--execution-approved");
   if (opts.briefApproved !== undefined) record.briefApproved = parseBoolean(opts.briefApproved, "--brief-approved");
+  return record;
+}
+
+function activeGoal(opts) {
+  if (!opts.goalDescription && opts.goalUserFacing === undefined && !opts.goalCompletionMode) return null;
+  const record = {};
+  if (opts.goalDescription) record.description = opts.goalDescription;
+  if (opts.goalUserFacing !== undefined) record.userFacing = parseBoolean(opts.goalUserFacing, "--goal-user-facing");
+  if (opts.goalCompletionMode) record.completionMode = opts.goalCompletionMode;
+  return record;
+}
+
+function goalCoverage(opts) {
+  if (!opts.goalStatus && !opts.storyType && !opts.requiredSurface.length && !opts.coveredSurface.length && !opts.goalEvidence.length && !opts.goalMissing.length) return null;
+  const record = {};
+  if (opts.goalStatus) record.status = opts.goalStatus;
+  if (opts.storyType) record.storyType = opts.storyType;
+  if (opts.requiredSurface.length) record.requiredSurfaces = opts.requiredSurface;
+  if (opts.coveredSurface.length) record.coveredSurfaces = opts.coveredSurface;
+  if (opts.goalEvidence.length) record.evidenceRefs = opts.goalEvidence;
+  if (opts.goalMissing.length) record.missing = opts.goalMissing;
+  if (opts.goalNotes) record.notes = opts.goalNotes;
   return record;
 }
 
@@ -240,6 +262,8 @@ function writeActiveRun(opts) {
     activeEpic: opts.epic || null,
     activeStory: opts.story,
     activePhase: opts.phase,
+    activeGoal: activeGoal(opts),
+    goalCoverage: goalCoverage(opts),
     workerRole: opts.workerRole || null,
     activeActorId: opts.actor || null,
     laneRationale: opts.laneRationale || null,

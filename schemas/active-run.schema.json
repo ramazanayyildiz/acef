@@ -14,6 +14,46 @@
     "activeEpic": { "type": ["string", "null"] },
     "activeStory": { "type": "string", "minLength": 1 },
     "activePhase": { "type": "string", "minLength": 1 },
+    "activeGoal": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "properties": {
+        "description": { "type": "string", "minLength": 1 },
+        "userFacing": { "type": "boolean" },
+        "completionMode": {
+          "type": "string",
+          "enum": ["backend-capability", "product-workspace", "internal"]
+        }
+      }
+    },
+    "goalCoverage": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "properties": {
+        "status": { "type": "string", "enum": ["PASS", "INCOMPLETE"] },
+        "storyType": {
+          "type": "string",
+          "enum": ["foundation", "backend-capability", "ui-surface", "integration", "closeout"]
+        },
+        "requiredSurfaces": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/surface" }
+        },
+        "coveredSurfaces": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/surface" }
+        },
+        "evidenceRefs": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "missing": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "notes": { "type": ["string", "null"] }
+      }
+    },
     "workerRole": { "type": ["string", "null"] },
     "activeActorId": { "type": ["string", "null"] },
     "laneRationale": { "type": ["string", "null"] },
@@ -66,5 +106,30 @@
     "ledgerPath": { "type": "string", "minLength": 1 },
     "contextPath": { "type": ["string", "null"] },
     "updatedAt": { "type": ["string", "null"] }
+  },
+  "$defs": {
+    "surface": {
+      "type": "string",
+      "enum": [
+        "ui",
+        "admin",
+        "mobile",
+        "api",
+        "http",
+        "cli",
+        "queue",
+        "job",
+        "scheduler",
+        "storage",
+        "email",
+        "notification",
+        "webhook",
+        "integration",
+        "config",
+        "database",
+        "library",
+        "internal"
+      ]
+    }
   }
 }

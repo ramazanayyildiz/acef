@@ -185,6 +185,11 @@ A lightweight task promotes to full BMAD when any of:
   epic close, each mapped FR needs: owning story done, a real-path capability test, and conductor/manual execution where
   browser/admin/runtime UX is involved. Artifact existence never satisfies an FR by itself. A "manual QA later" deferral
   may cover polish only after an automated check proves the entrypoint exists.
+- **Goal-story reconciliation** — story PASS and goal complete are different states. Foundation/backend stories may pass
+  their own AC, but a user-facing goal cannot be marked complete until `activeGoal` and `goalCoverage` prove the owning
+  persona can reach and use the visible product surface. Run `--check goal-coverage`; backend/query seams do not satisfy
+  workspace, staff flow, CRM, finance, capture, manage, or tracking goals unless the human explicitly scoped the goal as
+  backend-only.
 - **Full BMAD actor separation** — the conductor coordinates the story lifecycle; it is not the ATDD author,
   implementing actor, code reviewer, verifier, test reviewer, or Process Judge. The actor that authored code must never
   review, accept, or mark done that code. Guarded payment/auth/entitlement/data stories require independent review by

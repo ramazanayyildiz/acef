@@ -208,6 +208,8 @@ Risk-based review tier:
 - **Dev-done:** ATDD/feature tests green, acceptance criteria implemented, review reached its stop condition, test-review evidence exists.
 - **Product-done:** dev-done **plus** the owning persona can actually discover and use the surface (real entry point,
   not a direct URL/service test). Only product-done may be marked `done`. A green happy-path demo is not enough.
+  For user-facing goals, the active run must also record `activeGoal` and `goalCoverage`; foundation/backend stories may
+  PASS but cannot close the product goal without visible surface evidence.
 
 ## Epic wrappers (once per epic)
 Start: test-design (levels/boundaries/risk-weighted coverage). Close: trace (AC↔test matrix) · epic test-review ·

@@ -1,0 +1,62 @@
+{
+  "capabilityId": "goal-coverage-gate",
+  "requestedIntent": "Prevent ACEF from marking a user-facing product goal complete when only backend, foundation, command/query, or test-seam stories passed.",
+  "status": "enforced",
+  "requiredLayers": [
+    "docs",
+    "schema",
+    "cli",
+    "workflow",
+    "validator",
+    "tests"
+  ],
+  "implementedLayers": {
+    "docs": [
+      "method/OPERATING_MODEL.md#Story-close evidence minimums",
+      "skills/acef/references/ACEF_OPERATING_MODEL.md#Story-close evidence minimums",
+      "skills/acef/references/ACEF_DELIVERY_RULES.md",
+      "skills/acef/references/ACEF_BMAD_V2_LANE.md",
+      "CHANGELOG.md"
+    ],
+    "schema": [
+      "schemas/active-run.schema.json"
+    ],
+    "cli": [
+      "scripts/acef-state#writeActiveRun"
+    ],
+    "workflow": [
+      "scripts/lib/acef-state-parser.js#parseActiveRun"
+    ],
+    "validator": [
+      "scripts/acef-process-validator#checkGoalCoverage",
+      "scripts/acef-process-validator#checkLaneCloseout"
+    ],
+    "tests": [
+      "scripts/test-acef-process-validator",
+      "scripts/test-acef-state"
+    ]
+  },
+  "limitations": [
+    "The gate uses explicit activeGoal/goalCoverage metadata plus user-facing keyword inference for completed typed active runs; legacy markdown-only runs remain best-effort.",
+    "It verifies cited evidence paths exist, but the quality of the route/form/action assertion still depends on the related surface evidence and Process Judge review."
+  ],
+  "evidence": [
+    {
+      "layer": "schema",
+      "ref": "schemas/active-run.schema.json"
+    },
+    {
+      "layer": "cli",
+      "ref": "scripts/acef-state#writeActiveRun"
+    },
+    {
+      "layer": "validator",
+      "ref": "scripts/acef-process-validator#checkGoalCoverage"
+    },
+    {
+      "layer": "tests",
+      "ref": "scripts/test-acef-process-validator"
+    }
+  ],
+  "createdAt": "2026-06-26"
+}

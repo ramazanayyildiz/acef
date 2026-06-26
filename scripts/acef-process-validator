@@ -48,6 +48,7 @@ Checks:
   current-context    Require a role-scoped, ledger-reconciled hot context before worker dispatch
   pr-review          Validate bounded PR-review context and reject reviewer-authored patches
   spec-readiness     Require file-backed product/spec readiness before planning or dispatch
+  goal-coverage      Require user-facing goals to close with visible product surface evidence
   lane-selection     Require active lane choice to match recorded risk triggers
   lane-closeout      Require the active lane's complete validator bundle before close
   lightweight-lifecycle Require the six-step lightweight lifecycle, promotion disposition, and surface evidence
@@ -2206,6 +2207,65 @@ function checkSpecReadiness(repoRoot) {
   return result("spec-readiness", false, failures.join("; "));
 }
 
+const USER_VISIBLE_SURFACES = new Set(["ui", "admin", "mobile", "http"]);
+
+function goalLooksUserFacing(activeRun) {
+  const goal = activeRun?.activeGoal || {};
+  if (goal.userFacing === true || goal.completionMode === "product-workspace") return true;
+  if (goal.completionMode === "backend-capability" || goal.userFacing === false) return false;
+  const text = [
+    activeRun?.activeStory,
+    activeRun?.laneRationale,
+    ...(activeRun?.riskTriggers || []),
+    goal.description,
+  ].filter(Boolean).join(" ");
+  return /\b(workspace|screen|page|panel|console|dashboard|staff|user|capture|manage|track|notes?|crm|finance|accounting|muhasebe|lead|student|teacher|customer|client)\b/i.test(text);
+}
+
+function evidenceRefExists(repoRoot, ref) {
+  const value = String(ref || "").trim();
+  if (!value) return false;
+  const filePart = value.split("#")[0].replace(/^`|`$/g, "").trim();
+  if (!filePart) return false;
+  return exists(resolvePath(filePart, repoRoot));
+}
+
+function checkGoalCoverage(repoRoot) {
+  const activeRun = typedActiveRun(repoRoot);
+  if (!activeRun) return result("goal-coverage", true, "No typed active run; legacy goal coverage checks remain active");
+  if (activeRun.status !== "complete") return result("goal-coverage", true, "Active run is not complete");
+  if (!goalLooksUserFacing(activeRun)) return result("goal-coverage", true, "Goal is not classified as user-facing");
+
+  const failures = [];
+  const coverage = activeRun.goalCoverage || null;
+  if (!coverage) {
+    return result("goal-coverage", false, "user-facing complete run requires goalCoverage with visible product surface evidence");
+  }
+  if (coverage.status !== "PASS") failures.push("goalCoverage.status must be PASS before user-facing goal completion");
+  if (["foundation", "backend-capability"].includes(coverage.storyType)) {
+    failures.push(`storyType ${coverage.storyType} cannot complete a user-facing product goal`);
+  }
+  const required = coverage.requiredSurfaces || [];
+  const covered = coverage.coveredSurfaces || [];
+  if (!required.length) failures.push("goalCoverage.requiredSurfaces must name the user-visible surface(s)");
+  const missingSurfaces = required.filter((surface) => !covered.includes(surface));
+  if (missingSurfaces.length) failures.push(`goalCoverage missing covered surface(s): ${missingSurfaces.join(", ")}`);
+  if (!covered.some((surface) => USER_VISIBLE_SURFACES.has(surface))) {
+    failures.push("goalCoverage must include a user-visible surface: ui, admin, mobile, or http");
+  }
+  const evidenceRefs = coverage.evidenceRefs || [];
+  if (!evidenceRefs.length) failures.push("goalCoverage.evidenceRefs must cite real route/component/action/runtime evidence");
+  for (const ref of evidenceRefs) {
+    if (!evidenceRefExists(repoRoot, ref)) failures.push(`goalCoverage evidence ref missing: ${ref}`);
+  }
+  if (Array.isArray(coverage.missing) && coverage.missing.length) {
+    failures.push(`goalCoverage still has missing goal item(s): ${coverage.missing.join(", ")}`);
+  }
+  return failures.length
+    ? result("goal-coverage", false, failures.join("; "))
+    : result("goal-coverage", true, `User-facing goal covered by ${covered.join(", ")} surface evidence`);
+}
+
 function closeoutResultFailure(item) {
   return item.ok ? "" : `${item.name}: ${item.message}`;
 }
@@ -2232,6 +2292,7 @@ function checkLaneCloseout(repoRoot, ledgerPath, adapterPath, registryPath) {
     checks.push(checkSessionHandoff(repoRoot, ledgerPath, adapterPath, registryPath));
   } else if (lane === "full-bmad") {
     checks.push(checkLaneSelection(repoRoot));
+    checks.push(checkGoalCoverage(repoRoot));
     checks.push(checkCurrentContext(repoRoot, ledgerPath));
     checks.push(checkActorSeparation(repoRoot, ledgerPath));
     checks.push(checkWorkerScope(repoRoot));
@@ -2242,6 +2303,7 @@ function checkLaneCloseout(repoRoot, ledgerPath, adapterPath, registryPath) {
     checks.push(checkSessionHandoff(repoRoot, ledgerPath, adapterPath, registryPath));
   } else if (lane === "guarded") {
     checks.push(checkLaneSelection(repoRoot));
+    checks.push(checkGoalCoverage(repoRoot));
     checks.push(checkCurrentContext(repoRoot, ledgerPath));
     checks.push(checkActorSeparation(repoRoot, ledgerPath));
     checks.push(checkWorkerScope(repoRoot));
@@ -2351,7 +2413,7 @@ function main() {
   const adapter = args.adapter || findAdapter(args.repo);
   const registry = findPatternRegistry(args.repo, adapter);
   const checks = args.check === "all"
-    ? ["clean-tree", "preflight", "claims", "adapter-freshness", "pattern-registry", "reuse-before-create", "do-not-copy", "partial-workshape", "finding-promotion", "graduation-reconciliation", "vertical-slice", "test-authenticity", "guarded-test-floor", "actor-separation", "worker-scope", "evidence-manifest", "gate-verdict", "source-reconciliation", "epic-context-pack", "current-context", "pr-review", "spec-readiness", "lane-selection", "lane-closeout", "lightweight-lifecycle", "lean-evidence", "capability-change", "session-handoff", "seeded-epic-gates", "epic-boundary", "epic-transition-approval", "replan-counter"]
+    ? ["clean-tree", "preflight", "claims", "adapter-freshness", "pattern-registry", "reuse-before-create", "do-not-copy", "partial-workshape", "finding-promotion", "graduation-reconciliation", "vertical-slice", "test-authenticity", "guarded-test-floor", "actor-separation", "worker-scope", "evidence-manifest", "gate-verdict", "source-reconciliation", "epic-context-pack", "current-context", "pr-review", "spec-readiness", "goal-coverage", "lane-selection", "lane-closeout", "lightweight-lifecycle", "lean-evidence", "capability-change", "session-handoff", "seeded-epic-gates", "epic-boundary", "epic-transition-approval", "replan-counter"]
     : [args.check];
 
   const results = checks.map((check) => {
@@ -2377,6 +2439,7 @@ function main() {
     if (check === "current-context") return checkCurrentContext(args.repo, ledger);
     if (check === "pr-review") return checkPrReview(args.repo);
     if (check === "spec-readiness") return checkSpecReadiness(args.repo);
+    if (check === "goal-coverage") return checkGoalCoverage(args.repo);
     if (check === "lane-selection") return checkLaneSelection(args.repo);
     if (check === "lane-closeout") return checkLaneCloseout(args.repo, ledger, adapter, registry);
     if (check === "lightweight-lifecycle") return checkLightweightLifecycle(args.repo);

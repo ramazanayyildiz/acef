@@ -9,6 +9,15 @@ or evidence contract. Do not use it to claim implementation status; link to the 
 
 ## Unreleased
 
+### Goal coverage gate
+
+- Added typed `activeGoal` and `goalCoverage` fields to `ACEF_ACTIVE_RUN.json` so story PASS and original product-goal
+  completion are mechanically separate.
+- Added `goal-coverage` validation: user-facing complete runs must prove visible product surface coverage and cannot use
+  `foundation` or `backend-capability` stories to close workspace/staff-flow/product goals.
+- Wired `goal-coverage` into full-BMAD and guarded closeout and added `acef-state active-run` flags for recording goal
+  coverage metadata.
+
 ### Spec-readiness gate
 
 - Added the `spec-readiness` skill as an intake-time product/spec readiness classifier for vague or risky requests before
