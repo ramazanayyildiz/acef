@@ -363,11 +363,19 @@ function specReadinessPath(repoRoot, activeRun = null) {
   return configured ? resolvePath(configured, repoRoot) : path.join(repoRoot, "docs", "ai", "ACEF_SPEC_READINESS.json");
 }
 
+function isDispatchPhase(activeRun) {
+  if (!activeRun || activeRun.status === "complete") return false;
+  const phase = String(activeRun.activePhase || "").toLowerCase();
+  if (!phase) return false;
+  if (new Set(["planning", "atdd", "development", "code-review", "verify-patch", "test-review", "process-judge", "closeout"]).has(phase)) {
+    return true;
+  }
+  return /(plan|atdd|develop|developer|implementation|code[-_ ]?review|verify|test[-_ ]?review|process[-_ ]?judge|closeout)/i.test(phase);
+}
+
 function specReadinessRequired(activeRun, triggers = []) {
   if (!activeRun) return false;
-  const phase = String(activeRun.activePhase || "").toLowerCase();
-  const planningOrExecutionPhases = new Set(["planning", "atdd", "development", "code-review", "verify-patch", "test-review", "process-judge", "closeout"]);
-  if (!planningOrExecutionPhases.has(phase)) return false;
+  if (!isDispatchPhase(activeRun)) return false;
   if (["full-bmad", "guarded"].includes(activeRun.lane)) return true;
   const riskText = triggers.join(" ");
   return /(feature|crm|notes?|tracking|reporting|dashboard|workflow|persistence|database|schema|migration|auth|authorization|permission|roles?|payment|billing|invoice|accounting|finance|financial|revenue|expense|tax|ledger|muhasebe|payout|security|tenant|privacy|pii)/i.test(riskText);
@@ -2112,9 +2120,7 @@ function checkLaneSelection(repoRoot) {
   const activeRun = typedActiveRun(repoRoot);
   if (!activeRun) return result("lane-selection", true, "No typed active run; legacy lane selection checks remain active");
   const failures = [];
-  const planningOrExecutionPhases = new Set(["planning", "atdd", "development", "code-review", "verify-patch", "test-review", "process-judge", "closeout"]);
-  const phase = String(activeRun.activePhase || "").toLowerCase();
-  if (planningOrExecutionPhases.has(phase)) {
+  if (isDispatchPhase(activeRun)) {
     const decision = activeRun.intakeDecision || null;
     if (!decision) {
       failures.push("planning/execution requires recorded intakeDecision before dispatch");
