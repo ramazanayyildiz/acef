@@ -9,6 +9,18 @@ or evidence contract. Do not use it to claim implementation status; link to the 
 
 ## Unreleased
 
+### Spec-readiness gate
+
+- Added the `spec-readiness` skill as an intake-time product/spec readiness classifier for vague or risky requests before
+  route dispatch, spec writing, story creation, or implementation.
+- Added `schemas/spec-readiness.schema.json` and parser support for file-backed `docs/ai/ACEF_SPEC_READINESS.json`
+  verdicts with `PASS`, `NEEDS_PM`, `NEEDS_DISCOVERY`, `NEEDS_BMAD`, `NEEDS_GUARDED_DISCOVERY`, and `REJECT` routing.
+- Added the `spec-readiness` validator check and wired `lane-selection` so planning/execution phases that are full-BMAD,
+  guarded, or risk-triggered by CRM/notes/tracking/persistence/RBAC/schema/PII/money/finance cannot proceed without a
+  current `PASS` verdict.
+- Installed `spec-readiness` as a default ACEF skill and added
+  `docs/ai/capabilities/spec-readiness-gate.json` with status `enforced`.
+
 ### Operational friction reduction
 
 - Allowed `acef-state evidence-run` to capture evidence while application paths are dirty, recording
@@ -16,6 +28,9 @@ or evidence contract. Do not use it to claim implementation status; link to the 
   `clean-tree` remains the certification/Process Judge cleanliness gate.
 - Fixed current-context semantics so typed active runs with `status: complete` can still satisfy `current-context`
   instead of failing only because the run is closed.
+- Improved worker-scope hard-wall denials so stale or mismatched `ACEF_ACTIVE_WORKER_SCOPE.json` states report the active
+  story, phase, worker id, allowed paths, requested path, and whether to close stale ACEF state or dispatch a matching
+  worker.
 - Added `docs/ai/capabilities/operational-friction-reduction.json` to classify these friction fixes as `enforced`.
 
 ### Intake decision gate

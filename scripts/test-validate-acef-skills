@@ -34,6 +34,6 @@ const run = cp.spawnSync(process.execPath, [path.join(repoRoot, "scripts", "vali
   encoding: "utf8",
 });
 assert.equal(run.status, 0, run.stderr || run.stdout);
-assert.match(run.stdout, /Validated 20 ACEF skill metadata record/);
+assert.match(run.stdout, /Validated 21 ACEF skill metadata record/);
 
 console.log("acef skill metadata tests passed");

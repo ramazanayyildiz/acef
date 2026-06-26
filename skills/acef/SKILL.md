@@ -42,6 +42,7 @@ Read only the references needed for the current step, but do read the selected f
 
 - Always for concrete ACEF work: `references/ACEF_OPERATING_MODEL.md` and `references/ACEF_DELIVERY_RULES.md`.
 - Route selection: `references/ACEF_BROWNFIELD_ROUTES.md` plus `acef-router` when available.
+- Thin or risky product requests before route dispatch: `spec-readiness`.
 - Adapter/codemap or repo-pattern work: `references/ACEF_PROJECT_ADAPTER_EXTRACTION.md`, `references/ACEF_ADAPTER_MEMORY.md`, `references/ACEF_PATTERN_REGISTRY.md`.
 - Full BMAD / large / risky epic work: `references/ACEF_BMAD_V2_LANE.md` and `references/ACEF_RULE_ENFORCEMENT_MAP.md`.
 - Test extraction/automation/bootstrap: `references/ACEF_TEST_PIPELINE.md`.
@@ -70,6 +71,7 @@ A worker launched before this bootstrap is drift. Stop, record it, patch the amb
 ## Helper Skills
 
 - `acef-router`: route decision and minimum inputs.
+- `spec-readiness`: file-backed product/spec readiness verdict before planning or dispatch.
 - `acef-adapter`: project adapter and pattern registry extraction.
 - `acef-specify`: requirements/design/planning when the route calls for it.
 - `acef-test-bootstrap`: first accepted test pattern for zero-test repos.

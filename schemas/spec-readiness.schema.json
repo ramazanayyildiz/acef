@@ -1,0 +1,80 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://acef.local/schemas/spec-readiness.schema.json",
+  "title": "ACEF Spec Readiness Verdict",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "status",
+    "ambiguity",
+    "dimensions",
+    "tier1",
+    "riskFlags",
+    "missing",
+    "blockingQuestions",
+    "nextArtifact",
+    "repositoryCommit",
+    "verdictReason"
+  ],
+  "properties": {
+    "status": {
+      "type": "string",
+      "enum": ["PASS", "NEEDS_PM", "NEEDS_DISCOVERY", "NEEDS_BMAD", "NEEDS_GUARDED_DISCOVERY", "REJECT"]
+    },
+    "ambiguity": { "type": "number", "minimum": 0, "maximum": 1 },
+    "dimensions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["goal", "boundary", "constraint", "acceptance"],
+      "properties": {
+        "goal": { "type": "number", "minimum": 0, "maximum": 1 },
+        "boundary": { "type": "number", "minimum": 0, "maximum": 1 },
+        "constraint": { "type": "number", "minimum": 0, "maximum": 1 },
+        "acceptance": { "type": "number", "minimum": 0, "maximum": 1 }
+      }
+    },
+    "tier1": {
+      "type": "object",
+      "additionalProperties": {
+        "anyOf": [
+          { "type": "string", "enum": ["pass", "fail", "unknown", "not-applicable"] },
+          {
+            "type": "array",
+            "items": { "type": "string", "minLength": 1 }
+          }
+        ]
+      }
+    },
+    "riskFlags": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "missing": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "blockingQuestions": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "assumptions": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "nextArtifact": { "type": "string", "minLength": 1 },
+    "repositoryCommit": { "type": "string", "minLength": 6 },
+    "verdictReason": { "type": "string", "minLength": 1 },
+    "fastTrack": { "type": "boolean" },
+    "humanWaiver": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["decision", "actorType", "userQuote"],
+      "properties": {
+        "decision": { "type": "string", "enum": ["ACCEPT_RISK"] },
+        "actorType": { "type": "string", "enum": ["human"] },
+        "userQuote": { "type": "string", "minLength": 1 }
+      }
+    },
+    "createdAt": { "type": ["string", "null"] }
+  }
+}

@@ -45,6 +45,18 @@
       "type": "array",
       "items": { "type": "string", "minLength": 1 }
     },
+    "specReadinessPath": { "type": ["string", "null"] },
+    "specReadiness": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "properties": {
+        "path": { "type": "string", "minLength": 1 },
+        "status": {
+          "type": "string",
+          "enum": ["PASS", "NEEDS_PM", "NEEDS_DISCOVERY", "NEEDS_BMAD", "NEEDS_GUARDED_DISCOVERY", "REJECT"]
+        }
+      }
+    },
     "workerScopePath": { "type": ["string", "null"] },
     "workflowPath": { "type": ["string", "null"] },
     "workflowNodeId": { "type": ["string", "null"] },

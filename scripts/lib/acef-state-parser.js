@@ -604,6 +604,42 @@ function parseCapabilityChange(filePath) {
   return record;
 }
 
+function parseSpecReadiness(filePath) {
+  const record = readJson(filePath);
+  requireFields(record, ["status", "ambiguity", "dimensions", "tier1", "riskFlags", "missing", "blockingQuestions", "nextArtifact", "repositoryCommit", "verdictReason"], "spec readiness");
+  requireEnum(record, "status", ["PASS", "NEEDS_PM", "NEEDS_DISCOVERY", "NEEDS_BMAD", "NEEDS_GUARDED_DISCOVERY", "REJECT"], "spec readiness");
+  if (typeof record.ambiguity !== "number" || record.ambiguity < 0 || record.ambiguity > 1) {
+    throw new Error("spec readiness ambiguity must be a number between 0 and 1");
+  }
+  if (!record.dimensions || typeof record.dimensions !== "object" || Array.isArray(record.dimensions)) {
+    throw new Error("spec readiness dimensions must be an object");
+  }
+  for (const field of ["goal", "boundary", "constraint", "acceptance"]) {
+    if (typeof record.dimensions[field] !== "number" || record.dimensions[field] < 0 || record.dimensions[field] > 1) {
+      throw new Error(`spec readiness dimensions.${field} must be a number between 0 and 1`);
+    }
+  }
+  if (!record.tier1 || typeof record.tier1 !== "object" || Array.isArray(record.tier1)) {
+    throw new Error("spec readiness tier1 must be an object");
+  }
+  requireStringArray(record, "riskFlags", "spec readiness");
+  requireStringArray(record, "missing", "spec readiness");
+  requireStringArray(record, "blockingQuestions", "spec readiness");
+  if (record.assumptions !== undefined) requireStringArray(record, "assumptions", "spec readiness");
+  if (record.fastTrack !== undefined && typeof record.fastTrack !== "boolean") {
+    throw new Error("spec readiness fastTrack must be boolean");
+  }
+  if (record.humanWaiver !== undefined) {
+    if (!record.humanWaiver || typeof record.humanWaiver !== "object" || Array.isArray(record.humanWaiver)) {
+      throw new Error("spec readiness humanWaiver must be an object");
+    }
+    requireFields(record.humanWaiver, ["decision", "actorType", "userQuote"], "spec readiness humanWaiver");
+    requireEnum(record.humanWaiver, "decision", ["ACCEPT_RISK"], "spec readiness humanWaiver");
+    requireEnum(record.humanWaiver, "actorType", ["human"], "spec readiness humanWaiver");
+  }
+  return record;
+}
+
 function parseFreshness(record, label = "freshness") {
   if (!record || typeof record !== "object") throw new Error(`${label} must be an object`);
   requireFields(record, ["commit", "verifiedAt", "scope"], label);
@@ -633,6 +669,7 @@ module.exports = {
   parseWorkerResult,
   parseWorkerRollup,
   parseCapabilityChange,
+  parseSpecReadiness,
   parseFreshness,
   safeRelative,
 };

@@ -683,6 +683,23 @@ function scopeAppliesToWorker(payload, scope) {
   return payloadWorkerIdentity(payload).includes(expected);
 }
 
+function workerScopeRecoveryHint(scope, repoRoot, requestedPaths = []) {
+  const story = String(scope?.activeStory || scope?.story || "unknown").trim();
+  const phase = String(scope?.phase || "unknown").trim();
+  const workerId = String(scope?.workerId || scope?.worker || "unknown").trim();
+  const allowedPaths = Array.isArray(scope?.allowedPaths) ? scope.allowedPaths.filter(Boolean) : [];
+  const requested = requestedPaths
+    .filter(Boolean)
+    .map((filePath) => path.relative(repoRoot, filePath).replaceAll(path.sep, "/"))
+    .join(", ");
+  const allowed = allowedPaths.length ? allowedPaths.join(", ") : "none";
+  return [
+    `Active worker scope: activeStory=${story}; phase=${phase}; workerId=${workerId}; allowedPaths=${allowed}.`,
+    requested ? `Requested implementation path(s): ${requested}.` : "",
+    "If this is not an active ACEF run, close the stale lane marker or reset docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json before editing. If it is an ACEF run, dispatch a worker whose identity and allowedPaths match this task.",
+  ].filter(Boolean).join(" ");
+}
+
 function countCommitsSince(repoRoot, baseRef) {
   if (!baseRef) return 0;
   try {
@@ -731,7 +748,7 @@ function workerScopeRestricted(payload, toolName, input, cwd, repoRoot, filePath
     return "ACEF worker scope fence: docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json is not valid JSON.";
   }
   if (!scopeAppliesToWorker(payload, scope)) {
-    return "ACEF worker scope fence: active worker scope is assigned to a different worker identity.";
+    return `ACEF worker scope fence: active worker scope is assigned to a different worker identity. ${workerScopeRecoveryHint(scope, repoRoot, filePath ? [filePath] : [])}`;
   }
 
   const targetEpic = parseEpicNumberFromStory(scope.activeStory || scope.story || scope.scope || "");
@@ -740,14 +757,14 @@ function workerScopeRestricted(payload, toolName, input, cwd, repoRoot, filePath
 
   if (isWriteTool(toolName) && !allowedByScopePath(filePath, repoRoot, scope)) {
     const story = scope.activeStory || "current story";
-    return `ACEF worker scope fence: ${path.relative(repoRoot, filePath)} is outside allowedPaths for Story ${story}.`;
+    return `ACEF worker scope fence: ${path.relative(repoRoot, filePath)} is outside allowedPaths for Story ${story}. ${workerScopeRecoveryHint(scope, repoRoot, [filePath])}`;
   }
 
   if (/^apply_patch$/i.test(toolName)) {
     const outOfScope = patchTouchedPaths(input, cwd).filter((patchPath) => implementationPath(patchPath, repoRoot) && !allowedByScopePath(patchPath, repoRoot, scope));
     if (outOfScope.length) {
       const story = scope.activeStory || "current story";
-      return `ACEF worker scope fence: ${outOfScope.map((patchPath) => path.relative(repoRoot, patchPath)).join(", ")} outside allowedPaths for Story ${story}.`;
+      return `ACEF worker scope fence: ${outOfScope.map((patchPath) => path.relative(repoRoot, patchPath)).join(", ")} outside allowedPaths for Story ${story}. ${workerScopeRecoveryHint(scope, repoRoot, outOfScope)}`;
     }
   }
 

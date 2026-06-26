@@ -24,9 +24,11 @@ try {
     "acef-router",
     "acef-test-bootstrap",
     "map-codebase",
+    "spec-readiness",
   ]);
   for (const toolDir of [[".codex", "skills"], [".claude", "skills"], [".opencode", "skills"]]) {
     assert.ok(fs.existsSync(path.join(tmp, ...toolDir, "acef", "SKILL.md")));
+    assert.ok(fs.existsSync(path.join(tmp, ...toolDir, "spec-readiness", "SKILL.md")));
     assert.ok(!fs.existsSync(path.join(tmp, ...toolDir, "bug-hunter")), "bug-hunter must not enter minimal default");
     assert.ok(!fs.existsSync(path.join(tmp, ...toolDir, "implementation-shape-review")), "shape review must not enter minimal default");
   }

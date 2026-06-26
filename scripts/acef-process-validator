@@ -13,6 +13,7 @@ const {
   parsePrReview,
   parsePrReviewProfile,
   parseCapabilityChange,
+  parseSpecReadiness,
   parseWorkerScope,
   safeRelative,
 } = require("./lib/acef-state-parser");
@@ -46,6 +47,7 @@ Checks:
   epic-context-pack  Require an epic-level context pack before story workers consume the epic
   current-context    Require a role-scoped, ledger-reconciled hot context before worker dispatch
   pr-review          Validate bounded PR-review context and reject reviewer-authored patches
+  spec-readiness     Require file-backed product/spec readiness before planning or dispatch
   lane-selection     Require active lane choice to match recorded risk triggers
   lane-closeout      Require the active lane's complete validator bundle before close
   lightweight-lifecycle Require the six-step lightweight lifecycle, promotion disposition, and surface evidence
@@ -354,6 +356,52 @@ function inferredRiskTriggers(paths) {
     if (/tenant|privacy|pii|personal[-_]?data/i.test(filePath)) triggers.add("tenant-privacy");
   }
   return [...triggers];
+}
+
+function specReadinessPath(repoRoot, activeRun = null) {
+  const configured = activeRun?.specReadinessPath || activeRun?.specReadiness?.path || "";
+  return configured ? resolvePath(configured, repoRoot) : path.join(repoRoot, "docs", "ai", "ACEF_SPEC_READINESS.json");
+}
+
+function specReadinessRequired(activeRun, triggers = []) {
+  if (!activeRun) return false;
+  const phase = String(activeRun.activePhase || "").toLowerCase();
+  const planningOrExecutionPhases = new Set(["planning", "atdd", "development", "code-review", "verify-patch", "test-review", "process-judge", "closeout"]);
+  if (!planningOrExecutionPhases.has(phase)) return false;
+  if (["full-bmad", "guarded"].includes(activeRun.lane)) return true;
+  const riskText = triggers.join(" ");
+  return /(feature|crm|notes?|tracking|reporting|dashboard|workflow|persistence|database|schema|migration|auth|authorization|permission|roles?|payment|billing|invoice|accounting|finance|financial|revenue|expense|tax|ledger|muhasebe|payout|security|tenant|privacy|pii)/i.test(riskText);
+}
+
+function validateSpecReadinessForDispatch(repoRoot, activeRun, triggers = []) {
+  if (!specReadinessRequired(activeRun, triggers)) return [];
+  const failures = [];
+  const filePath = specReadinessPath(repoRoot, activeRun);
+  if (!exists(filePath)) return [`planning/execution requires file-backed spec readiness verdict at ${path.relative(repoRoot, filePath)}`];
+  let verdict;
+  try {
+    verdict = parseSpecReadiness(filePath);
+  } catch (error) {
+    return [`spec readiness verdict invalid: ${error.message}`];
+  }
+  const commitError = recordCommitError(repoRoot, verdict.repositoryCommit, "spec readiness verdict");
+  if (commitError) failures.push(commitError);
+  const highRisk = (triggers.concat(verdict.riskFlags || [])).some((item) => /(schema|migration|auth|authorization|permission|role|payment|billing|invoice|accounting|finance|financial|revenue|expense|tax|ledger|muhasebe|payout|security|tenant|privacy|pii|persistence|database|crm)/i.test(item));
+  if (verdict.status !== "PASS") {
+    const questions = (verdict.blockingQuestions || []).slice(0, 3).join(" | ");
+    const suffix = questions ? ` Blocking question(s): ${questions}` : "";
+    failures.push(`spec readiness is ${verdict.status}; route to ${verdict.nextArtifact}.${suffix}`);
+  }
+  if (verdict.status === "PASS" && verdict.ambiguity > 0.2 && !verdict.fastTrack) {
+    failures.push(`spec readiness PASS has ambiguity ${verdict.ambiguity}; non-fast-track work must be <= 0.20`);
+  }
+  if (highRisk && verdict.fastTrack) {
+    failures.push("spec readiness fastTrack cannot be used for guarded/high-risk work");
+  }
+  if (highRisk && verdict.status !== "PASS" && !verdict.blockingQuestions.length) {
+    failures.push("non-PASS guarded spec readiness must include blockingQuestions");
+  }
+  return failures;
 }
 
 function missingInferredSurfaces(repoRoot, declared, activeScope = null) {
@@ -2108,6 +2156,7 @@ function checkLaneSelection(repoRoot) {
     if (!triggers.includes(trigger)) failures.push(`risk trigger inferred from changed paths but not declared: ${trigger}`);
   }
   const allTriggers = [...new Set([...triggers, ...inferredTriggers])];
+  failures.push(...validateSpecReadinessForDispatch(repoRoot, activeRun, allTriggers));
   if (!activeRun.laneRationale || !String(activeRun.laneRationale).trim()) {
     failures.push("active run requires laneRationale");
   }
@@ -2127,6 +2176,28 @@ function checkLaneSelection(repoRoot) {
   return failures.length
     ? result("lane-selection", false, failures.join("; "))
     : result("lane-selection", true, `${activeRun.lane} lane selection is justified`);
+}
+
+function checkSpecReadiness(repoRoot) {
+  const activeRun = typedActiveRun(repoRoot);
+  if (!activeRun) return result("spec-readiness", true, "No typed active run; spec readiness is checked at lane selection when a typed run exists");
+  const triggers = (activeRun.riskTriggers || []).map((item) => String(item).toLowerCase());
+  let activeScope = null;
+  if (activeRun.workerScopePath) {
+    try {
+      activeScope = parseWorkerScope(resolvePath(activeRun.workerScopePath, repoRoot));
+    } catch {
+      activeScope = null;
+    }
+  }
+  const allTriggers = [...new Set([...triggers, ...inferredRiskTriggers(pathHints(repoRoot, activeScope))])];
+  const failures = validateSpecReadinessForDispatch(repoRoot, activeRun, allTriggers);
+  if (!failures.length) {
+    if (!specReadinessRequired(activeRun, allTriggers)) return result("spec-readiness", true, "Spec readiness not required for this phase/lane/risk profile");
+    const verdict = parseSpecReadiness(specReadinessPath(repoRoot, activeRun));
+    return result("spec-readiness", true, `Spec readiness ${verdict.status} for ${activeRun.activeStory}`);
+  }
+  return result("spec-readiness", false, failures.join("; "));
 }
 
 function closeoutResultFailure(item) {
@@ -2274,7 +2345,7 @@ function main() {
   const adapter = args.adapter || findAdapter(args.repo);
   const registry = findPatternRegistry(args.repo, adapter);
   const checks = args.check === "all"
-    ? ["clean-tree", "preflight", "claims", "adapter-freshness", "pattern-registry", "reuse-before-create", "do-not-copy", "partial-workshape", "finding-promotion", "graduation-reconciliation", "vertical-slice", "test-authenticity", "guarded-test-floor", "actor-separation", "worker-scope", "evidence-manifest", "gate-verdict", "source-reconciliation", "epic-context-pack", "current-context", "pr-review", "lane-selection", "lane-closeout", "lightweight-lifecycle", "lean-evidence", "capability-change", "session-handoff", "seeded-epic-gates", "epic-boundary", "epic-transition-approval", "replan-counter"]
+    ? ["clean-tree", "preflight", "claims", "adapter-freshness", "pattern-registry", "reuse-before-create", "do-not-copy", "partial-workshape", "finding-promotion", "graduation-reconciliation", "vertical-slice", "test-authenticity", "guarded-test-floor", "actor-separation", "worker-scope", "evidence-manifest", "gate-verdict", "source-reconciliation", "epic-context-pack", "current-context", "pr-review", "spec-readiness", "lane-selection", "lane-closeout", "lightweight-lifecycle", "lean-evidence", "capability-change", "session-handoff", "seeded-epic-gates", "epic-boundary", "epic-transition-approval", "replan-counter"]
     : [args.check];
 
   const results = checks.map((check) => {
@@ -2299,6 +2370,7 @@ function main() {
     if (check === "epic-context-pack") return checkEpicContextPack(args.repo, ledger);
     if (check === "current-context") return checkCurrentContext(args.repo, ledger);
     if (check === "pr-review") return checkPrReview(args.repo);
+    if (check === "spec-readiness") return checkSpecReadiness(args.repo);
     if (check === "lane-selection") return checkLaneSelection(args.repo);
     if (check === "lane-closeout") return checkLaneCloseout(args.repo, ledger, adapter, registry);
     if (check === "lightweight-lifecycle") return checkLightweightLifecycle(args.repo);

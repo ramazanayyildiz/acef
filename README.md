@@ -330,6 +330,9 @@ which local neighbor/probe was checked before creation, and do-not-copy entries 
 The Claude Code guard hook also runs those P1 checks before implementation writes in active ACEF/BMAD lanes.
 The hook also enforces the worker scope fence: implementation workers cannot write outside their active story manifest,
 edit `docs/ai/ACEF_*`, spawn subagents, or commit without citing the active story.
+When an implementation write is blocked by a stale or mismatched active worker scope, the hook reports the active story,
+phase, worker id, allowed paths, requested path, and the recovery choice: close the stale lane marker/scope for a normal
+hotfix, or dispatch a worker whose identity and allowed paths match the task.
 When story tests depend on third-party framework APIs, run a grounding spike first and record the proven contract before
 ATDD. Green tests built on fake descriptors, vendor overrides, monkey patches, or test-only framework shims are not
 evidence; they are a REPLAN signal.

@@ -28,7 +28,12 @@ Do not start implementation, tests, installs, or broad repo scans unless the use
 Ask at most three yes/no clarifying questions before choosing a provisional route. If confidence is low or risk is
 high, route upward to the safer/larger path; never route downward to reduce ceremony.
 
-Before planning, dispatch, or implementation, record the route decision in `docs/ai/ACEF_ACTIVE_RUN.json` as
+Before planning, dispatch, or implementation, run `spec-readiness` for thin, broad, product-shaped, CRM/notes/tracking,
+finance/accounting, persistence, RBAC, schema, PII, or money-related requests and write
+`docs/ai/ACEF_SPEC_READINESS.json`. The dispatcher must not proceed unless that verdict is `PASS` or a reversible
+low-risk exception has explicit human risk acceptance.
+
+Also record the route decision in `docs/ai/ACEF_ACTIVE_RUN.json` as
 `intakeDecision`: selected route, confidence, clarifying questions asked, facts inferred without asking, unresolved
 questions, interview brief approval, and execution approval. If no question was needed, record the inference. If the
 idea is thin, broad, CRM/notes/tracking/reporting/accounting/finance-related, or medium/low confidence, interview for

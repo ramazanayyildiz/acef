@@ -144,7 +144,7 @@ function expectDispatcherDecision(label, payload, decision, env = {}) {
   }
 }
 
-function expectHookDecision(label, payload, decision, env = {}) {
+function expectHookDecision(label, payload, decision, env = {}, expectedSystemMessages = []) {
   const output = runHook(payload, env);
   const hookEventName = output?.hookSpecificOutput?.hookEventName;
   if (hookEventName !== "PreToolUse") {
@@ -153,6 +153,11 @@ function expectHookDecision(label, payload, decision, env = {}) {
   const actual = output?.hookSpecificOutput?.permissionDecision;
   if (actual !== decision) {
     throw new Error(`Expected hook ${label} to ${decision}, got ${actual || "none"}:\n${JSON.stringify(output, null, 2)}`);
+  }
+  for (const expected of expectedSystemMessages) {
+    if (!String(output.systemMessage || "").includes(expected)) {
+      throw new Error(`Expected hook ${label} message to include ${expected}, got:\n${JSON.stringify(output, null, 2)}`);
+    }
   }
 }
 
@@ -535,6 +540,28 @@ try {
   fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_ACTIVE_WORKER_SCOPE.json"), JSON.stringify({
     activeStory: "1.1",
     phase: "dev",
+    workerId: "other-worker",
+    allowedPaths: ["src/**", "tests/**"],
+    baseRef: "HEAD",
+    maxCommits: 1,
+    canEditLedger: false,
+    canSpawnAgents: false,
+  }, null, 2));
+  expectHookDecision("worker identity mismatch explains active scope", {
+    tool_name: "Write",
+    cwd: tmp,
+    tool_input: {
+      file_path: path.join(tmp, "src", "wrong-worker.ts"),
+      content: "export const blocked = true;\n",
+    },
+  }, "deny", workerEnv, [
+    "active worker scope is assigned to a different worker identity",
+    "Active worker scope: activeStory=1.1; phase=dev; workerId=other-worker; allowedPaths=src/**, tests/**.",
+    "If this is not an active ACEF run, close the stale lane marker",
+  ]);
+  fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_ACTIVE_WORKER_SCOPE.json"), JSON.stringify({
+    activeStory: "1.1",
+    phase: "dev",
     workerId: "ACEF_BMAD_WORKER",
     allowedPaths: ["src/**", "tests/**"],
     baseRef: "HEAD",
@@ -549,7 +576,11 @@ try {
       file_path: path.join(tmp, "app", "Models", "OutOfScope.php"),
       content: "<?php\n",
     },
-  }, "deny", workerEnv);
+  }, "deny", workerEnv, [
+    "outside allowedPaths for Story 1.1",
+    "Requested implementation path(s): app/Models/OutOfScope.php.",
+    "If this is not an active ACEF run, close the stale lane marker",
+  ]);
   expectHookDecision("worker apply_patch outside active story scope denied", {
     tool_name: "apply_patch",
     cwd: tmp,
@@ -961,6 +992,64 @@ try {
     ledgerPath: "docs/ai/ACEF_demo_DELIVERY_AUDIT.md",
     contextPath: "docs/ai/ACEF_CURRENT_CONTEXT.md",
   }, null, 2));
+  expectFail("spec-readiness", ["--repo", tmp, "--check", "spec-readiness"]);
+  expectFail("lane-selection", ["--repo", tmp, "--check", "lane-selection"]);
+  fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_SPEC_READINESS.json"), JSON.stringify({
+    status: "NEEDS_GUARDED_DISCOVERY",
+    ambiguity: 0.55,
+    dimensions: {
+      goal: 0.5,
+      boundary: 0.3,
+      constraint: 0.5,
+      acceptance: 0.2,
+    },
+    tier1: {
+      problem: "pass",
+      persona: "fail",
+      success_metric: "fail",
+      non_goals: "fail",
+      given_when_then: "fail",
+      data_entity: "fail",
+      acceptance_criteria: "fail",
+      smell_words: ["finance", "tracking"],
+    },
+    riskFlags: ["finance", "persistence"],
+    missing: ["data_model", "acceptance_criteria"],
+    blockingQuestions: ["Which finance entity owns the tracked balance?"],
+    assumptions: [],
+    nextArtifact: "product-brief",
+    repositoryCommit: head,
+    verdictReason: "Vague finance tracking request touches persisted money data.",
+  }, null, 2));
+  expectFail("spec-readiness", ["--repo", tmp, "--check", "spec-readiness"]);
+  fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_SPEC_READINESS.json"), JSON.stringify({
+    status: "PASS",
+    ambiguity: 0.12,
+    dimensions: {
+      goal: 0.9,
+      boundary: 0.9,
+      constraint: 0.8,
+      acceptance: 0.9,
+    },
+    tier1: {
+      problem: "pass",
+      persona: "pass",
+      success_metric: "pass",
+      non_goals: "pass",
+      given_when_then: "pass",
+      data_entity: "pass",
+      acceptance_criteria: "pass",
+      smell_words: [],
+    },
+    riskFlags: ["finance", "persistence"],
+    missing: [],
+    blockingQuestions: [],
+    assumptions: [],
+    nextArtifact: "story-plan",
+    repositoryCommit: head,
+    verdictReason: "Goal, boundary, data ownership, and acceptance criteria are explicit.",
+  }, null, 2));
+  expectPass("spec-readiness", ["--repo", tmp, "--check", "spec-readiness"]);
   fs.writeFileSync(path.join(tmp, "docs", "ai", "gates", "story-1-1.json"), JSON.stringify({
     gateId: "story-1-1",
     scope: "story 1.1",

@@ -1,6 +1,6 @@
 {
   "capabilityId": "operational-friction-reduction",
-  "requestedIntent": "Reduce ACEF friction found in real guarded product work without weakening evidence, especially around dirty-tree evidence capture and completed active-run context validation.",
+  "requestedIntent": "Reduce ACEF friction found in real guarded product work without weakening evidence, especially around dirty-tree evidence capture, completed active-run context validation, and stale worker-scope recovery diagnostics.",
   "status": "enforced",
   "requiredLayers": [
     "docs",
@@ -15,7 +15,8 @@
     ],
     "workflow": [
       "schemas/evidence.schema.json",
-      "scripts/acef-state#writeEvidence"
+      "scripts/acef-state#writeEvidence",
+      "claude-plugins/acef-bmad-guard/hooks/acef-bmad-hard-wall.mjs#workerScopeRecoveryHint"
     ],
     "validator": [
       "scripts/acef-process-validator#checkCurrentContext",
@@ -39,6 +40,10 @@
     {
       "layer": "workflow",
       "ref": "scripts/acef-state#writeEvidence"
+    },
+    {
+      "layer": "workflow",
+      "ref": "claude-plugins/acef-bmad-guard/hooks/acef-bmad-hard-wall.mjs#workerScopeRecoveryHint"
     },
     {
       "layer": "validator",

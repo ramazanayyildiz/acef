@@ -1,0 +1,71 @@
+{
+  "capabilityId": "spec-readiness-gate",
+  "requestedIntent": "Prevent vague product requests from entering ACEF planning, story creation, or implementation before a file-backed spec-readiness verdict resolves ambiguity, risk, missing product facts, and blocking questions.",
+  "status": "enforced",
+  "requiredLayers": [
+    "docs",
+    "schema",
+    "workflow",
+    "validator",
+    "tests",
+    "installer"
+  ],
+  "implementedLayers": {
+    "docs": [
+      "skills/spec-readiness/SKILL.md",
+      "skills/acef/SKILL.md",
+      "skills/acef-router/SKILL.md",
+      "CHANGELOG.md"
+    ],
+    "schema": [
+      "schemas/spec-readiness.schema.json",
+      "schemas/active-run.schema.json"
+    ],
+    "workflow": [
+      "scripts/lib/acef-state-parser.js#parseSpecReadiness"
+    ],
+    "validator": [
+      "scripts/acef-process-validator#checkSpecReadiness",
+      "scripts/acef-process-validator#checkLaneSelection"
+    ],
+    "tests": [
+      "scripts/test-acef-process-validator",
+      "scripts/test-install-acef-skills",
+      "scripts/test-validate-acef-skills"
+    ],
+    "installer": [
+      "scripts/install-acef-skills"
+    ]
+  },
+  "limitations": [
+    "The validator enforces the presence and PASS state of the verdict for typed active runs in planning/execution phases when the lane or risk profile requires readiness; it does not transcribe the human interview automatically.",
+    "Target repositories must refresh ACEF before the new skill and validator behavior are installed there."
+  ],
+  "evidence": [
+    {
+      "layer": "schema",
+      "ref": "schemas/spec-readiness.schema.json"
+    },
+    {
+      "layer": "workflow",
+      "ref": "scripts/lib/acef-state-parser.js#parseSpecReadiness"
+    },
+    {
+      "layer": "validator",
+      "ref": "scripts/acef-process-validator#checkSpecReadiness"
+    },
+    {
+      "layer": "validator",
+      "ref": "scripts/acef-process-validator#checkLaneSelection"
+    },
+    {
+      "layer": "tests",
+      "ref": "scripts/test-acef-process-validator"
+    },
+    {
+      "layer": "installer",
+      "ref": "scripts/install-acef-skills"
+    }
+  ],
+  "createdAt": "2026-06-26"
+}
