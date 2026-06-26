@@ -248,6 +248,23 @@ try {
   assert.notEqual(failedSurfaceEvidenceResult.status, 0);
   assert.match(failedSurfaceEvidenceResult.stdout, /successful surface evidence for api/);
 
+  const statefulSurface = makeRepo("crm-notes-lightweight");
+  const statefulSurfaceResult = run(statefulSurface);
+  assert.notEqual(statefulSurfaceResult.status, 0);
+  assert.match(statefulSurfaceResult.stdout, /durable write\/read persistence evidence/);
+  const statefulRecord = JSON.parse(fs.readFileSync(path.join(statefulSurface, "docs", "ai", "ACEF_LIGHTWEIGHT_RUN.json"), "utf8"));
+  const statefulEntry = statefulRecord.surfaceEvidence[0];
+  const durableSurfaceArtifact = surfaceArtifact(statefulEntry.command, statefulEntry.exitCode, [
+    "CRM note inserted into Postgres",
+    "fresh request selected persisted row from database",
+    "read-after-write durable round-trip PASS",
+  ].join("\n"));
+  statefulEntry.runnerProof = lightweightSurfaceProof(statefulEntry, durableSurfaceArtifact);
+  write(statefulSurface, statefulEntry.evidencePath, durableSurfaceArtifact);
+  write(statefulSurface, "docs/ai/ACEF_LIGHTWEIGHT_RUN.json", `${JSON.stringify(statefulRecord, null, 2)}\n`);
+  const durableStatefulSurfaceResult = run(statefulSurface);
+  assert.equal(durableStatefulSurfaceResult.status, 0, durableStatefulSurfaceResult.stderr || durableStatefulSurfaceResult.stdout);
+
   const quickFix = makeRepo("quick-fix", (record) => {
     record.lane = "quick-fix";
     record.quickFix = quickFixEvidence();

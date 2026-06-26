@@ -190,6 +190,10 @@ Every story close must include two canonical ledger facts, even when the full ev
    `surfaceEvidence` records the command, evidence path, success result, and runner proof for each one.
    Validators also infer obvious surfaces from changed path names and fail if those surfaces were not declared; this is a
    guardrail, not a replacement for honest surface declaration.
+   For state-changing work, surface evidence must prove the durable write/read boundary. Schema/model existence,
+   route/render/status smoke, command tests against fixture or in-memory stores, demo data, or process-local singleton
+   stores are not enough. The evidence package must include at least one real write plus read/requery proof through the
+   production-like persistence path.
 4. **Goal coverage evidence.** A story may close as a foundation/backend slice, but it cannot close the user's original
    product goal unless `docs/ai/ACEF_ACTIVE_RUN.json` records `activeGoal` and `goalCoverage`. For user-facing goals,
    `goalCoverage.status` must be `PASS`, `storyType` cannot be `foundation` or `backend-capability`, required visible

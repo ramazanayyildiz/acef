@@ -20,6 +20,7 @@
     ],
     "validator": [
       "scripts/acef-process-validator#checkLightweightLifecycle",
+      "scripts/acef-process-validator#durablePersistenceEvidenceText",
       "scripts/lib/acef-state-parser.js#parseLightweightRun"
     ],
     "tests": [
@@ -27,7 +28,7 @@
     ]
   },
   "limitations": [
-    "The validator checks that declared lightweight surfaces have successful surfaceEvidence, runner-shaped command/exit proof, and path-name inference to catch obvious underdeclared surfaces; inference is heuristic.",
+    "The validator checks that declared lightweight surfaces have successful surfaceEvidence, runner-shaped command/exit proof, path-name inference to catch obvious underdeclared surfaces, and at least one durable write/read evidence signal for state-changing work; inference is heuristic.",
     "Agents must choose the correct UI, API, worker, command, hook, job, or integration validation command for each touched surface."
   ],
   "evidence": [
@@ -46,6 +47,10 @@
     {
       "layer": "validator",
       "ref": "scripts/acef-process-validator#checkLightweightLifecycle"
+    },
+    {
+      "layer": "validator",
+      "ref": "scripts/acef-process-validator#durablePersistenceEvidenceText"
     },
     {
       "layer": "tests",

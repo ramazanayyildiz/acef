@@ -1078,6 +1078,33 @@ try {
     ],
   }, null, 2));
   expectPass("gate-verdict", ["--repo", tmp, "--check", "gate-verdict"]);
+  const statefulActiveRun = JSON.parse(fs.readFileSync(path.join(tmp, "docs", "ai", "ACEF_ACTIVE_RUN.json"), "utf8"));
+  statefulActiveRun.laneRationale = "CRM workspace captures notes and follow-up records";
+  statefulActiveRun.riskTriggers = ["crm", "notes", "persistence"];
+  fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_ACTIVE_RUN.json"), JSON.stringify(statefulActiveRun, null, 2));
+  expectFail("gate-verdict", ["--repo", tmp, "--check", "gate-verdict"]);
+  const originalUiArtifact = fs.readFileSync(surfaceArtifact, "utf8");
+  const originalUiEvidence = JSON.parse(fs.readFileSync(path.join(tmp, "docs", "ai", "evidence", "evidence-ui.json"), "utf8"));
+  fs.writeFileSync(surfaceArtifact, runnerArtifact(uiCommand, 0, [
+    "CRM action inserted row into Postgres",
+    "fresh request selected persisted note from database",
+    "read-after-write durable round-trip PASS",
+  ].join("\n")));
+  const durableUiEvidence = {
+    ...originalUiEvidence,
+    rawArtifact: {
+      ...originalUiEvidence.rawArtifact,
+      sha256: sha256File(surfaceArtifact),
+    },
+  };
+  durableUiEvidence.runnerProof = evidenceRunnerProof(durableUiEvidence);
+  fs.writeFileSync(path.join(tmp, "docs", "ai", "evidence", "evidence-ui.json"), JSON.stringify(durableUiEvidence, null, 2));
+  expectPass("gate-verdict", ["--repo", tmp, "--check", "gate-verdict"]);
+  fs.writeFileSync(surfaceArtifact, originalUiArtifact);
+  fs.writeFileSync(path.join(tmp, "docs", "ai", "evidence", "evidence-ui.json"), JSON.stringify(originalUiEvidence, null, 2));
+  statefulActiveRun.riskTriggers = [];
+  statefulActiveRun.laneRationale = null;
+  fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_ACTIVE_RUN.json"), JSON.stringify(statefulActiveRun, null, 2));
   const activeRunForGoalCoverage = JSON.parse(fs.readFileSync(path.join(tmp, "docs", "ai", "ACEF_ACTIVE_RUN.json"), "utf8"));
   activeRunForGoalCoverage.status = "complete";
   activeRunForGoalCoverage.activeGoal = {

@@ -351,12 +351,46 @@ function inferredRiskTriggers(paths) {
   for (const filePath of paths) {
     if (/auth|authorization|permission|roles?/i.test(filePath)) triggers.add("auth");
     if (/payment|billing|invoice|checkout|subscription|accounting|finance|financial|revenue|expense|tax|ledger|muhasebe/i.test(filePath)) triggers.add("financial");
+    if (/crm|lead|notes?|follow[-_]?up|conversion|history|tracking/i.test(filePath)) triggers.add("stateful-product-data");
+    if (/app[-_]?store|memory|singleton|demo[-_]?data|fixture[-_]?store/i.test(filePath)) triggers.add("stateful-product-data");
     if (/migration|delete|destroy|purge|truncate/i.test(filePath)) triggers.add("migration");
+    if (/(^|\/)(migrations|database|schema)(\/|$)/i.test(filePath)) triggers.add("persistence");
     if (/security|token|session|secret|credential/i.test(filePath)) triggers.add("security");
     if (/webhook/i.test(filePath)) triggers.add("webhook");
     if (/tenant|privacy|pii|personal[-_]?data/i.test(filePath)) triggers.add("tenant-privacy");
   }
   return [...triggers];
+}
+
+function stateChangingRisk(repoRoot, activeRun, activeScope = null) {
+  const text = [
+    activeRun?.activeStory,
+    activeRun?.laneRationale,
+    ...(activeRun?.riskTriggers || []),
+    ...(activeScope?.surfaces || []),
+    ...pathHints(repoRoot, activeScope),
+  ].filter(Boolean).join(" ");
+  return /\b(create|capture|record|save|store|persist|write|update|delete|notes?|lead|crm|follow[-_ ]?up|conversion|history|tracking|payment|billing|invoice|finance|financial|payout|receipt|balance|migration|database|schema|app[-_ ]?store|memory|singleton|demo[-_ ]?data|fixture[-_ ]?store)\b/i.test(text);
+}
+
+function durablePersistenceEvidenceText(text) {
+  return /\b(postgres|postgresql|database|db\b|drizzle|sql|insert(?:ed)?|select(?:ed)?|row(?:s)?|transaction|migration|persistent|persisted|durable|write[-_ ]?read|read[-_ ]?after[-_ ]?write|fresh request|new request|cold start|process reset|store reset|reload|requery|round[-_ ]?trip)\b/i.test(text)
+    && /\b(create|capture|record|save|write|insert|update|persist|read|select|query|requery|reload|visible|found|exists)\b/i.test(text);
+}
+
+function stateChangingEvidenceFailure(label, rawText) {
+  if (durablePersistenceEvidenceText(rawText)) return "";
+  if (/\b(route|page|http|status|200|render|smoke|component|fixture|mock|memory|singleton|demo[-_ ]?data|schema only|schema exists|model exists)\b/i.test(rawText)) {
+    return `${label} must prove durable write/read persistence, not only route/render/status/schema/in-memory evidence`;
+  }
+  return `${label} must include durable write/read persistence evidence for state-changing work`;
+}
+
+function evidenceRawText(repoRoot, evidence) {
+  if (!evidence?.rawArtifact?.path) return "";
+  const rawPath = resolvePath(evidence.rawArtifact.path, repoRoot);
+  if (!exists(rawPath)) return "";
+  return read(rawPath);
 }
 
 function specReadinessPath(repoRoot, activeRun = null) {
@@ -1434,6 +1468,7 @@ function checkGateVerdict(repoRoot) {
       activeScope = null;
     }
   }
+  const requiresDurableStateEvidence = stateChangingRisk(repoRoot, activeRun, activeScope);
   const files = jsonRecords(path.join(repoRoot, "docs", "ai", "gates"));
   const matching = [];
   const failures = [];
@@ -1558,6 +1593,24 @@ function checkGateVerdict(repoRoot) {
         if (binding.defaultMaskingRisk === true && match.defaultRejected !== true) {
           failures.push(`binding ${label} has default masking risk and requires defaultRejected=true`);
         }
+      }
+    }
+    if (requiresDurableStateEvidence) {
+      const durableEvidenceIds = [...new Set([
+        ...(gate.evidenceIds || []),
+        ...(gate.surfaceEvidence || []).map((entry) => entry.evidenceId),
+        ...(gate.inputOutputEvidence || []).map((entry) => entry.evidenceId),
+      ].filter(Boolean))];
+      const rawTexts = [];
+      for (const evidenceId of durableEvidenceIds) {
+        try {
+          rawTexts.push(evidenceRawText(repoRoot, evidenceRecordById(repoRoot, evidenceId)));
+        } catch {
+          // Missing evidence is reported by the normal evidence validation path.
+        }
+      }
+      if (!rawTexts.some(durablePersistenceEvidenceText)) {
+        failures.push(stateChangingEvidenceFailure("state-changing PASS gate", rawTexts.join("\n")));
       }
     }
   }
@@ -2034,6 +2087,12 @@ function checkLightweightLifecycle(repoRoot) {
       }
     }
     if (run.status === "complete") {
+      const lightweightStateRisk = stateChangingRisk(repoRoot, {
+        activeStory: run.scope || run.runId,
+        laneRationale: run.summary || run.reason || "",
+        riskTriggers: run.riskTriggers || run.surfaces || [],
+      }, null);
+      const lightweightSurfaceTexts = [];
       if (!Array.isArray(run.surfaces) || !run.surfaces.length) {
         missing.push("surface declaration");
       }
@@ -2053,6 +2112,7 @@ function checkLightweightLifecycle(repoRoot) {
         } else {
           const artifactSha256 = sha256File(evidencePath);
           const artifactText = read(evidencePath);
+          lightweightSurfaceTexts.push(artifactText);
           if (!artifactHasRunnerHeader(artifactText, match.command, match.exitCode)) {
             missing.push(`runner command/exit header for ${surface}`);
           }
@@ -2068,6 +2128,9 @@ function checkLightweightLifecycle(repoRoot) {
         if (match.exitCode !== 0) {
           missing.push(`successful surface evidence for ${surface}`);
         }
+      }
+      if (lightweightStateRisk && !lightweightSurfaceTexts.some(durablePersistenceEvidenceText)) {
+        missing.push(stateChangingEvidenceFailure("state-changing lightweight closeout", lightweightSurfaceTexts.join("\n")));
       }
       if (run.lane === "quick-fix") {
         if (!run.quickFix) {

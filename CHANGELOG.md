@@ -18,6 +18,14 @@ or evidence contract. Do not use it to claim implementation status; link to the 
 - Wired `goal-coverage` into full-BMAD and guarded closeout and added `acef-state active-run` flags for recording goal
   coverage metadata.
 
+### Surface evidence quality
+
+- Tightened existing surface-evidence validation for state-changing work: CRM/notes/tracking/finance/payment/persistence
+  closeout can no longer pass on schema existence, route/render/status smoke, or in-memory/demo-store evidence alone.
+- Full-BMAD/guarded `gate-verdict` and lightweight lifecycle closeout now require the evidence package to include at
+  least one durable write/read signal such as DB insert/select, persisted row, fresh-request requery, or read-after-write
+  proof when the work creates or mutates product state.
+
 ### Spec-readiness gate
 
 - Added the `spec-readiness` skill as an intake-time product/spec readiness classifier for vague or risky requests before
