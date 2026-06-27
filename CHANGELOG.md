@@ -22,6 +22,7 @@ or evidence contract. Do not use it to claim implementation status; link to the 
 - CI now runs the **full `test-acef-*` matrix** (was only the process-validator), plus a closeout integration check.
 - `scripts/install-acef-bmad-guard` now installs a packaged **git pre-commit gate** (`acef-precommit-gate.sh`) that fires the lean-evidence check on an active ACEF run (no-op otherwise).
 - `acef-closeout-verify` now rejects empty or mislabeled surface-evidence records — missing required fields or an empty `goal.surfaceSet` fail-closed rather than vacuously passing — and is wired into `install-acef-tools`.
+- **Fix: default ledger resolution.** `acef-process-validator`'s `findLedger` (used when `--ledger` is omitted, e.g. by the pre-commit gate) chose the alphabetically-first ledger candidate, which could resolve a legacy `ACEF_ACTIVE_LEDGER` ahead of the active run's audit and produce a false FAIL (forcing `--no-verify` commits). It now prefers `ACEF_ACTIVE_RUN.json`'s declared `ledgerPath` when present, falling back to the alphabetical scan otherwise. Regression test added.
 - Fixed a self-test that was red on `main`.
 - Honest-up'd overstated claims in `method/RULE_ENFORCEMENT_MAP.md`, `method/TRUST_MODEL.md`, `README.md`, `method/VALIDATION_PLAN.md`, and `method/ACEF_COCKPIT.md`: evidence mechanisms detect accidental/lazy evidence gaps, not a forging agent; right-sized the quality claim to the actual benchmark; added a "not yet built" banner on COCKPIT.
 

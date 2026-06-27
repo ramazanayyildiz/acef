@@ -540,6 +540,16 @@ function nestedGitRepos(repoRoot) {
 }
 
 function findLedger(repoRoot) {
+  // Prefer the active run's declared ledger. The alphabetical fallback below can
+  // otherwise resolve a stale/legacy ledger (e.g. ACEF_ACTIVE_LEDGER sorts ahead
+  // of ACEF_CREDIT_LEDGER_DELIVERY_AUDIT.md) that lacks the active run's evidence,
+  // producing false FAILs for callers that omit --ledger (e.g. the pre-commit hook).
+  const activeRunPath = path.join(repoRoot, "docs", "ai", "ACEF_ACTIVE_RUN.json");
+  if (exists(activeRunPath)) {
+    const activeRun = parseActiveRun(activeRunPath);
+    const declared = activeRun && resolvePath(activeRun.ledgerPath, repoRoot);
+    if (declared && exists(declared)) return declared;
+  }
   const roots = [
     path.join(repoRoot, "docs", "ai"),
     path.join(repoRoot, "_bmad-output"),

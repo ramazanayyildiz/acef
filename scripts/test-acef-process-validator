@@ -961,6 +961,20 @@ try {
   ].join("\n"));
   expectFail("current-context", ["--repo", tmp, "--check", "current-context", "--ledger", "docs/ai/ACEF_bad_current_context_DELIVERY_AUDIT.md"]);
   expectPass("lean-evidence", ["--repo", tmp, "--check", "lean-evidence", "--ledger", "docs/ai/ACEF_demo_DELIVERY_AUDIT.md"]);
+  // Regression: with --ledger omitted, findLedger must resolve the ACTIVE_RUN
+  // ledgerPath, not the alphabetically-first candidate. ACEF_ACTIVE_LEDGER (a
+  // legacy state file that matches the ledger filter and sorts ahead of the demo
+  // audit) lacks the Lean Evidence Contract section, so the pre-fix behavior would
+  // pick it and FAIL. The active run points at the passing demo audit instead.
+  fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_ACTIVE_LEDGER"), "docs/ai/ACEF_demo_DELIVERY_AUDIT.md\n");
+  fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_ACTIVE_RUN.json"), JSON.stringify({
+    runId: "lean-default-ledger", repo: "fixture", lane: "guarded", status: "active",
+    activeStory: "1-1", activePhase: "closeout", workerRole: "process-judge",
+    ledgerPath: "docs/ai/ACEF_demo_DELIVERY_AUDIT.md", contextPath: "docs/ai/ACEF_CURRENT_CONTEXT.md",
+  }, null, 2));
+  expectPass("lean-evidence", ["--repo", tmp, "--check", "lean-evidence"]);
+  fs.rmSync(path.join(tmp, "docs", "ai", "ACEF_ACTIVE_LEDGER"), { force: true });
+  fs.rmSync(path.join(tmp, "docs", "ai", "ACEF_ACTIVE_RUN.json"), { force: true });
   fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_lean_bad_DELIVERY_AUDIT.md"), [
     "# Bad Lean Ledger",
     "",
