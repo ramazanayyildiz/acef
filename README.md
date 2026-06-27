@@ -8,7 +8,7 @@ the reality of your current project.
 
 ## ACEF v1 Status
 
-ACEF v1 is evidence-backed for **quality and process control**, not for token-cost reduction.
+ACEF v1 is evidence-backed for **quality and process control**, not for token-cost reduction — though the quality result comes from a small benchmark where only one task differentiated lanes; see the sample caveat in `method/VALIDATION_PLAN.md`.
 
 The v1 empirical validation matrix ran 30 external-agent tasks across three repositories, three stacks, two clients,
 and three lanes. It showed that ACEF lightweight/guarded lanes improved pass rate and known-defect recall, but increased
@@ -99,7 +99,7 @@ files the agent follows. No build, no npm, no services.
    scripts/install-acef-tools --repo /path/to/your/repo
    ```
    This installs the default local set for Claude, Codex, and OpenCode:
-   `acef`, `acef-adapter`, `acef-router`, `acef-test-bootstrap`, and `map-codebase`.
+   `acef`, `acef-adapter`, `acef-router`, `acef-test-bootstrap`, `map-codebase`, and `spec-readiness`.
    For OpenCode, the same installer also writes repo-local slash command wrappers under `.opencode/commands/`
    (`/acef`, `/acef-adapter`, `/acef-router`, `/acef-test-bootstrap`, `/map-codebase`). OpenCode skills live under
    `.opencode/skills/`, but slash commands are a separate `.opencode/commands/*.md` mechanism.
