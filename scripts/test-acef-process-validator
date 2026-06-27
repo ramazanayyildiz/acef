@@ -609,6 +609,97 @@ try {
       content: "export const ok = true;\n",
     },
   }, "allow", workerEnv);
+
+  // --- Identity-absent graceful degradation -------------------------------------------
+  // The harness (e.g. Claude Code subagents) does not propagate worker identity into hook
+  // env. With no identity, the hard wall must degrade from per-actor to scope-level gating
+  // rather than fail-closed on every guarded write. The P1-conformance fixtures established
+  // above remain in place, so these cases exercise only the identity/scope decision.
+  const noIdentityEnv = {
+    ACEF_BMAD_WORKER: "",
+    ACEF_ROLE: "",
+    ACEF_WORKER_ID: "",
+    CLAUDE_AGENT_NAME: "",
+    CLAUDE_SUBAGENT_NAME: "",
+    OPENCODE_AGENT_NAME: "",
+    AGENT_NAME: "",
+  };
+  function writeWorkerScope(overrides) {
+    fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_ACTIVE_WORKER_SCOPE.json"), JSON.stringify({
+      activeStory: "1.1",
+      phase: "development",
+      workerId: "ACEF_BMAD_WORKER",
+      allowedPaths: ["src/**", "tests/**"],
+      baseRef: "HEAD",
+      maxCommits: 1,
+      canEditLedger: false,
+      canSpawnAgents: false,
+      ...overrides,
+    }, null, 2));
+  }
+
+  // (a) no identity + dev-phase scope + path in allowedPaths -> ALLOW
+  writeWorkerScope({ phase: "development", allowedPaths: ["src/**", "tests/**"] });
+  expectHookDecision("identity fallback allows dev-phase write inside allowedPaths", {
+    tool_name: "Write",
+    cwd: tmp,
+    tool_input: {
+      file_path: path.join(tmp, "src", "fallback-ok.ts"),
+      content: "export const ok = true;\n",
+    },
+  }, "allow", noIdentityEnv, ["worker identity not propagated by harness"]);
+
+  // (b) no identity + non-implementation phase (process-judge) -> DENY
+  writeWorkerScope({ phase: "process-judge" });
+  expectHookDecision("identity fallback denies non-dev phase write", {
+    tool_name: "Write",
+    cwd: tmp,
+    tool_input: {
+      file_path: path.join(tmp, "src", "fallback-phase.ts"),
+      content: "export const blocked = true;\n",
+    },
+  }, "deny", noIdentityEnv, [
+    "does not permit implementation writes",
+    "set a developer scope via 'acef-state worker-scope'",
+  ]);
+
+  // (c) no identity + dev phase but path outside allowedPaths -> DENY
+  writeWorkerScope({ phase: "development", allowedPaths: ["lib/**"] });
+  expectHookDecision("identity fallback denies write outside allowedPaths", {
+    tool_name: "Write",
+    cwd: tmp,
+    tool_input: {
+      file_path: path.join(tmp, "src", "fallback-outside.ts"),
+      content: "export const blocked = true;\n",
+    },
+  }, "deny", noIdentityEnv, ["outside allowedPaths for Story 1.1"]);
+
+  // (d) identity present (ACEF_WORKER_ID) matching scope.workerId -> ALLOW
+  writeWorkerScope({ phase: "development", workerId: "dev-worker-7", allowedPaths: ["src/**"] });
+  expectHookDecision("identity present matching scope allows write", {
+    tool_name: "Write",
+    cwd: tmp,
+    tool_input: {
+      file_path: path.join(tmp, "src", "matched.ts"),
+      content: "export const ok = true;\n",
+    },
+  }, "allow", { ...noIdentityEnv, ACEF_WORKER_ID: "dev-worker-7" });
+
+  // (e) identity present but mismatched scope.workerId -> DENY
+  writeWorkerScope({ phase: "development", workerId: "dev-worker-7", allowedPaths: ["src/**"] });
+  expectHookDecision("identity present mismatched scope denies write", {
+    tool_name: "Write",
+    cwd: tmp,
+    tool_input: {
+      file_path: path.join(tmp, "src", "mismatch.ts"),
+      content: "export const blocked = true;\n",
+    },
+  }, "deny", { ...noIdentityEnv, ACEF_WORKER_ID: "intruder-9" }, [
+    "active worker scope is assigned to a different worker identity",
+  ]);
+
+  // Restore the worker scope expected by the review-patch tests that follow.
+  writeWorkerScope({ phase: "dev", workerId: "ACEF_BMAD_WORKER", allowedPaths: ["src/**", "tests/**"] });
   fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_REVIEW_PATCH_REQUIRED.json"), JSON.stringify({
     activeStory: "1.1",
     reviewVerdict: "MERGE WITH REQUIRED PATCH",

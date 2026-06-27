@@ -96,6 +96,7 @@ function isWorker(payload) {
   const values = [
     process.env.ACEF_BMAD_WORKER,
     process.env.ACEF_ROLE,
+    process.env.ACEF_WORKER_ID,
     process.env.CLAUDE_AGENT_NAME,
     process.env.CLAUDE_SUBAGENT_NAME,
     process.env.OPENCODE_AGENT_NAME,
@@ -106,17 +107,26 @@ function isWorker(payload) {
     return false;
   }
 
+  // ACEF_WORKER_ID is an explicit, conductor-set worker binding (env only — never a
+  // worker-writable file). It restores per-actor enforcement when the harness does not
+  // propagate a persona env var. It cannot widen authority: guarded writes still require
+  // a matching conductor-written scope.workerId (see scopeAppliesToWorker), so a forged
+  // ACEF_WORKER_ID that does not match the active scope is denied.
+  if ((process.env.ACEF_WORKER_ID || "").trim()) return true;
+
   return /(^|\s)(1|true)(\s|$)/i.test(process.env.ACEF_BMAD_WORKER || "")
     || /(^|[\s_-])(bmad-agent-(pm|ux-designer|architect|dev|tester|qa|reviewer)|pm-worker|planner|ux-worker|architect-worker|test-author|tester|developer|dev-story|implementing-actor|code-reviewer|reviewer|judge|verify-patch|test-reviewer|process-judge|documentation-maintainer)([\s_-]|$)/i.test(values);
 }
 
-function allow() {
-  process.stdout.write(JSON.stringify({
+function allow(systemMessage) {
+  const payload = {
     hookSpecificOutput: {
       hookEventName: "PreToolUse",
       permissionDecision: "allow"
     }
-  }));
+  };
+  if (systemMessage) payload.systemMessage = systemMessage;
+  process.stdout.write(JSON.stringify(payload));
 }
 
 function deny(reason) {
@@ -638,6 +648,7 @@ function payloadWorkerIdentity(payload) {
     payload?.agent_type,
     payload?.agentType,
     process.env.ACEF_ROLE,
+    process.env.ACEF_WORKER_ID,
     process.env.CLAUDE_AGENT_NAME,
     process.env.CLAUDE_SUBAGENT_NAME,
     process.env.OPENCODE_AGENT_NAME,
@@ -783,6 +794,121 @@ function workerScopeRestricted(payload, toolName, input, cwd, repoRoot, filePath
   return "";
 }
 
+function identityValues(payload) {
+  return [
+    payload?.agent_id,
+    payload?.agentId,
+    payload?.agent_type,
+    payload?.agentType,
+    process.env.ACEF_BMAD_WORKER,
+    process.env.ACEF_ROLE,
+    process.env.ACEF_WORKER_ID,
+    process.env.CLAUDE_AGENT_NAME,
+    process.env.CLAUDE_SUBAGENT_NAME,
+    process.env.OPENCODE_AGENT_NAME,
+    process.env.AGENT_NAME,
+  ].filter((value) => typeof value === "string" && value.trim());
+}
+
+function identityPresent(payload) {
+  return identityValues(payload).length > 0;
+}
+
+function phasePermitsImplementation(scope) {
+  const phase = normalizedScopePhase(scope);
+  return /^(dev|development|devstory|implementation|implementing|implement|impl)$/.test(phase);
+}
+
+// Identity-absent graceful degradation.
+//
+// The Claude Code subagent harness does not propagate worker identity into hook env
+// (ACEF_ROLE / CLAUDE_SUBAGENT_NAME / AGENT_NAME are empty), so a correctly dispatched
+// developer worker is otherwise misread as the conductor and hard-walled off every
+// guarded write. When NO identity is present we cannot prove the actor, so we degrade
+// from per-actor enforcement to SCOPE-LEVEL enforcement: a guarded operation is judged
+// only against the conductor-written active worker scope.
+//
+//   - guarded write / restricted apply_patch: ALLOW only when the active scope is in an
+//     implementation phase AND every target path is inside allowedPaths; otherwise DENY.
+//   - restricted read / restricted shell: ALLOW only when an active implementation-phase
+//     scope exists (a developer worker must read neighbors and run build/install steps);
+//     otherwise DENY.
+//   - anything that does not touch the conductor hard-wall surface: pass through to the
+//     normal conductor checks.
+//
+// KNOWN LIMITATION (see method/TRUST_MODEL.md): without harness identity propagation this
+// cannot separate a developer worker from the conductor; it is scope-phase+path proof,
+// not per-actor proof. The trust anchor remains the conductor-written scope file, which a
+// worker cannot forge.
+function scopeFallbackDecision(toolName, input, cwd, repoRoot, filePath, patchPaths) {
+  const command = shellCommand(input);
+  const restrictedWrite = isWriteTool(toolName)
+    && restrictedPath(filePath, repoRoot) && !runControlPath(filePath, repoRoot);
+  const restrictedRead = isReadOrWriteTool(toolName) && !isWriteTool(toolName)
+    && restrictedPath(filePath, repoRoot) && !runControlPath(filePath, repoRoot);
+  const restrictedPatchPaths = (/^apply_patch$/i.test(toolName) ? patchPaths : [])
+    .filter((patchPath) => restrictedPath(patchPath, repoRoot) && !runControlPath(patchPath, repoRoot));
+  const restrictedShell = isShellTool(toolName) && bashIsRestricted(command, cwd, repoRoot);
+
+  if (!restrictedWrite && !restrictedRead && !restrictedPatchPaths.length && !restrictedShell) {
+    return { action: "pass" };
+  }
+
+  const note = "worker identity not propagated by harness; gating on active scope phase+allowedPaths (scope-level enforcement)";
+  const targets = restrictedWrite || restrictedRead
+    ? (filePath ? [filePath] : [])
+    : restrictedPatchPaths.length ? restrictedPatchPaths
+    : [];
+  const targetLabel = targets.length
+    ? targets.map((target) => path.relative(repoRoot, target).replaceAll(path.sep, "/")).join(", ")
+    : "the requested guarded operation";
+  const denyReason = (detail) =>
+    `ACEF/BMAD hard wall (identity fallback): no development-phase worker scope authorizes a write to ${targetLabel}; `
+    + `set a developer scope via 'acef-state worker-scope' (or set ACEF_WORKER_ID=<id>). ${detail} ${note}.`;
+
+  const scope = readActiveWorkerScope(repoRoot);
+  if (!scope) {
+    return { action: "deny", reason: denyReason("No active docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json is set.") };
+  }
+  if (scope.invalid) {
+    return { action: "deny", reason: denyReason("docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json is not valid worker-scope JSON.") };
+  }
+  if (!phasePermitsImplementation(scope)) {
+    return {
+      action: "deny",
+      reason: denyReason(`Active scope phase '${scope.phase}' does not permit implementation writes. ${workerScopeRecoveryHint(scope, repoRoot, targets)}`),
+    };
+  }
+
+  // The epic-transition gate still applies in fallback mode, mirroring the worker path.
+  const targetEpic = parseEpicNumberFromStory(scope.activeStory || scope.story || scope.scope || "");
+  const transitionReason = epicTransitionRestricted(targetEpic, repoRoot);
+  if (transitionReason) return { action: "deny", reason: transitionReason };
+
+  if (restrictedWrite && !allowedByScopePath(filePath, repoRoot, scope)) {
+    const story = scope.activeStory || "current story";
+    return {
+      action: "deny",
+      reason: denyReason(`Target is outside allowedPaths for Story ${story}. ${workerScopeRecoveryHint(scope, repoRoot, [filePath])}`),
+    };
+  }
+  if (restrictedPatchPaths.length) {
+    const outOfScope = restrictedPatchPaths.filter((patchPath) => !allowedByScopePath(patchPath, repoRoot, scope));
+    if (outOfScope.length) {
+      const story = scope.activeStory || "current story";
+      return {
+        action: "deny",
+        reason: denyReason(`Patched path(s) ${outOfScope.map((patchPath) => path.relative(repoRoot, patchPath)).join(", ")} are outside allowedPaths for Story ${story}. ${workerScopeRecoveryHint(scope, repoRoot, outOfScope)}`),
+      };
+    }
+  }
+
+  return {
+    action: "allow",
+    note: `ACEF/BMAD hard wall (identity fallback): ${note}. Authorized by active worker scope phase '${scope.phase}' for Story ${scope.activeStory || "current story"}.`,
+  };
+}
+
 function partialWorkshapeRestricted(registry, ledgerText) {
   if (String(registry?.status || "").toUpperCase() !== "PARTIAL") return "";
 
@@ -917,6 +1043,24 @@ function p1ConformanceRestricted(repoRoot) {
     return;
   }
 
+  // No identity was propagated by the harness. Rather than fail-closed on every guarded
+  // write (which blocks a correctly set-up developer worker), degrade to scope-level
+  // gating. See scopeFallbackDecision for the full rationale and limitation note.
+  if (!identityPresent(payload)) {
+    const fallback = scopeFallbackDecision(toolName, input, cwd, repoRoot, filePath, patchPaths);
+    if (fallback.action === "deny") {
+      deny(fallback.reason);
+      return;
+    }
+    if (fallback.action === "allow") {
+      allow(fallback.note);
+      return;
+    }
+    // action === "pass": not a guarded surface; fall through to the normal checks below.
+  }
+
+  // Identity is present and the actor is a non-worker persona (conductor/dispatcher):
+  // the original per-actor hard wall applies unchanged.
   if (isReadOrWriteTool(toolName)
     && restrictedPath(filePath, repoRoot)
     && !runControlPath(filePath, repoRoot)) {
