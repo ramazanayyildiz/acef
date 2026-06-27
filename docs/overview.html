@@ -214,6 +214,12 @@ Captures (each field cites a source path):
             <div class="card" style="border-left-color:var(--blue)"><h3>Fresh state</h3><p><code>acef-status</code>
               and <code>acef-next</code> turn typed repo state into a small startup packet: current action, allowed paths,
               forbidden actions, required evidence, and stop condition.</p></div>
+            <div class="card" style="border-left-color:var(--green)"><h3>Surface closeout verifier</h3><p><code>acef-closeout-verify</code>
+              derives the evidence a story owes per touched surface from the adapter's surface registry and enforces fail-closed: cold-process
+              fresh-read for persistence (separate process must read what another wrote; a same-process read does not count), reachability as
+              separate evidence (isolated render is partial, not pass), fail-closed on unknown surfaces (no nearest-match), and no story
+              self-downgrade of a surface its goal owns. CI-gated; wired into <code>install-acef-tools</code>. The rule is recorded in
+              <code>method/DELIVERY_RULES.md</code> as <strong>"Done = surface-proven."</strong></p></div>
             <div class="card" style="border-left-color:var(--violet)"><h3>Workflow graph</h3><p>Small YAML workflows
               describe node order and artifact passing. <code>acef-workflow-validate</code> checks the graph; it does not
               replace evidence, gates, or Process Judge.</p></div>
@@ -275,7 +281,8 @@ Captures (each field cites a source path):
             <code>bug-hunter</code> is measured as an optional JIT review lens; <code>implementation-shape-review</code>
             is wired as an optional review lens but not enforced as a required gate. Quick-fix, lane closeout,
             touched-surface validation, and evidence runner proof are recorded as <code>proven</code> capability
-            records. Capability records prevent those states from being blurred.</p>
+            records. <code>acef-closeout-verify</code> is CI-gated and enforces the "Done = surface-proven" rule
+            per the adapter's surface registry. Capability records prevent those states from being blurred.</p>
         </section>
 
         <section id="setup"><h2><span class="ic" style="background:#e3f7ec">📦</span>Setup</h2>
@@ -295,10 +302,16 @@ Captures (each field cites a source path):
           <p>ACEF ships a portable BMAD guard hook in
             <code>claude-plugins/acef-bmad-guard/</code>. Clone users can install it with
             <code>scripts/install-acef-bmad-guard --repo /path/to/repo</code>; the installer writes the full guard into the repo's
-            <code>.acef/hooks/</code> directory and installs a repo-local OpenCode plugin. Claude Code and Codex users can add
+            <code>.acef/hooks/</code> directory, installs a repo-local OpenCode plugin, and wires a git pre-commit gate
+            (<code>acef-precommit-gate.sh</code>) that fires the lean-evidence check on an active ACEF run (no-op otherwise).
+            Claude Code and Codex users can add
             <code>--global-dispatcher</code> once per machine for a tiny dispatcher that only forwards to repos with a local hook.
             Claude plugin users can enable that directory as a Claude Code plugin. The hook blocks dispatcher/conductor writes and blocks crossing into Epic N+1 until Epic N Process
-            Judge is <code>PASS</code>. Use <code>node scripts/smoke-acef-hook-active-ledger</code> to verify active
+            Judge is <code>PASS</code>. When the harness does not propagate worker identity (as with Claude Code subagents),
+            the hard wall degrades from per-actor to scope-level enforcement: a guarded write is allowed only when the
+            conductor-written active worker scope is in an implementation phase and the path is in <code>allowedPaths</code>.
+            Set <code>ACEF_WORKER_ID</code> to restore strict per-actor enforcement.
+            Use <code>node scripts/smoke-acef-hook-active-ledger</code> to verify active
             ledger scoping and <code>node scripts/smoke-acef-opencode-plugin</code> to verify the OpenCode adapter.
             Restart Claude Code / Codex / OpenCode after installing hooks.</p>
         </section>

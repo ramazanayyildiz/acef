@@ -9,6 +9,29 @@ or evidence contract. Do not use it to claim implementation status; link to the 
 
 ## Unreleased
 
+### Surface-done closeout contract
+
+- Added `scripts/acef-closeout-verify` (with `scripts/lib/acef-surface-contract.js` and `scripts/test-acef-closeout-verify`): a code-grounded, per-surface "done" verifier that derives required evidence from the project adapter's per-surface registry and enforces fail-closed rules.
+- Enforces: **cold-process / separate-process fresh-read** for persistence surfaces (a same-process read does not count); **reachability** as separate evidence (an isolated render that nothing links to is `partial`, not pass); fail-closed on unknown surfaces (no nearest-match); no story self-downgrade of a surface its goal owns; human-signed, versioned waivers recorded in output.
+- Added `schemas/surface-evidence.schema.json`.
+- Reconciled into `method/DELIVERY_RULES.md` as the rule **"Done = surface-proven."**
+- CI-gated: `validate.yml` runs the full `test-acef-*` matrix and a closeout integration check.
+
+### Audit remediation (Tier 1)
+
+- CI now runs the **full `test-acef-*` matrix** (was only the process-validator), plus a closeout integration check.
+- `scripts/install-acef-bmad-guard` now installs a packaged **git pre-commit gate** (`acef-precommit-gate.sh`) that fires the lean-evidence check on an active ACEF run (no-op otherwise).
+- `acef-closeout-verify` now rejects empty or mislabeled surface-evidence records — missing required fields or an empty `goal.surfaceSet` fail-closed rather than vacuously passing — and is wired into `install-acef-tools`.
+- Fixed a self-test that was red on `main`.
+- Honest-up'd overstated claims in `method/RULE_ENFORCEMENT_MAP.md`, `method/TRUST_MODEL.md`, `README.md`, `method/VALIDATION_PLAN.md`, and `method/ACEF_COCKPIT.md`: evidence mechanisms detect accidental/lazy evidence gaps, not a forging agent; right-sized the quality claim to the actual benchmark; added a "not yet built" banner on COCKPIT.
+
+### Hard-wall identity fallback
+
+- The BMAD hard-wall previously failed-closed on **all** guarded writes when the harness did not propagate worker identity (which the Claude subagent harness never does), blocking a correctly set-up developer worker from writing any code.
+- Fix: when no identity is present, the hard wall **degrades from per-actor to scope-level enforcement** — a guarded write is allowed only when the active conductor-written worker scope is in an implementation phase AND the path is in `allowedPaths`; all other cases remain denied.
+- Strict per-actor enforcement is kept when `ACEF_WORKER_ID` is present in the environment. `ACEF_WORKER_ID` is env-only and cannot widen authority beyond the scope's `workerId`, so the conductor-written scope file remains the unforgeable trust anchor.
+- Documented limitation added to `method/TRUST_MODEL.md`: without harness identity propagation, the hard wall provides scope-phase+path proof, not per-actor proof. Raw shell writes are not path-gated.
+
 ### Goal coverage gate
 
 - Added typed `activeGoal` and `goalCoverage` fields to `ACEF_ACTIVE_RUN.json` so story PASS and original product-goal
