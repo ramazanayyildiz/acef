@@ -24,6 +24,7 @@ sandbox or malicious-code security boundary.
 | Agent fabricates a human approval receipt | no cryptographic guarantee; preserve the exact quote and source channel, and reconcile it to the client transcript at guarded/epic gates |
 | Runtime environment lies about command output | require raw evidence hashes, runner headers, runner proofs, and reproducible command records |
 | Agent forges self-consistent evidence inputs (fresh-read scripts, reachability graphs, runner proof) | no guarantee; inputs are trusted as authored; the keyless self-hash and agent-supplied specs/graphs pass a self-consistent forgery; these mechanisms defend against honest evidence gaps, not a forging author |
+| Harness does not propagate worker identity into hook env (e.g. Claude Code subagents) | no per-actor proof; the hard wall degrades from per-actor to scope-level enforcement — a guarded write is gated on the conductor-written active worker scope (implementation phase + allowedPaths) rather than on a proven actor identity. The scope file remains the trust anchor (workers cannot forge it); set `ACEF_WORKER_ID` to restore the strict per-actor check |
 
 ## Evidence Standard
 
