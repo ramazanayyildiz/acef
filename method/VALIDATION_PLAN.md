@@ -18,6 +18,10 @@ Decision: ACEF is validated as a quality/process-control framework for v1, but *
 framework. Lightweight and guarded lanes improved completion quality and known-defect recall in the sample, while median
 input-token usage increased versus baseline.
 
+**Sample caveat:** only 1 of the 5 benchmark tasks differentiated between lanes; pass-rate and known-defect recall were
+collinear (one signal reported as two). The quality gain is real but rests on a small, single-differentiator task set.
+Do not generalize to a robust, broad quality improvement until the next measurement round uses a wider task set.
+
 Evidence:
 
 - `docs/experiments/empirical-validation/report.md`;

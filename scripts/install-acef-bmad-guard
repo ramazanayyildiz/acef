@@ -7,6 +7,7 @@ const repoRoot = path.resolve(__dirname, "..");
 const sourceHook = path.join(repoRoot, "claude-plugins", "acef-bmad-guard", "hooks", "acef-bmad-hard-wall.mjs");
 const sourceDispatcher = path.join(repoRoot, "claude-plugins", "acef-bmad-guard", "hooks", "acef-bmad-dispatcher.mjs");
 const sourceOpenCodePlugin = path.join(repoRoot, "opencode-plugins", "acef-bmad-guard", "acef-bmad-hard-wall.js");
+const sourcePrecommitGate = path.join(repoRoot, "claude-plugins", "acef-bmad-guard", "hooks", "acef-precommit-gate.sh");
 const home = process.env.HOME;
 
 function usage() {
@@ -86,6 +87,49 @@ function installLocal(targetRepo) {
   copyFile(sourceOpenCodePlugin, localOpenCodePlugin);
   console.log(`Installed local ACEF guard engine: ${localHook}`);
   console.log(`Installed local OpenCode plugin: ${localOpenCodePlugin}`);
+  installGitPrecommitGate(targetRepo);
+}
+
+// Install a git pre-commit hook that runs the ACEF lean-evidence check before
+// every commit.  The hook is a no-op when no ACEF delivery session is active
+// (ACEF_ACTIVE_RUN.json absent), so it is safe in non-ACEF repos too.
+//
+// If .git/hooks/pre-commit already exists and does not yet reference the gate,
+// a one-line call is appended so we compose rather than clobber.
+function installGitPrecommitGate(targetRepo) {
+  // The gate script itself goes into .acef/hooks/ (alongside the bmad wall)
+  // so it stays out of .git/ (which is not committed).  The git hook only
+  // needs to call it.
+  const gateTarget = path.join(targetRepo, ".acef", "hooks", "acef-precommit-gate.sh");
+  copyFile(sourcePrecommitGate, gateTarget);
+  fs.chmodSync(gateTarget, 0o755);
+  console.log(`Installed ACEF pre-commit gate: ${gateTarget}`);
+
+  const gitHooksDir = path.join(targetRepo, ".git", "hooks");
+  if (!fs.existsSync(gitHooksDir)) {
+    // Not a git repo or the .git dir is elsewhere; skip hook wiring silently.
+    console.log("Skipped .git/hooks wiring: .git/hooks not found (not a git repo or detached worktree).");
+    return;
+  }
+
+  const precommitPath = path.join(gitHooksDir, "pre-commit");
+  const dispatchLine = `'$(git rev-parse --show-toplevel)/.acef/hooks/acef-precommit-gate.sh'`;
+  const dispatchCall = `\n# ACEF closeout gate (installed by install-acef-bmad-guard)\n[ -x ${dispatchLine} ] && ${dispatchLine}\n`;
+
+  if (fs.existsSync(precommitPath)) {
+    const existing = fs.readFileSync(precommitPath, "utf8");
+    if (existing.includes("acef-precommit-gate.sh")) {
+      console.log("ACEF pre-commit gate already referenced in .git/hooks/pre-commit; skipped.");
+      return;
+    }
+    // Append rather than clobber an existing pre-commit hook.
+    fs.appendFileSync(precommitPath, dispatchCall);
+    console.log(`Appended ACEF gate call to existing .git/hooks/pre-commit: ${precommitPath}`);
+  } else {
+    fs.writeFileSync(precommitPath, `#!/usr/bin/env sh\nset -e\n${dispatchCall}`);
+    fs.chmodSync(precommitPath, 0o755);
+    console.log(`Created .git/hooks/pre-commit with ACEF gate: ${precommitPath}`);
+  }
 }
 
 function installGlobalDispatchers() {
@@ -161,6 +205,7 @@ function installGlobalDispatchers() {
 assertFile(sourceHook);
 assertFile(sourceDispatcher);
 assertFile(sourceOpenCodePlugin);
+assertFile(sourcePrecommitGate);
 
 const opts = parseArgs(process.argv.slice(2));
 installLocal(opts.repo);

@@ -5,12 +5,18 @@ on:
   pull_request:
 
 jobs:
-  process-validator:
+  test-matrix:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
-      - run: node scripts/test-acef-process-validator
-      - run: node scripts/test-acef-closeout-verify
+      - name: Run full test suite (all scripts/test-acef-*)
+        run: |
+          for f in scripts/test-acef-*; do
+            echo "== $f =="
+            node "$f"
+          done
+      - name: closeout verify — integration check (cli delivery fixture)
+        run: node tests/fixtures/closeout-delivery/run.js

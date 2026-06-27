@@ -68,6 +68,23 @@ function loadRecord(args) {
   return record;
 }
 
+// Fail-closed input validation: a record missing required fields or carrying an
+// empty goal surface set must never vacuously pass.
+function validateRecord(record) {
+  const required = ["schema", "goal", "story", "adapter"];
+  const missing = required.filter((k) => !(k in record));
+  if (missing.length) {
+    throw new Error(
+      `missing required field(s): ${missing.join(", ")} — provide a valid surface-evidence record`,
+    );
+  }
+  if (!Array.isArray(record.goal.surfaceSet) || record.goal.surfaceSet.length === 0) {
+    throw new Error(
+      "goal.surfaceSet is empty — closeout requires at least one surface in the goal",
+    );
+  }
+}
+
 function printText(evaluation) {
   if (evaluation.drift) {
     // Refuse: a stale adapter is not authorized to certify a closeout.
@@ -97,6 +114,7 @@ try {
     process.exit(0);
   }
   const record = loadRecord(args);
+  validateRecord(record);
   const currentFingerprint = args.repo ? extractWitness(args.repo).fingerprint : undefined;
   const evaluation = evaluateCloseout(record, { currentFingerprint });
   if (args.format === "json") {

@@ -1,5 +1,7 @@
 # ACEF Cockpit Direction
 
+> **Status: DIRECTION — not yet built.** The `acef-cockpit`, `acef-cockpit-status`, and related commands described in this document do not exist yet. This file records the intended design; no `acef-cockpit*` script is present in `scripts/`.
+
 ACEF can grow a user-facing application, but the first product should not be a new AI runtime.
 
 The first product should be:

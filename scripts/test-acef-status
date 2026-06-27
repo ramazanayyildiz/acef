@@ -49,6 +49,22 @@ try {
     "## Current Work",
     "Story 2.2",
   ].join("\n"));
+  fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_INSTALLATION.json"), JSON.stringify({
+    schema: "acef.installation.v1",
+    installedAt: "2026-01-01T00:00:00.000Z",
+    acefVersion: {
+      sourcePath: "/fake/acef",
+      sourceCommit: "abc1234567890abc1234567890abc1234567890ab",
+      sourceShortCommit: "abc1234",
+      sourceBranch: "main",
+      sourceTreeState: "clean",
+    },
+    lastUpdatedAt: "2026-01-01T00:00:00.000Z",
+    updateCommand: "node /fake/acef/scripts/update-acef-installation --repo .",
+    components: {
+      tools: { installedAt: "2026-01-01T00:00:00.000Z" },
+    },
+  }, null, 2) + "\n");
   mustRun("git", ["add", "."]);
   mustRun("git", ["commit", "-qm", "fixture"]);
 

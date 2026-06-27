@@ -315,6 +315,22 @@ try {
   expectFail("closeout", [unsignedRecord]);
   ok("an unsigned waiver does NOT satisfy a surface");
 
+  // --- 10. fail-closed input validation: empty record must FAIL ---------------
+  // An empty {} record has no required fields; vacuously-true closeout is a bug.
+  const emptyRecord = writeRecord("empty", {});
+  expectFail("closeout", [emptyRecord]);
+  ok("MUST-FAIL: empty {} record fails closed (missing required fields)");
+
+  // A record with an empty surfaceSet must also fail — zero surfaces ⇒ nothing to verify.
+  const emptyGoalSet = writeRecord("empty-goalset", {
+    schema: "acef.surface-evidence.v1",
+    goal: { id: "goal-empty", surfaceSet: [] },
+    story: { id: "story-empty", goalId: "goal-empty", touchedSurfaces: [] },
+    adapter: { fingerprint: null, surfaces: {} },
+  });
+  expectFail("closeout", [emptyGoalSet]);
+  ok("MUST-FAIL: empty surfaceSet fails closed (closeout requires at least one surface)");
+
   console.log(`\nacef-closeout-verify tests passed (${count} cases)`);
 } finally {
   fs.rmSync(tmp, { recursive: true, force: true });
