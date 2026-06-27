@@ -113,8 +113,11 @@ function installGitPrecommitGate(targetRepo) {
   }
 
   const precommitPath = path.join(gitHooksDir, "pre-commit");
-  const dispatchLine = `'$(git rev-parse --show-toplevel)/.acef/hooks/acef-precommit-gate.sh'`;
-  const dispatchCall = `\n# ACEF closeout gate (installed by install-acef-bmad-guard)\n[ -x ${dispatchLine} ] && ${dispatchLine}\n`;
+  // Double-quote the command substitution so $(...) expands; a single-quoted
+  // path is taken literally, never matches `-x`, and (as the wrapper's last
+  // command) makes it exit 1 on every commit — forcing --no-verify. The if-form
+  // also keeps a missing gate from blocking commits while a failing gate still blocks.
+  const dispatchCall = `\n# ACEF closeout gate (installed by install-acef-bmad-guard)\nACEF_GATE="$(git rev-parse --show-toplevel)/.acef/hooks/acef-precommit-gate.sh"\nif [ -x "$ACEF_GATE" ]; then "$ACEF_GATE"; fi\n`;
 
   if (fs.existsSync(precommitPath)) {
     const existing = fs.readFileSync(precommitPath, "utf8");
