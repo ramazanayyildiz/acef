@@ -240,7 +240,11 @@ or scope grows, preserve the existing promotion rules: promote to full BMAD or r
   touched files, and shared resources do not overlap. Workers must emit complete final reports inline. Mechanical/low-risk work may use a
   combined independent review-and-judge worker only when the author is separate and the ledger records the waiver.
   Guarded/security/routing/storage/KVKK/data-migration/source-conflict work keeps separate reviewer and Process Judge.
-- **Done = user-visible** — for user-facing work, prove the owning persona can reach and use the surface, not just a green unit test.
+- **Done = surface-proven** (`scripts/acef-closeout-verify`) — derive the required evidence from the project adapter's per-surface status, then prove **each touched surface**, not a green unit test:
+  - *user-facing surface* → the owning persona can **reach** the feature from a real entrypoint (nav / route / command / tool); an isolated render that nothing links to is **partial, not done**.
+  - *persistence surface* → the write survives a **separate-process / fresh-connection read** — a same-process read does **not** count; that is exactly what lets an in-memory store pass as durable.
+  - *unknown surface* → **fail closed** (a human classifies it; no nearest-match).
+  Aspiration parked in the adapter's `deferred`/`unknown` set (e.g. "multi-tenant later") generates **no** evidence requirement and authorizes no scaffolding; a child story cannot self-downgrade a surface its goal owns. The evidence that passes is **reproducible** (a re-runnable command / hashed artifact), never the worker's self-report.
 - **Drift = stop condition** — if specs, artifact, and code disagree, resolve the source-of-truth conflict before merging.
 - **Guarded test floor** — for guarded-track work a verification checklist is a **supplement, not a substitute**: require at least one symbol-grounded test on the auth / payment / entitlement / data boundary (bootstrap the framework with approval if the repo has none). A zero-test repo does not license shipping guarded work untested; the human-approval gate confirms a test was written, not just a checklist.
   Record the exact boundary symbol and `path#symbol` evidence under `## Guarded Test Floor`; run

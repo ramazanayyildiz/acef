@@ -1,0 +1,321 @@
+#!/usr/bin/env node
+const fs = require("node:fs");
+const os = require("node:os");
+const path = require("node:path");
+const cp = require("node:child_process");
+const { extractWitness } = require("./lib/acef-surface-contract");
+
+const repoRoot = path.resolve(__dirname, "..");
+const tool = path.join(repoRoot, "scripts", "acef-closeout-verify");
+const fixtures = path.join(repoRoot, "tests", "fixtures", "surface-contract");
+const repo = (name) => path.join(fixtures, "repos", name);
+const store = (kind, file) => path.join(fixtures, "stores", kind, file);
+const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "acef-closeout-"));
+
+let count = 0;
+function ok(label) {
+  count += 1;
+  console.log(`ok ${count} - ${label}`);
+}
+
+function run(args, options = {}) {
+  return cp.execFileSync("node", [tool, ...args], {
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+    ...options,
+  }).trim();
+}
+
+// Run and return parsed JSON whether the run exits 0 (PASS) or non-zero (FAIL).
+function runJson(args, options = {}) {
+  try {
+    return JSON.parse(run([...args, "--format", "json"], options));
+  } catch (error) {
+    if (error.stdout) return JSON.parse(error.stdout.toString());
+    throw error;
+  }
+}
+
+function expectPass(label, args, options = {}) {
+  const output = run(args, options);
+  if (!output.includes(`PASS ${label}:`)) {
+    throw new Error(`Expected "${label}" to PASS, got:\n${output}`);
+  }
+}
+
+function expectFail(label, args, options = {}) {
+  try {
+    run(args, options);
+  } catch (error) {
+    const output = `${error.stdout || ""}${error.stderr || ""}`;
+    if (output.includes(`FAIL ${label}:`)) return;
+    throw new Error(`Expected "${label}" to FAIL, got:\n${output}`);
+  }
+  throw new Error(`Expected "${label}" to FAIL, but the run exited 0`);
+}
+
+function writeRecord(name, record) {
+  const filePath = path.join(tmp, `${name}.json`);
+  fs.writeFileSync(filePath, JSON.stringify(record, null, 2));
+  return filePath;
+}
+
+const FP = {
+  web: extractWitness(repo("web")).fingerprint,
+  cli: extractWitness(repo("cli")).fingerprint,
+  library: extractWitness(repo("library")).fingerprint,
+  docs: extractWitness(repo("docs")).fingerprint,
+};
+
+const reachable = {
+  entrypoints: ["app/page"],
+  featureModule: "lib/feature",
+  graph: { "app/page": ["lib/feature"], "lib/feature": [] },
+};
+const unreachable = {
+  entrypoints: ["app/page"],
+  featureModule: "orphan/secret",
+  graph: { "app/page": ["lib/other"], "lib/other": [], "orphan/secret": [] },
+};
+const durableFreshRead = { writeCmd: store("durable", "write.js"), readCmd: store("durable", "read.js"), key: "lead-7", value: "qualified" };
+const inmemoryFreshRead = { writeCmd: store("inmemory", "write.js"), readCmd: store("inmemory", "read.js"), key: "lead-7", value: "qualified" };
+
+try {
+  // --- 1. web+db derives ui + reachability + persistence + fresh-read --------
+  const webRecord = writeRecord("web", {
+    schema: "acef.surface-evidence.v1",
+    goal: { id: "goal-web", surfaceSet: ["ui", "persistence"] },
+    story: { id: "story-web", goalId: "goal-web", touchedSurfaces: ["ui", "persistence"] },
+    adapter: { fingerprint: FP.web, surfaces: { ui: { status: "grounded" }, persistence: { status: "grounded" } } },
+    witnessFingerprint: FP.web,
+    evidence: { ui: { pass: true }, reachability: reachable, persistence: { pass: true }, "fresh-read": durableFreshRead },
+  });
+  const webDerived = runJson([webRecord]);
+  const expectedWeb = ["ui", "reachability", "persistence", "fresh-read"].sort();
+  if (JSON.stringify([...webDerived.requiredEvidence].sort()) !== JSON.stringify(expectedWeb)) {
+    throw new Error(`web derived wrong evidence: ${JSON.stringify(webDerived.requiredEvidence)}`);
+  }
+  ok("web+db derives ui + reachability + persistence + fresh-read");
+
+  expectPass("closeout", [webRecord]);
+  expectPass("ui", [webRecord]);
+  expectPass("persistence", [webRecord]);
+  ok("web+db closeout PASSes with reachable + durable cold-process evidence");
+
+  // --- 2. cli / library / docs differ (no UI demand) ------------------------
+  const cliRecord = writeRecord("cli", {
+    schema: "acef.surface-evidence.v1",
+    goal: { id: "goal-cli", surfaceSet: ["cli"] },
+    story: { id: "story-cli", goalId: "goal-cli", touchedSurfaces: ["cli"] },
+    adapter: { fingerprint: FP.cli, surfaces: { cli: { status: "grounded" } } },
+    witnessFingerprint: FP.cli,
+    evidence: { command: { pass: true }, state: { pass: true } },
+  });
+  const cliDerived = runJson([cliRecord]);
+  if (JSON.stringify([...cliDerived.requiredEvidence].sort()) !== JSON.stringify(["command", "state"])) {
+    throw new Error(`cli derived wrong evidence: ${JSON.stringify(cliDerived.requiredEvidence)}`);
+  }
+  if (cliDerived.requiredEvidence.includes("ui")) throw new Error("cli should not demand ui");
+  expectPass("closeout", [cliRecord]);
+  ok("cli derives command/state, no UI demand");
+
+  const libRecord = writeRecord("library", {
+    schema: "acef.surface-evidence.v1",
+    goal: { id: "goal-lib", surfaceSet: ["library"] },
+    story: { id: "story-lib", goalId: "goal-lib", touchedSurfaces: ["library"] },
+    adapter: { fingerprint: FP.library, surfaces: { library: { status: "grounded" } } },
+    witnessFingerprint: FP.library,
+    evidence: { "public-api": { pass: true }, consumer: { pass: true } },
+  });
+  const libDerived = runJson([libRecord]);
+  if (JSON.stringify([...libDerived.requiredEvidence].sort()) !== JSON.stringify(["consumer", "public-api"])) {
+    throw new Error(`library derived wrong evidence: ${JSON.stringify(libDerived.requiredEvidence)}`);
+  }
+  if (libDerived.requiredEvidence.includes("ui")) throw new Error("library should not demand ui");
+  expectPass("closeout", [libRecord]);
+  ok("library derives public-api/consumer, no UI demand");
+
+  const docsRecord = writeRecord("docs", {
+    schema: "acef.surface-evidence.v1",
+    goal: { id: "goal-docs", surfaceSet: ["docs"] },
+    story: { id: "story-docs", goalId: "goal-docs", touchedSurfaces: ["docs"] },
+    adapter: { fingerprint: FP.docs, surfaces: { docs: { status: "grounded" } } },
+    witnessFingerprint: FP.docs,
+    evidence: { "docs-diff": { pass: true } },
+  });
+  const docsDerived = runJson([docsRecord]);
+  if (JSON.stringify(docsDerived.requiredEvidence) !== JSON.stringify(["docs-diff"])) {
+    throw new Error(`docs derived wrong evidence: ${JSON.stringify(docsDerived.requiredEvidence)}`);
+  }
+  expectPass("closeout", [docsRecord]);
+  ok("docs derives docs-diff only");
+
+  // --- 3. MUST-FAIL: backend-only story under a ui+persistence goal ----------
+  const backendOnly = writeRecord("backend-only", {
+    schema: "acef.surface-evidence.v1",
+    goal: { id: "goal-web", surfaceSet: ["ui", "persistence"] },
+    story: { id: "story-backend", goalId: "goal-web", touchedSurfaces: ["persistence"] },
+    adapter: { fingerprint: FP.web, surfaces: { ui: { status: "grounded" }, persistence: { status: "grounded" } } },
+    witnessFingerprint: FP.web,
+    evidence: { persistence: { pass: true }, "fresh-read": durableFreshRead },
+  });
+  expectFail("ui", [backendOnly]);
+  expectFail("closeout", [backendOnly]);
+  ok("MUST-FAIL: backend-only story cannot self-downgrade a ui+persistence goal");
+
+  // --- 4. MUST-FAIL signature: in-memory RED, durable GREEN -----------------
+  // The false green: a SAME-process read of the in-memory store "works".
+  const sameProcess = cp.execFileSync(
+    "node",
+    ["-e", `const s=require(${JSON.stringify(store("inmemory", "store.js"))}); s.put("k","v"); process.stdout.write(String(s.get("k")));`],
+    { encoding: "utf8" },
+  );
+  if (sameProcess.trim() !== "v") throw new Error("in-memory same-process read should succeed (the false green)");
+
+  // Cold-process (separate processes) RED on the in-memory store.
+  const inmemRecord = writeRecord("inmem", {
+    schema: "acef.surface-evidence.v1",
+    goal: { id: "goal-p", surfaceSet: ["persistence"] },
+    story: { id: "story-p", goalId: "goal-p", touchedSurfaces: ["persistence"] },
+    adapter: { fingerprint: FP.web, surfaces: { persistence: { status: "grounded" } } },
+    witnessFingerprint: FP.web,
+    evidence: { persistence: { pass: true }, "fresh-read": inmemoryFreshRead },
+  });
+  expectFail("persistence", [inmemRecord]);
+  expectFail("closeout", [inmemRecord]);
+
+  // Durable store GREEN, isolated via RGSC_STORE_FILE (inherited by the verifier
+  // and the store processes it spawns).
+  const durRecord = writeRecord("durable", {
+    schema: "acef.surface-evidence.v1",
+    goal: { id: "goal-p", surfaceSet: ["persistence"] },
+    story: { id: "story-p", goalId: "goal-p", touchedSurfaces: ["persistence"] },
+    adapter: { fingerprint: FP.web, surfaces: { persistence: { status: "grounded" } } },
+    witnessFingerprint: FP.web,
+    evidence: { persistence: { pass: true }, "fresh-read": durableFreshRead },
+  });
+  const durEnv = { ...process.env, RGSC_STORE_FILE: path.join(tmp, "durable-store.json") };
+  expectPass("persistence", [durRecord], { env: durEnv });
+  expectPass("closeout", [durRecord], { env: durEnv });
+  ok("MUST-FAIL signature: in-memory store RED, durable store GREEN (real separate processes)");
+
+  // A self-asserted fresh-read (a bare recorded pass) is rejected — a same-process
+  // claim must NOT count as a cold-process proof.
+  const selfAsserted = writeRecord("self-asserted", {
+    schema: "acef.surface-evidence.v1",
+    goal: { id: "goal-p", surfaceSet: ["persistence"] },
+    story: { id: "story-p", goalId: "goal-p", touchedSurfaces: ["persistence"] },
+    adapter: { fingerprint: FP.web, surfaces: { persistence: { status: "grounded" } } },
+    witnessFingerprint: FP.web,
+    evidence: { persistence: { pass: true }, "fresh-read": { pass: true } },
+  });
+  expectFail("persistence", [selfAsserted]);
+  ok("a self-asserted fresh-read (bare recorded pass) is rejected as not a real cold-process proof");
+
+  // --- 5. anti-self-fulfilling: a "multiTenant later" wish yields no tenant evidence
+  const antiRecord = writeRecord("anti", {
+    schema: "acef.surface-evidence.v1",
+    goal: { id: "goal-web", surfaceSet: ["ui", "persistence"] },
+    story: { id: "story-web", goalId: "goal-web", touchedSurfaces: ["ui", "persistence"] },
+    adapter: { fingerprint: FP.web, surfaces: { ui: { status: "grounded" }, persistence: { status: "grounded" }, multiTenant: { status: "deferred" } } },
+    witnessFingerprint: FP.web,
+    intake: { surfaceSet: ["ui", "persistence", "multiTenant"], deferred: ["multiTenant", "payments"] },
+    evidence: { ui: { pass: true }, reachability: reachable, persistence: { pass: true }, "fresh-read": durableFreshRead },
+  });
+  const anti = runJson([antiRecord], { env: { ...process.env, RGSC_STORE_FILE: path.join(tmp, "anti-store.json") } });
+  if (anti.activeSurfaceSet.includes("multiTenant")) throw new Error("deferred wish leaked into the active surface set");
+  if (!anti.parked.includes("multiTenant")) throw new Error("deferred wish was not parked");
+  if (anti.requiredEvidence.some((kind) => /tenant|payment/i.test(kind))) {
+    throw new Error(`tenant/payment evidence was generated: ${JSON.stringify(anti.requiredEvidence)}`);
+  }
+  // And a wish can only ever surface as a fail-closed unknown — it can never self-fulfill silently.
+  const wishInGoal = writeRecord("wish-in-goal", {
+    schema: "acef.surface-evidence.v1",
+    goal: { id: "goal-x", surfaceSet: ["ui", "multiTenant"] },
+    story: { id: "story-x", goalId: "goal-x", touchedSurfaces: ["ui", "multiTenant"] },
+    adapter: { fingerprint: FP.web, surfaces: { ui: { status: "grounded" } } },
+    witnessFingerprint: FP.web,
+    evidence: { ui: { pass: true }, reachability: reachable },
+  });
+  expectFail("multiTenant", [wishInGoal]);
+  ok("anti-self-fulfilling: a multiTenant wish yields NO tenant evidence (and only ever a fail-closed unknown)");
+
+  // --- 6. drift: a mutated witnessed file deauthorizes the adapter ----------
+  const driftRepo = path.join(tmp, "web-drift");
+  fs.cpSync(repo("web"), driftRepo, { recursive: true });
+  fs.appendFileSync(path.join(driftRepo, "migrations", "001_init.sql"), "\n-- drift\n");
+  const driftRecord = writeRecord("drift", {
+    schema: "acef.surface-evidence.v1",
+    goal: { id: "goal-web", surfaceSet: ["ui", "persistence"] },
+    story: { id: "story-web", goalId: "goal-web", touchedSurfaces: ["ui", "persistence"] },
+    adapter: { fingerprint: FP.web, surfaces: { ui: { status: "grounded" }, persistence: { status: "grounded" } } },
+    evidence: { ui: { pass: true }, reachability: reachable, persistence: { pass: true }, "fresh-read": durableFreshRead },
+  });
+  expectFail("adapter-drift", [driftRecord, "--repo", driftRepo]);
+  expectFail("closeout", [driftRecord, "--repo", driftRepo]);
+  // sanity: against the un-mutated repo, the same record is authorized (no drift).
+  expectPass("closeout", [driftRecord, "--repo", repo("web")], { env: { ...process.env, RGSC_STORE_FILE: path.join(tmp, "drift-store.json") } });
+  ok("drift: mutating a witnessed file invalidates the adapter (refused); the un-mutated repo is authorized");
+
+  // --- 7. reachability partial is NOT a pass --------------------------------
+  const partialRecord = writeRecord("partial", {
+    schema: "acef.surface-evidence.v1",
+    goal: { id: "goal-ui", surfaceSet: ["ui"] },
+    story: { id: "story-ui", goalId: "goal-ui", touchedSurfaces: ["ui"] },
+    adapter: { fingerprint: FP.web, surfaces: { ui: { status: "grounded" } } },
+    witnessFingerprint: FP.web,
+    evidence: { ui: { pass: true }, reachability: unreachable },
+  });
+  expectFail("ui", [partialRecord]);
+  expectFail("closeout", [partialRecord]);
+  const partialJson = runJson([partialRecord]);
+  const uiResult = partialJson.surfaces.find((s) => s.surface === "ui");
+  if (uiResult.status !== "partial") throw new Error(`expected ui status "partial", got "${uiResult.status}"`);
+  ok("reachability partial (renders-but-unreachable) is NOT a pass");
+
+  // --- 8. unknown surface fails closed --------------------------------------
+  const unknownRecord = writeRecord("unknown", {
+    schema: "acef.surface-evidence.v1",
+    goal: { id: "goal-m", surfaceSet: ["ui", "mystery"] },
+    story: { id: "story-m", goalId: "goal-m", touchedSurfaces: ["ui", "mystery"] },
+    adapter: { fingerprint: FP.web, surfaces: { ui: { status: "grounded" }, mystery: { status: "unknown" } } },
+    witnessFingerprint: FP.web,
+    evidence: { ui: { pass: true }, reachability: reachable },
+  });
+  expectFail("mystery", [unknownRecord]);
+  expectFail("closeout", [unknownRecord]);
+  const unknownJson = runJson([unknownRecord]);
+  const mysteryResult = unknownJson.surfaces.find((s) => s.surface === "mystery");
+  if (!/human classification/.test(mysteryResult.reason)) throw new Error("unknown surface should ask for human classification");
+  ok("unknown surface fails closed — needs human classification, no nearest-match");
+
+  // --- 9. human-signed versioned waiver; unsigned waiver does not satisfy ----
+  const waivedRecord = writeRecord("waived", {
+    schema: "acef.surface-evidence.v1",
+    goal: { id: "goal-web", surfaceSet: ["ui", "persistence"] },
+    story: { id: "story-ui", goalId: "goal-web", touchedSurfaces: ["ui"] },
+    adapter: { fingerprint: FP.web, surfaces: { ui: { status: "grounded" }, persistence: { status: "waived" } } },
+    witnessFingerprint: FP.web,
+    evidence: { ui: { pass: true }, reachability: reachable },
+    waivers: [{ surface: "persistence", reason: "read-only slice; no writes", signedBy: "ram", version: 1, createdAt: "2026-06-20T00:00:00Z" }],
+  });
+  expectPass("closeout", [waivedRecord]);
+  expectPass("persistence", [waivedRecord]);
+  ok("a human-signed, versioned waiver satisfies a surface and is visible in the output");
+
+  const unsignedRecord = writeRecord("unsigned", {
+    schema: "acef.surface-evidence.v1",
+    goal: { id: "goal-p", surfaceSet: ["persistence"] },
+    story: { id: "story-p", goalId: "goal-p", touchedSurfaces: [] },
+    adapter: { fingerprint: FP.web, surfaces: { persistence: { status: "grounded" } } },
+    witnessFingerprint: FP.web,
+    evidence: {},
+    waivers: [{ surface: "persistence", reason: "skip", version: 1 }],
+  });
+  expectFail("closeout", [unsignedRecord]);
+  ok("an unsigned waiver does NOT satisfy a surface");
+
+  console.log(`\nacef-closeout-verify tests passed (${count} cases)`);
+} finally {
+  fs.rmSync(tmp, { recursive: true, force: true });
+}
