@@ -1,0 +1,111 @@
+#!/usr/bin/env node
+const fs = require("node:fs");
+const path = require("node:path");
+const { extractWitness, evaluateCloseout } = require("./lib/acef-surface-contract");
+
+function usage() {
+  console.log(`ACEF closeout verifier
+
+Usage:
+  scripts/acef-closeout-verify <surface-evidence.json> [--repo <path>] [--adapter <path>] [--format text|json]
+
+Derives the evidence a story owes per touched surface from the open surface
+registry, then verifies it:
+  - per-surface coverage over the WHOLE goal surface set
+  - cold-process fresh-read for persistence (a separate process must read what
+    another process wrote; a same-process read does NOT count)
+  - reachability as separate evidence (renders-but-unreachable = partial, NOT pass)
+  - fail-closed on unknown surfaces (no nearest-match)
+  - goal-inherited surfaces: a story cannot self-downgrade the goal
+  - human-signed, versioned waivers (visible in the output)
+  - refuses to run on a stale/drifted adapter (fingerprint mismatch)
+
+It is read-only: it does not advance state, edit ledgers, or approve gates.
+Prints PASS/FAIL with per-surface reasons; exits non-zero on FAIL.`);
+}
+
+function resolvePath(value, base) {
+  if (!value) return "";
+  const expanded = value.replace(/^~(?=\/|$)/, process.env.HOME || "");
+  return path.resolve(path.isAbsolute(expanded) ? expanded : path.join(base, expanded));
+}
+
+function parseArgs(argv) {
+  const args = { evidence: "", repo: "", adapter: "", format: "text" };
+  for (let index = 0; index < argv.length; index += 1) {
+    const arg = argv[index];
+    if (arg === "--help" || arg === "-h") {
+      args.help = true;
+    } else if (arg === "--repo") {
+      args.repo = argv[++index] || "";
+    } else if (arg === "--adapter") {
+      args.adapter = argv[++index] || "";
+    } else if (arg === "--format") {
+      args.format = argv[++index] || "";
+    } else if (arg.startsWith("--")) {
+      throw new Error(`Unknown argument: ${arg}`);
+    } else if (!args.evidence) {
+      args.evidence = arg;
+    } else {
+      throw new Error(`Unexpected argument: ${arg}`);
+    }
+  }
+  if (!["text", "json"].includes(args.format)) throw new Error("--format must be text or json");
+  if (!args.help && !args.evidence) throw new Error("a surface-evidence JSON path is required");
+  const cwd = process.cwd();
+  if (args.evidence) args.evidence = resolvePath(args.evidence, cwd);
+  if (args.repo) args.repo = resolvePath(args.repo, cwd);
+  if (args.adapter) args.adapter = resolvePath(args.adapter, cwd);
+  return args;
+}
+
+function loadRecord(args) {
+  const record = JSON.parse(fs.readFileSync(args.evidence, "utf8"));
+  // Adapter may be embedded in the record or supplied via --adapter.
+  if (args.adapter) {
+    record.adapter = JSON.parse(fs.readFileSync(args.adapter, "utf8"));
+  }
+  return record;
+}
+
+function printText(evaluation) {
+  if (evaluation.drift) {
+    // Refuse: a stale adapter is not authorized to certify a closeout.
+    console.log(`FAIL adapter-drift: ${evaluation.drift}`);
+    console.log(`FAIL closeout: refused — re-witness the repo and rebuild the adapter`);
+    return;
+  }
+  for (const v of evaluation.violations) {
+    console.log(`FAIL ${v.surface}: ${v.reason}`);
+  }
+  for (const s of evaluation.surfaces) {
+    console.log(`${s.ok ? "PASS" : "FAIL"} ${s.surface}: ${s.reason}`);
+  }
+  for (const w of evaluation.waivers) {
+    console.log(`WAIVER ${w.surface}: ${w.valid ? "valid" : "INVALID (unsigned/unversioned)"} — signedBy ${w.signedBy || "<none>"} v${w.version}`);
+  }
+  const covered = evaluation.surfaces.filter((s) => s.ok).length;
+  console.log(
+    `${evaluation.verdict} closeout: goal "${evaluation.goal}" ${covered}/${evaluation.surfaces.length} surfaces satisfied (required evidence: ${evaluation.requiredEvidence.join(", ") || "none"})`,
+  );
+}
+
+try {
+  const args = parseArgs(process.argv.slice(2));
+  if (args.help) {
+    usage();
+    process.exit(0);
+  }
+  const record = loadRecord(args);
+  const currentFingerprint = args.repo ? extractWitness(args.repo).fingerprint : undefined;
+  const evaluation = evaluateCloseout(record, { currentFingerprint });
+  if (args.format === "json") {
+    console.log(JSON.stringify(evaluation, null, 2));
+  } else {
+    printText(evaluation);
+  }
+  if (!evaluation.ok) process.exitCode = 1;
+} catch (error) {
+  console.error(`FAIL closeout: ${error.message}`);
+  process.exitCode = 1;
+}

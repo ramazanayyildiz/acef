@@ -10,7 +10,7 @@ sandbox or malicious-code security boundary.
 | Agent loses context and skips a gate | prevent or detect with active run, ledger, guard, and process validator |
 | Worker edits outside story scope | prevent or detect with worker scope and guard checks |
 | Reviewer approves own work | prevent with actor records and Process Judge checks |
-| Story closes without runtime evidence | prevent with evidence manifests and runtime smoke gates |
+| Story closes without runtime evidence (e.g. an in-memory store passes a same-process test) | prevent with evidence manifests, surface-derived runtime gates, and a **separate-process / fresh-connection read** for persistence surfaces (`acef-closeout-verify`) |
 | Epic starts from vague "go on" | prevent with explicit approval receipts |
 | Retrieval returns stale story context | detect with story/role-scoped current context and query tests |
 
@@ -35,6 +35,9 @@ An ACEF evidence record should bind the result to:
 - runner proof generated from command, exit code, actor/story, repository state, and raw artifact hash;
 - relevant runtime/tool versions when available;
 - raw output artifact path and hash when output is large;
-- ACs or gates it satisfies.
+- ACs or gates it satisfies;
+- the **surface(s)** the work touches, each with surface-appropriate proof:
+  - *persistence surface* — a read produced by a **separate process / fresh connection** from the writer; a same-process read does not evidence durability;
+  - *user-facing surface* — a reachability proof from a real entrypoint (an isolated render that nothing links to is `PARTIAL`).
 
 `UNKNOWN`, `STALE`, and `PARTIAL` are not hard-gate PASS states.
