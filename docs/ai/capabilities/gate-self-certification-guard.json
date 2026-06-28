@@ -5,6 +5,8 @@
   "requiredLayers": [
     "docs",
     "validator",
+    "hook",
+    "installer",
     "tests"
   ],
   "implementedLayers": {
@@ -14,7 +16,15 @@
       "skills/acef/references/ACEF_CONTROL_RATIONALE.md#Why Gate Verdicts Exist"
     ],
     "validator": [
-      "scripts/acef-process-validator#checkGateVerdict"
+      "scripts/acef-process-validator#checkGateVerdict",
+      "scripts/acef-process-validator#checkGateDecider",
+      "scripts/acef-process-validator#checkPrecommitGate"
+    ],
+    "hook": [
+      "claude-plugins/acef-bmad-guard/hooks/acef-precommit-gate.sh"
+    ],
+    "installer": [
+      "scripts/install-acef-bmad-guard"
     ],
     "tests": [
       "scripts/test-acef-process-validator"
@@ -22,12 +32,17 @@
   },
   "limitations": [
     "This validates typed gate verdicts and actor records; it cannot prove that an unrecorded nested reviewer existed.",
+    "The pre-commit path intentionally checks only gate decider integrity; full surface and persistence evidence remain closeout/CI responsibilities.",
     "The Process Judge actor identity is still cooperative-local and depends on accurate actor records written to disk."
   ],
   "evidence": [
     {
       "layer": "validator",
-      "ref": "scripts/acef-process-validator#checkGateVerdict"
+      "ref": "scripts/acef-process-validator#checkGateDecider"
+    },
+    {
+      "layer": "hook",
+      "ref": "claude-plugins/acef-bmad-guard/hooks/acef-precommit-gate.sh"
     },
     {
       "layer": "tests",
