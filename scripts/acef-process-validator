@@ -1906,32 +1906,102 @@ function pathExistsField(repoRoot, fields, field) {
   return exists(filePath) ? "" : `${field} missing file ${fields[field]}`;
 }
 
+function normalizeLaneName(value) {
+  const normalized = String(value || "").trim().toLowerCase().replace(/[_\s]+/g, "-");
+  if (/^(?:full-)?bmad(?:-v2)?$/.test(normalized) || normalized === "full-bmad-v2") return "full-bmad";
+  if (normalized === "guarded") return "guarded";
+  if (normalized === "quick-fix" || normalized === "quickfix") return "quick-fix";
+  if (normalized === "lightweight" || normalized === "lean") return "lightweight";
+  return normalized;
+}
+
+function inferActiveLane(repoRoot, ledgerPath) {
+  const activeRun = typedActiveRun(repoRoot);
+  if (activeRun?.lane) return normalizeLaneName(activeRun.lane);
+  const lightweightPath = path.join(repoRoot, "docs", "ai", "ACEF_LIGHTWEIGHT_RUN.json");
+  if (exists(lightweightPath)) {
+    try {
+      return normalizeLaneName(parseLightweightRun(lightweightPath).lane);
+    } catch {
+      return "";
+    }
+  }
+  if (ledgerPath && exists(ledgerPath)) {
+    const text = read(ledgerPath);
+    const match = text.match(/^\s*(?:[-*]\s*)?active_lane\s*:\s*(.+?)\s*$/im);
+    if (match) return normalizeLaneName(match[1]);
+  }
+  return "";
+}
+
+function controlDosingManifestPath(repoRoot) {
+  const candidates = [
+    path.join(repoRoot, "docs", "ai", "ACEF_CONTROL_DOSING.json"),
+    path.join(repoRoot, ".acef", "control-dosing.json"),
+    path.join(__dirname, "..", "control-dosing.json"),
+    path.join(repoRoot, "method", "control-dosing.json"),
+  ];
+  return candidates.find((candidate) => exists(candidate)) || "";
+}
+
+function readControlDosing(repoRoot) {
+  const manifestPath = controlDosingManifestPath(repoRoot);
+  if (!manifestPath) {
+    throw new Error("Missing control dosing manifest: docs/ai/ACEF_CONTROL_DOSING.json or .acef/control-dosing.json");
+  }
+  return { path: manifestPath, record: parseControlDosing(manifestPath) };
+}
+
+function controlById(controlDosing, controlId) {
+  return controlDosing.record.controls.find((control) => control.id === controlId) || null;
+}
+
+function controlDoseForLane(controlDosing, controlId, lane) {
+  return controlById(controlDosing, controlId)?.laneDoses?.[lane] || null;
+}
+
 function checkLeanEvidence(repoRoot, ledgerPath) {
   if (!ledgerPath || !exists(ledgerPath)) return result("lean-evidence", false, "Missing ledger path");
+  let controlDosing = null;
+  try {
+    controlDosing = readControlDosing(repoRoot);
+  } catch (error) {
+    return result("lean-evidence", false, error.message);
+  }
+  const lane = inferActiveLane(repoRoot, ledgerPath);
+  const dose = controlDoseForLane(controlDosing, "lean-evidence", lane);
+  if (!dose) return result("lean-evidence", false, `No lean-evidence dose for lane ${lane || "unknown"}`);
+
   const text = read(ledgerPath);
   const section = extractSection(text, "Lean Evidence Contract");
   if (!section) return result("lean-evidence", false, "Missing ## Lean Evidence Contract section");
 
   const fields = sessionHandoffFields(section);
-  const required = [
+  const required = new Set([
     "status",
     "scope",
-    "worker_report",
-    "review_report",
-    "process_judge_report",
     "session_handoff_updated",
-    "worker_context",
-    "fork_context",
     "raw_output_policy",
     "diff_policy",
     "test_output_policy",
     "search_output_policy",
-  ];
-  const missing = required.filter((field) => !hasMeaningfulValue(fields[field]));
+  ]);
+  if (dose.dose !== "light") {
+    required.add("worker_context");
+    required.add("fork_context");
+    required.add("worker_report");
+    required.add("review_report");
+  }
+  if (dose.dose === "full") {
+    required.add("process_judge_report");
+  }
+
+  const missing = [...required].filter((field) => !hasMeaningfulValue(fields[field]));
   if (missing.length) return result("lean-evidence", false, `Missing field(s): ${missing.join(", ")}`);
 
   const failures = [];
   for (const field of ["worker_report", "review_report", "process_judge_report"]) {
+    if (!hasMeaningfulValue(fields[field])) continue;
     const pathFailure = pathExistsField(repoRoot, fields, field);
     if (pathFailure) failures.push(pathFailure);
   }
@@ -1939,10 +2009,10 @@ function checkLeanEvidence(repoRoot, ledgerPath) {
   if (!/^yes|true|pass$/i.test(fields.session_handoff_updated)) {
     failures.push("session_handoff_updated must be yes/true/PASS");
   }
-  if (!/^(bounded|minimal|scoped)$/i.test(fields.worker_context || "")) {
+  if (hasMeaningfulValue(fields.worker_context) && !/^(bounded|minimal|scoped)$/i.test(fields.worker_context || "")) {
     failures.push("worker_context must be bounded/minimal/scoped");
   }
-  if (!/^(false|no|off|disabled)$/i.test(fields.fork_context || "")) {
+  if (hasMeaningfulValue(fields.fork_context) && !/^(false|no|off|disabled)$/i.test(fields.fork_context || "")) {
     failures.push("fork_context must be false/no/off/disabled");
   }
   if (!/^(artifact-only|artifact_only|disk|disk-only|disk_only)$/i.test(fields.raw_output_policy || "")) {
@@ -1967,7 +2037,7 @@ function checkLeanEvidence(repoRoot, ledgerPath) {
 
   if (!/^pass$/i.test(fields.status)) failures.push("status must be PASS at close");
   if (failures.length) return result("lean-evidence", false, failures.join("; "));
-  return result("lean-evidence", true, `${fields.scope} evidence is artifact-backed and handoff is refreshed`);
+  return result("lean-evidence", true, `${fields.scope} ${dose.dose} evidence is artifact-backed and handoff is refreshed`);
 }
 
 function checkSessionHandoff(repoRoot, ledgerPath, adapterPath, registryPath) {
@@ -2345,67 +2415,65 @@ function closeoutResultFailure(item) {
   return item.ok ? "" : `${item.name}: ${item.message}`;
 }
 
-function checkLaneCloseout(repoRoot, ledgerPath, adapterPath, registryPath) {
-  const activeRun = typedActiveRun(repoRoot);
-  let lane = activeRun?.lane || "";
-  if (!lane) {
-    const lightweightPath = path.join(repoRoot, "docs", "ai", "ACEF_LIGHTWEIGHT_RUN.json");
-    if (exists(lightweightPath)) lane = parseLightweightRun(lightweightPath).lane;
-  }
-  if (!lane) return result("lane-closeout", false, "Missing typed active run or lightweight run lane");
+function controlCheckForId(controlId, repoRoot, ledgerPath) {
+  const checks = {
+    "worker-scope": () => checkWorkerScope(repoRoot),
+    "cold-read-current-context": () => checkCurrentContext(repoRoot, ledgerPath),
+    "active-run-next-action": () => checkCurrentContext(repoRoot, ledgerPath),
+    "actor-records": () => checkActorSeparation(repoRoot, ledgerPath),
+    "evidence-manifest": () => checkEvidenceManifests(repoRoot),
+    "runner-proof": () => checkEvidenceManifests(repoRoot),
+    "gate-verdict": () => checkGateVerdict(repoRoot),
+    "lean-evidence": () => checkLeanEvidence(repoRoot, ledgerPath),
+  };
+  return checks[controlId] || null;
+}
 
-  const checks = [];
-  checks.push(checkControlDosing(repoRoot));
-  if (lane === "quick-fix") {
-    checks.push(checkLaneSelection(repoRoot));
-    checks.push(checkLightweightLifecycle(repoRoot));
-    checks.push(checkLeanEvidence(repoRoot, ledgerPath));
-    checks.push(checkSessionHandoff(repoRoot, ledgerPath, adapterPath, registryPath));
-  } else if (lane === "lightweight") {
-    checks.push(checkLaneSelection(repoRoot));
-    checks.push(checkLightweightLifecycle(repoRoot));
-    checks.push(checkLeanEvidence(repoRoot, ledgerPath));
-    checks.push(checkSessionHandoff(repoRoot, ledgerPath, adapterPath, registryPath));
-  } else if (lane === "full-bmad") {
-    checks.push(checkLaneSelection(repoRoot));
-    checks.push(checkGoalCoverage(repoRoot));
-    checks.push(checkCurrentContext(repoRoot, ledgerPath));
-    checks.push(checkActorSeparation(repoRoot, ledgerPath));
-    checks.push(checkWorkerScope(repoRoot));
-    checks.push(checkEvidenceManifests(repoRoot));
-    checks.push(checkGateVerdict(repoRoot));
-    checks.push(checkSourceReconciliation(repoRoot, ledgerPath));
-    checks.push(checkLeanEvidence(repoRoot, ledgerPath));
-    checks.push(checkSessionHandoff(repoRoot, ledgerPath, adapterPath, registryPath));
-  } else if (lane === "guarded") {
-    checks.push(checkLaneSelection(repoRoot));
-    checks.push(checkGoalCoverage(repoRoot));
-    checks.push(checkCurrentContext(repoRoot, ledgerPath));
-    checks.push(checkActorSeparation(repoRoot, ledgerPath));
-    checks.push(checkWorkerScope(repoRoot));
-    checks.push(checkEvidenceManifests(repoRoot));
-    checks.push(checkGateVerdict(repoRoot));
-    checks.push(checkSourceReconciliation(repoRoot, ledgerPath));
-    checks.push(checkGuardedTestFloor(repoRoot, ledgerPath));
-    checks.push(checkLeanEvidence(repoRoot, ledgerPath));
-    checks.push(checkSessionHandoff(repoRoot, ledgerPath, adapterPath, registryPath));
-  } else {
+function baseCloseoutChecks(lane, repoRoot, ledgerPath, adapterPath, registryPath) {
+  const checks = [
+    () => checkLaneSelection(repoRoot),
+    () => checkSessionHandoff(repoRoot, ledgerPath, adapterPath, registryPath),
+  ];
+  if (lane === "quick-fix" || lane === "lightweight") {
+    checks.push(() => checkLightweightLifecycle(repoRoot));
+  }
+  if (lane === "guarded" || lane === "full-bmad") {
+    checks.push(() => checkGoalCoverage(repoRoot));
+    checks.push(() => checkSourceReconciliation(repoRoot, ledgerPath));
+  }
+  if (lane === "guarded") {
+    checks.push(() => checkGuardedTestFloor(repoRoot, ledgerPath));
+  }
+  return checks;
+}
+
+function checkLaneCloseout(repoRoot, ledgerPath, adapterPath, registryPath) {
+  const lane = inferActiveLane(repoRoot, ledgerPath);
+  if (!lane) return result("lane-closeout", false, "Missing typed active run or lightweight run lane");
+  if (!["quick-fix", "lightweight", "guarded", "full-bmad"].includes(lane)) {
     return result("lane-closeout", false, `Unsupported closeout lane: ${lane}`);
   }
-  const failures = checks.map(closeoutResultFailure).filter(Boolean);
+
+  let controlDosing = null;
+  try {
+    controlDosing = readControlDosing(repoRoot);
+  } catch (error) {
+    return result("lane-closeout", false, `control-dosing: ${error.message}`);
+  }
+
+  const checks = [() => checkControlDosing(repoRoot), ...baseCloseoutChecks(lane, repoRoot, ledgerPath, adapterPath, registryPath)];
+  const scheduled = new Set();
+  for (const controlId of controlDosing.record.laneBundles[lane] || []) {
+    const check = controlCheckForId(controlId, repoRoot, ledgerPath);
+    if (!check || scheduled.has(controlId)) continue;
+    scheduled.add(controlId);
+    checks.push(check);
+  }
+
+  const failures = checks.map((check) => closeoutResultFailure(check())).filter(Boolean);
   return failures.length
     ? result("lane-closeout", false, failures.join("; "))
     : result("lane-closeout", true, `${lane} closeout bundle passed`);
-}
-
-function controlDosingManifestPath(repoRoot) {
-  const candidates = [
-    path.join(repoRoot, "docs", "ai", "ACEF_CONTROL_DOSING.json"),
-    path.join(repoRoot, ".acef", "control-dosing.json"),
-    path.join(__dirname, "..", "control-dosing.json"),
-    path.join(repoRoot, "method", "control-dosing.json"),
-  ];
-  return candidates.find((candidate) => exists(candidate)) || "";
 }
 
 function displayPath(repoRoot, filePath) {
@@ -2417,15 +2485,11 @@ function displayPath(repoRoot, filePath) {
 }
 
 function checkControlDosing(repoRoot) {
-  const manifestPath = controlDosingManifestPath(repoRoot);
-  if (!manifestPath) {
-    return result("control-dosing", false, "Missing control dosing manifest: docs/ai/ACEF_CONTROL_DOSING.json or .acef/control-dosing.json");
-  }
   try {
-    const record = parseControlDosing(manifestPath);
+    const { path: manifestPath, record } = readControlDosing(repoRoot);
     return result("control-dosing", true, `${displayPath(repoRoot, manifestPath)} defines ${record.controls.length} control dose(s)`);
   } catch (error) {
-    return result("control-dosing", false, `${displayPath(repoRoot, manifestPath)}: ${error.message}`);
+    return result("control-dosing", false, error.message);
   }
 }
 

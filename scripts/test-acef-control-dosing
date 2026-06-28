@@ -17,6 +17,14 @@ function runValidator(repo = tmp) {
   });
 }
 
+function runCheck(repo, check, extra = []) {
+  return cp.spawnSync(process.execPath, [validator, "--repo", repo, "--check", check, ...extra], {
+    cwd: repo,
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+}
+
 function readRecord() {
   return JSON.parse(fs.readFileSync(sourceManifest, "utf8"));
 }
@@ -71,6 +79,56 @@ try {
   const sourceOutput = `${sourceCheck.stdout}\n${sourceCheck.stderr}`;
   if (sourceCheck.status !== 0 || !sourceOutput.includes("PASS control-dosing:")) {
     throw new Error(`source repo default manifest did not validate:\n${sourceOutput}`);
+  }
+
+  writeRecord(readRecord());
+  fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_guarded_missing_evidence_DELIVERY_AUDIT.md"), [
+    "# Guarded Missing Evidence",
+    "",
+    "active_lane: guarded",
+    "",
+    "## Lean Evidence Contract",
+    "status: PASS",
+    "scope: story 1.1",
+    "worker_report: docs/ai/worker.md",
+    "review_report: docs/ai/review.md",
+    "process_judge_report: docs/ai/judge.md",
+    "session_handoff_updated: yes",
+    "worker_context: bounded",
+    "fork_context: false",
+    "raw_output_policy: artifact-only",
+    "diff_policy: targeted",
+    "test_output_policy: summary-only",
+    "search_output_policy: summarized",
+    "",
+    "## Session Handoff",
+    "status: ready",
+    "current_step: closeout",
+    "last_passed_gate: implementation PASS",
+    "next_allowed_step: process judge",
+    "active_lane: guarded",
+    "active_track: guarded",
+    "ledger_path: docs/ai/ACEF_guarded_missing_evidence_DELIVERY_AUDIT.md",
+    "",
+  ].join("\n"));
+  fs.writeFileSync(path.join(tmp, "docs", "ai", "worker.md"), "worker report\n");
+  fs.writeFileSync(path.join(tmp, "docs", "ai", "review.md"), "review report\n");
+  fs.writeFileSync(path.join(tmp, "docs", "ai", "judge.md"), "judge report\n");
+  fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_ACTIVE_RUN.json"), `${JSON.stringify({
+    runId: "RUN-guarded-missing-evidence",
+    repo: "fixture",
+    lane: "guarded",
+    laneRationale: "Payment-adjacent guarded closeout requires typed evidence.",
+    riskTriggers: ["payment"],
+    status: "active",
+    activeStory: "story 1.1",
+    activePhase: "closeout",
+    ledgerPath: "docs/ai/ACEF_guarded_missing_evidence_DELIVERY_AUDIT.md",
+  }, null, 2)}\n`);
+  const guardedCloseout = runCheck(tmp, "lane-closeout", ["--ledger", "docs/ai/ACEF_guarded_missing_evidence_DELIVERY_AUDIT.md"]);
+  const guardedOutput = `${guardedCloseout.stdout}\n${guardedCloseout.stderr}`;
+  if (guardedCloseout.status === 0 || !/evidence-manifest: No typed evidence manifests/.test(guardedOutput)) {
+    throw new Error(`guarded closeout without evidence manifest should fail through manifest-driven bundle:\n${guardedOutput}`);
   }
 
   console.log("acef control-dosing tests passed");

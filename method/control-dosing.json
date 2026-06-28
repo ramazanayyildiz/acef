@@ -321,11 +321,43 @@
           "backstop": "Reviewer diff is useful but should not replace full-BMAD test-integrity evidence."
         }
       }
+    },
+    {
+      "id": "lean-evidence",
+      "primaryFailureMode": "Closeout evidence lives in chat or asks small lanes for full multi-actor paperwork.",
+      "role": "evidence-guard",
+      "trustCeiling": "cooperative-local",
+      "laneDoses": {
+        "quick-fix": {
+          "requirement": "required",
+          "dose": "light",
+          "enforcementLevel": "validator",
+          "backstop": "Focused quick-fix repro, before-patch, after-patch, and session handoff evidence."
+        },
+        "lightweight": {
+          "requirement": "required",
+          "dose": "compact",
+          "enforcementLevel": "validator",
+          "backstop": "Lightweight lifecycle artifact, focused verification evidence, and session handoff."
+        },
+        "guarded": {
+          "requirement": "required",
+          "dose": "full",
+          "enforcementLevel": "validator",
+          "backstop": "Manual audit can supplement but should not replace guarded closeout evidence."
+        },
+        "full-bmad": {
+          "requirement": "required",
+          "dose": "full",
+          "enforcementLevel": "validator",
+          "backstop": "Manual audit can supplement but should not replace full-BMAD closeout evidence."
+        }
+      }
     }
   ],
   "laneBundles": {
-    "quick-fix": ["worker-scope"],
-    "lightweight": ["worker-scope", "cold-read-current-context", "active-run-next-action"],
+    "quick-fix": ["worker-scope", "lean-evidence"],
+    "lightweight": ["worker-scope", "cold-read-current-context", "active-run-next-action", "lean-evidence"],
     "guarded": [
       "worker-scope",
       "cold-read-current-context",
@@ -333,7 +365,8 @@
       "actor-records",
       "evidence-manifest",
       "runner-proof",
-      "gate-verdict"
+      "gate-verdict",
+      "lean-evidence"
     ],
     "full-bmad": [
       "worker-scope",
@@ -342,7 +375,8 @@
       "actor-records",
       "evidence-manifest",
       "runner-proof",
-      "gate-verdict"
+      "gate-verdict",
+      "lean-evidence"
     ]
   },
   "notes": "This manifest defines control dose by lane. It does not replace the lane validators that verify actual run artifacts."

@@ -18,6 +18,7 @@ const CONTROL_DOSING_IDS = [
   "gate-verdict",
   "surface-contract",
   "test-integrity",
+  "lean-evidence",
 ];
 
 function readJson(filePath) {
@@ -717,6 +718,7 @@ function parseControlDosing(filePath) {
     ["active-run-next-action", ["lightweight", "guarded", "full-bmad"], "required"],
     ["surface-contract", CONTROL_DOSING_LANES, "required-if-triggered"],
     ["test-integrity", CONTROL_DOSING_LANES, "required-if-triggered"],
+    ["lean-evidence", CONTROL_DOSING_LANES, "required"],
   ];
   for (const [controlId, lanes, requirement] of hardRules) {
     for (const lane of lanes) {

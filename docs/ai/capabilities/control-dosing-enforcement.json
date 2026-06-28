@@ -1,6 +1,6 @@
 {
   "capabilityId": "control-dosing-enforcement",
-  "requestedIntent": "Turn ACEF's control-pricing rationale into a machine-readable lane/control dosing manifest with validator and installer support, so agents cannot silently rewrite which controls are required for quick-fix, lightweight, guarded, and full-BMAD lanes.",
+  "requestedIntent": "Turn ACEF's control-pricing rationale into a machine-readable lane/control dosing manifest with validator, lane-closeout consumer, dose-sensitive lean-evidence behavior, and installer support, so agents cannot silently rewrite which controls are required for quick-fix, lightweight, guarded, and full-BMAD lanes.",
   "status": "enforced",
   "requiredLayers": [
     "docs",
@@ -23,10 +23,13 @@
     "validator": [
       "scripts/lib/acef-state-parser.js#parseControlDosing",
       "scripts/acef-process-validator#checkControlDosing",
-      "scripts/acef-process-validator#checkLaneCloseout"
+      "scripts/acef-process-validator#checkLaneCloseout",
+      "scripts/acef-process-validator#checkLeanEvidence"
     ],
     "tests": [
       "scripts/test-acef-control-dosing",
+      "scripts/test-acef-lightweight-lifecycle",
+      "scripts/test-acef-process-validator",
       "scripts/test-install-acef-tools"
     ],
     "installer": [
@@ -34,7 +37,7 @@
     ]
   },
   "limitations": [
-    "This enforces the control dosing manifest and lane-closeout linkage; it does not replace the existing lane validators that verify actual run artifacts.",
+    "This enforces the control dosing manifest, lane-closeout manifest-driven control selection, and lean-evidence lane-dose behavior; it does not replace the existing lane validators that verify actual run artifacts.",
     "Evidence manifests, gate verdicts, actor records, and surface evidence remain cooperative-local controls and do not provide cryptographic protection against a self-consistent forgery.",
     "Target repos must refresh ACEF tools before .acef/control-dosing.json and the control-dosing validator are installed locally."
   ],
@@ -49,11 +52,27 @@
     },
     {
       "layer": "validator",
+      "ref": "scripts/acef-process-validator#checkLaneCloseout"
+    },
+    {
+      "layer": "validator",
+      "ref": "scripts/acef-process-validator#checkLeanEvidence"
+    },
+    {
+      "layer": "validator",
       "ref": "scripts/lib/acef-state-parser.js#parseControlDosing"
     },
     {
       "layer": "tests",
       "ref": "scripts/test-acef-control-dosing"
+    },
+    {
+      "layer": "tests",
+      "ref": "scripts/test-acef-lightweight-lifecycle"
+    },
+    {
+      "layer": "tests",
+      "ref": "scripts/test-acef-process-validator"
     },
     {
       "layer": "tests",

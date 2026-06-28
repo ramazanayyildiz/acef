@@ -169,8 +169,10 @@ try {
   run("git", ["config", "user.name", "ACEF Test"], { cwd: tmp });
 
   fs.mkdirSync(path.join(tmp, "docs", "ai"), { recursive: true });
+  fs.mkdirSync(path.join(tmp, ".acef"), { recursive: true });
+  fs.copyFileSync(path.join(repoRoot, "method", "control-dosing.json"), path.join(tmp, ".acef", "control-dosing.json"));
   fs.writeFileSync(path.join(tmp, "README.md"), "# fixture\n");
-  run("git", ["add", "README.md"], { cwd: tmp });
+  run("git", ["add", "README.md", ".acef/control-dosing.json"], { cwd: tmp });
   run("git", ["commit", "-m", "init"], { cwd: tmp });
   const head = run("git", ["rev-parse", "--short", "HEAD"], { cwd: tmp });
 
@@ -1013,6 +1015,29 @@ try {
     "",
   ].join("\n"));
   expectFail("lean-evidence", ["--repo", tmp, "--ledger", "docs/ai/ACEF_lean_context_bad_DELIVERY_AUDIT.md", "--check", "lean-evidence"]);
+
+  fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_quick_fix_light_DELIVERY_AUDIT.md"), [
+    "# Quick Fix Light Ledger",
+    "",
+    "active_lane: quick-fix",
+    "",
+    "## Lean Evidence Contract",
+    "status: PASS",
+    "scope: story 1.1",
+    "session_handoff_updated: yes",
+    "raw_output_policy: artifact-only",
+    "diff_policy: targeted",
+    "test_output_policy: summary-only",
+    "search_output_policy: summarized",
+    "",
+  ].join("\n"));
+  fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_ACTIVE_RUN.json"), JSON.stringify({
+    runId: "lean-quick-fix", repo: "fixture", lane: "quick-fix", status: "active",
+    activeStory: "1-1", activePhase: "closeout",
+    ledgerPath: "docs/ai/ACEF_quick_fix_light_DELIVERY_AUDIT.md",
+  }, null, 2));
+  expectPass("lean-evidence", ["--repo", tmp, "--ledger", "docs/ai/ACEF_quick_fix_light_DELIVERY_AUDIT.md", "--check", "lean-evidence"]);
+  fs.rmSync(path.join(tmp, "docs", "ai", "ACEF_ACTIVE_RUN.json"), { force: true });
 
   fs.mkdirSync(path.join(tmp, "docs", "ai", "actors"), { recursive: true });
   fs.mkdirSync(path.join(tmp, "docs", "ai", "evidence"), { recursive: true });

@@ -222,6 +222,7 @@ Use this table when deciding whether a lane needs the full artifact, a lighter f
 | Gate verdict | PASS without required evidence or wrong decision actor | Decision guard | Guarded/full-BMAD; lightweight closeout when typed gates are used | Manual closeout checklist plus independent review |
 | Surface contract | Fake runtime proof, in-memory persistence, unreachable UI | Runtime floor | Any user-visible or persistence-affecting feature lane | Manual browser/runtime check with durable persistence proof |
 | Test-integrity check | Green-by-weakening-tests | Active guard | Any lane where the worker edits tests inside the envelope | Reviewer diff of assertions/skips/imports |
+| Lean evidence | Chat-only closeout or over-heavy closeout for small lanes | Evidence guard | All lanes; light for quick-fix, compact for lightweight, full for guarded/full-BMAD | Focused artifacts plus skeptical disk re-run |
 
 The table is intentionally not a universal "always require everything" rule. It is a dosing rule: if another stronger
 backstop is present and cheaper for the lane, use the lighter form; if no backstop catches the failure mode before harm,
@@ -234,7 +235,8 @@ node scripts/acef-process-validator --repo . --check control-dosing
 ```
 
 Target repos installed with current ACEF tools receive the same manifest at `.acef/control-dosing.json`. The
-`lane-closeout` check validates this manifest before running the lane's closeout bundle.
+`lane-closeout` check validates this manifest and uses its lane bundle to select control checks. Dose-sensitive checks
+such as `lean-evidence` read their lane dose before deciding which fields are mandatory.
 
 ## How To Trim Without Breaking The Safety Model
 

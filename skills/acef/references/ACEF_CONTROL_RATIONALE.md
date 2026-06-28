@@ -104,12 +104,14 @@ Use this table to choose full artifact, lighter form, or human/backstop check:
 | Gate verdict | Decision guard | Guarded/full-BMAD; lightweight closeout when typed gates are used | Manual closeout checklist |
 | Surface contract | Runtime floor | User-visible or persistence-affecting feature lanes | Manual browser/runtime persistence proof |
 | Test-integrity check | Test-gutting guard | Any lane where the worker edits tests | Reviewer assertion/skip/import diff |
+| Lean evidence | Evidence guard | All lanes; light for quick-fix, compact for lightweight, full for guarded/full-BMAD | Focused artifacts plus skeptical disk re-run |
 
 If another stronger backstop is present and cheaper for the lane, use the lighter form. If no backstop catches the
 failure mode before harm, keep the stronger control.
 
 The machine-readable version is `method/control-dosing.json` in the ACEF source repo and `.acef/control-dosing.json` in
-installed target repos. Validate it with:
+installed target repos. `lane-closeout` uses its lane bundle to select control checks, and dose-sensitive checks such as
+`lean-evidence` read their lane dose before deciding which fields are mandatory. Validate it with:
 
 ```bash
 acef-process-validator --check control-dosing

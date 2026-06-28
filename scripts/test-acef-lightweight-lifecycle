@@ -299,6 +299,58 @@ try {
   const quickFixCloseout = run(quickFix, "lane-closeout");
   assert.equal(quickFixCloseout.status, 0, quickFixCloseout.stderr || quickFixCloseout.stdout);
 
+  const quickFixLight = makeRepo("quick-fix-light-lean-evidence", (record) => {
+    record.lane = "quick-fix";
+    record.quickFix = quickFixEvidence();
+    return record;
+  });
+  write(quickFixLight, "docs/ai/ACEF_test_DELIVERY_AUDIT.md", [
+    "# Quick Fix Light Delivery Audit",
+    "",
+    "active_lane: quick-fix",
+    "",
+    "## Lean Evidence Contract",
+    "status: PASS",
+    "scope: story 1.1",
+    "session_handoff_updated: yes",
+    "raw_output_policy: artifact-only",
+    "diff_policy: targeted",
+    "test_output_policy: summary-only",
+    "search_output_policy: summarized",
+    "",
+    "## Session Handoff",
+    "status: ready",
+    "current_step: closeout",
+    "last_passed_gate: quick-fix verification PASS",
+    "next_allowed_step: done",
+    "active_lane: quick-fix",
+    "active_track: mechanical",
+    "ledger_path: docs/ai/ACEF_test_DELIVERY_AUDIT.md",
+    "",
+  ].join("\n"));
+  write(quickFixLight, "docs/ai/ACEF_ACTIVE_RUN.json", `${JSON.stringify({
+    runId: "RUN-quick-fix-light",
+    repo: "quick-fix-light-lean-evidence",
+    lane: "quick-fix",
+    laneRationale: "Operator-style narrow fix with focused artifacts, not a multi-actor delivery story.",
+    intakeDecision: {
+      route: "C",
+      confidence: "high",
+      clarifyingQuestions: ["Is this a narrow operator fix?"],
+      inferredAnswers: ["The fix is bounded to the computed quick-fix envelope."],
+      unresolvedQuestions: [],
+      approvalRequired: false,
+      executionApproved: true,
+    },
+    riskTriggers: ["bugfix", "operator-fix"],
+    status: "active",
+    activeStory: "story 1.1",
+    activePhase: "closeout",
+    ledgerPath: "docs/ai/ACEF_test_DELIVERY_AUDIT.md",
+  }, null, 2)}\n`);
+  const quickFixLightCloseout = run(quickFixLight, "lane-closeout");
+  assert.equal(quickFixLightCloseout.status, 0, quickFixLightCloseout.stderr || quickFixLightCloseout.stdout);
+
   const missingIntake = makeRepo("missing-intake", (record) => {
     record.lane = "quick-fix";
     record.quickFix = quickFixEvidence();

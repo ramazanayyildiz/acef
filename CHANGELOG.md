@@ -14,8 +14,10 @@ or evidence contract. Do not use it to claim implementation status; link to the 
 - Added a machine-readable control dosing manifest (`method/control-dosing.json`) and schema
   (`schemas/control-dosing.schema.json`) that classifies ACEF integrity controls by lane, role, dose, enforcement level,
   and fallback backstop.
-- Added `acef-process-validator --check control-dosing` and wired it into `lane-closeout`, so closeout first validates
-  the lane/control dose table before running the existing lane-specific artifact checks.
+- Added `acef-process-validator --check control-dosing` and wired `lane-closeout` to select control checks from the
+  manifest's per-lane bundles instead of a parallel hardcoded control list.
+- Added `lean-evidence` to the dosing manifest and made `checkLeanEvidence` consume its lane dose: quick-fix gets light
+  evidence, lightweight gets compact evidence, and guarded/full-BMAD keep full closeout evidence.
 - `install-acef-tools` now installs the default manifest to `.acef/control-dosing.json`; target repos must refresh ACEF
   tools before this check is available locally.
 - Capability status: see `docs/ai/capabilities/control-dosing-enforcement.json`.
