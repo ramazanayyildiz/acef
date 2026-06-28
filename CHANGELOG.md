@@ -9,6 +9,13 @@ or evidence contract. Do not use it to claim implementation status; link to the 
 
 ## Unreleased
 
+### Gate self-certification guard
+
+- Tightened typed `gate-verdict` validation so guarded/full-BMAD PASS gates must be decided by a real Process Judge
+  actor: both phase and role must be Process Judge, and the implementation/developer actor cannot certify its own work.
+- Added regression coverage for developer-decided gates and Process Judge actors mislabeled as Developer.
+- Capability status: see `docs/ai/capabilities/gate-self-certification-guard.json`.
+
 ### Control dosing validator
 
 - Added a machine-readable control dosing manifest (`method/control-dosing.json`) and schema

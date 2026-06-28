@@ -1,0 +1,38 @@
+{
+  "capabilityId": "gate-self-certification-guard",
+  "requestedIntent": "Prevent guarded and full-BMAD PASS gates from being self-certified by the implementation/developer actor, even when a gate verdict file exists.",
+  "status": "enforced",
+  "requiredLayers": [
+    "docs",
+    "validator",
+    "tests"
+  ],
+  "implementedLayers": {
+    "docs": [
+      "CHANGELOG.md#Gate self-certification guard",
+      "method/CONTROL_RATIONALE.md#Why Gate Verdicts Exist",
+      "skills/acef/references/ACEF_CONTROL_RATIONALE.md#Why Gate Verdicts Exist"
+    ],
+    "validator": [
+      "scripts/acef-process-validator#checkGateVerdict"
+    ],
+    "tests": [
+      "scripts/test-acef-process-validator"
+    ]
+  },
+  "limitations": [
+    "This validates typed gate verdicts and actor records; it cannot prove that an unrecorded nested reviewer existed.",
+    "The Process Judge actor identity is still cooperative-local and depends on accurate actor records written to disk."
+  ],
+  "evidence": [
+    {
+      "layer": "validator",
+      "ref": "scripts/acef-process-validator#checkGateVerdict"
+    },
+    {
+      "layer": "tests",
+      "ref": "scripts/test-acef-process-validator"
+    }
+  ],
+  "createdAt": "2026-06-28"
+}

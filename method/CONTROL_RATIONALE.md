@@ -128,7 +128,8 @@ They exist to prevent:
 - inconsistent closeout checks across clients.
 
 A gate verdict still does not prove semantic correctness by itself. It proves that the required gate evidence exists and
-was used by the right decision role.
+was used by the right decision role. For guarded/full-BMAD work, the deciding actor must be a real Process Judge actor;
+the implementation/developer actor cannot certify its own work.
 
 ## Why Approval Receipts Exist
 

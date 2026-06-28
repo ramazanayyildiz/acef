@@ -463,6 +463,19 @@ function actorRecordById(repoRoot, actorId) {
   return actor;
 }
 
+function actorRecordsForStory(repoRoot, story) {
+  return jsonRecords(path.join(repoRoot, "docs", "ai", "actors"))
+    .map(parseActorRecord)
+    .filter((actor) => normalizedScope(actor.story) === normalizedScope(story));
+}
+
+function isProcessJudgeActor(actor) {
+  const phase = canonicalPhase(actor.phase);
+  const role = normalizedPhase(actor.role);
+  return (phase === "processjudge" || phase === "epicprocessjudge")
+    && (role === "processjudge" || role === "epicprocessjudge" || role === "judge");
+}
+
 function evidenceRecordById(repoRoot, evidenceId) {
   const filePath = path.join(repoRoot, "docs", "ai", "evidence", `${evidenceId}.json`);
   if (!exists(filePath)) throw new Error(`Missing evidence manifest ${evidenceId}`);
@@ -1498,8 +1511,14 @@ function checkGateVerdict(repoRoot) {
     try {
       const actor = actorRecordById(repoRoot, gate.decidedBy);
       if (normalizedScope(actor.story) !== normalizedScope(activeRun.activeStory)) failures.push(`gate actor ${gate.decidedBy} story mismatch`);
-      if (canonicalPhase(actor.phase) !== "processjudge" && canonicalPhase(actor.phase) !== "epicprocessjudge") {
-        failures.push(`gate actor ${gate.decidedBy} is not a Process Judge`);
+      if (!isProcessJudgeActor(actor)) {
+        failures.push(`gate actor ${gate.decidedBy} is not a Process Judge actor`);
+      }
+      const implementationActorIds = actorRecordsForStory(repoRoot, activeRun.activeStory)
+        .filter((record) => canonicalPhase(record.phase) === "development" || normalizedPhase(record.role) === "developer")
+        .map((record) => record.actorInstanceId);
+      if (implementationActorIds.includes(gate.decidedBy)) {
+        failures.push(`gate actor ${gate.decidedBy} cannot certify its own implementation`);
       }
     } catch (error) {
       failures.push(error.message);

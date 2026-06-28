@@ -46,7 +46,8 @@ wrong-commit, and chat-only evidence. They do not stop a malicious actor who can
 
 Gate verdicts make `PASS` a file-backed decision. They prevent story close because artifacts merely exist, Process Judge
 passes without successful evidence, skipped evidence hidden in prose, and stale or unrelated commands satisfying gates.
-They prove gate evidence was used by the right decision role; they do not prove semantic correctness by themselves.
+They prove gate evidence was used by the right decision role; they do not prove semantic correctness by themselves. For
+guarded/full-BMAD work, the deciding actor must be a real Process Judge actor, not the implementation/developer actor.
 
 ## Why Approval Receipts Exist
 

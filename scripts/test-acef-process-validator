@@ -1208,6 +1208,22 @@ try {
     ],
   }, null, 2));
   expectPass("gate-verdict", ["--repo", tmp, "--check", "gate-verdict"]);
+  const processJudgeGate = JSON.parse(fs.readFileSync(path.join(tmp, "docs", "ai", "gates", "story-1-1.json"), "utf8"));
+  fs.writeFileSync(path.join(tmp, "docs", "ai", "gates", "story-1-1.json"), JSON.stringify({
+    ...processJudgeGate,
+    decidedBy: "dev-surface",
+  }, null, 2));
+  expectFail("gate-verdict", ["--repo", tmp, "--check", "gate-verdict"]);
+  fs.writeFileSync(path.join(tmp, "docs", "ai", "gates", "story-1-1.json"), JSON.stringify(processJudgeGate, null, 2));
+  const judgeActorPath = path.join(tmp, "docs", "ai", "actors", "judge-surface.json");
+  const judgeActor = JSON.parse(fs.readFileSync(judgeActorPath, "utf8"));
+  fs.writeFileSync(judgeActorPath, JSON.stringify({
+    ...judgeActor,
+    role: "Developer",
+  }, null, 2));
+  expectFail("gate-verdict", ["--repo", tmp, "--check", "gate-verdict"]);
+  fs.writeFileSync(judgeActorPath, JSON.stringify(judgeActor, null, 2));
+  expectPass("gate-verdict", ["--repo", tmp, "--check", "gate-verdict"]);
   const statefulActiveRun = JSON.parse(fs.readFileSync(path.join(tmp, "docs", "ai", "ACEF_ACTIVE_RUN.json"), "utf8"));
   statefulActiveRun.laneRationale = "CRM workspace captures notes and follow-up records";
   statefulActiveRun.riskTriggers = ["crm", "notes", "persistence"];
