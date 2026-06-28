@@ -100,6 +100,8 @@ function quickFixEvidence(overrides = {}) {
 function makeRepo(name, mutate = (record) => record) {
   const repo = path.join(tmpRoot, name);
   fs.mkdirSync(repo, { recursive: true });
+  fs.mkdirSync(path.join(repo, ".acef"), { recursive: true });
+  fs.copyFileSync(path.join(acefRoot, "method", "control-dosing.json"), path.join(repo, ".acef", "control-dosing.json"));
   for (const step of steps) write(repo, `docs/ai/evidence/${step}.txt`, `${step}\n`);
   const surfaceEntry = {
     surface: "api",

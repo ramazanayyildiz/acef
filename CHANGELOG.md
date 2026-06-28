@@ -9,6 +9,17 @@ or evidence contract. Do not use it to claim implementation status; link to the 
 
 ## Unreleased
 
+### Control dosing validator
+
+- Added a machine-readable control dosing manifest (`method/control-dosing.json`) and schema
+  (`schemas/control-dosing.schema.json`) that classifies ACEF integrity controls by lane, role, dose, enforcement level,
+  and fallback backstop.
+- Added `acef-process-validator --check control-dosing` and wired it into `lane-closeout`, so closeout first validates
+  the lane/control dose table before running the existing lane-specific artifact checks.
+- `install-acef-tools` now installs the default manifest to `.acef/control-dosing.json`; target repos must refresh ACEF
+  tools before this check is available locally.
+- Capability status: see `docs/ai/capabilities/control-dosing-enforcement.json`.
+
 ### Surface-done closeout contract
 
 - Added `scripts/acef-closeout-verify` (with `scripts/lib/acef-surface-contract.js` and `scripts/test-acef-closeout-verify`): a code-grounded, per-surface "done" verifier that derives required evidence from the project adapter's per-surface registry and enforces fail-closed rules.

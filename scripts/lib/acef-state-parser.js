@@ -6,6 +6,20 @@ const SURFACE_VALUES = new Set([
   "email", "notification", "webhook", "integration", "config", "database", "library", "internal",
 ]);
 
+const CONTROL_DOSING_LANES = ["quick-fix", "lightweight", "guarded", "full-bmad"];
+const CONTROL_DOSING_IDS = [
+  "worker-scope",
+  "cold-read-current-context",
+  "active-run-next-action",
+  "actor-records",
+  "approval-receipts",
+  "evidence-manifest",
+  "runner-proof",
+  "gate-verdict",
+  "surface-contract",
+  "test-integrity",
+];
+
 function readJson(filePath) {
   const text = fs.readFileSync(filePath, "utf8");
   try {
@@ -31,6 +45,12 @@ function requireStringArray(record, field, label, { nonEmpty = false } = {}) {
     throw new Error(`${label} ${field} must be an array of non-empty strings`);
   }
   if (nonEmpty && !record[field].length) throw new Error(`${label} ${field} must not be empty`);
+}
+
+function requireObject(record, field, label) {
+  if (!record[field] || typeof record[field] !== "object" || Array.isArray(record[field])) {
+    throw new Error(`${label} ${field} must be an object`);
+  }
 }
 
 function requireSurface(value, label) {
@@ -635,6 +655,90 @@ function parseCapabilityChange(filePath) {
   return record;
 }
 
+function parseControlDose(dose, label) {
+  if (!dose || typeof dose !== "object" || Array.isArray(dose)) throw new Error(`${label} must be an object`);
+  requireFields(dose, ["requirement", "dose", "enforcementLevel", "backstop"], label);
+  requireEnum(dose, "requirement", ["required", "required-if-triggered", "optional", "not-required"], label);
+  requireEnum(dose, "dose", ["full", "compact", "light", "none"], label);
+  requireEnum(dose, "enforcementLevel", ["mechanical", "validator", "hook", "audit", "human", "documented", "not-applicable"], label);
+  if (typeof dose.backstop !== "string" || !dose.backstop.trim()) throw new Error(`${label} backstop must be a non-empty string`);
+  if (dose.requirement === "not-required" && dose.dose !== "none") throw new Error(`${label} not-required must use dose none`);
+  if (dose.requirement !== "not-required" && dose.dose === "none") throw new Error(`${label} required/optional controls cannot use dose none`);
+}
+
+function parseControlDosing(filePath) {
+  const record = readJson(filePath);
+  requireFields(record, ["schema", "version", "controls", "laneBundles"], "control dosing");
+  if (record.schema !== "acef.control-dosing.v1") throw new Error("control dosing schema must be acef.control-dosing.v1");
+  if (typeof record.version !== "string" || !record.version.trim()) throw new Error("control dosing version must be a non-empty string");
+  if (!Array.isArray(record.controls)) throw new Error("control dosing controls must be an array");
+  requireObject(record, "laneBundles", "control dosing");
+
+  const seen = new Set();
+  const controlById = new Map();
+  for (const [index, control] of record.controls.entries()) {
+    if (!control || typeof control !== "object" || Array.isArray(control)) throw new Error(`control dosing controls[${index}] must be an object`);
+    requireFields(control, ["id", "primaryFailureMode", "role", "trustCeiling", "laneDoses"], `control dosing controls[${index}]`);
+    requireEnum(control, "id", CONTROL_DOSING_IDS, `control dosing controls[${index}]`);
+    requireEnum(control, "role", ["active-enforcement", "active-guidance", "scope-guard", "evidence-guard", "decision-guard", "runtime-floor", "audit-telemetry", "test-integrity-guard"], `control dosing ${control.id}`);
+    requireEnum(control, "trustCeiling", ["mechanical", "cooperative-local", "audit-only", "human-confirmed"], `control dosing ${control.id}`);
+    if (seen.has(control.id)) throw new Error(`control dosing duplicate control id ${control.id}`);
+    seen.add(control.id);
+    if (typeof control.primaryFailureMode !== "string" || !control.primaryFailureMode.trim()) {
+      throw new Error(`control dosing ${control.id} primaryFailureMode must be a non-empty string`);
+    }
+    requireObject(control, "laneDoses", `control dosing ${control.id}`);
+    for (const lane of CONTROL_DOSING_LANES) {
+      parseControlDose(control.laneDoses[lane], `control dosing ${control.id}.${lane}`);
+    }
+    controlById.set(control.id, control);
+  }
+
+  const missingControls = CONTROL_DOSING_IDS.filter((id) => !seen.has(id));
+  if (missingControls.length) throw new Error(`control dosing missing control(s): ${missingControls.join(", ")}`);
+
+  for (const lane of CONTROL_DOSING_LANES) {
+    requireStringArray(record.laneBundles, lane, "control dosing laneBundles");
+    for (const id of record.laneBundles[lane]) {
+      if (!CONTROL_DOSING_IDS.includes(id)) throw new Error(`control dosing laneBundles.${lane} has unknown control ${id}`);
+      if (controlById.get(id).laneDoses[lane].requirement === "not-required") {
+        throw new Error(`control dosing laneBundles.${lane} includes not-required control ${id}`);
+      }
+    }
+  }
+
+  const hardRules = [
+    ["worker-scope", CONTROL_DOSING_LANES, "required"],
+    ["evidence-manifest", ["guarded", "full-bmad"], "required"],
+    ["runner-proof", ["guarded", "full-bmad"], "required"],
+    ["gate-verdict", ["guarded", "full-bmad"], "required"],
+    ["actor-records", ["guarded", "full-bmad"], "required"],
+    ["cold-read-current-context", ["lightweight", "guarded", "full-bmad"], "required"],
+    ["active-run-next-action", ["lightweight", "guarded", "full-bmad"], "required"],
+    ["surface-contract", CONTROL_DOSING_LANES, "required-if-triggered"],
+    ["test-integrity", CONTROL_DOSING_LANES, "required-if-triggered"],
+  ];
+  for (const [controlId, lanes, requirement] of hardRules) {
+    for (const lane of lanes) {
+      const dose = controlById.get(controlId).laneDoses[lane];
+      if (dose.requirement !== requirement) {
+        throw new Error(`control dosing ${controlId}.${lane} must be ${requirement}`);
+      }
+    }
+  }
+
+  for (const lane of CONTROL_DOSING_LANES) {
+    const required = [...controlById.values()]
+      .filter((control) => control.laneDoses[lane].requirement === "required")
+      .map((control) => control.id);
+    const bundle = new Set(record.laneBundles[lane]);
+    const missing = required.filter((id) => !bundle.has(id));
+    if (missing.length) throw new Error(`control dosing laneBundles.${lane} missing required control(s): ${missing.join(", ")}`);
+  }
+
+  return record;
+}
+
 function parseSpecReadiness(filePath) {
   const record = readJson(filePath);
   requireFields(record, ["status", "ambiguity", "dimensions", "tier1", "riskFlags", "missing", "blockingQuestions", "nextArtifact", "repositoryCommit", "verdictReason"], "spec readiness");
@@ -700,6 +804,7 @@ module.exports = {
   parseWorkerResult,
   parseWorkerRollup,
   parseCapabilityChange,
+  parseControlDosing,
   parseSpecReadiness,
   parseFreshness,
   safeRelative,

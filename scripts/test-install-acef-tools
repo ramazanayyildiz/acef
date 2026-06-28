@@ -37,6 +37,8 @@ try {
   const installationHelper = path.join(tmp, ".acef", "bin", "lib", "acef-installation.js");
   const schema = path.join(tmp, ".acef", "schemas", "active-run.schema.json");
   const capabilitySchema = path.join(tmp, ".acef", "schemas", "capability-change.schema.json");
+  const controlDosingSchema = path.join(tmp, ".acef", "schemas", "control-dosing.schema.json");
+  const controlDosingManifest = path.join(tmp, ".acef", "control-dosing.json");
   const workflowSchema = path.join(tmp, ".acef", "schemas", "workflow.schema.json");
   const workflow = path.join(tmp, ".acef", "workflows", "lightweight-review.yaml");
   const runtimePackage = path.join(tmp, ".acef", "bin", "package.json");
@@ -50,6 +52,8 @@ try {
   if (!fs.existsSync(installationHelper)) throw new Error("installation support library was not installed");
   if (!fs.existsSync(schema)) throw new Error("typed-state schemas were not installed");
   if (!fs.existsSync(capabilitySchema)) throw new Error("capability-change schema was not installed");
+  if (!fs.existsSync(controlDosingSchema)) throw new Error("control-dosing schema was not installed");
+  if (!fs.existsSync(controlDosingManifest)) throw new Error("control-dosing manifest was not installed");
   if (!fs.existsSync(workflowSchema)) throw new Error("workflow schema was not installed");
   if (!fs.existsSync(workflow)) throw new Error("lightweight workflow was not installed");
   if (JSON.parse(fs.readFileSync(runtimePackage, "utf8")).type !== "commonjs") throw new Error("ACEF runtime CommonJS boundary was not installed");
@@ -60,6 +64,7 @@ try {
   if (!installation.acefVersion?.sourceCommit) throw new Error("installation manifest missing source commit");
   if (!installation.components?.tools) throw new Error("installation manifest missing tools component");
   if (!installation.components.tools.tools.includes("update-acef-installation")) throw new Error("tools component missing updater");
+  if (!installation.components.tools.controlDosing) throw new Error("tools component missing control-dosing manifest");
 
   fs.mkdirSync(path.join(tmp, "docs", "ai"), { recursive: true });
   fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_demo_DELIVERY_AUDIT.md"), [
@@ -122,6 +127,10 @@ try {
   ]);
   if (!output.includes("PASS current-context:")) {
     throw new Error(`installed validator did not use installed parser:\n${output}`);
+  }
+  const controlDosingOutput = run(validator, ["--repo", tmp, "--check", "control-dosing"]);
+  if (!controlDosingOutput.includes("PASS control-dosing:")) {
+    throw new Error(`installed validator did not validate installed control dosing:\n${controlDosingOutput}`);
   }
   const statusOutput = run(status, ["--repo", tmp, "--format", "json"]);
   const statusJson = JSON.parse(statusOutput);

@@ -1,0 +1,79 @@
+#!/usr/bin/env node
+const fs = require("node:fs");
+const os = require("node:os");
+const path = require("node:path");
+const cp = require("node:child_process");
+
+const repoRoot = path.resolve(__dirname, "..");
+const validator = path.join(repoRoot, "scripts", "acef-process-validator");
+const sourceManifest = path.join(repoRoot, "method", "control-dosing.json");
+const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "acef-control-dosing-"));
+
+function runValidator(repo = tmp) {
+  return cp.spawnSync(process.execPath, [validator, "--repo", repo, "--check", "control-dosing"], {
+    cwd: repo,
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+}
+
+function readRecord() {
+  return JSON.parse(fs.readFileSync(sourceManifest, "utf8"));
+}
+
+function writeRecord(record) {
+  fs.mkdirSync(path.join(tmp, "docs", "ai"), { recursive: true });
+  fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_CONTROL_DOSING.json"), `${JSON.stringify(record, null, 2)}\n`);
+}
+
+function expectPass(label) {
+  const proc = runValidator();
+  const output = `${proc.stdout}\n${proc.stderr}`;
+  if (proc.status !== 0 || !output.includes("PASS control-dosing:")) {
+    throw new Error(`${label}: expected pass, got:\n${output}`);
+  }
+}
+
+function expectFail(pattern, label) {
+  const proc = runValidator();
+  const output = `${proc.stdout}\n${proc.stderr}`;
+  if (proc.status === 0) {
+    throw new Error(`${label}: expected failure, got success:\n${output}`);
+  }
+  if (!pattern.test(output)) {
+    throw new Error(`${label}: expected ${pattern}, got:\n${output}`);
+  }
+}
+
+try {
+  writeRecord(readRecord());
+  expectPass("valid control dosing manifest");
+
+  const missing = readRecord();
+  missing.controls = missing.controls.filter((control) => control.id !== "runner-proof");
+  writeRecord(missing);
+  expectFail(/missing control\(s\): runner-proof/, "missing required control");
+
+  const weakScope = readRecord();
+  weakScope.controls.find((control) => control.id === "worker-scope").laneDoses["quick-fix"].requirement = "optional";
+  writeRecord(weakScope);
+  expectFail(/worker-scope\.quick-fix must be required/, "worker scope cannot be optional");
+
+  const missingBundle = readRecord();
+  missingBundle.laneBundles.guarded = missingBundle.laneBundles.guarded.filter((id) => id !== "evidence-manifest");
+  writeRecord(missingBundle);
+  expectFail(/laneBundles\.guarded missing required control\(s\): evidence-manifest/, "guarded bundle requires evidence manifest");
+
+  fs.rmSync(path.join(tmp, "docs", "ai", "ACEF_CONTROL_DOSING.json"));
+  expectFail(/Missing control dosing manifest/, "target repo without manifest fails explicit check");
+
+  const sourceCheck = runValidator(repoRoot);
+  const sourceOutput = `${sourceCheck.stdout}\n${sourceCheck.stderr}`;
+  if (sourceCheck.status !== 0 || !sourceOutput.includes("PASS control-dosing:")) {
+    throw new Error(`source repo default manifest did not validate:\n${sourceOutput}`);
+  }
+
+  console.log("acef control-dosing tests passed");
+} finally {
+  fs.rmSync(tmp, { recursive: true, force: true });
+}

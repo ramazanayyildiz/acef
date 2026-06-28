@@ -16,6 +16,7 @@ const {
   parseSpecReadiness,
   parseWorkerScope,
   safeRelative,
+  parseControlDosing,
 } = require("./lib/acef-state-parser");
 
 function usage() {
@@ -53,6 +54,7 @@ Checks:
   lane-closeout      Require the active lane's complete validator bundle before close
   lightweight-lifecycle Require the six-step lightweight lifecycle, promotion disposition, and surface evidence
   lean-evidence       Require story/epic close evidence to live in artifacts, not chat
+  control-dosing      Validate the machine-readable lane/control dosing manifest
   capability-change   Require ACEF flow/gate/capability changes to declare documented/wired/enforced/proven layers
   session-handoff     Require a structured Session Handoff block in the delivery ledger
   seeded-epic-gates   Require Epic N Process Judge rows/artifacts for epics mentioned in ledger
@@ -2353,6 +2355,7 @@ function checkLaneCloseout(repoRoot, ledgerPath, adapterPath, registryPath) {
   if (!lane) return result("lane-closeout", false, "Missing typed active run or lightweight run lane");
 
   const checks = [];
+  checks.push(checkControlDosing(repoRoot));
   if (lane === "quick-fix") {
     checks.push(checkLaneSelection(repoRoot));
     checks.push(checkLightweightLifecycle(repoRoot));
@@ -2393,6 +2396,37 @@ function checkLaneCloseout(repoRoot, ledgerPath, adapterPath, registryPath) {
   return failures.length
     ? result("lane-closeout", false, failures.join("; "))
     : result("lane-closeout", true, `${lane} closeout bundle passed`);
+}
+
+function controlDosingManifestPath(repoRoot) {
+  const candidates = [
+    path.join(repoRoot, "docs", "ai", "ACEF_CONTROL_DOSING.json"),
+    path.join(repoRoot, ".acef", "control-dosing.json"),
+    path.join(__dirname, "..", "control-dosing.json"),
+    path.join(repoRoot, "method", "control-dosing.json"),
+  ];
+  return candidates.find((candidate) => exists(candidate)) || "";
+}
+
+function displayPath(repoRoot, filePath) {
+  try {
+    return safeRelative(filePath, repoRoot);
+  } catch {
+    return filePath;
+  }
+}
+
+function checkControlDosing(repoRoot) {
+  const manifestPath = controlDosingManifestPath(repoRoot);
+  if (!manifestPath) {
+    return result("control-dosing", false, "Missing control dosing manifest: docs/ai/ACEF_CONTROL_DOSING.json or .acef/control-dosing.json");
+  }
+  try {
+    const record = parseControlDosing(manifestPath);
+    return result("control-dosing", true, `${displayPath(repoRoot, manifestPath)} defines ${record.controls.length} control dose(s)`);
+  } catch (error) {
+    return result("control-dosing", false, `${displayPath(repoRoot, manifestPath)}: ${error.message}`);
+  }
 }
 
 function capabilityChangePaths(repoRoot) {
@@ -2486,7 +2520,7 @@ function main() {
   const adapter = args.adapter || findAdapter(args.repo);
   const registry = findPatternRegistry(args.repo, adapter);
   const checks = args.check === "all"
-    ? ["clean-tree", "preflight", "claims", "adapter-freshness", "pattern-registry", "reuse-before-create", "do-not-copy", "partial-workshape", "finding-promotion", "graduation-reconciliation", "vertical-slice", "test-authenticity", "guarded-test-floor", "actor-separation", "worker-scope", "evidence-manifest", "gate-verdict", "source-reconciliation", "epic-context-pack", "current-context", "pr-review", "spec-readiness", "goal-coverage", "lane-selection", "lane-closeout", "lightweight-lifecycle", "lean-evidence", "capability-change", "session-handoff", "seeded-epic-gates", "epic-boundary", "epic-transition-approval", "replan-counter"]
+    ? ["clean-tree", "preflight", "claims", "adapter-freshness", "pattern-registry", "reuse-before-create", "do-not-copy", "partial-workshape", "finding-promotion", "graduation-reconciliation", "vertical-slice", "test-authenticity", "guarded-test-floor", "actor-separation", "worker-scope", "evidence-manifest", "gate-verdict", "source-reconciliation", "epic-context-pack", "current-context", "pr-review", "spec-readiness", "goal-coverage", "lane-selection", "lane-closeout", "lightweight-lifecycle", "lean-evidence", "control-dosing", "capability-change", "session-handoff", "seeded-epic-gates", "epic-boundary", "epic-transition-approval", "replan-counter"]
     : [args.check];
 
   const results = checks.map((check) => {
@@ -2517,6 +2551,7 @@ function main() {
     if (check === "lane-closeout") return checkLaneCloseout(args.repo, ledger, adapter, registry);
     if (check === "lightweight-lifecycle") return checkLightweightLifecycle(args.repo);
     if (check === "lean-evidence") return checkLeanEvidence(args.repo, ledger);
+    if (check === "control-dosing") return checkControlDosing(args.repo);
     if (check === "capability-change") return checkCapabilityChange(args.repo);
     if (check === "session-handoff") return checkSessionHandoff(args.repo, ledger, adapter, registry);
     if (check === "seeded-epic-gates") return checkSeededEpicGates(args.repo, ledger);

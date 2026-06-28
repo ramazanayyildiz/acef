@@ -108,6 +108,13 @@ Use this table to choose full artifact, lighter form, or human/backstop check:
 If another stronger backstop is present and cheaper for the lane, use the lighter form. If no backstop catches the
 failure mode before harm, keep the stronger control.
 
+The machine-readable version is `method/control-dosing.json` in the ACEF source repo and `.acef/control-dosing.json` in
+installed target repos. Validate it with:
+
+```bash
+acef-process-validator --check control-dosing
+```
+
 ## How To Trim Safely
 
 Trim by lane, not by deleting the safety model:

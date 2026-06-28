@@ -1,0 +1,68 @@
+{
+  "capabilityId": "control-dosing-enforcement",
+  "requestedIntent": "Turn ACEF's control-pricing rationale into a machine-readable lane/control dosing manifest with validator and installer support, so agents cannot silently rewrite which controls are required for quick-fix, lightweight, guarded, and full-BMAD lanes.",
+  "status": "enforced",
+  "requiredLayers": [
+    "docs",
+    "schema",
+    "validator",
+    "tests",
+    "installer"
+  ],
+  "implementedLayers": {
+    "docs": [
+      "CHANGELOG.md#Control dosing validator",
+      "README.md#What's in this repo",
+      "method/CONTROL_RATIONALE.md#Control Dosing Table",
+      "skills/acef/references/ACEF_CONTROL_RATIONALE.md#Control Dosing Table",
+      "method/control-dosing.json"
+    ],
+    "schema": [
+      "schemas/control-dosing.schema.json"
+    ],
+    "validator": [
+      "scripts/lib/acef-state-parser.js#parseControlDosing",
+      "scripts/acef-process-validator#checkControlDosing",
+      "scripts/acef-process-validator#checkLaneCloseout"
+    ],
+    "tests": [
+      "scripts/test-acef-control-dosing",
+      "scripts/test-install-acef-tools"
+    ],
+    "installer": [
+      "scripts/install-acef-tools"
+    ]
+  },
+  "limitations": [
+    "This enforces the control dosing manifest and lane-closeout linkage; it does not replace the existing lane validators that verify actual run artifacts.",
+    "Evidence manifests, gate verdicts, actor records, and surface evidence remain cooperative-local controls and do not provide cryptographic protection against a self-consistent forgery.",
+    "Target repos must refresh ACEF tools before .acef/control-dosing.json and the control-dosing validator are installed locally."
+  ],
+  "evidence": [
+    {
+      "layer": "schema",
+      "ref": "schemas/control-dosing.schema.json"
+    },
+    {
+      "layer": "validator",
+      "ref": "scripts/acef-process-validator#checkControlDosing"
+    },
+    {
+      "layer": "validator",
+      "ref": "scripts/lib/acef-state-parser.js#parseControlDosing"
+    },
+    {
+      "layer": "tests",
+      "ref": "scripts/test-acef-control-dosing"
+    },
+    {
+      "layer": "tests",
+      "ref": "scripts/test-install-acef-tools"
+    },
+    {
+      "layer": "installer",
+      "ref": "scripts/install-acef-tools"
+    }
+  ],
+  "createdAt": "2026-06-28"
+}

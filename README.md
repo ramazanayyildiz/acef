@@ -63,6 +63,7 @@ method/      The delivery engine — how the work actually runs
   TYPED_STATE.md       JSON sidecars for machine-readable ACEF state
   TRUST_MODEL.md       what ACEF guards do and do not guarantee
   CONTROL_RATIONALE.md why the sidecars, guards, evidence, approvals, and gates exist
+  control-dosing.json  machine-readable lane/control dose manifest
   VALIDATION_PLAN.md   empirical thresholds before calling ACEF proven
   STABILIZATION_ROADMAP.md  phased plan for context diet, typed state, parser, evidence, and measurement
   docs/research/tooling-admission.md measured admission notes for future tools/backends
@@ -109,7 +110,8 @@ files the agent follows. No build, no npm, no services.
    `acef-codex-guard`, `acef-query`, `acef-context-experiment`, `acef-context-experiment-report`,
    `acef-context-actor-prompt`, `acef-context-actor-prompt-batch`, `acef-context-record-actor-report`, and
    `update-acef-installation`.
-   It also installs shared parser support under `.acef/bin/lib/` and typed-state schemas under `.acef/schemas/`.
+   It also installs shared parser support under `.acef/bin/lib/`, typed-state schemas under `.acef/schemas/`, and the
+   default control-dosing manifest under `.acef/control-dosing.json`.
    Every local install writes `docs/ai/ACEF_INSTALLATION.json` with the source checkout path, commit, branch,
    dirty/clean source state, installed components, and the update command.
    Use `--tool codex|claude|opencode` to target one tool, or `--all-core` to copy every skill in this repo.
@@ -377,6 +379,7 @@ Quick verify:
 
 ```bash
 node scripts/test-acef-process-validator
+node scripts/test-acef-control-dosing
 node .acef/bin/acef-process-validator --repo . --check clean-tree
 node scripts/smoke-acef-hook-active-ledger
 node scripts/smoke-acef-opencode-plugin

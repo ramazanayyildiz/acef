@@ -1,0 +1,108 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://acef.local/schemas/control-dosing.schema.json",
+  "title": "ACEF Control Dosing",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "version", "controls", "laneBundles"],
+  "properties": {
+    "schema": { "type": "string", "const": "acef.control-dosing.v1" },
+    "version": { "type": "string", "minLength": 1 },
+    "controls": {
+      "type": "array",
+      "minItems": 10,
+      "items": { "$ref": "#/$defs/control" }
+    },
+    "laneBundles": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["quick-fix", "lightweight", "guarded", "full-bmad"],
+      "properties": {
+        "quick-fix": { "$ref": "#/$defs/controlIds" },
+        "lightweight": { "$ref": "#/$defs/controlIds" },
+        "guarded": { "$ref": "#/$defs/controlIds" },
+        "full-bmad": { "$ref": "#/$defs/controlIds" }
+      }
+    },
+    "notes": { "type": "string" }
+  },
+  "$defs": {
+    "controlId": {
+      "type": "string",
+      "enum": [
+        "worker-scope",
+        "cold-read-current-context",
+        "active-run-next-action",
+        "actor-records",
+        "approval-receipts",
+        "evidence-manifest",
+        "runner-proof",
+        "gate-verdict",
+        "surface-contract",
+        "test-integrity"
+      ]
+    },
+    "controlIds": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/controlId" }
+    },
+    "control": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "primaryFailureMode", "role", "trustCeiling", "laneDoses"],
+      "properties": {
+        "id": { "$ref": "#/$defs/controlId" },
+        "primaryFailureMode": { "type": "string", "minLength": 1 },
+        "role": {
+          "type": "string",
+          "enum": [
+            "active-enforcement",
+            "active-guidance",
+            "scope-guard",
+            "evidence-guard",
+            "decision-guard",
+            "runtime-floor",
+            "audit-telemetry",
+            "test-integrity-guard"
+          ]
+        },
+        "trustCeiling": {
+          "type": "string",
+          "enum": ["mechanical", "cooperative-local", "audit-only", "human-confirmed"]
+        },
+        "laneDoses": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["quick-fix", "lightweight", "guarded", "full-bmad"],
+          "properties": {
+            "quick-fix": { "$ref": "#/$defs/dose" },
+            "lightweight": { "$ref": "#/$defs/dose" },
+            "guarded": { "$ref": "#/$defs/dose" },
+            "full-bmad": { "$ref": "#/$defs/dose" }
+          }
+        },
+        "notes": { "type": "string" }
+      }
+    },
+    "dose": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["requirement", "dose", "enforcementLevel", "backstop"],
+      "properties": {
+        "requirement": {
+          "type": "string",
+          "enum": ["required", "required-if-triggered", "optional", "not-required"]
+        },
+        "dose": {
+          "type": "string",
+          "enum": ["full", "compact", "light", "none"]
+        },
+        "enforcementLevel": {
+          "type": "string",
+          "enum": ["mechanical", "validator", "hook", "audit", "human", "documented", "not-applicable"]
+        },
+        "backstop": { "type": "string", "minLength": 1 }
+      }
+    }
+  }
+}

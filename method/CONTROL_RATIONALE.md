@@ -227,6 +227,15 @@ The table is intentionally not a universal "always require everything" rule. It 
 backstop is present and cheaper for the lane, use the lighter form; if no backstop catches the failure mode before harm,
 keep the stronger control.
 
+The machine-readable version lives in `method/control-dosing.json` and is validated by:
+
+```bash
+node scripts/acef-process-validator --repo . --check control-dosing
+```
+
+Target repos installed with current ACEF tools receive the same manifest at `.acef/control-dosing.json`. The
+`lane-closeout` check validates this manifest before running the lane's closeout bundle.
+
 ## How To Trim Without Breaking The Safety Model
 
 Trim ceremony by lane, not by deleting the safety model:

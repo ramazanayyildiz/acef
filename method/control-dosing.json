@@ -1,0 +1,349 @@
+{
+  "schema": "acef.control-dosing.v1",
+  "version": "2026-06-28",
+  "controls": [
+    {
+      "id": "worker-scope",
+      "primaryFailureMode": "Scope escape before or during writes.",
+      "role": "active-enforcement",
+      "trustCeiling": "mechanical",
+      "laneDoses": {
+        "quick-fix": {
+          "requirement": "required",
+          "dose": "compact",
+          "enforcementLevel": "hook",
+          "backstop": "Human diff review is weaker because it happens after the write."
+        },
+        "lightweight": {
+          "requirement": "required",
+          "dose": "compact",
+          "enforcementLevel": "hook",
+          "backstop": "Human diff review is weaker because it happens after the write."
+        },
+        "guarded": {
+          "requirement": "required",
+          "dose": "full",
+          "enforcementLevel": "hook",
+          "backstop": "No cheaper backstop catches guarded scope escape before the write."
+        },
+        "full-bmad": {
+          "requirement": "required",
+          "dose": "full",
+          "enforcementLevel": "hook",
+          "backstop": "No cheaper backstop catches BMAD scope escape before the write."
+        }
+      }
+    },
+    {
+      "id": "cold-read-current-context",
+      "primaryFailureMode": "Chat-memory drift, stale story, wrong phase, or wrong active ledger.",
+      "role": "active-guidance",
+      "trustCeiling": "cooperative-local",
+      "laneDoses": {
+        "quick-fix": {
+          "requirement": "required-if-triggered",
+          "dose": "light",
+          "enforcementLevel": "validator",
+          "backstop": "A tight single-context quick fix can use explicit user scope plus focused repro evidence."
+        },
+        "lightweight": {
+          "requirement": "required",
+          "dose": "compact",
+          "enforcementLevel": "validator",
+          "backstop": "Manual conductor ledger checks are slower and easier to skip."
+        },
+        "guarded": {
+          "requirement": "required",
+          "dose": "full",
+          "enforcementLevel": "validator",
+          "backstop": "Manual checks are not enough for guarded multi-actor dispatch."
+        },
+        "full-bmad": {
+          "requirement": "required",
+          "dose": "full",
+          "enforcementLevel": "validator",
+          "backstop": "Manual checks are not enough for full-BMAD multi-phase dispatch."
+        }
+      }
+    },
+    {
+      "id": "active-run-next-action",
+      "primaryFailureMode": "Wrong next action, phase jump, or repeated full-ledger reread.",
+      "role": "active-guidance",
+      "trustCeiling": "cooperative-local",
+      "laneDoses": {
+        "quick-fix": {
+          "requirement": "optional",
+          "dose": "light",
+          "enforcementLevel": "documented",
+          "backstop": "Explicit quick-fix envelope and focused evidence can be enough for a tight single-context fix."
+        },
+        "lightweight": {
+          "requirement": "required",
+          "dose": "compact",
+          "enforcementLevel": "validator",
+          "backstop": "Manual next-step checks are slower and less reproducible."
+        },
+        "guarded": {
+          "requirement": "required",
+          "dose": "full",
+          "enforcementLevel": "validator",
+          "backstop": "Manual next-step checks are not enough for guarded work."
+        },
+        "full-bmad": {
+          "requirement": "required",
+          "dose": "full",
+          "enforcementLevel": "validator",
+          "backstop": "Manual next-step checks are not enough for full-BMAD work."
+        }
+      }
+    },
+    {
+      "id": "actor-records",
+      "primaryFailureMode": "Self-review, role collapse, or unverifiable separation.",
+      "role": "audit-telemetry",
+      "trustCeiling": "audit-only",
+      "laneDoses": {
+        "quick-fix": {
+          "requirement": "required-if-triggered",
+          "dose": "light",
+          "enforcementLevel": "audit",
+          "backstop": "Real separate-worker topology plus reviewer report, with weaker attribution."
+        },
+        "lightweight": {
+          "requirement": "required-if-triggered",
+          "dose": "compact",
+          "enforcementLevel": "audit",
+          "backstop": "Real separate-worker topology plus reviewer report, with weaker attribution."
+        },
+        "guarded": {
+          "requirement": "required",
+          "dose": "full",
+          "enforcementLevel": "validator",
+          "backstop": "Reviewer/conductor reports alone do not make separation auditable."
+        },
+        "full-bmad": {
+          "requirement": "required",
+          "dose": "full",
+          "enforcementLevel": "validator",
+          "backstop": "Reviewer/conductor reports alone do not make separation auditable."
+        }
+      }
+    },
+    {
+      "id": "approval-receipts",
+      "primaryFailureMode": "Ambiguous continuation text treated as new scope approval.",
+      "role": "scope-guard",
+      "trustCeiling": "human-confirmed",
+      "laneDoses": {
+        "quick-fix": {
+          "requirement": "optional",
+          "dose": "light",
+          "enforcementLevel": "human",
+          "backstop": "Fresh explicit user confirmation before widening the quick-fix envelope."
+        },
+        "lightweight": {
+          "requirement": "required-if-triggered",
+          "dose": "compact",
+          "enforcementLevel": "human",
+          "backstop": "Fresh explicit user confirmation before scope expansion."
+        },
+        "guarded": {
+          "requirement": "required-if-triggered",
+          "dose": "full",
+          "enforcementLevel": "validator",
+          "backstop": "Fresh explicit user confirmation before guarded start or expansion."
+        },
+        "full-bmad": {
+          "requirement": "required-if-triggered",
+          "dose": "full",
+          "enforcementLevel": "validator",
+          "backstop": "Fresh explicit user confirmation before epic transition or expansion."
+        }
+      }
+    },
+    {
+      "id": "evidence-manifest",
+      "primaryFailureMode": "Stale output, wrong command, wrong commit, or chat-only evidence.",
+      "role": "evidence-guard",
+      "trustCeiling": "cooperative-local",
+      "laneDoses": {
+        "quick-fix": {
+          "requirement": "optional",
+          "dose": "light",
+          "enforcementLevel": "audit",
+          "backstop": "Skeptical disk re-run of focused repro and verification commands."
+        },
+        "lightweight": {
+          "requirement": "optional",
+          "dose": "compact",
+          "enforcementLevel": "audit",
+          "backstop": "Skeptical disk re-run plus lightweight surface evidence."
+        },
+        "guarded": {
+          "requirement": "required",
+          "dose": "full",
+          "enforcementLevel": "validator",
+          "backstop": "Manual re-run can audit but should not replace guarded evidence manifests."
+        },
+        "full-bmad": {
+          "requirement": "required",
+          "dose": "full",
+          "enforcementLevel": "validator",
+          "backstop": "Manual re-run can audit but should not replace full-BMAD evidence manifests."
+        }
+      }
+    },
+    {
+      "id": "runner-proof",
+      "primaryFailureMode": "Evidence record edited after command or detached from raw output.",
+      "role": "evidence-guard",
+      "trustCeiling": "cooperative-local",
+      "laneDoses": {
+        "quick-fix": {
+          "requirement": "optional",
+          "dose": "light",
+          "enforcementLevel": "audit",
+          "backstop": "Skeptical re-run and raw log inspection."
+        },
+        "lightweight": {
+          "requirement": "required-if-triggered",
+          "dose": "compact",
+          "enforcementLevel": "validator",
+          "backstop": "Skeptical re-run and raw log inspection."
+        },
+        "guarded": {
+          "requirement": "required",
+          "dose": "full",
+          "enforcementLevel": "validator",
+          "backstop": "Raw log inspection can audit but should not replace guarded runner proof."
+        },
+        "full-bmad": {
+          "requirement": "required",
+          "dose": "full",
+          "enforcementLevel": "validator",
+          "backstop": "Raw log inspection can audit but should not replace full-BMAD runner proof."
+        }
+      }
+    },
+    {
+      "id": "gate-verdict",
+      "primaryFailureMode": "PASS without required evidence or with the wrong decision actor.",
+      "role": "decision-guard",
+      "trustCeiling": "cooperative-local",
+      "laneDoses": {
+        "quick-fix": {
+          "requirement": "optional",
+          "dose": "light",
+          "enforcementLevel": "documented",
+          "backstop": "Manual closeout checklist plus independent review."
+        },
+        "lightweight": {
+          "requirement": "optional",
+          "dose": "compact",
+          "enforcementLevel": "documented",
+          "backstop": "Manual closeout checklist plus independent review."
+        },
+        "guarded": {
+          "requirement": "required",
+          "dose": "full",
+          "enforcementLevel": "validator",
+          "backstop": "Manual closeout is weaker for guarded PASS decisions."
+        },
+        "full-bmad": {
+          "requirement": "required",
+          "dose": "full",
+          "enforcementLevel": "validator",
+          "backstop": "Manual closeout is weaker for full-BMAD PASS decisions."
+        }
+      }
+    },
+    {
+      "id": "surface-contract",
+      "primaryFailureMode": "Fake runtime proof, in-memory persistence, or unreachable UI.",
+      "role": "runtime-floor",
+      "trustCeiling": "cooperative-local",
+      "laneDoses": {
+        "quick-fix": {
+          "requirement": "required-if-triggered",
+          "dose": "compact",
+          "enforcementLevel": "validator",
+          "backstop": "Manual browser/runtime check with durable persistence proof."
+        },
+        "lightweight": {
+          "requirement": "required-if-triggered",
+          "dose": "compact",
+          "enforcementLevel": "validator",
+          "backstop": "Manual browser/runtime check with durable persistence proof."
+        },
+        "guarded": {
+          "requirement": "required-if-triggered",
+          "dose": "full",
+          "enforcementLevel": "validator",
+          "backstop": "Manual browser/runtime check with durable persistence proof."
+        },
+        "full-bmad": {
+          "requirement": "required-if-triggered",
+          "dose": "full",
+          "enforcementLevel": "validator",
+          "backstop": "Manual browser/runtime check with durable persistence proof."
+        }
+      }
+    },
+    {
+      "id": "test-integrity",
+      "primaryFailureMode": "Green-by-weakening-tests when a worker edits tests.",
+      "role": "test-integrity-guard",
+      "trustCeiling": "cooperative-local",
+      "laneDoses": {
+        "quick-fix": {
+          "requirement": "required-if-triggered",
+          "dose": "compact",
+          "enforcementLevel": "validator",
+          "backstop": "Reviewer diff of assertions, skips, matchers, and implementation references."
+        },
+        "lightweight": {
+          "requirement": "required-if-triggered",
+          "dose": "compact",
+          "enforcementLevel": "validator",
+          "backstop": "Reviewer diff of assertions, skips, matchers, and implementation references."
+        },
+        "guarded": {
+          "requirement": "required-if-triggered",
+          "dose": "full",
+          "enforcementLevel": "validator",
+          "backstop": "Reviewer diff is useful but should not replace guarded test-integrity evidence."
+        },
+        "full-bmad": {
+          "requirement": "required-if-triggered",
+          "dose": "full",
+          "enforcementLevel": "validator",
+          "backstop": "Reviewer diff is useful but should not replace full-BMAD test-integrity evidence."
+        }
+      }
+    }
+  ],
+  "laneBundles": {
+    "quick-fix": ["worker-scope"],
+    "lightweight": ["worker-scope", "cold-read-current-context", "active-run-next-action"],
+    "guarded": [
+      "worker-scope",
+      "cold-read-current-context",
+      "active-run-next-action",
+      "actor-records",
+      "evidence-manifest",
+      "runner-proof",
+      "gate-verdict"
+    ],
+    "full-bmad": [
+      "worker-scope",
+      "cold-read-current-context",
+      "active-run-next-action",
+      "actor-records",
+      "evidence-manifest",
+      "runner-proof",
+      "gate-verdict"
+    ]
+  },
+  "notes": "This manifest defines control dose by lane. It does not replace the lane validators that verify actual run artifacts."
+}
