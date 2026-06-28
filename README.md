@@ -62,6 +62,7 @@ method/      The delivery engine — how the work actually runs
   ACEF_COCKPIT.md      product direction for cockpit + context compiler + tool proxy
   TYPED_STATE.md       JSON sidecars for machine-readable ACEF state
   TRUST_MODEL.md       what ACEF guards do and do not guarantee
+  CONTROL_RATIONALE.md why the sidecars, guards, evidence, approvals, and gates exist
   VALIDATION_PLAN.md   empirical thresholds before calling ACEF proven
   STABILIZATION_ROADMAP.md  phased plan for context diet, typed state, parser, evidence, and measurement
   docs/research/tooling-admission.md measured admission notes for future tools/backends
