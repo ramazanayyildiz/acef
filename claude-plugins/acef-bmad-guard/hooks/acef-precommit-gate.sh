@@ -1,9 +1,12 @@
 #!/usr/bin/env sh
 # ACEF process gate — pre-commit hook
 #
-# Checks that the active ACEF run satisfies the lean-evidence requirement before
-# each commit.  Silently passes when no ACEF delivery run is in progress
-# (ACEF_ACTIVE_RUN.json absent), so the hook is a no-op in non-ACEF repos.
+# Runs the lane-aware pre-commit bundle (precommit-gate) before each commit so the
+# certification path and the commit path cannot diverge: a guarded/full-BMAD commit must
+# clear gate-decider (independent Process-Judge-decided PASS gate) in addition to
+# lean-evidence; full surface/persistence gate-verdict remains a closeout/CI gate.
+# Quick-fix/lightweight only needs lean-evidence. Silently passes when no ACEF delivery
+# run is in progress (ACEF_ACTIVE_RUN.json absent), so it is a no-op in non-ACEF repos.
 #
 # Installed via: scripts/install-acef-bmad-guard --repo <path>
 # Source: claude-plugins/acef-bmad-guard/hooks/acef-precommit-gate.sh
@@ -22,4 +25,4 @@ VALIDATOR="$BIN/acef-process-validator"
   exit 0
 }
 
-"$VALIDATOR" --check lean-evidence --repo "$REPO_ROOT"
+"$VALIDATOR" --check precommit-gate --repo "$REPO_ROOT"

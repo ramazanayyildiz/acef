@@ -14,6 +14,22 @@ or evidence contract. Do not use it to claim implementation status; link to the 
 - Tightened typed `gate-verdict` validation so guarded/full-BMAD PASS gates must be decided by a real Process Judge
   actor: both phase and role must be Process Judge, and the implementation/developer actor cannot certify its own work.
 - Added regression coverage for developer-decided gates and Process Judge actors mislabeled as Developer.
+- **Wired the guard into the commit path.** The hardened self-certification guard only helps if it runs; previously the
+  pre-commit hook ran only `lean-evidence`, so a conductor could mint a developer-self-decided PASS gate and commit
+  without ever invoking closeout (the STU360-001 hole — certification path and commit path had diverged). Added a
+  lane-aware `precommit-gate` meta-check that the pre-commit hook now calls: guarded/full-BMAD commits must clear
+  `gate-decider` **and** `lean-evidence`; quick-fix/lightweight only `lean-evidence`.
+- Added `gate-decider`, a narrow tree-independent check that enforces *only* the decider rule — a guarded/full-BMAD PASS
+  gate must be decided by a genuine, distinct Process Judge, never the developer. `precommit-gate` uses it instead of full
+  `gate-verdict` on purpose: `gate-verdict`'s surface-inference and durable-persistence requirements are tree-sensitive
+  (they ingest the intentionally-uncommitted ACEF run-control churn) and read-only-hostile (they demand a persistence
+  write for a read-only page), so running them at commit time would false-fail every isolated guarded commit and block
+  legitimate read-only slices. Full `gate-verdict` remains the closeout/CI check (clean tree, DB available). Regression
+  coverage: good guarded gate passes; a developer-decided gate blocks the commit; a lightweight lane does not require it.
+- Known follow-up (logged via STU360-001 dogfood): full `gate-verdict` over-classifies read-only `ui` surfaces — it infers
+  surfaces from path lexity and the whole dirty working tree and demands persistence from read-only code paths, instead of
+  honoring an explicit read-only/`ui` surface classification and the scope's own changed paths. Closeout/CI surface +
+  persistence enforcement should defer to the declared surface; tracked separately.
 - Capability status: see `docs/ai/capabilities/gate-self-certification-guard.json`.
 
 ### Control dosing validator

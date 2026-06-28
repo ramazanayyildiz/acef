@@ -1208,12 +1208,14 @@ try {
     ],
   }, null, 2));
   expectPass("gate-verdict", ["--repo", tmp, "--check", "gate-verdict"]);
+  expectPass("gate-decider", ["--repo", tmp, "--check", "gate-decider"]);
   const processJudgeGate = JSON.parse(fs.readFileSync(path.join(tmp, "docs", "ai", "gates", "story-1-1.json"), "utf8"));
   fs.writeFileSync(path.join(tmp, "docs", "ai", "gates", "story-1-1.json"), JSON.stringify({
     ...processJudgeGate,
     decidedBy: "dev-surface",
   }, null, 2));
   expectFail("gate-verdict", ["--repo", tmp, "--check", "gate-verdict"]);
+  expectFail("gate-decider", ["--repo", tmp, "--check", "gate-decider"]);
   fs.writeFileSync(path.join(tmp, "docs", "ai", "gates", "story-1-1.json"), JSON.stringify(processJudgeGate, null, 2));
   const judgeActorPath = path.join(tmp, "docs", "ai", "actors", "judge-surface.json");
   const judgeActor = JSON.parse(fs.readFileSync(judgeActorPath, "utf8"));
@@ -1222,13 +1224,17 @@ try {
     role: "Developer",
   }, null, 2));
   expectFail("gate-verdict", ["--repo", tmp, "--check", "gate-verdict"]);
+  expectFail("gate-decider", ["--repo", tmp, "--check", "gate-decider"]);
   fs.writeFileSync(judgeActorPath, JSON.stringify(judgeActor, null, 2));
   expectPass("gate-verdict", ["--repo", tmp, "--check", "gate-verdict"]);
+  expectPass("gate-decider", ["--repo", tmp, "--check", "gate-decider"]);
   const statefulActiveRun = JSON.parse(fs.readFileSync(path.join(tmp, "docs", "ai", "ACEF_ACTIVE_RUN.json"), "utf8"));
   statefulActiveRun.laneRationale = "CRM workspace captures notes and follow-up records";
   statefulActiveRun.riskTriggers = ["crm", "notes", "persistence"];
   fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_ACTIVE_RUN.json"), JSON.stringify(statefulActiveRun, null, 2));
   expectFail("gate-verdict", ["--repo", tmp, "--check", "gate-verdict"]);
+  expectPass("gate-decider", ["--repo", tmp, "--check", "gate-decider"]);
+  expectPass("precommit-gate", ["--repo", tmp, "--check", "precommit-gate"]);
   const originalUiArtifact = fs.readFileSync(surfaceArtifact, "utf8");
   const originalUiEvidence = JSON.parse(fs.readFileSync(path.join(tmp, "docs", "ai", "evidence", "evidence-ui.json"), "utf8"));
   fs.writeFileSync(surfaceArtifact, runnerArtifact(uiCommand, 0, [
@@ -1246,6 +1252,21 @@ try {
   durableUiEvidence.runnerProof = evidenceRunnerProof(durableUiEvidence);
   fs.writeFileSync(path.join(tmp, "docs", "ai", "evidence", "evidence-ui.json"), JSON.stringify(durableUiEvidence, null, 2));
   expectPass("gate-verdict", ["--repo", tmp, "--check", "gate-verdict"]);
+
+  // precommit-gate (lane-aware bundle): the certification path and the commit path must not
+  // diverge on actor certification. With a good guarded gate in place, the bundle passes;
+  // flipping the gate to a developer-self-decided one must BLOCK the commit (the STU360-001
+  // hole); switching the lane to lightweight must NOT require gate-decider at all.
+  const precommitGate = JSON.parse(fs.readFileSync(path.join(tmp, "docs", "ai", "gates", "story-1-1.json"), "utf8"));
+  const precommitRun = JSON.parse(fs.readFileSync(path.join(tmp, "docs", "ai", "ACEF_ACTIVE_RUN.json"), "utf8"));
+  expectPass("precommit-gate", ["--repo", tmp, "--check", "precommit-gate"]);
+  fs.writeFileSync(path.join(tmp, "docs", "ai", "gates", "story-1-1.json"), JSON.stringify({ ...precommitGate, decidedBy: "dev-surface" }, null, 2));
+  expectFail("precommit-gate", ["--repo", tmp, "--check", "precommit-gate"]);
+  fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_ACTIVE_RUN.json"), JSON.stringify({ ...precommitRun, lane: "lightweight" }, null, 2));
+  expectPass("precommit-gate", ["--repo", tmp, "--check", "precommit-gate"]);
+  fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_ACTIVE_RUN.json"), JSON.stringify(precommitRun, null, 2));
+  fs.writeFileSync(path.join(tmp, "docs", "ai", "gates", "story-1-1.json"), JSON.stringify(precommitGate, null, 2));
+
   fs.writeFileSync(surfaceArtifact, originalUiArtifact);
   fs.writeFileSync(path.join(tmp, "docs", "ai", "evidence", "evidence-ui.json"), JSON.stringify(originalUiEvidence, null, 2));
   statefulActiveRun.riskTriggers = [];

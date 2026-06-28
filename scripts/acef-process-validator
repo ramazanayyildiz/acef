@@ -44,6 +44,7 @@ Checks:
   worker-scope       Require active worker identity and write scope to match the typed active run
   evidence-manifest  Validate typed evidence provenance, hashes, actor binding, and source freshness
   gate-verdict       Require the active scope to have a typed PASS verdict backed by successful surface evidence
+  gate-decider       Require guarded/full-BMAD PASS gates to be decided by an independent Process Judge
   source-reconciliation For full BMAD, require every planning source to record use/conflict/resolution
   epic-context-pack  Require an epic-level context pack before story workers consume the epic
   current-context    Require a role-scoped, ledger-reconciled hot context before worker dispatch
@@ -1482,6 +1483,62 @@ function checkEvidenceManifests(repoRoot) {
     : result("evidence-manifest", true, `${records.length} typed evidence manifest(s) verified for ${activeRun.activeStory}`);
 }
 
+function latestPassGateForActiveRun(repoRoot, activeRun) {
+  const matching = [];
+  const failures = [];
+  for (const filePath of jsonRecords(path.join(repoRoot, "docs", "ai", "gates"))) {
+    try {
+      const gate = parseGateVerdict(filePath);
+      if (normalizedScope(gate.scope) === normalizedScope(activeRun.activeStory)) matching.push(gate);
+    } catch (error) {
+      failures.push(`${path.relative(repoRoot, filePath)}: ${error.message}`);
+    }
+  }
+  const gate = matching
+    .filter((record) => record.verdict === "PASS")
+    .sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")))[0];
+  if (!gate) failures.push(`No typed PASS gate verdict for ${activeRun.activeStory}`);
+  return { gate, failures };
+}
+
+function gateDeciderIntegrityFailures(repoRoot, activeRun, gate) {
+  const failures = [];
+  try {
+    const actor = actorRecordById(repoRoot, gate.decidedBy);
+    if (normalizedScope(actor.story) !== normalizedScope(activeRun.activeStory)) {
+      failures.push(`gate actor ${gate.decidedBy} story mismatch`);
+    }
+    if (!isProcessJudgeActor(actor)) failures.push(`gate actor ${gate.decidedBy} is not a Process Judge actor`);
+    const implementationActorIds = actorRecordsForStory(repoRoot, activeRun.activeStory)
+      .filter((record) => canonicalPhase(record.phase) === "development" || normalizedPhase(record.role) === "developer")
+      .map((record) => record.actorInstanceId);
+    if (implementationActorIds.includes(gate.decidedBy)) {
+      failures.push(`gate actor ${gate.decidedBy} cannot certify its own implementation`);
+    }
+  } catch (error) {
+    failures.push(error.message);
+  }
+  return failures;
+}
+
+// Narrow, tree-independent decider check for the commit path (precommit-gate). It enforces
+// only the self-certification guard: a guarded/full-BMAD PASS gate must be decided by a
+// genuine, distinct Process Judge actor — never the developer who implemented it. It does
+// NOT run the surface-inference or durable-persistence requirements of full gate-verdict;
+// those are tree-sensitive and read-only-hostile, so they belong at clean-tree closeout/CI.
+function checkGateDecider(repoRoot) {
+  const activeRun = typedActiveRun(repoRoot);
+  if (!activeRun) return result("gate-decider", true, "No typed active run; legacy gate checks remain active");
+  if (!["full-bmad", "guarded"].includes(activeRun.lane)) {
+    return result("gate-decider", true, "Typed lane is not full BMAD/guarded");
+  }
+  const { gate, failures } = latestPassGateForActiveRun(repoRoot, activeRun);
+  if (gate) failures.push(...gateDeciderIntegrityFailures(repoRoot, activeRun, gate));
+  return failures.length
+    ? result("gate-decider", false, failures.join("; "))
+    : result("gate-decider", true, `${gate.gateId} PASS is decided by an independent Process Judge`);
+}
+
 function checkGateVerdict(repoRoot) {
   const activeRun = typedActiveRun(repoRoot);
   if (!activeRun) return result("gate-verdict", true, "No typed active run; legacy gate checks remain active");
@@ -1494,35 +1551,9 @@ function checkGateVerdict(repoRoot) {
     }
   }
   const requiresDurableStateEvidence = stateChangingRisk(repoRoot, activeRun, activeScope);
-  const files = jsonRecords(path.join(repoRoot, "docs", "ai", "gates"));
-  const matching = [];
-  const failures = [];
-  for (const filePath of files) {
-    try {
-      const gate = parseGateVerdict(filePath);
-      if (normalizedScope(gate.scope) === normalizedScope(activeRun.activeStory)) matching.push(gate);
-    } catch (error) {
-      failures.push(`${path.relative(repoRoot, filePath)}: ${error.message}`);
-    }
-  }
-  const gate = matching.filter((record) => record.verdict === "PASS").sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")))[0];
-  if (!gate) failures.push(`No typed PASS gate verdict for ${activeRun.activeStory}`);
+  const { gate, failures } = latestPassGateForActiveRun(repoRoot, activeRun);
   if (gate) {
-    try {
-      const actor = actorRecordById(repoRoot, gate.decidedBy);
-      if (normalizedScope(actor.story) !== normalizedScope(activeRun.activeStory)) failures.push(`gate actor ${gate.decidedBy} story mismatch`);
-      if (!isProcessJudgeActor(actor)) {
-        failures.push(`gate actor ${gate.decidedBy} is not a Process Judge actor`);
-      }
-      const implementationActorIds = actorRecordsForStory(repoRoot, activeRun.activeStory)
-        .filter((record) => canonicalPhase(record.phase) === "development" || normalizedPhase(record.role) === "developer")
-        .map((record) => record.actorInstanceId);
-      if (implementationActorIds.includes(gate.decidedBy)) {
-        failures.push(`gate actor ${gate.decidedBy} cannot certify its own implementation`);
-      }
-    } catch (error) {
-      failures.push(error.message);
-    }
+    failures.push(...gateDeciderIntegrityFailures(repoRoot, activeRun, gate));
     const commitError = recordCommitError(repoRoot, gate.repositoryCommit, `gate ${gate.gateId}`);
     if (commitError) failures.push(commitError);
     for (const evidenceId of gate.evidenceIds || []) {
@@ -2443,6 +2474,7 @@ function controlCheckForId(controlId, repoRoot, ledgerPath) {
     "evidence-manifest": () => checkEvidenceManifests(repoRoot),
     "runner-proof": () => checkEvidenceManifests(repoRoot),
     "gate-verdict": () => checkGateVerdict(repoRoot),
+    "gate-decider": () => checkGateDecider(repoRoot),
     "lean-evidence": () => checkLeanEvidence(repoRoot, ledgerPath),
   };
   return checks[controlId] || null;
@@ -2510,6 +2542,35 @@ function checkControlDosing(repoRoot) {
   } catch (error) {
     return result("control-dosing", false, error.message);
   }
+}
+
+// Lane-aware pre-commit bundle. The pre-commit hook calls this so the certification
+// path and the commit path cannot diverge: a guarded/full-BMAD commit must clear
+// gate-decider (an independent Process Judge decided the PASS gate — not the developer),
+// in addition to lean-evidence — closing the hole where a conductor mints a
+// developer-decided PASS gate and commits without ever running closeout. It uses the
+// NARROW gate-decider check, not full gate-verdict, on purpose: gate-decider and
+// lean-evidence are record/state-based, so they do NOT false-fail on the
+// intentionally-uncommitted ACEF run-control churn, nor over-block a read-only guarded
+// slice. Full gate-verdict's surface-inference and durable-persistence requirements are
+// tree-sensitive / read-only-hostile and belong at clean-tree closeout/CI.
+function checkPrecommitGate(repoRoot) {
+  const activeRunPath = path.join(repoRoot, "docs", "ai", "ACEF_ACTIVE_RUN.json");
+  if (!exists(activeRunPath)) return result("precommit-gate", true, "No active ACEF run");
+  const ledger = findLedger(repoRoot);
+  const lane = inferActiveLane(repoRoot, ledger);
+  const subChecks = lane === "guarded" || lane === "full-bmad"
+    ? ["gate-decider", "lean-evidence"]
+    : ["lean-evidence"];
+  const failures = [];
+  for (const name of subChecks) {
+    const sub = name === "gate-decider" ? checkGateDecider(repoRoot) : checkLeanEvidence(repoRoot, ledger);
+    if (!sub.ok) failures.push(`${sub.name}: ${sub.message}`);
+  }
+  if (failures.length) {
+    return result("precommit-gate", false, `${lane || "no-lane"} pre-commit bundle failed — ${failures.join("; ")}`);
+  }
+  return result("precommit-gate", true, `${lane || "no-lane"} pre-commit bundle passed (${subChecks.join(", ")})`);
 }
 
 function capabilityChangePaths(repoRoot) {
@@ -2603,7 +2664,7 @@ function main() {
   const adapter = args.adapter || findAdapter(args.repo);
   const registry = findPatternRegistry(args.repo, adapter);
   const checks = args.check === "all"
-    ? ["clean-tree", "preflight", "claims", "adapter-freshness", "pattern-registry", "reuse-before-create", "do-not-copy", "partial-workshape", "finding-promotion", "graduation-reconciliation", "vertical-slice", "test-authenticity", "guarded-test-floor", "actor-separation", "worker-scope", "evidence-manifest", "gate-verdict", "source-reconciliation", "epic-context-pack", "current-context", "pr-review", "spec-readiness", "goal-coverage", "lane-selection", "lane-closeout", "lightweight-lifecycle", "lean-evidence", "control-dosing", "capability-change", "session-handoff", "seeded-epic-gates", "epic-boundary", "epic-transition-approval", "replan-counter"]
+    ? ["clean-tree", "preflight", "claims", "adapter-freshness", "pattern-registry", "reuse-before-create", "do-not-copy", "partial-workshape", "finding-promotion", "graduation-reconciliation", "vertical-slice", "test-authenticity", "guarded-test-floor", "actor-separation", "worker-scope", "evidence-manifest", "gate-verdict", "gate-decider", "source-reconciliation", "epic-context-pack", "current-context", "pr-review", "spec-readiness", "goal-coverage", "lane-selection", "lane-closeout", "lightweight-lifecycle", "lean-evidence", "control-dosing", "capability-change", "session-handoff", "seeded-epic-gates", "epic-boundary", "epic-transition-approval", "replan-counter"]
     : [args.check];
 
   const results = checks.map((check) => {
@@ -2635,6 +2696,8 @@ function main() {
     if (check === "lightweight-lifecycle") return checkLightweightLifecycle(args.repo);
     if (check === "lean-evidence") return checkLeanEvidence(args.repo, ledger);
     if (check === "control-dosing") return checkControlDosing(args.repo);
+    if (check === "gate-decider") return checkGateDecider(args.repo);
+    if (check === "precommit-gate") return checkPrecommitGate(args.repo);
     if (check === "capability-change") return checkCapabilityChange(args.repo);
     if (check === "session-handoff") return checkSessionHandoff(args.repo, ledger, adapter, registry);
     if (check === "seeded-epic-gates") return checkSeededEpicGates(args.repo, ledger);
