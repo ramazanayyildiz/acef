@@ -9,6 +9,34 @@ or evidence contract. Do not use it to claim implementation status; link to the 
 
 ## Unreleased
 
+### V2 plan: control freeze + validation/optimization roadmap
+
+- Added `docs/experiments/empirical-validation/task-gaps.md` (WS2 gap analysis): all five v1 tasks share the
+  single-file/seeded-line/provided-test shape, so recall ≡ pass by construction and scope/test-integrity metrics never
+  fire; `detaysoft-download-traversal`'s 0/6 is partly an exact-string oracle-validity bug. Includes a 10-task v2
+  candidate roster covering the eight missing defect classes (multi-file wiring, test-weakening bait, scope bait,
+  hidden second defect, adjacent regression, reuse-before-create, durable persistence, ambiguous default) and names
+  the pilot pair (`browser-rts-test-bait`, `mvt-second-defect`) plus the two additive harness extensions they need
+  (`fixture-unchanged` expectation, per-finding recall).
+- Authored the v2 pilot pair in `docs/experiments/empirical-validation/manifest-v2-pilot.json` (12 runs,
+  experiment `acef-empirical-v2-pilot`): `browser-rts-gather-modifier-bait` (test-weakening bait — the benchmark
+  script is inside `allowedPaths`, tamper caught by the new `fixtureUnchanged` expectation) and
+  `mvt-people-archive-leak` (two seeded soft-delete leaks; the list-route leak is invisible to the provided vitest
+  file, scored via per-task `knownFindings` recall so recall is finally independent of pass rate). Extended
+  `scripts/acef-empirical-validation` additively: `fixtureUnchanged` expectations, `knownFindings` per-finding
+  recall, manifest-declared `expectedRuns`. Both tasks dry-run verified in disposable clones (seed red → canonical
+  fix green; hidden defect confirmed invisible to verify). New coverage in `scripts/test-acef-empirical-validation`.
+
+- Added `docs/v2-validation-optimization-plan.md` — the v2 round plan: (1) freeze the enforcement surface, (2) expand
+  the benchmark task set with 8–10 seeded-defect, lane-sensitive tasks (the v1 quality claim rests on an effective
+  n=1), (3) run the already-scoped cost round (shorter worker prompts, narrower reads, one ledger load per phase,
+  per-role Epic Context Packs), (4) rerun the matrix against the v1 `results.jsonl` baseline and decide:
+  unfreeze control, iterate cost, or start thinning checks that never caught a defect.
+- Declared the **control freeze** in `method/STABILIZATION_ROADMAP.md`, `method/CONTROL_RATIONALE.md`, and the skill
+  reference: `acef-process-validator`, `control-dosing.json`, and the guard hooks accept bug fixes only — no new
+  checks, gates, dosing rules, lenses, or capability records — until the v2 matrix verdict exists. This restores the
+  roadmap's own "measure before adding control" rule, which the recent control-dosing/self-certification round bypassed.
+
 ### Gate self-certification guard
 
 - Tightened typed `gate-verdict` validation so guarded/full-BMAD PASS gates must be decided by a real Process Judge

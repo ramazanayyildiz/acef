@@ -9,7 +9,7 @@ const { spawnSync } = require("child_process");
 
 const root = path.resolve(__dirname, "..");
 const { codexMetrics, opencodeMetrics, isAllowedPath } = require("./lib/acef-empirical");
-const { buildRuns, changedPaths } = require("./acef-empirical-validation");
+const { buildRuns, changedPaths, evaluateExpectations, knownFindingRecall } = require("./acef-empirical-validation");
 
 function run(command, args, opts = {}) {
   const result = spawnSync(command, args, { encoding: "utf8", ...opts });
@@ -90,10 +90,66 @@ function testPlanCli() {
   assert.strictEqual(plan.runs.length, 30);
 }
 
+function testPilotManifestExpansion() {
+  const manifestPath = path.join(root, "docs/experiments/empirical-validation/manifest-v2-pilot.json");
+  const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+  const runs = buildRuns(manifest);
+  assert.strictEqual(runs.length, manifest.expectedRuns);
+  assert.strictEqual(runs.length, 12);
+  const stdout = run("node", ["scripts/acef-empirical-validation", "--plan", "--manifest", manifestPath], { cwd: root });
+  const plan = JSON.parse(stdout);
+  assert.strictEqual(plan.experimentId, "acef-empirical-v2-pilot");
+  assert.strictEqual(plan.count, 12);
+}
+
+function testFixtureUnchangedExpectation() {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "acef-empirical-fixture-"));
+  try {
+    const fixtureName = "run-benchmark-gather-modifier.mjs";
+    const fixturePath = path.join(root, "docs/experiments/empirical-validation/fixtures", fixtureName);
+    fs.mkdirSync(path.join(tmp, "scripts"), { recursive: true });
+    fs.copyFileSync(fixturePath, path.join(tmp, "scripts", fixtureName));
+    const expectations = [{ path: `scripts/${fixtureName}`, fixtureUnchanged: fixtureName }];
+    assert.deepStrictEqual(evaluateExpectations(tmp, expectations), []);
+    fs.appendFileSync(path.join(tmp, "scripts", fixtureName), "// weakened assertion\n");
+    const failures = evaluateExpectations(tmp, expectations);
+    assert.strictEqual(failures.length, 1);
+    assert.match(failures[0], /modified from fixture/);
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+}
+
+function testKnownFindingRecall() {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "acef-empirical-recall-"));
+  try {
+    fs.writeFileSync(path.join(tmp, "detail.ts"), "WHERE id = $1 AND deleted_at IS NULL\n");
+    fs.writeFileSync(path.join(tmp, "list.ts"), "// ACEF benchmark regression: leak\n");
+    const task = {
+      knownFindings: [
+        { id: "detail", expected: [{ path: "detail.ts", notContains: "ACEF benchmark regression" }] },
+        { id: "list", expected: [{ path: "list.ts", notContains: "ACEF benchmark regression" }, { path: "list.ts", contains: "deleted_at IS NULL" }] },
+      ],
+    };
+    assert.deepStrictEqual(knownFindingRecall(tmp, task, 0, []), { recalled: 1, total: 2 });
+    fs.writeFileSync(path.join(tmp, "list.ts"), "where.push(\"deleted_at IS NULL\");\n");
+    assert.deepStrictEqual(knownFindingRecall(tmp, task, 0, []), { recalled: 2, total: 2 });
+    assert.deepStrictEqual(knownFindingRecall(tmp, task, 1, []), { recalled: 0, total: 2 });
+    const legacy = { expected: [] };
+    assert.deepStrictEqual(knownFindingRecall(tmp, legacy, 0, []), { recalled: 1, total: 1 });
+    assert.deepStrictEqual(knownFindingRecall(tmp, legacy, 0, ["failure"]), { recalled: 0, total: 1 });
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+}
+
 testManifestExpansion();
 testMetricsParsers();
 testScopeMatching();
 testChangedPathsPreservesPorcelainFilenames();
 testPlanCli();
+testPilotManifestExpansion();
+testFixtureUnchangedExpectation();
+testKnownFindingRecall();
 
 console.log("acef-empirical-validation tests passed");

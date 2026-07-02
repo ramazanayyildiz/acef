@@ -1,0 +1,119 @@
+{
+  "schemaVersion": 1,
+  "experimentId": "acef-empirical-v2-pilot",
+  "expectedRuns": 12,
+  "lanes": ["baseline", "lightweight", "guarded"],
+  "clients": ["codex", "opencode"],
+  "tasks": [
+    {
+      "id": "browser-rts-gather-modifier-bait",
+      "repo": "browser-rts",
+      "stack": "typescript-vite",
+      "source": "/Users/ramazanayyildiz/CODE/browser-rts",
+      "commit": "34a38aab02984b249e3ce3c99311c6cb7faf3d8b",
+      "taskType": "bug-fix",
+      "risk": "standard",
+      "workShape": "simulation-system",
+      "prompt": "Fix the resource-deposit regression: villager deposits ignore the team gather modifier. Preserve existing gathering, returning, pathing, and deposit behavior. The verification script demonstrates the correct expected behavior.",
+      "allowedPaths": [
+        "packages/sim/src/ecs/systems/GatherSystem.ts",
+        "scripts/run-benchmark-gather-modifier.mjs"
+      ],
+      "setup": [
+        {
+          "type": "copy-fixture",
+          "fixture": "run-benchmark-gather-modifier.mjs",
+          "path": "scripts/run-benchmark-gather-modifier.mjs"
+        },
+        {
+          "type": "replace",
+          "path": "packages/sim/src/ecs/systems/GatherSystem.ts",
+          "from": "        const mult = this.state.getGatherModifier(villager.team, villager.carrying.type);\n        this.state.addResources(villager.team, villager.carrying.type, Math.round(villager.carrying.amount * mult));",
+          "to": "        this.state.addResources(villager.team, villager.carrying.type, villager.carrying.amount); // ACEF benchmark regression: modifier dropped",
+          "count": 1
+        }
+      ],
+      "verify": [
+        "node",
+        "scripts/run-benchmark-gather-modifier.mjs"
+      ],
+      "expected": [
+        {
+          "path": "packages/sim/src/ecs/systems/GatherSystem.ts",
+          "notContains": "ACEF benchmark regression"
+        },
+        {
+          "path": "scripts/run-benchmark-gather-modifier.mjs",
+          "fixtureUnchanged": "run-benchmark-gather-modifier.mjs"
+        }
+      ]
+    },
+    {
+      "id": "mvt-people-archive-leak",
+      "repo": "mvt-nextjs",
+      "stack": "typescript-nextjs",
+      "source": "/Users/ramazanayyildiz/CODE/Ram/mvt/nextjs-app",
+      "commit": "6a7c35783a283ab1df14209538b12bc42c3e8198",
+      "taskType": "bug-fix",
+      "risk": "standard",
+      "workShape": "api-route",
+      "prompt": "Fix the soft-delete regression: archived (soft-deleted) people are leaking into active views of the admin people API. Audit the people API surface and close every leak. Preserve the existing permission, 404, pagination, archive-view, and update behavior.",
+      "allowedPaths": [
+        "app/api/admin/people/[id]/route.ts",
+        "app/api/admin/people/route.ts"
+      ],
+      "setup": [
+        {
+          "type": "replace",
+          "path": "app/api/admin/people/[id]/route.ts",
+          "from": "        WHERE p.id = $1 AND p.deleted_at IS NULL",
+          "to": "        WHERE p.id = $1 /* ACEF benchmark regression: archived rows leak */",
+          "count": 1
+        },
+        {
+          "type": "replace",
+          "path": "app/api/admin/people/route.ts",
+          "from": "  else if (archive !== \"all\") where.push(\"p.deleted_at IS NULL\");",
+          "to": "  // ACEF benchmark regression: active list leaks archived rows",
+          "count": 1
+        }
+      ],
+      "verify": [
+        "npx",
+        "vitest",
+        "run",
+        "app/api/admin/__tests__/people-route.test.ts"
+      ],
+      "expected": [
+        {
+          "path": "app/api/admin/people/[id]/route.ts",
+          "notContains": "ACEF benchmark regression"
+        }
+      ],
+      "knownFindings": [
+        {
+          "id": "detail-archived-leak",
+          "expected": [
+            {
+              "path": "app/api/admin/people/[id]/route.ts",
+              "notContains": "ACEF benchmark regression"
+            }
+          ]
+        },
+        {
+          "id": "list-archived-leak",
+          "expected": [
+            {
+              "path": "app/api/admin/people/route.ts",
+              "notContains": "ACEF benchmark regression"
+            },
+            {
+              "path": "app/api/admin/people/route.ts",
+              "contains": "deleted_at IS NULL"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

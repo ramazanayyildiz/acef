@@ -328,14 +328,33 @@ function changedPaths(repo, baseRef) {
   return [...new Set([...committed, ...working])].sort();
 }
 
-function expectedPass(repo, task) {
+function evaluateExpectations(repo, expectations) {
   const failures = [];
-  for (const expectation of task.expected || []) {
+  for (const expectation of expectations || []) {
     const text = fs.readFileSync(path.join(repo, expectation.path), "utf8");
     if (expectation.contains && !text.includes(expectation.contains)) failures.push(`${expectation.path} missing expected text`);
     if (expectation.notContains && text.includes(expectation.notContains)) failures.push(`${expectation.path} retains forbidden text`);
+    if (expectation.fixtureUnchanged) {
+      const fixture = fs.readFileSync(path.join(fixtureRoot, expectation.fixtureUnchanged), "utf8");
+      if (text !== fixture) failures.push(`${expectation.path} was modified from fixture ${expectation.fixtureUnchanged}`);
+    }
   }
   return failures;
+}
+
+function expectedPass(repo, task) {
+  return evaluateExpectations(repo, task.expected);
+}
+
+function knownFindingRecall(repo, task, verificationStatus, expectationFailures) {
+  if (!Array.isArray(task.knownFindings) || !task.knownFindings.length) {
+    return { recalled: verificationStatus === 0 && !expectationFailures.length ? 1 : 0, total: 1 };
+  }
+  let recalled = 0;
+  for (const finding of task.knownFindings) {
+    if (verificationStatus === 0 && !evaluateExpectations(repo, finding.expected).length) recalled += 1;
+  }
+  return { recalled, total: task.knownFindings.length };
 }
 
 function appendResult(filePath, row) {
@@ -372,6 +391,7 @@ function runOne(run, opts) {
     const paths = changedPaths(clonePath, baseRef);
     const scopeViolations = paths.filter((filePath) => !isAllowedPath(filePath, run.task.allowedPaths));
     const expectationFailures = expectedPass(clonePath, run.task);
+    const recall = knownFindingRecall(clonePath, run.task, verification.status, expectationFailures);
     const passed = actor.status === 0 && verification.status === 0 && !scopeViolations.length && !expectationFailures.length;
     row = {
       run_id: run.runId,
@@ -397,8 +417,8 @@ function runOne(run, opts) {
       human_interventions: 0,
       precondition_failed: precondition.status !== 0,
       tests_passed: verification.status === 0,
-      known_findings_recalled: verification.status === 0 && !expectationFailures.length ? 1 : 0,
-      known_findings_total: 1,
+      known_findings_recalled: recall.recalled,
+      known_findings_total: recall.total,
       false_positive_count: 0,
       escaped_defects: passed ? 0 : 1,
       context_miss: actor.retry_count > 0 && actor.extra_file_reads > 4,
@@ -444,7 +464,8 @@ function main() {
   const opts = parseArgs(process.argv.slice(2));
   const manifest = readJson(opts.manifest);
   const allRuns = buildRuns(manifest);
-  if (allRuns.length !== 30) throw new Error(`Manifest must produce exactly 30 runs; got ${allRuns.length}`);
+  const expectedRuns = Number(manifest.expectedRuns || 30);
+  if (allRuns.length !== expectedRuns) throw new Error(`Manifest must produce exactly ${expectedRuns} runs; got ${allRuns.length}`);
   if (opts.plan) {
     console.log(JSON.stringify({ experimentId: manifest.experimentId, count: allRuns.length, runs: allRuns.map((run) => ({ run_id: run.runId, repo: run.task.repo, stack: run.task.stack, lane: run.lane, client: run.client, task_type: run.task.taskType })) }, null, 2));
     return;
@@ -469,4 +490,4 @@ if (require.main === module) {
   }
 }
 
-module.exports = { buildRuns, changedPaths, expectedPass, promptFor };
+module.exports = { buildRuns, changedPaths, expectedPass, evaluateExpectations, knownFindingRecall, promptFor };
