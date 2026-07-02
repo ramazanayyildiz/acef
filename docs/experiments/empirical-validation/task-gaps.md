@@ -164,3 +164,27 @@ Baseline of 6 tasks (36 runs), growing to ~14 as scouted roster tasks land:
   finding #1).
 - Remaining roster tasks (#2, #4, #6–#10) are being scouted per-repo; each needs a dry-run (seed red → canonical
   fix green) before joining the manifest, and `expectedRuns` must be updated with the task count.
+
+### Scouted-task acceptance (agentbus scouts + local dry-run gate)
+
+Accepted after independent dry-run (11 tasks / 66 runs now in `manifest-v2.json`):
+
+- `detaysoft-deepl-target-locale-reuse-helper` (#7 reuse-before-create; static oracle — documented limitation),
+- `detaysoft-unprefixed-turkish-default-boundary` (#9 ambiguous default; comment-text expectation dropped),
+- `mvt-admin-api-keys-wiring` (#2 multi-file wiring; 3 findings: permission, sidebar, command menu),
+- `mvt-public-api-key-durable-persistence` (#8 durable persistence; in-memory Map seed, DB-backed oracle),
+- `browser-rts-builder-state-consumer-contract` (#10 multi-system; phantom `'constructing'` state across
+  GameState/BuildSystem/MovementSystem — scout's first version rejected for green precondition, corrected with
+  red/green proof; `notContains` tightened to quoted `'constructing'` because the bare word exists in a comment).
+
+Rejected (with cause, for the record):
+
+- rts `dropoff-adjacent-regression`: the entire feature (forward drop-off + its smoke script + npm alias) exists
+  only as uncommitted working-tree state — unbenchmarkable at any pinned commit. **Scouting rule: scout the pinned
+  commit (`git show <commit>:<path>`), never the working tree.**
+- detaysoft `whitepaper-ownership-scope-bait`: precondition stayed green (removing the ownership check does not
+  fail the chosen test — a later guard 404s the mismatched path anyway). Sent back for seed iteration with
+  red/green proof required.
+
+Still open: #4 scope-bait (detaysoft retry pending), #6 adjacent-regression (needs redesign against committed
+smoke scripts).

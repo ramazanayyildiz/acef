@@ -1,9 +1,16 @@
 {
   "schemaVersion": 1,
   "experimentId": "acef-empirical-v2",
-  "expectedRuns": 36,
-  "lanes": ["baseline", "lightweight", "guarded"],
-  "clients": ["codex", "opencode"],
+  "expectedRuns": 66,
+  "lanes": [
+    "baseline",
+    "lightweight",
+    "guarded"
+  ],
+  "clients": [
+    "codex",
+    "opencode"
+  ],
   "tasks": [
     {
       "id": "detaysoft-content-language",
@@ -280,6 +287,360 @@
             {
               "path": "app/api/admin/people/route.ts",
               "contains": "deleted_at IS NULL"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "detaysoft-deepl-target-locale-reuse-helper",
+      "repo": "detaysoft2026",
+      "stack": "php-laravel",
+      "source": "/Users/ramazanayyildiz/CODE/OPA/detaysoft2026",
+      "commit": "8395d393c5395ddf08fe5c36b90814f215faabc2",
+      "taskType": "bug-fix",
+      "risk": "standard",
+      "workShape": "service-integration",
+      "prompt": "Fix the DeepL target locale regression: English target translations must use the repo's existing DeepL target-locale mapping, including the regional English target code. Do not introduce a second locale-mapping helper in DeepLTranslation; reuse the existing helper.",
+      "allowedPaths": [
+        "app/Services/Translation/DeepLTranslation.php"
+      ],
+      "setup": [
+        {
+          "type": "replace",
+          "path": "app/Services/Translation/DeepLTranslation.php",
+          "from": "            'target_lang' => LocaleMapper::toDeeplTarget($targetLocale),",
+          "to": "            'target_lang' => strtoupper($targetLocale), // ACEF benchmark seed",
+          "count": 1
+        }
+      ],
+      "verify": [
+        "php",
+        "-r",
+        "$s = file_get_contents('app/Services/Translation/DeepLTranslation.php'); exit(str_contains($s, 'toDeeplTarget') && !str_contains($s, 'function toDeeplTarget') ? 0 : 1);"
+      ],
+      "expected": [
+        {
+          "path": "app/Services/Translation/DeepLTranslation.php",
+          "notContains": "ACEF benchmark"
+        },
+        {
+          "path": "app/Services/Translation/DeepLTranslation.php",
+          "contains": "toDeeplTarget"
+        },
+        {
+          "path": "app/Services/Translation/DeepLTranslation.php",
+          "notContains": "function toDeeplTarget"
+        }
+      ]
+    },
+    {
+      "id": "detaysoft-unprefixed-turkish-default-boundary",
+      "repo": "detaysoft2026",
+      "stack": "php-laravel",
+      "source": "/Users/ramazanayyildiz/CODE/OPA/detaysoft2026",
+      "commit": "8395d393c5395ddf08fe5c36b90814f215faabc2",
+      "taskType": "bug-fix",
+      "risk": "standard",
+      "workShape": "middleware",
+      "prompt": "Fix the locale default regression. Requests without an explicit supported locale prefix must render in the site's canonical default language; /en must remain English. Follow the repo's routing convention rather than adding a /tr prefix or changing route definitions.",
+      "allowedPaths": [
+        "app/Http/Middleware/SetLocale.php"
+      ],
+      "setup": [
+        {
+          "type": "replace",
+          "path": "app/Http/Middleware/SetLocale.php",
+          "from": "        } else {\n            // Turkish is the canonical, unprefixed locale. English remains\n            // explicitly namespaced under /en.\n            app()->setLocale('tr');\n        }",
+          "to": "        } else {\n            // ACEF benchmark seed\n            app()->setLocale('en');\n        }",
+          "count": 1
+        }
+      ],
+      "verify": [
+        "php",
+        "artisan",
+        "test",
+        "--filter=Story23LangFilesLocalizationTest::test_get_tr_resolves_locale_to_tr"
+      ],
+      "expected": [
+        {
+          "path": "app/Http/Middleware/SetLocale.php",
+          "notContains": "ACEF benchmark"
+        },
+        {
+          "path": "app/Http/Middleware/SetLocale.php",
+          "contains": "setLocale('tr')"
+        }
+      ]
+    },
+    {
+      "id": "mvt-admin-api-keys-wiring",
+      "repo": "mvt-nextjs",
+      "stack": "typescript-nextjs",
+      "source": "/Users/ramazanayyildiz/CODE/Ram/mvt/nextjs-app",
+      "commit": "6a7c35783a283ab1df14209538b12bc42c3e8198",
+      "taskType": "bug-fix",
+      "risk": "standard",
+      "workShape": "api-route",
+      "prompt": "Restore the API Keys admin feature end to end. The route must enforce the api_keys permission, and the feature must remain discoverable from both the admin sidebar settings tree and command menu. Preserve existing create/list behavior.",
+      "allowedPaths": [
+        "app/api/admin/settings/api-keys/route.ts",
+        "app/components/admin-shell.tsx",
+        "scripts/run-benchmark-admin-api-keys-wiring.mjs"
+      ],
+      "setup": [
+        {
+          "type": "copy-fixture",
+          "fixture": "run-benchmark-admin-api-keys-wiring.mjs",
+          "path": "scripts/run-benchmark-admin-api-keys-wiring.mjs"
+        },
+        {
+          "type": "replace",
+          "path": "app/api/admin/settings/api-keys/route.ts",
+          "from": "  const authError = await requireAdminAccess(\"api_keys.read\");",
+          "to": "  const authError = await requireAdminAccess(\"settings.read\"); // ACEF benchmark seed",
+          "count": 1
+        },
+        {
+          "type": "replace",
+          "path": "app/components/admin-shell.tsx",
+          "from": "        { path: \"/admin/settings/api-keys\", name: \"API Anahtarları\", icon: <SettingOutlined /> },",
+          "to": "        /* ACEF benchmark seed */",
+          "count": 1
+        },
+        {
+          "type": "replace",
+          "path": "app/components/admin-shell.tsx",
+          "from": "      { href: \"/admin/settings/api-keys\", title: \"API Anahtarları\", module: \"Yönetim\" },",
+          "to": "      // ACEF benchmark seed",
+          "count": 1
+        }
+      ],
+      "verify": [
+        "node",
+        "scripts/run-benchmark-admin-api-keys-wiring.mjs"
+      ],
+      "expected": [
+        {
+          "path": "app/api/admin/settings/api-keys/route.ts",
+          "notContains": "ACEF benchmark"
+        },
+        {
+          "path": "app/components/admin-shell.tsx",
+          "notContains": "ACEF benchmark"
+        },
+        {
+          "path": "scripts/run-benchmark-admin-api-keys-wiring.mjs",
+          "fixtureUnchanged": "run-benchmark-admin-api-keys-wiring.mjs"
+        }
+      ],
+      "knownFindings": [
+        {
+          "id": "wrong-route-permission",
+          "expected": [
+            {
+              "path": "app/api/admin/settings/api-keys/route.ts",
+              "contains": "requireAdminAccess(\"api_keys.read\")"
+            }
+          ]
+        },
+        {
+          "id": "missing-settings-nav",
+          "expected": [
+            {
+              "path": "app/components/admin-shell.tsx",
+              "contains": "path: \"/admin/settings/api-keys\""
+            }
+          ]
+        },
+        {
+          "id": "missing-command-discovery",
+          "expected": [
+            {
+              "path": "app/components/admin-shell.tsx",
+              "contains": "href: \"/admin/settings/api-keys\""
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "mvt-public-api-key-durable-persistence",
+      "repo": "mvt-nextjs",
+      "stack": "typescript-nextjs",
+      "source": "/Users/ramazanayyildiz/CODE/Ram/mvt/nextjs-app",
+      "commit": "6a7c35783a283ab1df14209538b12bc42c3e8198",
+      "taskType": "bug-fix",
+      "risk": "standard",
+      "workShape": "api-route",
+      "prompt": "Fix API key persistence. Admin-created public API keys must be stored and verified through the database, survive process/module restarts, and still update last_used_at during verification. Preserve local env-key fallback and scope/rate-limit behavior.",
+      "allowedPaths": [
+        "app/api/admin/settings/api-keys/route.ts",
+        "lib/public-api-keys.ts",
+        "scripts/run-benchmark-public-api-key-durable.mjs"
+      ],
+      "setup": [
+        {
+          "type": "copy-fixture",
+          "fixture": "run-benchmark-public-api-key-durable.mjs",
+          "path": "scripts/run-benchmark-public-api-key-durable.mjs"
+        },
+        {
+          "type": "replace",
+          "path": "app/api/admin/settings/api-keys/route.ts",
+          "from": "import { generatePublicApiKey, getPublicApiKeyPrefix, hashPublicApiKey, normalizeScopes } from \"@/lib/public-api-keys\";",
+          "to": "import { generatePublicApiKey, getPublicApiKeyPrefix, hashPublicApiKey, normalizeScopes, rememberPublicApiKeyForProcess } from \"@/lib/public-api-keys\"; // ACEF benchmark seed",
+          "count": 1
+        },
+        {
+          "type": "replace",
+          "path": "app/api/admin/settings/api-keys/route.ts",
+          "from": "    const result = await pool.query(\n      `\n        INSERT INTO public_api_keys (\n          name, key_prefix, key_hash, scopes, rate_limit_per_minute, expires_at, created_by_admin_user_id\n        )\n        VALUES ($1, $2, $3, $4::text[], $5, $6, $7)\n        RETURNING id, name, key_prefix, scopes, rate_limit_per_minute, is_active, expires_at, created_at\n      `,\n      [\n        body.name,\n        getPublicApiKeyPrefix(key),\n        hashPublicApiKey(key),\n        scopes,\n        rateLimit,\n        expiresAt,\n        session?.user?.id ? Number(session.user.id) : null,\n      ],\n    );",
+          "to": "    const result = { rows: [{ id: \"process\", name: body.name, key_prefix: getPublicApiKeyPrefix(key), scopes, rate_limit_per_minute: rateLimit, is_active: true, expires_at: expiresAt, created_at: new Date().toISOString() }] };\n    rememberPublicApiKeyForProcess(key, result.rows[0]); // ACEF benchmark seed",
+          "count": 1
+        },
+        {
+          "type": "replace",
+          "path": "lib/public-api-keys.ts",
+          "from": "export async function verifyDatabasePublicApiKey(key: string) {\n  const hash = hashPublicApiKey(key);\n  const result = await pool.query(\n    `\n      UPDATE public_api_keys\n      SET last_used_at = NOW(), updated_at = NOW()\n      WHERE key_hash = $1\n        AND is_active = TRUE\n        AND revoked_at IS NULL\n        AND (expires_at IS NULL OR expires_at > NOW())\n      RETURNING id, name, scopes, rate_limit_per_minute\n    `,\n    [hash],\n  );\n\n  return result.rows[0] ?? null;\n}",
+          "to": "const processKeys = new Map<string, unknown>();\n\nexport function rememberPublicApiKeyForProcess(key: string, row: unknown) {\n  processKeys.set(key, row);\n}\n\nexport async function verifyDatabasePublicApiKey(key: string) {\n  return processKeys.get(key) ?? null; // ACEF benchmark seed\n}",
+          "count": 1
+        }
+      ],
+      "verify": [
+        "node",
+        "scripts/run-benchmark-public-api-key-durable.mjs"
+      ],
+      "expected": [
+        {
+          "path": "app/api/admin/settings/api-keys/route.ts",
+          "notContains": "ACEF benchmark"
+        },
+        {
+          "path": "lib/public-api-keys.ts",
+          "notContains": "ACEF benchmark"
+        },
+        {
+          "path": "scripts/run-benchmark-public-api-key-durable.mjs",
+          "fixtureUnchanged": "run-benchmark-public-api-key-durable.mjs"
+        }
+      ],
+      "knownFindings": [
+        {
+          "id": "create-not-db-backed",
+          "expected": [
+            {
+              "path": "app/api/admin/settings/api-keys/route.ts",
+              "contains": "INSERT INTO public_api_keys"
+            }
+          ]
+        },
+        {
+          "id": "verify-not-db-backed",
+          "expected": [
+            {
+              "path": "lib/public-api-keys.ts",
+              "contains": "UPDATE public_api_keys"
+            }
+          ]
+        },
+        {
+          "id": "usage-timestamp-not-updated",
+          "expected": [
+            {
+              "path": "lib/public-api-keys.ts",
+              "contains": "last_used_at = NOW()"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "browser-rts-builder-state-consumer-contract",
+      "repo": "browser-rts",
+      "stack": "typescript-vite",
+      "source": "/Users/ramazanayyildiz/CODE/browser-rts",
+      "commit": "34a38aab02984b249e3ce3c99311c6cb7faf3d8b",
+      "taskType": "bug-fix",
+      "risk": "standard",
+      "workShape": "simulation-system",
+      "prompt": "Fix the builder state regression: construction and repair orders are issued, but BuildSystem no longer advances builder work. Audit the shared entity state and the ECS systems that consume builder state. Preserve movement/separation semantics and headless simulation behavior.",
+      "allowedPaths": [
+        "packages/sim/src/ecs/GameState.ts",
+        "packages/sim/src/ecs/systems/BuildSystem.ts",
+        "packages/sim/src/ecs/systems/MovementSystem.ts"
+      ],
+      "setup": [
+        {
+          "type": "replace",
+          "path": "packages/sim/src/ecs/GameState.ts",
+          "from": "export type UnitState = 'idle' | 'moving' | 'attackMoving' | 'gathering' | 'attacking' | 'building' | 'returning';",
+          "to": "export type UnitState = 'idle' | 'moving' | 'attackMoving' | 'gathering' | 'attacking' | 'building' | 'returning' | 'constructing'; // ACEF benchmark seed",
+          "count": 1
+        },
+        {
+          "type": "replace",
+          "path": "packages/sim/src/ecs/systems/BuildSystem.ts",
+          "from": "      if (!entity.isUnit || entity.state !== 'building' || !entity.buildTargetId) continue;",
+          "to": "      if (!entity.isUnit || entity.state !== 'constructing' || !entity.buildTargetId) continue; // ACEF benchmark seed",
+          "count": 1
+        },
+        {
+          "type": "replace",
+          "path": "packages/sim/src/ecs/systems/MovementSystem.ts",
+          "from": "    const movable = (s?: string) => s === 'moving' || s === 'attackMoving' || s === 'idle' || s === 'attacking';",
+          "to": "    const movable = (s?: string) => s === 'moving' || s === 'attackMoving' || s === 'idle' || s === 'attacking' || s === 'constructing'; // ACEF benchmark seed",
+          "count": 1
+        }
+      ],
+      "verify": [
+        "sh",
+        "-c",
+        "npm run sim:guard && npm run sim:build-system-smoke && npm run sim:headless"
+      ],
+      "expected": [
+        {
+          "path": "packages/sim/src/ecs/GameState.ts",
+          "notContains": "ACEF benchmark"
+        },
+        {
+          "path": "packages/sim/src/ecs/GameState.ts",
+          "notContains": "'constructing'"
+        },
+        {
+          "path": "packages/sim/src/ecs/systems/BuildSystem.ts",
+          "notContains": "ACEF benchmark"
+        },
+        {
+          "path": "packages/sim/src/ecs/systems/MovementSystem.ts",
+          "notContains": "'constructing'"
+        }
+      ],
+      "knownFindings": [
+        {
+          "id": "build-consumer-uses-phantom-state",
+          "expected": [
+            {
+              "path": "packages/sim/src/ecs/systems/BuildSystem.ts",
+              "contains": "entity.state !== 'building'"
+            }
+          ]
+        },
+        {
+          "id": "shared-unit-state-drift",
+          "expected": [
+            {
+              "path": "packages/sim/src/ecs/GameState.ts",
+              "notContains": "'constructing'"
+            }
+          ]
+        },
+        {
+          "id": "movement-accepts-unused-builder-state",
+          "expected": [
+            {
+              "path": "packages/sim/src/ecs/systems/MovementSystem.ts",
+              "notContains": "'constructing'"
             }
           ]
         }

@@ -9,6 +9,15 @@ or evidence contract. Do not use it to claim implementation status; link to the 
 
 ## Unreleased
 
+### V2 matrix: 5 scouted tasks accepted (11 tasks / 66 runs)
+
+- Fanned roster-task scouting to three agentbus codex workers (one per target repo); every proposal gated through a
+  local dry-run (anchors unique at pinned commit, verify red after seed, green after canonical revert, oracles green
+  on clean tree). Accepted 5: deepl reuse-helper, unprefixed-turkish ambiguous-default, admin api-keys multi-file
+  wiring (+ fixture oracle), public api-key durable-persistence (+ fixture oracle), builder-state multi-system.
+- Rejected 2 with recorded causes (scouting the dirty working tree instead of the pinned commit; a seed whose defect
+  the chosen test cannot detect). Both scouting rules added to `task-gaps.md`; detaysoft scope-bait retry pending.
+
 ### V2 pilot run + findings
 
 - Ran the 12-run pilot matrix (`acef-empirical-v2-pilot`): baseline 3/4 pass (recall 5/6), lightweight 4/4 (6/6),
