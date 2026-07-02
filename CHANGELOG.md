@@ -9,6 +9,17 @@ or evidence contract. Do not use it to claim implementation status; link to the 
 
 ## Unreleased
 
+### WS3 cost round: worker short-circuit on ACEF reference reads
+
+- Pilot transcript audit found the dominant ACEF-lane token overhead: `skills/acef/SKILL.md` said "Always for
+  concrete ACEF work: read OPERATING_MODEL + DELIVERY_RULES" (~920 lines), workers obeyed, and chat-completion
+  clients resend the whole context on every subsequent tool call (guarded codex: 14 tool calls → 583k input tokens
+  vs 215k baseline on the same task).
+- Subtractive fix (freeze-compatible): SKILL.md worker short-circuit — when `docs/ai/ACEF_CURRENT_CONTEXT.md`
+  exists, a scoped worker reads NO references/operating model/delivery rules/full ledger; reference reads are
+  conductor/router-only. Mirrored into `method/CONTEXT_POLICY.md` with the pilot numbers, the benchmark
+  current-context header, and both ACEF lane prompts in the harness.
+
 ### V2 matrix: 5 scouted tasks accepted (11 tasks / 66 runs)
 
 - Fanned roster-task scouting to three agentbus codex workers (one per target repo); every proposal gated through a

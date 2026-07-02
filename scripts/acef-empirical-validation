@@ -225,6 +225,8 @@ function installAcef(repo, run) {
   write(path.join(docs, "pattern-registry.json"), `${JSON.stringify(patternRegistry(run.task, must("git", ["rev-parse", "HEAD"], { cwd: repo })), null, 2)}\n`);
   write(path.join(docs, "ACEF_CURRENT_CONTEXT.md"), [
     "# ACEF Current Context",
+    "This file is the complete ACEF context for this step. Do not read ACEF skill references, the operating model,",
+    "delivery rules, or the full delivery ledger; everything relevant has already been compiled here.",
     `source_ledger: ${ledger}`,
     `active_story: ${run.task.id}`,
     "active_phase: development",
@@ -276,8 +278,8 @@ function promptFor(run) {
   const laneText = run.lane === "baseline"
     ? "Use the repository's native conventions. Do not invoke or simulate ACEF."
     : run.lane === "lightweight"
-      ? "Use the repo-local ACEF lightweight workflow. Read docs/ai/ACEF_CURRENT_CONTEXT.md; do not read the full delivery ledger."
-      : "You are the scoped ACEF developer actor ACEF_BMAD_WORKER in a guarded run. Read docs/ai/ACEF_CURRENT_CONTEXT.md and obey the repo-local scope hook. Do not act as reviewer or Process Judge.";
+      ? "Use the repo-local ACEF lightweight workflow. Read docs/ai/ACEF_CURRENT_CONTEXT.md — it is your complete ACEF context. Do not read the full delivery ledger, ACEF skill references, the operating model, or delivery rules."
+      : "You are the scoped ACEF developer actor ACEF_BMAD_WORKER in a guarded run. Read docs/ai/ACEF_CURRENT_CONTEXT.md — it is your complete ACEF context — and obey the repo-local scope hook. Do not read the full delivery ledger, ACEF skill references, the operating model, or delivery rules. Do not act as reviewer or Process Judge.";
   return [
     "Complete one controlled benchmark task in this disposable clone.",
     laneText,

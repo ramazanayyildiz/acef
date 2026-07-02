@@ -28,6 +28,12 @@ The default worker context is:
 
 Do not give every worker the full delivery ledger, full planning folder, full pattern registry, or unbounded `git diff`.
 
+Workers also do not read the ACEF method surface itself: when `docs/ai/ACEF_CURRENT_CONTEXT.md` exists, a scoped
+worker must not read the acef skill references (operating model, delivery rules, ~900+ lines) — the conductor
+already applied them when compiling the current context. This is the dominant measured ACEF-lane token overhead:
+in the v2 pilot, workers that read the references cost 343–583k input tokens versus 215–246k baseline on the same
+tasks, because chat-completion clients resend the whole context on every subsequent tool call.
+
 ## Fresh Session Startup
 
 Any new agent session should begin from the repo-local startup packet:

@@ -40,7 +40,13 @@ Evidence stays on disk; chat stays small.
 
 Read only the references needed for the current step, but do read the selected files completely.
 
-- Always for concrete ACEF work: `references/ACEF_OPERATING_MODEL.md` and `references/ACEF_DELIVERY_RULES.md`.
+**Worker short-circuit (read this first):** if `docs/ai/ACEF_CURRENT_CONTEXT.md` exists and you are executing one
+assigned step as a scoped worker (developer, reviewer, test author), that file plus your worker scope IS your
+complete ACEF context. Do NOT read `references/*`, the operating model, delivery rules, or the full delivery
+ledger — the conductor already applied them when it built your current context. Reference reads are for the
+conductor/router role only (`method/CONTEXT_POLICY.md` role budgets).
+
+- Conductor/router, for concrete ACEF work: `references/ACEF_OPERATING_MODEL.md` and `references/ACEF_DELIVERY_RULES.md`.
 - Route selection: `references/ACEF_BROWNFIELD_ROUTES.md` plus `acef-router` when available.
 - Thin or risky product requests before route dispatch: `spec-readiness`.
 - Adapter/codemap or repo-pattern work: `references/ACEF_PROJECT_ADAPTER_EXTRACTION.md`, `references/ACEF_ADAPTER_MEMORY.md`, `references/ACEF_PATTERN_REGISTRY.md`.
