@@ -150,3 +150,17 @@ What the pilot caught:
 
 Pilot verdict: harness ready for batch authoring; both authoring lessons (neutral markers, lane-sensitive ≠
 prompt-hinted) apply to the remaining 8 roster tasks before the full v2 matrix.
+
+## V2 matrix manifest (`manifest-v2.json`, in progress)
+
+Baseline of 6 tasks (36 runs), growing to ~14 as scouted roster tasks land:
+
+- 4 v1 tasks carried over with pilot lessons applied: all seed markers neutralized to `ACEF benchmark seed`,
+  exact-string fix oracles dropped in favor of behavior (verify) + marker-gone + `fixtureUnchanged` on every
+  provided test/script (`detaysoft-download-traversal-v2` is roster task #1 — the oracle-validity fix).
+- 2 pilot tasks carried over; `mvt-people-archive-leak` reseeded with non-descriptive markers so the hidden
+  finding is actually hidden this time.
+- `mvt-people-soft-delete` dropped: superseded by `mvt-people-archive-leak` (same detail-route defect is its
+  finding #1).
+- Remaining roster tasks (#2, #4, #6–#10) are being scouted per-repo; each needs a dry-run (seed red → canonical
+  fix green) before joining the manifest, and `expectedRuns` must be updated with the task count.
