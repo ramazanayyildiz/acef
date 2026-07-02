@@ -121,3 +121,32 @@ node scripts/acef-empirical-validation \
   --manifest docs/experiments/empirical-validation/manifest-v2-pilot.json \
   --results docs/experiments/empirical-validation/runs/results-v2-pilot.jsonl
 ```
+
+## Pilot results (2026-07-01, `runs/results-v2-pilot.jsonl`)
+
+12/12 valid runs after one harness fix. Per lane: baseline 3/4 pass (recall 5/6), lightweight 4/4 (6/6),
+guarded 4/4 (6/6). Zero scope violations; `fixtureUnchanged` never fired (no agent tampered with the benchmark
+script). The single differentiated result: opencode failed the gather-modifier task under baseline (left the
+regression marker, never restored the modifier) and passed it under lightweight and guarded — the first
+same-client lane split the benchmark has produced. Input tokens repeat the v1 pattern for codex (baseline
+215–246k → lightweight 343–472k, guarded 275–583k); for opencode the guarded bait run was actually *cheaper*
+than baseline (14.1k vs 17.2k).
+
+What the pilot caught:
+
+1. **A live framework regression.** The lane-aware `precommit-gate` (added `e7e9216`) fails every guarded-lane
+   commit made before a gate verdict exists — including the lifecycle commit that binds actor/scope state before
+   work starts. All four guarded runs initially died invalid on it. Harness-side fix: the experiment runner's own
+   scaffolding commits use `--no-verify` (the agent under test never commits and stays fully guarded).
+   **Open framework question (freeze-compatible bug-fix candidate):** real guarded flows also commit state
+   bindings before any PASS gate can exist; `precommit-gate` likely needs a bootstrap exemption for
+   state-binding-only commits.
+2. **Descriptive seed markers un-hide hidden defects.** All valid archive-leak runs scored recall 2/2 — even
+   baseline found the "hidden" list-route leak, because the marker comment announced it ("active list leaks
+   archived rows") and the prompt invited a sweep. Authoring rule for the remaining roster: hidden-defect seeds
+   get non-descriptive markers (or marker-free oracles); recall/pass separation was not exercised by this pilot.
+3. **The harness extensions work end-to-end**: per-finding recall recorded correctly, `fixtureUnchanged` evaluated
+   on every bait run, `expectedRuns: 12` gate passed, and v1 rows remain untouched in the separate results file.
+
+Pilot verdict: harness ready for batch authoring; both authoring lessons (neutral markers, lane-sensitive ≠
+prompt-hinted) apply to the remaining 8 roster tasks before the full v2 matrix.

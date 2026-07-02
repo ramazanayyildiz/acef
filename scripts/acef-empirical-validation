@@ -140,10 +140,13 @@ function linkDependencies(repo, task) {
   }
 }
 
-function commitAll(repo, message) {
+function commitAll(repo, message, options = {}) {
   must("git", ["add", "-A"], { cwd: repo });
   const status = must("git", ["status", "--porcelain"], { cwd: repo });
-  if (status) must("git", ["commit", "-qm", message], { cwd: repo });
+  // noVerify is for the harness's own scaffolding commits after the guard hook is installed:
+  // the experiment runner is not the actor under test, and precommit-gate correctly has no
+  // gate verdict to check before any work exists. The agent under test never commits.
+  if (status) must("git", options.noVerify ? ["commit", "--no-verify", "-qm", message] : ["commit", "-qm", message], { cwd: repo });
   return must("git", ["rev-parse", "HEAD"], { cwd: repo });
 }
 
@@ -265,7 +268,7 @@ function installAcef(repo, run) {
     must(state, scopeArgs, { cwd: repo });
     must(state, ["active-run", "--repo", repo, "--run-id", run.runId, "--lane", "guarded", "--track", "guarded", "--status", "active", "--story", run.task.id, "--phase", "development", "--ledger", ledger, "--worker-role", "developer", "--actor", "ACEF_BMAD_WORKER", "--worker-scope", "docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json", "--context", "docs/ai/ACEF_CURRENT_CONTEXT.md", "--full-ledger-access", "denied", "--max-lines", "150", "--route", "C", "--route-confidence", "high", "--inferred-answer", "Benchmark task prompt supplies the defect, target path, allowed paths, and verification command.", "--approval-required", "true", "--brief-approved", "true", "--execution-approved", "true"], { cwd: repo });
     must(state, ["approval", "--repo", repo, "--id", `approval-${run.task.id}`, "--decision", "ACCEPT_RISK", "--scope", run.task.id, "--quote", `Approve guarded benchmark ${run.task.id}`, "--source-channel", "empirical-validation"], { cwd: repo });
-    commitAll(repo, "chore: bind guarded benchmark actor scope");
+    commitAll(repo, "chore: bind guarded benchmark actor scope", { noVerify: true });
   }
 }
 

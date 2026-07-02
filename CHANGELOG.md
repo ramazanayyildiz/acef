@@ -9,6 +9,19 @@ or evidence contract. Do not use it to claim implementation status; link to the 
 
 ## Unreleased
 
+### V2 pilot run + findings
+
+- Ran the 12-run pilot matrix (`acef-empirical-v2-pilot`): baseline 3/4 pass (recall 5/6), lightweight 4/4 (6/6),
+  guarded 4/4 (6/6); zero scope violations; `fixtureUnchanged` never fired. First same-client lane split: opencode
+  failed the gather-modifier task under baseline, passed under lightweight/guarded. Results in
+  `docs/experiments/empirical-validation/runs/results-v2-pilot.jsonl`; full write-up in `task-gaps.md`.
+- Pilot caught a live regression: the lane-aware `precommit-gate` fails guarded commits made before any gate verdict
+  exists, killing guarded runs at the actor/scope binding commit. Harness fix: `commitAll` supports `--no-verify`
+  for the runner's own scaffolding commits (the agent under test never commits). Logged framework follow-up: a
+  bootstrap exemption for state-binding-only commits (freeze-compatible bug-fix candidate).
+- Authoring lesson recorded: descriptive seed markers un-hide hidden defects; remaining roster tasks use
+  non-descriptive markers.
+
 ### V2 plan: control freeze + validation/optimization roadmap
 
 - Added `docs/experiments/empirical-validation/task-gaps.md` (WS2 gap analysis): all five v1 tasks share the
