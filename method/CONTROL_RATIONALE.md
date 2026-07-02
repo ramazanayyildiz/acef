@@ -12,6 +12,10 @@ The important distinction is:
 The second group is not a correctness oracle, but it is not theater. It protects the delivery process around the
 correctness controls.
 
+**Control freeze (v2 round):** until the v2 empirical matrix has run, the enforcement surface accepts bug fixes only —
+no new checks, gates, dosing rules, or lenses. See `method/STABILIZATION_ROADMAP.md` (Control Freeze) and
+`docs/v2-validation-optimization-plan.md`.
+
 ## Correctness-Producing Controls
 
 These controls are the parts most likely to catch real product bugs:

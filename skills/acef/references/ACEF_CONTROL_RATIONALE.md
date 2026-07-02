@@ -13,6 +13,9 @@ The useful distinction is:
 The second group is not a semantic correctness oracle, but it is not theater. It protects the delivery process around
 the correctness controls.
 
+**Control freeze (v2 round):** bug fixes only on the enforcement surface — no new checks, gates, dosing rules, or
+lenses until the v2 matrix has run. See `docs/v2-validation-optimization-plan.md`.
+
 ## Why Typed State Exists
 
 Markdown remains the human chronology. JSON sidecars carry machine truth.

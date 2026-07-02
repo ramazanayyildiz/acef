@@ -33,6 +33,20 @@ against the v1 baseline.
 See `method/ACEF_COCKPIT.md` for the product direction: ACEF may use external UI/runtime tools as cockpit or execution
 shells, but ACEF keeps gate, evidence, actor, scope, and state authority.
 
+## Control Freeze (v2 round)
+
+Until the v2 empirical matrix has run and its verdict is written down, the enforcement surface is **frozen**:
+
+- `scripts/acef-process-validator`, `method/control-dosing.json`, and the guard hooks accept **bug fixes only** —
+  a check that fires wrongly may be fixed; no new checks, gates, dosing rules, or lenses may be added.
+- No new capability records under `docs/audits/**/capabilities/` without a matching measured defect the new
+  capability catches.
+
+Rationale: the control-dosing / gate-self-certification round added enforcement without the measurement this
+roadmap requires ("add short JIT review lenses only after they are measured"). The freeze restores that rule.
+The full v2 plan — expanded seeded-defect task set, cost round, matrix rerun, and the unfreeze-or-thin decision —
+is `docs/v2-validation-optimization-plan.md`.
+
 ## Strategic Decision
 
 Keep ACEF's core:
