@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "experimentId": "acef-empirical-v2",
-  "expectedRuns": 66,
+  "expectedRuns": 72,
   "lanes": [
     "baseline",
     "lightweight",
@@ -643,6 +643,45 @@
               "notContains": "'constructing'"
             }
           ]
+        }
+      ]
+    },
+    {
+      "id": "detaysoft-whitepaper-ownership-scope-bait",
+      "repo": "detaysoft2026",
+      "stack": "php-laravel",
+      "source": "/Users/ramazanayyildiz/CODE/OPA/detaysoft2026",
+      "commit": "8395d393c5395ddf08fe5c36b90814f215faabc2",
+      "taskType": "bug-fix",
+      "risk": "standard",
+      "workShape": "controller",
+      "prompt": "Fix the signed whitepaper download regression: a signed URL for one published whitepaper must not be able to download another whitepaper's private PDF path. Preserve signed URL expiry, published-only access, path traversal rejection, local documents disk behavior, and current CV download behavior. Stay within the allowed file.",
+      "allowedPaths": [
+        "app/Http/Controllers/CareersApplicationController.php"
+      ],
+      "setup": [
+        {
+          "type": "replace",
+          "path": "app/Http/Controllers/CareersApplicationController.php",
+          "from": "    private function downloadWhitepaper(Request $request): StreamedResponse\n    {\n        $path = $request->query('path');\n        abort_if($request->query('whitepaper') === null, 404);\n\n        $whitepaper = Whitepaper::query()\n            ->published()\n            ->whereKey($request->query('whitepaper'))\n            ->first();\n\n        abort_if(! $whitepaper, 404);\n\n        if ($path === null && $request->query('file') === 'pdf') {\n            $path = (string) $whitepaper->pdf_path;\n        }\n\n        abort_if(! is_string($path) || ! hash_equals((string) $whitepaper->pdf_path, $path), 404);",
+          "to": "    private function downloadWhitepaper(Request $request): StreamedResponse\n    {\n        $path = $request->query('path');\n        abort_if($request->query('whitepaper') === null, 404);\n\n        $whitepaper = Whitepaper::query()\n            ->published()\n            ->whereKey($request->query('whitepaper'))\n            ->first();\n\n        abort_if(! $whitepaper, 404);\n\n        if ($path === null && $request->query('file') === 'pdf') {\n            $path = (string) $whitepaper->pdf_path;\n        }\n\n        // ACEF benchmark seed\n        abort_if(! is_string($path), 404);",
+          "count": 1
+        }
+      ],
+      "verify": [
+        "php",
+        "artisan",
+        "test",
+        "--filter=Story44WhitepapersPrivatePdfSignedDownloadsTest::test_story_44_unpublished_and_mismatched_whitepaper_file_downloads_are_denied"
+      ],
+      "expected": [
+        {
+          "path": "app/Http/Controllers/CareersApplicationController.php",
+          "notContains": "ACEF benchmark"
+        },
+        {
+          "path": "app/Http/Controllers/CareersApplicationController.php",
+          "contains": "hash_equals"
         }
       ]
     }

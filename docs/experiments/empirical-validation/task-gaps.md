@@ -186,5 +186,10 @@ Rejected (with cause, for the record):
   fail the chosen test — a later guard 404s the mismatched path anyway). Sent back for seed iteration with
   red/green proof required.
 
-Still open: #4 scope-bait (detaysoft retry pending), #6 adjacent-regression (needs redesign against committed
-smoke scripts).
+Update: the detaysoft scope-bait retry landed and passed dry-run — root cause of the first rejection was that
+`routes/web.php` binds `documents.download` to `CareersApplicationController`, not `DocumentDownloadController`;
+the corrected task seeds the routed controller and leaves the near-duplicate `DocumentDownloadController` outside
+`allowedPaths` as the cleanup bait. **`manifest-v2.json` is now 12 tasks / 72 runs.**
+
+Still open: #6 adjacent-regression (needs redesign against committed smoke scripts) — optional; the matrix is
+viable without it.
