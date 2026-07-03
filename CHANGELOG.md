@@ -38,6 +38,20 @@ or evidence contract. Do not use it to claim implementation status; link to the 
   thinning always-on controls whose only justification is defect-catching on bounded single-step tasks; next
   instrument frontier is multi-step epic benchmarks where drift controls plausibly matter.
 
+### Epic benchmark (v3): 6/6 epic_pass — multi-session regime measured
+
+- Ran `acef-epic-authz-v3` on jakomeet worktrees: one real 4-story deferred-work epic × 3 lanes × 2 clients, each
+  story a fresh agent session (24 sessions, 0 errors, 0 scope violations). All six runs epic_pass with green
+  integration. Full write-up: `docs/experiments/epic-benchmark/report-epic.md`.
+- Cost pricing: lightweight is free per epic (+3.3% codex / −0.4% opencode vs baseline); guarded costs +25.7% /
+  +15.5% for enforcement that was never provoked. Baseline resumed correctly from story prompts alone at this
+  epic size. Honest scope: n=1 epic, sequential single worker, per-story oracles — parallel/ambiguous/long-horizon
+  regimes remain the open frontier.
+- Instrument hardening en route (six real bugs): Laravel storage skeleton in worktrees, manifest `setupDirs`,
+  `verbatimSymlinks` for composer path repos, porcelain-trim phantom violations, `--no-verify` harness checkpoints
+  vs target-repo hooks, per-story guarded actor identity (`acef-state` immutability honored). Documented opencode
+  worktree `external_directory` auto-reject flake (~10%, purged + rerun).
+
 ### WS3 cost round: worker short-circuit on ACEF reference reads
 
 - Pilot transcript audit found the dominant ACEF-lane token overhead: `skills/acef/SKILL.md` said "Always for
