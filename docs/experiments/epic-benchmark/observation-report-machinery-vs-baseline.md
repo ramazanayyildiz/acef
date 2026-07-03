@@ -141,6 +141,23 @@ the stale pre-commit rules (the same gate Arm 1 bypassed 15 times). Cycle 3's co
 those fixed rules (Rule 48 flagging a fixture literal), fixed properly, and re-gated as v2. One story's output
 became the next story's working control — the compounding loop ACEF's docs promise, observed within two hours.
 
+### Cycles 4–5 (E-POOL planning + S1) — fleet operations and the gate-friction curve
+
+**O2-11 — Worker-fleet operations are a real skill layer the machinery records but does not automate.** E-POOL S1
+burned two workers before shipping: a codex dev killed mid-delivery because the conductor's stall window was
+tighter than codex's long single turn (autopsy: 'Working (4m03s)', files landed at the kill), and an opencode
+replacement hijacked by its own interactive update dialog — the second client-self-update casualty in this
+project. The salvage path was machinery-native: the killed worker's immutable actor record let its 85–90%
+complete patch be adopted WITH authorship credit, a gap-filler finished it under corrected doctrine
+(transcript-tail reads before kills; first-minute dialog checks), and the gate cited evidence from the whole
+chain. New doctrine ledgered.
+
+**O2-12 — The commit-gate friction curve completed.** Arm 1: 15 silent bypasses. Machinery cycle 1: blocked →
+documented bypass approval. Cycle 2: stale rules fixed as a story. Cycles 3–4: normal commits. Cycle 5: one
+residual over-broad rule (34: 'every module has views') hit a deliberately viewless module — fixed in-line as a
+micro-commit with a bidirectional fixture proof (viewless exempt, view-bearing still enforced), then the story
+committed through the front door. No bypass. The gate's lifecycle under machinery: ignored → fought → maintained.
+
 ## Conclusions (first cycle)
 
 1. **The operating model is portable; the machinery is what makes it inescapable.** A disciplined Claude
