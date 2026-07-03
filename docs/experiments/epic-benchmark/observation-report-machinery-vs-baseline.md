@@ -1,6 +1,7 @@
 # Observation Report — ACEF Machinery vs Disciplined Baseline on Real Delivery
 
-Status: **in progress** — baseline arm complete; machinery arm accruing. This is the observational study the v3
+Status: **first full machinery cycle COMPLETE** (2026-07-03) — baseline arm complete; machinery arm has one
+end-to-end story cycle recorded and pushed; further cycles accrue as the epic continues. This is the observational study the v3
 epic benchmark could not produce: same repo (jakomeet), same conductor, same worker pool, real product work
 (E-PKG packaging/entitlements epic), two halves — S1–S7 run WITHOUT ACEF machinery (disciplined-conductor
 baseline), everything from the review-fix story onward run WITH fully installed ACEF typed state.
@@ -119,7 +120,31 @@ approval record documenting the bypass rationale, a single verification-backed `
 it, and a ledgered follow-up to update the stale rules. The contrast in one line: **Arm 1 normalized the bypass;
 Arm 2 turned it into a recorded, owner-approved exception with a remediation path.**
 
-- (pending) Closeout commit + push under approval.
+**O2-8 — Full cycle closed, with unscripted judge behavior.** The story completed the entire typed pipeline:
+worker → disk handoff after worker death → 7 targeted evidence-runs + 2 parallel-suite evidence records +
+3 UNSCRIPTED isolation-clear evidence records (the conductor isolated parallel-suite suspects on its own,
+following the ledger's "isolation is authoritative" methodology — nobody instructed those three runs) →
+independent review recorded as evidence → phase transitions enforced by projection → Process Judge PASS gate
+citing all evidence → documented ACCEPT_RISK bypass approval → commit `682b2580` → repo's own pre-push gate
+PASS → push to origin confirmed. Every artifact machine-checkable under `docs/ai/`.
+
+## Conclusions (first cycle)
+
+1. **The operating model is portable; the machinery is what makes it inescapable.** A disciplined Claude
+   conductor reproduced ~90% of ACEF's value by discipline alone (Arm 1) — and then normalized a quality-gate
+   bypass 15 times without noticing. The machinery caught that habit on its first story (O2-7).
+2. **Projections beat prompts for external agents.** The codex conductor's correct behavior — halting twice,
+   refusing premature gates, deriving its own constraints — came from `acef-next`'s typed contract, not from
+   the owner's brief (O2-1, O2-4). This held for a non-Claude agent with no ACEF training.
+3. **The controls that fired were the cheap ones.** Phase discipline and commit gating produced the catches;
+   the expensive ceremony (evidence wrappers) mostly recorded. But the recordings are what made worker death
+   (O2-3) and the bypass dispute auditable after the fact.
+4. **Cost profile:** ceremony overhead was minutes per story; the two halts each cost one owner round-trip and
+   were both correct. Combined with v3's measured +16–26% guarded-lane token premium, the machinery's price is
+   real but bounded — and in this cycle it purchased two genuine catches and one habit correction.
+5. **Open items for the next cycles:** stale repo selfcheck rules (the bypass-approval treadmill is
+   unsustainable — ledgered); AB purchase-dedup UX; the AI-audit gate must flip to fail-closed before E-INV;
+   quantitative overhead accounting across multiple stories.
 
 ## Deliverable criteria (from the owner's goal sentence)
 
