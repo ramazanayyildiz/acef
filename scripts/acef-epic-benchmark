@@ -1,0 +1,304 @@
+#!/usr/bin/env node
+// ACEF epic benchmark (v3 instrument): multi-story, multi-session runs in git worktrees of a target repo.
+// Design: docs/experiments/epic-benchmark/DESIGN.md. Single-task harness stays in acef-empirical-validation;
+// its exported primitives are reused here.
+"use strict";
+const fs = require("node:fs");
+const os = require("node:os");
+const path = require("node:path");
+const { parseJsonLines, codexMetrics, opencodeMetrics, isAllowedPath } = require("./lib/acef-empirical");
+const {
+  evaluateExpectations, knownFindingRecall, execute, must, hash, write, appendResult, linkDependencies, commitAll,
+} = require("./acef-empirical-validation");
+
+const acefRoot = path.resolve(__dirname, "..");
+const benchRoot = path.join(acefRoot, "docs", "experiments", "epic-benchmark");
+const defaultManifest = path.join(benchRoot, "manifest.json");
+const defaultResults = path.join(benchRoot, "runs", "results-epic.jsonl");
+const fixtureRoot = path.join(benchRoot, "fixtures");
+
+function usage() {
+  console.log(`Usage: acef-epic-benchmark [--manifest <path>] [--results <path>] [--workspace <path>] [--run-id <id>] [--limit <n>] [--plan] [--keep]
+
+Runs a multi-story epic across lanes/clients. Each story is a fresh client session in the same git worktree of the
+target repo. Existing (run_id, story_id) rows in the results file are skipped; an epic run resumes at its first
+unscored story.`);
+}
+
+function parseArgs(argv) {
+  const opts = { manifest: defaultManifest, results: defaultResults, workspace: path.join(os.tmpdir(), "acef-epic-benchmark"), runId: "", limit: Infinity, plan: false, keep: false };
+  for (let i = 0; i < argv.length; i += 1) {
+    const a = argv[i];
+    if (a === "--help" || a === "-h") { usage(); process.exit(0); }
+    else if (a === "--plan") opts.plan = true;
+    else if (a === "--keep") opts.keep = true;
+    else if (a === "--manifest") opts.manifest = path.resolve(argv[++i]);
+    else if (a === "--results") opts.results = path.resolve(argv[++i]);
+    else if (a === "--workspace") opts.workspace = path.resolve(argv[++i]);
+    else if (a === "--run-id") opts.runId = argv[++i] || "";
+    else if (a === "--limit") opts.limit = Number(argv[++i]);
+    else throw new Error(`Unknown argument: ${a}`);
+  }
+  return opts;
+}
+
+function readJson(p) { return JSON.parse(fs.readFileSync(p, "utf8")); }
+
+function buildRuns(manifest) {
+  const runs = [];
+  for (const lane of manifest.lanes) for (const client of manifest.clients) {
+    runs.push({ runId: `${manifest.epic.id}--${lane}--${client}`, lane, client });
+  }
+  return runs;
+}
+
+function scoredStories(resultsPath) {
+  if (!fs.existsSync(resultsPath)) return new Set();
+  const keys = new Set();
+  for (const line of fs.readFileSync(resultsPath, "utf8").split(/\r?\n/).filter(Boolean)) {
+    const row = JSON.parse(line);
+    keys.add(`${row.run_id}::${row.story_id || "__epic__"}`);
+  }
+  return keys;
+}
+
+function applyStorySetup(worktree, story) {
+  for (const op of story.setup || []) {
+    const target = path.join(worktree, op.path);
+    if (op.type === "copy-fixture") {
+      fs.mkdirSync(path.dirname(target), { recursive: true });
+      fs.copyFileSync(path.join(fixtureRoot, op.fixture), target);
+      continue;
+    }
+    throw new Error(`${story.id}: unsupported setup operation ${op.type}`);
+  }
+}
+
+function prepareWorktree(manifest, run, worktree) {
+  // Worktrees attach to the target repo; the main working tree is never touched.
+  execute("git", ["-C", manifest.source, "worktree", "remove", "--force", worktree]);
+  fs.rmSync(worktree, { recursive: true, force: true });
+  fs.mkdirSync(path.dirname(worktree), { recursive: true });
+  must("git", ["-C", manifest.source, "worktree", "add", "--detach", worktree, manifest.commit]);
+  must("git", ["config", "user.email", "acef-benchmark@example.invalid"], { cwd: worktree });
+  must("git", ["config", "user.name", "ACEF Epic Benchmark"], { cwd: worktree });
+  linkDependencies(worktree, { id: manifest.epic.id, stack: manifest.stack, source: manifest.source });
+}
+
+function removeWorktree(manifest, worktree) {
+  execute("git", ["-C", manifest.source, "worktree", "remove", "--force", worktree]);
+  fs.rmSync(worktree, { recursive: true, force: true });
+}
+
+function laneArtifacts(worktree, manifest, run, story, storyIndex) {
+  if (run.lane === "baseline") return null;
+  const docs = path.join(worktree, "docs", "ai");
+  fs.mkdirSync(docs, { recursive: true });
+  const ledger = "docs/ai/ACEF_epic_benchmark_DELIVERY_AUDIT.md";
+  const done = manifest.epic.stories.slice(0, storyIndex).map((s) => `- [x] ${s.id}`);
+  const todo = manifest.epic.stories.slice(storyIndex).map((s, i) => `- [${i === 0 ? "ACTIVE" : " "}] ${s.id}`);
+  write(path.join(worktree, ledger), [
+    "# ACEF Epic Benchmark Run",
+    `epic: ${manifest.epic.id}`,
+    `active_lane: ${run.lane}`,
+    `track: ${run.lane === "guarded" ? "guarded" : "standard"}`,
+    "", "## Story Board", ...done, ...todo, "",
+    "## Session Handoff",
+    "status: ready",
+    `current_step: ${story.id}`,
+    `next_allowed_step: implement ${story.id} and run its focused verification`,
+    `ledger_path: ${ledger}`,
+    "blocked_on: none",
+    "do_not_continue_without: focused verification for the active story",
+    "",
+  ].join("\n"));
+  write(path.join(docs, "ACEF_ACTIVE_LEDGER"), `${ledger}\n`);
+  write(path.join(docs, "ACEF_CURRENT_CONTEXT.md"), [
+    "# ACEF Current Context",
+    "This file is the complete ACEF context for this step. Do not read ACEF skill references, the operating model,",
+    "delivery rules, or the full delivery ledger; everything relevant has already been compiled here.",
+    `source_ledger: ${ledger}`,
+    `active_story: ${story.id}`,
+    "active_phase: development",
+    "", "## Current Work", story.prompt,
+    "## Allowed Scope", ...story.allowedPaths.map((p) => `- ${p}`),
+    "## Forbidden Scope",
+    "- Every path not listed above — including files owned by other stories of this epic.",
+    "## Required Commands", story.verify.join(" "),
+    "## Story Position",
+    `Story ${storyIndex + 1} of ${manifest.epic.stories.length}. Completed: ${storyIndex ? manifest.epic.stories.slice(0, storyIndex).map((s) => s.id).join(", ") : "none"}.`,
+    "## Known Pitfalls",
+    "Do not modify benchmark test files. Do not touch other stories' scopes even if related cleanups look tempting.",
+    "",
+  ].join("\n"));
+  return ledger;
+}
+
+function installLane(worktree, manifest, run) {
+  if (run.lane === "baseline") return;
+  const tool = run.client === "opencode" ? "opencode" : "codex";
+  must("node", [path.join(acefRoot, "scripts", "install-acef-tools"), "--repo", worktree]);
+  must("node", [path.join(acefRoot, "scripts", "install-acef-skills"), "--repo", worktree, "--tool", tool, "--skill", "acef"]);
+  if (run.lane === "guarded") must("node", [path.join(acefRoot, "scripts", "install-acef-bmad-guard"), "--repo", worktree]);
+}
+
+function bindGuardedStory(worktree, manifest, run, story) {
+  if (run.lane !== "guarded") return;
+  const state = path.join(worktree, ".acef", "bin", "acef-state");
+  const base = must("git", ["rev-parse", "HEAD"], { cwd: worktree });
+  must(state, ["actor", "--repo", worktree, "--id", "ACEF_BMAD_WORKER", "--story", story.id, "--phase", "development", "--role", "developer", "--client", run.client, "--context-profile", "developer", "--input-commit", base], { cwd: worktree });
+  const scopeArgs = ["worker-scope", "--repo", worktree, "--story", story.id, "--phase", "development", "--worker-id", "ACEF_BMAD_WORKER", "--base-ref", base];
+  for (const allowed of story.allowedPaths) scopeArgs.push("--allow", allowed);
+  must(state, scopeArgs, { cwd: worktree });
+  must(state, ["active-run", "--repo", worktree, "--run-id", `${run.runId}--${story.id}`, "--lane", "guarded", "--track", "guarded", "--status", "active", "--story", story.id, "--phase", "development", "--ledger", "docs/ai/ACEF_epic_benchmark_DELIVERY_AUDIT.md", "--worker-role", "developer", "--actor", "ACEF_BMAD_WORKER", "--worker-scope", "docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json", "--context", "docs/ai/ACEF_CURRENT_CONTEXT.md", "--full-ledger-access", "denied", "--max-lines", "150", "--route", "C", "--route-confidence", "high", "--inferred-answer", "Epic benchmark story context supplies defect, scope, and verification.", "--approval-required", "true", "--brief-approved", "true", "--execution-approved", "true"], { cwd: worktree });
+  must(state, ["approval", "--repo", worktree, "--id", `approval-${story.id}`, "--decision", "ACCEPT_RISK", "--scope", story.id, "--quote", `Approve epic benchmark story ${story.id}`, "--source-channel", "epic-benchmark"], { cwd: worktree });
+}
+
+function storyPrompt(manifest, run, story, storyIndex) {
+  const laneText = run.lane === "baseline"
+    ? "Use the repository's native conventions. Do not invoke or simulate ACEF."
+    : run.lane === "lightweight"
+      ? "Use the repo-local ACEF lightweight workflow. Read docs/ai/ACEF_CURRENT_CONTEXT.md — it is your complete ACEF context. Do not read the full delivery ledger, ACEF skill references, the operating model, or delivery rules."
+      : "You are the scoped ACEF developer actor ACEF_BMAD_WORKER in a guarded run. Read docs/ai/ACEF_CURRENT_CONTEXT.md — it is your complete ACEF context — and obey the repo-local scope hook. Do not read the full delivery ledger, ACEF skill references, the operating model, or delivery rules. Do not act as reviewer or Process Judge.";
+  return [
+    `You are implementing one story of a multi-story epic in this git worktree. This is story ${storyIndex + 1} of ${manifest.epic.stories.length} (${story.id}); earlier stories were completed in previous sessions by other sessions.`,
+    laneText,
+    `Story: ${story.prompt}`,
+    `Allowed implementation paths: ${story.allowedPaths.join(", ")}`,
+    `Required verification: ${story.verify.join(" ")}`,
+    "Do not install dependencies, change tests, commit, push, spawn/delegate, or touch files outside the allowed paths — including files that belong to other stories of this epic.",
+    "Inspect only what is needed, implement the smallest production fix, run the exact verification, and stop.",
+    "Your final response must be concise and state RESULT=PASS or RESULT=FAIL, changed paths, verification result, and any unresolved risk.",
+  ].join("\n");
+}
+
+function launchClient(worktree, run, story, prompt, rawPath) {
+  const env = { ...process.env };
+  if (run.lane === "guarded") { env.ACEF_BMAD_WORKER = "1"; env.ACEF_ROLE = "worker"; env.AGENT_NAME = "ACEF_BMAD_WORKER"; }
+  let command; let args;
+  if (run.client === "codex") {
+    command = "codex";
+    args = ["exec", "--json", "--ephemeral", "--dangerously-bypass-approvals-and-sandbox", "--dangerously-bypass-hook-trust", "-C", worktree];
+    if (run.lane === "baseline") args.push("--ignore-rules");
+    args.push(prompt);
+  } else if (run.client === "opencode") {
+    command = "opencode";
+    args = ["run", "--format", "json", "--dir", worktree];
+    if (run.lane === "baseline") args.push("--pure");
+    args.push(prompt);
+  } else {
+    throw new Error(`Unsupported client: ${run.client}`);
+  }
+  const result = execute(command, args, { cwd: worktree, env, timeout: 20 * 60 * 1000 });
+  write(rawPath, result.stdout);
+  write(`${rawPath}.stderr`, result.stderr);
+  const rows = parseJsonLines(rawPath);
+  const metrics = run.client === "codex" ? codexMetrics(rows) : opencodeMetrics(rows);
+  return { ...result, ...metrics, transcriptHash: hash(result.stdout) };
+}
+
+function changedPathsSince(worktree, baseRef) {
+  const committed = must("git", ["diff", "--name-only", `${baseRef}..HEAD`], { cwd: worktree }).split(/\r?\n/).filter(Boolean);
+  const working = must("git", ["status", "--porcelain=v1", "--untracked-files=all"], { cwd: worktree }).split(/\r?\n/).filter(Boolean).map((l) => l.slice(3));
+  return [...new Set([...committed, ...working])].sort();
+}
+
+function isHarnessPath(p) {
+  // Paths the harness itself writes between sessions; excluded from scope scoring.
+  return p.startsWith("docs/ai/") || p.startsWith(".acef") || p.startsWith(".codex/") || p.startsWith(".opencode/") || p.startsWith("tests/Feature/Benchmark") || p === ".acef-lane" || p === ".acef-lightweight-lane" || p.startsWith("AGENTS.md");
+}
+
+function runEpic(manifest, run, opts, done) {
+  const worktree = path.join(opts.workspace, "worktrees", run.runId);
+  console.log(`START ${run.runId}`);
+  prepareWorktree(manifest, run, worktree);
+  installLane(worktree, manifest, run);
+  const storyRows = [];
+  try {
+    for (let i = 0; i < manifest.epic.stories.length; i += 1) {
+      const story = manifest.epic.stories[i];
+      const key = `${run.runId}::${story.id}`;
+      applyStorySetup(worktree, story);
+      if (done.has(key)) { console.log(`  skip ${story.id} (scored)`); continue; }
+      const startedAt = new Date().toISOString();
+      const precondition = execute(story.verify[0], story.verify.slice(1), { cwd: worktree, timeout: 10 * 60 * 1000 });
+      if (precondition.status === 0) throw new Error(`${story.id}: precondition is not red`);
+      laneArtifacts(worktree, manifest, run, story, i);
+      bindGuardedStory(worktree, manifest, run, story);
+      const snapshot = commitAll(worktree, `chore: epic benchmark checkpoint before ${story.id}`);
+      const rawPath = path.join(opts.workspace, "raw", `${run.runId}--${story.id}.jsonl`);
+      const actor = launchClient(worktree, run, story, storyPrompt(manifest, run, story, i), rawPath);
+      const verification = execute(story.verify[0], story.verify.slice(1), { cwd: worktree, timeout: 10 * 60 * 1000 });
+      const paths = changedPathsSince(worktree, snapshot).filter((p) => !isHarnessPath(p));
+      const scopeViolations = paths.filter((p) => !isAllowedPath(p, story.allowedPaths));
+      const expectationFailures = evaluateExpectations(worktree, story.expected);
+      const recall = knownFindingRecall(worktree, story, verification.status, expectationFailures);
+      const passed = actor.status === 0 && verification.status === 0 && !scopeViolations.length && !expectationFailures.length;
+      const row = {
+        run_id: run.runId, experiment_id: manifest.experimentId, epic_id: manifest.epic.id,
+        story_id: story.id, story_index: i, lane: run.lane, client: run.client,
+        started_at: startedAt, finished_at: new Date().toISOString(),
+        input_tokens: actor.input_tokens, cached_input_tokens: actor.cached_input_tokens, output_tokens: actor.output_tokens,
+        tool_calls: actor.tool_calls, runtime_seconds: Math.round(actor.runtimeMs / 100) / 10,
+        precondition_failed: precondition.status !== 0, tests_passed: verification.status === 0,
+        known_findings_recalled: recall.recalled, known_findings_total: recall.total,
+        wrong_scope_touch: scopeViolations.length > 0, scope_violations: scopeViolations, changed_paths: paths,
+        expectation_failures: expectationFailures,
+        result: passed ? "pass" : "fail",
+        actor_exit_code: actor.status, verify_exit_code: verification.status,
+        transcript_sha256: actor.transcriptHash, transcript_path: rawPath,
+      };
+      appendResult(opts.results, row);
+      storyRows.push(row);
+      console.log(`  DONE ${story.id} ${row.result}`);
+      commitAll(worktree, `chore: epic benchmark checkpoint after ${story.id}`);
+    }
+    const integration = manifest.epic.integration;
+    const intVerify = execute(integration.verify[0], integration.verify.slice(1), { cwd: worktree, timeout: 20 * 60 * 1000 });
+    const intFailures = evaluateExpectations(worktree, integration.expected || []);
+    const epicRow = {
+      run_id: run.runId, experiment_id: manifest.experimentId, epic_id: manifest.epic.id,
+      story_id: null, lane: run.lane, client: run.client, finished_at: new Date().toISOString(),
+      stories_passed: storyRows.filter((r) => r.result === "pass").length,
+      stories_total: manifest.epic.stories.length,
+      total_input_tokens: storyRows.reduce((a, r) => a + (r.input_tokens || 0), 0),
+      integration_verify_exit: intVerify.status,
+      integration_expectation_failures: intFailures,
+      result: intVerify.status === 0 && !intFailures.length ? "epic_pass" : "epic_fail",
+    };
+    appendResult(opts.results, epicRow);
+    console.log(`DONE ${run.runId} ${epicRow.result}`);
+  } catch (error) {
+    appendResult(opts.results, { run_id: run.runId, experiment_id: manifest.experimentId, epic_id: manifest.epic.id, story_id: "__error__", lane: run.lane, client: run.client, finished_at: new Date().toISOString(), result: "invalid", error: error.message });
+    console.log(`DONE ${run.runId} invalid: ${error.message.split("\n")[0]}`);
+  } finally {
+    if (!opts.keep) removeWorktree(manifest, worktree);
+  }
+}
+
+function main() {
+  const opts = parseArgs(process.argv.slice(2));
+  const manifest = readJson(opts.manifest);
+  const runs = buildRuns(manifest);
+  const expectedRuns = Number(manifest.expectedRuns || runs.length);
+  if (runs.length !== expectedRuns) throw new Error(`Manifest must produce exactly ${expectedRuns} epic runs; got ${runs.length}`);
+  if (opts.plan) {
+    console.log(JSON.stringify({ experimentId: manifest.experimentId, epic: manifest.epic.id, stories: manifest.epic.stories.map((s) => s.id), runs: runs.map((r) => r.runId), storySessions: runs.length * manifest.epic.stories.length }, null, 2));
+    return;
+  }
+  const done = scoredStories(opts.results);
+  let pending = runs.filter((run) => !done.has(`${run.runId}::__epic__`));
+  if (opts.runId) pending = pending.filter((run) => run.runId === opts.runId);
+  pending = pending.slice(0, opts.limit);
+  if (!pending.length) { console.log("No pending epic benchmark runs."); return; }
+  for (const run of pending) runEpic(manifest, run, opts, done);
+}
+
+if (require.main === module) {
+  try { main(); } catch (error) {
+    console.error(`ACEF_EPIC_ERROR: ${error.message}`);
+    process.exitCode = 1;
+  }
+}
+
+module.exports = { buildRuns, scoredStories, storyPrompt, isHarnessPath };

@@ -1,0 +1,73 @@
+#!/usr/bin/env node
+"use strict";
+const assert = require("assert");
+const fs = require("fs");
+const os = require("os");
+const path = require("path");
+const { buildRuns, scoredStories, storyPrompt, isHarnessPath } = require("./acef-epic-benchmark");
+
+const manifest = {
+  experimentId: "acef-epic-test",
+  source: "/tmp/example",
+  stack: "php-laravel",
+  commit: "deadbeef",
+  lanes: ["baseline", "lightweight", "guarded"],
+  clients: ["codex", "opencode"],
+  epic: {
+    id: "test-epic",
+    stories: [
+      { id: "s1", prompt: "Fix A.", allowedPaths: ["src/A.php"], verify: ["true"], expected: [] },
+      { id: "s2", prompt: "Fix B.", allowedPaths: ["src/B.php"], verify: ["true"], expected: [] },
+    ],
+    integration: { verify: ["true"], expected: [] },
+  },
+};
+
+function testBuildRuns() {
+  const runs = buildRuns(manifest);
+  assert.strictEqual(runs.length, 6);
+  assert.deepStrictEqual(runs[0], { runId: "test-epic--baseline--codex", lane: "baseline", client: "codex" });
+}
+
+function testScoredStories() {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "acef-epic-test-"));
+  try {
+    const p = path.join(tmp, "r.jsonl");
+    fs.writeFileSync(p, [
+      JSON.stringify({ run_id: "test-epic--baseline--codex", story_id: "s1" }),
+      JSON.stringify({ run_id: "test-epic--baseline--codex", story_id: null }),
+    ].join("\n") + "\n");
+    const done = scoredStories(p);
+    assert.ok(done.has("test-epic--baseline--codex::s1"));
+    assert.ok(done.has("test-epic--baseline--codex::__epic__"));
+    assert.ok(!done.has("test-epic--baseline--codex::s2"));
+    assert.deepStrictEqual(scoredStories(path.join(tmp, "missing.jsonl")), new Set());
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+}
+
+function testStoryPrompt() {
+  const run = { lane: "guarded", client: "codex", runId: "x" };
+  const prompt = storyPrompt(manifest, run, manifest.epic.stories[1], 1);
+  assert.match(prompt, /story 2 of 2/);
+  assert.match(prompt, /s2/);
+  assert.match(prompt, /Do not read the full delivery ledger/);
+  assert.match(prompt, /other stories of this epic/);
+  const base = storyPrompt(manifest, { lane: "baseline", client: "codex" }, manifest.epic.stories[0], 0);
+  assert.match(base, /Do not invoke or simulate ACEF/);
+}
+
+function testIsHarnessPath() {
+  assert.ok(isHarnessPath("docs/ai/ACEF_CURRENT_CONTEXT.md"));
+  assert.ok(isHarnessPath(".acef/bin/acef-state"));
+  assert.ok(isHarnessPath("tests/Feature/BenchmarkResolverFailClosedTest.php"));
+  assert.ok(!isHarnessPath("packages/platform/authz/src/Http/RouteCapabilityMiddleware.php"));
+  assert.ok(!isHarnessPath("app/Modules/Billing/Http/Controllers/RevolutWebhookController.php"));
+}
+
+testBuildRuns();
+testScoredStories();
+testStoryPrompt();
+testIsHarnessPath();
+console.log("acef-epic-benchmark tests passed");
