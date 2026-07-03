@@ -6,24 +6,27 @@ It helps an AI agent understand your project first, route the work correctly, an
 specific case. ACEF does not replace tools like BMAD, Kiro, GSD, OpenSpec, or spec-kit — it orchestrates them through
 the reality of your current project.
 
-## ACEF v1 Status
+## ACEF v2 Status
 
-ACEF v1 is evidence-backed for **quality and process control**, not for token-cost reduction — though the quality result comes from a small benchmark where only one task differentiated lanes; see the sample caveat in `method/VALIDATION_PLAN.md`.
+The v2 empirical matrix (72 runs: 12 seeded-defect tasks × 3 lanes × 2 clients, July 2026) updated both v1 claims —
+full write-up in `docs/experiments/empirical-validation/report-v2.md`:
 
-The v1 empirical validation matrix ran 30 external-agent tasks across three repositories, three stacks, two clients,
-and three lanes. It showed that ACEF lightweight/guarded lanes improved pass rate and known-defect recall, but increased
-median input-token usage versus baseline. Therefore ACEF v1 keeps the current safe context policy and does not promote
-SQLite, vector, graph, SCIP, Serena, Codebase-Memory, or Context Mode-backed retrieval as defaults.
+- **Token cost is fixed.** After the worker short-circuit (scoped workers read only their compiled current context,
+  never the ACEF references), ACEF lane overhead fell from +39%/+65% (v1, codex) to +20%/+24%; on opencode ACEF
+  lanes now cost the same as or less than baseline.
+- **The v1 quality edge did not replicate.** On a task set purpose-built to be lane-sensitive (scope bait,
+  test-weakening bait, hidden findings, multi-file wiring, durable persistence, multi-system defects), every lane —
+  including baseline — performed at ceiling with current-generation agents. ACEF is therefore **not** claimed to
+  catch defects that strong agents miss on bounded single-step tasks.
 
-Current optimization target:
+What ACEF's process controls still offer is what `method/CONTROL_RATIONALE.md` always documented: auditable actor
+separation, scope fencing, durable evidence, and drift control for **unattended, multi-session, or multi-worker**
+delivery — a regime the current benchmark does not exercise. Measuring that regime (multi-step epic benchmarks) is
+the next validation frontier; until then, always-on controls justified only by single-step defect-catching are being
+thinned per `method/STABILIZATION_ROADMAP.md`, and the control freeze stays in force.
 
-- shorter worker prompts;
-- narrower file and diff reads;
-- less repeated ledger/artifact loading;
-- better per-role Epic Context Packs.
-
-The next benchmark should repeat the same 30-run comparison after those prompt/context-policy improvements and compare
-against `docs/experiments/empirical-validation/runs/results.jsonl`.
+ACEF still does not promote SQLite, vector, graph, SCIP, Serena, Codebase-Memory, or Context Mode-backed retrieval
+as defaults.
 
 ## Core idea
 

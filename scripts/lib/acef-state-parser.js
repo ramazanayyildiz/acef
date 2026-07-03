@@ -711,7 +711,10 @@ function parseControlDosing(filePath) {
   const hardRules = [
     ["worker-scope", CONTROL_DOSING_LANES, "required"],
     ["evidence-manifest", ["guarded", "full-bmad"], "required"],
-    ["runner-proof", ["guarded", "full-bmad"], "required"],
+    // V2 thinning (report-v2): runner-proof is required only for full-BMAD; guarded is
+    // required-if-triggered (unattended/async), with the skeptical re-run as the attended backstop.
+    ["runner-proof", ["full-bmad"], "required"],
+    ["runner-proof", ["guarded"], "required-if-triggered"],
     ["gate-verdict", ["guarded", "full-bmad"], "required"],
     ["actor-records", ["guarded", "full-bmad"], "required"],
     ["cold-read-current-context", ["lightweight", "guarded", "full-bmad"], "required"],

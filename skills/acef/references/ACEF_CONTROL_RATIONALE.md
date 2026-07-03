@@ -104,7 +104,7 @@ Use this table to choose full artifact, lighter form, or human/backstop check:
 | Actor records | Audit plus policy guard | Any independent workers/reviewers; required for guarded/full-BMAD | Real topology plus reviewer report |
 | Approval receipts | Scope guard | Epic transitions, guarded starts, high-risk expansions | Fresh explicit user confirmation |
 | Evidence manifest | Evidence guard | Guarded/full-BMAD/unattended; lighter command log for quick-fix/lightweight | Skeptical disk re-run |
-| Runner proof | Cooperative integrity guard | Guarded/full-BMAD/unattended | Skeptical re-run and raw log inspection |
+| Runner proof | Cooperative integrity guard | Full-BMAD; guarded only when unattended/async (v2 thinning) | Skeptical re-run and raw log inspection |
 | Gate verdict | Decision guard | Guarded/full-BMAD; lightweight closeout when typed gates are used | Manual closeout checklist |
 | Surface contract | Runtime floor | User-visible or persistence-affecting feature lanes | Manual browser/runtime persistence proof |
 | Test-integrity check | Test-gutting guard | Any lane where the worker edits tests | Reviewer assertion/skip/import diff |

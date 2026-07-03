@@ -30,6 +30,25 @@ Evidence:
 Do not add new retrieval/storage infrastructure from this result. A future measurement round must compare against this
 baseline after prompt/context-policy improvements.
 
+## v2 Result (2026-07-02)
+
+The wider measurement round ran: 72 runs (12 seeded-defect tasks × 3 lanes × 2 clients), 0 invalid
+(`docs/experiments/empirical-validation/report-v2.md`).
+
+- **Cost claim superseded:** after the worker short-circuit, codex ACEF-lane overhead fell from +39%/+65% to
+  +20%/+24% and opencode lanes matched or beat baseline. ACEF is no longer meaningfully token-expensive.
+- **Quality claim did not replicate:** the v1 sample caveat resolved against the claim. On a task set designed to
+  be lane-sensitive, every lane performed at ceiling (oracle-adjusted 23/24 baseline, 24/24 lightweight, 23/24
+  guarded); one genuine lane differentiation in 72 runs; zero scope violations or fixture tampering in any lane.
+  ACEF is **not** validated as catching defects strong current agents miss on bounded single-step tasks.
+- **Open validation frontier:** unattended, multi-session, and multi-worker delivery — the regime the drift/
+  separation controls were designed for — remains unmeasured. The next measurement round must be a multi-step
+  epic benchmark; single-step task sets are saturated by current agents.
+
+Decision: keep the control freeze; thin always-on controls whose only justification is single-step defect-catching
+(first: `runner-proof` out of the guarded bundle); do not thin worker-scope, gate decision, or test-integrity
+guards without the multi-step measurement.
+
 ## Freeze
 
 Do not add new retrieval/storage backends until the current policy is measured on real tasks.

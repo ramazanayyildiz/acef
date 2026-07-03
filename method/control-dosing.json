@@ -213,10 +213,10 @@
           "backstop": "Skeptical re-run and raw log inspection."
         },
         "guarded": {
-          "requirement": "required",
-          "dose": "full",
+          "requirement": "required-if-triggered",
+          "dose": "compact",
           "enforcementLevel": "validator",
-          "backstop": "Raw log inspection can audit but should not replace guarded runner proof."
+          "backstop": "Skeptical re-run and raw log inspection (v2 thinning: attended guarded flows rely on the re-run backstop; unattended guarded work should trigger runner proof)."
         },
         "full-bmad": {
           "requirement": "required",
@@ -356,15 +356,22 @@
     }
   ],
   "laneBundles": {
-    "quick-fix": ["worker-scope", "lean-evidence"],
-    "lightweight": ["worker-scope", "cold-read-current-context", "active-run-next-action", "lean-evidence"],
+    "quick-fix": [
+      "worker-scope",
+      "lean-evidence"
+    ],
+    "lightweight": [
+      "worker-scope",
+      "cold-read-current-context",
+      "active-run-next-action",
+      "lean-evidence"
+    ],
     "guarded": [
       "worker-scope",
       "cold-read-current-context",
       "active-run-next-action",
       "actor-records",
       "evidence-manifest",
-      "runner-proof",
       "gate-verdict",
       "lean-evidence"
     ],
@@ -379,5 +386,5 @@
       "lean-evidence"
     ]
   },
-  "notes": "This manifest defines control dose by lane. It does not replace the lane validators that verify actual run artifacts."
+  "notes": "This manifest defines control dose by lane. It does not replace the lane validators that verify actual run artifacts. V2 thinning (2026-07-02): runner-proof removed from the guarded bundle per report-v2 — no measured defect value on bounded single-step guarded work and the documented backstop (skeptical re-run) is available in attended guarded flows; full-bmad retains runner-proof for unattended/async work."
 }

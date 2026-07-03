@@ -9,6 +9,18 @@ or evidence contract. Do not use it to claim implementation status; link to the 
 
 ## Unreleased
 
+### V2 honest-down + first thinning move
+
+- README "ACEF v1 Status" → "ACEF v2 Status": token-cost claim superseded (+20%/+24% codex, ≈0% opencode), quality
+  claim honest-downed (no lane edge on bounded single-step tasks; controls' remaining documented value is the
+  unattended/multi-session/multi-worker regime, which is unmeasured). `VALIDATION_PLAN.md` gained a v2 Result
+  section resolving the v1 sample caveat against the claim; `STABILIZATION_ROADMAP.md` records the active posture.
+- First thinning move per the WS4 decision: `runner-proof` removed from the guarded lane bundle and downgraded to
+  `required-if-triggered` (unattended/async) in `control-dosing.json`; the parser hard-rule and both control
+  rationale dosing tables updated. Full-BMAD keeps runner-proof required. Backstop: the skeptical re-run, as the
+  dosing table always documented. Worker-scope, gate-decision, and test-integrity guards are explicitly NOT
+  thinned without the multi-step epic measurement.
+
 ### V2 matrix result: cost fixed, quality edge did not replicate
 
 - Ran the full 72-run v2 matrix (12 tasks × 3 lanes × 2 clients, 0 invalid): `runs/results-v2.jsonl`, write-up in

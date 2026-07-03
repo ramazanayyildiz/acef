@@ -223,7 +223,7 @@ Use this table when deciding whether a lane needs the full artifact, a lighter f
 | Actor records | Self-review, role collapse, unverifiable separation | Audit plus policy guard | Any lane with independent workers/reviewers; required for guarded/full-BMAD | Real separate-worker topology plus reviewer report, but less auditable |
 | Approval receipts | Ambiguous "continue" treated as new scope approval | Scope guard | Epic transitions, guarded starts, high-risk expansions | Fresh explicit user confirmation |
 | Evidence manifest | Stale output, wrong command, wrong commit, chat-only evidence | Audit plus evidence guard | Guarded/full-BMAD/unattended; lighter command log for quick-fix/lightweight | Skeptical re-run from disk |
-| Runner proof | Evidence record edited after command or detached from raw output | Cooperative integrity guard | Guarded/full-BMAD/unattended | Skeptical re-run and raw log inspection |
+| Runner proof | Evidence record edited after command or detached from raw output | Cooperative integrity guard | Full-BMAD; guarded only when unattended/async (v2 thinning) | Skeptical re-run and raw log inspection |
 | Gate verdict | PASS without required evidence or wrong decision actor | Decision guard | Guarded/full-BMAD; lightweight closeout when typed gates are used | Manual closeout checklist plus independent review |
 | Surface contract | Fake runtime proof, in-memory persistence, unreachable UI | Runtime floor | Any user-visible or persistence-affecting feature lane | Manual browser/runtime check with durable persistence proof |
 | Test-integrity check | Green-by-weakening-tests | Active guard | Any lane where the worker edits tests inside the envelope | Reviewer diff of assertions/skips/imports |

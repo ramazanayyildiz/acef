@@ -33,6 +33,20 @@ against the v1 baseline.
 See `method/ACEF_COCKPIT.md` for the product direction: ACEF may use external UI/runtime tools as cockpit or execution
 shells, but ACEF keeps gate, evidence, actor, scope, and state authority.
 
+## V2 Outcome (2026-07-02)
+
+The v2 matrix ran: 72/72 valid (`docs/experiments/empirical-validation/report-v2.md`). Cost round validated
+(codex lane overhead +39%/+65% → +20%/+24%; opencode at/below baseline). Quality edge did not replicate — every
+lane at ceiling on the expanded lane-sensitive task set; single genuine differentiation in 72 runs. Per the
+pre-committed WS4 rule, the active posture is now:
+
+- the control freeze stays in force;
+- always-on controls justified only by single-step defect-catching are thinned (first move: `runner-proof`
+  removed from the guarded lane bundle — its documented backstop, the skeptical re-run, is available in guarded
+  flows; full-BMAD keeps it);
+- the next validation frontier is a multi-step epic benchmark, where drift/separation controls plausibly earn
+  their cost. No thinning of worker-scope, gate decision, or test-integrity guards without that measurement.
+
 ## Control Freeze (v2 round)
 
 Until the v2 empirical matrix has run and its verdict is written down, the enforcement surface is **frozen**:
