@@ -128,6 +128,19 @@ independent review recorded as evidence → phase transitions enforced by projec
 citing all evidence → documented ACCEPT_RISK bypass approval → commit `682b2580` → repo's own pre-push gate
 PASS → push to origin confirmed. Every artifact machine-checkable under `docs/ai/`.
 
+### Cycles 2–3 (selfcheck-rules, ab-audit-fail-closed)
+
+**O2-9 — Friction collapsed once the path was worn.** Cycle 2 (selfcheck rules) and cycle 3 (fail-closed audit
+gate) ran with ZERO conductor halts: fresh actor bound before dispatch, evidence, independent review, judge gate,
+normal commits (no bypass), owner-approved pushes. Ceremony cost settled at roughly code-review overhead. Failed
+DoD harness attempts (2 in cycle 2) and a superseded gate (v1 in cycle 3) were preserved uncited rather than
+deleted — evidence append-only discipline held without enforcement.
+
+**O2-10 — The machinery improved itself and the improvement fired immediately.** Cycle 2's deliverable was fixing
+the stale pre-commit rules (the same gate Arm 1 bypassed 15 times). Cycle 3's commit was then caught by one of
+those fixed rules (Rule 48 flagging a fixture literal), fixed properly, and re-gated as v2. One story's output
+became the next story's working control — the compounding loop ACEF's docs promise, observed within two hours.
+
 ## Conclusions (first cycle)
 
 1. **The operating model is portable; the machinery is what makes it inescapable.** A disciplined Claude
