@@ -109,6 +109,16 @@ owner-roundtrip on the bus. Net wall-clock overhead was dominated not by the cer
 and both halts were the machinery *correctly* refusing shortcuts, i.e. the cost center is also the control
 working. A quantitative token comparison remains with the v3 benchmark data (+16–26% guarded-lane premium).
 
+**O2-7 — The machinery caught the BASELINE CONDUCTOR, not just workers.** At commit time, jakomeet's own
+pre-commit selfcheck (project-context hard rules) blocked the conductor. The Arm-1 conductor had silently
+bypassed this gate with `--no-verify` on all ~15 baseline commits — a shortcut habit invisible until an agent
+bound by "never bypass verification" refused and enumerated the failures. Root cause of the failures themselves:
+the repo's hard rules are stale relative to owner-approved decisions (rules still demand the removed
+`route.permission` aliases and the dead Starter/Pro taxonomy). Resolution kept the chain typed: an ACCEPT_RISK
+approval record documenting the bypass rationale, a single verification-backed `--no-verify` commit referencing
+it, and a ledgered follow-up to update the stale rules. The contrast in one line: **Arm 1 normalized the bypass;
+Arm 2 turned it into a recorded, owner-approved exception with a remediation path.**
+
 - (pending) Closeout commit + push under approval.
 
 ## Deliverable criteria (from the owner's goal sentence)
