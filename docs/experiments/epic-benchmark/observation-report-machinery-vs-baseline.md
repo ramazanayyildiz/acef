@@ -92,7 +92,24 @@ state. The conductor halted and reported the exact projection rather than gating
 transition impossible to do silently. Resolution was the legitimate path — bind the Process Judge actor, rewrite
 the active-run singleton to the review phase, re-read the projection.
 
-- (pending) Gate verdict + commit outcome and overhead accounting.
+**O2-5 — The gate artifact replaces the conductor's word.** The story closed with a typed PASS verdict
+(`docs/ai/gates/gate-review-fixes-b1-w2-w3-n2n3n4.json`) decided by a distinct Process Judge actor
+(`EPKG_REVIEW_FIXES_PROCESS_JUDGE_CODEX` — not the developer actor), pinned to the input commit, citing eight
+evidence records: seven single-class test evidence-runs plus the independent review report recorded as evidence,
+with per-surface round-trip mapping (database/config/internal/http). In Arm 1 the equivalent information was a
+chat paragraph and a commit message; here it is machine-checkable repo truth that `acef-process-validator` can
+audit. The full review-phase pipeline that produced it — developer forbidden to gate, review report demanded
+before gating, judge distinct from developer — was enforced by `acef-next` projections at every step (see O2-4),
+not by anyone's discipline.
+
+**O2-6 — Ceremony overhead (qualitative, this story).** The typed machinery added, beyond Arm-1 discipline:
+state bootstrap (~10 CLI invocations, one-time per run), two phase transitions, eight evidence-run wrappers
+around commands that would have run anyway, one gate write, and two conductor-halts that each cost one
+owner-roundtrip on the bus. Net wall-clock overhead was dominated not by the ceremony but by the halts —
+and both halts were the machinery *correctly* refusing shortcuts, i.e. the cost center is also the control
+working. A quantitative token comparison remains with the v3 benchmark data (+16–26% guarded-lane premium).
+
+- (pending) Closeout commit + push under approval.
 
 ## Deliverable criteria (from the owner's goal sentence)
 
