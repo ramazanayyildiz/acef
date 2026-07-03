@@ -1,0 +1,25 @@
+diff --git a/packages/platform/authz/src/Http/RouteCapabilityMiddleware.php b/packages/platform/authz/src/Http/RouteCapabilityMiddleware.php
+index f45c3b49..82819dab 100644
+--- a/packages/platform/authz/src/Http/RouteCapabilityMiddleware.php
++++ b/packages/platform/authz/src/Http/RouteCapabilityMiddleware.php
+@@ -12,12 +12,20 @@
+ 
+ class RouteCapabilityMiddleware
+ {
++    private const REQUEST_EVALUATED_ATTRIBUTE = 'platform_authz.route_capability_evaluated';
++
+     public function __construct(
+         private readonly RouteRequirementResolver $resolver,
+     ) {}
+ 
+     public function handle(Request $request, Closure $next): Response
+     {
++        if ($request->attributes->get(self::REQUEST_EVALUATED_ATTRIBUTE) === true) {
++            return $next($request);
++        }
++
++        $request->attributes->set(self::REQUEST_EVALUATED_ATTRIBUTE, true);
++
+         $routeName = $request->route()?->getName();
+ 
+         if (!$routeName) {

@@ -127,7 +127,9 @@ function linkDependencies(repo, task) {
   if (task.stack === "php-laravel") {
     const sourceVendor = path.join(task.source, "vendor");
     if (!fs.existsSync(sourceVendor)) throw new Error(`${task.id}: source vendor directory missing`);
-    fs.cpSync(sourceVendor, path.join(repo, "vendor"), { recursive: true });
+    // verbatimSymlinks keeps composer path-repository symlinks relative, so package code
+    // resolves inside the clone/worktree instead of leaking back to the source checkout.
+    fs.cpSync(sourceVendor, path.join(repo, "vendor"), { recursive: true, verbatimSymlinks: true });
     const sourceEnv = path.join(task.source, ".env");
     if (fs.existsSync(sourceEnv)) fs.copyFileSync(sourceEnv, path.join(repo, ".env"));
     fs.mkdirSync(path.join(repo, "database"), { recursive: true });
@@ -333,14 +335,14 @@ function changedPaths(repo, baseRef) {
   return [...new Set([...committed, ...working])].sort();
 }
 
-function evaluateExpectations(repo, expectations) {
+function evaluateExpectations(repo, expectations, fixtureRootOverride) {
   const failures = [];
   for (const expectation of expectations || []) {
     const text = fs.readFileSync(path.join(repo, expectation.path), "utf8");
     if (expectation.contains && !text.includes(expectation.contains)) failures.push(`${expectation.path} missing expected text`);
     if (expectation.notContains && text.includes(expectation.notContains)) failures.push(`${expectation.path} retains forbidden text`);
     if (expectation.fixtureUnchanged) {
-      const fixture = fs.readFileSync(path.join(fixtureRoot, expectation.fixtureUnchanged), "utf8");
+      const fixture = fs.readFileSync(path.join(fixtureRootOverride || fixtureRoot, expectation.fixtureUnchanged), "utf8");
       if (text !== fixture) failures.push(`${expectation.path} was modified from fixture ${expectation.fixtureUnchanged}`);
     }
   }
@@ -351,13 +353,13 @@ function expectedPass(repo, task) {
   return evaluateExpectations(repo, task.expected);
 }
 
-function knownFindingRecall(repo, task, verificationStatus, expectationFailures) {
+function knownFindingRecall(repo, task, verificationStatus, expectationFailures, fixtureRootOverride) {
   if (!Array.isArray(task.knownFindings) || !task.knownFindings.length) {
     return { recalled: verificationStatus === 0 && !expectationFailures.length ? 1 : 0, total: 1 };
   }
   let recalled = 0;
   for (const finding of task.knownFindings) {
-    if (verificationStatus === 0 && !evaluateExpectations(repo, finding.expected).length) recalled += 1;
+    if (verificationStatus === 0 && !evaluateExpectations(repo, finding.expected, fixtureRootOverride).length) recalled += 1;
   }
   return { recalled, total: task.knownFindings.length };
 }

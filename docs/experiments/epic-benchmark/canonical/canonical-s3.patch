@@ -1,0 +1,110 @@
+diff --git a/app/Modules/Billing/routes.php b/app/Modules/Billing/routes.php
+index a8cc4896..a9a3769b 100644
+--- a/app/Modules/Billing/routes.php
++++ b/app/Modules/Billing/routes.php
+@@ -8,7 +8,7 @@
+ use App\Modules\Billing\Livewire\PlanSelection;
+ use Illuminate\Support\Facades\Route;
+ 
+-$middlewares = ['web', 'auth:web', 'verified', 'workspace.active', 'route.permission'];
++$middlewares = ['web', 'auth:web', 'verified', 'workspace.active'];
+ if (config('jetstream.auth_session')) {
+     array_splice($middlewares, 3, 0, config('jetstream.auth_session'));
+ }
+diff --git a/app/Modules/Events/routes.php b/app/Modules/Events/routes.php
+index 1fc8ff89..784efebf 100644
+--- a/app/Modules/Events/routes.php
++++ b/app/Modules/Events/routes.php
+@@ -67,7 +67,6 @@
+     config('jetstream.auth_session'),
+     'verified',
+     'workspace.active',
+-    'route.permission',
+ ]))
+     ->group(function () {
+         Route::get('/automations/dashboard', [AutomationConfigurationController::class, 'index'])
+@@ -80,7 +79,6 @@
+     config('jetstream.auth_session'),
+     'verified',
+     'workspace.active',
+-    'route.permission',
+ ]))
+     ->prefix('events')
+     ->name('events.')
+diff --git a/app/Modules/Streaming/routes.php b/app/Modules/Streaming/routes.php
+index b39208eb..f910865d 100644
+--- a/app/Modules/Streaming/routes.php
++++ b/app/Modules/Streaming/routes.php
+@@ -45,7 +45,6 @@
+     config('jetstream.auth_session'),
+     'verified',
+     'workspace.active',
+-    'route.permission',
+ ]))
+     ->prefix('events')
+     ->name('events.')
+diff --git a/app/Modules/SuperAdmin/Routes/web.php b/app/Modules/SuperAdmin/Routes/web.php
+index 33498f35..aa4f55f2 100644
+--- a/app/Modules/SuperAdmin/Routes/web.php
++++ b/app/Modules/SuperAdmin/Routes/web.php
+@@ -22,7 +22,7 @@
+ use App\Modules\SuperAdmin\Livewire\WorkspacesIndex;
+ use Illuminate\Support\Facades\Route;
+ 
+-$middlewares = ['web', 'auth:web', 'verified', 'route.permission'];
++$middlewares = ['web', 'auth:web', 'verified'];
+ if (config('jetstream.auth_session')) {
+     array_splice($middlewares, 2, 0, config('jetstream.auth_session'));
+ }
+diff --git a/routes/web.php b/routes/web.php
+index 65cee146..662dce2b 100644
+--- a/routes/web.php
++++ b/routes/web.php
+@@ -156,7 +156,6 @@
+ Route::middleware($wizardMiddlewares)->group(function () {
+     // User notification inbox — user-scoped, does NOT require workspace.active
+     Route::get('/notifications', NotificationCenter::class)
+-        ->middleware('route.permission')
+         ->name('notifications.index');
+ 
+     Route::get('/workspace/create', WorkspaceWizard::class)
+@@ -191,11 +190,9 @@
+ 
+     // R6-14: Route guard — workspace-less users redirected to wizard
+     Route::get('/workspace/settings', $workspacePage('workspace.settings'))
+-        ->middleware('route.permission')
+         ->name('workspace.settings');
+ 
+     Route::get('/workspace/members', $workspacePage('workspace.members'))
+-        ->middleware('route.permission')
+         ->name('workspace.members');
+ 
+     // Story 1.5 Round 2 — tenant stubs guarded by the canonical
+@@ -203,11 +200,9 @@
+     // lives in config/route_permissions.php; both role and plan gates
+     // are evaluated through a single pipeline.
+     Route::redirect('/automations', '/automations/dashboard')
+-        ->middleware('route.permission')
+         ->name('automations.legacy');
+ 
+     Route::get('/events', EventList::class)
+-        ->middleware('route.permission')
+         ->name('events.index');
+ 
+     // Account settings
+@@ -223,7 +218,6 @@
+     config('jetstream.auth_session'),
+     'verified',
+     'workspace.active',
+-    'route.permission',
+ ]))->group(function () {
+     // Dashboard
+     Route::get('/dashboard', function (
+@@ -272,7 +266,6 @@
+     'auth:web',
+     config('jetstream.auth_session'),
+     'verified',
+-    'route.permission',
+ ]))->prefix('admin')
+     ->name('admin.')
+     ->group(function () {

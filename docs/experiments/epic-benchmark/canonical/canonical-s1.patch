@@ -1,0 +1,85 @@
+diff --git a/packages/platform/authz/src/Http/RouteRequirementResolver.php b/packages/platform/authz/src/Http/RouteRequirementResolver.php
+index 75156bc6..2dfb2ec0 100644
+--- a/packages/platform/authz/src/Http/RouteRequirementResolver.php
++++ b/packages/platform/authz/src/Http/RouteRequirementResolver.php
+@@ -4,6 +4,8 @@
+ 
+ namespace Platform\Authz\Http;
+ 
++use InvalidArgumentException;
++
+ class RouteRequirementResolver
+ {
+     /** @var array<string, string> Map of special permission names to user method names */
+@@ -72,7 +74,7 @@ public function parse(string $permissionString): RouteRequirement
+         $andClauses = array_filter($andClauses, fn(string $c) => $c !== '');
+ 
+         if (count($andClauses) === 0) {
+-            return new RouteRequirement(RouteRequirement::TYPE_NONE);
++            throw new InvalidArgumentException('Route permission expression must contain at least one capability.');
+         }
+ 
+         if (count($andClauses) === 1) {
+@@ -105,6 +107,10 @@ private function parseClause(string $clause): RouteRequirement
+         $orParts = array_map('trim', explode('|', $clause));
+         $orParts = array_filter($orParts, fn(string $p) => $p !== '');
+ 
++        if (count($orParts) === 0) {
++            throw new InvalidArgumentException('Route permission expression must contain at least one capability.');
++        }
++
+         if (count($orParts) === 1) {
+             return new RouteRequirement(
+                 type: RouteRequirement::TYPE_SINGLE,
+diff --git a/tests/Unit/Platform/Authz/RouteRequirementResolverTest.php b/tests/Unit/Platform/Authz/RouteRequirementResolverTest.php
+index cc6b82f5..b87a72d7 100644
+--- a/tests/Unit/Platform/Authz/RouteRequirementResolverTest.php
++++ b/tests/Unit/Platform/Authz/RouteRequirementResolverTest.php
+@@ -2,6 +2,7 @@
+ 
+ namespace Tests\Unit\Platform\Authz;
+ 
++use InvalidArgumentException;
+ use Tests\TestCase;
+ use Platform\Authz\Http\RouteRequirement;
+ use Platform\Authz\Http\RouteRequirementResolver;
+@@ -166,9 +167,10 @@ public function parse_trims_whitespace(): void
+     #[Test]
+     public function parse_empty_string_returns_none(): void
+     {
+-        $result = $this->resolver->parse('');
++        $this->expectException(InvalidArgumentException::class);
++        $this->expectExceptionMessage('Route permission expression must contain at least one capability.');
+ 
+-        $this->assertSame(RouteRequirement::TYPE_NONE, $result->type);
++        $this->resolver->parse('');
+     }
+ 
+     #[Test]
+@@ -197,20 +199,19 @@ public function parse_handles_complex_nested_expressions(): void
+     #[Test]
+     public function parse_handles_only_whitespace_with_and_operator(): void
+     {
+-        // Should filter out empty strings and return NONE
+-        $result = $this->resolver->parse('  &  &  ');
++        $this->expectException(InvalidArgumentException::class);
++        $this->expectExceptionMessage('Route permission expression must contain at least one capability.');
+ 
+-        $this->assertSame(RouteRequirement::TYPE_NONE, $result->type);
++        $this->resolver->parse('  &  &  ');
+     }
+ 
+     #[Test]
+     public function parse_handles_only_whitespace_with_or_operator(): void
+     {
+-        // Whitespace-only OR parts get filtered out, resulting in ANY_OF with empty capabilities
+-        $result = $this->resolver->parse('  |  |  ');
++        $this->expectException(InvalidArgumentException::class);
++        $this->expectExceptionMessage('Route permission expression must contain at least one capability.');
+ 
+-        $this->assertSame(RouteRequirement::TYPE_ANY_OF, $result->type);
+-        $this->assertEmpty($result->capabilities);
++        $this->resolver->parse('  |  |  ');
+     }
+ 
+     #[Test]

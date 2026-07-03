@@ -1,0 +1,182 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:noNamespaceSchemaLocation="vendor/phpunit/phpunit/phpunit.xsd"
+         bootstrap="vendor/autoload.php"
+         colors="true"
+         cacheDirectory=".phpunit.cache"
+         displayDetailsOnTestsThatTriggerWarnings="true"
+         failOnWarning="false"
+         failOnRisky="false"
+         executionOrder="random"
+         resolveDependencies="true"
+>
+    <testsuites>
+        <testsuite name="Unit">
+            <directory>tests/Unit</directory>
+        </testsuite>
+        <testsuite name="Feature">
+            <directory>tests/Feature</directory>
+        </testsuite>
+        <!--
+            Integration Test Suite (Opt-In)
+            ================================
+            Integration tests validate interactions with external services (Revolut Open Banking sandbox).
+            These tests are OPT-IN and require sandbox credentials to run.
+            
+            Required Environment Variables:
+            - REVOLUT_OB_CLIENT_ID
+            - REVOLUT_OB_CLIENT_SECRET
+            - REVOLUT_OB_SIGNING_KEY_PATH
+            - REVOLUT_OB_SIGNING_KEY_ID
+            
+            Default Behavior: Tests are SKIPPED if credentials are not configured
+            
+            Run Integration Tests:
+            - php artisan test (testsuite)=Integration
+            
+            See: tests/integration-suite-guide.md for complete setup instructions
+        -->
+        <testsuite name="Integration">
+            <directory>tests/Integration</directory>
+        </testsuite>
+        <!--
+            Platform Package Tests
+            ======================
+            Pure PHPUnit tests for platform packages (no Laravel bootstrap needed).
+            These run alongside the main suite so `php artisan test` covers everything.
+            Each package also has its own phpunit.xml for isolated package development.
+        -->
+        <testsuite name="Packages">
+            <directory>packages/platform/audit-logging/tests</directory>
+            <directory>packages/platform/authz/tests</directory>
+            <directory>packages/platform/notifications/tests</directory>
+        </testsuite>
+        <testsuite name="Performance">
+            <directory>tests/Performance</directory>
+        </testsuite>
+    </testsuites>
+    
+    <source>
+        <include>
+            <directory>app</directory>
+        </include>
+        <exclude>
+            <directory>app/Console</directory>
+            <directory>app/Exceptions</directory>
+            <file>app/Helpers/helpers.php</file>
+        </exclude>
+    </source>
+    
+    <!-- Coverage is OPT-IN: Use vendor/bin/phpunit with coverage flags -->
+    <!-- DO NOT enable coverage by default as it adds 2-3x overhead -->
+    <!--
+    <coverage pathCoverage="false"
+              ignoreDeprecatedCodeUnits="true"
+              disableCodeCoverageIgnore="false"
+              includeUncoveredFiles="true">
+        <report>
+            <html outputDirectory="coverage/html" lowUpperBound="50" highLowerBound="80"/>
+            <text outputFile="php://stdout" showUncoveredFiles="true" showOnlySummary="false"/>
+            <clover outputFile="coverage/clover.xml"/>
+            <cobertura outputFile="coverage/cobertura.xml"/>
+            <xml outputDirectory="coverage/xml"/>
+        </report>
+    </coverage>
+    -->
+    
+    <!--
+        Coverage Thresholds (Staged Approach)
+        ======================================
+        See tests/coverage-thresholds.json for complete threshold definitions.
+        
+        Stage 0 (Baseline): TBD (Requires coverage driver installation)
+        Stage 1 (Near-term): Baseline + 5%
+        Stage 2 (Mid-term): 75% overall, 85% critical
+        Stage 3 (Target): 80% overall, 90% critical
+        
+        IMPORTANT: Before enforcing coverage thresholds:
+        1. Install coverage driver: pecl install pcov (or xdebug)
+        2. Measure baseline: php artisan test (coverage) (min)=0
+        3. Update tests/coverage-thresholds.json with baseline values
+        4. Enable CI enforcement by uncommenting the appropriate stage below
+        
+        Current Status: Stage 0 baseline not yet measured
+        CI Enforcement: DISABLED (pending baseline measurement)
+    -->
+    
+    <logging>
+        <!--Uncomment to enable JUnit XML output for CI/CD:-->
+        <!--<junit outputFile="coverage/junit.xml"/>-->
+    </logging>
+    
+    <php>
+        <ini name="memory_limit" value="1G"/>
+        <ini name="error_reporting" value="-1"/>
+        <ini name="display_errors" value="1"/>
+        <ini name="display_startup_errors" value="1"/>
+        <env name="APP_ENV" value="testing"/>
+        <env name="APP_MAINTENANCE_DRIVER" value="file"/>
+        <server name="DB_CONNECTION" value="sqlite"/>
+        <server name="DB_HOST" value="127.0.0.1"/>
+        <server name="DB_PORT" value="3306"/>
+        <server name="DB_DATABASE" value="/tmp/jako-bench-webhook/database/testing.sqlite"/>
+        <server name="DB_USERNAME" value="root"/>
+        <server name="DB_PASSWORD" value=""/>
+        <!--Database timeout and pool settings:-->
+        <env name="DB_TIMEOUT" value="30"/>
+        <env name="DB_POOL_MIN" value="1"/>
+        <env name="DB_POOL_MAX" value="5"/>
+        <!--MySQL lock wait timeout (seconds), prevents indefinite lock waits:-->
+        <env name="DB_LOCK_WAIT_TIMEOUT" value="10"/>
+        <server name="BCRYPT_ROUNDS" value="4"/>
+        <server name="CACHE_DRIVER" value="array"/>
+        <env name="DB_FOREIGN_KEYS" value="true"/>
+        <env name="MAIL_MAILER" value="array"/>
+        <env name="QUEUE_CONNECTION" value="sync"/>
+        <env name="SESSION_DRIVER" value="array"/>
+        <env name="PULSE_ENABLED" value="false"/>
+        <env name="TELESCOPE_ENABLED" value="false"/>
+        <env name="NIGHTWATCH_ENABLED" value="false"/>
+        
+        <!--Suppress PHPUnit metadata deprecation warnings:-->
+        <env name="SYMFONY_DEPRECATIONS_HELPER" value="disabled"/>
+        <ini name="zend.assertions" value="1"/>
+        
+        <!--Revolut Open Banking Test Configuration-->
+        <env name="REVOLUT_OB_MOCK_MODE" value="true"/>
+        <env name="REVOLUT_OB_CREDITOR_ACCOUNT_NUMBER" value="12345678"/>
+        <env name="REVOLUT_OB_CREDITOR_SORT_CODE" value="123456"/>
+        <env name="REVOLUT_OB_CREDITOR_IBAN" value="GB33BUKB20201555555555"/>
+        <env name="REVOLUT_OB_CREDITOR_NAME" value="Test Creditor"/>
+        
+        <!--Property-Based Test Configuration. Keep low for fast tests:-->
+        <env name="PROPERTY_TEST_ITERATIONS" value="5"/>
+        
+        <!--
+            Parallel Testing Configuration
+
+            Laravel automatically creates isolated databases per process
+            (e.g. jakomeet_testing_1, jakomeet_testing_2).
+            Each process gets its own DB, preventing conflicts.
+
+            Run with:  php artisan test  parallel
+            First run: php artisan test  parallel  recreate-databases
+
+            Requirements:
+            MySQL user must have CREATE/DROP DATABASE privileges for the test DB pattern.
+            GRANT ALL ON `jakomeet_testing_%`.* TO 'your_test_user'@'localhost';
+        -->
+        <env name="PARATEST_PROCESSES" value="4"/>
+        <env name="LARAVEL_PARALLEL_TESTING" value="1"/>
+        <!--PHPUnit configuration:-->
+        <ini name="processIsolation" value="false"/>
+        <ini name="noInteraction" value="false"/>
+    </php>
+    
+    <groups>
+        <exclude>
+            <group>performance</group>
+            <group>pending-fix</group>
+        </exclude>
+    </groups>
+</phpunit>

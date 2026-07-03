@@ -1,0 +1,27 @@
+diff --git a/app/Modules/Billing/Http/Controllers/RevolutWebhookController.php b/app/Modules/Billing/Http/Controllers/RevolutWebhookController.php
+index a98348a7..e977d597 100644
+--- a/app/Modules/Billing/Http/Controllers/RevolutWebhookController.php
++++ b/app/Modules/Billing/Http/Controllers/RevolutWebhookController.php
+@@ -113,7 +113,7 @@ public function handle(Request $request): JsonResponse
+                 'trace' => $e->getTraceAsString(),
+             ]);
+ 
+-            return response()->json(['error' => 'internal_error'], 202);
++            return response()->json(['error' => 'internal_error'], 500);
+         }
+     }
+ 
+diff --git a/app/Modules/Billing/Jobs/ProcessRevolutWebhookJob.php b/app/Modules/Billing/Jobs/ProcessRevolutWebhookJob.php
+index e5901a5e..14f14e0c 100644
+--- a/app/Modules/Billing/Jobs/ProcessRevolutWebhookJob.php
++++ b/app/Modules/Billing/Jobs/ProcessRevolutWebhookJob.php
+@@ -120,7 +120,8 @@ public function handle(
+         } catch (QueryException $e) {
+             if (str_contains($e->getMessage(), 'Duplicate entry')
+                 || str_contains($e->getMessage(), 'revolut_webhook_events_provider_env_event_unique')
+-                || str_contains($e->getMessage(), 'revolut_webhook_events_provider_event_unique')) { // Fallback for old constraint name
++                || str_contains($e->getMessage(), 'revolut_webhook_events_provider_event_unique') // Fallback for old constraint name
++                || str_contains($e->getMessage(), 'UNIQUE constraint failed')) {
+                 // BLOCKER 3 fix: Check if this duplicate has already been processed.
+                 // If yes, skip (normal dedup). If no, continue (crash recovery).
+                 $existing = DB::table('revolut_webhook_events')

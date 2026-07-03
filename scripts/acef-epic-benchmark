@@ -82,6 +82,13 @@ function prepareWorktree(manifest, run, worktree) {
   must("git", ["-C", manifest.source, "worktree", "add", "--detach", worktree, manifest.commit]);
   must("git", ["config", "user.email", "acef-benchmark@example.invalid"], { cwd: worktree });
   must("git", ["config", "user.name", "ACEF Epic Benchmark"], { cwd: worktree });
+  for (const dir of manifest.setupDirs || []) fs.mkdirSync(path.join(worktree, dir), { recursive: true });
+  if (manifest.stack === "php-laravel") {
+    // Worktrees contain only tracked files; Laravel needs its gitignored storage skeleton.
+    for (const dir of ["storage/framework/views", "storage/framework/cache/data", "storage/framework/sessions", "storage/framework/testing", "storage/logs", "bootstrap/cache"]) {
+      fs.mkdirSync(path.join(worktree, dir), { recursive: true });
+    }
+  }
   linkDependencies(worktree, { id: manifest.epic.id, stack: manifest.stack, source: manifest.source });
 }
 
@@ -231,8 +238,8 @@ function runEpic(manifest, run, opts, done) {
       const verification = execute(story.verify[0], story.verify.slice(1), { cwd: worktree, timeout: 10 * 60 * 1000 });
       const paths = changedPathsSince(worktree, snapshot).filter((p) => !isHarnessPath(p));
       const scopeViolations = paths.filter((p) => !isAllowedPath(p, story.allowedPaths));
-      const expectationFailures = evaluateExpectations(worktree, story.expected);
-      const recall = knownFindingRecall(worktree, story, verification.status, expectationFailures);
+      const expectationFailures = evaluateExpectations(worktree, story.expected, fixtureRoot);
+      const recall = knownFindingRecall(worktree, story, verification.status, expectationFailures, fixtureRoot);
       const passed = actor.status === 0 && verification.status === 0 && !scopeViolations.length && !expectationFailures.length;
       const row = {
         run_id: run.runId, experiment_id: manifest.experimentId, epic_id: manifest.epic.id,
@@ -255,7 +262,7 @@ function runEpic(manifest, run, opts, done) {
     }
     const integration = manifest.epic.integration;
     const intVerify = execute(integration.verify[0], integration.verify.slice(1), { cwd: worktree, timeout: 20 * 60 * 1000 });
-    const intFailures = evaluateExpectations(worktree, integration.expected || []);
+    const intFailures = evaluateExpectations(worktree, integration.expected || [], fixtureRoot);
     const epicRow = {
       run_id: run.runId, experiment_id: manifest.experimentId, epic_id: manifest.epic.id,
       story_id: null, lane: run.lane, client: run.client, finished_at: new Date().toISOString(),

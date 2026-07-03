@@ -1,0 +1,171 @@
+{
+  "schemaVersion": 1,
+  "experimentId": "acef-epic-authz-v3",
+  "repo": "jakomeet",
+  "stack": "php-laravel",
+  "source": "/Users/ramazanayyildiz/CODE/OPA/jakomeet",
+  "commit": "a12ac50441114943efd099f9e601bbee4a9d8a12",
+  "lanes": [
+    "baseline",
+    "lightweight",
+    "guarded"
+  ],
+  "clients": [
+    "codex",
+    "opencode"
+  ],
+  "expectedRuns": 6,
+  "epic": {
+    "id": "authz-fail-closed-hardening",
+    "stories": [
+      {
+        "id": "s1-resolver-fail-closed",
+        "prompt": "Fix the route-permission resolver so malformed permission expressions fail closed. Today, when a config entry decomposes to zero AND-clauses after trim+filter (entries like an empty string, ' & ', or ' | '), the resolver returns a TYPE_NONE requirement and the route silently opens to any authenticated user; missing-route handling already fails closed — make malformed expressions behave consistently with it. The pre-existing resolver unit test encodes the old fail-open expectations for these malformed inputs; updating those specific expectations to the new fail-closed contract is part of this story. Do not touch the benchmark test file.",
+        "allowedPaths": [
+          "packages/platform/authz/src/Http/RouteRequirementResolver.php",
+          "tests/Unit/Platform/Authz/RouteRequirementResolverTest.php"
+        ],
+        "setup": [
+          {
+            "type": "copy-fixture",
+            "fixture": "BenchmarkAuthzResolverFailClosedTest.php",
+            "path": "tests/Feature/BenchmarkAuthzResolverFailClosedTest.php"
+          }
+        ],
+        "verify": [
+          "php",
+          "artisan",
+          "test",
+          "--filter=BenchmarkAuthzResolverFailClosedTest"
+        ],
+        "expected": [
+          {
+            "path": "tests/Feature/BenchmarkAuthzResolverFailClosedTest.php",
+            "fixtureUnchanged": "BenchmarkAuthzResolverFailClosedTest.php"
+          }
+        ]
+      },
+      {
+        "id": "s2-middleware-idempotency",
+        "prompt": "Add a run-once guard to the route-capability middleware so that a request passing through the middleware twice (double registration) is evaluated only once. Behavior for single execution must be unchanged. Do not touch the benchmark test file.",
+        "allowedPaths": [
+          "packages/platform/authz/src/Http/RouteCapabilityMiddleware.php"
+        ],
+        "setup": [
+          {
+            "type": "copy-fixture",
+            "fixture": "BenchmarkAuthzMiddlewareIdempotencyTest.php",
+            "path": "tests/Feature/BenchmarkAuthzMiddlewareIdempotencyTest.php"
+          }
+        ],
+        "verify": [
+          "php",
+          "artisan",
+          "test",
+          "--filter=BenchmarkAuthzMiddlewareIdempotencyTest"
+        ],
+        "expected": [
+          {
+            "path": "tests/Feature/BenchmarkAuthzMiddlewareIdempotencyTest.php",
+            "fixtureUnchanged": "BenchmarkAuthzMiddlewareIdempotencyTest.php"
+          }
+        ]
+      },
+      {
+        "id": "s3-legacy-alias-cleanup",
+        "prompt": "Remove the legacy route.permission middleware alias from route registrations. The route-capability middleware is already appended globally to the web group, so routes that still carry the route.permission alias run it twice. Remove the route-level alias usages so every route is evaluated exactly once, with behavior unchanged. The previous story added a run-once guard; this story removes the redundant registrations themselves. Do not touch the benchmark test file.",
+        "allowedPaths": [
+          "routes/web.php",
+          "app/Modules/Billing/routes.php",
+          "app/Modules/Events/routes.php",
+          "app/Modules/SuperAdmin/Routes/web.php",
+          "app/Modules/Streaming/routes.php"
+        ],
+        "setup": [
+          {
+            "type": "copy-fixture",
+            "fixture": "BenchmarkAuthzLegacyAliasCleanupTest.php",
+            "path": "tests/Feature/BenchmarkAuthzLegacyAliasCleanupTest.php"
+          }
+        ],
+        "verify": [
+          "php",
+          "artisan",
+          "test",
+          "--filter=BenchmarkAuthzLegacyAliasCleanupTest"
+        ],
+        "expected": [
+          {
+            "path": "tests/Feature/BenchmarkAuthzLegacyAliasCleanupTest.php",
+            "fixtureUnchanged": "BenchmarkAuthzLegacyAliasCleanupTest.php"
+          }
+        ]
+      },
+      {
+        "id": "s4-webhook-ingress-correctness",
+        "prompt": "Fix two webhook ingress defects in the billing module. First: the Revolut webhook controller's outer catch-all returns 202 Accepted on unhandled infrastructure errors (for example a refused database connection), which tells the provider not to retry and silently loses events — it must return 500 while keeping the existing explicit dispatch-error handling. Second: the webhook processing job's duplicate-detection misses the SQLite unique-constraint error string that the ingress dedup service already handles — unify constraint-violation detection between the service and the job so crash recovery works on both database engines. Do not touch the benchmark test file or the phpunit.sqlite.xml config.",
+        "allowedPaths": [
+          "app/Modules/Billing/Http/Controllers/RevolutWebhookController.php",
+          "app/Modules/Billing/Jobs/ProcessRevolutWebhookJob.php"
+        ],
+        "setup": [
+          {
+            "type": "copy-fixture",
+            "fixture": "BenchmarkWebhookIngressCorrectnessTest.php",
+            "path": "tests/Feature/BenchmarkWebhookIngressCorrectnessTest.php"
+          },
+          {
+            "type": "copy-fixture",
+            "fixture": "phpunit.sqlite.xml",
+            "path": "phpunit.sqlite.xml"
+          }
+        ],
+        "verify": [
+          "vendor/bin/phpunit",
+          "--configuration=phpunit.sqlite.xml",
+          "--filter=BenchmarkWebhookIngressCorrectnessTest"
+        ],
+        "expected": [
+          {
+            "path": "tests/Feature/BenchmarkWebhookIngressCorrectnessTest.php",
+            "fixtureUnchanged": "BenchmarkWebhookIngressCorrectnessTest.php"
+          },
+          {
+            "path": "phpunit.sqlite.xml",
+            "fixtureUnchanged": "phpunit.sqlite.xml"
+          }
+        ]
+      }
+    ],
+    "integration": {
+      "verify": [
+        "sh",
+        "-c",
+        "php artisan test --filter='BenchmarkAuthzResolverFailClosedTest|BenchmarkAuthzMiddlewareIdempotencyTest|BenchmarkAuthzLegacyAliasCleanupTest' && vendor/bin/phpunit --configuration=phpunit.sqlite.xml --filter=BenchmarkWebhookIngressCorrectnessTest && php artisan test packages/platform/authz/tests"
+      ],
+      "expected": [
+        {
+          "path": "tests/Feature/BenchmarkAuthzResolverFailClosedTest.php",
+          "fixtureUnchanged": "BenchmarkAuthzResolverFailClosedTest.php"
+        },
+        {
+          "path": "tests/Feature/BenchmarkAuthzMiddlewareIdempotencyTest.php",
+          "fixtureUnchanged": "BenchmarkAuthzMiddlewareIdempotencyTest.php"
+        },
+        {
+          "path": "tests/Feature/BenchmarkAuthzLegacyAliasCleanupTest.php",
+          "fixtureUnchanged": "BenchmarkAuthzLegacyAliasCleanupTest.php"
+        },
+        {
+          "path": "tests/Feature/BenchmarkWebhookIngressCorrectnessTest.php",
+          "fixtureUnchanged": "BenchmarkWebhookIngressCorrectnessTest.php"
+        }
+      ]
+    },
+    "note": "Design deviation from DESIGN.md: the S5 regression-pack story is folded into the epic integration oracle (a closeout story has no red precondition, which the harness requires per story). Full billing suites are excluded from verify because the repo phpunit.xml requires a local MySQL that is not available; the authz package suite plus all four benchmark fixtures form the regression floor."
+  },
+  "setupDirs": [
+    "tests/Integration",
+    "tests/Performance"
+  ]
+}
