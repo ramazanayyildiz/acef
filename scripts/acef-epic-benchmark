@@ -206,7 +206,11 @@ function launchClient(worktree, run, story, prompt, rawPath) {
 
 function changedPathsSince(worktree, baseRef) {
   const committed = must("git", ["diff", "--name-only", `${baseRef}..HEAD`], { cwd: worktree }).split(/\r?\n/).filter(Boolean);
-  const working = must("git", ["status", "--porcelain=v1", "--untracked-files=all"], { cwd: worktree }).split(/\r?\n/).filter(Boolean).map((l) => l.slice(3));
+  // execute(), not must(): must() trims stdout, which eats the leading space of the first
+  // porcelain line and shifts the path slice by one character.
+  const status = execute("git", ["status", "--porcelain=v1", "--untracked-files=all"], { cwd: worktree });
+  if (status.status !== 0) throw new Error(`git status failed: ${status.stderr || status.stdout}`);
+  const working = status.stdout.split(/\r?\n/).filter(Boolean).map((l) => l.slice(3));
   return [...new Set([...committed, ...working])].sort();
 }
 
@@ -232,7 +236,9 @@ function runEpic(manifest, run, opts, done) {
       if (precondition.status === 0) throw new Error(`${story.id}: precondition is not red`);
       laneArtifacts(worktree, manifest, run, story, i);
       bindGuardedStory(worktree, manifest, run, story);
-      const snapshot = commitAll(worktree, `chore: epic benchmark checkpoint before ${story.id}`);
+      // noVerify: harness checkpoint commits are the experimenter's, and the target repo's own
+      // pre-commit hooks (jakomeet runs style/analysis hooks) must not gate them.
+      const snapshot = commitAll(worktree, `chore: epic benchmark checkpoint before ${story.id}`, { noVerify: true });
       const rawPath = path.join(opts.workspace, "raw", `${run.runId}--${story.id}.jsonl`);
       const actor = launchClient(worktree, run, story, storyPrompt(manifest, run, story, i), rawPath);
       const verification = execute(story.verify[0], story.verify.slice(1), { cwd: worktree, timeout: 10 * 60 * 1000 });
@@ -258,7 +264,7 @@ function runEpic(manifest, run, opts, done) {
       appendResult(opts.results, row);
       storyRows.push(row);
       console.log(`  DONE ${story.id} ${row.result}`);
-      commitAll(worktree, `chore: epic benchmark checkpoint after ${story.id}`);
+      commitAll(worktree, `chore: epic benchmark checkpoint after ${story.id}`, { noVerify: true });
     }
     const integration = manifest.epic.integration;
     const intVerify = execute(integration.verify[0], integration.verify.slice(1), { cwd: worktree, timeout: 20 * 60 * 1000 });
