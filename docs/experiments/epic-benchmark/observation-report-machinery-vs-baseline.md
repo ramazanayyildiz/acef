@@ -170,6 +170,24 @@ impossible to skip (Arm 1 ran it by choice; the review-phase projection makes it
 hygiene held throughout: superseded records (including the conductor's own test-DB collision mistake) preserved
 uncited rather than deleted.
 
+### Cycles 8–12 (E-POOL S4–S8, epic complete) — steady state, and the machinery corrected the OWNER
+
+**O2-14 — Steady-state characterization.** E-POOL ran eight stories to completion under full machinery with zero
+bypasses, zero worker churn after the fleet doctrine landed, two test-only stories (S5, S7 — the architecture
+repeatedly proved contract-clean, so those stories became regression pinning), and review-caught defects in five
+of eight stories (verdict overwrite, duplicate poisoning ×2, warmth provenance, erasure-registry gaps). The
+review layer's hit rate held from first story to last; nothing else in the pipeline caught that defect class.
+
+**O2-15 — The machinery corrected the owner, completing the set.** Before S8 (erasure), a read-only pre-check
+scout falsified the owner's standing decision that "erasure rides the existing Super Admin GDPR deletion flow":
+no such executable flow exists (scope.md's claim was aspirational; only Jetstream soft-delete exists, RETAINING
+PII — file:line evidence). The decision was corrected on the record before any code was written, S8 was redesigned
+(registry-driven erasure service, permanent hash-only tombstones so erased people cannot be re-imported), and
+the platform-wide gap was ledgered as an owner follow-up instead of silently absorbed. With this, the machinery
+has now caught all three roles: workers (scope/test drift, Arm 1), the conductor (bypass habit, cycle 1), and
+the owner (decision on a false premise, cycle 12). No role's claims survived contact with typed evidence — which
+is, in one sentence, ACEF's thesis.
+
 ## Conclusions (first cycle)
 
 1. **The operating model is portable; the machinery is what makes it inescapable.** A disciplined Claude
