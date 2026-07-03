@@ -9,6 +9,23 @@ or evidence contract. Do not use it to claim implementation status; link to the 
 
 ## Unreleased
 
+### V2 matrix result: cost fixed, quality edge did not replicate
+
+- Ran the full 72-run v2 matrix (12 tasks × 3 lanes × 2 clients, 0 invalid): `runs/results-v2.jsonl`, write-up in
+  `docs/experiments/empirical-validation/report-v2.md`.
+- WS3 validated: codex ACEF-lane overhead fell from +39%/+65% (v1) to +20%/+24%; opencode lanes now at/below
+  baseline. The worker short-circuit was the entire treatment change.
+- Quality: no lane differentiation. Oracle-adjusted pass is 23/24 baseline, 24/24 lightweight, 23/24 guarded; the
+  purpose-built provocations (scope bait, test bait, hidden findings, wiring, persistence, multi-system) were
+  passed by every lane; zero scope violations or fixture tampering. The single genuine lane split: baseline
+  opencode left the traversal security regression unfixed.
+- Instrument: 6 of 8 raw failures were one exact-string oracle bug (turkish task demanded literal `setLocale('tr')`
+  while all six agents made the test pass) and 1 was marker-retention noise — the oracle-validity lesson recurred
+  in an oracle authored after writing the lesson down.
+- Decision per the pre-committed WS4 rule (outcome three): keep the freeze, honest-down the quality claim, begin
+  thinning always-on controls whose only justification is defect-catching on bounded single-step tasks; next
+  instrument frontier is multi-step epic benchmarks where drift controls plausibly matter.
+
 ### WS3 cost round: worker short-circuit on ACEF reference reads
 
 - Pilot transcript audit found the dominant ACEF-lane token overhead: `skills/acef/SKILL.md` said "Always for
