@@ -158,6 +158,18 @@ residual over-broad rule (34: 'every module has views') hit a deliberately viewl
 micro-commit with a bidirectional fixture proof (viewless exempt, view-bearing still enforced), then the story
 committed through the front door. No bypass. The gate's lifecycle under machinery: ignored → fought → maintained.
 
+### Cycles 6–7 (E-POOL S2–S3) — the review layer's hit rate
+
+**O2-13 — Structural independent review is catching real defects at a steady rate.** Three review-caught defects
+in three consecutive E-POOL stories, all pre-commit, all inside the machinery's mandatory review step: S2's
+adverse-verdict-overwritable-to-active (a bounced/unsubscribed address could re-enter the targetable pool) and
+S3's two duplicate-poisoning blockers in seed ingestion. Combined with Arm 1's B1 (review-caught revenue leak),
+the pattern across both arms is consistent: implementation workers + conductor verification miss a class of
+defect that only fresh-context adversarial review finds — and the machinery's contribution is making that review
+impossible to skip (Arm 1 ran it by choice; the review-phase projection makes it a precondition). Evidence
+hygiene held throughout: superseded records (including the conductor's own test-DB collision mistake) preserved
+uncited rather than deleted.
+
 ## Conclusions (first cycle)
 
 1. **The operating model is portable; the machinery is what makes it inescapable.** A disciplined Claude
