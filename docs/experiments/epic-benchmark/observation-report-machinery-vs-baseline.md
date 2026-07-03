@@ -84,7 +84,15 @@ cannot be confirmed from tests+diff. Recovery cost shifted from forensic reconst
 - (pending) Gate mechanics outcome: evidence ids + verdict + commit for the review-fix story (conductor
   mid-verification).
 - (pending) Overhead accounting: typed-ceremony cost per story vs baseline equivalent.
-- (pending) Whether a control *fires* (blocks/catches) beyond O2-2's near-miss, versus merely records.
+**O2-4 — A control FIRED: phase discipline blocked a premature gate.** With seven PASS evidence records in hand
+and diff review complete, the conductor attempted closeout — and `acef-next` still projected the *developer-phase*
+contract (`implement_to_green`; `approve_gate`/`edit_ledger` forbidden) because no one had advanced the typed
+state. The conductor halted and reported the exact projection rather than gating anyway. Contrast Arm 1, where
+"done" was whatever the conductor's chat context said it was: here the state machine made skipping the phase
+transition impossible to do silently. Resolution was the legitimate path — bind the Process Judge actor, rewrite
+the active-run singleton to the review phase, re-read the projection.
+
+- (pending) Gate verdict + commit outcome and overhead accounting.
 
 ## Deliverable criteria (from the owner's goal sentence)
 
