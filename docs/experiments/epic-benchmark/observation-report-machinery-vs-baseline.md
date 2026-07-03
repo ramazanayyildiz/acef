@@ -60,11 +60,31 @@ Disclosure (per the goal's violation rule): the review-fixer worker was dispatch
 set; its actor record is retroactive (correctly pinned). Every subsequent worker is bound before dispatch.
 
 ### Observations (accruing)
-- (pending) Story closeout mechanics: evidence-run records for each verification command; typed gate verdict
-  decided by the conductor-as-Process-Judge; independent reviewer re-verification before push.
-- (pending) Overhead: wall-clock and friction cost of the typed ceremony per story, vs the baseline arm's
-  equivalent steps.
-- (pending) Whether any control *fires* (blocks or catches something) versus merely records.
+
+**O2-1 — Cold-start from repo truth: PASS.** The codex conductor, given only a read order, reported back the
+typed contract from `acef-next` including constraints the owner's brief never mentioned: the per-phase evidence
+requirements (`failing_before_implementation`, `green_test_command`, `changed_files_summary`), the
+`max_1_commit_then_report` stop condition, and the forbidden-action list (`docs/ai/ACEF_*` edits, `spawn_worker`,
+`push`, `approve_gate`, `edit_ledger` during development). The state machine, not the prompt, supplied the rules —
+the exact mechanism the worker short-circuit work (v2) was building toward, now observed steering a non-Claude
+agent.
+
+**O2-2 — Contract-boundary behavior instead of drift.** When the owner's brief and `acef-next` disagreed about
+`edit_ledger` at closeout, the conductor's response was to state its planned reconciliation and pre-commit to
+stop-and-report if the contract still disagreed at decision time — rather than silently picking one authority.
+Compare Arm 1's authority dispute, where a worker picked an authority unilaterally and burned hours.
+
+**O2-3 — Degraded-worker recovery, machinery vs baseline (direct repeat of an Arm-1 incident).** The review-fix
+developer session degraded before delivering its report, leaving complete code on disk — the same failure shape
+as Arm 1's S6. Baseline recovery: the conductor reverse-engineered completion from `git status` in chat.
+Machinery recovery: the disk state was handed to the conductor as a typed story with an existing actor record and
+scope; verification proceeds as evidence-runs and the gate decision is explicitly allowed to FAIL if the B1 kill
+cannot be confirmed from tests+diff. Recovery cost shifted from forensic reconstruction to normal closeout.
+
+- (pending) Gate mechanics outcome: evidence ids + verdict + commit for the review-fix story (conductor
+  mid-verification).
+- (pending) Overhead accounting: typed-ceremony cost per story vs baseline equivalent.
+- (pending) Whether a control *fires* (blocks/catches) beyond O2-2's near-miss, versus merely records.
 
 ## Deliverable criteria (from the owner's goal sentence)
 
