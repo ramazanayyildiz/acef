@@ -49,8 +49,9 @@ function testScoredStories() {
 
 function testStoryPrompt() {
   const run = { lane: "guarded", client: "codex", runId: "x" };
-  const prompt = storyPrompt(manifest, run, manifest.epic.stories[1], 1);
+  const prompt = storyPrompt(manifest, run, manifest.epic.stories[1], 1, "ACEF_BMAD_WORKER_S2");
   assert.match(prompt, /story 2 of 2/);
+  assert.match(prompt, /ACEF_BMAD_WORKER_S2/);
   assert.match(prompt, /s2/);
   assert.match(prompt, /Do not read the full delivery ledger/);
   assert.match(prompt, /other stories of this epic/);

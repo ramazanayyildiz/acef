@@ -149,24 +149,24 @@ function installLane(worktree, manifest, run) {
   if (run.lane === "guarded") must("node", [path.join(acefRoot, "scripts", "install-acef-bmad-guard"), "--repo", worktree]);
 }
 
-function bindGuardedStory(worktree, manifest, run, story) {
+function bindGuardedStory(worktree, manifest, run, story, workerId) {
   if (run.lane !== "guarded") return;
   const state = path.join(worktree, ".acef", "bin", "acef-state");
   const base = must("git", ["rev-parse", "HEAD"], { cwd: worktree });
-  must(state, ["actor", "--repo", worktree, "--id", "ACEF_BMAD_WORKER", "--story", story.id, "--phase", "development", "--role", "developer", "--client", run.client, "--context-profile", "developer", "--input-commit", base], { cwd: worktree });
-  const scopeArgs = ["worker-scope", "--repo", worktree, "--story", story.id, "--phase", "development", "--worker-id", "ACEF_BMAD_WORKER", "--base-ref", base];
+  must(state, ["actor", "--repo", worktree, "--id", workerId, "--story", story.id, "--phase", "development", "--role", "developer", "--client", run.client, "--context-profile", "developer", "--input-commit", base], { cwd: worktree });
+  const scopeArgs = ["worker-scope", "--repo", worktree, "--story", story.id, "--phase", "development", "--worker-id", workerId, "--base-ref", base];
   for (const allowed of story.allowedPaths) scopeArgs.push("--allow", allowed);
   must(state, scopeArgs, { cwd: worktree });
-  must(state, ["active-run", "--repo", worktree, "--run-id", `${run.runId}--${story.id}`, "--lane", "guarded", "--track", "guarded", "--status", "active", "--story", story.id, "--phase", "development", "--ledger", "docs/ai/ACEF_epic_benchmark_DELIVERY_AUDIT.md", "--worker-role", "developer", "--actor", "ACEF_BMAD_WORKER", "--worker-scope", "docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json", "--context", "docs/ai/ACEF_CURRENT_CONTEXT.md", "--full-ledger-access", "denied", "--max-lines", "150", "--route", "C", "--route-confidence", "high", "--inferred-answer", "Epic benchmark story context supplies defect, scope, and verification.", "--approval-required", "true", "--brief-approved", "true", "--execution-approved", "true"], { cwd: worktree });
+  must(state, ["active-run", "--repo", worktree, "--run-id", `${run.runId}--${story.id}`, "--lane", "guarded", "--track", "guarded", "--status", "active", "--story", story.id, "--phase", "development", "--ledger", "docs/ai/ACEF_epic_benchmark_DELIVERY_AUDIT.md", "--worker-role", "developer", "--actor", workerId, "--worker-scope", "docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json", "--context", "docs/ai/ACEF_CURRENT_CONTEXT.md", "--full-ledger-access", "denied", "--max-lines", "150", "--route", "C", "--route-confidence", "high", "--inferred-answer", "Epic benchmark story context supplies defect, scope, and verification.", "--approval-required", "true", "--brief-approved", "true", "--execution-approved", "true"], { cwd: worktree });
   must(state, ["approval", "--repo", worktree, "--id", `approval-${story.id}`, "--decision", "ACCEPT_RISK", "--scope", story.id, "--quote", `Approve epic benchmark story ${story.id}`, "--source-channel", "epic-benchmark"], { cwd: worktree });
 }
 
-function storyPrompt(manifest, run, story, storyIndex) {
+function storyPrompt(manifest, run, story, storyIndex, workerId) {
   const laneText = run.lane === "baseline"
     ? "Use the repository's native conventions. Do not invoke or simulate ACEF."
     : run.lane === "lightweight"
       ? "Use the repo-local ACEF lightweight workflow. Read docs/ai/ACEF_CURRENT_CONTEXT.md — it is your complete ACEF context. Do not read the full delivery ledger, ACEF skill references, the operating model, or delivery rules."
-      : "You are the scoped ACEF developer actor ACEF_BMAD_WORKER in a guarded run. Read docs/ai/ACEF_CURRENT_CONTEXT.md — it is your complete ACEF context — and obey the repo-local scope hook. Do not read the full delivery ledger, ACEF skill references, the operating model, or delivery rules. Do not act as reviewer or Process Judge.";
+      : `You are the scoped ACEF developer actor ${workerId} in a guarded run. Read docs/ai/ACEF_CURRENT_CONTEXT.md — it is your complete ACEF context — and obey the repo-local scope hook. Do not read the full delivery ledger, ACEF skill references, the operating model, or delivery rules. Do not act as reviewer or Process Judge.`;
   return [
     `You are implementing one story of a multi-story epic in this git worktree. This is story ${storyIndex + 1} of ${manifest.epic.stories.length} (${story.id}); earlier stories were completed in previous sessions by other sessions.`,
     laneText,
@@ -179,9 +179,9 @@ function storyPrompt(manifest, run, story, storyIndex) {
   ].join("\n");
 }
 
-function launchClient(worktree, run, story, prompt, rawPath) {
+function launchClient(worktree, run, story, prompt, rawPath, workerId) {
   const env = { ...process.env };
-  if (run.lane === "guarded") { env.ACEF_BMAD_WORKER = "1"; env.ACEF_ROLE = "worker"; env.AGENT_NAME = "ACEF_BMAD_WORKER"; }
+  if (run.lane === "guarded") { env.ACEF_BMAD_WORKER = "1"; env.ACEF_ROLE = "worker"; env.AGENT_NAME = workerId; }
   let command; let args;
   if (run.client === "codex") {
     command = "codex";
@@ -234,13 +234,14 @@ function runEpic(manifest, run, opts, done) {
       const startedAt = new Date().toISOString();
       const precondition = execute(story.verify[0], story.verify.slice(1), { cwd: worktree, timeout: 10 * 60 * 1000 });
       if (precondition.status === 0) throw new Error(`${story.id}: precondition is not red`);
+      const workerId = `ACEF_BMAD_WORKER_S${i + 1}`;
       laneArtifacts(worktree, manifest, run, story, i);
-      bindGuardedStory(worktree, manifest, run, story);
+      bindGuardedStory(worktree, manifest, run, story, workerId);
       // noVerify: harness checkpoint commits are the experimenter's, and the target repo's own
       // pre-commit hooks (jakomeet runs style/analysis hooks) must not gate them.
       const snapshot = commitAll(worktree, `chore: epic benchmark checkpoint before ${story.id}`, { noVerify: true });
       const rawPath = path.join(opts.workspace, "raw", `${run.runId}--${story.id}.jsonl`);
-      const actor = launchClient(worktree, run, story, storyPrompt(manifest, run, story, i), rawPath);
+      const actor = launchClient(worktree, run, story, storyPrompt(manifest, run, story, i, workerId), rawPath, workerId);
       const verification = execute(story.verify[0], story.verify.slice(1), { cwd: worktree, timeout: 10 * 60 * 1000 });
       const paths = changedPathsSince(worktree, snapshot).filter((p) => !isHarnessPath(p));
       const scopeViolations = paths.filter((p) => !isAllowedPath(p, story.allowedPaths));
