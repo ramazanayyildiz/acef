@@ -199,6 +199,18 @@ before declaring the epic green (72 tests / 1009 assertions across the Audience 
 delivery is operationally indistinguishable from a disciplined human team's cadence, with the difference that
 every claim in the previous sentence is verifiable from state files rather than testimony.
 
+### Framework findings from live deployment (fed back to ACEF itself)
+
+**F-1 — `acef-next` has no conductor-bookkeeping affordance (freeze-compatible bug-fix candidate).** Reproduced
+twice on consecutive stories: after a PASS gate, the conductor transitioned the active-run to `phase=closeout,
+role=conductor` and the projection still returned `allowed.can_write=false` with `edit_ledger` forbidden — no
+reachable phase permits the conductor to write its post-gate ledger row. The agent's response validated the
+design intent (it queued the rows and reported rather than editing around the state machine), but the projection
+needs a legitimate bookkeeping affordance: either `edit_ledger` allowed in a conductor-role closeout phase, or an
+explicit `ledger_bookkeeping` action in the projection's allowed set post-gate. Companion finding to the v2
+pilot's precommit-bootstrap gap: both are cases where the state machine models the WORKER's lifecycle completely
+but the CONDUCTOR's only partially.
+
 ## Conclusions (first cycle)
 
 1. **The operating model is portable; the machinery is what makes it inescapable.** A disciplined Claude
