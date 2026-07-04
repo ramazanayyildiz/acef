@@ -233,6 +233,23 @@ own mini typed cycle, and v2 passed (39 tests / 11207 assertions across the AI-a
 failure class, same recovery shape — cross-story test staleness at epic close appears to be a structural cost of
 per-story worker isolation, and the closeout oracle is the control that pays it down.
 
+### Cycles 29–34 (E-CERT S1–S6) — the guarded-vs-heavy-lane delta, measured
+
+**O2-22 — Retro-applying the heavy lane's epic wrappers to four guarded-lane epics quantified exactly what the
+lighter lane missed.** Four independent auditors (codex/opencode split, fresh identities with prior-role
+exclusions) ran drift audit, AC↔test trace, test-quality scoring, real-surface smoke, and adversarial boundary
+review over E-PKG/E-POOL/E-SEG/E-QRY. Result: **three of four epics CERTIFIED retroactively** — ~30 guarded-lane
+gate cycles produced work that passed heavy-lane close criteria without modification — and **one HIGH
+production-path defect found** (F-ECERT-S4-F1): returning registrants silently skip TOPIC interest writes because
+the real validator classifies already-pooled emails as DUPLICATE and the ingestion service re-validates without
+`ignore_member_id`. The defect survived E-SEG's story tests, independent review, epic closeout, AND the E-SEG
+suite's 72-test green because the tests stubbed the validator — a masked-by-fake escape that only the heavy
+lane's *real-surface smoke* requirement could catch. Nine further findings triaged defer/accepted-risk with typed
+owner dispositions. Reading: the guarded lane's per-story controls deliver ~certified quality on most epics at
+lower ceremony cost, but the heavy lane's epic wrappers catch a distinct failure class (test-double masking of
+production paths) that per-story review structurally cannot — supporting a hybrid dosing: guarded lane per story
++ heavy-lane wrappers at epic close, rather than full BMAD v2 per story.
+
 **O2-19 — Self-surfaced lane-routing deviation (owner-side).** Prompted by the owner asking "are we using ACEF
 1:1, and if so aren't we in the BMAD v2 flow?", an audit of the active run found: the typed control layer IS
 running 1:1 (`lane: "guarded"`, every story with actor/scope/evidence/gate records, zero exceptions since Arm 2)
