@@ -276,6 +276,17 @@ registration → aggregate breakdown, 75 tests / 610 assertions with leakage neg
 trace — the E-CERT-derived hybrid dosing (guarded stories + heavy-lane epic close) is now the operating default
 rather than a recommendation.
 
+**O2-25 — The active-run singleton drifts silently between gates.** An owner-side audit (prompted by "is ACEF
+being followed 1:1?") found `ACEF_ACTIVE_RUN.json` still pointing at E-CERT S1/development while actual work was
+two epics later (E-DOM S1) — the gate/evidence chain was complete and correct throughout, but the live-state
+singleton had not been updated at story transitions. Companion gap: the O2-19 lane decision still had
+`laneRationale: null` and no typed owner ratification, running instead on the observer's "operating default"
+declaration. Both fixed the same hour (conductor adopted active-run updates into the story-open ritual; owner
+ratification quote requested). Framework lesson: gates are enforced at commit boundaries so they cannot drift,
+but *between-gate* state (active-run, lane rationale) has no enforcement point — a `acef-status` consistency
+check comparing active-run against the newest gate/evidence timestamps would make this class of staleness
+self-announcing (candidate F-3).
+
 **O2-19 — Self-surfaced lane-routing deviation (owner-side).** Prompted by the owner asking "are we using ACEF
 1:1, and if so aren't we in the BMAD v2 flow?", an audit of the active run found: the typed control layer IS
 running 1:1 (`lane: "guarded"`, every story with actor/scope/evidence/gate records, zero exceptions since Arm 2)
