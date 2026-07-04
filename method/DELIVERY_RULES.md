@@ -48,6 +48,14 @@ scales — a guarded *epic* closes with the capstone wrapper set (guarded-story 
 boundary; validated live before codification, see `GUARDED_LANE.md` for the evidence and the exact wrapper set).
 Most ongoing non-defect work lives in the lightweight lane.
 
+**Surface declaration is lane-independent.** Every work item — in any lane, at any size — declares at intake
+which user-facing surface delivers it (`ui`, `admin`, `api`, `cli`, `queue`, …) or records `surface: none` with a
+justification. At close, the judging actor verifies the owning persona can actually reach the capability through
+that surface, or records a typed deferral that names the owning follow-up item — prose deferrals are invalid.
+Rationale: green services with no calling surface is the most common real-world delivery failure this framework
+has observed (twice — once pre-ACEF, once under the guarded lane when the precaution lived only in BMAD v2:
+observation O2-30). The lightweight lane is the most exposed because nothing else in it asks the question.
+
 When using the Claude Code guard hook, lightweight runs should create `.acef-lightweight-lane` (or the neutral
 `.acef-lane`) at the repo root while the run is active. Full BMAD runs use `.acef-bmad-lane` or BMAD runtime markers.
 Without a lane marker, Claude Code hooks cannot know a repo is inside an ACEF run and will allow by default.
