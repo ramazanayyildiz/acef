@@ -41,9 +41,12 @@ Adapter/pattern-registry status controls what can proceed:
 | **Lightweight lane** | small / scoped / ongoing non-bugfix work | the operating model (Layer 1): track → personas → Judge, evidence in the artifact + PR, borrowing review discipline without a full story lifecycle |
 | **Full BMAD v2** | epics, large features, core-behavior change, multi-module, new patterns, or broad refactors | the heavy story lifecycle (Layer 3) |
 | **Guarded lane** | auth, payment, security, data deletion/migration, permissions, irreversible side effects, or high-risk boundaries | full typed closeout plus guarded test floor and independent boundary test author |
+| **Capstone lane** | epics whose per-story work fits the guarded lane but whose epic-level risk demands heavy-lane close evidence | guarded lane per story + the BMAD v2 epic-close wrappers as a mandatory capstone at every epic boundary (see `CAPSTONE_LANE.md`) |
 
 The lightweight lane *is* Layer 1 run for day-to-day work. Quick-fix is the narrow bugfix shortcut. Full BMAD v2 is the
 heavy lane for broad feature/story work. Guarded is the high-risk lane and inherits the full typed closeout checks.
+Capstone is the measured middle for epic-scale delivery: guarded-story speed with heavy-lane certainty at the epic
+boundary — validated live before codification (see `CAPSTONE_LANE.md` for the evidence and the exact wrapper set).
 Most ongoing non-defect work lives in the lightweight lane.
 
 When using the Claude Code guard hook, lightweight runs should create `.acef-lightweight-lane` (or the neutral
@@ -74,7 +77,7 @@ run's gates.
 |---|---|---|
 | Small feature | lightweight | standard (guarded if it touches risk) |
 | Bug fix | quick-fix when narrow and reproduced; guarded if high-risk; full BMAD if scope expands | standard / mechanical |
-| Large feature / epic | **full BMAD v2** | — |
+| Large feature / epic | **full BMAD v2**, or **capstone** when the human explicitly accepts guarded-story depth (typed lane approval required) | — |
 | Test-case extraction · Test automation · Unit/integration | capability **inside a route**, not a lane | the test/flow skills (Layer 2) |
 
 **Test/flow work (D/E/F) is a capability set invoked inside a route, not a separate lane.** A small feature needing
