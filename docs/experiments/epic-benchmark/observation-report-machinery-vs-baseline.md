@@ -254,6 +254,24 @@ confirmed the duplicate-poisoning/suppression walls were untouched, and a narrow
 to CERTIFIED — end-to-end, the audit-to-certified loop for four epics cost seven typed cycles and found/fixed one
 HIGH escape.
 
+### Cycles 35–39 (E-INV S1–S4) — the paid chain ships; evidence-integrity self-correction
+
+**O2-23 — The conductor halted its own approved push over an evidence/tree mismatch.** After S1 was gated AND
+push-approved by the owner, the conductor discovered its evidence records certified a slightly different tree
+than the final commit (stale unused imports removed post-evidence), stopped, re-ran evidence against the exact
+amended tree, wrote a superseding gate, and requested a *superseding* approval — the owner independently diffed
+the two commits to confirm the claim. Nothing in the machinery forced this; the typed-evidence habit did.
+"Evidence must bind to the exact tree it certifies" is now a ledgered process rule.
+
+**O2-24 — Review catches on every story of the epic, including a security-class catch.** S1: HIGH
+route-permission + MEDIUM category-coverage. S2: three PATCH findings (raw QueryException leaking on unique
+collision, unbounded metadata persistence, non-injectable exclusion seam). S3: forbidden-URL test allowing 200s,
+hardened into a closed-world structural guard (the only audience-boost route is the eligibility page — future
+route drift must consciously break the contract test). S4: registration-source spoofing closed by ignoring the
+client payload and deriving attribution server-side from the sent-invite ledger, plus a same-email-cross-event
+regression. The guarded lane plus multi-engine review (codex + opencode) sustained a catch rate of one-or-more
+real findings per story on the epic with the largest outward-facing risk surface.
+
 **O2-19 — Self-surfaced lane-routing deviation (owner-side).** Prompted by the owner asking "are we using ACEF
 1:1, and if so aren't we in the BMAD v2 flow?", an audit of the active run found: the typed control layer IS
 running 1:1 (`lane: "guarded"`, every story with actor/scope/evidence/gate records, zero exceptions since Arm 2)
