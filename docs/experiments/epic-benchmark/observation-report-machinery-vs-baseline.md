@@ -327,6 +327,20 @@ change — the capstone now includes a persona product-done check, and deferrals
 approved cut (`GUARDED_LANE.md` item 5). Candidate F-4: deferral tracking needs a typed record with an owner
 story, not prose in an audit report.
 
+**O2-31 — The observer reproduced the failure it was deployed to catch.** Addendum to O2-30, on the owner's
+direct challenge ("you knew the whole, your mission was reviewing ACEF, and you missed it too"): the owner-proxy
+— holding full context, independent commit verification habits, and an explicit framework-audit mission —
+approved the E-INV cut without cross-checking open deferrals and then repeatedly reported the chain
+"functionally complete end-to-end" on service-level smoke evidence alone. Diagnosis, not excuse: (1) the proxy
+consumed the same evidence diet as the agents (gate reports, test counts, commit diffs — never the running
+product); (2) process-fidelity auditing crowded out product-reality auditing — complete typed records were taken
+as a proxy for a complete product, the exact Goodhart substitution documented elsewhere in this report; (3)
+claim language ("complete") outran its evidence class. Implication for the framework thesis: full context +
+explicit vigilance mission in a single mind does NOT substitute for a structural checkpoint — which is the
+strongest argument yet that the persona product-done gate must be mechanical, not attentional. Owner-proxy
+behavioral corrections adopted: no capstone push approval without persona-walk evidence (real UI traversal, not
+suite output); completeness claims must name their evidence class.
+
 **O2-25 — The active-run singleton drifts silently between gates.** An owner-side audit (prompted by "is ACEF
 being followed 1:1?") found `ACEF_ACTIVE_RUN.json` still pointing at E-CERT S1/development while actual work was
 two epics later (E-DOM S1) — the gate/evidence chain was complete and correct throughout, but the live-state
