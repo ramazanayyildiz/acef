@@ -270,7 +270,11 @@ hardened into a closed-world structural guard (the only audience-boost route is 
 route drift must consciously break the contract test). S4: registration-source spoofing closed by ignoring the
 client payload and deriving attribution server-side from the sent-invite ledger, plus a same-email-cross-event
 regression. The guarded lane plus multi-engine review (codex + opencode) sustained a catch rate of one-or-more
-real findings per story on the epic with the largest outward-facing risk surface.
+real findings per story on the epic with the largest outward-facing risk surface. Epic closed with the
+heavy-lane wrapper adopted as standard: a single full-chain real-surface smoke (eligibility → send → attributed
+registration → aggregate breakdown, 75 tests / 610 assertions with leakage negatives) plus an FR-capability
+trace — the E-CERT-derived hybrid dosing (guarded stories + heavy-lane epic close) is now the operating default
+rather than a recommendation.
 
 **O2-19 — Self-surfaced lane-routing deviation (owner-side).** Prompted by the owner asking "are we using ACEF
 1:1, and if so aren't we in the BMAD v2 flow?", an audit of the active run found: the typed control layer IS
