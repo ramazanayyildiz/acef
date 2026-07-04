@@ -188,6 +188,17 @@ has now caught all three roles: workers (scope/test drift, Arm 1), the conductor
 the owner (decision on a false premise, cycle 12). No role's claims survived contact with typed evidence — which
 is, in one sentence, ACEF's thesis.
 
+### Cycles 13–21 (E-SEG S1–S8 + closeout) — boring is the result
+
+**O2-16 — A full epic with nothing to report is the report.** E-SEG ran eight stories plus closeout with zero
+bypasses, zero worker churn, zero escalations beyond routine gate approvals, review catches where they mattered
+(notably S5's silent data loss: only the first extracted topic was being persisted), and reviewer-verified reuse
+constraints (S7 riding E-POOL's targetable seam instead of paralleling it). The epic closeout oracle then caught
+a stale cross-story test assertion and healed it through its own mini typed cycle — fix commit, gate, evidence —
+before declaring the epic green (72 tests / 1009 assertions across the Audience surface). Steady-state machinery
+delivery is operationally indistinguishable from a disciplined human team's cadence, with the difference that
+every claim in the previous sentence is verifiable from state files rather than testimony.
+
 ## Conclusions (first cycle)
 
 1. **The operating model is portable; the machinery is what makes it inescapable.** A disciplined Claude
