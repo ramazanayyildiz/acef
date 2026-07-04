@@ -199,6 +199,24 @@ before declaring the epic green (72 tests / 1009 assertions across the Audience 
 delivery is operationally indistinguishable from a disciplined human team's cadence, with the difference that
 every claim in the previous sentence is verifiable from state files rather than testimony.
 
+### Cycles 22–24 (E-QRY closeout → E-AIA S1–S3) — provider onboarding under typed approvals
+
+**O2-17 — Owner inputs enter the system as typed records, not chat.** The owner's real AI-provider credentials
+(self-hosted vLLM endpoint) were onboarded mid-epic: endpoint validated out-of-band, secret placed only in the
+untracked `.env`, and the decision captured as a typed approval record (`approval-ai-audit-provider`) that the
+conductor then cited when upgrading S6 from a seam story to a real-implementation story. The interesting property
+is directional: a *product requirement change* (seam → live provider) flowed into an already-authorized batch
+without renegotiating the batch — the approval record carried the delta. In the baseline arm the same input
+would have been a chat message with no artifact for the S6 reviewer to check the security AC against.
+
+**O2-18 — The review layer keeps hitting at the same rate in a new module.** E-AIA S2's reviewer caught a
+readiness-check side effect (readiness probe mutated state; fix made it pure, publish stays the sole command
+path) and S3's reviewer caught verdict context binding to a mutable event title — the same
+immutability-vs-display distinction the snapshot design exists for. Both were design-level catches, not lint;
+both were fixed and re-reviewed before gating (S3 took three evidence generations, v1→v3, all preserved). Six
+review cycles into net-new modules, the independent-review stage has caught a real defect in roughly every
+second story — a stable hit rate that no longer looks like early-codebase luck.
+
 ### Framework findings from live deployment (fed back to ACEF itself)
 
 **F-1 — `acef-next` has no conductor-bookkeeping affordance (freeze-compatible bug-fix candidate).** Reproduced
@@ -212,7 +230,9 @@ pilot's precommit-bootstrap gap: both are cases where the state machine models t
 but the CONDUCTOR's only partially. Supplement (third data point, E-QRY S4): the gate-phase projection reported
 `approve_gate` forbidden while the typed `acef-state gate` command succeeded — the projection and the state tool
 disagree about what is permitted, i.e. the projection under-models the state layer's actual affordances rather
-than merely lacking one.
+than merely lacking one. Fourth reproduction (E-AIA S3): identical `approve_gate`-forbidden-while-typed-command-
+succeeds mismatch, now logged inside the gate record itself per standing instruction — the finding is stable
+across two epics, two conductors' story styles, and both the ledger-write and gate-approve affordances.
 
 ## Conclusions (first cycle)
 
