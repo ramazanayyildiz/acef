@@ -293,6 +293,26 @@ as typed incident evidence (`ev-edom-s3-review-attempt-incidents`) rather than d
 then delivered the verdict with the two owner-flagged attack surfaces explicitly examined. The guarded lane's
 no-verdict-no-gate rule held under infrastructure failure, which is the condition such rules exist for.
 
+### Cycles 44–50 (E-AIC S1–S7) — an AI-product epic under the machinery; evidence-driven design pivots
+
+**O2-28 — A required capability probe changed a story's shape on evidence, not assumption.** The owner-mandated
+S1 probe of the live provider discovered an audio model (`valorite-whisper-tr`) alongside the chat model, which
+upgraded S2 from "seam-deferred, no audio" to real transcription — the opposite pivot from the usual scope-cut,
+and made safely: the probe result is a typed evidence record the gate cites. Symmetric to E-AIA's S6 upgrade
+(seam → real) when the owner supplied the endpoint: in both cases a typed record, not chat, carried the
+design-changing fact.
+
+**O2-29 — The review layer caught an AI-specific defect class: fabricated provenance.** Across E-AIC's cycles
+the reviewers' most valuable catches were failure modes unique to LLM-integrated features: raw attendee text
+flowing into provider prompts (S3, patched to aggregates-only in both directions), and interest signals citing
+source actions that did not exist in the real snapshot (S5 v4) — the model inventing evidence for its own
+claims. The fix made explainability *enforceable*: out-of-snapshot citations fail closed. The epic's capstone
+ends on the epic's most important cross-system assertion: applying an AI copy suggestion invalidates the
+existing E-AIA audit approval through the real content-hash path — AI output cannot launder itself past the
+audit gate. Also surfaced: the auto-triage prompt v1 defines output contract and risk mapping but no enumerated
+content policy — "inappropriate" is currently delegated to the model's general judgment; a versioned policy
+story (auto_triage_v2, owner-reviewable category list) is queued.
+
 **O2-25 — The active-run singleton drifts silently between gates.** An owner-side audit (prompted by "is ACEF
 being followed 1:1?") found `ACEF_ACTIVE_RUN.json` still pointing at E-CERT S1/development while actual work was
 two epics later (E-DOM S1) — the gate/evidence chain was complete and correct throughout, but the live-state
