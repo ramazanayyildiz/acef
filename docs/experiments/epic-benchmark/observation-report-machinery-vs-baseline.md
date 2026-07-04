@@ -298,6 +298,12 @@ surfaced, not rationalized: the framework lesson is that ACEF's controls enforce
 nothing audits whether the chosen lane matches the routing table (a missing intake-conformance check — candidate
 F-2). Owner decision now pending: record risk acceptance for guarded-lane epics, or promote the remaining backlog
 to real BMAD v2 (BMAD-METHOD is installed in the repo; the external codex conductor is not wired to it).
+RESOLVED 2026-07-04: the owner ratified the hybrid dosing and elevated it to a first-class 4th ACEF lane — the
+**Capstone lane** (`method/CAPSTONE_LANE.md`): guarded lane per story + mandatory BMAD v2 epic-close wrappers at
+every epic boundary, with lane selection remaining a typed human approval. Typed record:
+`approval-capstone-lane-policy` in the validation repo. The deviation is closed by codification: what the run
+was doing informally is now a named, evidence-backed lane with explicit selection rules — the validation
+experiment's first direct change to the framework it was validating.
 
 ### Framework findings from live deployment (fed back to ACEF itself)
 
