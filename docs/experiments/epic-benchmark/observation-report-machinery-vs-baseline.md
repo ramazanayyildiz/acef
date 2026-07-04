@@ -209,7 +209,10 @@ design intent (it queued the rows and reported rather than editing around the st
 needs a legitimate bookkeeping affordance: either `edit_ledger` allowed in a conductor-role closeout phase, or an
 explicit `ledger_bookkeeping` action in the projection's allowed set post-gate. Companion finding to the v2
 pilot's precommit-bootstrap gap: both are cases where the state machine models the WORKER's lifecycle completely
-but the CONDUCTOR's only partially.
+but the CONDUCTOR's only partially. Supplement (third data point, E-QRY S4): the gate-phase projection reported
+`approve_gate` forbidden while the typed `acef-state gate` command succeeded — the projection and the state tool
+disagree about what is permitted, i.e. the projection under-models the state layer's actual affordances rather
+than merely lacking one.
 
 ## Conclusions (first cycle)
 
