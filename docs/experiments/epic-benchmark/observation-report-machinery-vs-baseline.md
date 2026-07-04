@@ -217,6 +217,18 @@ both were fixed and re-reviewed before gating (S3 took three evidence generation
 review cycles into net-new modules, the independent-review stage has caught a real defect in roughly every
 second story — a stable hit rate that no longer looks like early-codebase luck.
 
+**O2-19 — Self-surfaced lane-routing deviation (owner-side).** Prompted by the owner asking "are we using ACEF
+1:1, and if so aren't we in the BMAD v2 flow?", an audit of the active run found: the typed control layer IS
+running 1:1 (`lane: "guarded"`, every story with actor/scope/evidence/gate records, zero exceptions since Arm 2)
+— but `DELIVERY_RULES.md` routes *epic-scale* work to the full BMAD v2 heavy lane, and five epics have now run in
+the guarded lane with `laneRationale: null` and no ledgered lane decision. The deviation predates the machinery
+install (Arm 1 set the pattern) and survived ~30 typed gate cycles without any control firing, because lane
+routing is decided at intake — before the machinery that would check it is bound. Per the goal directive this is
+surfaced, not rationalized: the framework lesson is that ACEF's controls enforce the *chosen* lane completely but
+nothing audits whether the chosen lane matches the routing table (a missing intake-conformance check — candidate
+F-2). Owner decision now pending: record risk acceptance for guarded-lane epics, or promote the remaining backlog
+to real BMAD v2 (BMAD-METHOD is installed in the repo; the external codex conductor is not wired to it).
+
 ### Framework findings from live deployment (fed back to ACEF itself)
 
 **F-1 — `acef-next` has no conductor-bookkeeping affordance (freeze-compatible bug-fix candidate).** Reproduced
