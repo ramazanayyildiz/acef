@@ -39,7 +39,16 @@ Before a guarded epic closes, a closeout oracle actor must produce:
    evidence and healed through its own mini typed cycle, never rerun-until-green.
 4. **Guarded-boundary re-review** — an adversarial pass over the epic's money/PII/authz/irreversible surfaces
    as they exist *after* all stories, not as each story left them.
-5. **Typed epic gate** — the capstone closes with its own gate verdict citing the evidence above. A FAIL gate
+5. **Persona product-done check** — for every user-facing promise the epic claims to deliver, verify the owning
+   persona can actually *discover and perform* the capability through a real entry point (navigable UI/route,
+   not a service call or a direct-URL test). The real-surface smoke (item 1) proves the surfaces that exist
+   work; this check asks the question the smoke structurally cannot: **do all the promised surfaces exist at
+   all?** A capability whose service layer is green but which no persona can reach is `dev-done`, not
+   `product-done` — it is an UNCOVERED finding, and "defer to a later epic" requires a typed deferral that names
+   the owning story in an approved cut (a deferral pointing at an epic that never absorbs it is how
+   service-only-no-UI delivery escapes; observed live: E-CERT deferred purchase/campaign UI 'to E-INV', E-INV's
+   cut never included it, and the gap survived two more capstones until the owner asked).
+6. **Typed epic gate** — the capstone closes with its own gate verdict citing the evidence above. A FAIL gate
    is preserved and superseded by a new PASS gate after fixes (supersede-not-mutate); the next epic must not
    start while the capstone gate is FAIL.
 

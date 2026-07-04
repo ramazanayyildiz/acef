@@ -313,6 +313,20 @@ audit gate. Also surfaced: the auto-triage prompt v1 defines output contract and
 content policy — "inappropriate" is currently delegated to the model's general judgment; a versioned policy
 story (auto_triage_v2, owner-reviewable category list) is queued.
 
+**O2-30 — The owner's historical failure class partially reproduced UNDER the machinery: dev-done ≠
+product-done.** The owner asked whether "backend green, nothing wired to the frontend, no usable product" — his
+platform's most common historical failure — was recurring. Audit: yes, in a bounded form. The AB send service
+and the package-purchase service have no calling UI; organizers cannot launch a campaign or buy a package, and
+credit exhaustion surfaces as HTTP 500. Crucially, the machinery had *seen* it: E-CERT flagged the missing
+surfaces and deferred them "to E-INV" — but the E-INV cut never absorbed the deferral (owner-proxy approved that
+cut without cross-checking open deferrals), and the gap then survived two more capstones because the capstone's
+real-surface smoke proves existing surfaces work — it structurally cannot ask whether promised surfaces exist.
+Three fixes: an immediate E-UIX epic (purchase UI, campaign composer, persona-level walkthrough capstone); a
+standing cut rule (every story declares its user-facing surface or justifies surface-none); and a framework
+change — the capstone now includes a persona product-done check, and deferrals must name an owning story in an
+approved cut (`GUARDED_LANE.md` item 5). Candidate F-4: deferral tracking needs a typed record with an owner
+story, not prose in an audit report.
+
 **O2-25 — The active-run singleton drifts silently between gates.** An owner-side audit (prompted by "is ACEF
 being followed 1:1?") found `ACEF_ACTIVE_RUN.json` still pointing at E-CERT S1/development while actual work was
 two epics later (E-DOM S1) — the gate/evidence chain was complete and correct throughout, but the live-state
