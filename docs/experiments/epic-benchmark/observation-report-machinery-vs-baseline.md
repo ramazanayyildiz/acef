@@ -248,7 +248,11 @@ lane's *real-surface smoke* requirement could catch. Nine further findings triag
 owner dispositions. Reading: the guarded lane's per-story controls deliver ~certified quality on most epics at
 lower ceremony cost, but the heavy lane's epic wrappers catch a distinct failure class (test-double masking of
 production paths) that per-story review structurally cannot — supporting a hybrid dosing: guarded lane per story
-+ heavy-lane wrappers at epic close, rather than full BMAD v2 per story.
++ heavy-lane wrappers at epic close, rather than full BMAD v2 per story. Closure: the fix story landed with a
+real-validator regression and an erasure-tombstone guard (8 tests / 57 assertions), an independent reviewer
+confirmed the duplicate-poisoning/suppression walls were untouched, and a narrow re-certification flipped E-SEG
+to CERTIFIED — end-to-end, the audit-to-certified loop for four epics cost seven typed cycles and found/fixed one
+HIGH escape.
 
 **O2-19 — Self-surfaced lane-routing deviation (owner-side).** Prompted by the owner asking "are we using ACEF
 1:1, and if so aren't we in the BMAD v2 flow?", an audit of the active run found: the typed control layer IS
