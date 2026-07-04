@@ -276,6 +276,23 @@ registration → aggregate breakdown, 75 tests / 610 assertions with leakage neg
 trace — the E-CERT-derived hybrid dosing (guarded stories + heavy-lane epic close) is now the operating default
 rather than a recommendation.
 
+### Cycles 40–43 (E-DOM S1–S4) — first epic under the ratified lane; a review outage handled fail-closed
+
+**O2-26 — E-DOM ran start-to-finish under the formally ratified guarded-at-epic-scale lane** (typed approvals
+`approval-capstone-lane-policy` → `approval-guarded-epic-scale-merge`; the lane was renamed/merged mid-epic on
+the owner's call with zero operational disruption — taxonomy change, not process change). Review catches
+continued (multi-label public-suffix apex, custody unique-race exception, validation-field mix-up), and the
+capstone close bound *future* work with conditional guardrails: the S3 middleware/Host-header security review
+must re-run if custom-host rewriting ever expands. A capstone that schedules its own re-verification condition
+is a stronger close than a static green.
+
+**O2-27 — Reviewer outage produced a hold, not a workaround.** S3's independent review failed twice (a reviewer
+reviewed the wrong story; a second opencode reviewer hung mid-execution) — the conductor HELD the gate on green
+evidence rather than gating without a usable verdict, reported the hold, and both failed attempts were preserved
+as typed incident evidence (`ev-edom-s3-review-attempt-incidents`) rather than discarded. A fresh codex reviewer
+then delivered the verdict with the two owner-flagged attack surfaces explicitly examined. The guarded lane's
+no-verdict-no-gate rule held under infrastructure failure, which is the condition such rules exist for.
+
 **O2-25 — The active-run singleton drifts silently between gates.** An owner-side audit (prompted by "is ACEF
 being followed 1:1?") found `ACEF_ACTIVE_RUN.json` still pointing at E-CERT S1/development while actual work was
 two epics later (E-DOM S1) — the gate/evidence chain was complete and correct throughout, but the live-state
