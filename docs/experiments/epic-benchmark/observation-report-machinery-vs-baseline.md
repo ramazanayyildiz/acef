@@ -217,6 +217,22 @@ both were fixed and re-reviewed before gating (S3 took three evidence generation
 review cycles into net-new modules, the independent-review stage has caught a real defect in roughly every
 second story — a stable hit rate that no longer looks like early-codebase luck.
 
+### Cycles 25–28 (E-AIA S4–S6 + closeout) — epic complete; the review layer peaks on the riskiest story
+
+**O2-20 — Review catch density tracked story risk.** E-AIA closed 6/6 with the independent-review layer catching
+real defects on four of six stories, and the two catches on S6 (the highest-risk story: live AI provider deciding
+publish outcomes) were the epic's most material — a conflicting LOW-risk model output could have auto-approved,
+and manual overrides still triggered provider calls. Both would have shipped under test-green-only discipline;
+both were design-level, not lint. The owner independently re-scanned the S6 commit for the provider secret (zero
+occurrences) — a control the machinery made cheap because the evidence chain names exactly one commit to scan.
+
+**O2-21 — The closeout oracle self-heal is now a pattern, not an anecdote.** E-AIA's epic closeout reproduced
+E-SEG's shape exactly: first oracle run FAILED on stale cross-story assertions (S3/S4 tests unaware of what S6
+added), the failed evidence was preserved rather than rerun-until-green, a scoped test-only fix landed through its
+own mini typed cycle, and v2 passed (39 tests / 11207 assertions across the AI-audit surface). Two epics, same
+failure class, same recovery shape — cross-story test staleness at epic close appears to be a structural cost of
+per-story worker isolation, and the closeout oracle is the control that pays it down.
+
 **O2-19 — Self-surfaced lane-routing deviation (owner-side).** Prompted by the owner asking "are we using ACEF
 1:1, and if so aren't we in the BMAD v2 flow?", an audit of the active run found: the typed control layer IS
 running 1:1 (`lane: "guarded"`, every story with actor/scope/evidence/gate records, zero exceptions since Arm 2)
@@ -245,6 +261,9 @@ disagree about what is permitted, i.e. the projection under-models the state lay
 than merely lacking one. Fourth reproduction (E-AIA S3): identical `approve_gate`-forbidden-while-typed-command-
 succeeds mismatch, now logged inside the gate record itself per standing instruction — the finding is stable
 across two epics, two conductors' story styles, and both the ledger-write and gate-approve affordances.
+Reproductions 5–7 (E-AIA S4, S5, S6): identical on every remaining story of the epic — the mismatch is fully
+deterministic in the gate phase, which upgrades the fix from "affordance gap" to "projection/state-tool contract
+divergence" and makes it the top candidate for the first post-freeze framework change.
 
 ## Conclusions (first cycle)
 
