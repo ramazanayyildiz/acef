@@ -393,6 +393,22 @@ privacy-clean CSV export, and tier-gated cross-event reporting. Notable: the epi
 evidence-integrity defects (uncommitted evidence, phantom SHA binding) before the owner saw the bundle —
 O2-23's lesson operating as routine.
 
+**O2-37 — A test-green safety control that fails open under a routine ops action, surfaced only by inspecting the
+persistence mechanism.** E-OPS S2 (platform kill switches) gated PASS with correct enforcement-layer proof — the
+publish/go_live/email switches genuinely deny at the real command path before side effects, with audit rows and
+active indicators. But the state lives in `Cache::forever` and `active()` defaults to `false` on a cache miss.
+Default cache store is `database` (survives app restart), but `php artisan cache:clear` — routine during deploys
+and incident response — silently reverts every switch to OFF, re-enabling the emergency-disabled capability with
+no audit row for the un-disabling. That is fail-OPEN on the one control whose entire purpose is to stay closed
+during an incident. The story's tests could not see it: they set-then-assert within one process, which is exactly
+the operational context where it works. The reviewer HAD flagged 'cache durability' but as an accepted residual;
+owner-side inspection re-weighted it to a required pre-launch hardening story (authoritative durable state, cache
+as accelerator only, explicit default-when-unknown policy, audited un-set). Failure class distinct from the
+UI-unreachable family (O2-30..36): here the capability is reachable and correct in-test — the defect is in its
+behavior across an out-of-process lifecycle event, visible only by reading how state persists, not by exercising
+the feature. Reinforces that 'independent review PASS' is a floor, not a ceiling: the residual-vs-blocker
+weighting itself needs owner judgment on guarded controls.
+
 **O2-25 — The active-run singleton drifts silently between gates.** An owner-side audit (prompted by "is ACEF
 being followed 1:1?") found `ACEF_ACTIVE_RUN.json` still pointing at E-CERT S1/development while actual work was
 two epics later (E-DOM S1) — the gate/evidence chain was complete and correct throughout, but the live-state
