@@ -367,6 +367,19 @@ Lesson completing the O2-30→O2-32 arc: real-surface tests, real boots, and wri
 something the previous layer missed — but only *executing* the persona walk caught the interaction deadlock. The
 persona product-done check must mean a performed walk, not documented steps.
 
+**O2-34 — The reject→fix→re-walk loop converged in three iterations and found three UI-unreachable
+capabilities.** E-UIX S3 closure: walk v1 found the publish/audit deadlock (F1) and a wrong-role persona (F2);
+walk v2 confirmed those fixes and found the next blocker one layer deeper — purchased AB credits had a bind()
+service method no UI called, so a paying organizer saw 'Remaining credits: 0' with launch disabled (F3), plus a
+seeder gap hiding the included-credit promise (F4); walk v3 passed 16/16 with DB-verified end state (30 invites
+sent, purchase consumed+bound, registration attributed jakomeet_audience, zero identity leakage). Pattern: each
+executed walk found exactly the defect class that all prior layers — story tests, independent reviews, capstone
+suites, even the previous walk — could not, because each blocker MASKED the next (the deadlock hid the credit
+gap; you cannot discover launch-is-unreachable until publish works). Conclusion for the framework: the persona
+walk is not a one-shot gate but a convergence loop — walk, fix, re-walk until the persona completes; and it must
+be EXECUTED (now a standing capstone requirement), because the v2 cycle's 'browser walkthrough documentation'
+had passed independent review while describing steps that had never been performed.
+
 **O2-25 — The active-run singleton drifts silently between gates.** An owner-side audit (prompted by "is ACEF
 being followed 1:1?") found `ACEF_ACTIVE_RUN.json` still pointing at E-CERT S1/development while actual work was
 two epics later (E-DOM S1) — the gate/evidence chain was complete and correct throughout, but the live-state
