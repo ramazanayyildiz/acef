@@ -353,6 +353,20 @@ tests ≠ real boot — the persona walk must start from an actual running insta
 needs an explicit no-DB short-circuit for first-party hosts (fix ordered into E-UIX scope with a
 table-dropped regression).
 
+**O2-33 — The owner-proxy's first real browser walk rejected a PASS-gated capstone with a deadlock no test
+layer could see.** E-UIX S3 (persona capstone) was gated PASS with 21 tests/340 assertions and an
+independent-review PASS that had even demanded walkthrough documentation. The owner-proxy then actually executed
+the walk in a scripted browser (Playwright, 14 screenshots): the UI disables Publish while `publishReadiness`
+returns audit-pending, but the audit *request* is only created inside the publish command path — so a real
+organizer can never trigger the review; `ai_audit_requests` was empty in the DB and the Super Admin queue
+showed nothing. Every automated layer passed because tests POST the endpoint directly, bypassing the disabled
+button. Second finding: the seeded 'organizer' persona had super-admin navigation — the walk wasn't even running
+under real organizer authz. Push rejected; story returned for a UI affordance fix (audit-pending must be
+attemptable: click → fail-closed deny + queue request) and a seeder role fix, with a superseding gate required.
+Lesson completing the O2-30→O2-32 arc: real-surface tests, real boots, and written walkthroughs each caught
+something the previous layer missed — but only *executing* the persona walk caught the interaction deadlock. The
+persona product-done check must mean a performed walk, not documented steps.
+
 **O2-25 — The active-run singleton drifts silently between gates.** An owner-side audit (prompted by "is ACEF
 being followed 1:1?") found `ACEF_ACTIVE_RUN.json` still pointing at E-CERT S1/development while actual work was
 two epics later (E-DOM S1) — the gate/evidence chain was complete and correct throughout, but the live-state
