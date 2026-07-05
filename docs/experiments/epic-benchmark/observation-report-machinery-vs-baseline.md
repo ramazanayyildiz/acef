@@ -341,6 +341,18 @@ strongest argument yet that the persona product-done gate must be mechanical, no
 behavioral corrections adopted: no capstone push approval without persona-walk evidence (real UI traversal, not
 suite output); completeness claims must name their evidence class.
 
+**O2-32 — The first real boot found a defect the entire evidence chain could not see.** Acting on the owner's
+"are you sure they work?", the owner-proxy booted a real dev server for the first time in the run: the whole app
+returned 500 on /, /login, /register. Cause: the E-DOM serving middleware runs a custody-table query on EVERY
+request including the app's own host, and the dev DB was unmigrated — i.e. custody-table unavailability takes
+down the entire platform, not just custom-domain serving (wrong blast radius), plus an unnecessary per-request
+query on all default-host traffic. No test could see this: the suite always migrates, and every E-DOM test
+targeted the middleware's logic, not its failure envelope on infrastructure absence. The E-DOM capstone's
+real-surface smoke also ran inside the migrated test harness. Lesson stacked on O2-30/O2-31: real-surface
+tests ≠ real boot — the persona walk must start from an actual running instance, and middleware on the hot path
+needs an explicit no-DB short-circuit for first-party hosts (fix ordered into E-UIX scope with a
+table-dropped regression).
+
 **O2-25 — The active-run singleton drifts silently between gates.** An owner-side audit (prompted by "is ACEF
 being followed 1:1?") found `ACEF_ACTIVE_RUN.json` still pointing at E-CERT S1/development while actual work was
 two epics later (E-DOM S1) — the gate/evidence chain was complete and correct throughout, but the live-state
