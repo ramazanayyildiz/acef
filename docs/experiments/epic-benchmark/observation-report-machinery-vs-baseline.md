@@ -380,6 +380,19 @@ walk is not a one-shot gate but a convergence loop — walk, fix, re-walk until 
 be EXECUTED (now a standing capstone requirement), because the v2 cycle's 'browser walkthrough documentation'
 had passed independent review while describing steps that had never been performed.
 
+**O2-36 — E-RPT closed under the full matured ritual; the walk caught a second seeder-invariant violation.**
+The reporting epic (5 stories + capstone) ran with every accumulated control active: per-story surface
+declarations, honest-unavailable over fabricated metrics (a reviewer HIGH killed a capacity-rate stand-in for
+conversion), an entitlement-leak HIGH caught in exports (Launch reaching AI payloads through the EXPORTS
+umbrella), worker reaping at gates, and an executed owner walk at close. The walk's first run rejected the
+capstone: the demo seeder pre-published an event with no audit verdict — a state production cannot produce —
+and the AB composer correctly failed closed against it. Second instance of the 'seeder violates production
+invariant' class (E-UIX's admin-role organizer was the first), yielding a standing rule: demo seeders may only
+create states reachable through real command paths. v2 walk passed 15/15 including spoof-resistant attribution,
+privacy-clean CSV export, and tier-gated cross-event reporting. Notable: the epic's review chain also caught two
+evidence-integrity defects (uncommitted evidence, phantom SHA binding) before the owner saw the bundle —
+O2-23's lesson operating as routine.
+
 **O2-25 — The active-run singleton drifts silently between gates.** An owner-side audit (prompted by "is ACEF
 being followed 1:1?") found `ACEF_ACTIVE_RUN.json` still pointing at E-CERT S1/development while actual work was
 two epics later (E-DOM S1) — the gate/evidence chain was complete and correct throughout, but the live-state
