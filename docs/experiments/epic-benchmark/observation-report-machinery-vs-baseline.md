@@ -409,6 +409,18 @@ every epic boundary, with lane selection remaining a typed human approval. Typed
 was doing informally is now a named, evidence-backed lane with explicit selection rules — the validation
 experiment's first direct change to the framework it was validating.
 
+**O2-35 — Worker lifecycle is unmodeled: ~90 finished workers stayed alive across 11 epics.** The owner found
+~90 idle codex processes — every dev/reviewer pair from every closed story since E-SEG — each parked on a prompt
+waiting for a message that would never arrive, holding memory the whole run. Root cause is structural, not
+negligence: ACEF types the actor's *birth* (actor record, scope binding) and its *work* (evidence, reports) but
+has no typed *death* — nothing in the gate ritual says the worker process ends. The conductor spawns fresh
+identities per story (correct, for immutability), which guarantees orphans accumulate monotonically. Fix
+deployed as a standing rule: reaping is part of the gate ritual (story gate decided → that story's workers
+reaped after their final report artifact is confirmed on disk; epic close → sweep), with the inverse guard that
+a worker with no final report may NOT be reaped silently — that is an incomplete worker and a process gap.
+Candidate F-5: the worker-scope/actor record should carry a lifecycle terminus (`reaped_at`, by whom) so
+orphan detection is a state query instead of a process-table archaeology session.
+
 ### Framework findings from live deployment (fed back to ACEF itself)
 
 **F-1 — `acef-next` has no conductor-bookkeeping affordance (freeze-compatible bug-fix candidate).** Reproduced
