@@ -482,6 +482,18 @@ escaped defects in the multi-worker regime — the exact regime the freeze's thi
 progress: the delivered capstone-lane epics are getting their flow maps + manual test case plans + browser E2E
 retroactively (pilot: the Audience Boost organizer journey — 10 flows, 39 manual cases, 30 automatable).
 
+**O2-40 — O2-38 closed by re-walk + committed regression; E-OPS closed as the 14th epic.** The blank kill-switch
+page was fixed at source (`render()->extends('layouts.authenticated')->section('content')` so the component markup
+binds into the layout's yielded section), and — crucially — the fix was verified the way the defect was found: by
+driving the *rendered* page (5/5 — content div, audit banner, all three switch cards with Enable/Disable/Inactive
+indicators, publish toggle active; 3255 chars vs the previous blank ~1310). The persona walk is now a committed
+Dusk regression (`EopsCapstoneOperationsBrowserTest.php`), closing the O2-39 loop in practice: the owner walk
+discovered the class, the committed browser test makes it un-regressable. Same commit registered the five backfill
+QA plans (161 manual cases) with Process-Judge AC-coverage + count-reconciliation PASS. The reject→fix→re-walk
+loop for E-OPS S7 ran two iterations (O2-38 blank page → v2 render fix + committed E2E), consistent with the
+E-UIX (three) and E-RPT (two) convergence counts: UI capstones need 2–3 executed-walk iterations, and each
+iteration's fix is only durable once committed as a rendered-page test.
+
 ### Framework findings from live deployment (fed back to ACEF itself)
 
 **F-1 — `acef-next` has no conductor-bookkeeping affordance (freeze-compatible bug-fix candidate).** Reproduced
