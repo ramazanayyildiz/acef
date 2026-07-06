@@ -409,6 +409,21 @@ behavior across an out-of-process lifecycle event, visible only by reading how s
 the feature. Reinforces that 'independent review PASS' is a floor, not a ceiling: the residual-vs-blocker
 weighting itself needs owner judgment on guarded controls.
 
+**O2-38 — The capstone walk caught an emergency control rendering blank, invisible to every test because they
+render the component in isolation.** E-OPS S7 capstone gated PASS (58-assertion smoke, independent review) and I
+rejected it on the executed walk: the platform kill-switches page returns HTTP 200 but renders BLANK for a super
+admin — the content div is absent from the DOM, no switch cards, no controls. Root cause: `render()` sets
+`->layout('layouts.authenticated')` (which emits the body via `@yield('content')`) while the view outputs its
+markup outside any `@section('content')`, so the layout yields nothing; sibling super-admin pages that don't
+override the layout render fine. Every gate missed it because the S2 story tests use `Livewire::test(component)`
+— which renders the component in isolation, bypassing layout composition — and the S7 smoke asserts
+'kill-switch → publish 503' by driving the service/action directly, never the rendered page. So an admin cannot
+flip an emergency kill switch in an incident, yet the whole test+review+capstone chain is green. Third kill-switch
+defect across the epic (fail-open on cache:clear O2-37; UI-unreachable here) and a clean instance of the O2-33
+class. The durable lesson sharpened: a capstone smoke that exercises actions/endpoints is not a persona walk —
+the walk must drive the *rendered page* (navigate, assert controls exist in the DOM, click the real toggle), and
+component-isolation tests must never be accepted as proof that a surface renders. Fix + v2 re-walk required.
+
 **O2-25 — The active-run singleton drifts silently between gates.** An owner-side audit (prompted by "is ACEF
 being followed 1:1?") found `ACEF_ACTIVE_RUN.json` still pointing at E-CERT S1/development while actual work was
 two epics later (E-DOM S1) — the gate/evidence chain was complete and correct throughout, but the live-state
