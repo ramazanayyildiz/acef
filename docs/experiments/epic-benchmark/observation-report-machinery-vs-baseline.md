@@ -532,7 +532,55 @@ divergence" and makes it the top candidate for the first post-freeze framework c
    unsustainable — ledgered); AB purchase-dedup UX; the AI-audit gate must flip to fail-closed before E-INV;
    quantitative overhead accounting across multiple stories.
 
+## Second-cycle synthesis (in progress — finalized at E-SUP close)
+
+The first cycle measured a single epic under machinery. The second cycle ran ~15 epics end-to-end (E-PKG through
+E-SUP) and produced a different, sharper set of findings. Draft synthesis, stable across the remaining work:
+
+1. **The dominant failure class was not what the controls were built to catch.** Arm 1's story was quality-gate
+   bypass (a discipline lapse). The second cycle's recurring, expensive failures were all one family:
+   *dev-done ≠ product-done* — a capability green at the service/test layer but unreachable, deadlocked, or
+   blank at the rendered surface (O2-30 service-only-no-UI, O2-33 publish deadlock, O2-36 seeder invariant,
+   O2-38 blank kill-switch page). Every one passed story tests, independent review, and the capstone smoke,
+   because all of those exercise components/endpoints in-process. None was caught by any automated gate; each was
+   caught only by an executed browser walk.
+
+2. **The compensating control that worked is human-in-the-loop persona walking — and its weakness is that it
+   doesn't persist.** The owner-proxy's manual browser walks caught the entire dev-done class. But a manual walk
+   leaves no regression; it re-opens the moment the walker leaves. The durable fix was structural: elevate the
+   persona product-done check to require the committed Layer-2 chain (flow-map → manual cases → browser E2E
+   driving the rendered page) as its evidence (O2-39), and back-fill it — 197 manual cases across six journeys,
+   the ~157 automatable ones becoming committed E2E.
+
+3. **The observer reproduced the failure it was deployed to catch (O2-31), which is the cycle's most important
+   result about the framework's thesis.** Full context + an explicit vigilance mission in one mind did NOT
+   prevent the owner-proxy from reporting "complete" on service-level evidence. That is the strongest available
+   evidence that *structural gates beat attentional vigilance* — the framework's core claim — because it held
+   even when the attentive party was the framework's own author-proxy.
+
+4. **The machinery's self-correction behaviors were real and unprompted:** the conductor halting an
+   already-approved push over an evidence/tree mismatch (O2-23); reviewers catching fabricated LLM provenance
+   (O2-29) and an entitlement leak through an export umbrella; the closeout oracle self-healing cross-story test
+   staleness on every multi-story epic (O2-21). These are the payoff of typed evidence, and none required the
+   owner to ask.
+
+5. **Lane evolution was itself a finding.** The run started on an unledgered lane deviation (guarded where the
+   table routed BMAD v2, O2-19), which forced two framework changes codified *from live evidence, not on paper*:
+   the guarded lane's epic-scale capstone (validated by E-CERT retro-certifying 3/4 epics and catching one HIGH
+   escape, O2-22), and the surface-declaration + committed-Layer-2 rules (O2-39). The experiment changed the
+   framework it was validating — four times (F-1…F-5 candidates, plus two ratified lane rules).
+
+6. **Cost:** the guarded lane per story ran at the v3-measured +16–26% token premium; the capstones and the QA
+   backfill added real epic-close weight. Against that: one HIGH production defect found by retro-certification,
+   three UI-unreachable capabilities found by persona walks, one fabricated-provenance vector, one
+   entitlement-leak, one blank safety-control page, one fail-open kill switch — none of which the always-on
+   single-step controls (being thinned under the freeze) would have caught, all of which live in the
+   multi-worker/UI regime the freeze explicitly does not cover.
+
 ## Deliverable criteria (from the owner's goal sentence)
 
 Every jakomeet change from Arm 2 onward has a corresponding typed ACEF record verifiable in `.acef/` and
-`docs/ai/`; violations are surfaced, not rationalized. This report is the comparison artifact.
+`docs/ai/`; violations are surfaced, not rationalized. This report is the comparison artifact. Status at E-SUP:
+14 epics closed under full machinery, 197 manual test cases + committed browser E2E backfilling the epic-close
+E2E wrapper, and every owner-proxy lapse (E-INV cut approved without cross-checking deferrals, "complete" claims
+on service evidence) surfaced in-report rather than buried — including the ones that were the observer's own.
