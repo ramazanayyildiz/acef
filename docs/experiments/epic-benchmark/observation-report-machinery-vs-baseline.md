@@ -508,6 +508,24 @@ capstone) produced a walk with zero product findings — the first UI epic in th
 signal that the accumulated controls have converged. The distinction the run teaches: a *rejecting* walk finds
 product defects; a *passing* walk still finds script/surface mismatches — both are only visible by executing it.
 
+**O2-42 — A dedicated adversarial security review found a HIGH privacy break that certification, ~30 gate
+cycles, and every persona walk missed — because none of them probed adversarially.** An Opus security-review
+subagent found HIGH-1: the k-anonymity floor is applied to the Audience distribution histograms but NOT to the
+scalar `estimated_count`/`eligible_count` on the same composer screen — so any organizer can narrow filters to a
+size-1 segment and read a specific individual's registration/eligibility state, a direct break of the flagship
+E-INV organizer-blindness contract with KVKK exposure, through the normal UI with no privilege. This surface
+(E-SEG/E-QRY) was E-CERT-certified; the certification checked the histogram floor (which is correct) and missed
+the sibling scalar values. My persona walks rendered the composer with realistic 30-member segments and never an
+adversarial size-1 filter — walks verify intended behavior renders, they do not attack. The manual test cases
+had a k-anon floor case aimed at distributions, not counts. Conclusion for the framework: persona walking and
+certification are *intended-behavior* lenses; neither substitutes for an *adversarial* lens that deliberately
+constructs malicious inputs (size-1 segments, cache eviction, host spoofing). A security-review pass belongs in
+the guarded-lane epic close for any epic touching a privacy/authz/payment boundary — it found what six months of
+in-lane controls did not. (The same review also independently re-derived O2-37's kill-switch fail-open as HIGH-2
+and found erasure incompleteness outside `audience_*` as MEDIUM-1, and — importantly — self-refuted a first-pass
+CRITICAL admin-bypass false positive by reading the actual middleware wiring, demonstrating the adversarial-
+verify discipline the report elsewhere prescribes.)
+
 ### Framework findings from live deployment (fed back to ACEF itself)
 
 **F-1 — `acef-next` has no conductor-bookkeeping affordance (freeze-compatible bug-fix candidate).** Reproduced
