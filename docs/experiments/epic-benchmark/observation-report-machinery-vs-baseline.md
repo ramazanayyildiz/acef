@@ -526,6 +526,17 @@ and found erasure incompleteness outside `audience_*` as MEDIUM-1, and — impor
 CRITICAL admin-bypass false positive by reading the actual middleware wiring, demonstrating the adversarial-
 verify discipline the report elsewhere prescribes.)
 
+**O2-43 — The HIGH-1 privacy fix was verified by reproducing the exploit, not re-walking the happy path.** The
+k-anon count leak was closed and the owner-proxy confirmed it by constructing the attack the security review
+described: seed 30 members + one rare-attribute individual, open the composer, narrow filters to isolate the
+single person. Pre-fix that surfaced `estimated=1/eligible=0` (the per-person oracle); post-fix it shows `<25`
+with launch disabled, while a normal 31-member segment still shows the real count — proving the floor suppresses
+only sub-k without breaking legitimate use. This sharpens the persona-walk doctrine: for a *security* fix, the
+walk must reproduce the exploit (adversarial input), not just confirm the surface renders — the same distinction
+that let O2-42 escape every intended-behavior lens. The fix also spawned a reviewer-flagged sibling residual
+(the distribution result's own under-floor eligible_count) held for verify-or-floor, showing the adversarial
+lens keeps finding adjacent instances of a class once the first is known.
+
 ### Framework findings from live deployment (fed back to ACEF itself)
 
 **F-1 — `acef-next` has no conductor-bookkeeping affordance (freeze-compatible bug-fix candidate).** Reproduced
