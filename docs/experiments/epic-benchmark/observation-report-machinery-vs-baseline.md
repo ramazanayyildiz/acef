@@ -494,6 +494,20 @@ loop for E-OPS S7 ran two iterations (O2-38 blank page → v2 render fix + commi
 E-UIX (three) and E-RPT (two) convergence counts: UI capstones need 2–3 executed-walk iterations, and each
 iteration's fix is only durable once committed as a rendered-page test.
 
+**O2-41 — E-SUP closed as the 15th and final active epic; the capstone walk passed on the second script
+iteration with no product defect.** Unlike E-UIX/E-RPT/E-OPS (whose walks rejected the capstone on real defects),
+the E-SUP walk's only failures were in the owner-proxy's walk *script* (looked for a "new ticket" button; the
+create form is inline — and looked for a "Resolve" button; resolve is a status-dropdown + Update). Once the
+script matched the actual surface, the full journey verified: help center + search, inline ticket create, admin
+queue/detail with correctly-labelled Internal vs Organizer-visible thread entries, status→resolved→auto-close
+with idempotency (second scheduler run left status=closed and the audit count at 1), and the load-bearing
+privacy boundary — the organizer's rendered view and JSON contain the public reply and status but not the
+internal note. Reading: a mature surface built under the fully-tightened lane (surface declared per story,
+allowlist-not-denylist sanitizer for error context, component-level authz caught by review, committed Dusk
+capstone) produced a walk with zero product findings — the first UI epic in the run to do so, which is the
+signal that the accumulated controls have converged. The distinction the run teaches: a *rejecting* walk finds
+product defects; a *passing* walk still finds script/surface mismatches — both are only visible by executing it.
+
 ### Framework findings from live deployment (fed back to ACEF itself)
 
 **F-1 — `acef-next` has no conductor-bookkeeping affordance (freeze-compatible bug-fix candidate).** Reproduced
