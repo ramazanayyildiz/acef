@@ -465,6 +465,23 @@ a worker with no final report may NOT be reaped silently — that is an incomple
 Candidate F-5: the worker-scope/actor record should carry a lifecycle terminus (`reaped_at`, by whom) so
 orphan detection is a state query instead of a process-table archaeology session.
 
+**O2-39 — Framework change: the persona product-done check now requires the committed Layer-2 chain, not a
+manual walk.** The UI-render/reachability escapes accumulated to a pattern (O2-30 service-only-no-UI, O2-33
+publish deadlock, O2-36 seeder invariant, O2-38 blank kill-switch page) with one root cause: the guarded-lane
+capstone's persona product-done check (item 5) was satisfied by the owner's *manual browser walk* — which
+discovers gaps but leaves no durable regression, and which every automated layer structurally could not
+reproduce because story/capstone tests exercise components/endpoints in-process, never the rendered page. The
+full BMAD v2 lane already defines the fix as an epic-close wrapper — the Layer-2 chain `test-user-flow-mapper →
+test-case-planner → test-browser-generator` (flow map → manual test cases → browser E2E) — which the guarded
+lane's lighter "full-chain smoke" had substituted away. Resolution (owner decision): `GUARDED_LANE.md` item 5 now
+mandates, for every `ui`/`admin`-surfaced epic, the committed Layer-2 chain driving the RENDERED page as the
+product-done evidence; component-isolation tests explicitly do not satisfy it; non-UI epics exempt with a
+`surface:none` justification. This is codification-from-evidence, not speculative control-adding: it is the
+epic-close E2E wrapper the capstone lane omitted, now made mandatory because the omission produced repeated
+escaped defects in the multi-worker regime — the exact regime the freeze's thinning does not cover. Backfill in
+progress: the delivered capstone-lane epics are getting their flow maps + manual test case plans + browser E2E
+retroactively (pilot: the Audience Boost organizer journey — 10 flows, 39 manual cases, 30 automatable).
+
 ### Framework findings from live deployment (fed back to ACEF itself)
 
 **F-1 — `acef-next` has no conductor-bookkeeping affordance (freeze-compatible bug-fix candidate).** Reproduced

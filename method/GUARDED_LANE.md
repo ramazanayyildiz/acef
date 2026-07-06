@@ -39,15 +39,27 @@ Before a guarded epic closes, a closeout oracle actor must produce:
    evidence and healed through its own mini typed cycle, never rerun-until-green.
 4. **Guarded-boundary re-review** — an adversarial pass over the epic's money/PII/authz/irreversible surfaces
    as they exist *after* all stories, not as each story left them.
-5. **Persona product-done check** — for every user-facing promise the epic claims to deliver, verify the owning
-   persona can actually *discover and perform* the capability through a real entry point (navigable UI/route,
-   not a service call or a direct-URL test). The real-surface smoke (item 1) proves the surfaces that exist
-   work; this check asks the question the smoke structurally cannot: **do all the promised surfaces exist at
-   all?** A capability whose service layer is green but which no persona can reach is `dev-done`, not
-   `product-done` — it is an UNCOVERED finding, and "defer to a later epic" requires a typed deferral that names
-   the owning story in an approved cut (a deferral pointing at an epic that never absorbs it is how
-   service-only-no-UI delivery escapes; observed live: E-CERT deferred purchase/campaign UI 'to E-INV', E-INV's
-   cut never included it, and the gap survived two more capstones until the owner asked).
+5. **Persona product-done check, evidenced by the committed Layer-2 chain** — for every user-facing promise the
+   epic claims to deliver, verify the owning persona can actually *discover and perform* the capability through a
+   real entry point (navigable UI/route, not a service call or a direct-URL test). The real-surface smoke (item 1)
+   proves the surfaces that exist work; this check asks the question the smoke structurally cannot: **do all the
+   promised surfaces exist at all, and do they render?** A capability whose service layer is green but which no
+   persona can reach — or whose page returns 200 but renders blank — is `dev-done`, not `product-done`.
+
+   For any epic that ships a `ui`/`admin`/user-facing surface, this check's evidence is **not** a one-off manual
+   walk; it is the framework's defined Layer-2 chain (`TEST_PIPELINE.md`), committed to the repo:
+   `test-user-flow-mapper` → Flow Map · `test-case-planner` → Manual Test Case Plan (happy/negative/edge, P0–P2,
+   guarded-boundary flags) · `test-browser-generator` → **committed browser/E2E tests that drive the RENDERED
+   page** (navigate, assert controls exist in the DOM, click the real control), never in-process component-isolation
+   smoke. Component tests (`Livewire::test`, direct HTTP/action calls) are structurally blind to render/reachability
+   defects and do not satisfy this item. A manual owner walk may *discover* the gap but the durable evidence is the
+   committed test — otherwise the check evaporates the moment the walker leaves. Non-UI epics (pure
+   backend/library/data/`surface:none`) are exempt but must carry the justification.
+
+   Escapes this rule has caught live, each invisible to component-isolation tests and caught only by driving the
+   rendered page: service-only-no-UI delivery (E-CERT deferred purchase/campaign UI 'to E-INV', the deferral fell
+   through E-INV's cut — O2-30); a publish/audit UI deadlock (O2-33); an emergency kill-switch page rendering blank
+   (O2-38). "Defer to a later epic" requires a typed deferral that names the owning story in an approved cut.
 6. **Typed epic gate** — the capstone closes with its own gate verdict citing the evidence above. A FAIL gate
    is preserved and superseded by a new PASS gate after fixes (supersede-not-mutate); the next epic must not
    start while the capstone gate is FAIL.
