@@ -9,6 +9,17 @@ or evidence contract. Do not use it to claim implementation status; link to the 
 
 ## Unreleased
 
+### Cockpit direction reassessed — v1 narrowed to read-only state viewer
+
+- `method/ACEF_COCKPIT.md` reassessed (2026-07-07): the original doc conflated three products. State viewer
+  (`acef-cockpit-status` JSON + terminal table) stays as v1; context compiler + tool proxy deferred (token-cost
+  motivation superseded by v2 measurements; context-mode covers bounded tool output today); execution shell bought
+  (Nimbalyst/Conductor-class), not built.
+- V1 JSON contract now carries `product_done` (persona-walk evidence, `self_certified_only`, `stale_evidence`) from the
+  O2 dev-done-vs-product-done finding, and a `decision_queue` aggregating product-risk `DECISION`/`UNVERIFIED` items.
+- Success criteria rewritten operator-shaped (visibility questions answerable without grepping), not token-shaped.
+- Added `docs/ai/capabilities/cockpit-state-viewer.json` with status `specified`. No `acef-cockpit*` script exists yet.
+
 ### Product risk model documented
 
 - Added `method/PRODUCT_RISK_MODEL.md`, a domain-agnostic documented-only method for pre-development product risk

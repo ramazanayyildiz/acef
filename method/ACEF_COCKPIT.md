@@ -1,6 +1,9 @@
 # ACEF Cockpit Direction
 
 > **Status: DIRECTION — not yet built.** The `acef-cockpit`, `acef-cockpit-status`, and related commands described in this document do not exist yet. This file records the intended design; no `acef-cockpit*` script is present in `scripts/`.
+>
+> **Reassessed 2026-07-07.** V1 narrowed to the read-only state viewer. Context compiler and tool proxy deferred out of
+> v1; execution shell is bought (Nimbalyst/Conductor-class tools), not built. See "2026-07-07 Reassessment" below.
 
 ACEF can grow a user-facing application, but the first product should not be a new AI runtime.
 
@@ -16,6 +19,28 @@ ACEF Cockpit
 
 The cockpit runs, scopes, observes, and records work. ACEF remains the authority for gates, evidence, actor separation,
 scope, and state.
+
+## 2026-07-07 Reassessment
+
+The original document conflated three products. Evidence produced after it was written re-dispositions them:
+
+| Piece | Original plan | Current disposition |
+|---|---|---|
+| State viewer (`acef-cockpit-status` JSON + terminal dashboard) | v1 slice | **Build.** Still the first shippable slice. |
+| Context compiler + tool proxy | v1 foundation | **Deferred out of v1.** The token-cost motivation was superseded by v2 measurements (+20%/+24% codex, ≈0% opencode; see README "ACEF v2 Status"), and context-mode tooling already provides bounded tool output. Revisit only if a future benchmark shows context waste is again the binding constraint. |
+| Execution shell (worktrees, terminals, agent launching) | pilot, maybe build | **Buy, not build.** Nimbalyst/Conductor-class tools already provide this. Per the boundary rule they get UI and execution only — no gate/state authority. |
+
+What changed since the original draft:
+
+1. **V2 honest-down.** The original success criteria were token/cost-shaped; the v2 measurements demoted that axis.
+2. **Second observation cycle (O2).** The dominant observed failure class is dev-done-vs-product-done: gate reports
+   claiming completion that persona walks refute. That is a visibility and evidence-freshness problem, and it is what
+   the state viewer must be designed around. The v1 JSON contract now carries product-done fields for this reason.
+3. **Product risk model.** `method/PRODUCT_RISK_MODEL.md` produces `DECISION`/`UNVERIFIED` dispositions; these are
+   pending human decisions and belong in the human decisions panel from day one.
+
+V1 succeeds if the operator can answer, without grepping or asking an agent to reconstruct state: what is running, what
+is the next allowed step, what awaits my decision, and which "done" claims lack product-done evidence.
 
 ## Non-Negotiable Boundary
 
@@ -34,7 +59,12 @@ ACEF decides. The cockpit displays and executes.
 
 ## MVP Shape
 
-The first cockpit should do the smallest useful loop:
+V1 (reassessed) is a read-only state viewer: `acef-cockpit-status` derives one bounded JSON object per repo from
+existing canonical files and renders a terminal table. It writes nothing durable; the moment the cockpit owns state it
+violates the boundary above.
+
+The original fuller loop is retained as a post-v1 shape only, and its context-compiler/tool-proxy steps are deferred
+(see reassessment) while agent launching belongs to the external execution shell:
 
 ```text
 task/story selected
@@ -49,7 +79,7 @@ task/story selected
 -> evidence, gate, and report artifacts shown
 ```
 
-This is a cockpit plus context compiler plus tool proxy. It is not a general autonomous agent manager.
+It is not a general autonomous agent manager.
 
 ## Human Visibility Layer
 
@@ -122,6 +152,8 @@ Do not import these behaviors into ACEF:
 
 ## Context Compiler
 
+> **Deferred out of v1 (2026-07-07 reassessment).** Kept as design record for a possible later phase.
+
 The context compiler prepares bounded worker input:
 
 ```text
@@ -142,6 +174,9 @@ The compiler output is convenience context, not evidence. Evidence still comes f
 and runtime behavior.
 
 ## Tool Proxy
+
+> **Deferred out of v1 (2026-07-07 reassessment).** context-mode tooling already provides bounded tool output in the
+> operator's current setup; rebuild inside ACEF only if a benchmark shows the gap matters.
 
 The tool proxy should reduce raw output before it reaches the model.
 
@@ -214,6 +249,20 @@ acef-cockpit
     "approval_needed_for": "Start Epic 4",
     "last_decision": "Epic 3 approved, stop before Epic 4"
   },
+  "product_done": {
+    "persona_walk_evidence": null,
+    "persona_walk_date": null,
+    "self_certified_only": true,
+    "stale_evidence": []
+  },
+  "decision_queue": [
+    {
+      "source": "product-risk",
+      "item": "redemption-window check missing on exclusive path",
+      "disposition": "DECISION",
+      "ref": "docs/ai/risk/example-product-risk-pass.md"
+    }
+  ],
   "artifacts": {
     "planning": "_bmad-output/planning-artifacts",
     "latest_worker_report": null,
@@ -221,6 +270,12 @@ acef-cockpit
   }
 }
 \`\`\`
+
+The `product_done` block exists because of the O2 finding that gate self-certification and product-done diverge:
+`self_certified_only: true` means every completion claim for the current story/epic rests on gate reports with no
+persona-walk artifact; `stale_evidence` lists gate claims whose cited evidence predates the code they certify. The
+`decision_queue` aggregates `DECISION`/`UNVERIFIED` dispositions from product-risk artifacts and any other pending
+human calls the canonical files record.
 
 \`acef-cockpit-status --all\` should read a repo registry and return one status object per repo. The registry may be
 project-local or user-local, but it must only list repos; it must not become a second source of delivery truth.
@@ -277,6 +332,9 @@ Minimum extracted fields:
 When the data is ambiguous, the cockpit should display \`unknown\` or \`approval_required\`; it must not infer approval from
 phrases such as \`go on\`, \`continue\`, or \`tamamla\`.
 
+The panel also surfaces the `decision_queue`: `DECISION` and `UNVERIFIED` dispositions from product-risk artifacts
+(`method/PRODUCT_RISK_MODEL.md`) are pending human decisions and must appear here, not only inside feature docs.
+
 ## Worker Timeline
 
 The cockpit should show worker activity as a timeline, not as a raw transcript dump.
@@ -311,7 +369,10 @@ Do not build these until the CLI cockpit proves useful:
 - multi-agent scheduler;
 - auto-spawning workers;
 - auto-merge or auto-push;
-- replacing existing Claude/Codex/OpenCode clients.
+- replacing existing Claude/Codex/OpenCode clients;
+- context compiler (deferred — see reassessment);
+- tool proxy (deferred — context-mode covers it today);
+- execution shell / worktree launcher (bought — Nimbalyst/Conductor-class tools).
 
 The v1 cockpit is a state viewer and context/proxy foundation. It is not a new orchestrator.
 
@@ -367,21 +428,29 @@ That is a later phase. Build the cockpit first; measure; then decide whether run
 
 ## Pilot Order
 
-1. Define the ACEF Cockpit spec.
-2. Pilot Baton/Nimbalyst-style worktree cockpit UX.
-3. Pilot Watchfire-style execution shell and transcript/token recording.
-4. Evaluate Archon workflow definitions for reusable ideas.
-5. Build a minimal ACEF tool proxy for bounded search, diff, and test-output summaries.
-6. Rerun the empirical validation matrix against the v1 baseline.
-7. Consider Goose/OpenHands/direct API only if external cockpit plus proxy cannot reduce cost or prevent drift.
+Revised 2026-07-07:
+
+1. Update this spec with the reassessment (done).
+2. Build `acef-cockpit-status --repo` against the acef repo plus one live target repo, deriving everything from
+   existing canonical files.
+3. Build the `acef-cockpit` terminal table over the same JSON.
+4. Pilot Nimbalyst/Conductor as the execution shell alongside the status CLI; note which UX elements matter before any
+   ACEF-owned UI work.
+5. Evaluate Archon workflow definitions for reusable ideas.
+6. Revisit the context compiler and tool proxy only if a benchmark shows context waste is again the binding constraint.
+7. Consider Goose/OpenHands/direct API only after that benchmark, not before.
 
 ## Success Criteria
 
-The cockpit direction is justified only if a follow-up benchmark shows:
+Revised 2026-07-07 — v1 is a visibility product, so the criteria are operator-shaped, not token-shaped:
 
-- lower real actor input tokens or cost;
-- no drop in pass rate;
-- no drop in known-defect recall;
-- zero scope violations;
-- no increase in invalid runs;
-- fewer repeated raw reads or test-output dumps.
+- the operator can answer "what is running, on which repo/branch, at which epic/story/phase" from the cockpit alone;
+- the next allowed step and any pending human approval are visible without grepping the ledger or asking an agent to
+  reconstruct state;
+- every completion claim is visibly marked as persona-walk-backed or `self_certified_only`;
+- stale evidence (gate claims older than the code they certify) is surfaced, not discovered in review;
+- `DECISION`/`UNVERIFIED` product-risk dispositions appear in one queue across repos;
+- the JSON contract survives a second consumer (terminal table today, any web UI later) without state-model changes.
+
+The deferred context-compiler/tool-proxy phase keeps the original benchmark-shaped criteria (lower actor tokens/cost,
+no drop in pass rate or known-defect recall, zero scope violations) if it is ever picked up.

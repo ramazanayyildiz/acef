@@ -1,0 +1,39 @@
+{
+  "capabilityId": "cockpit-state-viewer",
+  "requestedIntent": "Reassess the ACEF Cockpit direction and specify a v1 read-only state viewer (acef-cockpit-status JSON + terminal table) designed around dev-done-vs-product-done visibility.",
+  "status": "specified",
+  "requiredLayers": [
+    "docs",
+    "cli",
+    "artifact",
+    "tests",
+    "installer"
+  ],
+  "implementedLayers": {
+    "docs": [
+      "method/ACEF_COCKPIT.md#2026-07-07 Reassessment",
+      "method/ACEF_COCKPIT.md#First Sprint Contract",
+      "README.md#What's in this repo",
+      "CHANGELOG.md#Unreleased"
+    ]
+  },
+  "limitations": [
+    "No acef-cockpit* script exists in scripts/; the JSON contract and terminal table are specified only.",
+    "The product_done and decision_queue fields depend on canonical persona-walk and product-risk artifacts whose repo-level locations are not yet standardized; the CLI cannot be built until those paths are pinned.",
+    "Context compiler and tool proxy are deferred out of v1 (token-cost motivation superseded by v2 measurements; context-mode covers bounded tool output today).",
+    "Execution shell (worktrees, terminals, agent launching) is explicitly bought, not built — Nimbalyst/Conductor-class tools, UI/execution only, no gate/state authority."
+  ],
+  "evidence": [
+    {
+      "layer": "docs",
+      "ref": "method/ACEF_COCKPIT.md#2026-07-07 Reassessment",
+      "note": "Three-product split with per-piece disposition and the rationale from v2 measurements and the O2 cycle."
+    },
+    {
+      "layer": "docs",
+      "ref": "method/ACEF_COCKPIT.md#First Sprint Contract",
+      "note": "Bounded JSON contract including product_done (persona-walk evidence, self_certified_only, stale_evidence) and decision_queue (product-risk DECISION/UNVERIFIED items)."
+    }
+  ],
+  "createdAt": "2026-07-07"
+}

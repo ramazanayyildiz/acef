@@ -62,7 +62,7 @@ method/      The delivery engine — how the work actually runs
   CONTEXT_POLICY.md    role-specific context budgets and worker input policy
   STATE_MACHINE_CONTEXT.md acef-next state-machine pushed context contract
   WORKFLOW_AS_CODE.md  minimal workflow YAML, artifact passing, and fresh-node context contract
-  ACEF_COCKPIT.md      product direction for cockpit + context compiler + tool proxy
+  ACEF_COCKPIT.md      cockpit direction — v1 = read-only state viewer (compiler/proxy deferred, shell bought)
   TYPED_STATE.md       JSON sidecars for machine-readable ACEF state
   TRUST_MODEL.md       what ACEF guards do and do not guarantee
   CONTROL_RATIONALE.md why the sidecars, guards, evidence, approvals, and gates exist
