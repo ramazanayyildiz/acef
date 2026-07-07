@@ -74,6 +74,7 @@ method/      The delivery engine — how the work actually runs
   BMAD_V2_LANE.md      the heavy story lifecycle for epics (Layer 3)
   ADAPTER_MEMORY.md    snapshot vs adapter memory vs run ledger state
   PATTERN_REGISTRY.md  machine-readable conformance registry contract
+  PRODUCT_RISK_MODEL.md domain-agnostic product risk / edge-case modeling method (documented-only)
   RULE_ENFORCEMENT_MAP.md  which rules are machinery/shard/JIT vs documentation-only
   DELIVERY_RULES.md    two lanes + promotion — the glue (Layer 5)
 skills/      The ACEF agent skills you install into Claude Code

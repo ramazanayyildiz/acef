@@ -9,6 +9,13 @@ or evidence contract. Do not use it to claim implementation status; link to the 
 
 ## Unreleased
 
+### Product risk model documented
+
+- Added `method/PRODUCT_RISK_MODEL.md`, a domain-agnostic documented-only method for pre-development product risk
+  analysis: feature model -> business invariants -> generic operators -> disposition.
+- Added `docs/ai/capabilities/product-risk-model.json` with status `documented-only`. No ACEF workflow, review lens,
+  schema, validator, installer, or target-repo integration enforces this method yet.
+
 ### V2 honest-down + first thinning move
 
 - README "ACEF v1 Status" → "ACEF v2 Status": token-cost claim superseded (+20%/+24% codex, ≈0% opencode), quality

@@ -1,0 +1,61 @@
+{
+  "capabilityId": "product-risk-model",
+  "requestedIntent": "Document a domain-agnostic product risk model for finding business, edge-case, and abuse risks before development.",
+  "status": "documented-only",
+  "requiredLayers": [
+    "docs",
+    "workflow",
+    "actor",
+    "artifact",
+    "tests"
+  ],
+  "implementedLayers": {
+    "docs": [
+      "method/PRODUCT_RISK_MODEL.md",
+      "README.md#What's in this repo",
+      "CHANGELOG.md#Unreleased"
+    ],
+    "targetRepo": [
+      "delta3-pm:risk/delta3-product-risk-adapter.md",
+      "delta3-pm:features/gift-membership-backtest/product-risk-retro.md",
+      "delta3-pm:features/campaign-code-risk-test/product-risk-pass.md"
+    ]
+  },
+  "limitations": [
+    "No ACEF workflow, actor, review lens, schema, validator, installer, or target-repo integration enforces this method yet.",
+    "One retroactive backtest (delta3-pm gift-membership, 2026-07-06) shows shape fit only: it was run after the miss was known, so it does not prove independent predictive power.",
+    "One live pass (delta3-pm campaign-code) produced dispositioned findings with file:line evidence, but on already-shipped code, not pre-development.",
+    "Promotion beyond documented-only requires a blind pre-implementation run whose findings are compared against later implementation/review findings.",
+    "Domain adapters are expected to extend the core method; they are not part of this ACEF capability record."
+  ],
+  "evidence": [
+    {
+      "layer": "docs",
+      "ref": "method/PRODUCT_RISK_MODEL.md"
+    },
+    {
+      "layer": "docs",
+      "ref": "README.md#What's in this repo"
+    },
+    {
+      "layer": "docs",
+      "ref": "CHANGELOG.md#Unreleased"
+    },
+    {
+      "layer": "targetRepo",
+      "ref": "delta3-pm:risk/delta3-product-risk-adapter.md",
+      "note": "External domain adapter consuming this method; draft, not yet wired into delta3-pm prompts."
+    },
+    {
+      "layer": "targetRepo",
+      "ref": "delta3-pm:features/gift-membership-backtest/product-risk-retro.md",
+      "note": "Retro backtest: generic operators (authority mismatch + actor substitution + boundary crossing) surface the missed price-arbitrage class without an incident-shaped rule. Shape fit only — run after the miss was known."
+    },
+    {
+      "layer": "targetRepo",
+      "ref": "delta3-pm:features/campaign-code-risk-test/product-risk-pass.md",
+      "note": "Live pass on shipped code with file:line evidence; dispositions include 2 DECISION and 2 UNVERIFIED items."
+    }
+  ],
+  "createdAt": "2026-07-06"
+}
