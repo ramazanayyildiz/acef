@@ -107,12 +107,16 @@ Borrow ideas, not authority.
 | Source | Useful idea | ACEF boundary |
 |---|---|---|
 | Baton / Nimbalyst / Vibe Kanban | worktree cockpit, agent visibility, diff review | UI only; no gate/state authority |
-| Watchfire | sandbox, transcripts, token/cost logging, per-task worktrees | execution shell only |
-| Archon | deterministic workflow definitions and approval gates | ACEF remains the workflow contract |
+| Watchfire | per-task kernel-level sandbox generated from the scope contract; default-deny creds/hooks; per-task token/cost ledger | execution shell only; no network egress control — do not treat as contained |
+| Archon (coleam00) | DB-state pause gates resumed only by out-of-band human command; fail-closed condition evaluator; no-silent-drop output refs | ACEF remains the workflow contract; Archon's autonomous loop path still trusts model self-report |
+| Chorus (chorus-ai.dev, not chorus.sh) | permission bits gate MCP tool registration per session; human-only "Done" transition | audit trail too thin for ACEF provenance needs |
 | Multica | task board, assignment UX, managed-agent visibility | no Multica squads/autopilot as ACEF state |
 | Agent Kanban | actor identity and provenance ideas | no worker-created subtasks or auto-merge |
 | Goose / OpenHands / WrongStack | open runtime hooks and tool control | later runtime option, not v1 cockpit |
 | Obsidian Atlas / vault skills | session start/end, breadcrumb, topic, todo, project status, activity feed, decision capture | personal knowledge workflow only; ACEF still owns delivery state |
+
+Watchfire, Archon, and Chorus were decoded and verified 2026-07-07; all three verdicts BORROW, none USE. Details and
+drift-type mapping: `docs/research/cockpit-tool-decodes-2026-07-07.md`.
 
 ## Obsidian Atlas Audit Notes
 

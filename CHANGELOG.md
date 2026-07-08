@@ -9,6 +9,16 @@ or evidence contract. Do not use it to claim implementation status; link to the 
 
 ## Unreleased
 
+### Cockpit borrow table verified — Watchfire/Archon/Chorus decoded
+
+- Added `docs/research/cockpit-tool-decodes-2026-07-07.md`: three borrow-table tools decoded by parallel research
+  agents. All verdicts BORROW, none USE — validates buy/borrow-the-shell, keep-authority-in-ACEF.
+- Borrow table in `method/ACEF_COCKPIT.md` updated with verified identities (Chorus is chorus-ai.dev, not chorus.sh)
+  and the concrete steals: per-task kernel sandbox from scope contract (Watchfire), DB-state pause gates +
+  fail-closed evaluators (Archon), permission-bit tool registration + human-only Done (Chorus).
+- Negative finding recorded: even Archon's autonomous path trusts model self-report — self-certification remains
+  mechanically unsolved in the market; `product_done.self_certified_only` stays load-bearing.
+
 ### Cockpit direction reassessed — v1 narrowed to read-only state viewer
 
 - `method/ACEF_COCKPIT.md` reassessed (2026-07-07): the original doc conflated three products. State viewer
