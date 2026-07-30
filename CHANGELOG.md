@@ -22,7 +22,10 @@ or evidence contract. Do not use it to claim implementation status; link to the 
 - Direct intentionally skips adapter refresh, preflight, active-run bootstrap, worker scope, separate ATDD/reviewer/
   Process Judge actors, delivery ledger, evidence manifests, runner proof, gate verdict, and phase commits.
 - Extended the control-dosing manifest and installer/test coverage for the fifth lane. Added
-  `docs/ai/capabilities/direct-task-lane.json` with status `enforced`; empirical target-repo proof remains pending.
+  `docs/ai/capabilities/direct-task-lane.json` with status `enforced`.
+- Added deterministic disposable-clone dogfood on Agentbus and Scientificfloor: both direct closeouts passed and an
+  intentional migration-shaped change was rejected. The 30-real-task empirical threshold remains pending, so the
+  lane is not yet `proven`.
 - Refined lane triggers: provider integration, realtime, concurrency/fencing, and state-machine work route to guarded;
   generic feature and multi-surface labels no longer automatically force full-BMAD, while direct still promotes on
   multiple inferred surfaces.
