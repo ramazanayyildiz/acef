@@ -91,6 +91,7 @@ function buildRuns(manifest) {
           task,
           lane,
           client,
+          model: manifest.models?.[client] || null,
         });
       }
     }
@@ -327,8 +328,9 @@ function launchClient(repo, run, rawPath) {
     args.push(prompt);
   } else if (run.client === "opencode") {
     command = "opencode";
-    args = ["run", "--format", "json", "--dir", repo];
+    args = ["run", "--format", "json", "--auto", "--dir", repo];
     if (run.lane === "baseline") args.push("--pure");
+    if (run.model) args.push("--model", run.model);
     args.push(prompt);
   } else {
     throw new Error(`Unsupported client: ${run.client}`);
@@ -489,6 +491,7 @@ function runOne(run, opts) {
       task_direct_expected: run.task.directExpected || null,
       lane: run.lane,
       client: run.client,
+      model: run.model,
       runner_type: "external-agent",
       started_at: startedAt,
       finished_at: new Date().toISOString(),
@@ -542,6 +545,7 @@ function runOne(run, opts) {
       task_direct_expected: run.task.directExpected || null,
       lane: run.lane,
       client: run.client,
+      model: run.model,
       runner_type: "external-agent",
       started_at: startedAt,
       finished_at: new Date().toISOString(),
@@ -563,7 +567,7 @@ function main() {
   const expectedRuns = Number(manifest.expectedRuns || 30);
   if (allRuns.length !== expectedRuns) throw new Error(`Manifest must produce exactly ${expectedRuns} runs; got ${allRuns.length}`);
   if (opts.plan) {
-    console.log(JSON.stringify({ experimentId: manifest.experimentId, count: allRuns.length, runs: allRuns.map((run) => ({ run_id: run.runId, repo: run.task.repo, stack: run.task.stack, lane: run.lane, client: run.client, task_type: run.task.taskType })) }, null, 2));
+    console.log(JSON.stringify({ experimentId: manifest.experimentId, count: allRuns.length, runs: allRuns.map((run) => ({ run_id: run.runId, repo: run.task.repo, stack: run.task.stack, lane: run.lane, client: run.client, model: run.model, task_type: run.task.taskType })) }, null, 2));
     return;
   }
   const done = existingRunIds(opts.results);

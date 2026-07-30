@@ -12,6 +12,8 @@ quality or allowing risky work to bypass promotion.
 - 5 seeded tasks in real repositories.
 - 3 lanes: native baseline, ACEF direct, ACEF lightweight.
 - 2 clients: Codex and OpenCode.
+- OpenCode model: `opencode/deepseek-v4-flash-free` (pinned after the preregistered default provider failed pre-task
+  for insufficient balance; see `RUN_LOG.md`).
 - 30 external-agent runs in disposable local clones.
 - 4 tasks are direct-eligible localized bug fixes.
 - 1 DeepL provider-integration task is an intentional promotion trap.
