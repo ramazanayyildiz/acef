@@ -17,7 +17,7 @@ const {
   promptFor,
   evaluateDirectOutcome,
 } = require("./acef-empirical-validation");
-const { summarizeMeasurement } = require("./acef-direct-measurement-report");
+const { summarizeMeasurement, reviewedRows } = require("./acef-direct-measurement-report");
 
 function run(command, args, opts = {}) {
   const result = spawnSync(command, args, { encoding: "utf8", ...opts });
@@ -212,7 +212,38 @@ function testDirectMeasurementSummary() {
   assert.strictEqual(summary.direct.contract_passes, 8);
   assert.strictEqual(summary.direct.correct_promotions, 2);
   assert.strictEqual(summary.direct.input_reduction_vs_baseline_pct, 40);
+  assert.strictEqual(summary.paired.input_vs_baseline.pairs, 8);
+  assert.strictEqual(summary.by_client.codex.direct.runs, 4);
   assert.strictEqual(summary.proven, true);
+}
+
+function testDirectMeasurementOracleReview() {
+  const rows = reviewedRows([{
+    task_id: "detaysoft-unprefixed-turkish-default-boundary",
+    lane: "baseline",
+    result: "fail",
+    escaped_defects: 1,
+    verify_exit_code: 0,
+    actor_exit_code: 0,
+    expectation_failures: ["missing expected text in app/Providers/AppServiceProvider.php: setLocale('tr')"],
+    scope_violations: [],
+  }, {
+    task_id: "detaysoft-unprefixed-turkish-default-boundary",
+    lane: "direct",
+    result: "fail",
+    escaped_defects: 1,
+    verify_exit_code: 0,
+    actor_exit_code: 0,
+    expectation_failures: ["missing expected text in app/Providers/AppServiceProvider.php: setLocale('tr')"],
+    scope_violations: [],
+    direct_state_status: "promoted",
+    implementation_attempted: false,
+  }]);
+  assert.strictEqual(rows[0].result, "pass");
+  assert.strictEqual(rows[0].escaped_defects, 0);
+  assert.strictEqual(rows[1].result, "fail");
+  assert.strictEqual(rows[1].escaped_defects, 0);
+  assert.match(rows[1].data_quality_adjustment, /process noncompletion/);
 }
 
 function testFixtureUnchangedExpectation() {
@@ -265,6 +296,7 @@ testPilotManifestExpansion();
 testDirectManifestExpansion();
 testDirectPromptAndPromotionOutcome();
 testDirectMeasurementSummary();
+testDirectMeasurementOracleReview();
 testFixtureUnchangedExpectation();
 testKnownFindingRecall();
 

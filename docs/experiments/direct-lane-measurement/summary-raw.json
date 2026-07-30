@@ -1,0 +1,79 @@
+{
+  "experiment_id": "acef-direct-lane-v1",
+  "generated_at": "2026-07-30T12:03:39.914Z",
+  "total_runs": 30,
+  "eligible_runs": 24,
+  "promotion_trap_runs": 6,
+  "lanes": {
+    "baseline": {
+      "runs": 8,
+      "pass": 6,
+      "fail": 2,
+      "invalid": 0,
+      "escaped_defects": 2,
+      "scope_violations": 0,
+      "context_misses": 1,
+      "median_input_tokens": 88348,
+      "median_cached_input_tokens": 123648,
+      "median_output_tokens": 1032.5,
+      "median_runtime_seconds": 36.2,
+      "median_tool_calls": 5,
+      "median_extra_file_reads": 2.5,
+      "median_retries": 0
+    },
+    "direct": {
+      "runs": 8,
+      "pass": 6,
+      "fail": 2,
+      "invalid": 0,
+      "escaped_defects": 2,
+      "scope_violations": 0,
+      "context_misses": 2,
+      "median_input_tokens": 327434.5,
+      "median_cached_input_tokens": 895808,
+      "median_output_tokens": 3800.5,
+      "median_runtime_seconds": 114.55,
+      "median_tool_calls": 28,
+      "median_extra_file_reads": 22.5,
+      "median_retries": 0
+    },
+    "lightweight": {
+      "runs": 8,
+      "pass": 6,
+      "fail": 2,
+      "invalid": 0,
+      "escaped_defects": 2,
+      "scope_violations": 0,
+      "context_misses": 0,
+      "median_input_tokens": 83565,
+      "median_cached_input_tokens": 185088,
+      "median_output_tokens": 921.5,
+      "median_runtime_seconds": 29.549999999999997,
+      "median_tool_calls": 6.5,
+      "median_extra_file_reads": 3,
+      "median_retries": 0
+    }
+  },
+  "direct": {
+    "eligible_runs": 8,
+    "promotion_runs": 2,
+    "context_miss_rate_pct": 25,
+    "input_reduction_vs_baseline_pct": -270.6,
+    "runtime_overhead_vs_baseline_pct": 216.4,
+    "runtime_improvement_vs_lightweight_pct": -287.6,
+    "contract_passes": 6,
+    "correct_promotions": 1
+  },
+  "thresholds": {
+    "exactly_30_valid_runs": true,
+    "quality_non_inferior": true,
+    "direct_contract_100pct": false,
+    "promotion_accuracy_100pct": false,
+    "scope_violations_zero": true,
+    "context_miss_below_10pct": false,
+    "input_reduction_at_least_25pct": false,
+    "runtime_overhead_at_most_30pct": false,
+    "faster_than_lightweight": false
+  },
+  "proven": false
+}

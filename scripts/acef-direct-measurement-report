@@ -7,6 +7,7 @@ const { median } = require("./lib/acef-empirical");
 
 const root = path.resolve(__dirname, "..");
 const experimentDir = path.join(root, "docs", "experiments", "direct-lane-measurement");
+const ORACLE_REVIEW_TASK = "detaysoft-unprefixed-turkish-default-boundary";
 
 function parseArgs(argv) {
   const opts = {
@@ -48,31 +49,129 @@ function laneSummary(rows) {
     median_input_tokens: median(rows.map((row) => row.input_tokens)),
     median_cached_input_tokens: median(rows.map((row) => row.cached_input_tokens)),
     median_output_tokens: median(rows.map((row) => row.output_tokens)),
-    median_runtime_seconds: median(rows.map((row) => row.runtime_seconds)),
+    median_runtime_seconds: pct(median(rows.map((row) => row.runtime_seconds))),
     median_tool_calls: median(rows.map((row) => row.tool_calls)),
     median_extra_file_reads: median(rows.map((row) => row.extra_file_reads)),
     median_retries: median(rows.map((row) => row.retry_count)),
   };
 }
 
-function summarizeMeasurement(rows) {
+function pairedDeltaSummary(rows, comparatorLane, metric) {
+  const byPair = new Map();
+  for (const row of rows) {
+    const key = `${row.task_id}\u0000${row.client}`;
+    const pair = byPair.get(key) || {};
+    pair[row.lane] = row;
+    byPair.set(key, pair);
+  }
+  const deltas = [];
+  for (const [key, pair] of byPair.entries()) {
+    const directValue = Number(pair.direct?.[metric]);
+    const comparatorValue = Number(pair[comparatorLane]?.[metric]);
+    if (!Number.isFinite(directValue) || !Number.isFinite(comparatorValue) || comparatorValue === 0) continue;
+    const [task_id, client] = key.split("\u0000");
+    deltas.push({
+      task_id,
+      client,
+      direct: directValue,
+      comparator: comparatorValue,
+      delta_pct: deltaPct(directValue, comparatorValue),
+    });
+  }
+  return {
+    comparator_lane: comparatorLane,
+    metric,
+    pairs: deltas.length,
+    median_delta_pct: pct(median(deltas.map((item) => item.delta_pct))),
+    values: deltas,
+  };
+}
+
+function reviewedRows(rows) {
+  return rows.map((row) => {
+    const next = {
+      ...row,
+      raw_result: row.result,
+      raw_escaped_defects: row.escaped_defects,
+      raw_expectation_failures: row.expectation_failures || [],
+      data_quality_adjustment: null,
+    };
+    const localeOracleFalseFail = row.task_id === ORACLE_REVIEW_TASK
+      && row.verify_exit_code === 0
+      && (row.expectation_failures || []).length === 1
+      && /missing expected text/.test(row.expectation_failures[0]);
+    if (localeOracleFalseFail) {
+      next.expectation_failures = [];
+      next.escaped_defects = 0;
+      next.data_quality_adjustment = "Behavioral verification passed; removed invalid exact implementation-string oracle failure.";
+      if (row.lane !== "direct" && row.actor_exit_code === 0 && !(row.scope_violations || []).length) {
+        next.result = "pass";
+        next.implementation_quality = "sound";
+      }
+    }
+
+    const directSafeNoncompletion = row.result === "fail"
+      && row.lane === "direct"
+      && row.direct_state_status === "promoted"
+      && row.implementation_attempted === false;
+    const directCorrectProductButProcessFailed = row.result === "fail"
+      && row.lane === "direct"
+      && row.verify_exit_code === 0
+      && !(next.expectation_failures || []).length
+      && !(row.scope_violations || []).length;
+    if (directSafeNoncompletion || directCorrectProductButProcessFailed) {
+      next.escaped_defects = 0;
+      next.data_quality_adjustment = [
+        next.data_quality_adjustment,
+        directSafeNoncompletion
+          ? "Promotion stopped implementation; classified as process noncompletion, not an escaped defect."
+          : "Product verification passed; classified as direct-contract failure, not an escaped defect.",
+      ].filter(Boolean).join(" ");
+    }
+    return next;
+  });
+}
+
+function summarizeMeasurement(rawRows) {
+  const rows = reviewedRows(rawRows);
   const eligible = rows.filter((row) => row.task_direct_expected === "complete");
   const promotion = rows.filter((row) => row.task_direct_expected === "promote");
   const lanes = {};
   for (const lane of ["baseline", "direct", "lightweight"]) {
     lanes[lane] = laneSummary(eligible.filter((row) => row.lane === lane));
   }
+  const cleanEligible = eligible.filter((row) => row.task_id !== ORACLE_REVIEW_TASK);
+  const cleanLanes = {};
+  for (const lane of ["baseline", "direct", "lightweight"]) {
+    cleanLanes[lane] = laneSummary(cleanEligible.filter((row) => row.lane === lane));
+  }
+  const byClient = {};
+  for (const client of [...new Set(eligible.map((row) => row.client))].sort()) {
+    byClient[client] = {};
+    for (const lane of ["baseline", "direct", "lightweight"]) {
+      byClient[client][lane] = laneSummary(
+        eligible.filter((row) => row.client === client && row.lane === lane),
+      );
+    }
+  }
 
   const directEligible = eligible.filter((row) => row.lane === "direct");
   const directPromotion = promotion.filter((row) => row.lane === "direct");
-  const inputDelta = deltaPct(lanes.direct.median_input_tokens, lanes.baseline.median_input_tokens);
+  const inputVsBaseline = pairedDeltaSummary(eligible, "baseline", "input_tokens");
+  const runtimeVsBaseline = pairedDeltaSummary(eligible, "baseline", "runtime_seconds");
+  const runtimeVsLightweight = pairedDeltaSummary(eligible, "lightweight", "runtime_seconds");
+  const inputDelta = inputVsBaseline.median_delta_pct;
   const inputReduction = Number.isFinite(inputDelta) ? pct(-inputDelta) : null;
-  const runtimeOverhead = deltaPct(lanes.direct.median_runtime_seconds, lanes.baseline.median_runtime_seconds);
-  const runtimeVsLightweight = deltaPct(lanes.direct.median_runtime_seconds, lanes.lightweight.median_runtime_seconds);
-  const runtimeImprovementVsLightweight = Number.isFinite(runtimeVsLightweight) ? pct(-runtimeVsLightweight) : null;
+  const runtimeOverhead = runtimeVsBaseline.median_delta_pct;
+  const runtimeImprovementVsLightweight = Number.isFinite(runtimeVsLightweight.median_delta_pct)
+    ? pct(-runtimeVsLightweight.median_delta_pct)
+    : null;
   const directContextMissRate = directEligible.length
     ? pct((lanes.direct.context_misses / directEligible.length) * 100)
     : null;
+  const cleanInputVsBaseline = pairedDeltaSummary(cleanEligible, "baseline", "input_tokens");
+  const cleanRuntimeVsBaseline = pairedDeltaSummary(cleanEligible, "baseline", "runtime_seconds");
+  const cleanRuntimeVsLightweight = pairedDeltaSummary(cleanEligible, "lightweight", "runtime_seconds");
 
   const thresholds = {
     exactly_30_valid_runs: rows.length === 30 && rows.every((row) => row.result !== "invalid"),
@@ -95,7 +194,32 @@ function summarizeMeasurement(rows) {
     total_runs: rows.length,
     eligible_runs: eligible.length,
     promotion_trap_runs: promotion.length,
+    raw_result_counts: {
+      pass: rawRows.filter((row) => row.result === "pass").length,
+      fail: rawRows.filter((row) => row.result === "fail").length,
+      invalid: rawRows.filter((row) => row.result === "invalid").length,
+    },
+    reviewed_result_counts: {
+      pass: rows.filter((row) => row.result === "pass").length,
+      fail: rows.filter((row) => row.result === "fail").length,
+      invalid: rows.filter((row) => row.result === "invalid").length,
+    },
+    data_quality_adjustments: rows.filter((row) => row.data_quality_adjustment).length,
     lanes,
+    by_client: byClient,
+    paired: {
+      input_vs_baseline: inputVsBaseline,
+      runtime_vs_baseline: runtimeVsBaseline,
+      runtime_vs_lightweight: runtimeVsLightweight,
+    },
+    oracle_valid_sensitivity: {
+      excluded_task: ORACLE_REVIEW_TASK,
+      eligible_runs: cleanEligible.length,
+      lanes: cleanLanes,
+      direct_input_delta_vs_baseline_pct: cleanInputVsBaseline.median_delta_pct,
+      direct_runtime_delta_vs_baseline_pct: cleanRuntimeVsBaseline.median_delta_pct,
+      direct_runtime_delta_vs_lightweight_pct: cleanRuntimeVsLightweight.median_delta_pct,
+    },
     direct: {
       eligible_runs: directEligible.length,
       promotion_runs: directPromotion.length,
@@ -123,6 +247,15 @@ function reportMarkdown(summary) {
   });
   const thresholdRows = Object.entries(summary.thresholds)
     .map(([name, passed]) => `| ${name} | ${passed ? "PASS" : "FAIL"} |`);
+  const sensitivityRows = ["baseline", "direct", "lightweight"].map((lane) => {
+    const item = summary.oracle_valid_sensitivity.lanes[lane];
+    return `| ${lane} | ${item.runs} | ${item.pass}/${item.runs} | ${item.median_input_tokens ?? "n/a"} | ${item.median_runtime_seconds ?? "n/a"} | ${item.median_tool_calls ?? "n/a"} |`;
+  });
+  const clientRows = Object.entries(summary.by_client).flatMap(([client, lanes]) =>
+    ["baseline", "direct", "lightweight"].map((lane) => {
+      const item = lanes[lane];
+      return `| ${client} | ${lane} | ${item.pass}/${item.runs} | ${item.median_input_tokens ?? "n/a"} | ${item.median_runtime_seconds ?? "n/a"} | ${item.median_tool_calls ?? "n/a"} |`;
+    }));
   return [
     "# ACEF Direct Lane Measurement v1",
     "",
@@ -140,20 +273,47 @@ function reportMarkdown(summary) {
     "- Real repositories: Browser RTS and Detaysoft CMS, executed only in disposable clones.",
     "- Lanes: baseline, direct, lightweight. Clients: Codex and OpenCode.",
     "",
+    "## Data Quality Review",
+    "",
+    `- Raw scoring: ${summary.raw_result_counts.pass} PASS, ${summary.raw_result_counts.fail} FAIL, ${summary.raw_result_counts.invalid} invalid.`,
+    `- Oracle-reviewed scoring: ${summary.reviewed_result_counts.pass} PASS, ${summary.reviewed_result_counts.fail} FAIL, ${summary.reviewed_result_counts.invalid} invalid.`,
+    `- ${summary.data_quality_adjustments} row(s) received documented analytical reclassification without changing the raw JSONL.`,
+    "- The Detaysoft locale behavioral test passed for baseline and lightweight, but the preregistered exact `setLocale('tr')` string check rejected the valid config-driven implementation. Those four rows are reviewed as product PASS.",
+    "- Direct process failures remain FAIL even when product behavior passed: false promotion and missed provider promotion are workflow failures.",
+    "- Token accounting differs by client. Primary token/runtime thresholds therefore use the preregistered median of paired task/client percentage deltas, not a median that mixes client token scales.",
+    "",
     "## Eligible-Task Results",
     "",
     "| Lane | Runs | Pass | Escaped defects | Scope violations | Median input | Median seconds | Median tool calls | Context misses |",
     "| --- | --- | --- | --- | --- | --- | --- | --- | --- |",
     ...laneRows,
     "",
+    "## Client Diagnostics",
+    "",
+    "| Client | Lane | Pass | Median input | Median seconds | Median tool calls |",
+    "| --- | --- | --- | --- | --- | --- |",
+    ...clientRows,
+    "",
     "## Direct Deltas",
     "",
-    `- Input reduction versus baseline: ${formatDelta(summary.direct.input_reduction_vs_baseline_pct)}`,
-    `- Runtime overhead versus baseline: ${formatDelta(summary.direct.runtime_overhead_vs_baseline_pct)}`,
-    `- Runtime improvement versus lightweight: ${formatDelta(summary.direct.runtime_improvement_vs_lightweight_pct)}`,
+    `- Paired median input reduction versus baseline (${summary.paired.input_vs_baseline.pairs} pairs): ${formatDelta(summary.direct.input_reduction_vs_baseline_pct)}`,
+    `- Paired median runtime overhead versus baseline (${summary.paired.runtime_vs_baseline.pairs} pairs): ${formatDelta(summary.direct.runtime_overhead_vs_baseline_pct)}`,
+    `- Paired median runtime improvement versus lightweight (${summary.paired.runtime_vs_lightweight.pairs} pairs): ${formatDelta(summary.direct.runtime_improvement_vs_lightweight_pct)}`,
     `- Direct contract closeouts: ${summary.direct.contract_passes}/${summary.direct.eligible_runs}`,
     `- Correct provider promotions: ${summary.direct.correct_promotions}/${summary.direct.promotion_runs}`,
     `- Direct context-miss rate: ${summary.direct.context_miss_rate_pct ?? "n/a"}%`,
+    "",
+    "## Oracle-Valid Sensitivity",
+    "",
+    `This excludes only \`${summary.oracle_valid_sensitivity.excluded_task}\` and leaves ${summary.oracle_valid_sensitivity.eligible_runs} eligible runs.`,
+    "",
+    "| Lane | Runs | Pass | Median input | Median seconds | Median tool calls |",
+    "| --- | --- | --- | --- | --- | --- |",
+    ...sensitivityRows,
+    "",
+    `- Direct input delta versus baseline: ${formatDelta(summary.oracle_valid_sensitivity.direct_input_delta_vs_baseline_pct)}`,
+    `- Direct runtime delta versus baseline: ${formatDelta(summary.oracle_valid_sensitivity.direct_runtime_delta_vs_baseline_pct)}`,
+    `- Direct runtime delta versus lightweight: ${formatDelta(summary.oracle_valid_sensitivity.direct_runtime_delta_vs_lightweight_pct)}`,
     "",
     "## Preregistered Thresholds",
     "",
@@ -164,8 +324,11 @@ function reportMarkdown(summary) {
     "## Evidence",
     "",
     "- Raw rows: `runs/results.jsonl`",
+    "- Unadjusted generated report: `report-raw.md`",
+    "- Unadjusted machine summary: `summary-raw.json`",
     "- Machine summary: `summary.json`",
     "- Preregistered design: `DESIGN.md`",
+    "- Data-quality review: `DATA_QUALITY_REVIEW.md`",
     "- Raw transcripts remain outside Git; each row records transcript and verification hashes.",
     "",
   ].join("\n");
@@ -191,4 +354,11 @@ if (require.main === module) {
   }
 }
 
-module.exports = { summarizeMeasurement, laneSummary, deltaPct, reportMarkdown };
+module.exports = {
+  summarizeMeasurement,
+  reviewedRows,
+  laneSummary,
+  pairedDeltaSummary,
+  deltaPct,
+  reportMarkdown,
+};

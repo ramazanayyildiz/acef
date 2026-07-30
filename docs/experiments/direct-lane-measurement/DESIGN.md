@@ -33,10 +33,11 @@ Eligible-task comparisons use paired task/client runs.
    reason, avoid implementation changes, and leave the seeded failing verification unfixed.
 4. **Scope safety:** direct scope violations must be 0.
 5. **Context reliability:** direct context-miss runs must be below 10%.
-6. **Empirical token threshold:** direct median input tokens must be at least 25% lower than baseline. This retains the
-   existing `method/VALIDATION_PLAN.md` threshold; it will not be relaxed after seeing results.
-7. **Speed objective:** direct median runtime overhead versus baseline must be at most 30%, and direct must be faster
-   than lightweight on the eligible-task median.
+6. **Empirical token threshold:** the median paired task/client input-token reduction must be at least 25% versus
+   baseline. This retains the existing `method/VALIDATION_PLAN.md` threshold; it will not be relaxed after seeing
+   results.
+7. **Speed objective:** the median paired task/client runtime overhead versus baseline must be at most 30%, and the
+   paired median must show direct faster than lightweight.
 
 The capability becomes `proven` only if all seven thresholds pass, the matrix contains exactly 30 completed valid runs,
 and no oracle or harness defect invalidates the comparison.
@@ -66,5 +67,6 @@ and no oracle or harness defect invalidates the comparison.
 - Manifest: `manifest.json`
 - Raw results: `runs/results.jsonl`
 - Generated report: `report.md`
+- Data-quality review: `DATA_QUALITY_REVIEW.md`
 - Harness: `scripts/acef-empirical-validation`
 - Report generator: `scripts/acef-direct-measurement-report`

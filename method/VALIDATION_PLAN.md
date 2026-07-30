@@ -49,6 +49,21 @@ Decision: keep the control freeze; thin always-on controls whose only justificat
 (first: `runner-proof` out of the guarded bundle); do not thin worker-scope, gate decision, or test-integrity
 guards without the multi-step measurement.
 
+## Direct Lane v1 Result (2026-07-30)
+
+The preregistered 30-run direct-lane matrix completed across five real-repository tasks, three lanes, and two clients
+with 0 invalid rows (`docs/experiments/direct-lane-measurement/report.md`).
+
+- Oracle-reviewed eligible pass: 8/8 baseline, 6/8 direct, 8/8 lightweight.
+- Direct contract closeout: 6/8; provider-promotion accuracy: 1/2; context misses: 25%; scope violations: 0.
+- Paired task/client median direct input delta versus baseline: +190%.
+- Paired task/client median direct runtime delta versus baseline: +175.1%.
+- Paired task/client median direct runtime delta versus lightweight: +203.3%.
+
+Decision: direct remains `enforced`, not `proven`. The next iteration must bound context, make the compact state
+command self-describing, and make provider promotion fail closed before another proof attempt. Do not market direct as
+the fast lane on the current evidence.
+
 ## Freeze
 
 Do not add new retrieval/storage backends until the current policy is measured on real tasks.

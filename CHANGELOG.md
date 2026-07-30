@@ -29,6 +29,13 @@ or evidence contract. Do not use it to claim implementation status; link to the 
 - Preregistered a 30-run direct-lane measurement across baseline/direct/lightweight and Codex/OpenCode, with four
   direct-eligible real-repo tasks plus one provider-integration promotion trap. The empirical harness now records
   direct state, closeout, promotion, implementation-attempt, scope, token, runtime, and quality outcomes.
+- Completed the 30-run matrix with 0 invalid runs. After data-quality review, eligible pass was 8/8 baseline, 6/8
+  direct, and 8/8 lightweight; direct contract closeout was 6/8, provider promotion 1/2, and context misses 25%.
+  Paired task/client medians showed direct used 190% more input and took 175.1% more runtime than baseline, while
+  taking 203.3% more runtime than lightweight. The capability remains `enforced`, not `proven`.
+- Preserved raw scoring and added a documented oracle review: an exact source-string check falsely rejected four valid
+  config-driven locale implementations. Primary cost analysis now uses paired within-client deltas so incompatible
+  Codex/OpenCode token scales are not pooled.
 - Refined lane triggers: provider integration, realtime, concurrency/fencing, and state-machine work route to guarded;
   generic feature and multi-surface labels no longer automatically force full-BMAD, while direct still promotes on
   multiple inferred surfaces.
