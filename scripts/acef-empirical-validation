@@ -5,6 +5,7 @@ const path = require("node:path");
 const cp = require("node:child_process");
 const crypto = require("node:crypto");
 const { parseJsonLines, codexMetrics, opencodeMetrics, isAllowedPath } = require("./lib/acef-empirical");
+const { parseDirectRun } = require("./lib/acef-state-parser");
 
 const acefRoot = path.resolve(__dirname, "..");
 const defaultManifest = path.join(acefRoot, "docs", "experiments", "empirical-validation", "manifest.json");
@@ -102,12 +103,12 @@ function existingRunIds(resultsPath) {
   return new Set(fs.readFileSync(resultsPath, "utf8").split(/\r?\n/).filter(Boolean).map((line) => JSON.parse(line).run_id));
 }
 
-function applySetup(repo, task) {
+function applySetup(repo, task, fixtureRootOverride = fixtureRoot) {
   for (const operation of task.setup || []) {
     const target = path.join(repo, operation.path);
     if (operation.type === "copy-fixture") {
       fs.mkdirSync(path.dirname(target), { recursive: true });
-      fs.copyFileSync(path.join(fixtureRoot, operation.fixture), target);
+      fs.copyFileSync(path.join(fixtureRootOverride, operation.fixture), target);
       continue;
     }
     if (operation.type === "replace") {
@@ -198,6 +199,13 @@ function installAcef(repo, run) {
   must("node", [path.join(acefRoot, "scripts", "install-acef-tools"), "--repo", repo]);
   must("node", [path.join(acefRoot, "scripts", "install-acef-skills"), "--repo", repo, "--tool", tool, "--skill", "acef"]);
 
+  if (run.lane === "direct") {
+    fs.rmSync(path.join(repo, "docs", "ai", "ACEF_ACTIVE_RUN.json"), { force: true });
+    fs.rmSync(path.join(repo, "docs", "ai", "ACEF_DIRECT_RUN.json"), { force: true });
+    commitAll(repo, "chore: prepare ACEF direct benchmark");
+    return;
+  }
+
   const docs = path.join(repo, "docs", "ai");
   fs.mkdirSync(docs, { recursive: true });
   const ledger = "docs/ai/ACEF_benchmark_DELIVERY_AUDIT.md";
@@ -279,6 +287,13 @@ function installAcef(repo, run) {
 function promptFor(run) {
   const laneText = run.lane === "baseline"
     ? "Use the repository's native conventions. Do not invoke or simulate ACEF."
+    : run.lane === "direct"
+      ? [
+        "Use the repo-local ACEF direct workflow. Load and follow the installed `acef` skill for this repo.",
+        "Treat direct as a candidate, not a pre-approved downgrade. Evaluate reversibility, technical boundary, product surface, and promotion triggers before editing.",
+        "If eligible: create ACEF_DIRECT_RUN.json with `.acef/bin/acef-state direct-run`, implement only the declared paths, run the exact focused verification, complete the record with handoff, and run `.acef/bin/acef-process-validator --check lane-closeout`.",
+        "If persistence, auth/security/privacy, money, provider integration, realtime, concurrency/fencing, state-machine, tracking/reporting/analytics, a new pattern, or scope expansion appears: record a promoted direct run with a concrete reason, do not implement, and return RESULT=PROMOTED.",
+      ].join(" ")
     : run.lane === "lightweight"
       ? "Use the repo-local ACEF lightweight workflow. Read docs/ai/ACEF_CURRENT_CONTEXT.md — it is your complete ACEF context. Do not read the full delivery ledger, ACEF skill references, the operating model, or delivery rules."
       : "You are the scoped ACEF developer actor ACEF_BMAD_WORKER in a guarded run. Read docs/ai/ACEF_CURRENT_CONTEXT.md — it is your complete ACEF context — and obey the repo-local scope hook. Do not read the full delivery ledger, ACEF skill references, the operating model, or delivery rules. Do not act as reviewer or Process Judge.";
@@ -335,6 +350,60 @@ function changedPaths(repo, baseRef) {
   return [...new Set([...committed, ...working])].sort();
 }
 
+function isDirectControlPath(filePath) {
+  return filePath === "docs/ai/ACEF_DIRECT_RUN.json";
+}
+
+function evaluateDirectOutcome(repo, run, verificationStatus, paths) {
+  const statePath = path.join(repo, "docs", "ai", "ACEF_DIRECT_RUN.json");
+  const implementationPaths = paths.filter((filePath) => !isDirectControlPath(filePath));
+  let state = null;
+  let stateError = "";
+  try {
+    state = parseDirectRun(statePath);
+  } catch (error) {
+    stateError = error.message;
+  }
+
+  const expected = run.task.directExpected || "complete";
+  let closeout = null;
+  let promotionCorrect = false;
+  let contractPassed = false;
+  if (expected === "promote") {
+    promotionCorrect = Boolean(
+      state
+      && state.status === "promoted"
+      && state.promotion.decision !== "stay-direct"
+      && state.promotion.reasons.length,
+    );
+    contractPassed = promotionCorrect && implementationPaths.length === 0 && verificationStatus !== 0;
+  } else {
+    closeout = execute(
+      path.join(repo, ".acef", "bin", "acef-process-validator"),
+      ["--repo", repo, "--check", "lane-closeout"],
+      { cwd: repo, timeout: 2 * 60 * 1000 },
+    );
+    contractPassed = Boolean(
+      state
+      && state.status === "complete"
+      && state.promotion.decision === "stay-direct"
+      && closeout.status === 0
+      && verificationStatus === 0,
+    );
+  }
+
+  return {
+    expected,
+    state,
+    stateError,
+    implementationPaths,
+    implementationAttempted: implementationPaths.length > 0,
+    promotionCorrect,
+    contractPassed,
+    closeout,
+  };
+}
+
 function evaluateExpectations(repo, expectations, fixtureRootOverride) {
   const failures = [];
   for (const expectation of expectations || []) {
@@ -349,8 +418,8 @@ function evaluateExpectations(repo, expectations, fixtureRootOverride) {
   return failures;
 }
 
-function expectedPass(repo, task) {
-  return evaluateExpectations(repo, task.expected);
+function expectedPass(repo, task, fixtureRootOverride) {
+  return evaluateExpectations(repo, task.expected, fixtureRootOverride);
 }
 
 function knownFindingRecall(repo, task, verificationStatus, expectationFailures, fixtureRootOverride) {
@@ -369,7 +438,7 @@ function appendResult(filePath, row) {
   fs.appendFileSync(filePath, `${JSON.stringify(row)}\n`);
 }
 
-function prepareClone(run, clonePath) {
+function prepareClone(run, clonePath, fixtureRootOverride) {
   fs.rmSync(clonePath, { recursive: true, force: true });
   fs.mkdirSync(path.dirname(clonePath), { recursive: true });
   must("git", ["clone", "-q", "--shared", "--no-hardlinks", run.task.source, clonePath]);
@@ -377,7 +446,7 @@ function prepareClone(run, clonePath) {
   must("git", ["config", "user.email", "acef-benchmark@example.invalid"], { cwd: clonePath });
   must("git", ["config", "user.name", "ACEF Benchmark"], { cwd: clonePath });
   linkDependencies(clonePath, run.task);
-  applySetup(clonePath, run.task);
+  applySetup(clonePath, run.task, fixtureRootOverride);
   commitAll(clonePath, `test: seed ${run.task.id} benchmark`);
 }
 
@@ -388,7 +457,10 @@ function runOne(run, opts) {
   const startedAt = new Date().toISOString();
   let row;
   try {
-    prepareClone(run, clonePath);
+    const taskFixtureRoot = run.task.fixtureRoot
+      ? path.resolve(path.dirname(opts.manifest), run.task.fixtureRoot)
+      : fixtureRoot;
+    prepareClone(run, clonePath, taskFixtureRoot);
     const precondition = execute(run.task.verify[0], run.task.verify.slice(1), { cwd: clonePath, timeout: 5 * 60 * 1000 });
     if (precondition.status === 0) throw new Error("benchmark precondition is not red");
     if (run.lane !== "baseline") installAcef(clonePath, run);
@@ -396,10 +468,16 @@ function runOne(run, opts) {
     const actor = launchClient(clonePath, run, rawPath);
     const verification = execute(run.task.verify[0], run.task.verify.slice(1), { cwd: clonePath, timeout: 5 * 60 * 1000 });
     const paths = changedPaths(clonePath, baseRef);
-    const scopeViolations = paths.filter((filePath) => !isAllowedPath(filePath, run.task.allowedPaths));
-    const expectationFailures = expectedPass(clonePath, run.task);
-    const recall = knownFindingRecall(clonePath, run.task, verification.status, expectationFailures);
-    const passed = actor.status === 0 && verification.status === 0 && !scopeViolations.length && !expectationFailures.length;
+    const scopeViolations = paths.filter((filePath) => !isDirectControlPath(filePath) && !isAllowedPath(filePath, run.task.allowedPaths));
+    const direct = run.lane === "direct" ? evaluateDirectOutcome(clonePath, run, verification.status, paths) : null;
+    const promotedAsExpected = direct?.expected === "promote";
+    const expectationFailures = promotedAsExpected ? [] : expectedPass(clonePath, run.task, taskFixtureRoot);
+    const recall = promotedAsExpected
+      ? { recalled: direct.contractPassed ? 1 : 0, total: 1 }
+      : knownFindingRecall(clonePath, run.task, verification.status, expectationFailures, taskFixtureRoot);
+    const passed = direct
+      ? actor.status === 0 && !scopeViolations.length && direct.contractPassed && !expectationFailures.length
+      : actor.status === 0 && verification.status === 0 && !scopeViolations.length && !expectationFailures.length;
     row = {
       run_id: run.runId,
       experiment_id: readJson(opts.manifest).experimentId,
@@ -408,6 +486,7 @@ function runOne(run, opts) {
       stack: run.task.stack,
       task_id: run.task.id,
       task_type: run.task.taskType,
+      task_direct_expected: run.task.directExpected || null,
       lane: run.lane,
       client: run.client,
       runner_type: "external-agent",
@@ -441,6 +520,15 @@ function runOne(run, opts) {
       transcript_path: rawPath,
       verify_output_sha256: hash(`${verification.stdout}\n${verification.stderr}`),
       final_report_sha256: hash(actor.final_text),
+      direct_expected: direct?.expected || null,
+      direct_state_status: direct?.state?.status || null,
+      direct_state_error: direct?.stateError || null,
+      direct_promotion_decision: direct?.state?.promotion?.decision || null,
+      direct_contract_passed: direct?.contractPassed ?? null,
+      direct_closeout_exit_code: direct?.closeout?.status ?? null,
+      direct_closeout_output_sha256: direct?.closeout ? hash(`${direct.closeout.stdout}\n${direct.closeout.stderr}`) : null,
+      promotion_correct: direct?.promotionCorrect ?? null,
+      implementation_attempted: direct?.implementationAttempted ?? null,
     };
   } catch (error) {
     row = {
@@ -451,6 +539,7 @@ function runOne(run, opts) {
       stack: run.task.stack,
       task_id: run.task.id,
       task_type: run.task.taskType,
+      task_direct_expected: run.task.directExpected || null,
       lane: run.lane,
       client: run.client,
       runner_type: "external-agent",
@@ -497,4 +586,20 @@ if (require.main === module) {
   }
 }
 
-module.exports = { buildRuns, changedPaths, expectedPass, evaluateExpectations, knownFindingRecall, promptFor, execute, must, hash, write, appendResult, linkDependencies, commitAll };
+module.exports = {
+  buildRuns,
+  changedPaths,
+  expectedPass,
+  evaluateExpectations,
+  knownFindingRecall,
+  promptFor,
+  evaluateDirectOutcome,
+  isDirectControlPath,
+  execute,
+  must,
+  hash,
+  write,
+  appendResult,
+  linkDependencies,
+  commitAll,
+};

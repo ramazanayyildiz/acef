@@ -9,7 +9,15 @@ const { spawnSync } = require("child_process");
 
 const root = path.resolve(__dirname, "..");
 const { codexMetrics, opencodeMetrics, isAllowedPath } = require("./lib/acef-empirical");
-const { buildRuns, changedPaths, evaluateExpectations, knownFindingRecall } = require("./acef-empirical-validation");
+const {
+  buildRuns,
+  changedPaths,
+  evaluateExpectations,
+  knownFindingRecall,
+  promptFor,
+  evaluateDirectOutcome,
+} = require("./acef-empirical-validation");
+const { summarizeMeasurement } = require("./acef-direct-measurement-report");
 
 function run(command, args, opts = {}) {
   const result = spawnSync(command, args, { encoding: "utf8", ...opts });
@@ -102,6 +110,111 @@ function testPilotManifestExpansion() {
   assert.strictEqual(plan.count, 12);
 }
 
+function testDirectManifestExpansion() {
+  const manifestPath = path.join(root, "docs/experiments/direct-lane-measurement/manifest.json");
+  const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+  const runs = buildRuns(manifest);
+  assert.strictEqual(runs.length, 30);
+  assert.deepStrictEqual([...new Set(runs.map((run) => run.lane))].sort(), ["baseline", "direct", "lightweight"]);
+  assert.strictEqual(manifest.tasks.filter((task) => task.directExpected === "complete").length, 4);
+  assert.strictEqual(manifest.tasks.filter((task) => task.directExpected === "promote").length, 1);
+  const stdout = run("node", ["scripts/acef-empirical-validation", "--plan", "--manifest", manifestPath], { cwd: root });
+  const plan = JSON.parse(stdout);
+  assert.strictEqual(plan.experimentId, "acef-direct-lane-v1");
+  assert.strictEqual(plan.count, 30);
+}
+
+function testDirectPromptAndPromotionOutcome() {
+  const prompt = promptFor({
+    lane: "direct",
+    task: {
+      prompt: "Fix one localized bug.",
+      allowedPaths: ["src/local.js"],
+      verify: ["node", "--check", "src/local.js"],
+    },
+  });
+  assert.match(prompt, /ACEF direct workflow/);
+  assert.match(prompt, /ACEF_DIRECT_RUN\.json/);
+  assert.match(prompt, /RESULT=PROMOTED/);
+
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "acef-direct-outcome-"));
+  try {
+    const stateDir = path.join(tmp, "docs", "ai");
+    fs.mkdirSync(stateDir, { recursive: true });
+    fs.writeFileSync(path.join(stateDir, "ACEF_DIRECT_RUN.json"), `${JSON.stringify({
+      schema: "acef.direct-run.v1",
+      version: "1.0.0",
+      runId: "promotion-test",
+      lane: "direct",
+      status: "promoted",
+      scope: "provider integration",
+      acceptance: ["Provider work promotes"],
+      technicalBoundary: "localized-bugfix",
+      reversible: true,
+      riskTriggers: ["external-provider"],
+      changedPaths: [],
+      verification: [],
+      promotion: {
+        decision: "promote-guarded",
+        reasons: ["DeepL provider integration"],
+      },
+      updatedAt: new Date().toISOString(),
+    }, null, 2)}\n`);
+    const outcome = evaluateDirectOutcome(
+      tmp,
+      { task: { directExpected: "promote" } },
+      1,
+      ["docs/ai/ACEF_DIRECT_RUN.json"],
+    );
+    assert.strictEqual(outcome.contractPassed, true);
+    assert.strictEqual(outcome.promotionCorrect, true);
+    assert.strictEqual(outcome.implementationAttempted, false);
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+}
+
+function testDirectMeasurementSummary() {
+  const rows = [];
+  const clients = ["codex", "opencode"];
+  for (let taskIndex = 0; taskIndex < 5; taskIndex += 1) {
+    const expected = taskIndex === 4 ? "promote" : "complete";
+    for (const lane of ["baseline", "direct", "lightweight"]) {
+      for (const client of clients) {
+        const direct = lane === "direct";
+        rows.push({
+          experiment_id: "test-direct",
+          task_id: `task-${taskIndex}`,
+          task_direct_expected: expected,
+          lane,
+          client,
+          result: "pass",
+          escaped_defects: 0,
+          scope_violations: [],
+          context_miss: false,
+          input_tokens: lane === "baseline" ? 100 : lane === "direct" ? 60 : 80,
+          cached_input_tokens: 10,
+          output_tokens: 5,
+          runtime_seconds: lane === "baseline" ? 10 : lane === "direct" ? 11 : 20,
+          tool_calls: lane === "baseline" ? 5 : lane === "direct" ? 6 : 9,
+          extra_file_reads: 0,
+          retry_count: 0,
+          direct_contract_passed: direct && expected === "complete" ? true : null,
+          direct_closeout_exit_code: direct && expected === "complete" ? 0 : null,
+          promotion_correct: direct && expected === "promote" ? true : null,
+          implementation_attempted: direct && expected === "promote" ? false : null,
+        });
+      }
+    }
+  }
+  const summary = summarizeMeasurement(rows);
+  assert.strictEqual(summary.total_runs, 30);
+  assert.strictEqual(summary.direct.contract_passes, 8);
+  assert.strictEqual(summary.direct.correct_promotions, 2);
+  assert.strictEqual(summary.direct.input_reduction_vs_baseline_pct, 40);
+  assert.strictEqual(summary.proven, true);
+}
+
 function testFixtureUnchangedExpectation() {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "acef-empirical-fixture-"));
   try {
@@ -149,6 +262,9 @@ testScopeMatching();
 testChangedPathsPreservesPorcelainFilenames();
 testPlanCli();
 testPilotManifestExpansion();
+testDirectManifestExpansion();
+testDirectPromptAndPromotionOutcome();
+testDirectMeasurementSummary();
 testFixtureUnchangedExpectation();
 testKnownFindingRecall();
 

@@ -1,0 +1,194 @@
+#!/usr/bin/env node
+"use strict";
+
+const fs = require("node:fs");
+const path = require("node:path");
+const { median } = require("./lib/acef-empirical");
+
+const root = path.resolve(__dirname, "..");
+const experimentDir = path.join(root, "docs", "experiments", "direct-lane-measurement");
+
+function parseArgs(argv) {
+  const opts = {
+    results: path.join(experimentDir, "runs", "results.jsonl"),
+    report: path.join(experimentDir, "report.md"),
+    summary: path.join(experimentDir, "summary.json"),
+  };
+  for (let index = 0; index < argv.length; index += 1) {
+    const arg = argv[index];
+    if (arg === "--results") opts.results = path.resolve(argv[++index]);
+    else if (arg === "--report") opts.report = path.resolve(argv[++index]);
+    else if (arg === "--summary") opts.summary = path.resolve(argv[++index]);
+    else if (arg === "--help" || arg === "-h") {
+      console.log("Usage: acef-direct-measurement-report [--results <jsonl>] [--report <md>] [--summary <json>]");
+      process.exit(0);
+    } else throw new Error(`Unknown argument: ${arg}`);
+  }
+  return opts;
+}
+
+function pct(value) {
+  return Number.isFinite(value) ? Math.round(value * 10) / 10 : null;
+}
+
+function deltaPct(next, base) {
+  if (!Number.isFinite(next) || !Number.isFinite(base) || base === 0) return null;
+  return pct(((next - base) / base) * 100);
+}
+
+function laneSummary(rows) {
+  return {
+    runs: rows.length,
+    pass: rows.filter((row) => row.result === "pass").length,
+    fail: rows.filter((row) => row.result === "fail").length,
+    invalid: rows.filter((row) => row.result === "invalid").length,
+    escaped_defects: rows.reduce((sum, row) => sum + Number(row.escaped_defects || 0), 0),
+    scope_violations: rows.reduce((sum, row) => sum + Number(row.scope_violations?.length || 0), 0),
+    context_misses: rows.filter((row) => row.context_miss).length,
+    median_input_tokens: median(rows.map((row) => row.input_tokens)),
+    median_cached_input_tokens: median(rows.map((row) => row.cached_input_tokens)),
+    median_output_tokens: median(rows.map((row) => row.output_tokens)),
+    median_runtime_seconds: median(rows.map((row) => row.runtime_seconds)),
+    median_tool_calls: median(rows.map((row) => row.tool_calls)),
+    median_extra_file_reads: median(rows.map((row) => row.extra_file_reads)),
+    median_retries: median(rows.map((row) => row.retry_count)),
+  };
+}
+
+function summarizeMeasurement(rows) {
+  const eligible = rows.filter((row) => row.task_direct_expected === "complete");
+  const promotion = rows.filter((row) => row.task_direct_expected === "promote");
+  const lanes = {};
+  for (const lane of ["baseline", "direct", "lightweight"]) {
+    lanes[lane] = laneSummary(eligible.filter((row) => row.lane === lane));
+  }
+
+  const directEligible = eligible.filter((row) => row.lane === "direct");
+  const directPromotion = promotion.filter((row) => row.lane === "direct");
+  const inputDelta = deltaPct(lanes.direct.median_input_tokens, lanes.baseline.median_input_tokens);
+  const inputReduction = Number.isFinite(inputDelta) ? pct(-inputDelta) : null;
+  const runtimeOverhead = deltaPct(lanes.direct.median_runtime_seconds, lanes.baseline.median_runtime_seconds);
+  const runtimeVsLightweight = deltaPct(lanes.direct.median_runtime_seconds, lanes.lightweight.median_runtime_seconds);
+  const runtimeImprovementVsLightweight = Number.isFinite(runtimeVsLightweight) ? pct(-runtimeVsLightweight) : null;
+  const directContextMissRate = directEligible.length
+    ? pct((lanes.direct.context_misses / directEligible.length) * 100)
+    : null;
+
+  const thresholds = {
+    exactly_30_valid_runs: rows.length === 30 && rows.every((row) => row.result !== "invalid"),
+    quality_non_inferior: lanes.direct.pass >= lanes.baseline.pass
+      && lanes.direct.escaped_defects <= lanes.baseline.escaped_defects,
+    direct_contract_100pct: directEligible.length > 0
+      && directEligible.every((row) => row.direct_contract_passed === true && row.direct_closeout_exit_code === 0),
+    promotion_accuracy_100pct: directPromotion.length > 0
+      && directPromotion.every((row) => row.promotion_correct === true && row.implementation_attempted === false),
+    scope_violations_zero: lanes.direct.scope_violations === 0,
+    context_miss_below_10pct: directContextMissRate !== null && directContextMissRate < 10,
+    input_reduction_at_least_25pct: inputReduction !== null && inputReduction >= 25,
+    runtime_overhead_at_most_30pct: runtimeOverhead !== null && runtimeOverhead <= 30,
+    faster_than_lightweight: runtimeImprovementVsLightweight !== null && runtimeImprovementVsLightweight > 0,
+  };
+
+  return {
+    experiment_id: rows[0]?.experiment_id || null,
+    generated_at: new Date().toISOString(),
+    total_runs: rows.length,
+    eligible_runs: eligible.length,
+    promotion_trap_runs: promotion.length,
+    lanes,
+    direct: {
+      eligible_runs: directEligible.length,
+      promotion_runs: directPromotion.length,
+      context_miss_rate_pct: directContextMissRate,
+      input_reduction_vs_baseline_pct: inputReduction,
+      runtime_overhead_vs_baseline_pct: runtimeOverhead,
+      runtime_improvement_vs_lightweight_pct: runtimeImprovementVsLightweight,
+      contract_passes: directEligible.filter((row) => row.direct_contract_passed === true).length,
+      correct_promotions: directPromotion.filter((row) => row.promotion_correct === true && row.implementation_attempted === false).length,
+    },
+    thresholds,
+    proven: Object.values(thresholds).every(Boolean),
+  };
+}
+
+function formatDelta(value) {
+  if (!Number.isFinite(value)) return "n/a";
+  return `${value >= 0 ? "+" : ""}${value}%`;
+}
+
+function reportMarkdown(summary) {
+  const laneRows = ["baseline", "direct", "lightweight"].map((lane) => {
+    const item = summary.lanes[lane];
+    return `| ${lane} | ${item.runs} | ${item.pass}/${item.runs} | ${item.escaped_defects} | ${item.scope_violations} | ${item.median_input_tokens ?? "n/a"} | ${item.median_runtime_seconds ?? "n/a"} | ${item.median_tool_calls ?? "n/a"} | ${item.context_misses} |`;
+  });
+  const thresholdRows = Object.entries(summary.thresholds)
+    .map(([name, passed]) => `| ${name} | ${passed ? "PASS" : "FAIL"} |`);
+  return [
+    "# ACEF Direct Lane Measurement v1",
+    "",
+    `Generated: ${summary.generated_at}`,
+    "",
+    "## Decision",
+    "",
+    summary.proven
+      ? "The preregistered direct-lane proof threshold passed. The capability may advance to `proven`."
+      : "The preregistered direct-lane proof threshold did not fully pass. Keep the capability at `enforced` and use the failed thresholds to refine the lane.",
+    "",
+    "## Scope",
+    "",
+    `- ${summary.total_runs} total external-agent runs; ${summary.eligible_runs} direct-eligible comparison runs; ${summary.promotion_trap_runs} promotion-trap runs.`,
+    "- Real repositories: Browser RTS and Detaysoft CMS, executed only in disposable clones.",
+    "- Lanes: baseline, direct, lightweight. Clients: Codex and OpenCode.",
+    "",
+    "## Eligible-Task Results",
+    "",
+    "| Lane | Runs | Pass | Escaped defects | Scope violations | Median input | Median seconds | Median tool calls | Context misses |",
+    "| --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+    ...laneRows,
+    "",
+    "## Direct Deltas",
+    "",
+    `- Input reduction versus baseline: ${formatDelta(summary.direct.input_reduction_vs_baseline_pct)}`,
+    `- Runtime overhead versus baseline: ${formatDelta(summary.direct.runtime_overhead_vs_baseline_pct)}`,
+    `- Runtime improvement versus lightweight: ${formatDelta(summary.direct.runtime_improvement_vs_lightweight_pct)}`,
+    `- Direct contract closeouts: ${summary.direct.contract_passes}/${summary.direct.eligible_runs}`,
+    `- Correct provider promotions: ${summary.direct.correct_promotions}/${summary.direct.promotion_runs}`,
+    `- Direct context-miss rate: ${summary.direct.context_miss_rate_pct ?? "n/a"}%`,
+    "",
+    "## Preregistered Thresholds",
+    "",
+    "| Threshold | Verdict |",
+    "| --- | --- |",
+    ...thresholdRows,
+    "",
+    "## Evidence",
+    "",
+    "- Raw rows: `runs/results.jsonl`",
+    "- Machine summary: `summary.json`",
+    "- Preregistered design: `DESIGN.md`",
+    "- Raw transcripts remain outside Git; each row records transcript and verification hashes.",
+    "",
+  ].join("\n");
+}
+
+function main() {
+  const opts = parseArgs(process.argv.slice(2));
+  const rows = fs.readFileSync(opts.results, "utf8").split(/\r?\n/).filter(Boolean).map(JSON.parse);
+  const summary = summarizeMeasurement(rows);
+  fs.mkdirSync(path.dirname(opts.summary), { recursive: true });
+  fs.writeFileSync(opts.summary, `${JSON.stringify(summary, null, 2)}\n`);
+  fs.mkdirSync(path.dirname(opts.report), { recursive: true });
+  fs.writeFileSync(opts.report, reportMarkdown(summary));
+  console.log(`${opts.report}\n${opts.summary}\nproven=${summary.proven}`);
+}
+
+if (require.main === module) {
+  try {
+    main();
+  } catch (error) {
+    console.error(`ACEF_DIRECT_REPORT_ERROR: ${error.message}`);
+    process.exitCode = 1;
+  }
+}
+
+module.exports = { summarizeMeasurement, laneSummary, deltaPct, reportMarkdown };

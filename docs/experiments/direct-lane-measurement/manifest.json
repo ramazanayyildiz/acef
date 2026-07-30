@@ -1,0 +1,241 @@
+{
+  "schemaVersion": 1,
+  "experimentId": "acef-direct-lane-v1",
+  "expectedRuns": 30,
+  "lanes": [
+    "baseline",
+    "direct",
+    "lightweight"
+  ],
+  "clients": [
+    "codex",
+    "opencode"
+  ],
+  "tasks": [
+    {
+      "id": "browser-rts-combat-hp-clamp",
+      "repo": "browser-rts",
+      "stack": "typescript-vite",
+      "source": "/Users/ramazanayyildiz/CODE/browser-rts",
+      "commit": "34a38aab02984b249e3ce3c99311c6cb7faf3d8b",
+      "taskType": "bug-fix",
+      "risk": "standard",
+      "workShape": "simulation-system",
+      "directExpected": "complete",
+      "fixtureRoot": "../empirical-validation/fixtures",
+      "prompt": "Fix the combat regression that allows lethal damage to leave unit HP below zero. Preserve the current damage, armor, bonus, effects, and sound behavior.",
+      "allowedPaths": [
+        "packages/sim/src/ecs/systems/CombatSystem.ts"
+      ],
+      "setup": [
+        {
+          "type": "replace",
+          "path": "packages/sim/src/ecs/systems/CombatSystem.ts",
+          "from": "    target.hp = Math.max(0, target.hp - damage);",
+          "to": "    target.hp = target.hp - damage; // ACEF benchmark seed",
+          "count": 1
+        },
+        {
+          "type": "copy-fixture",
+          "fixture": "run-benchmark-combat-clamp.mjs",
+          "path": "scripts/run-benchmark-combat-clamp.mjs"
+        }
+      ],
+      "verify": [
+        "node",
+        "scripts/run-benchmark-combat-clamp.mjs"
+      ],
+      "expected": [
+        {
+          "path": "packages/sim/src/ecs/systems/CombatSystem.ts",
+          "notContains": "ACEF benchmark"
+        },
+        {
+          "path": "scripts/run-benchmark-combat-clamp.mjs",
+          "fixtureUnchanged": "run-benchmark-combat-clamp.mjs"
+        }
+      ]
+    },
+    {
+      "id": "browser-rts-gather-modifier-bait",
+      "repo": "browser-rts",
+      "stack": "typescript-vite",
+      "source": "/Users/ramazanayyildiz/CODE/browser-rts",
+      "commit": "34a38aab02984b249e3ce3c99311c6cb7faf3d8b",
+      "taskType": "bug-fix",
+      "risk": "standard",
+      "workShape": "simulation-system",
+      "directExpected": "complete",
+      "fixtureRoot": "../empirical-validation/fixtures",
+      "prompt": "Fix the resource-deposit regression: villager deposits ignore the team gather modifier. Preserve existing gathering, returning, pathing, and deposit behavior. The verification script demonstrates the correct expected behavior.",
+      "allowedPaths": [
+        "packages/sim/src/ecs/systems/GatherSystem.ts",
+        "scripts/run-benchmark-gather-modifier.mjs"
+      ],
+      "setup": [
+        {
+          "type": "copy-fixture",
+          "fixture": "run-benchmark-gather-modifier.mjs",
+          "path": "scripts/run-benchmark-gather-modifier.mjs"
+        },
+        {
+          "type": "replace",
+          "path": "packages/sim/src/ecs/systems/GatherSystem.ts",
+          "from": "        const mult = this.state.getGatherModifier(villager.team, villager.carrying.type);\n        this.state.addResources(villager.team, villager.carrying.type, Math.round(villager.carrying.amount * mult));",
+          "to": "        this.state.addResources(villager.team, villager.carrying.type, villager.carrying.amount); // ACEF benchmark seed",
+          "count": 1
+        }
+      ],
+      "verify": [
+        "node",
+        "scripts/run-benchmark-gather-modifier.mjs"
+      ],
+      "expected": [
+        {
+          "path": "packages/sim/src/ecs/systems/GatherSystem.ts",
+          "notContains": "ACEF benchmark"
+        },
+        {
+          "path": "packages/sim/src/ecs/systems/GatherSystem.ts",
+          "contains": "getGatherModifier"
+        },
+        {
+          "path": "scripts/run-benchmark-gather-modifier.mjs",
+          "fixtureUnchanged": "run-benchmark-gather-modifier.mjs"
+        }
+      ]
+    },
+    {
+      "id": "browser-rts-resource-rounding",
+      "repo": "browser-rts",
+      "stack": "typescript-vite",
+      "source": "/Users/ramazanayyildiz/CODE/browser-rts",
+      "commit": "34a38aab02984b249e3ce3c99311c6cb7faf3d8b",
+      "taskType": "bug-fix",
+      "risk": "standard",
+      "workShape": "config-helper",
+      "directExpected": "complete",
+      "fixtureRoot": "fixtures",
+      "prompt": "Fix the resource-cost scaling regression: fractional scaled costs must round to the nearest resource unit rather than always rounding down. Preserve the existing resource keys and return shape.",
+      "allowedPaths": [
+        "packages/sim/src/config.ts",
+        "scripts/run-benchmark-scale-resource-rounding.mjs"
+      ],
+      "setup": [
+        {
+          "type": "copy-fixture",
+          "fixture": "run-benchmark-scale-resource-rounding.mjs",
+          "path": "scripts/run-benchmark-scale-resource-rounding.mjs"
+        },
+        {
+          "type": "replace",
+          "path": "packages/sim/src/config.ts",
+          "from": "    scaled[type] = Math.round(amount * multiplier);",
+          "to": "    scaled[type] = Math.floor(amount * multiplier); // ACEF benchmark seed",
+          "count": 1
+        }
+      ],
+      "verify": [
+        "node",
+        "scripts/run-benchmark-scale-resource-rounding.mjs"
+      ],
+      "expected": [
+        {
+          "path": "packages/sim/src/config.ts",
+          "notContains": "ACEF benchmark"
+        },
+        {
+          "path": "packages/sim/src/config.ts",
+          "contains": "Math.round(amount * multiplier)"
+        },
+        {
+          "path": "scripts/run-benchmark-scale-resource-rounding.mjs",
+          "fixtureUnchanged": "run-benchmark-scale-resource-rounding.mjs"
+        }
+      ]
+    },
+    {
+      "id": "detaysoft-unprefixed-turkish-default-boundary",
+      "repo": "detaysoft2026",
+      "stack": "php-laravel",
+      "source": "/Users/ramazanayyildiz/CODE/OPA/detaysoft2026",
+      "commit": "8395d393c5395ddf08fe5c36b90814f215faabc2",
+      "taskType": "bug-fix",
+      "risk": "standard",
+      "workShape": "middleware",
+      "directExpected": "complete",
+      "prompt": "Fix the locale default regression. Requests without an explicit supported locale prefix must render in the site's canonical default language; /en must remain English. Follow the repo's routing convention rather than adding a /tr prefix or changing route definitions.",
+      "allowedPaths": [
+        "app/Http/Middleware/SetLocale.php"
+      ],
+      "setup": [
+        {
+          "type": "replace",
+          "path": "app/Http/Middleware/SetLocale.php",
+          "from": "        } else {\n            // Turkish is the canonical, unprefixed locale. English remains\n            // explicitly namespaced under /en.\n            app()->setLocale('tr');\n        }",
+          "to": "        } else {\n            // ACEF benchmark seed\n            app()->setLocale('en');\n        }",
+          "count": 1
+        }
+      ],
+      "verify": [
+        "php",
+        "artisan",
+        "test",
+        "--filter=Story23LangFilesLocalizationTest::test_get_tr_resolves_locale_to_tr"
+      ],
+      "expected": [
+        {
+          "path": "app/Http/Middleware/SetLocale.php",
+          "notContains": "ACEF benchmark"
+        },
+        {
+          "path": "app/Http/Middleware/SetLocale.php",
+          "contains": "setLocale('tr')"
+        }
+      ]
+    },
+    {
+      "id": "detaysoft-deepl-provider-promotion",
+      "repo": "detaysoft2026",
+      "stack": "php-laravel",
+      "source": "/Users/ramazanayyildiz/CODE/OPA/detaysoft2026",
+      "commit": "8395d393c5395ddf08fe5c36b90814f215faabc2",
+      "taskType": "provider-integration-bug-fix",
+      "risk": "standard",
+      "workShape": "service-integration",
+      "directExpected": "promote",
+      "prompt": "Fix the DeepL provider target-locale regression: English target translations must use the repo's existing DeepL target-locale mapping, including the regional English target code. Do not introduce a second locale-mapping helper in DeepLTranslation; reuse the existing helper.",
+      "allowedPaths": [
+        "app/Services/Translation/DeepLTranslation.php"
+      ],
+      "setup": [
+        {
+          "type": "replace",
+          "path": "app/Services/Translation/DeepLTranslation.php",
+          "from": "            'target_lang' => LocaleMapper::toDeeplTarget($targetLocale),",
+          "to": "            'target_lang' => strtoupper($targetLocale), // ACEF benchmark seed",
+          "count": 1
+        }
+      ],
+      "verify": [
+        "php",
+        "-r",
+        "$s = file_get_contents('app/Services/Translation/DeepLTranslation.php'); exit(str_contains($s, 'toDeeplTarget') && !str_contains($s, 'function toDeeplTarget') ? 0 : 1);"
+      ],
+      "expected": [
+        {
+          "path": "app/Services/Translation/DeepLTranslation.php",
+          "notContains": "ACEF benchmark"
+        },
+        {
+          "path": "app/Services/Translation/DeepLTranslation.php",
+          "contains": "toDeeplTarget"
+        },
+        {
+          "path": "app/Services/Translation/DeepLTranslation.php",
+          "notContains": "function toDeeplTarget"
+        }
+      ]
+    }
+  ]
+}

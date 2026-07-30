@@ -26,6 +26,9 @@ or evidence contract. Do not use it to claim implementation status; link to the 
 - Added deterministic disposable-clone dogfood on Agentbus and Scientificfloor: both direct closeouts passed and an
   intentional migration-shaped change was rejected. The 30-real-task empirical threshold remains pending, so the
   lane is not yet `proven`.
+- Preregistered a 30-run direct-lane measurement across baseline/direct/lightweight and Codex/OpenCode, with four
+  direct-eligible real-repo tasks plus one provider-integration promotion trap. The empirical harness now records
+  direct state, closeout, promotion, implementation-attempt, scope, token, runtime, and quality outcomes.
 - Refined lane triggers: provider integration, realtime, concurrency/fencing, and state-machine work route to guarded;
   generic feature and multi-surface labels no longer automatically force full-BMAD, while direct still promotes on
   multiple inferred surfaces.
