@@ -7,6 +7,7 @@ const {
   parseActiveRun,
   parseActorRecord,
   parseApproval,
+  parseDirectRun,
   parseEvidenceManifest,
   parseGateVerdict,
   parseLightweightRun,
@@ -53,6 +54,7 @@ Checks:
   goal-coverage      Require user-facing goals to close with visible product surface evidence
   lane-selection     Require active lane choice to match recorded risk triggers
   lane-closeout      Require the active lane's complete validator bundle before close
+  direct-lifecycle   Require a reversible contained task, focused verification, handoff, and no promotion trigger
   lightweight-lifecycle Require the six-step lightweight lifecycle, promotion disposition, and surface evidence
   lean-evidence       Require story/epic close evidence to live in artifacts, not chat
   control-dosing      Validate the machine-readable lane/control dosing manifest
@@ -248,7 +250,7 @@ function normalizedScope(value) {
 function stateControlPath(filePath) {
   const normalized = String(filePath || "").replaceAll(path.sep, "/");
   return /^docs\/ai\/(?:actors|evidence|gates|approvals)\//.test(normalized)
-    || /^docs\/ai\/ACEF_(?:ACTIVE_RUN|ACTIVE_WORKER_SCOPE|CURRENT_CONTEXT|ACTIVE_LEDGER)(?:\.json)?$/.test(normalized)
+    || /^docs\/ai\/ACEF_(?:ACTIVE_RUN|ACTIVE_WORKER_SCOPE|CURRENT_CONTEXT|ACTIVE_LEDGER|DIRECT_RUN)(?:\.json)?$/.test(normalized)
     || /^docs\/ai\/ACEF_.*_DELIVERY_AUDIT\.md$/.test(normalized);
 }
 
@@ -361,6 +363,10 @@ function inferredRiskTriggers(paths) {
     if (/security|token|session|secret|credential/i.test(filePath)) triggers.add("security");
     if (/webhook/i.test(filePath)) triggers.add("webhook");
     if (/tenant|privacy|pii|personal[-_]?data/i.test(filePath)) triggers.add("tenant-privacy");
+    if (/vimeo|youtube|mux|twilio|sendgrid|stripe|zoom|external[-_]?provider|provider[-_]?client|integrations?\//i.test(filePath)) triggers.add("external-provider");
+    if (/websocket|web[-_]?socket|realtime|server[-_]?sent|event[-_]?stream|sse\b/i.test(filePath)) triggers.add("realtime");
+    if (/concurren|mutex|semaphore|fencing|lease[-_]?lock|distributed[-_]?lock/i.test(filePath)) triggers.add("concurrency");
+    if (/state[-_]?machine|workflow[-_]?state|transition[-_]?guard/i.test(filePath)) triggers.add("state-machine");
   }
   return [...triggers];
 }
@@ -1960,6 +1966,7 @@ function normalizeLaneName(value) {
   const normalized = String(value || "").trim().toLowerCase().replace(/[_\s]+/g, "-");
   if (/^(?:full-)?bmad(?:-v2)?$/.test(normalized) || normalized === "full-bmad-v2") return "full-bmad";
   if (normalized === "guarded") return "guarded";
+  if (normalized === "direct" || normalized === "contained" || normalized === "contained-task") return "direct";
   if (normalized === "quick-fix" || normalized === "quickfix") return "quick-fix";
   if (normalized === "lightweight" || normalized === "lean") return "lightweight";
   return normalized;
@@ -1967,6 +1974,15 @@ function normalizeLaneName(value) {
 
 function inferActiveLane(repoRoot, ledgerPath) {
   const activeRun = typedActiveRun(repoRoot);
+  if (activeRun?.lane && activeRun.status !== "complete") return normalizeLaneName(activeRun.lane);
+  const directPath = path.join(repoRoot, "docs", "ai", "ACEF_DIRECT_RUN.json");
+  if (exists(directPath)) {
+    try {
+      return normalizeLaneName(parseDirectRun(directPath).lane);
+    } catch {
+      return "";
+    }
+  }
   if (activeRun?.lane) return normalizeLaneName(activeRun.lane);
   const lightweightPath = path.join(repoRoot, "docs", "ai", "ACEF_LIGHTWEIGHT_RUN.json");
   if (exists(lightweightPath)) {
@@ -2312,9 +2328,89 @@ function checkLightweightLifecycle(repoRoot) {
   }
 }
 
+function directRunPath(repoRoot) {
+  return path.join(repoRoot, "docs", "ai", "ACEF_DIRECT_RUN.json");
+}
+
+function directChangedPaths(repoRoot, run) {
+  const paths = new Set(workingApplicationChanges(repoRoot));
+  const head = gitHead(repoRoot);
+  if (run.baseCommit && gitIsAncestor(repoRoot, run.baseCommit, head)) {
+    for (const filePath of gitChangedFiles(repoRoot, run.baseCommit, head)) {
+      if (!stateControlPath(filePath)) paths.add(filePath);
+    }
+  }
+  return [...paths].map((filePath) => filePath.replaceAll(path.sep, "/"));
+}
+
+function directPromotionReasons(repoRoot, run) {
+  const actualPaths = directChangedPaths(repoRoot, run);
+  const reasons = [];
+  const triggers = [...new Set([
+    ...(run.riskTriggers || []).map((item) => String(item).toLowerCase()),
+    ...inferredRiskTriggers(actualPaths),
+  ])];
+  const promotionTerms = /(auth|authorization|permission|role|payment|billing|invoice|accounting|finance|financial|migration|delete|destructive|security|token|session|webhook|irreversible|tenant|privacy|pii|persistence|database|schema|stateful-product-data|tracking|reporting|analytics|external[-_ ]?provider|provider[-_ ]?integration|realtime|concurrency|fencing|state[-_ ]?machine|multi[-_ ]?surface|new[-_ ]?pattern|scope[-_ ]?expansion)/i;
+  for (const trigger of triggers) {
+    if (promotionTerms.test(trigger)) reasons.push(`risk trigger ${trigger}`);
+  }
+  const surfaces = inferredSurfaces(actualPaths.filter((filePath) => !isTestPath(filePath)));
+  if (surfaces.length > 1) reasons.push(`multiple inferred surfaces: ${surfaces.join(", ")}`);
+  const declared = new Set(run.changedPaths || []);
+  for (const filePath of actualPaths) {
+    if (!declared.has(filePath)) reasons.push(`changed path outside direct task record: ${filePath}`);
+  }
+  for (const testPath of actualPaths.filter(isTestPath)) {
+    reasons.push(...testEditIntegrityFailures(repoRoot, testPath));
+  }
+  return [...new Set(reasons)];
+}
+
+function checkDirectLaneSelection(repoRoot) {
+  const statePath = directRunPath(repoRoot);
+  if (!exists(statePath)) return result("lane-selection", false, "Missing docs/ai/ACEF_DIRECT_RUN.json");
+  try {
+    const run = parseDirectRun(statePath);
+    const reasons = directPromotionReasons(repoRoot, run);
+    if (run.status === "promoted") {
+      return result("lane-selection", false, `direct task promoted via ${run.promotion.decision}: ${run.promotion.reasons.join(", ")}`);
+    }
+    if (run.promotion.decision !== "stay-direct") {
+      return result("lane-selection", false, `direct task requires ${run.promotion.decision}: ${run.promotion.reasons.join(", ")}`);
+    }
+    if (reasons.length) return result("lane-selection", false, `direct task must promote: ${reasons.join("; ")}`);
+    return result("lane-selection", true, `direct lane is justified for ${run.runId}`);
+  } catch (error) {
+    return result("lane-selection", false, error.message);
+  }
+}
+
+function checkDirectLifecycle(repoRoot) {
+  const statePath = directRunPath(repoRoot);
+  if (!exists(statePath)) return result("direct-lifecycle", false, "Missing docs/ai/ACEF_DIRECT_RUN.json");
+  try {
+    const run = parseDirectRun(statePath);
+    if (run.status !== "complete") {
+      return result("direct-lifecycle", false, `direct run ${run.runId} is ${run.status}; closeout requires complete`);
+    }
+    const reasons = directPromotionReasons(repoRoot, run);
+    if (reasons.length) return result("direct-lifecycle", false, `direct task must promote: ${reasons.join("; ")}`);
+    return result(
+      "direct-lifecycle",
+      true,
+      `${run.runId} closed with ${run.verification.length} focused verification command(s) and no separate lifecycle actors`,
+    );
+  } catch (error) {
+    return result("direct-lifecycle", false, error.message);
+  }
+}
+
 function checkLaneSelection(repoRoot) {
   const activeRun = typedActiveRun(repoRoot);
-  if (!activeRun) return result("lane-selection", true, "No typed active run; legacy lane selection checks remain active");
+  if (!activeRun || (activeRun.status === "complete" && exists(directRunPath(repoRoot)))) {
+    if (exists(directRunPath(repoRoot))) return checkDirectLaneSelection(repoRoot);
+    return result("lane-selection", true, "No typed active run; legacy lane selection checks remain active");
+  }
   const failures = [];
   if (isDispatchPhase(activeRun)) {
     const decision = activeRun.intakeDecision || null;
@@ -2362,8 +2458,8 @@ function checkLaneSelection(repoRoot) {
   if (!activeRun.laneRationale || !String(activeRun.laneRationale).trim()) {
     failures.push("active run requires laneRationale");
   }
-  const guardedTerms = /(auth|authorization|permission|role|payment|billing|invoice|accounting|finance|financial|revenue|expense|tax|ledger|muhasebe|migration|delete|destructive|security|token|session|webhook|irreversible|tenant|privacy|pii)/i;
-  const fullTerms = /(new-pattern|new abstraction|shared abstraction|multi-surface|unclear repro|scope expansion|broad refactor|feature|crm|notes?|workflow|reporting|dashboard|tracking)/i;
+  const guardedTerms = /(auth|authorization|permission|role|payment|billing|invoice|accounting|finance|financial|revenue|expense|tax|ledger|muhasebe|migration|delete|destructive|security|token|session|webhook|irreversible|tenant|privacy|pii|external[-_ ]?provider|provider[-_ ]?integration|realtime|concurrency|fencing|state[-_ ]?machine)/i;
+  const fullTerms = /(new-pattern|new abstraction|shared abstraction|unclear repro|scope expansion|broad refactor|crm|notes?|workflow|reporting|dashboard|tracking)/i;
   const guardedTrigger = allTriggers.find((item) => guardedTerms.test(item));
   const fullTrigger = allTriggers.find((item) => fullTerms.test(item));
   if (guardedTrigger && activeRun.lane !== "guarded") {
@@ -2481,6 +2577,12 @@ function controlCheckForId(controlId, repoRoot, ledgerPath) {
 }
 
 function baseCloseoutChecks(lane, repoRoot, ledgerPath, adapterPath, registryPath) {
+  if (lane === "direct") {
+    return [
+      () => checkLaneSelection(repoRoot),
+      () => checkDirectLifecycle(repoRoot),
+    ];
+  }
   const checks = [
     () => checkLaneSelection(repoRoot),
     () => checkSessionHandoff(repoRoot, ledgerPath, adapterPath, registryPath),
@@ -2501,7 +2603,7 @@ function baseCloseoutChecks(lane, repoRoot, ledgerPath, adapterPath, registryPat
 function checkLaneCloseout(repoRoot, ledgerPath, adapterPath, registryPath) {
   const lane = inferActiveLane(repoRoot, ledgerPath);
   if (!lane) return result("lane-closeout", false, "Missing typed active run or lightweight run lane");
-  if (!["quick-fix", "lightweight", "guarded", "full-bmad"].includes(lane)) {
+  if (!["direct", "quick-fix", "lightweight", "guarded", "full-bmad"].includes(lane)) {
     return result("lane-closeout", false, `Unsupported closeout lane: ${lane}`);
   }
 
@@ -2664,7 +2766,7 @@ function main() {
   const adapter = args.adapter || findAdapter(args.repo);
   const registry = findPatternRegistry(args.repo, adapter);
   const checks = args.check === "all"
-    ? ["clean-tree", "preflight", "claims", "adapter-freshness", "pattern-registry", "reuse-before-create", "do-not-copy", "partial-workshape", "finding-promotion", "graduation-reconciliation", "vertical-slice", "test-authenticity", "guarded-test-floor", "actor-separation", "worker-scope", "evidence-manifest", "gate-verdict", "gate-decider", "source-reconciliation", "epic-context-pack", "current-context", "pr-review", "spec-readiness", "goal-coverage", "lane-selection", "lane-closeout", "lightweight-lifecycle", "lean-evidence", "control-dosing", "capability-change", "session-handoff", "seeded-epic-gates", "epic-boundary", "epic-transition-approval", "replan-counter"]
+    ? ["clean-tree", "preflight", "claims", "adapter-freshness", "pattern-registry", "reuse-before-create", "do-not-copy", "partial-workshape", "finding-promotion", "graduation-reconciliation", "vertical-slice", "test-authenticity", "guarded-test-floor", "actor-separation", "worker-scope", "evidence-manifest", "gate-verdict", "gate-decider", "source-reconciliation", "epic-context-pack", "current-context", "pr-review", "spec-readiness", "goal-coverage", "lane-selection", "lane-closeout", "direct-lifecycle", "lightweight-lifecycle", "lean-evidence", "control-dosing", "capability-change", "session-handoff", "seeded-epic-gates", "epic-boundary", "epic-transition-approval", "replan-counter"]
     : [args.check];
 
   const results = checks.map((check) => {
@@ -2693,6 +2795,7 @@ function main() {
     if (check === "goal-coverage") return checkGoalCoverage(args.repo);
     if (check === "lane-selection") return checkLaneSelection(args.repo);
     if (check === "lane-closeout") return checkLaneCloseout(args.repo, ledger, adapter, registry);
+    if (check === "direct-lifecycle") return checkDirectLifecycle(args.repo);
     if (check === "lightweight-lifecycle") return checkLightweightLifecycle(args.repo);
     if (check === "lean-evidence") return checkLeanEvidence(args.repo, ledger);
     if (check === "control-dosing") return checkControlDosing(args.repo);

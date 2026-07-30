@@ -1,6 +1,6 @@
 {
   "capabilityId": "control-dosing-enforcement",
-  "requestedIntent": "Turn ACEF's control-pricing rationale into a machine-readable lane/control dosing manifest with validator, lane-closeout consumer, dose-sensitive lean-evidence behavior, and installer support, so agents cannot silently rewrite which controls are required for quick-fix, lightweight, guarded, and full-BMAD lanes.",
+  "requestedIntent": "Turn ACEF's control-pricing rationale into a machine-readable lane/control dosing manifest with validator, lane-closeout consumer, dose-sensitive behavior, and installer support, so agents cannot silently rewrite which controls are required for direct, quick-fix, lightweight, guarded, and full-BMAD lanes.",
   "status": "enforced",
   "requiredLayers": [
     "docs",
@@ -28,6 +28,7 @@
     ],
     "tests": [
       "scripts/test-acef-control-dosing",
+      "scripts/test-acef-direct-lifecycle",
       "scripts/test-acef-lightweight-lifecycle",
       "scripts/test-acef-process-validator",
       "scripts/test-install-acef-tools"
@@ -37,7 +38,7 @@
     ]
   },
   "limitations": [
-    "This enforces the control dosing manifest, lane-closeout manifest-driven control selection, and lean-evidence lane-dose behavior; it does not replace the existing lane validators that verify actual run artifacts.",
+    "This enforces the control dosing manifest, lane-closeout manifest-driven control selection, direct's explicit no-ceremony dose, and lean-evidence behavior for heavier lanes; it does not replace the existing lane validators that verify actual run artifacts.",
     "Evidence manifests, gate verdicts, actor records, and surface evidence remain cooperative-local controls and do not provide cryptographic protection against a self-consistent forgery.",
     "Target repos must refresh ACEF tools before .acef/control-dosing.json and the control-dosing validator are installed locally."
   ],
@@ -65,6 +66,10 @@
     {
       "layer": "tests",
       "ref": "scripts/test-acef-control-dosing"
+    },
+    {
+      "layer": "tests",
+      "ref": "scripts/test-acef-direct-lifecycle"
     },
     {
       "layer": "tests",

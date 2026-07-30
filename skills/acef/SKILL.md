@@ -23,14 +23,15 @@ Evidence stays on disk; chat stays small.
 - In full-BMAD epics, create/use an Epic Context Pack before story workers so shared context is read once, not repeated
   every story.
 - Rebuild the current-context hot slice at every phase transition and validate it with `--check current-context`.
-- Never reduce gates, tests, ledgers, or worker evidence to save context.
+- Never silently reduce a selected lane's controls to save context. The explicit `direct` lane is the exception contract,
+  not an improvised downgrade.
 - In typed runs, use `.acef/bin/acef-state` for actor, worker-scope, evidence, gate, and approval records. JSON sidecars
   are machine truth; the Markdown ledger remains the human chronology.
 
 ## What This Agent Does
 
 1. Identify current state and next useful action.
-2. Bootstrap the active run before workers or deep planning.
+2. Bootstrap the active run before workers or deep planning, except for a contained direct task.
 3. Route the work through ACEF.
 4. Delegate to the right helper/persona skill.
 5. Verify durable evidence before saying `PASS`.
@@ -39,6 +40,13 @@ Evidence stays on disk; chat stays small.
 ## Required References By Situation
 
 Read only the references needed for the current step, but do read the selected files completely.
+
+**Direct short-circuit:** when the request is clearly reversible copy/style/local UI/config/docs/mechanical work or a
+localized bug fix with one technical boundary, do not load ACEF references, refresh the adapter, create a preflight,
+delivery ledger, current-context slice, worker scope, or separate actors. Write `docs/ai/ACEF_DIRECT_RUN.json` with
+`.acef/bin/acef-state direct-run`, make targeted repo reads, implement, record focused verification and handoff, then run
+`acef-process-validator --check lane-closeout`. Promote before continuing if the validator or discovered scope rejects
+direct.
 
 **Worker short-circuit (read this first):** if `docs/ai/ACEF_CURRENT_CONTEXT.md` exists and you are executing one
 assigned step as a scoped worker (developer, reviewer, test author), that file plus your worker scope IS your
@@ -59,9 +67,10 @@ conductor/router role only (`method/CONTEXT_POLICY.md` role budgets).
 - Research provenance only when needed: `references/ACEF_RESEARCH_FINDINGS.md`.
 - Project adapter/pattern registry if present in the target repo.
 
-## Non-Negotiable Start Sequence
+## Non-Direct Start Sequence
 
-Before any worker fan-out, source verification, deep workflow/template read, planning artifact, or implementation step:
+For every non-direct lane, before any worker fan-out, source verification, deep workflow/template read, planning
+artifact, or implementation step:
 
 1. Resolve the target repo/workspace where run artifacts live.
 2. Create `docs/ai/` if missing.

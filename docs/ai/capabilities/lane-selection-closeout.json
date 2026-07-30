@@ -15,14 +15,18 @@
     ],
     "workflow": [
       "schemas/active-run.schema.json",
+      "schemas/direct-run.schema.json",
       "scripts/lib/acef-state-parser.js#parseActiveRun",
-      "scripts/acef-state#writeActiveRun"
+      "scripts/lib/acef-state-parser.js#parseDirectRun",
+      "scripts/acef-state#writeActiveRun",
+      "scripts/acef-state#writeDirectRun"
     ],
     "validator": [
       "scripts/acef-process-validator#checkLaneSelection",
       "scripts/acef-process-validator#checkLaneCloseout"
     ],
     "tests": [
+      "scripts/test-acef-direct-lifecycle",
       "scripts/test-acef-lightweight-lifecycle",
       "scripts/test-acef-process-validator",
       "scripts/test-acef-typed-state-validator"
@@ -30,6 +34,7 @@
   },
   "limitations": [
     "Lane selection checks recorded riskTriggers and path-name risk inference; inference is heuristic and does not replace human review for unusual domain risks.",
+    "Direct lane selection additionally checks one inferred product surface, declared changed paths, reversibility, focused verification, and promotion triggers; it is enforced but not yet empirically proven in a target repository.",
     "Lane closeout bundles existing validator checks; future lane-specific rules must be added to the bundle explicitly."
   ],
   "evidence": [
@@ -42,12 +47,20 @@
       "ref": "schemas/active-run.schema.json"
     },
     {
+      "layer": "workflow",
+      "ref": "schemas/direct-run.schema.json"
+    },
+    {
       "layer": "validator",
       "ref": "scripts/acef-process-validator#checkLaneSelection"
     },
     {
       "layer": "validator",
       "ref": "scripts/acef-process-validator#checkLaneCloseout"
+    },
+    {
+      "layer": "tests",
+      "ref": "scripts/test-acef-direct-lifecycle"
     },
     {
       "layer": "tests",

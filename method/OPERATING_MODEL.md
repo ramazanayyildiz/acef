@@ -35,8 +35,8 @@ ACEF is lean by default. Lean mode never removes gates or evidence; it only limi
 
 Use the heaviest guarded/full-BMAD profile only where it pays for itself: money movement, RBAC/authorization, payout,
 PII, migrations, destructive actions, cross-module contracts, or new product workflows that need interview and brief
-approval. Small UI copy, labels, local text, and already-patterned mechanical edits should use quick-fix or lightweight
-profiles with the same evidence discipline but fewer artifacts.
+approval. Reversible copy, style, localized UI/config, docs, localized bug fixes, and already-patterned mechanical edits
+should use the `direct` lane: one compact task record, focused verification, and no separate lifecycle actors.
 
 ## Worker Context Budget
 
@@ -329,10 +329,17 @@ typed proof so quick fixes do not become unreviewed drive-by patches.
 
 | Lane | Use for | Mechanical controls |
 |---|---|---|
+| `direct` | Reversible, contained copy/style/local UI/config/docs/mechanical changes or localized bug fixes with one technical boundary. | `ACEF_DIRECT_RUN.json`: scope, acceptance, reversibility, changed paths, focused verification, compact handoff, and automatic promotion checks. No separate ATDD, reviewer, Process Judge, evidence manifest, runner proof, phase commits, or delivery ledger. |
 | `quick-fix` | BMAD-style Quick Dev / Quick Fix work: narrow bug fixes, tiny regressions, localized patches. | Compact lifecycle, independent review actor, computed fix envelope, repro evidence, before/after patch evidence, test-integrity validation, touched-surface validation, promotion triggers. |
 | `lightweight` | Low-risk compact feature/config/doc/mechanical work that is not primarily a defect fix. | Compact lifecycle, independent review actor, touched-surface validation, promotion triggers. |
 | `full-bmad` | Normal feature/story work needing full planning, phase separation, and Process Judge close. | Current context, epic context pack when applicable, actor separation, worker scope, evidence manifests, gate verdict, source reconciliation. |
 | `guarded` | Auth, payment, security, data migration/deletion, permissions, irreversible side effects, or high-risk boundaries. | Full typed closeout plus guarded test floor and independent boundary test author. |
+
+Direct tasks must promote before continuing when they become irreversible, touch more than one inferred product
+surface, expand beyond their declared paths, weaken tests, or encounter persistence, migration, auth/security/privacy,
+money, external-provider, realtime/concurrency/state-machine, tracking/reporting/analytics, or new-pattern work. Promote
+to `lightweight` for contained low-risk scope growth, `full-bmad` for coherent planning-heavy work, and `guarded` for
+high-risk boundaries.
 
 Quick fixes must promote to `full-bmad` or `guarded` when reproduction is unclear, the patch expands beyond the stated
 scope, the touched surface is high-risk, the fix creates a new pattern, or the after-patch evidence does not directly
@@ -348,15 +355,16 @@ bug surface.
 Parallel quick-fix workers need disjoint files and disjoint shared resources. Shared seeds, migrations, settings groups,
 fixtures, and shared UI sections count as conflicts even when filenames differ.
 
-Lane choice is a mechanical gate, not only a planning note. Typed active runs record `laneRationale` and `riskTriggers`.
-Run `acef-process-validator --check lane-selection` before dispatch or closeout; auth, payment, accounting/finance,
-invoice/billing, migration, deletion, security, token/session, webhook, tenant, PII, or irreversible triggers require
-`guarded`, while new patterns, broad refactors, CRM/notes/tracking/reporting workflows, multi-surface work, unclear
-reproduction, or feature work require `full-bmad` or `guarded`.
+Lane choice is a mechanical gate, not only a planning note. Direct work records its choice in
+`docs/ai/ACEF_DIRECT_RUN.json`; typed active runs record `laneRationale` and `riskTriggers`. Run
+`acef-process-validator --check lane-selection` before dispatch or closeout. Auth, payment, accounting/finance,
+invoice/billing, migration, deletion, security, token/session, webhook, tenant, PII, external-provider,
+realtime/concurrency/state-machine, or irreversible triggers require `guarded`, while new patterns, broad refactors,
+CRM/notes/tracking/reporting workflows, unclear reproduction, or scope expansion require `full-bmad` or `guarded`.
 The validator also infers obvious risk triggers from changed path names and fails when those inferred triggers were not
 declared.
 
-Planning or execution phases must also record the intake decision in `docs/ai/ACEF_ACTIVE_RUN.json`. The decision names
+Non-direct planning or execution phases must also record the intake decision in `docs/ai/ACEF_ACTIVE_RUN.json`. The decision names
 the route, confidence, clarifying questions that were asked, facts inferred without asking, and any unresolved questions.
 If no question was needed, the inference must be written down. Low/medium-confidence work must ask clarifying questions.
 `full-bmad` and `guarded` planning/execution require an approved interview brief and explicit execution approval. If
@@ -371,7 +379,7 @@ the rest.
 
 ### Active Run Bootstrap
 
-Before any worker fan-out, source verification, deep workflow/template read, planning artifact, or implementation step,
+Before any non-direct worker fan-out, source verification, deep workflow/template read, planning artifact, or implementation step,
 the conductor must create a resumable active run in the target repo/workspace.
 
 Required bootstrap order:

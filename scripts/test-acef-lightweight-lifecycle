@@ -180,6 +180,37 @@ try {
   assert.equal(ok.status, 0, ok.stderr || ok.stdout);
   assert.match(ok.stdout, /follows the compact lifecycle/);
 
+  const ordinaryFeature = makeRepo("ordinary-feature");
+  write(ordinaryFeature, "docs/ai/ACEF_ACTIVE_RUN.json", `${JSON.stringify({
+    runId: "RUN-ordinary-feature",
+    repo: "ordinary-feature",
+    lane: "lightweight",
+    laneRationale: "A scoped low-risk feature may use lightweight even when it has more than one declared surface.",
+    riskTriggers: ["feature", "multi-surface"],
+    status: "active",
+    activeStory: "ordinary feature",
+    activePhase: "intake",
+    ledgerPath: "docs/ai/ACEF_test_DELIVERY_AUDIT.md",
+  }, null, 2)}\n`);
+  const ordinarySelection = run(ordinaryFeature, "lane-selection");
+  assert.equal(ordinarySelection.status, 0, ordinarySelection.stdout);
+
+  const providerFeature = makeRepo("provider-feature");
+  write(providerFeature, "docs/ai/ACEF_ACTIVE_RUN.json", `${JSON.stringify({
+    runId: "RUN-provider-feature",
+    repo: "provider-feature",
+    lane: "lightweight",
+    laneRationale: "External-provider integration requires promotion.",
+    riskTriggers: ["external-provider"],
+    status: "active",
+    activeStory: "provider feature",
+    activePhase: "intake",
+    ledgerPath: "docs/ai/ACEF_test_DELIVERY_AUDIT.md",
+  }, null, 2)}\n`);
+  const providerSelection = run(providerFeature, "lane-selection");
+  assert.notEqual(providerSelection.status, 0);
+  assert.match(providerSelection.stdout, /requires guarded lane: external-provider/);
+
   const wrongOrder = makeRepo("wrong-order", (record) => {
     [record.steps[1], record.steps[2]] = [record.steps[2], record.steps[1]];
     return record;

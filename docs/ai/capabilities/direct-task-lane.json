@@ -1,0 +1,80 @@
+{
+  "capabilityId": "direct-task-lane",
+  "requestedIntent": "Add a genuinely minimal lane for reversible contained work so ordinary UI, copy, config, docs, mechanical changes, and localized bug fixes do not pay the lightweight six-step lifecycle cost.",
+  "status": "enforced",
+  "requiredLayers": [
+    "docs",
+    "schema",
+    "cli",
+    "validator",
+    "tests",
+    "installer"
+  ],
+  "implementedLayers": {
+    "docs": [
+      "method/OPERATING_MODEL.md#Lanes",
+      "method/DELIVERY_RULES.md#Lanes",
+      "method/CONTROL_RATIONALE.md#Control-Dosing-Table",
+      "method/TYPED_STATE.md",
+      "README.md",
+      "AGENTS.md#Lane-Entry",
+      "skills/acef/SKILL.md#Direct-short-circuit",
+      "skills/acef-router/SKILL.md#Routing-Procedure"
+    ],
+    "schema": [
+      "schemas/direct-run.schema.json",
+      "schemas/control-dosing.schema.json"
+    ],
+    "cli": [
+      "scripts/acef-state#writeDirectRun"
+    ],
+    "validator": [
+      "scripts/acef-process-validator#checkDirectLaneSelection",
+      "scripts/acef-process-validator#checkDirectLifecycle",
+      "scripts/acef-process-validator#directPromotionReasons"
+    ],
+    "tests": [
+      "scripts/test-acef-direct-lifecycle",
+      "scripts/test-acef-control-dosing",
+      "scripts/test-install-acef-tools",
+      "scripts/test-install-acef-skills"
+    ],
+    "installer": [
+      "scripts/install-acef-tools",
+      "scripts/install-acef-skills"
+    ]
+  },
+  "limitations": [
+    "Direct closeout records focused verification command and exit code but intentionally does not create evidence manifests or runner proof.",
+    "Path and risk inference is heuristic; unusual domain risk that is absent from paths and omitted from riskTriggers cannot be discovered mechanically.",
+    "Direct is limited to one attended, reversible technical boundary and must promote when scope, surface count, risk, or test-integrity checks expand.",
+    "This capability is enforced by schema/parser/validator and installer tests but has not yet been empirically proven on target-repository delivery runs."
+  ],
+  "evidence": [
+    {
+      "layer": "schema",
+      "ref": "schemas/direct-run.schema.json"
+    },
+    {
+      "layer": "cli",
+      "ref": "scripts/acef-state"
+    },
+    {
+      "layer": "validator",
+      "ref": "scripts/acef-process-validator"
+    },
+    {
+      "layer": "tests",
+      "ref": "scripts/test-acef-direct-lifecycle"
+    },
+    {
+      "layer": "installer",
+      "ref": "scripts/install-acef-tools"
+    },
+    {
+      "layer": "installer",
+      "ref": "scripts/install-acef-skills"
+    }
+  ],
+  "createdAt": "2026-07-30"
+}

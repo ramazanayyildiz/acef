@@ -6,7 +6,16 @@ const SURFACE_VALUES = new Set([
   "email", "notification", "webhook", "integration", "config", "database", "library", "internal",
 ]);
 
-const CONTROL_DOSING_LANES = ["quick-fix", "lightweight", "guarded", "full-bmad"];
+const CONTROL_DOSING_LANES = ["direct", "quick-fix", "lightweight", "guarded", "full-bmad"];
+const DIRECT_BOUNDARIES = [
+  "copy",
+  "style",
+  "localized-ui",
+  "localized-config",
+  "docs",
+  "localized-bugfix",
+  "internal-mechanical",
+];
 const CONTROL_DOSING_IDS = [
   "worker-scope",
   "cold-read-current-context",
@@ -515,6 +524,79 @@ function parseLightweightRun(filePath) {
   return record;
 }
 
+function parseDirectRun(filePath) {
+  const record = readJson(filePath);
+  requireFields(record, [
+    "schema",
+    "version",
+    "runId",
+    "lane",
+    "status",
+    "scope",
+    "acceptance",
+    "technicalBoundary",
+    "reversible",
+    "riskTriggers",
+    "promotion",
+  ], "direct run");
+  if (record.schema !== "acef.direct-run.v1") throw new Error("direct run schema must be acef.direct-run.v1");
+  if (typeof record.version !== "string" || !record.version.trim()) throw new Error("direct run version must be a non-empty string");
+  if (record.lane !== "direct") throw new Error("direct run lane must be direct");
+  requireEnum(record, "status", ["active", "complete", "promoted"], "direct run");
+  requireStringArray(record, "acceptance", "direct run", { nonEmpty: true });
+  requireEnum(record, "technicalBoundary", DIRECT_BOUNDARIES, "direct run");
+  if (record.reversible !== true) throw new Error("direct run must be reversible");
+  requireStringArray(record, "riskTriggers", "direct run");
+  if (record.baseCommit !== undefined && record.baseCommit !== null
+    && (typeof record.baseCommit !== "string" || record.baseCommit.length < 6)) {
+    throw new Error("direct run baseCommit must be null or a commit string of at least six characters");
+  }
+  if (record.changedPaths !== undefined) {
+    requireStringArray(record, "changedPaths", "direct run");
+    requireRelativePaths(record.changedPaths, "direct run changedPaths");
+  }
+  if (record.verification !== undefined) {
+    if (!Array.isArray(record.verification)) throw new Error("direct run verification must be an array");
+    for (const [index, item] of record.verification.entries()) {
+      if (!item || typeof item !== "object" || Array.isArray(item)) throw new Error(`direct run verification[${index}] must be an object`);
+      requireFields(item, ["command", "exitCode"], `direct run verification[${index}]`);
+      if (typeof item.command !== "string" || !item.command.trim()) throw new Error(`direct run verification[${index}].command must be a non-empty string`);
+      if (!Number.isInteger(item.exitCode)) throw new Error(`direct run verification[${index}].exitCode must be integer`);
+    }
+  }
+  requireObject(record, "promotion", "direct run");
+  requireFields(record.promotion, ["decision", "reasons"], "direct run promotion");
+  requireEnum(record.promotion, "decision", [
+    "stay-direct",
+    "promote-lightweight",
+    "promote-full-bmad",
+    "promote-guarded",
+  ], "direct run promotion");
+  requireStringArray(record.promotion, "reasons", "direct run promotion");
+  if (record.promotion.decision === "stay-direct" && record.promotion.reasons.length) {
+    throw new Error("direct run stay-direct decision cannot list promotion reasons");
+  }
+  if (record.promotion.decision !== "stay-direct" && !record.promotion.reasons.length) {
+    throw new Error("direct run promotion requires at least one reason");
+  }
+  if (record.handoff !== undefined) {
+    requireObject(record, "handoff", "direct run");
+    requireFields(record.handoff, ["summary", "unresolvedRisks"], "direct run handoff");
+    requireStringArray(record.handoff, "unresolvedRisks", "direct run handoff");
+  }
+  if (record.status === "complete") {
+    if (record.promotion.decision !== "stay-direct") throw new Error("complete direct run must stay-direct");
+    if (!record.changedPaths?.length) throw new Error("complete direct run requires changedPaths");
+    if (!record.verification?.length) throw new Error("complete direct run requires focused verification");
+    if (record.verification.some((item) => item.exitCode !== 0)) throw new Error("complete direct run requires successful focused verification");
+    if (!record.handoff) throw new Error("complete direct run requires handoff");
+  }
+  if (record.status === "promoted" && record.promotion.decision === "stay-direct") {
+    throw new Error("promoted direct run requires a promotion decision");
+  }
+  return record;
+}
+
 const workerFailureKinds = [
   "provider_rate_limit",
   "provider_auth",
@@ -709,7 +791,17 @@ function parseControlDosing(filePath) {
   }
 
   const hardRules = [
-    ["worker-scope", CONTROL_DOSING_LANES, "required"],
+    ["worker-scope", ["direct"], "not-required"],
+    ["cold-read-current-context", ["direct"], "not-required"],
+    ["active-run-next-action", ["direct"], "not-required"],
+    ["actor-records", ["direct"], "not-required"],
+    ["approval-receipts", ["direct"], "not-required"],
+    ["evidence-manifest", ["direct"], "not-required"],
+    ["runner-proof", ["direct"], "not-required"],
+    ["gate-verdict", ["direct"], "not-required"],
+    ["surface-contract", ["direct"], "not-required"],
+    ["lean-evidence", ["direct"], "not-required"],
+    ["worker-scope", ["quick-fix", "lightweight", "guarded", "full-bmad"], "required"],
     ["evidence-manifest", ["guarded", "full-bmad"], "required"],
     // V2 thinning (report-v2): runner-proof is required only for full-BMAD; guarded is
     // required-if-triggered (unattended/async), with the skeptical re-run as the attended backstop.
@@ -719,9 +811,9 @@ function parseControlDosing(filePath) {
     ["actor-records", ["guarded", "full-bmad"], "required"],
     ["cold-read-current-context", ["lightweight", "guarded", "full-bmad"], "required"],
     ["active-run-next-action", ["lightweight", "guarded", "full-bmad"], "required"],
-    ["surface-contract", CONTROL_DOSING_LANES, "required-if-triggered"],
+    ["surface-contract", ["quick-fix", "lightweight", "guarded", "full-bmad"], "required-if-triggered"],
     ["test-integrity", CONTROL_DOSING_LANES, "required-if-triggered"],
-    ["lean-evidence", CONTROL_DOSING_LANES, "required"],
+    ["lean-evidence", ["quick-fix", "lightweight", "guarded", "full-bmad"], "required"],
   ];
   for (const [controlId, lanes, requirement] of hardRules) {
     for (const lane of lanes) {
@@ -804,6 +896,7 @@ module.exports = {
   parseWorkflow,
   parsePrReview,
   parsePrReviewProfile,
+  parseDirectRun,
   parseLightweightRun,
   parseWorkerExecution,
   parseWorkerResult,

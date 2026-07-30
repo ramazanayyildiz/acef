@@ -167,13 +167,13 @@ Captures (each field cites a source path):
           <div class="grid">
             <div class="card" style="border-left-color:var(--blue)"><h3>Operating model</h3><p>Planner, Developer,
               Judge, Test Author, Documentation Maintainer, plus mechanical/standard/guarded tracks.</p></div>
-            <div class="card" style="border-left-color:var(--violet)"><h3>Four lanes</h3><p><code>quick-fix</code>,
-              <code>lightweight</code>, <code>full-bmad</code>, and <code>guarded</code> each have mechanical lane
+            <div class="card" style="border-left-color:var(--violet)"><h3>Five lanes</h3><p><code>direct</code>,
+              <code>quick-fix</code>, <code>lightweight</code>, <code>full-bmad</code>, and <code>guarded</code> each have mechanical lane
               selection and closeout bundles.</p></div>
             <div class="card" style="border-left-color:var(--blue)"><h3>Adapter memory</h3><p>Codemap snapshot,
               adapter living-knowledge, and run ledger stay separate so repo memory stays grounded and small.</p></div>
             <div class="card" style="border-left-color:var(--teal)"><h3>Conformance loop</h3><p>Reuse-before-create
-              runs in both lanes; every conformance finding becomes a patch, registry update, do-not-copy update,
+              runs where the selected lane requires it; every conformance finding becomes a patch, registry update, do-not-copy update,
               mechanical-check proposal, or human deferral.</p></div>
             <div class="card" style="border-left-color:var(--green)"><h3>Rule enforcement</h3><p>Method prose is not
               enforcement. Load-bearing rules move to machinery, fresh sharded workers, or just-in-time injection.</p></div>
@@ -324,14 +324,17 @@ Captures (each field cites a source path):
         </section>
 
         <section id="delivery"><h2><span class="ic" style="background:#f0eaff">⚙️</span>Delivery model</h2>
-          <p>ACEF runs one of two lanes, then applies process gates before anything is marked done.</p>
+          <p>ACEF selects one of five lanes and applies only that lane's closeout floor.</p>
           <table>
             <tr><th>Lane</th><th>Use when</th><th>Gate</th></tr>
+            <tr><td><strong>Direct</strong></td><td>Reversible contained work with one technical boundary</td><td>Scope, acceptance, changed paths, focused verification, handoff, promotion check</td></tr>
+            <tr><td><strong>Quick-fix</strong></td><td>Narrow reproduced bugs needing before/after evidence</td><td>Compact lifecycle and independent review</td></tr>
             <tr><td><strong>Lightweight</strong></td><td>Small, scoped, ongoing work</td><td>Planner / Developer / Judge, with mechanical · standard · guarded tracks</td></tr>
             <tr><td><strong>Full BMAD v2</strong></td><td>Epics, large features, core behavior, multi-module, or risky-and-large work</td><td>Real BMAD conductor/skills must resolve, and each phase must bind to a separate worker persona</td></tr>
+            <tr><td><strong>Guarded</strong></td><td>Security, money, migration, provider, realtime, concurrency, or state-machine boundaries</td><td>Full typed closeout plus guarded boundary-test floor</td></tr>
           </table>
           <div class="grid">
-            <div class="card" style="border-left-color:var(--rose)"><h3>Preflight + Story Judge</h3><p><code>ACEF_PREFLIGHT.md</code> must PASS before planning or implementation. Before a story/task is <code>done</code>, verify route, lane, track, skill paths, phase order, artifacts, and evidence.</p></div>
+            <div class="card" style="border-left-color:var(--rose)"><h3>Preflight + Story Judge</h3><p>Non-direct work requires <code>ACEF_PREFLIGHT.md</code> PASS before planning or implementation. Direct uses its compact task record and promotion check instead.</p></div>
             <div class="card" style="border-left-color:var(--teal)"><h3>Intake decision</h3><p>Before planning or execution, typed runs record the route decision, confidence, questions asked or inferred answers, and unresolved questions.</p></div>
             <div class="card" style="border-left-color:var(--violet)"><h3>Epic Process Judge</h3><p>Before epic close, verify drift audit, trace, epic test-review, E2E/user-flow evidence, manual QA ledger, product-done audit, retrospective, and status close.</p></div>
             <div class="card" style="border-left-color:var(--blue)"><h3>Surface-realism</h3><p>When a story creates the first reusable UI/runtime pattern, it needs a round-trip proof through the real surface before other stories reuse it. UI epics need representative E2E at close.</p></div>

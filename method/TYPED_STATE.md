@@ -10,6 +10,7 @@ state moves into typed sidecars and is read through one parser library.
 | Information | Canonical owner |
 |---|---|
 | Active run, lane, story, phase | `docs/ai/ACEF_ACTIVE_RUN.json` |
+| Direct task scope, focused verification, handoff, and promotion | `docs/ai/ACEF_DIRECT_RUN.json` |
 | Worker identity and context profile | `docs/ai/actors/*.json` |
 | Active worker write boundary | `docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json` |
 | Runtime command evidence | `docs/ai/evidence/*.json` |
@@ -30,6 +31,7 @@ older ACEF repos migrate.
 The first typed-state slice defines these contracts:
 
 - `schemas/active-run.schema.json`
+- `schemas/direct-run.schema.json`
 - `schemas/actor.schema.json`
 - `schemas/evidence.schema.json`
 - `schemas/gate.schema.json`
@@ -44,6 +46,10 @@ Install the repo-local tools, then use `.acef/bin/acef-state` instead of hand-au
 
 ```bash
 scripts/install-acef-tools --repo /path/to/repo
+
+.acef/bin/acef-state direct-run --repo . --run-id TASK-1 --status active \
+  --scope "Adjust local label" --acceptance "Requested label is visible" \
+  --technical-boundary localized-ui --reversible true
 
 .acef/bin/acef-state actor --repo . --id dev-4-1 --story "Story 4.1" \
   --phase development --role developer --client codex --context-profile developer
@@ -67,7 +73,7 @@ exit code. It also writes a deterministic `runnerProof` over the command, exit c
 raw artifact hash, and satisfied checks. It refuses to start when application paths are already dirty. A `PASS` gate must
 cite at least one successful evidence manifest whose raw hash, runner header, and runner proof still match.
 
-Actor, evidence, gate, and approval records are immutable. `ACEF_ACTIVE_RUN.json` and
+Actor, evidence, gate, and approval records are immutable. `ACEF_DIRECT_RUN.json`, `ACEF_ACTIVE_RUN.json`, and
 `ACEF_ACTIVE_WORKER_SCOPE.json` are atomic singletons and may be replaced only as the run advances.
 
 ## Validator Contract

@@ -79,7 +79,8 @@ business math; those semantics come from tests, review, and domain-specific asse
 
 Pricing guide:
 
-- Worker scope mechanically catches scope escape before writes; keep it in every lane.
+- Worker scope mechanically catches scope escape before writes; keep it in every lane except direct, which validates
+  declared changed paths in one attended session and promotes on expansion.
 - Cold-read and active-run context matter most for drift-prone, cross-session, or multi-agent work.
 - Evidence manifests, runner proof, and gate verdicts mainly defend against honest stale-output, wrong-commit,
   wrong-command, and chat-only evidence; they are most valuable for guarded, unattended, async, or later-audited work.
@@ -98,7 +99,7 @@ Use this table to choose full artifact, lighter form, or human/backstop check:
 
 | Control | Role | Required dose | Backstop if lighter |
 | --- | --- | --- | --- |
-| Worker scope | Active enforcement | All lanes; strict actor+path binding for guarded/full-BMAD | Human diff review is weaker and late |
+| Worker scope | Active enforcement | Quick-fix/lightweight/guarded/full-BMAD; strict actor+path binding for guarded/full-BMAD | Direct changed-path validation |
 | Cold-read/current context | Drift guard | Cross-session, multi-agent, or drift-prone work | Tight single-context quick fix |
 | Active run and `acef-next` | Next-action guard | Lightweight/guarded/full-BMAD; compact quick-fix form optional | Manual ledger/status check |
 | Actor records | Audit plus policy guard | Any independent workers/reviewers; required for guarded/full-BMAD | Real topology plus reviewer report |
@@ -106,9 +107,9 @@ Use this table to choose full artifact, lighter form, or human/backstop check:
 | Evidence manifest | Evidence guard | Guarded/full-BMAD/unattended; lighter command log for quick-fix/lightweight | Skeptical disk re-run |
 | Runner proof | Cooperative integrity guard | Full-BMAD; guarded only when unattended/async (v2 thinning) | Skeptical re-run and raw log inspection |
 | Gate verdict | Decision guard | Guarded/full-BMAD; lightweight closeout when typed gates are used | Manual closeout checklist |
-| Surface contract | Runtime floor | User-visible or persistence-affecting feature lanes | Manual browser/runtime persistence proof |
-| Test-integrity check | Test-gutting guard | Any lane where the worker edits tests | Reviewer assertion/skip/import diff |
-| Lean evidence | Evidence guard | All lanes; light for quick-fix, compact for lightweight, full for guarded/full-BMAD | Focused artifacts plus skeptical disk re-run |
+| Surface contract | Runtime floor | Non-direct user-visible/persistence feature lanes; direct keeps focused runtime verification and promotes on expansion | Manual browser/runtime persistence proof |
+| Test-integrity check | Test-gutting guard | Any lane where tests are edited | Reviewer assertion/skip/import diff |
+| Lean evidence | Evidence guard | Quick-fix/lightweight/guarded/full-BMAD; direct uses only its compact task record | Focused artifacts plus skeptical disk re-run |
 
 If another stronger backstop is present and cheaper for the lane, use the lighter form. If no backstop catches the
 failure mode before harm, keep the stronger control.
@@ -125,6 +126,8 @@ acef-process-validator --check control-dosing
 
 Trim by lane, not by deleting the safety model:
 
+- Direct: scope, acceptance, reversibility, changed paths, focused command/exit results, compact handoff, and automatic
+  promotion checks; no separate actors, ledger, evidence manifest, runner proof, or gate.
 - Quick-fix/operator: compact envelope, focused regression evidence, independent review, lightweight surface and
   test-integrity gates.
 - Lightweight: reuse-before-create, review, focused tests, and surface floors without full-BMAD actor matrices unless

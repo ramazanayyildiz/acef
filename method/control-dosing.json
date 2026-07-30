@@ -1,6 +1,6 @@
 {
   "schema": "acef.control-dosing.v1",
-  "version": "2026-06-28",
+  "version": "2026-07-30",
   "controls": [
     {
       "id": "worker-scope",
@@ -8,6 +8,12 @@
       "role": "active-enforcement",
       "trustCeiling": "mechanical",
       "laneDoses": {
+        "direct": {
+          "requirement": "not-required",
+          "dose": "none",
+          "enforcementLevel": "not-applicable",
+          "backstop": "The direct task record and automatic promotion checks replace a write hook for reversible contained work."
+        },
         "quick-fix": {
           "requirement": "required",
           "dose": "compact",
@@ -40,6 +46,12 @@
       "role": "active-guidance",
       "trustCeiling": "cooperative-local",
       "laneDoses": {
+        "direct": {
+          "requirement": "not-required",
+          "dose": "none",
+          "enforcementLevel": "not-applicable",
+          "backstop": "A direct task stays in one bounded session and records scope and acceptance in ACEF_DIRECT_RUN.json."
+        },
         "quick-fix": {
           "requirement": "required-if-triggered",
           "dose": "light",
@@ -72,6 +84,12 @@
       "role": "active-guidance",
       "trustCeiling": "cooperative-local",
       "laneDoses": {
+        "direct": {
+          "requirement": "not-required",
+          "dose": "none",
+          "enforcementLevel": "not-applicable",
+          "backstop": "The four-step direct contract is fixed: scope, implement, focused verify, handoff."
+        },
         "quick-fix": {
           "requirement": "optional",
           "dose": "light",
@@ -104,6 +122,12 @@
       "role": "audit-telemetry",
       "trustCeiling": "audit-only",
       "laneDoses": {
+        "direct": {
+          "requirement": "not-required",
+          "dose": "none",
+          "enforcementLevel": "not-applicable",
+          "backstop": "Direct work intentionally uses no separate implementation or review actor."
+        },
         "quick-fix": {
           "requirement": "required-if-triggered",
           "dose": "light",
@@ -136,6 +160,12 @@
       "role": "scope-guard",
       "trustCeiling": "human-confirmed",
       "laneDoses": {
+        "direct": {
+          "requirement": "not-required",
+          "dose": "none",
+          "enforcementLevel": "not-applicable",
+          "backstop": "Any scope expansion invalidates direct closeout and requires promotion before continuing."
+        },
         "quick-fix": {
           "requirement": "optional",
           "dose": "light",
@@ -168,6 +198,12 @@
       "role": "evidence-guard",
       "trustCeiling": "cooperative-local",
       "laneDoses": {
+        "direct": {
+          "requirement": "not-required",
+          "dose": "none",
+          "enforcementLevel": "not-applicable",
+          "backstop": "The direct record keeps only command and exit code for focused verification."
+        },
         "quick-fix": {
           "requirement": "optional",
           "dose": "light",
@@ -200,6 +236,12 @@
       "role": "evidence-guard",
       "trustCeiling": "cooperative-local",
       "laneDoses": {
+        "direct": {
+          "requirement": "not-required",
+          "dose": "none",
+          "enforcementLevel": "not-applicable",
+          "backstop": "Direct work uses attended focused verification and promotes when stronger provenance is warranted."
+        },
         "quick-fix": {
           "requirement": "optional",
           "dose": "light",
@@ -232,6 +274,12 @@
       "role": "decision-guard",
       "trustCeiling": "cooperative-local",
       "laneDoses": {
+        "direct": {
+          "requirement": "not-required",
+          "dose": "none",
+          "enforcementLevel": "not-applicable",
+          "backstop": "Successful focused verification plus the compact handoff closes a direct task."
+        },
         "quick-fix": {
           "requirement": "optional",
           "dose": "light",
@@ -264,6 +312,12 @@
       "role": "runtime-floor",
       "trustCeiling": "cooperative-local",
       "laneDoses": {
+        "direct": {
+          "requirement": "not-required",
+          "dose": "none",
+          "enforcementLevel": "not-applicable",
+          "backstop": "Multiple or high-risk surfaces force promotion before direct closeout."
+        },
         "quick-fix": {
           "requirement": "required-if-triggered",
           "dose": "compact",
@@ -296,6 +350,12 @@
       "role": "test-integrity-guard",
       "trustCeiling": "cooperative-local",
       "laneDoses": {
+        "direct": {
+          "requirement": "required-if-triggered",
+          "dose": "compact",
+          "enforcementLevel": "validator",
+          "backstop": "When tests change, the validator rejects assertion drops, new skips, and obvious matcher loosening."
+        },
         "quick-fix": {
           "requirement": "required-if-triggered",
           "dose": "compact",
@@ -328,6 +388,12 @@
       "role": "evidence-guard",
       "trustCeiling": "cooperative-local",
       "laneDoses": {
+        "direct": {
+          "requirement": "not-required",
+          "dose": "none",
+          "enforcementLevel": "not-applicable",
+          "backstop": "ACEF_DIRECT_RUN.json is the whole handoff; no separate evidence or ledger artifact is required."
+        },
         "quick-fix": {
           "requirement": "required",
           "dose": "light",
@@ -356,6 +422,7 @@
     }
   ],
   "laneBundles": {
+    "direct": [],
     "quick-fix": [
       "worker-scope",
       "lean-evidence"
@@ -386,5 +453,5 @@
       "lean-evidence"
     ]
   },
-  "notes": "This manifest defines control dose by lane. It does not replace the lane validators that verify actual run artifacts. V2 thinning (2026-07-02): runner-proof removed from the guarded bundle per report-v2 — no measured defect value on bounded single-step guarded work and the documented backstop (skeptical re-run) is available in attended guarded flows; full-bmad retains runner-proof for unattended/async work."
+  "notes": "This manifest defines control dose by lane. Direct uses only its compact lifecycle validator plus triggered test-integrity checks; it has no worker, reviewer, evidence-manifest, runner-proof, gate, or ledger controls. V2 thinning (2026-07-02): runner-proof removed from the guarded bundle per report-v2 — no measured defect value on bounded single-step guarded work and the documented backstop (skeptical re-run) is available in attended guarded flows; full-bmad retains runner-proof for unattended/async work."
 }

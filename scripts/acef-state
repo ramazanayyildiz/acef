@@ -8,6 +8,7 @@ const {
   parseActiveRun,
   parseActorRecord,
   parseApproval,
+  parseDirectRun,
   parseEvidenceManifest,
   parseGateVerdict,
   parseWorkerScope,
@@ -18,6 +19,7 @@ function usage() {
 
 Usage:
   acef-state active-run --repo <path> --run-id <id> --lane <lane> --status <status> --story <scope> --phase <phase> --ledger <path> [--route <route> --route-confidence low|medium|high] [--goal-description <text> --goal-user-facing true|false --goal-completion-mode backend-capability|product-workspace|internal] [options]
+  acef-state direct-run --repo <path> --run-id <id> --status active|complete|promoted --scope <scope> --acceptance <criterion>... --technical-boundary <kind> --reversible true [--changed-path <path>...] [--verification-command <command> --verification-exit-code <code>]... [options]
   acef-state actor --repo <path> --id <id> --story <scope> --phase <phase> --role <role> --client <client> --context-profile <profile> [options]
   acef-state worker-scope --repo <path> --story <scope> --phase <phase> --worker-id <id> --allow <glob>... [--surface <name>...] [--pattern-use <kind>] [--requires-round-trip true|false] [--binding <input>><output>:<field>[:defaultMaskingRisk]] [options]
   acef-state approval --repo <path> --id <id> --decision APPROVE|REJECT|ACCEPT_RISK --scope <scope> --quote <exact human words> [options]
@@ -29,7 +31,7 @@ Record files are written under docs/ai. Immutable records refuse overwrite; acti
 
 function parseArgs(argv) {
   const [command, ...rest] = argv;
-  const opts = { command, repo: process.cwd(), allow: [], satisfies: [], evidence: [], surface: [], surfaceEvidence: [], binding: [], bindingEvidence: [], riskTrigger: [], clarifyingQuestion: [], inferredAnswer: [], unresolvedQuestion: [], requiredSurface: [], coveredSurface: [], goalEvidence: [], goalMissing: [], commandArgv: [] };
+  const opts = { command, repo: process.cwd(), allow: [], satisfies: [], evidence: [], surface: [], surfaceEvidence: [], binding: [], bindingEvidence: [], riskTrigger: [], clarifyingQuestion: [], inferredAnswer: [], unresolvedQuestion: [], requiredSurface: [], coveredSurface: [], goalEvidence: [], goalMissing: [], acceptance: [], changedPath: [], verificationCommand: [], verificationExitCode: [], unresolvedRisk: [], promotionReason: [], commandArgv: [] };
   for (let index = 0; index < rest.length; index += 1) {
     const arg = rest[index];
     if (arg === "--") {
@@ -45,7 +47,7 @@ function parseArgs(argv) {
     const value = rest[index + 1];
     if (value === undefined || value.startsWith("--")) throw new Error(`Missing value for ${arg}`);
     index += 1;
-    if (["allow", "satisfies", "evidence", "surface", "surfaceEvidence", "binding", "bindingEvidence", "riskTrigger", "clarifyingQuestion", "inferredAnswer", "unresolvedQuestion", "requiredSurface", "coveredSurface", "goalEvidence", "goalMissing"].includes(key)) opts[key].push(value);
+    if (["allow", "satisfies", "evidence", "surface", "surfaceEvidence", "binding", "bindingEvidence", "riskTrigger", "clarifyingQuestion", "inferredAnswer", "unresolvedQuestion", "requiredSurface", "coveredSurface", "goalEvidence", "goalMissing", "acceptance", "changedPath", "verificationCommand", "verificationExitCode", "unresolvedRisk", "promotionReason"].includes(key)) opts[key].push(value);
     else opts[key] = value;
   }
   opts.repo = path.resolve(opts.repo);
@@ -205,7 +207,7 @@ function dirtyDigest(repo) {
 function isControlPath(filePath) {
   const normalized = filePath.replaceAll(path.sep, "/");
   return /^docs\/ai\/(?:actors|evidence|gates|approvals)\//.test(normalized)
-    || /^docs\/ai\/ACEF_(?:ACTIVE_RUN|ACTIVE_WORKER_SCOPE|CURRENT_CONTEXT|ACTIVE_LEDGER)(?:\.json)?$/.test(normalized)
+    || /^docs\/ai\/ACEF_(?:ACTIVE_RUN|ACTIVE_WORKER_SCOPE|CURRENT_CONTEXT|ACTIVE_LEDGER|DIRECT_RUN)(?:\.json)?$/.test(normalized)
     || /^docs\/ai\/ACEF_.*_DELIVERY_AUDIT\.md$/.test(normalized);
 }
 
@@ -282,6 +284,56 @@ function writeActiveRun(opts) {
   const target = path.join(opts.repo, "docs", "ai", "ACEF_ACTIVE_RUN.json");
   atomicJson(target, record, { overwrite: true, validate: parseActiveRun });
   console.log(`WROTE active-run ${relative(opts.repo, target)}`);
+}
+
+function writeDirectRun(opts) {
+  required(opts, ["runId", "status"]);
+  const target = path.join(opts.repo, "docs", "ai", "ACEF_DIRECT_RUN.json");
+  const existing = fs.existsSync(target) ? parseDirectRun(target) : null;
+  const previous = existing?.runId === opts.runId ? existing : null;
+  const verification = opts.verificationCommand.length || opts.verificationExitCode.length
+    ? opts.verificationCommand.map((command, index) => ({
+      command,
+      exitCode: Number(opts.verificationExitCode[index]),
+    }))
+    : (previous?.verification || []);
+  if (opts.verificationCommand.length !== opts.verificationExitCode.length) {
+    throw new Error("direct-run requires one --verification-exit-code for each --verification-command");
+  }
+  if (verification.some((item) => !Number.isInteger(item.exitCode))) {
+    throw new Error("direct-run verification exit codes must be integers");
+  }
+  const promotionDecision = opts.promotionDecision || previous?.promotion?.decision || "stay-direct";
+  const record = {
+    schema: "acef.direct-run.v1",
+    version: "1.0.0",
+    runId: opts.runId,
+    lane: "direct",
+    status: opts.status,
+    scope: opts.scope || previous?.scope || "",
+    acceptance: opts.acceptance.length ? opts.acceptance : (previous?.acceptance || []),
+    technicalBoundary: opts.technicalBoundary || previous?.technicalBoundary || "",
+    reversible: opts.reversible !== undefined
+      ? parseBoolean(opts.reversible, "--reversible")
+      : previous?.reversible,
+    riskTriggers: opts.riskTrigger.length ? opts.riskTrigger : (previous?.riskTriggers || []),
+    baseCommit: opts.baseCommit || previous?.baseCommit || gitCommit(opts.repo),
+    changedPaths: opts.changedPath.length ? opts.changedPath : (previous?.changedPaths || []),
+    verification,
+    promotion: {
+      decision: promotionDecision,
+      reasons: opts.promotionReason.length ? opts.promotionReason : (previous?.promotion?.reasons || []),
+    },
+    handoff: opts.summary || opts.unresolvedRisk.length
+      ? {
+        summary: opts.summary || previous?.handoff?.summary || "",
+        unresolvedRisks: opts.unresolvedRisk.length ? opts.unresolvedRisk : (previous?.handoff?.unresolvedRisks || []),
+      }
+      : (previous?.handoff || undefined),
+    updatedAt: new Date().toISOString(),
+  };
+  atomicJson(target, record, { overwrite: true, validate: parseDirectRun });
+  console.log(`WROTE direct-run ${relative(opts.repo, target)} status=${record.status}`);
 }
 
 function writeActor(opts) {
@@ -462,6 +514,7 @@ function main() {
   if (!opts.command || opts.command === "help" || opts.command === "--help") return usage();
   runGit(opts.repo, ["rev-parse", "--git-dir"]);
   if (opts.command === "active-run") return writeActiveRun(opts);
+  if (opts.command === "direct-run") return writeDirectRun(opts);
   if (opts.command === "actor") return writeActor(opts);
   if (opts.command === "worker-scope") return writeWorkerScope(opts);
   if (opts.command === "approval") return writeApproval(opts);

@@ -2,6 +2,18 @@
 
 This is the short entry point for fresh agents working on ACEF.
 
+## Lane Entry
+
+Before bootstrapping the normal ACEF lifecycle, read `skills/acef/SKILL.md` and `skills/acef-router/SKILL.md` and
+evaluate whether the work qualifies for the `direct` lane.
+
+- Use `direct` only for a reversible, contained change with one technical boundary and one product surface.
+- Record it in `docs/ai/ACEF_DIRECT_RUN.json` through `acef-state direct-run`.
+- Promote before continuing when persistence, security/privacy, money, provider integration, realtime,
+  concurrency/fencing, state-machine, tracking/reporting/analytics, a new pattern, scope expansion, test weakening, or
+  failed verification appears.
+- Do not bootstrap the active-run ledger, worker/reviewer actors, or the full lifecycle for a valid direct task.
+
 ## First Checks
 
 Before reporting that an ACEF flow, gate, lane, reviewer, worker role, hook, validator, or enforcement change is

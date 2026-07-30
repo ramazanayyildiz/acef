@@ -16,8 +16,9 @@
     "laneBundles": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["quick-fix", "lightweight", "guarded", "full-bmad"],
+      "required": ["direct", "quick-fix", "lightweight", "guarded", "full-bmad"],
       "properties": {
+        "direct": { "$ref": "#/$defs/controlIds" },
         "quick-fix": { "$ref": "#/$defs/controlIds" },
         "lightweight": { "$ref": "#/$defs/controlIds" },
         "guarded": { "$ref": "#/$defs/controlIds" },
@@ -74,8 +75,9 @@
         "laneDoses": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["quick-fix", "lightweight", "guarded", "full-bmad"],
+          "required": ["direct", "quick-fix", "lightweight", "guarded", "full-bmad"],
           "properties": {
+            "direct": { "$ref": "#/$defs/dose" },
             "quick-fix": { "$ref": "#/$defs/dose" },
             "lightweight": { "$ref": "#/$defs/dose" },
             "guarded": { "$ref": "#/$defs/dose" },

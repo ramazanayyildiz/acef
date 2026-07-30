@@ -26,14 +26,15 @@ later preflight records resolved paths/commands and evidence.
 Do not start implementation, tests, installs, or broad repo scans unless the user explicitly approves that next step.
 
 Ask at most three yes/no clarifying questions before choosing a provisional route. If confidence is low or risk is
-high, route upward to the safer/larger path; never route downward to reduce ceremony.
+high, route upward to the safer/larger path. Selecting `direct` for work that satisfies its explicit reversible,
+single-boundary contract is correct routing, not a ceremony waiver.
 
 Before planning, dispatch, or implementation, run `spec-readiness` for thin, broad, product-shaped, CRM/notes/tracking,
 finance/accounting, persistence, RBAC, schema, PII, or money-related requests and write
 `docs/ai/ACEF_SPEC_READINESS.json`. The dispatcher must not proceed unless that verdict is `PASS` or a reversible
 low-risk exception has explicit human risk acceptance.
 
-Also record the route decision in `docs/ai/ACEF_ACTIVE_RUN.json` as
+Except for direct tasks, also record the route decision in `docs/ai/ACEF_ACTIVE_RUN.json` as
 `intakeDecision`: selected route, confidence, clarifying questions asked, facts inferred without asking, unresolved
 questions, interview brief approval, and execution approval. If no question was needed, record the inference. If the
 idea is thin, broad, CRM/notes/tracking/reporting/accounting/finance-related, or medium/low confidence, interview for
@@ -48,8 +49,9 @@ details before producing a spec or plan. If unresolved questions remain, do not 
    - requirement clear or unclear?
    - platform if relevant?
    - likely risk: multi-repo, new pattern/contract, auth/payment/data/migration?
-2. Check whether a project adapter exists and is fresh.
+2. For non-direct candidates, check whether a project adapter exists and is fresh. Direct uses only targeted repo reads.
 3. Choose one route:
+   - Direct: reversible contained change with one technical boundary
    - A: small feature
    - B: large feature
    - C: bug fix
@@ -69,6 +71,10 @@ details before producing a spec or plan. If unresolved questions remain, do not 
 ## Confidence And Escalation
 
 Start with the smallest plausible route, then escalate when evidence requires it.
+
+Promote direct to Route A/B/C when it is irreversible, crosses more than one product surface, expands beyond declared
+paths, needs a new pattern, or touches persistence, auth/security/privacy, money, migration, provider integration,
+realtime/concurrency/state-machine, tracking/reporting/analytics.
 
 Escalate from Route A to Route B when:
 - more than one module/repo is affected

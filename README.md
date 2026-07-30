@@ -45,7 +45,9 @@ ACEF is one package that unifies **five layers** — the actual delivery engine,
 3. **BMAD v2 heavy lane** — the full story lifecycle for epics / risky work (drives BMAD-METHOD, with a hard
    installed-skill preflight). `method/BMAD_V2_LANE.md`
 4. **Codemap / project adapter** — grounds everything in *your* real repo and extracts the pattern registry for conformance, including local generation docs, skills, stubs, and the registration/discoverability/runtime evidence that defines a complete work shape (evidence-pinned, no embeddings). `skills/map-codebase` + `skills/acef-adapter`
-5. **Delivery rules (the glue)** — which layer runs for which work: small/ongoing → lightweight lane, epics → BMAD v2 or the guarded lane at epic scale (guarded stories + the mandatory capstone close, validated live before codification: `method/GUARDED_LANE.md`), with a promotion path. `method/DELIVERY_RULES.md`
+5. **Delivery rules (the glue)** — which layer runs for which work: reversible contained changes → direct, scoped work
+   → lightweight/quick-fix, epics → BMAD v2, and high-risk boundaries → guarded, with mechanical promotion paths.
+   `method/DELIVERY_RULES.md`
 
 A front-door agent (`acef`) ties them together and routes each request, so the user never has to pick a layer, route, or skill.
 
@@ -76,7 +78,7 @@ method/      The delivery engine — how the work actually runs
   PATTERN_REGISTRY.md  machine-readable conformance registry contract
   PRODUCT_RISK_MODEL.md domain-agnostic product risk / edge-case modeling method (documented-only)
   RULE_ENFORCEMENT_MAP.md  which rules are machinery/shard/JIT vs documentation-only
-  DELIVERY_RULES.md    two lanes + promotion — the glue (Layer 5)
+  DELIVERY_RULES.md    lane selection + promotion — the glue (Layer 5)
 skills/      The ACEF agent skills you install into Claude Code
   acef/ acef-adapter/ acef-router/ acef-specify/ acef-test-bootstrap/ acef-release-adapter/   orchestration + adapter memory
   map-codebase/                                                          codemap + pattern registry / repo grounding (Layer 4)
@@ -130,10 +132,17 @@ files the agent follows. No build, no npm, no services.
    cp -R skills/* ~/.claude/skills/
    ```
    Prefer repo-local `.claude/skills/`, `.codex/skills/`, and `.opencode/skills/` for project-specific ACEF work.
-3. **Use it** — open your own repo and run `/acef` (or just say "use acef"). It extracts your project adapter, routes
-   your request, picks the lane (lightweight vs BMAD v2 per `method/DELIVERY_RULES.md`), and runs only the steps that
-   case needs.
-   For concrete work, ACEF first creates a target-run ledger, sets `ACEF_ACTIVE_LEDGER` or
+3. **Use it** — open your own repo and run `/acef` (or just say "use acef"). It routes the request and selects direct,
+   quick-fix, lightweight, full-BMAD, or guarded per `method/DELIVERY_RULES.md`.
+   Direct tasks use a targeted repo read without adapter refresh or a delivery ledger:
+   ```bash
+   .acef/bin/acef-state direct-run --repo . --run-id TASK-1 --status active \
+     --scope "Adjust the local label" --acceptance "The requested label is visible" \
+     --technical-boundary localized-ui --reversible true
+   ```
+   Complete the same record with changed paths, focused verification command/exit results, and a short summary, then run
+   `.acef/bin/acef-process-validator --repo . --check lane-closeout`. Non-direct concrete work first creates a target-run
+   ledger, sets `ACEF_ACTIVE_LEDGER` or
    `docs/ai/ACEF_ACTIVE_LEDGER`, and writes a `Session Handoff` before worker fan-out or deep planning.
    A fresh agent should start from repo truth, not chat memory:
    ```bash
@@ -170,8 +179,8 @@ files the agent follows. No build, no npm, no services.
    The dispatcher only forwards to a repo-local `.acef/hooks/acef-bmad-hard-wall.mjs` when one exists; repos without a
    local ACEF hook are allowed. The portable hook package lives in `claude-plugins/acef-bmad-guard/` for plugin-based
    Claude installs.
-   Lightweight runs should create `.acef-lightweight-lane` or `.acef-lane`; full BMAD runs use `.acef-bmad-lane` or
-   BMAD runtime markers.
+   Direct runs intentionally use no guard marker or worker-scope hook. Lightweight runs should create
+   `.acef-lightweight-lane` or `.acef-lane`; full BMAD runs use `.acef-bmad-lane` or BMAD runtime markers.
    To scope hook conformance checks to the current run, set `ACEF_ACTIVE_LEDGER` or write the active ledger path into
    `docs/ai/ACEF_ACTIVE_LEDGER`.
    For implementation workers, also write `docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json` before dispatch. It binds the worker
@@ -416,7 +425,7 @@ epic cannot start until the prior epic gate is `PASS`.
 
 ACEF separates implementation review from process review:
 
-- **Preflight artifact** (`docs/ai/ACEF_PREFLIGHT.md` by default) is required before planning, implementation, test
+- **Preflight artifact** (`docs/ai/ACEF_PREFLIGHT.md` by default) is required before non-direct planning, implementation, test
   generation, release, or done-state changes. It records route/lane/track, required skills, resolved paths, adapter
   freshness, test setup, API/backend source of truth, risk gates, approvals, and a `PASS` / `FAIL` / `HALT` verdict.
 - **Judge** reviews the change and returns `MERGE` / `REVISE` / `REPLAN`.

@@ -9,6 +9,24 @@ or evidence contract. Do not use it to claim implementation status; link to the 
 
 ## Unreleased
 
+### Direct task lane
+
+- Added the `direct` lane for reversible copy, style, localized UI/config/docs/mechanical changes and localized bug
+  fixes that stay inside one technical boundary.
+- Added `schemas/direct-run.schema.json`, `acef-state direct-run`, and
+  `docs/ai/ACEF_DIRECT_RUN.json`: one compact record carries scope, acceptance, reversibility, changed paths, focused
+  command/exit verification, handoff, and promotion disposition.
+- Added `direct-lifecycle` validation and wired `lane-selection`/`lane-closeout` so inferred high-risk paths,
+  multiple product surfaces, undeclared changed paths, failed verification, and obvious test weakening block direct
+  closeout and require promotion.
+- Direct intentionally skips adapter refresh, preflight, active-run bootstrap, worker scope, separate ATDD/reviewer/
+  Process Judge actors, delivery ledger, evidence manifests, runner proof, gate verdict, and phase commits.
+- Extended the control-dosing manifest and installer/test coverage for the fifth lane. Added
+  `docs/ai/capabilities/direct-task-lane.json` with status `enforced`; empirical target-repo proof remains pending.
+- Refined lane triggers: provider integration, realtime, concurrency/fencing, and state-machine work route to guarded;
+  generic feature and multi-surface labels no longer automatically force full-BMAD, while direct still promotes on
+  multiple inferred surfaces.
+
 ### Cockpit borrow table verified — Watchfire/Archon/Chorus decoded
 
 - Added `docs/research/cockpit-tool-decodes-2026-07-07.md`: three borrow-table tools decoded by parallel research
@@ -28,7 +46,8 @@ or evidence contract. Do not use it to claim implementation status; link to the 
 - V1 JSON contract now carries `product_done` (persona-walk evidence, `self_certified_only`, `stale_evidence`) from the
   O2 dev-done-vs-product-done finding, and a `decision_queue` aggregating product-risk `DECISION`/`UNVERIFIED` items.
 - Success criteria rewritten operator-shaped (visibility questions answerable without grepping), not token-shaped.
-- Added `docs/ai/capabilities/cockpit-state-viewer.json` with status `specified`. No `acef-cockpit*` script exists yet.
+- Added `docs/ai/capabilities/cockpit-state-viewer.json` with status `documented-only`. The JSON/table contract is
+  method documentation; no schema, artifact, `acef-cockpit*` script, tests, or installer exists yet.
 
 ### Product risk model documented
 

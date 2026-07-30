@@ -36,6 +36,7 @@ try {
   const parser = path.join(tmp, ".acef", "bin", "lib", "acef-state-parser.js");
   const installationHelper = path.join(tmp, ".acef", "bin", "lib", "acef-installation.js");
   const schema = path.join(tmp, ".acef", "schemas", "active-run.schema.json");
+  const directSchema = path.join(tmp, ".acef", "schemas", "direct-run.schema.json");
   const capabilitySchema = path.join(tmp, ".acef", "schemas", "capability-change.schema.json");
   const controlDosingSchema = path.join(tmp, ".acef", "schemas", "control-dosing.schema.json");
   const controlDosingManifest = path.join(tmp, ".acef", "control-dosing.json");
@@ -51,6 +52,7 @@ try {
   if (!fs.existsSync(parser)) throw new Error("parser support library was not installed");
   if (!fs.existsSync(installationHelper)) throw new Error("installation support library was not installed");
   if (!fs.existsSync(schema)) throw new Error("typed-state schemas were not installed");
+  if (!fs.existsSync(directSchema)) throw new Error("direct-run schema was not installed");
   if (!fs.existsSync(capabilitySchema)) throw new Error("capability-change schema was not installed");
   if (!fs.existsSync(controlDosingSchema)) throw new Error("control-dosing schema was not installed");
   if (!fs.existsSync(controlDosingManifest)) throw new Error("control-dosing manifest was not installed");
@@ -106,6 +108,30 @@ try {
   run("git", ["config", "user.name", "ACEF Test"], { cwd: tmp });
   run("git", ["add", "."], { cwd: tmp });
   run("git", ["commit", "-qm", "fixture"], { cwd: tmp });
+  run(state, [
+    "direct-run", "--repo", tmp,
+    "--run-id", "DIRECT-install-test",
+    "--status", "active",
+    "--scope", "Add a local direct-lane fixture.",
+    "--acceptance", "The fixture parses successfully.",
+    "--technical-boundary", "internal-mechanical",
+    "--reversible", "true",
+  ]);
+  fs.mkdirSync(path.join(tmp, "src"), { recursive: true });
+  fs.writeFileSync(path.join(tmp, "src", "direct.js"), "export const direct = true;\n");
+  run(state, [
+    "direct-run", "--repo", tmp,
+    "--run-id", "DIRECT-install-test",
+    "--status", "complete",
+    "--changed-path", "src/direct.js",
+    "--verification-command", "node --check src/direct.js",
+    "--verification-exit-code", "0",
+    "--summary", "Installed direct lane writes and validates its compact task record.",
+  ]);
+  const directOutput = run(validator, ["--repo", tmp, "--check", "direct-lifecycle"]);
+  if (!directOutput.includes("PASS direct-lifecycle:")) {
+    throw new Error(`installed validator did not validate direct lifecycle:\n${directOutput}`);
+  }
   run(state, [
     "active-run", "--repo", tmp,
     "--run-id", "RUN-install-test",

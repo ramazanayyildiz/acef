@@ -1,0 +1,177 @@
+#!/usr/bin/env node
+const fs = require("node:fs");
+const os = require("node:os");
+const path = require("node:path");
+const cp = require("node:child_process");
+
+const acefRoot = path.resolve(__dirname, "..");
+const validator = path.join(acefRoot, "scripts", "acef-process-validator");
+const state = path.join(acefRoot, "scripts", "acef-state");
+const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "acef-direct-"));
+
+function run(command, args, cwd, allowFailure = false) {
+  const proc = cp.spawnSync(command, args, {
+    cwd,
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  const output = `${proc.stdout || ""}${proc.stderr || ""}`;
+  if (!allowFailure && proc.status !== 0) throw new Error(`${command} ${args.join(" ")} failed:\n${output}`);
+  return { status: proc.status, output };
+}
+
+function write(repo, relativePath, text) {
+  const filePath = path.join(repo, relativePath);
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  fs.writeFileSync(filePath, text);
+}
+
+function record(overrides = {}) {
+  return {
+    schema: "acef.direct-run.v1",
+    version: "1.0.0",
+    runId: "DIRECT-1",
+    lane: "direct",
+    status: "complete",
+    scope: "Adjust the local replay button label.",
+    acceptance: ["The replay button uses the requested label."],
+    technicalBoundary: "localized-ui",
+    reversible: true,
+    riskTriggers: [],
+    baseCommit: null,
+    changedPaths: ["src/ui/replay-button.js"],
+    verification: [{ command: "node --check src/ui/replay-button.js", exitCode: 0 }],
+    promotion: { decision: "stay-direct", reasons: [] },
+    handoff: { summary: "Updated the local replay button label.", unresolvedRisks: [] },
+    ...overrides,
+  };
+}
+
+function makeRepo(name, mutateRecord = null) {
+  const repo = path.join(tmpRoot, name);
+  fs.mkdirSync(repo, { recursive: true });
+  write(repo, "src/ui/replay-button.js", "export const label = 'Replay';\n");
+  write(repo, ".acef/control-dosing.json", fs.readFileSync(path.join(acefRoot, "method", "control-dosing.json"), "utf8"));
+  run("git", ["init", "-q"], repo);
+  run("git", ["config", "user.email", "acef@example.test"], repo);
+  run("git", ["config", "user.name", "ACEF Test"], repo);
+  run("git", ["add", "."], repo);
+  run("git", ["commit", "-qm", "fixture"], repo);
+  const baseCommit = run("git", ["rev-parse", "HEAD"], repo).output.trim();
+  write(repo, "src/ui/replay-button.js", "export const label = 'Watch replay';\n");
+  const value = record({ baseCommit });
+  if (mutateRecord) mutateRecord(value, repo);
+  write(repo, "docs/ai/ACEF_DIRECT_RUN.json", `${JSON.stringify(value, null, 2)}\n`);
+  return repo;
+}
+
+function check(repo, name) {
+  return run(process.execPath, [validator, "--repo", repo, "--check", name], repo, true);
+}
+
+function expectPass(repo, name) {
+  const result = check(repo, name);
+  if (result.status !== 0 || !result.output.includes(`PASS ${name}:`)) {
+    throw new Error(`${name} expected PASS:\n${result.output}`);
+  }
+}
+
+function expectFail(repo, name, pattern) {
+  const result = check(repo, name);
+  if (result.status === 0 || !pattern.test(result.output)) {
+    throw new Error(`${name} expected ${pattern} failure:\n${result.output}`);
+  }
+}
+
+try {
+  const valid = makeRepo("valid");
+  expectPass(valid, "lane-selection");
+  expectPass(valid, "direct-lifecycle");
+  expectPass(valid, "lane-closeout");
+
+  const risky = makeRepo("risky", (value) => {
+    value.riskTriggers = ["security"];
+  });
+  expectFail(risky, "lane-selection", /direct task must promote: risk trigger security/);
+  expectFail(risky, "direct-lifecycle", /direct task must promote: risk trigger security/);
+
+  const provider = makeRepo("provider", (value, repo) => {
+    write(repo, "src/integrations/vimeo-client.js", "export const provider = 'vimeo';\n");
+    value.changedPaths.push("src/integrations/vimeo-client.js");
+  });
+  expectFail(provider, "direct-lifecycle", /risk trigger external-provider/);
+
+  const multiSurface = makeRepo("multi-surface", (value, repo) => {
+    write(repo, "src/api/replay-route.js", "export const route = '/replay';\n");
+    value.changedPaths.push("src/api/replay-route.js");
+  });
+  expectFail(multiSurface, "direct-lifecycle", /multiple inferred surfaces: ui, api|multiple inferred surfaces: api, ui/);
+
+  const undeclared = makeRepo("undeclared", (value, repo) => {
+    write(repo, "src/ui/extra.js", "export const extra = true;\n");
+  });
+  expectFail(undeclared, "direct-lifecycle", /changed path outside direct task record: src\/ui\/extra\.js/);
+
+  const active = makeRepo("active", (value) => {
+    value.status = "active";
+    delete value.changedPaths;
+    delete value.verification;
+    delete value.handoff;
+  });
+  expectFail(active, "direct-lifecycle", /closeout requires complete/);
+
+  const failedVerification = makeRepo("failed-verification", (value) => {
+    value.verification[0].exitCode = 1;
+  });
+  expectFail(failedVerification, "direct-lifecycle", /complete direct run requires successful focused verification/);
+
+  const cliRepo = path.join(tmpRoot, "cli");
+  fs.mkdirSync(cliRepo, { recursive: true });
+  write(cliRepo, "src/config.js", "export const enabled = false;\n");
+  run("git", ["init", "-q"], cliRepo);
+  run("git", ["config", "user.email", "acef@example.test"], cliRepo);
+  run("git", ["config", "user.name", "ACEF Test"], cliRepo);
+  run("git", ["add", "."], cliRepo);
+  run("git", ["commit", "-qm", "fixture"], cliRepo);
+  run(process.execPath, [
+    state,
+    "direct-run",
+    "--repo", cliRepo,
+    "--run-id", "DIRECT-CLI",
+    "--status", "active",
+    "--scope", "Toggle a local config default.",
+    "--acceptance", "The local default is enabled.",
+    "--technical-boundary", "localized-config",
+    "--reversible", "true",
+  ], cliRepo);
+  write(cliRepo, "src/config.js", "export const enabled = true;\n");
+  run(process.execPath, [
+    state,
+    "direct-run",
+    "--repo", cliRepo,
+    "--run-id", "DIRECT-CLI",
+    "--status", "complete",
+    "--changed-path", "src/config.js",
+    "--verification-command", "node --check src/config.js",
+    "--verification-exit-code", "0",
+    "--summary", "Enabled the local config default.",
+  ], cliRepo);
+  const cliRecord = JSON.parse(fs.readFileSync(path.join(cliRepo, "docs", "ai", "ACEF_DIRECT_RUN.json"), "utf8"));
+  if (cliRecord.status !== "complete" || cliRecord.acceptance.length !== 1 || cliRecord.handoff.summary !== "Enabled the local config default.") {
+    throw new Error("direct-run state writer did not preserve active task fields at closeout");
+  }
+  const accidentalCarryover = run(process.execPath, [
+    state,
+    "direct-run",
+    "--repo", cliRepo,
+    "--run-id", "DIRECT-NEW",
+    "--status", "active",
+  ], cliRepo, true);
+  if (accidentalCarryover.status === 0 || !/missing required field|acceptance must not be empty/.test(accidentalCarryover.output)) {
+    throw new Error(`new direct run unexpectedly inherited the previous task:\n${accidentalCarryover.output}`);
+  }
+
+  console.log("acef direct lifecycle tests passed");
+} finally {
+  fs.rmSync(tmpRoot, { recursive: true, force: true });
+}
