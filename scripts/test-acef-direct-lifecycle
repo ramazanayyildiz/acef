@@ -133,17 +133,18 @@ try {
   run("git", ["config", "user.name", "ACEF Test"], cliRepo);
   run("git", ["add", "."], cliRepo);
   run("git", ["commit", "-qm", "fixture"], cliRepo);
-  run(process.execPath, [
-    state,
-    "direct-run",
-    "--repo", cliRepo,
-    "--run-id", "DIRECT-CLI",
-    "--status", "active",
-    "--scope", "Toggle a local config default.",
-    "--acceptance", "The local default is enabled.",
-    "--technical-boundary", "localized-config",
-    "--reversible", "true",
-  ], cliRepo);
+  const cliBaseCommit = run("git", ["rev-parse", "HEAD"], cliRepo).output.trim();
+  write(cliRepo, "docs/ai/ACEF_DIRECT_RUN.json", `${JSON.stringify(record({
+    runId: "DIRECT-CLI",
+    status: "active",
+    scope: "Toggle a local config default.",
+    acceptance: ["The local default is enabled."],
+    technicalBoundary: "localized-config",
+    baseCommit: cliBaseCommit,
+    changedPaths: ["src/config.js"],
+    verification: [],
+    handoff: undefined,
+  }), null, 2)}\n`);
   write(cliRepo, "src/config.js", "export const enabled = true;\n");
   run(process.execPath, [
     state,
@@ -167,8 +168,8 @@ try {
     "--run-id", "DIRECT-NEW",
     "--status", "active",
   ], cliRepo, true);
-  if (accidentalCarryover.status === 0 || !/missing required field|acceptance must not be empty/.test(accidentalCarryover.output)) {
-    throw new Error(`new direct run unexpectedly inherited the previous task:\n${accidentalCarryover.output}`);
+  if (accidentalCarryover.status === 0 || !/new direct-run admission is retired/.test(accidentalCarryover.output)) {
+    throw new Error(`retired direct admission unexpectedly created a new run:\n${accidentalCarryover.output}`);
   }
 
   console.log("acef direct lifecycle tests passed");

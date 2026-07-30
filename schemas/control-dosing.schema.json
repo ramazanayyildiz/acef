@@ -4,10 +4,18 @@
   "title": "ACEF Control Dosing",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schema", "version", "controls", "laneBundles"],
+  "required": ["schema", "version", "retiredAdmissions", "controls", "laneBundles"],
   "properties": {
     "schema": { "type": "string", "const": "acef.control-dosing.v1" },
     "version": { "type": "string", "minLength": 1 },
+    "retiredAdmissions": {
+      "type": "array",
+      "contains": { "const": "direct" },
+      "items": {
+        "type": "string",
+        "enum": ["direct", "quick-fix", "lightweight", "guarded", "full-bmad"]
+      }
+    },
     "controls": {
       "type": "array",
       "minItems": 11,

@@ -116,14 +116,14 @@ web stacks and different mobile patterns across repos, so each repo gets its own
 
 ## Routes
 
-### Direct: Contained Reversible Task
+### Native / Outside ACEF: Contained Reversible Task
 
 Use for copy, style, localized UI/config/docs/mechanical work or a localized bug fix that stays inside one technical
-boundary. Skip adapter refresh, preflight, delivery ledger, current-context, worker scope, and separate lifecycle actors.
-Record `ACEF_DIRECT_RUN.json`, implement with targeted reads, run focused verification, write the compact handoff, and
-validate `lane-closeout`.
+boundary and one product surface. Skip ACEF entirely: no adapter refresh, preflight, delivery ledger, current-context,
+worker scope, reviewer actors, or ACEF state. Use targeted reads, implement the smallest patch, run focused
+verification, and report the result.
 
-Promote before continuing when the task becomes irreversible, cross-surface, path-expanding, new-pattern, persistent,
+Admit to Route A/B/C before continuing when the task becomes irreversible, cross-surface, path-expanding, new-pattern, persistent,
 security/privacy/money/migration/provider/realtime/concurrency/state-machine/tracking/reporting/analytics work.
 
 ### Route A: Existing Codebase, Small Feature

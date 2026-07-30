@@ -27,8 +27,8 @@ function readJson(rel) {
 
 try {
   const directHelp = runState(["direct-run", "--help"]);
-  if (!directHelp.includes("compact context boundary") || !directHelp.includes("Do not inspect ACEF schemas")) {
-    throw new Error("direct-run help did not expose the bounded direct workflow");
+  if (!directHelp.includes("New direct-run admission is retired") || !directHelp.includes("Do not inspect ACEF schemas")) {
+    throw new Error("direct-run help did not expose the retirement/compatibility boundary");
   }
   const workerHelp = runState(["worker-scope", "--help"]);
   if (!workerHelp.includes("runId is bound into the scope automatically")) {

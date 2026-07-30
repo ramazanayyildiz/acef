@@ -31,8 +31,8 @@ try {
     const routerSkillPath = path.join(tmp, ...toolDir, "acef-router", "SKILL.md");
     assert.ok(fs.existsSync(acefSkillPath));
     assert.ok(fs.existsSync(routerSkillPath));
-    assert.match(fs.readFileSync(acefSkillPath, "utf8"), /Direct short-circuit/);
-    assert.match(fs.readFileSync(routerSkillPath, "utf8"), /Selecting `direct`/);
+    assert.match(fs.readFileSync(acefSkillPath, "utf8"), /ACEF admission short-circuit/);
+    assert.match(fs.readFileSync(routerSkillPath, "utf8"), /outside ACEF/);
     assert.ok(fs.existsSync(path.join(tmp, ...toolDir, "spec-readiness", "SKILL.md")));
     assert.ok(!fs.existsSync(path.join(tmp, ...toolDir, "bug-hunter")), "bug-hunter must not enter minimal default");
     assert.ok(!fs.existsSync(path.join(tmp, ...toolDir, "implementation-shape-review")), "shape review must not enter minimal default");

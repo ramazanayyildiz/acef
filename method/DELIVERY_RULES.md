@@ -9,9 +9,9 @@ Before any work, extract/refresh the **project adapter** (`acef-adapter` + `map-
 CI, golden neighbors, pattern registry, risk surface, with a freshness stamp. No route runs on a stale adapter.
 ("Understand the repo first, then work" — the codemap idea.)
 
-The `direct` lane is the narrow exception: it may use a targeted repo read and an existing local pattern without adapter
-refresh, preflight, delivery ledger, or worker bootstrap. If the pattern is unclear, new, cross-surface, or risky, direct
-is invalid and must promote before implementation continues.
+Contained reversible single-boundary/single-surface work is outside ACEF and uses targeted repo reads plus focused
+verification. It does not create ACEF artifacts. The retired `direct` lane exists only to read, close, or promote
+records created before retirement.
 
 ACEF runs in lean mode by default: durable artifacts carry the evidence; chat carries only compact status. Do not paste
 full artifacts, broad search output, long logs, or worker transcripts into chat unless the user asks for detail.
@@ -41,21 +41,20 @@ Adapter/pattern-registry status controls what can proceed:
 
 | Lane | Use for | Engine |
 |---|---|---|
-| **Direct lane** | reversible copy/style/local UI/config/docs/mechanical work or a localized bug fix with one technical boundary | one `ACEF_DIRECT_RUN.json` record: scope → implementation → focused verification → compact handoff; no separate actors or lifecycle artifacts |
+| **Direct lane (retired compatibility)** | existing `ACEF_DIRECT_RUN.json` records only | read/close/promote the compact record; new contained work stays outside ACEF |
 | **Quick-fix lane** | narrow reproduced bug fixes with clear before/after evidence | compact lifecycle with independent review, repro evidence, before/after patch evidence, computed fix envelope, test-integrity validation, touched-surface validation, and promotion triggers |
 | **Lightweight lane** | small / scoped / ongoing non-bugfix work | the operating model (Layer 1): track → personas → Judge, evidence in the artifact + PR, borrowing review discipline without a full story lifecycle |
 | **Full BMAD v2** | epics, large features, core-behavior change, multi-module, new patterns, or broad refactors | the heavy story lifecycle (Layer 3) |
 | **Guarded lane** | auth, payment, security, data deletion/migration, permissions, irreversible side effects, or high-risk boundaries — at any scale | full typed closeout plus guarded test floor and independent boundary test author; **at epic scale, additionally the mandatory capstone close** — the BMAD v2 epic-close wrapper set at every epic boundary (see `GUARDED_LANE.md`) |
 
-Direct is the default for truly contained, reversible work. The lightweight lane is Layer 1 for scoped work that still
+Native repository work is the default for truly contained, reversible work. The lightweight lane is Layer 1 for scoped work that still
 benefits from independent review. Quick-fix is the evidence-heavy reproduced-bug lane. Full BMAD v2 is the heavy lane
 for broad feature/story work. Guarded is the high-risk lane and inherits the full typed closeout checks; it
 scales — a guarded *epic* closes with the capstone wrapper set (guarded-story speed, heavy-lane certainty at the epic
 boundary; validated live before codification, see `GUARDED_LANE.md` for the evidence and the exact wrapper set).
-Most ordinary scoped feature work lives in the lightweight lane; tiny contained changes stay direct.
+Most ordinary scoped feature work lives in the lightweight lane; tiny contained changes stay outside ACEF.
 
-**Surface declaration is lane-independent except for direct.** Direct infers its one changed product surface from paths
-and promotes when more than one is present. Every other work item declares at intake
+**Surface declaration is lane-independent for admitted ACEF work.** Every admitted work item declares at intake
 which user-facing surface delivers it (`ui`, `admin`, `api`, `cli`, `queue`, …) or records `surface: none` with a
 justification. At close, the judging actor verifies the owning persona can actually reach the capability through
 that surface, or records a typed deferral that names the owning follow-up item — prose deferrals are invalid.
@@ -74,12 +73,12 @@ classification says what the work needs; capability preflight proves what can ac
 BMAD is unavailable, the verdict is `HALT` until the human explicitly chooses to install/wire BMAD or accepts a
 non-BMAD guarded lightweight exception.
 
-Before any non-direct lane executes, the conductor must write/update the preflight artifact described in `OPERATING_MODEL.md`.
+Before any admitted ACEF lane executes, the conductor must write/update the preflight artifact described in `OPERATING_MODEL.md`.
 No preflight artifact with `PASS` means no planning, implementation, test generation, release, or done-state change.
 For multi-step features, the conductor must also create/update the feature delivery ledger described in
 `OPERATING_MODEL.md`. Preflight proves the start; the ledger proves the run stayed on the rails.
 
-Before any non-direct worker fan-out, source verification, deep workflow/template read, planning artifact, or implementation step,
+Before any admitted ACEF worker fan-out, source verification, deep workflow/template read, planning artifact, or implementation step,
 the conductor must also complete the Active Run Bootstrap from `OPERATING_MODEL.md`: target repo/workspace resolved,
 `docs/ai/` created, delivery ledger created, active ledger pointer set (`ACEF_ACTIVE_LEDGER` or
 `docs/ai/ACEF_ACTIVE_LEDGER`), and `## Session Handoff` recorded. Source repos used for evidence do not own the target
@@ -89,9 +88,9 @@ run's gates.
 
 | Route | Lane | Track (lightweight) |
 |---|---|---|
-| Tiny contained change | direct when reversible and bounded to one technical boundary | — |
+| Tiny contained change | native repository workflow outside ACEF when reversible, single-boundary, and single-surface | — |
 | Small feature | lightweight | standard (guarded if it touches risk) |
-| Bug fix | direct when localized, reversible, and clear; quick-fix when repro/before-after evidence is warranted; guarded if high-risk; full BMAD if scope expands | standard / mechanical |
+| Bug fix | native/outside ACEF when localized, reversible, and clear; quick-fix when repro/before-after evidence is warranted; guarded if high-risk; full BMAD if scope expands | standard / mechanical |
 | Large feature / epic | **full BMAD v2**, or **capstone** when the human explicitly accepts guarded-story depth (typed lane approval required) | — |
 | Test-case extraction · Test automation · Unit/integration | capability **inside a route**, not a lane | the test/flow skills (Layer 2) |
 
@@ -100,7 +99,7 @@ tests pulls the test skills in under the lightweight lane; an epic needing E2E p
 
 ## Promotion
 
-A direct task promotes immediately when it becomes irreversible, touches more than one inferred product surface, changes
+An existing direct compatibility task promotes immediately when it becomes irreversible, touches more than one inferred product surface, changes
 paths outside its compact task record, weakens tests, or encounters persistence, migration, auth/security/privacy,
 money, external-provider, realtime/concurrency/state-machine, tracking/reporting/analytics, or a new pattern. Use
 `promote-lightweight` for contained low-risk growth, `promote-full-bmad` for planning-heavy coherent work, and
@@ -167,7 +166,7 @@ Lightweight work uses a mechanically checkable compact lifecycle:
 Record it in `docs/ai/ACEF_LIGHTWEIGHT_RUN.json` and run `acef-process-validator --check lightweight-lifecycle`. If risk
 or scope grows, preserve the existing promotion rules: promote to full BMAD or record explicit human risk acceptance.
 
-## Discipline that travels with non-direct lanes (borrowed IN)
+## Discipline that travels with admitted ACEF lanes (borrowed IN)
 - **Plan integrity** — no skip / reorder / shrink / expand scope without human approval.
 - **2× typed non-PASS review → REPLAN/SPLIT** — the circuit breaker runs in guarded/full-BMAD closeout and
   pre-commit. A later `PASS` resets the consecutive count.
@@ -175,7 +174,7 @@ or scope grows, preserve the existing promotion rules: promote to full BMAD or r
 - **Review-patch hard stop** — if an independent reviewer returns `REVISE`, `BLOCK`, or `MERGE WITH REQUIRED PATCH`, the
   conductor records `docs/ai/ACEF_REVIEW_PATCH_REQUIRED.json` and stops. Only a separate `verify-patch` worker scoped in
   `docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json` may edit implementation files until the marker is cleared.
-- **Reuse-before-create gate** — before implementation in every non-direct lane, the worker records the work shape, registry
+- **Reuse-before-create gate** — before implementation in every admitted ACEF lane, the worker records the work shape, registry
   entry used, golden neighbor checked, existing symbols searched, what was reused, and why any new pattern is needed.
   This gate is short in the lightweight lane and story-scoped in full BMAD, but it is never skipped.
 - **Conformance feedback loop** — every conformance finding becomes a code patch, pattern-registry update,
@@ -197,8 +196,8 @@ or scope grows, preserve the existing promotion rules: promote to full BMAD or r
 - **Bounded gate reports** — capability gates are not open-ended exploration. Once the gate fact is proven, the
   conductor writes the artifact, states the next allowed action, and returns control before loading deeper workflow
   steps.
-- **Lean reporting** — every non-direct lane writes complete evidence to disk but reports compactly in chat. Direct
-  reports only its compact task record, focused verification, and handoff. Non-direct chat output remains: artifact path,
+- **Lean reporting** — every admitted ACEF lane writes complete evidence to disk but reports compactly in chat. Existing
+  direct compatibility runs report only their compact task record, focused verification, and handoff. ACEF chat output remains: artifact path,
   verdict, key evidence path/command, and next allowed step. Raw output dumps and full artifact bodies are drift
   risks because they consume context and hide the next gate.
 - **Lean evidence contract** — story/epic close requires artifact paths for worker report, review report, Process Judge

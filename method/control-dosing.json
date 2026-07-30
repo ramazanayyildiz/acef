@@ -1,6 +1,9 @@
 {
   "schema": "acef.control-dosing.v1",
   "version": "2026-07-30",
+  "retiredAdmissions": [
+    "direct"
+  ],
   "controls": [
     {
       "id": "worker-scope",
@@ -12,7 +15,7 @@
           "requirement": "not-required",
           "dose": "none",
           "enforcementLevel": "not-applicable",
-          "backstop": "The direct task record and automatic promotion checks replace a write hook for reversible contained work."
+          "backstop": "Direct is retired for new admission; existing compatibility records retain changed-path closeout."
         },
         "quick-fix": {
           "requirement": "required",
@@ -50,7 +53,7 @@
           "requirement": "not-required",
           "dose": "none",
           "enforcementLevel": "not-applicable",
-          "backstop": "A direct task stays in one bounded session and records scope and acceptance in ACEF_DIRECT_RUN.json."
+          "backstop": "Direct is retired for new admission; existing compatibility records remain one-session state."
         },
         "quick-fix": {
           "requirement": "required-if-triggered",
@@ -88,7 +91,7 @@
           "requirement": "not-required",
           "dose": "none",
           "enforcementLevel": "not-applicable",
-          "backstop": "The four-step direct contract is fixed: scope, implement, focused verify, handoff."
+          "backstop": "No new direct run may start; existing records keep their fixed compatibility transition."
         },
         "quick-fix": {
           "requirement": "optional",
@@ -126,7 +129,7 @@
           "requirement": "not-required",
           "dose": "none",
           "enforcementLevel": "not-applicable",
-          "backstop": "Direct work intentionally uses no separate implementation or review actor."
+          "backstop": "Existing retired direct records intentionally have no separate actor."
         },
         "quick-fix": {
           "requirement": "required-if-triggered",
@@ -164,7 +167,7 @@
           "requirement": "not-required",
           "dose": "none",
           "enforcementLevel": "not-applicable",
-          "backstop": "Any scope expansion invalidates direct closeout and requires promotion before continuing."
+          "backstop": "Any expansion in an existing direct record requires promotion before continuing."
         },
         "quick-fix": {
           "requirement": "optional",
@@ -202,7 +205,7 @@
           "requirement": "not-required",
           "dose": "none",
           "enforcementLevel": "not-applicable",
-          "backstop": "The direct record keeps only command and exit code for focused verification."
+          "backstop": "Existing direct compatibility records keep only command and exit code."
         },
         "quick-fix": {
           "requirement": "optional",
@@ -240,7 +243,7 @@
           "requirement": "not-required",
           "dose": "none",
           "enforcementLevel": "not-applicable",
-          "backstop": "Direct work uses attended focused verification and promotes when stronger provenance is warranted."
+          "backstop": "Existing direct compatibility work uses attended focused verification."
         },
         "quick-fix": {
           "requirement": "optional",
@@ -278,7 +281,7 @@
           "requirement": "not-required",
           "dose": "none",
           "enforcementLevel": "not-applicable",
-          "backstop": "Successful focused verification plus the compact handoff closes a direct task."
+          "backstop": "Successful focused verification plus compact handoff closes an existing direct record."
         },
         "quick-fix": {
           "requirement": "optional",
@@ -316,7 +319,7 @@
           "requirement": "not-required",
           "dose": "none",
           "enforcementLevel": "not-applicable",
-          "backstop": "Multiple or high-risk surfaces force promotion before direct closeout."
+          "backstop": "Multiple or high-risk surfaces force promotion of an existing direct record."
         },
         "quick-fix": {
           "requirement": "required-if-triggered",
@@ -354,7 +357,7 @@
           "requirement": "required-if-triggered",
           "dose": "compact",
           "enforcementLevel": "validator",
-          "backstop": "When tests change, the validator rejects assertion drops, new skips, and obvious matcher loosening."
+          "backstop": "For existing direct records, test changes still trigger integrity validation."
         },
         "quick-fix": {
           "requirement": "required-if-triggered",
@@ -392,7 +395,7 @@
           "requirement": "not-required",
           "dose": "none",
           "enforcementLevel": "not-applicable",
-          "backstop": "ACEF_DIRECT_RUN.json is the whole handoff; no separate evidence or ledger artifact is required."
+          "backstop": "ACEF_DIRECT_RUN.json remains the whole compatibility handoff for existing records."
         },
         "quick-fix": {
           "requirement": "required",

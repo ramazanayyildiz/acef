@@ -47,10 +47,6 @@ Install the repo-local tools, then use `.acef/bin/acef-state` instead of hand-au
 ```bash
 scripts/install-acef-tools --repo /path/to/repo
 
-.acef/bin/acef-state direct-run --repo . --run-id TASK-1 --status active \
-  --scope "Adjust local label" --acceptance "Requested label is visible" \
-  --technical-boundary localized-ui --reversible true
-
 .acef/bin/acef-state actor --repo . --id dev-4-1 --story "Story 4.1" \
   --phase development --role developer --client codex --context-profile developer
 
@@ -73,6 +69,10 @@ scripts/install-acef-tools --repo /path/to/repo
 .acef/bin/acef-state approval --repo . --id epic-5-start --decision APPROVE \
   --scope epic:5 --target-epic 5 --quote "Start Epic 5"
 ```
+
+New direct-run admission is retired. `acef-state direct-run` remains available only when
+`docs/ai/ACEF_DIRECT_RUN.json` already exists with the same run ID, so old records can be closed or promoted without
+discarding history.
 
 `evidence-run` executes an argv command without a shell, stores stdout/stderr under
 `docs/ai/evidence/raw/`, hashes the raw artifact, records the Git commit/tree and actor, and preserves the command's

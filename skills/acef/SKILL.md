@@ -31,7 +31,7 @@ Evidence stays on disk; chat stays small.
 ## What This Agent Does
 
 1. Identify current state and next useful action.
-2. Bootstrap the active run before workers or deep planning, except for a contained direct task.
+2. Bootstrap the active run before workers or deep planning, except when the task does not qualify for ACEF admission.
 3. Route the work through ACEF.
 4. Delegate to the right helper/persona skill.
 5. Verify durable evidence before saying `PASS`.
@@ -41,25 +41,19 @@ Evidence stays on disk; chat stays small.
 
 Read only the references needed for the current step, but do read the selected files completely.
 
-**Direct short-circuit:** when the request is clearly reversible copy/style/local UI/config/docs/mechanical work or a
-localized bug fix with one technical boundary, do not load ACEF references, refresh the adapter, create a preflight,
-delivery ledger, current-context slice, worker scope, or separate actors. Write `docs/ai/ACEF_DIRECT_RUN.json` with
-`.acef/bin/acef-state direct-run`, make targeted repo reads, implement, record focused verification and handoff, then run
-`acef-process-validator --check lane-closeout`. Promote before continuing if the validator or discovered scope rejects
-direct.
+**ACEF admission short-circuit:** when the request is clearly reversible copy/style/local UI/config/docs/mechanical
+work or a localized bug fix with one technical boundary and one product surface, stop routing: the task stays outside
+ACEF. Do not load ACEF references, refresh the adapter, create preflight/run/ledger/context/worker/reviewer artifacts,
+or call `acef-state`. Use the repository's native workflow, targeted reads, the smallest patch, and focused
+verification.
 
-The direct record is the entire ACEF context boundary. Do not read schemas, CLI source, method references, broad project
-documentation, or unrelated `AGENTS.md` references to discover the command. Use:
+Admit the work to ACEF when persistence/migration, security/privacy/permissions, money, provider integration, realtime,
+concurrency/fencing, state-machine behavior, tracking/reporting/analytics, a new pattern, scope expansion, multiple
+boundaries/surfaces, irreversible effects, or multi-session/worker coordination appears.
 
-```bash
-.acef/bin/acef-state direct-run --repo . --run-id <id> --status active --scope <scope> \
-  --acceptance <criterion> --technical-boundary <kind> --reversible true --changed-path <target>
-.acef/bin/acef-next --repo .
-```
-
-Close with the same run ID plus `--status complete`, the actual `--changed-path`, paired
-`--verification-command`/`--verification-exit-code`, and `--summary`. If exact syntax is needed, run only
-`.acef/bin/acef-state direct-run --help`; do not inspect implementation source.
+New `direct` runs are retired because repeated real-task measurement remained slower and less reliable than both native
+and lightweight work. An existing `ACEF_DIRECT_RUN.json` is compatibility state only; use
+`.acef/bin/acef-state direct-run --help` to close or promote that existing record.
 
 **Worker short-circuit (read this first):** if `docs/ai/ACEF_CURRENT_CONTEXT.md` exists and you are executing one
 assigned step as a scoped worker (developer, reviewer, test author), that file plus your worker scope IS your
@@ -80,9 +74,9 @@ conductor/router role only (`method/CONTEXT_POLICY.md` role budgets).
 - Research provenance only when needed: `references/ACEF_RESEARCH_FINDINGS.md`.
 - Project adapter/pattern registry if present in the target repo.
 
-## Non-Direct Start Sequence
+## Admitted ACEF Start Sequence
 
-For every non-direct lane, before any worker fan-out, source verification, deep workflow/template read, planning
+For every admitted ACEF lane, before any worker fan-out, source verification, deep workflow/template read, planning
 artifact, or implementation step:
 
 1. Resolve the target repo/workspace where run artifacts live.

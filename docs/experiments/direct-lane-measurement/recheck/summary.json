@@ -1,0 +1,443 @@
+{
+  "experiment_id": "acef-direct-lane-v1-direct-recheck",
+  "generated_at": "2026-07-30T19:02:10.964Z",
+  "total_runs": 30,
+  "eligible_runs": 24,
+  "promotion_trap_runs": 6,
+  "raw_result_counts": {
+    "pass": 23,
+    "fail": 7,
+    "invalid": 0
+  },
+  "reviewed_result_counts": {
+    "pass": 27,
+    "fail": 3,
+    "invalid": 0
+  },
+  "data_quality_adjustments": 7,
+  "lanes": {
+    "baseline": {
+      "runs": 8,
+      "pass": 8,
+      "fail": 0,
+      "invalid": 0,
+      "escaped_defects": 0,
+      "scope_violations": 0,
+      "context_misses": 1,
+      "median_input_tokens": 88348,
+      "median_cached_input_tokens": 123648,
+      "median_output_tokens": 1032.5,
+      "median_runtime_seconds": 36.2,
+      "median_tool_calls": 5,
+      "median_extra_file_reads": 2.5,
+      "median_retries": 0
+    },
+    "direct": {
+      "runs": 8,
+      "pass": 6,
+      "fail": 2,
+      "invalid": 0,
+      "escaped_defects": 0,
+      "scope_violations": 0,
+      "context_misses": 2,
+      "median_input_tokens": 132867.5,
+      "median_cached_input_tokens": 461824,
+      "median_output_tokens": 2614.5,
+      "median_runtime_seconds": 73,
+      "median_tool_calls": 14.5,
+      "median_extra_file_reads": 4,
+      "median_retries": 0
+    },
+    "lightweight": {
+      "runs": 8,
+      "pass": 8,
+      "fail": 0,
+      "invalid": 0,
+      "escaped_defects": 0,
+      "scope_violations": 0,
+      "context_misses": 0,
+      "median_input_tokens": 83565,
+      "median_cached_input_tokens": 185088,
+      "median_output_tokens": 921.5,
+      "median_runtime_seconds": 29.6,
+      "median_tool_calls": 6.5,
+      "median_extra_file_reads": 3,
+      "median_retries": 0
+    }
+  },
+  "by_client": {
+    "codex": {
+      "baseline": {
+        "runs": 4,
+        "pass": 4,
+        "fail": 0,
+        "invalid": 0,
+        "escaped_defects": 0,
+        "scope_violations": 0,
+        "context_misses": 1,
+        "median_input_tokens": 160534,
+        "median_cached_input_tokens": 123648,
+        "median_output_tokens": 1032.5,
+        "median_runtime_seconds": 37.8,
+        "median_tool_calls": 4.5,
+        "median_extra_file_reads": 7,
+        "median_retries": 0
+      },
+      "direct": {
+        "runs": 4,
+        "pass": 3,
+        "fail": 1,
+        "invalid": 0,
+        "escaped_defects": 0,
+        "scope_violations": 0,
+        "context_misses": 2,
+        "median_input_tokens": 289353,
+        "median_cached_input_tokens": 253952,
+        "median_output_tokens": 2614.5,
+        "median_runtime_seconds": 88.9,
+        "median_tool_calls": 10,
+        "median_extra_file_reads": 8,
+        "median_retries": 0.5
+      },
+      "lightweight": {
+        "runs": 4,
+        "pass": 4,
+        "fail": 0,
+        "invalid": 0,
+        "escaped_defects": 0,
+        "scope_violations": 0,
+        "context_misses": 0,
+        "median_input_tokens": 186112,
+        "median_cached_input_tokens": 149632,
+        "median_output_tokens": 1386,
+        "median_runtime_seconds": 42.8,
+        "median_tool_calls": 5.5,
+        "median_extra_file_reads": 9,
+        "median_retries": 0
+      }
+    },
+    "opencode": {
+      "baseline": {
+        "runs": 4,
+        "pass": 4,
+        "fail": 0,
+        "invalid": 0,
+        "escaped_defects": 0,
+        "scope_violations": 0,
+        "context_misses": 0,
+        "median_input_tokens": 28310.5,
+        "median_cached_input_tokens": 152640,
+        "median_output_tokens": 973,
+        "median_runtime_seconds": 31.1,
+        "median_tool_calls": 7,
+        "median_extra_file_reads": 0.5,
+        "median_retries": 0
+      },
+      "direct": {
+        "runs": 4,
+        "pass": 3,
+        "fail": 1,
+        "invalid": 0,
+        "escaped_defects": 0,
+        "scope_violations": 0,
+        "context_misses": 0,
+        "median_input_tokens": 43515,
+        "median_cached_input_tokens": 585536,
+        "median_output_tokens": 2590.5,
+        "median_runtime_seconds": 59.3,
+        "median_tool_calls": 18.5,
+        "median_extra_file_reads": 0,
+        "median_retries": 0
+      },
+      "lightweight": {
+        "runs": 4,
+        "pass": 4,
+        "fail": 0,
+        "invalid": 0,
+        "escaped_defects": 0,
+        "scope_violations": 0,
+        "context_misses": 0,
+        "median_input_tokens": 36132,
+        "median_cached_input_tokens": 188800,
+        "median_output_tokens": 782,
+        "median_runtime_seconds": 25.2,
+        "median_tool_calls": 6.5,
+        "median_extra_file_reads": 0,
+        "median_retries": 0
+      }
+    }
+  },
+  "paired": {
+    "input_vs_baseline": {
+      "comparator_lane": "baseline",
+      "metric": "input_tokens",
+      "pairs": 8,
+      "median_delta_pct": 60.8,
+      "values": [
+        {
+          "task_id": "browser-rts-combat-hp-clamp",
+          "client": "codex",
+          "direct": 296456,
+          "comparator": 170588,
+          "delta_pct": 73.8
+        },
+        {
+          "task_id": "browser-rts-combat-hp-clamp",
+          "client": "opencode",
+          "direct": 44883,
+          "comparator": 27855,
+          "delta_pct": 61.1
+        },
+        {
+          "task_id": "browser-rts-gather-modifier-bait",
+          "client": "codex",
+          "direct": 206700,
+          "comparator": 170355,
+          "delta_pct": 21.3
+        },
+        {
+          "task_id": "browser-rts-gather-modifier-bait",
+          "client": "opencode",
+          "direct": 41732,
+          "comparator": 28766,
+          "delta_pct": 45.1
+        },
+        {
+          "task_id": "browser-rts-resource-rounding",
+          "client": "codex",
+          "direct": 282250,
+          "comparator": 150713,
+          "delta_pct": 87.3
+        },
+        {
+          "task_id": "browser-rts-resource-rounding",
+          "client": "opencode",
+          "direct": 42147,
+          "comparator": 26259,
+          "delta_pct": 60.5
+        },
+        {
+          "task_id": "detaysoft-unprefixed-turkish-default-boundary",
+          "client": "codex",
+          "direct": 393942,
+          "comparator": 118224,
+          "delta_pct": 233.2
+        },
+        {
+          "task_id": "detaysoft-unprefixed-turkish-default-boundary",
+          "client": "opencode",
+          "direct": 59035,
+          "comparator": 58472,
+          "delta_pct": 1
+        }
+      ]
+    },
+    "runtime_vs_baseline": {
+      "comparator_lane": "baseline",
+      "metric": "runtime_seconds",
+      "pairs": 8,
+      "median_delta_pct": 112.8,
+      "values": [
+        {
+          "task_id": "browser-rts-combat-hp-clamp",
+          "client": "codex",
+          "direct": 98.8,
+          "comparator": 35.8,
+          "delta_pct": 176
+        },
+        {
+          "task_id": "browser-rts-combat-hp-clamp",
+          "client": "opencode",
+          "direct": 58,
+          "comparator": 25.6,
+          "delta_pct": 126.6
+        },
+        {
+          "task_id": "browser-rts-gather-modifier-bait",
+          "client": "codex",
+          "direct": 66.9,
+          "comparator": 51.1,
+          "delta_pct": 30.9
+        },
+        {
+          "task_id": "browser-rts-gather-modifier-bait",
+          "client": "opencode",
+          "direct": 59.3,
+          "comparator": 36.6,
+          "delta_pct": 62
+        },
+        {
+          "task_id": "browser-rts-resource-rounding",
+          "client": "codex",
+          "direct": 79,
+          "comparator": 39.7,
+          "delta_pct": 99
+        },
+        {
+          "task_id": "browser-rts-resource-rounding",
+          "client": "opencode",
+          "direct": 59.3,
+          "comparator": 14.6,
+          "delta_pct": 306.2
+        },
+        {
+          "task_id": "detaysoft-unprefixed-turkish-default-boundary",
+          "client": "codex",
+          "direct": 129.5,
+          "comparator": 34.9,
+          "delta_pct": 271.1
+        },
+        {
+          "task_id": "detaysoft-unprefixed-turkish-default-boundary",
+          "client": "opencode",
+          "direct": 92.8,
+          "comparator": 58.1,
+          "delta_pct": 59.7
+        }
+      ]
+    },
+    "runtime_vs_lightweight": {
+      "comparator_lane": "lightweight",
+      "metric": "runtime_seconds",
+      "pairs": 8,
+      "median_delta_pct": 147.9,
+      "values": [
+        {
+          "task_id": "browser-rts-combat-hp-clamp",
+          "client": "codex",
+          "direct": 98.8,
+          "comparator": 28.9,
+          "delta_pct": 241.9
+        },
+        {
+          "task_id": "browser-rts-combat-hp-clamp",
+          "client": "opencode",
+          "direct": 58,
+          "comparator": 18.6,
+          "delta_pct": 211.8
+        },
+        {
+          "task_id": "browser-rts-gather-modifier-bait",
+          "client": "codex",
+          "direct": 66.9,
+          "comparator": 57.1,
+          "delta_pct": 17.2
+        },
+        {
+          "task_id": "browser-rts-gather-modifier-bait",
+          "client": "opencode",
+          "direct": 59.3,
+          "comparator": 28,
+          "delta_pct": 111.8
+        },
+        {
+          "task_id": "browser-rts-resource-rounding",
+          "client": "codex",
+          "direct": 79,
+          "comparator": 30.2,
+          "delta_pct": 161.6
+        },
+        {
+          "task_id": "browser-rts-resource-rounding",
+          "client": "opencode",
+          "direct": 59.3,
+          "comparator": 22.3,
+          "delta_pct": 165.9
+        },
+        {
+          "task_id": "detaysoft-unprefixed-turkish-default-boundary",
+          "client": "codex",
+          "direct": 129.5,
+          "comparator": 55.3,
+          "delta_pct": 134.2
+        },
+        {
+          "task_id": "detaysoft-unprefixed-turkish-default-boundary",
+          "client": "opencode",
+          "direct": 92.8,
+          "comparator": 41.1,
+          "delta_pct": 125.8
+        }
+      ]
+    }
+  },
+  "oracle_valid_sensitivity": {
+    "excluded_task": "detaysoft-unprefixed-turkish-default-boundary",
+    "eligible_runs": 18,
+    "lanes": {
+      "baseline": {
+        "runs": 6,
+        "pass": 6,
+        "fail": 0,
+        "invalid": 0,
+        "escaped_defects": 0,
+        "scope_violations": 0,
+        "context_misses": 1,
+        "median_input_tokens": 89739.5,
+        "median_cached_input_tokens": 123648,
+        "median_output_tokens": 1029,
+        "median_runtime_seconds": 36.2,
+        "median_tool_calls": 5,
+        "median_extra_file_reads": 3.5,
+        "median_retries": 0
+      },
+      "direct": {
+        "runs": 6,
+        "pass": 6,
+        "fail": 0,
+        "invalid": 0,
+        "escaped_defects": 0,
+        "scope_violations": 0,
+        "context_misses": 1,
+        "median_input_tokens": 125791.5,
+        "median_cached_input_tokens": 409728,
+        "median_output_tokens": 2421.5,
+        "median_runtime_seconds": 63.1,
+        "median_tool_calls": 13.5,
+        "median_extra_file_reads": 4,
+        "median_retries": 0
+      },
+      "lightweight": {
+        "runs": 6,
+        "pass": 6,
+        "fail": 0,
+        "invalid": 0,
+        "escaped_defects": 0,
+        "scope_violations": 0,
+        "context_misses": 0,
+        "median_input_tokens": 76357,
+        "median_cached_input_tokens": 136192,
+        "median_output_tokens": 842.5,
+        "median_runtime_seconds": 28.5,
+        "median_tool_calls": 5.5,
+        "median_extra_file_reads": 3,
+        "median_retries": 0
+      }
+    },
+    "direct_input_delta_vs_baseline_pct": 60.8,
+    "direct_runtime_delta_vs_baseline_pct": 112.8,
+    "direct_runtime_delta_vs_lightweight_pct": 163.8
+  },
+  "direct": {
+    "eligible_runs": 8,
+    "promotion_runs": 2,
+    "context_miss_rate_pct": 25,
+    "input_reduction_vs_baseline_pct": -60.8,
+    "runtime_overhead_vs_baseline_pct": 112.8,
+    "runtime_improvement_vs_lightweight_pct": -147.9,
+    "contract_passes": 6,
+    "correct_promotions": 1
+  },
+  "thresholds": {
+    "exactly_30_valid_runs": true,
+    "quality_non_inferior": false,
+    "direct_contract_100pct": false,
+    "promotion_accuracy_100pct": false,
+    "scope_violations_zero": true,
+    "context_miss_below_10pct": false,
+    "input_reduction_at_least_25pct": false,
+    "runtime_overhead_at_most_30pct": false,
+    "faster_than_lightweight": false
+  },
+  "proven": false
+}

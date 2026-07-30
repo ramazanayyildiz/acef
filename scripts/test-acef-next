@@ -119,16 +119,22 @@ try {
 
   fs.rmSync(path.join(tmp, "docs", "ai", "ACEF_ACTIVE_RUN.json"));
   fs.rmSync(path.join(tmp, "docs", "ai", "ACEF_ACTIVE_WORKER_SCOPE.json"));
-  mustRun(state, [
-    "direct-run", "--repo", tmp,
-    "--run-id", "DIRECT-next-test",
-    "--status", "active",
-    "--scope", "Contained Story 2.2 UI copy",
-    "--acceptance", "Copy is updated",
-    "--technical-boundary", "localized-ui",
-    "--reversible", "true",
-    "--changed-path", "app/Story22.php",
-  ]);
+  fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_DIRECT_RUN.json"), `${JSON.stringify({
+    schema: "acef.direct-run.v1",
+    version: "1.0.0",
+    runId: "DIRECT-next-test",
+    lane: "direct",
+    status: "active",
+    scope: "Contained Story 2.2 UI copy",
+    acceptance: ["Copy is updated"],
+    technicalBoundary: "localized-ui",
+    reversible: true,
+    riskTriggers: [],
+    baseCommit: null,
+    changedPaths: ["app/Story22.php"],
+    verification: [],
+    promotion: { decision: "stay-direct", reasons: [] },
+  }, null, 2)}\n`);
 
   const direct = mustRun(next, ["--repo", tmp]);
   const directJson = JSON.parse(direct);

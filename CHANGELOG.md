@@ -9,6 +9,18 @@ or evidence contract. Do not use it to claim implementation status; link to the 
 
 ## Unreleased
 
+### Direct admission retired after treatment recheck
+
+- Re-ran the 10 changed direct-treatment cells against the original 20 fixed baseline/lightweight controls after the
+  compact-context/help changes. Direct improved versus its first measurement but still missed the stop thresholds:
+  +60.8% paired input and +112.8% paired runtime versus baseline, +147.9% runtime versus lightweight, 25% context
+  misses, 6/8 eligible direct closeouts, and 1/2 correct provider promotions.
+- Retired new direct-run admission rather than adding more process. Contained reversible single-boundary/single-surface
+  work now stays outside ACEF and uses the repository's native workflow plus focused verification.
+- Kept direct schema/parser/status/next/hook/closeout compatibility so existing `ACEF_DIRECT_RUN.json` records can be
+  read, closed, or promoted. `acef-state direct-run` mechanically rejects a new run ID.
+- Added `docs/ai/capabilities/direct-admission-retirement.json` with status `enforced`.
+
 ### Run authorization and bounded review loops
 
 - Added one shared run-authorization predicate for `acef-status`, `acef-next`, `acef-codex-guard`, the cross-client
@@ -30,7 +42,7 @@ or evidence contract. Do not use it to claim implementation status; link to the 
   inspection.
 - `acef-next` treats `ACEF_DIRECT_RUN.json` as the entire direct context boundary and emits the direct write/stop packet
   without bootstrapping typed active-run, ledger, context, or worker artifacts.
-- The direct lane remains `enforced`, not `proven`; its real-task cost remeasurement remains a separate empirical gate.
+- The treatment recheck completed and still failed the cost/reliability thresholds; new direct admission is retired.
 
 ### Direct task lane
 

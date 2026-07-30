@@ -58,6 +58,9 @@ try {
   if (!fs.existsSync(capabilitySchema)) throw new Error("capability-change schema was not installed");
   if (!fs.existsSync(controlDosingSchema)) throw new Error("control-dosing schema was not installed");
   if (!fs.existsSync(controlDosingManifest)) throw new Error("control-dosing manifest was not installed");
+  if (!JSON.parse(fs.readFileSync(controlDosingManifest, "utf8")).retiredAdmissions.includes("direct")) {
+    throw new Error("installed control-dosing manifest did not retire new direct admission");
+  }
   if (!fs.existsSync(workflowSchema)) throw new Error("workflow schema was not installed");
   if (!fs.existsSync(workflow)) throw new Error("lightweight workflow was not installed");
   if (JSON.parse(fs.readFileSync(runtimePackage, "utf8")).type !== "commonjs") throw new Error("ACEF runtime CommonJS boundary was not installed");
@@ -110,15 +113,35 @@ try {
   run("git", ["config", "user.name", "ACEF Test"], { cwd: tmp });
   run("git", ["add", "."], { cwd: tmp });
   run("git", ["commit", "-qm", "fixture"], { cwd: tmp });
-  run(state, [
+  const retiredDirect = cp.spawnSync(state, [
     "direct-run", "--repo", tmp,
-    "--run-id", "DIRECT-install-test",
+    "--run-id", "DIRECT-new-install-test",
     "--status", "active",
-    "--scope", "Add a local direct-lane fixture.",
-    "--acceptance", "The fixture parses successfully.",
+    "--scope", "Attempt a new direct run.",
+    "--acceptance", "The retired admission rejects it.",
     "--technical-boundary", "internal-mechanical",
     "--reversible", "true",
-  ]);
+  ], { cwd: tmp, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+  if (retiredDirect.status === 0 || !`${retiredDirect.stdout}${retiredDirect.stderr}`.includes("new direct-run admission is retired")) {
+    throw new Error("installed state writer did not reject new direct admission");
+  }
+  const directBase = run("git", ["rev-parse", "HEAD"], { cwd: tmp }).trim();
+  fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_DIRECT_RUN.json"), `${JSON.stringify({
+    schema: "acef.direct-run.v1",
+    version: "1.0.0",
+    runId: "DIRECT-install-test",
+    lane: "direct",
+    status: "active",
+    scope: "Close a legacy local direct-lane fixture.",
+    acceptance: ["The fixture parses successfully."],
+    technicalBoundary: "internal-mechanical",
+    reversible: true,
+    riskTriggers: [],
+    baseCommit: directBase,
+    changedPaths: ["src/direct.js"],
+    verification: [],
+    promotion: { decision: "stay-direct", reasons: [] },
+  }, null, 2)}\n`);
   fs.mkdirSync(path.join(tmp, "src"), { recursive: true });
   fs.writeFileSync(path.join(tmp, "src", "direct.js"), "export const direct = true;\n");
   run(state, [

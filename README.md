@@ -45,8 +45,8 @@ ACEF is one package that unifies **five layers** — the actual delivery engine,
 3. **BMAD v2 heavy lane** — the full story lifecycle for epics / risky work (drives BMAD-METHOD, with a hard
    installed-skill preflight). `method/BMAD_V2_LANE.md`
 4. **Codemap / project adapter** — grounds everything in *your* real repo and extracts the pattern registry for conformance, including local generation docs, skills, stubs, and the registration/discoverability/runtime evidence that defines a complete work shape (evidence-pinned, no embeddings). `skills/map-codebase` + `skills/acef-adapter`
-5. **Delivery rules (the glue)** — which layer runs for which work: reversible contained changes → direct, scoped work
-   → lightweight/quick-fix, epics → BMAD v2, and high-risk boundaries → guarded, with mechanical promotion paths.
+5. **Delivery rules (the glue)** — which work should enter ACEF: reversible contained changes stay in the native repo
+   workflow; scoped reviewed work → lightweight/quick-fix, epics → BMAD v2, and high-risk boundaries → guarded.
    `method/DELIVERY_RULES.md`
 
 A front-door agent (`acef`) ties them together and routes each request, so the user never has to pick a layer, route, or skill.
@@ -132,16 +132,10 @@ files the agent follows. No build, no npm, no services.
    cp -R skills/* ~/.claude/skills/
    ```
    Prefer repo-local `.claude/skills/`, `.codex/skills/`, and `.opencode/skills/` for project-specific ACEF work.
-3. **Use it** — open your own repo and run `/acef` (or just say "use acef"). It routes the request and selects direct,
-   quick-fix, lightweight, full-BMAD, or guarded per `method/DELIVERY_RULES.md`.
-   Direct tasks use a targeted repo read without adapter refresh or a delivery ledger:
-   ```bash
-   .acef/bin/acef-state direct-run --repo . --run-id TASK-1 --status active \
-     --scope "Adjust the local label" --acceptance "The requested label is visible" \
-     --technical-boundary localized-ui --reversible true
-   ```
-   Complete the same record with changed paths, focused verification command/exit results, and a short summary, then run
-   `.acef/bin/acef-process-validator --repo . --check lane-closeout`. Non-direct concrete work first creates a target-run
+3. **Use it** — open your own repo and run `/acef` (or just say "use acef"). It first decides whether ACEF controls are
+   warranted, then selects quick-fix, lightweight, full-BMAD, or guarded per `method/DELIVERY_RULES.md`.
+   Reversible contained single-boundary/single-surface tasks stay outside ACEF: use targeted reads, the smallest native
+   repo patch, and focused verification without ACEF artifacts. Admitted concrete work first creates a target-run
    ledger, sets `ACEF_ACTIVE_LEDGER` or
    `docs/ai/ACEF_ACTIVE_LEDGER`, and writes a `Session Handoff` before worker fan-out or deep planning.
    A fresh agent should start from repo truth, not chat memory:
@@ -179,7 +173,7 @@ files the agent follows. No build, no npm, no services.
    The dispatcher only forwards to a repo-local `.acef/hooks/acef-bmad-hard-wall.mjs` when one exists; repos without a
    local ACEF hook are allowed. The portable hook package lives in `claude-plugins/acef-bmad-guard/` for plugin-based
    Claude installs.
-   Direct runs intentionally use no guard marker or worker-scope hook. Lightweight runs should create
+   Existing retired direct records intentionally use no guard marker or worker-scope hook. Lightweight runs should create
    `.acef-lightweight-lane` or `.acef-lane`; full BMAD runs use `.acef-bmad-lane` or BMAD runtime markers.
    To scope hook conformance checks to the current run, set `ACEF_ACTIVE_LEDGER` or write the active ledger path into
    `docs/ai/ACEF_ACTIVE_LEDGER`.
@@ -425,7 +419,7 @@ epic cannot start until the prior epic gate is `PASS`.
 
 ACEF separates implementation review from process review:
 
-- **Preflight artifact** (`docs/ai/ACEF_PREFLIGHT.md` by default) is required before non-direct planning, implementation, test
+- **Preflight artifact** (`docs/ai/ACEF_PREFLIGHT.md` by default) is required before admitted ACEF planning, implementation, test
   generation, release, or done-state changes. It records route/lane/track, required skills, resolved paths, adapter
   freshness, test setup, API/backend source of truth, risk gates, approvals, and a `PASS` / `FAIL` / `HALT` verdict.
 - **Judge** reviews the change and returns `MERGE` / `REVISE` / `REPLAN`.

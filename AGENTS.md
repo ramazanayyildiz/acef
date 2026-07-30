@@ -2,17 +2,18 @@
 
 This is the short entry point for fresh agents working on ACEF.
 
-## Lane Entry
+## ACEF Admission
 
-Before bootstrapping the normal ACEF lifecycle, read `skills/acef/SKILL.md` and `skills/acef-router/SKILL.md` and
-evaluate whether the work qualifies for the `direct` lane.
+Do not bootstrap ACEF for reversible, contained work with one technical boundary and one product surface. Use the
+repository's native workflow, make targeted reads, implement the smallest patch, run focused verification, and report
+the result. Do not create ACEF run artifacts for that work.
 
-- Use `direct` only for a reversible, contained change with one technical boundary and one product surface.
-- Record it in `docs/ai/ACEF_DIRECT_RUN.json` through `acef-state direct-run`.
-- Promote before continuing when persistence, security/privacy, money, provider integration, realtime,
-  concurrency/fencing, state-machine, tracking/reporting/analytics, a new pattern, scope expansion, test weakening, or
-  failed verification appears.
-- Do not bootstrap the active-run ledger, worker/reviewer actors, or the full lifecycle for a valid direct task.
+Start ACEF only when the request needs its controls: persistence/migration, security/privacy/permissions, money,
+provider integration, realtime, concurrency/fencing, state-machine behavior, tracking/reporting/analytics, a new
+pattern, multiple technical boundaries/product surfaces, irreversible effects, or multi-session/worker coordination.
+
+The `direct` lane is retired for new runs after failing its repeated cost/reliability measurement. Existing
+`ACEF_DIRECT_RUN.json` records remain readable and may be closed or promoted for compatibility.
 
 ## First Checks
 

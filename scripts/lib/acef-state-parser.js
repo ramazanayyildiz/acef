@@ -754,9 +754,14 @@ function parseControlDose(dose, label) {
 
 function parseControlDosing(filePath) {
   const record = readJson(filePath);
-  requireFields(record, ["schema", "version", "controls", "laneBundles"], "control dosing");
+  requireFields(record, ["schema", "version", "retiredAdmissions", "controls", "laneBundles"], "control dosing");
   if (record.schema !== "acef.control-dosing.v1") throw new Error("control dosing schema must be acef.control-dosing.v1");
   if (typeof record.version !== "string" || !record.version.trim()) throw new Error("control dosing version must be a non-empty string");
+  requireStringArray(record, "retiredAdmissions", "control dosing");
+  for (const lane of record.retiredAdmissions) {
+    if (!CONTROL_DOSING_LANES.includes(lane)) throw new Error(`control dosing retiredAdmissions has unknown lane ${lane}`);
+  }
+  if (!record.retiredAdmissions.includes("direct")) throw new Error("control dosing retiredAdmissions must include direct");
   if (!Array.isArray(record.controls)) throw new Error("control dosing controls must be an array");
   requireObject(record, "laneBundles", "control dosing");
 

@@ -79,8 +79,8 @@ business math; those semantics come from tests, review, and domain-specific asse
 
 Pricing guide:
 
-- Worker scope mechanically catches scope escape before writes; keep it in every lane except direct, which validates
-  declared changed paths in one attended session and promotes on expansion.
+- Worker scope mechanically catches scope escape before writes; keep it in every admitted lane. Contained native work
+  stays outside ACEF, while existing retired direct records retain changed-path compatibility closeout.
 - Cold-read and active-run context matter most for drift-prone, cross-session, or multi-agent work.
 - Evidence manifests, runner proof, and gate verdicts mainly defend against honest stale-output, wrong-commit,
   wrong-command, and chat-only evidence; they are most valuable for guarded, unattended, async, or later-audited work.
@@ -126,8 +126,8 @@ acef-process-validator --check control-dosing
 
 Trim by lane, not by deleting the safety model:
 
-- Direct: scope, acceptance, reversibility, changed paths, focused command/exit results, compact handoff, and automatic
-  promotion checks; no separate actors, ledger, evidence manifest, runner proof, or gate.
+- Native contained work: outside ACEF with focused verification and no ACEF artifacts. Existing retired direct records
+  keep compact compatibility closeout; no new direct run may start.
 - Quick-fix/operator: compact envelope, focused regression evidence, independent review, lightweight surface and
   test-integrity gates.
 - Lightweight: reuse-before-create, review, focused tests, and surface floors without full-BMAD actor matrices unless

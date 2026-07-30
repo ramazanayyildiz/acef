@@ -1,0 +1,90 @@
+{
+  "capabilityId": "direct-admission-retirement",
+  "requestedIntent": "Stop paying ACEF lifecycle cost for contained low-risk work after direct repeatedly failed its empirical speed/reliability thresholds, while preserving existing direct-run history and closeout compatibility.",
+  "status": "enforced",
+  "requiredLayers": [
+    "docs",
+    "schema",
+    "cli",
+    "validator",
+    "tests",
+    "installer"
+  ],
+  "implementedLayers": {
+    "docs": [
+      "AGENTS.md#ACEF-Admission",
+      "CHANGELOG.md#Direct-admission-retired-after-treatment-recheck",
+      "README.md",
+      "method/OPERATING_MODEL.md",
+      "method/DELIVERY_RULES.md",
+      "method/CONTROL_RATIONALE.md",
+      "method/RULE_ENFORCEMENT_MAP.md",
+      "method/TYPED_STATE.md",
+      "skills/acef/SKILL.md#ACEF-admission-short-circuit",
+      "skills/acef-router/SKILL.md",
+      "skills/acef/references/ACEF_BROWNFIELD_ROUTES.md",
+      "docs/experiments/direct-lane-measurement/recheck/DESIGN.md",
+      "docs/experiments/direct-lane-measurement/recheck/RESULT.md"
+    ],
+    "schema": [
+      "schemas/control-dosing.schema.json",
+      "method/control-dosing.json"
+    ],
+    "cli": [
+      "scripts/acef-state#writeDirectRun",
+      "scripts/acef-state#usage"
+    ],
+    "validator": [
+      "scripts/acef-process-validator#checkDirectLifecycle",
+      "scripts/acef-process-validator#checkDirectLaneSelection"
+    ],
+    "tests": [
+      "scripts/test-acef-state",
+      "scripts/test-acef-direct-lifecycle",
+      "scripts/test-acef-next",
+      "scripts/test-acef-control-dosing",
+      "scripts/test-install-acef-skills",
+      "docs/experiments/direct-lane-measurement/recheck/summary.json"
+    ],
+    "installer": [
+      "scripts/install-acef-tools",
+      "scripts/install-acef-skills"
+    ]
+  },
+  "limitations": [
+    "Direct compatibility state remains supported so existing runs can finish without losing history; hand-authoring state can bypass the CLI admission refusal under ACEF's cooperative local trust model.",
+    "The treatment recheck reused unchanged baseline/lightweight controls rather than rerunning them concurrently. This is sufficient for rejection under the preregistered design, not for a proof claim.",
+    "Native contained work intentionally has no ACEF audit artifact; repository tests, diff review, and ordinary version control remain its evidence."
+  ],
+  "evidence": [
+    {
+      "layer": "tests",
+      "ref": "docs/experiments/direct-lane-measurement/recheck/summary.json",
+      "note": "30-row fixed-control composition: direct +60.8% paired input and +112.8% paired runtime versus baseline, +147.9% runtime versus lightweight, 25% context misses, 6/8 closeouts, and 1/2 provider promotions."
+    },
+    {
+      "layer": "tests",
+      "ref": "docs/experiments/direct-lane-measurement/recheck/runs/results.jsonl",
+      "note": "Ten new treatment rows, zero invalid runs."
+    },
+    {
+      "layer": "schema",
+      "ref": "method/control-dosing.json",
+      "note": "retiredAdmissions includes direct and is installed into target repositories."
+    },
+    {
+      "layer": "cli",
+      "ref": "scripts/acef-state",
+      "note": "New direct run IDs are rejected; an existing matching record can still close or promote."
+    },
+    {
+      "layer": "tests",
+      "ref": "scripts/test-acef-direct-lifecycle"
+    },
+    {
+      "layer": "tests",
+      "ref": "scripts/test-install-acef-skills"
+    }
+  ],
+  "createdAt": "2026-07-30"
+}

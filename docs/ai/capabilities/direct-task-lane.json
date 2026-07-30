@@ -51,6 +51,7 @@
     ]
   },
   "limitations": [
+    "New direct admission is retired after the treatment recheck still failed cost, context-miss, closeout, and provider-promotion thresholds. This capability remains only as enforced compatibility for existing records.",
     "Direct closeout records focused verification command and exit code but intentionally does not create evidence manifests or runner proof.",
     "Path and risk inference is heuristic; unusual domain risk that is absent from paths and omitted from riskTriggers cannot be discovered mechanically.",
     "Direct is limited to one attended, reversible technical boundary and must promote when scope, surface count, risk, or test-integrity checks expand.",
@@ -111,6 +112,11 @@
       "layer": "tests",
       "ref": "docs/experiments/direct-lane-measurement/DATA_QUALITY_REVIEW.md",
       "note": "Raw-row integrity, exact-string oracle correction, escaped-defect interpretation, and paired client-normalized analysis."
+    },
+    {
+      "layer": "tests",
+      "ref": "docs/experiments/direct-lane-measurement/recheck/RESULT.md",
+      "note": "Treatment-only recheck improved direct but still found +60.8% paired input, +112.8% runtime versus baseline, +147.9% runtime versus lightweight, 25% context misses, 6/8 closeouts, and 1/2 correct promotions; new admission retired."
     }
   ],
   "createdAt": "2026-07-30"

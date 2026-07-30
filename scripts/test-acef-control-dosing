@@ -57,6 +57,11 @@ try {
   writeRecord(readRecord());
   expectPass("valid control dosing manifest");
 
+  const activeDirectAdmission = readRecord();
+  activeDirectAdmission.retiredAdmissions = [];
+  writeRecord(activeDirectAdmission);
+  expectFail(/retiredAdmissions must include direct/, "direct admission remains retired");
+
   const missing = readRecord();
   missing.controls = missing.controls.filter((control) => control.id !== "runner-proof");
   writeRecord(missing);

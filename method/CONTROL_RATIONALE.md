@@ -191,9 +191,10 @@ This keeps ACEF honest about the difference between active enforcement, audit in
 
 Use this pricing model:
 
-- **Worker scope** is load-bearing when work is delegated or spans a lifecycle. Direct is the explicit exception: it
-  stays in one attended session and validates declared changed paths at closeout. Keep worker scope in every other lane,
-  with the strictest behavior reserved for guarded/full-BMAD work.
+- **Worker scope** is load-bearing when work is delegated or spans a lifecycle. Contained work outside ACEF has no
+  worker scope because it has no ACEF lifecycle or delegation. Existing retired direct records retain their historical
+  changed-path closeout contract. Keep worker scope in every admitted lane, with the strictest behavior reserved for
+  guarded/full-BMAD work.
 - **Cold-read and active-run context** are load-bearing when the executor is drift-prone, cross-session, or multi-agent.
   They can be lighter in a tight single-context quick fix, but they should not disappear when workers are involved.
 - **Evidence manifests, runner proof, and gate verdicts** mainly defend against honest stale-output, wrong-commit,
@@ -248,8 +249,8 @@ such as `lean-evidence` read their lane dose before deciding which fields are ma
 
 Trim ceremony by lane, not by deleting the safety model:
 
-- Direct work keeps only scope, acceptance, reversibility, changed paths, focused command/exit results, handoff, and
-  automatic promotion checks. It has no separate worker, reviewer, ledger, evidence manifest, runner proof, or gate.
+- Native contained work stays outside ACEF and uses focused verification without ACEF artifacts. Existing retired
+  direct records keep their compact compatibility closeout, but no new direct run may start.
 - Quick-fix and operator work can use compact envelopes, focused regression evidence, independent review, and lightweight
   surface/test-integrity gates.
 - Lightweight work should keep reuse-before-create, review, focused tests, and surface floors, but avoid full-BMAD actor

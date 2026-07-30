@@ -8,6 +8,7 @@ const {
   parseActiveRun,
   parseActorRecord,
   parseApproval,
+  parseControlDosing,
   parseDirectRun,
   parseEvidenceManifest,
   parseGateVerdict,
@@ -16,20 +17,19 @@ const {
 
 function usage(command = "") {
   if (command === "direct-run") {
-    console.log(`Usage: acef-state direct-run --repo <path> --run-id <id> --status active|complete|promoted [options]
+    console.log(`Usage: acef-state direct-run --repo <path> --run-id <existing-id> --status complete|promoted [options]
 
-Start:
-  acef-state direct-run --repo . --run-id <id> --status active --scope <scope> --acceptance <criterion> --technical-boundary <kind> --reversible true --changed-path <target>
-  kind: copy | style | localized-ui | localized-config | docs | localized-bugfix | internal-mechanical
+New direct-run admission is retired. Contained low-risk work uses the repository's native workflow outside ACEF with
+focused verification. Keep this command only to close or promote an ACEF_DIRECT_RUN.json that already exists.
 
-Close:
+Close an existing record:
   acef-state direct-run --repo . --run-id <id> --status complete --changed-path <target> --verification-command <command> --verification-exit-code 0 --summary <handoff>
 
-Promote before implementation continues:
+Promote an existing record before implementation continues:
   acef-state direct-run --repo . --run-id <id> --status promoted --promotion-decision <lane> --promotion-reason <reason>
   lane: promote-lightweight | promote-full-bmad | promote-guarded
 
-The direct record is the compact context boundary. Do not inspect ACEF schemas or CLI source to discover these options.`);
+The existing direct record is the compact compatibility context. Do not inspect ACEF schemas or CLI source to discover these options.`);
     return;
   }
   if (command === "worker-scope") {
@@ -316,6 +316,17 @@ function writeDirectRun(opts) {
   const target = path.join(opts.repo, "docs", "ai", "ACEF_DIRECT_RUN.json");
   const existing = fs.existsSync(target) ? parseDirectRun(target) : null;
   const previous = existing?.runId === opts.runId ? existing : null;
+  const dosingCandidates = [
+    path.join(opts.repo, ".acef", "control-dosing.json"),
+    path.resolve(__dirname, "..", "method", "control-dosing.json"),
+  ];
+  const dosingPath = dosingCandidates.find((candidate) => fs.existsSync(candidate));
+  const directRetired = dosingPath
+    ? parseControlDosing(dosingPath).retiredAdmissions.includes("direct")
+    : true;
+  if (!previous && directRetired) {
+    throw new Error("new direct-run admission is retired; use the repository native workflow outside ACEF, or start a non-direct ACEF run when risk/control triggers apply");
+  }
   const verification = opts.verificationCommand.length || opts.verificationExitCode.length
     ? opts.verificationCommand.map((command, index) => ({
       command,
