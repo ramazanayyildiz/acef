@@ -1,0 +1,62 @@
+{
+  "capabilityId": "typed-review-circuit-breaker",
+  "requestedIntent": "Bound guarded and full-BMAD patch loops by forcing REPLAN/SPLIT after two consecutive typed non-PASS review verdicts, without adding another review artifact or depending on prose wording.",
+  "status": "enforced",
+  "requiredLayers": [
+    "docs",
+    "validator",
+    "hook",
+    "tests",
+    "installer"
+  ],
+  "implementedLayers": {
+    "docs": [
+      "CHANGELOG.md#Run authorization and bounded review loops",
+      "method/DELIVERY_RULES.md",
+      "method/RULE_ENFORCEMENT_MAP.md",
+      "skills/acef/references/ACEF_DELIVERY_RULES.md",
+      "skills/acef/references/ACEF_RULE_ENFORCEMENT_MAP.md"
+    ],
+    "validator": [
+      "scripts/acef-process-validator#checkReviewCircuitBreaker",
+      "scripts/acef-process-validator#checkReplanCounter",
+      "scripts/acef-process-validator#checkLaneCloseout",
+      "scripts/acef-process-validator#checkPrecommitGate"
+    ],
+    "hook": [
+      "claude-plugins/acef-bmad-guard/hooks/acef-precommit-gate.sh"
+    ],
+    "tests": [
+      "scripts/test-acef-process-validator"
+    ],
+    "installer": [
+      "scripts/install-acef-tools",
+      "scripts/install-acef-bmad-guard"
+    ]
+  },
+  "limitations": [
+    "The breaker considers only valid typed gates for the active story decided by code-review, test-review, or Process Judge actors; gate integrity remains the responsibility of the gate-verdict validator.",
+    "A PASS review resets the consecutive non-PASS sequence. The breaker does not infer severity labels or patch-growth heuristics.",
+    "The breaker applies only to guarded and full-BMAD typed runs."
+  ],
+  "evidence": [
+    {
+      "layer": "validator",
+      "ref": "scripts/acef-process-validator#checkReviewCircuitBreaker"
+    },
+    {
+      "layer": "validator",
+      "ref": "scripts/acef-process-validator#checkPrecommitGate"
+    },
+    {
+      "layer": "tests",
+      "ref": "scripts/test-acef-process-validator",
+      "note": "Two consecutive REVISE/FAIL gates block; removing the second verdict returns the breaker to PASS."
+    },
+    {
+      "layer": "hook",
+      "ref": "claude-plugins/acef-bmad-guard/hooks/acef-precommit-gate.sh"
+    }
+  ],
+  "createdAt": "2026-07-30"
+}

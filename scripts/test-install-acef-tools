@@ -34,6 +34,7 @@ try {
   const updater = path.join(tmp, ".acef", "bin", "update-acef-installation");
   const workflowValidate = path.join(tmp, ".acef", "bin", "acef-workflow-validate");
   const parser = path.join(tmp, ".acef", "bin", "lib", "acef-state-parser.js");
+  const authorization = path.join(tmp, ".acef", "bin", "lib", "acef-run-authorization.js");
   const installationHelper = path.join(tmp, ".acef", "bin", "lib", "acef-installation.js");
   const schema = path.join(tmp, ".acef", "schemas", "active-run.schema.json");
   const directSchema = path.join(tmp, ".acef", "schemas", "direct-run.schema.json");
@@ -50,6 +51,7 @@ try {
   if (!fs.existsSync(updater)) throw new Error("ACEF update helper was not installed");
   if (!fs.existsSync(workflowValidate)) throw new Error("workflow validator was not installed");
   if (!fs.existsSync(parser)) throw new Error("parser support library was not installed");
+  if (!fs.existsSync(authorization)) throw new Error("run authorization support library was not installed");
   if (!fs.existsSync(installationHelper)) throw new Error("installation support library was not installed");
   if (!fs.existsSync(schema)) throw new Error("typed-state schemas were not installed");
   if (!fs.existsSync(directSchema)) throw new Error("direct-run schema was not installed");

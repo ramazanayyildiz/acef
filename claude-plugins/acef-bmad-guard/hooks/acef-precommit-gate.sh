@@ -19,10 +19,10 @@ VALIDATOR="$BIN/acef-process-validator"
 # Skip when no ACEF delivery session is active.
 [ -f "$ACTIVE_RUN" ] || exit 0
 
-# Skip gracefully if the local validator binary is not installed yet.
+# Fail closed when an ACEF run is active but the local validator is absent.
 [ -x "$VALIDATOR" ] || {
   echo "ACEF pre-commit: validator not found at $VALIDATOR — run install-acef-tools --repo . to install" >&2
-  exit 0
+  exit 2
 }
 
 "$VALIDATOR" --check precommit-gate --repo "$REPO_ROOT"

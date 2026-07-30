@@ -19,6 +19,7 @@ const {
   safeRelative,
   parseControlDosing,
 } = require("./lib/acef-state-parser");
+const { inspectRunAuthorization } = require("./lib/acef-run-authorization");
 
 function usage() {
   console.log(`ACEF process validator
@@ -63,7 +64,9 @@ Checks:
   seeded-epic-gates   Require Epic N Process Judge rows/artifacts for epics mentioned in ledger
   epic-boundary       Require Epic N-1 Process Judge PASS before target Epic N
   epic-transition-approval Require explicit human approval before starting Epic N
-  replan-counter      Fail when the same scope has 2+ REPLAN decisions in ledger text
+  run-authorization   Require active run, ledger, context, and worker-scope run/story binding
+  review-circuit-breaker Fail after two consecutive typed non-PASS review/judge verdicts for one scope
+  replan-counter      Compatibility alias for the typed review circuit breaker
 `);
 }
 
@@ -873,13 +876,72 @@ function checkEpicTransitionApproval(repoRoot, ledgerPath, targetEpic) {
   return result("epic-transition-approval", false, `Epic ${targetEpic} requires explicit human approval. Generic continuation phrases such as "go on", "continue", "devam", or "tamamla" are not valid epic transition approval.`);
 }
 
-function checkReplanCounter(ledgerPath) {
-  if (!ledgerPath || !exists(ledgerPath)) return result("replan-counter", false, "Missing ledger path");
-  const text = read(ledgerPath);
-  const count = (text.match(/\bREPLAN\b/g) || []).length;
-  return result("replan-counter", count < 2, count < 2
-    ? `REPLAN count ${count}`
-    : `REPLAN count ${count}; human escalation required`);
+function checkRunAuthorization(repoRoot, options = {}) {
+  const authorization = inspectRunAuthorization(repoRoot, {
+    allowDirect: true,
+    allowedStatuses: options.allowedStatuses || ["active", "complete"],
+    requireWorkerScope: options.requireWorkerScope === true,
+    requireScopeRunId: options.requireScopeRunId === true,
+  });
+  return authorization.ok
+    ? result("run-authorization", true, `${authorization.mode} run authorization is consistent`)
+    : result("run-authorization", false, authorization.blockers.join("; "));
+}
+
+function reviewGateEntries(repoRoot, activeRun) {
+  const entries = [];
+  for (const filePath of jsonRecords(path.join(repoRoot, "docs", "ai", "gates"))) {
+    try {
+      const gate = parseGateVerdict(filePath);
+      if (normalizedScope(gate.scope) !== normalizedScope(activeRun.activeStory)) continue;
+      const actor = actorRecordById(repoRoot, gate.decidedBy);
+      const phase = canonicalPhase(actor.phase || actor.role);
+      if (!["codereview", "testreview", "processjudge"].includes(phase)) continue;
+      entries.push({
+        gate,
+        filePath,
+        createdAt: gate.createdAt || "",
+      });
+    } catch {
+      // Gate integrity is enforced by gate-verdict. The breaker only consumes valid typed review gates.
+    }
+  }
+  return entries.sort((left, right) => {
+    const timeOrder = left.createdAt.localeCompare(right.createdAt);
+    return timeOrder || left.filePath.localeCompare(right.filePath);
+  });
+}
+
+function checkReviewCircuitBreaker(repoRoot) {
+  const activeRun = typedActiveRun(repoRoot);
+  if (!activeRun) return result("review-circuit-breaker", true, "No typed active run");
+  if (!["guarded", "full-bmad"].includes(activeRun.lane)) {
+    return result("review-circuit-breaker", true, `${activeRun.lane} does not use the guarded review breaker`);
+  }
+  const reviewGates = reviewGateEntries(repoRoot, activeRun);
+  const lastTwo = reviewGates.slice(-2);
+  const nonPass = lastTwo.filter((entry) => entry.gate.verdict !== "PASS");
+  if (lastTwo.length < 2 || nonPass.length < 2) {
+    return result(
+      "review-circuit-breaker",
+      true,
+      `${nonPass.length} consecutive typed non-PASS review verdict(s) for ${activeRun.activeStory}`,
+    );
+  }
+  const detail = lastTwo.map((entry) => `${entry.gate.gateId}:${entry.gate.verdict}`).join(", ");
+  return result(
+    "review-circuit-breaker",
+    false,
+    `${activeRun.activeStory} has two consecutive non-PASS review verdicts (${detail}); stop REVISE and REPLAN/SPLIT the scope`,
+  );
+}
+
+function checkReplanCounter(repoRoot) {
+  const verdict = checkReviewCircuitBreaker(repoRoot);
+  return {
+    ...verdict,
+    name: "replan-counter",
+  };
 }
 
 function readPatternRegistry(registryPath) {
@@ -2584,6 +2646,7 @@ function baseCloseoutChecks(lane, repoRoot, ledgerPath, adapterPath, registryPat
     ];
   }
   const checks = [
+    () => checkRunAuthorization(repoRoot, { requireScopeRunId: true }),
     () => checkLaneSelection(repoRoot),
     () => checkSessionHandoff(repoRoot, ledgerPath, adapterPath, registryPath),
   ];
@@ -2593,6 +2656,7 @@ function baseCloseoutChecks(lane, repoRoot, ledgerPath, adapterPath, registryPat
   if (lane === "guarded" || lane === "full-bmad") {
     checks.push(() => checkGoalCoverage(repoRoot));
     checks.push(() => checkSourceReconciliation(repoRoot, ledgerPath));
+    checks.push(() => checkReviewCircuitBreaker(repoRoot));
   }
   if (lane === "guarded") {
     checks.push(() => checkGuardedTestFloor(repoRoot, ledgerPath));
@@ -2662,11 +2726,17 @@ function checkPrecommitGate(repoRoot) {
   const ledger = findLedger(repoRoot);
   const lane = inferActiveLane(repoRoot, ledger);
   const subChecks = lane === "guarded" || lane === "full-bmad"
-    ? ["gate-decider", "lean-evidence"]
-    : ["lean-evidence"];
+    ? ["run-authorization", "review-circuit-breaker", "gate-decider", "lean-evidence"]
+    : ["run-authorization", "lean-evidence"];
   const failures = [];
   for (const name of subChecks) {
-    const sub = name === "gate-decider" ? checkGateDecider(repoRoot) : checkLeanEvidence(repoRoot, ledger);
+    const sub = name === "run-authorization"
+      ? checkRunAuthorization(repoRoot, { requireScopeRunId: true })
+      : name === "review-circuit-breaker"
+        ? checkReviewCircuitBreaker(repoRoot)
+        : name === "gate-decider"
+          ? checkGateDecider(repoRoot)
+          : checkLeanEvidence(repoRoot, ledger);
     if (!sub.ok) failures.push(`${sub.name}: ${sub.message}`);
   }
   if (failures.length) {
@@ -2766,7 +2836,7 @@ function main() {
   const adapter = args.adapter || findAdapter(args.repo);
   const registry = findPatternRegistry(args.repo, adapter);
   const checks = args.check === "all"
-    ? ["clean-tree", "preflight", "claims", "adapter-freshness", "pattern-registry", "reuse-before-create", "do-not-copy", "partial-workshape", "finding-promotion", "graduation-reconciliation", "vertical-slice", "test-authenticity", "guarded-test-floor", "actor-separation", "worker-scope", "evidence-manifest", "gate-verdict", "gate-decider", "source-reconciliation", "epic-context-pack", "current-context", "pr-review", "spec-readiness", "goal-coverage", "lane-selection", "lane-closeout", "direct-lifecycle", "lightweight-lifecycle", "lean-evidence", "control-dosing", "capability-change", "session-handoff", "seeded-epic-gates", "epic-boundary", "epic-transition-approval", "replan-counter"]
+    ? ["clean-tree", "preflight", "claims", "adapter-freshness", "pattern-registry", "reuse-before-create", "do-not-copy", "partial-workshape", "finding-promotion", "graduation-reconciliation", "vertical-slice", "test-authenticity", "guarded-test-floor", "actor-separation", "worker-scope", "evidence-manifest", "gate-verdict", "gate-decider", "source-reconciliation", "epic-context-pack", "current-context", "pr-review", "spec-readiness", "goal-coverage", "lane-selection", "lane-closeout", "direct-lifecycle", "lightweight-lifecycle", "lean-evidence", "control-dosing", "capability-change", "session-handoff", "seeded-epic-gates", "epic-boundary", "epic-transition-approval", "run-authorization", "review-circuit-breaker", "replan-counter"]
     : [args.check];
 
   const results = checks.map((check) => {
@@ -2806,7 +2876,9 @@ function main() {
     if (check === "seeded-epic-gates") return checkSeededEpicGates(args.repo, ledger);
     if (check === "epic-boundary") return checkEpicBoundary(args.repo, ledger, args.targetEpic);
     if (check === "epic-transition-approval") return checkEpicTransitionApproval(args.repo, ledger, args.targetEpic);
-    if (check === "replan-counter") return checkReplanCounter(ledger);
+    if (check === "run-authorization") return checkRunAuthorization(args.repo, { requireScopeRunId: true });
+    if (check === "review-circuit-breaker") return checkReviewCircuitBreaker(args.repo);
+    if (check === "replan-counter") return checkReplanCounter(args.repo);
     return result(check, false, `Unknown check: ${check}`);
   });
 

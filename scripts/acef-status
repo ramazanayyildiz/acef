@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 const fs = require("node:fs");
 const path = require("node:path");
-const { parseActiveRun, parseWorkerScope } = require("./lib/acef-state-parser");
+const { inspectRunAuthorization } = require("./lib/acef-run-authorization");
 
 function usage() {
   console.log(`Usage: acef-status --repo <path> [--format text|json]
@@ -33,10 +33,6 @@ function readTextIfExists(filePath) {
   return fs.existsSync(filePath) ? fs.readFileSync(filePath, "utf8").trim() : null;
 }
 
-function existsRelative(repo, relativePath) {
-  return Boolean(relativePath) && fs.existsSync(path.join(repo, relativePath));
-}
-
 function currentGit(repo) {
   const head = readTextIfExists(path.join(repo, ".git", "HEAD"));
   if (!head) return { branch: null, head: null };
@@ -45,26 +41,6 @@ function currentGit(repo) {
   const branch = ref.replace(/^refs\/heads\//, "");
   const commit = readTextIfExists(path.join(repo, ".git", ref));
   return { branch, head: commit ? commit.slice(0, 12) : null };
-}
-
-function loadActiveRun(repo) {
-  const filePath = path.join(repo, "docs", "ai", "ACEF_ACTIVE_RUN.json");
-  if (!fs.existsSync(filePath)) return { path: "docs/ai/ACEF_ACTIVE_RUN.json", exists: false, record: null, error: null };
-  try {
-    return { path: "docs/ai/ACEF_ACTIVE_RUN.json", exists: true, record: parseActiveRun(filePath), error: null };
-  } catch (error) {
-    return { path: "docs/ai/ACEF_ACTIVE_RUN.json", exists: true, record: null, error: error.message };
-  }
-}
-
-function loadWorkerScope(repo) {
-  const filePath = path.join(repo, "docs", "ai", "ACEF_ACTIVE_WORKER_SCOPE.json");
-  if (!fs.existsSync(filePath)) return { path: "docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json", exists: false, record: null, error: null };
-  try {
-    return { path: "docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json", exists: true, record: parseWorkerScope(filePath), error: null };
-  } catch (error) {
-    return { path: "docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json", exists: true, record: null, error: error.message };
-  }
 }
 
 function loadInstallation(repo) {
@@ -86,22 +62,19 @@ function loadInstallation(repo) {
 }
 
 function buildStatus(repo) {
-  const activeRun = loadActiveRun(repo);
-  const workerScope = loadWorkerScope(repo);
+  const authorization = inspectRunAuthorization(repo, {
+    allowDirect: true,
+    requireScopeRunId: true,
+  });
+  const activeRun = { record: authorization.activeRun };
+  const workerScope = { record: authorization.workerScope };
   const installation = loadInstallation(repo);
-  const activeLedgerPath = readTextIfExists(path.join(repo, "docs", "ai", "ACEF_ACTIVE_LEDGER"));
-  const contextPath = activeRun.record?.contextPath || "docs/ai/ACEF_CURRENT_CONTEXT.md";
-  const ledgerPath = activeRun.record?.ledgerPath || activeLedgerPath || null;
+  const contextPath = authorization.contextPath;
+  const ledgerPath = authorization.ledgerPath;
   const git = currentGit(repo);
-  const blockers = [];
+  const blockers = [...authorization.blockers];
 
   if (!fs.existsSync(path.join(repo, "AGENTS.md"))) blockers.push("missing AGENTS.md");
-  if (!activeRun.exists) blockers.push("missing docs/ai/ACEF_ACTIVE_RUN.json");
-  if (activeRun.error) blockers.push(`invalid active run: ${activeRun.error}`);
-  if (!ledgerPath) blockers.push("missing active ledger path");
-  if (ledgerPath && !existsRelative(repo, ledgerPath)) blockers.push(`active ledger not found: ${ledgerPath}`);
-  if (!existsRelative(repo, contextPath)) blockers.push(`current context not found: ${contextPath}`);
-  if (workerScope.error) blockers.push(`invalid worker scope: ${workerScope.error}`);
   if (!installation.exists) blockers.push("missing docs/ai/ACEF_INSTALLATION.json");
   if (installation.error) blockers.push(`invalid ACEF installation manifest: ${installation.error}`);
 
@@ -131,6 +104,14 @@ function buildStatus(repo) {
       nextAllowedStep,
       ledgerPath,
       contextPath,
+    } : null,
+    directRun: authorization.directRun ? {
+      runId: authorization.directRun.runId,
+      status: authorization.directRun.status,
+      scope: authorization.directRun.scope,
+      technicalBoundary: authorization.directRun.technicalBoundary,
+      promotionDecision: authorization.directRun.promotion.decision,
+      changedPaths: authorization.directRun.changedPaths,
     } : null,
     installation: installation.record ? {
       path: installation.path,
@@ -182,6 +163,13 @@ function printText(status) {
     if (status.activeRun.nextAllowedStep) console.log(`- next allowed step: ${status.activeRun.nextAllowedStep}`);
     console.log(`- ledger: ${status.activeRun.ledgerPath}`);
     console.log(`- context: ${status.activeRun.contextPath}`);
+  }
+  if (status.directRun) {
+    console.log("direct run:");
+    console.log(`- status: ${status.directRun.status}`);
+    console.log(`- scope: ${status.directRun.scope}`);
+    console.log(`- technical boundary: ${status.directRun.technicalBoundary}`);
+    console.log(`- promotion: ${status.directRun.promotionDecision}`);
   }
   if (status.installation) {
     console.log("ACEF installation:");

@@ -207,6 +207,9 @@ function parseApproval(filePath) {
 function parseWorkerScope(filePath) {
   const record = readJson(filePath);
   requireFields(record, ["activeStory", "phase", "workerId", "allowedPaths", "baseRef", "maxCommits"], "worker scope");
+  if (record.runId !== undefined && (typeof record.runId !== "string" || !record.runId.trim())) {
+    throw new Error("worker scope runId must be a non-empty string");
+  }
   requireStringArray(record, "allowedPaths", "worker scope", { nonEmpty: true });
   if (record.allowedPaths.some((entry) => path.isAbsolute(entry) || entry.split(/[\\/]/).includes(".."))) {
     throw new Error("worker scope allowedPaths must be repo-relative and cannot contain ..");

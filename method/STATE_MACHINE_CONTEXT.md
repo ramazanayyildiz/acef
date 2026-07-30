@@ -50,12 +50,16 @@ acef-next --repo . [--role developer] [--format json]
 
 Expected behavior:
 
-1. Read `docs/ai/ACEF_ACTIVE_RUN.json`.
-2. Read the active ledger pointer (`ACEF_ACTIVE_LEDGER` or `docs/ai/ACEF_ACTIVE_LEDGER`) for canonical run identity.
-3. Read `docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json` when a worker is active.
-4. Verify the current context path and active ledger path exist.
-5. Emit a bounded JSON instruction packet.
-6. Refuse to emit a forward-moving action when required active state, current context, ledger, or scope is missing.
+1. Prefer `docs/ai/ACEF_ACTIVE_RUN.json`; when it is absent, accept a valid active `ACEF_DIRECT_RUN.json`.
+2. Require an actionable active-run status before authorizing typed work.
+3. Read the active ledger pointer (`ACEF_ACTIVE_LEDGER` or `docs/ai/ACEF_ACTIVE_LEDGER`) and reconcile it with the
+   active run.
+4. Read `docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json` when a worker is active and reconcile story plus `runId`.
+5. Verify the current context path and active ledger path exist. For direct, the direct record is the whole compact
+   context boundary.
+6. Emit a bounded JSON instruction packet.
+7. Refuse to emit a forward-moving action when required active state, current context, ledger, or scope is missing,
+   stale, blocked, or bound to another run.
 
 `acef-next` is read-only. It does not advance state, edit ledgers, approve gates, run tests, spawn workers, or choose the
 next story. It is intentionally smaller than a Process Judge: it projects the current state into the next safe instruction;
@@ -108,7 +112,8 @@ where applicable; their full contents are not embedded.
 
 - `ACEF_ACTIVE_RUN.json` provides lane, story, phase, status, and active ledger.
 - `docs/ai/actors/*.json` provides actor identity and allowed context profile.
-- `ACEF_ACTIVE_WORKER_SCOPE.json` provides write paths, base ref, max commits, and no-spawn/no-ledger-edit boundaries.
+- `ACEF_ACTIVE_WORKER_SCOPE.json` provides the active-run `runId`, write paths, base ref, max commits, and
+  no-spawn/no-ledger-edit boundaries.
 - `ACEF_CURRENT_CONTEXT.md` provides the hot slice, but is not canonical state.
 - Epic Context Pack and story artifacts provide bounded human-readable context.
 - Pattern registry and generated PR review profiles provide conformance slices.
@@ -160,17 +165,17 @@ The repo ships `scripts/acef-next`, and `scripts/install-acef-tools` installs it
 
 The first slice checks:
 
-- active run exists and is `active`;
-- active ledger path exists;
+- typed active run exists and is `active`, or a valid direct record supplies the compact context;
+- active ledger path exists and agrees with the active pointer;
 - current context path exists;
-- worker scope is valid when present;
+- worker scope is valid when present and its story/`runId` agree with the active run;
 - output remains bounded and role-specific enough for the next prompt.
 - if `workflowPath` and `workflowNodeId` are present, the current workflow node is validated and its declared
   `inputs`/`outputs` are returned as artifact-passing context.
 
-Future hardening can add schema validation, actor-record matching, current-context freshness checks, gate/evidence lookups,
-and explicit approval-record checks before epic transitions. Those are not required for the command to be useful as a
-fresh-session guard today.
+The same run-authorization predicate is consumed by `acef-status`, `acef-next`, `acef-codex-guard`, the hard-wall hook,
+and the pre-commit validator. Future hardening can add actor-record matching, current-context freshness checks,
+gate/evidence lookups, and explicit approval-record checks before epic transitions.
 
 See `method/WORKFLOW_AS_CODE.md` for the minimal workflow YAML contract. This is not a workflow runner yet; it is a
 validated graph definition plus `acef-next` projection for fresh-node prompts.

@@ -26,7 +26,9 @@
       "schemas/control-dosing.schema.json"
     ],
     "cli": [
-      "scripts/acef-state#writeDirectRun"
+      "scripts/acef-state#writeDirectRun",
+      "scripts/acef-state#usage",
+      "scripts/acef-next#buildDirectNext"
     ],
     "validator": [
       "scripts/acef-process-validator#checkDirectLaneSelection",
@@ -39,6 +41,8 @@
       "scripts/test-install-acef-tools",
       "scripts/test-install-acef-skills",
       "scripts/test-acef-empirical-validation",
+      "scripts/test-acef-next",
+      "scripts/test-acef-state",
       "scripts/acef-direct-measurement-report"
     ],
     "installer": [
@@ -50,7 +54,8 @@
     "Direct closeout records focused verification command and exit code but intentionally does not create evidence manifests or runner proof.",
     "Path and risk inference is heuristic; unusual domain risk that is absent from paths and omitted from riskTriggers cannot be discovered mechanically.",
     "Direct is limited to one attended, reversible technical boundary and must promote when scope, surface count, risk, or test-integrity checks expand.",
-    "The preregistered 30-run real-task measurement completed with 0 invalid runs but failed the quality, direct-contract, provider-promotion, context-miss, token, and runtime thresholds. Direct used 190% more paired-median input and took 175.1% more paired-median runtime than baseline; it remains enforced, not proven."
+    "The preregistered 30-run real-task measurement completed with 0 invalid runs but failed the quality, direct-contract, provider-promotion, context-miss, token, and runtime thresholds. Direct used 190% more paired-median input and took 175.1% more paired-median runtime than baseline; it remains enforced, not proven.",
+    "The compact help/context change has deterministic tests but has not yet cleared a repeated real-task cost measurement; the capability therefore remains enforced rather than proven."
   ],
   "evidence": [
     {
@@ -68,6 +73,16 @@
     {
       "layer": "tests",
       "ref": "scripts/test-acef-direct-lifecycle"
+    },
+    {
+      "layer": "tests",
+      "ref": "scripts/test-acef-next",
+      "note": "The direct record is projected as the entire current-context boundary without active-run, ledger, or worker bootstrap."
+    },
+    {
+      "layer": "tests",
+      "ref": "scripts/test-acef-state",
+      "note": "The direct-run subcommand exposes bounded start, close, and promote usage."
     },
     {
       "layer": "installer",

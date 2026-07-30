@@ -539,7 +539,19 @@ try {
       content: "export const blocked = true;\n",
     },
   }, "deny", workerEnv);
+  fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_ACTIVE_RUN.json"), JSON.stringify({
+    runId: "RUN-hook",
+    repo: "fixture",
+    lane: "full-bmad",
+    status: "active",
+    activeStory: "1.1",
+    activePhase: "development",
+    workerScopePath: "docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json",
+    ledgerPath: "docs/ai/ACEF_demo_DELIVERY_AUDIT.md",
+    contextPath: "docs/ai/ACEF_CURRENT_CONTEXT.md",
+  }, null, 2));
   fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_ACTIVE_WORKER_SCOPE.json"), JSON.stringify({
+    runId: "RUN-hook",
     activeStory: "1.1",
     phase: "dev",
     workerId: "other-worker",
@@ -562,6 +574,7 @@ try {
     "If this is not an active ACEF run, close the stale lane marker",
   ]);
   fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_ACTIVE_WORKER_SCOPE.json"), JSON.stringify({
+    runId: "RUN-hook",
     activeStory: "1.1",
     phase: "dev",
     workerId: "ACEF_BMAD_WORKER",
@@ -611,6 +624,30 @@ try {
       content: "export const ok = true;\n",
     },
   }, "allow", workerEnv);
+  const hookRunPath = path.join(tmp, "docs", "ai", "ACEF_ACTIVE_RUN.json");
+  const hookRun = JSON.parse(fs.readFileSync(hookRunPath, "utf8"));
+  fs.writeFileSync(hookRunPath, JSON.stringify({ ...hookRun, status: "blocked" }, null, 2));
+  expectHookDecision("blocked active run denies implementation write", {
+    tool_name: "Write",
+    cwd: tmp,
+    tool_input: {
+      file_path: path.join(tmp, "src", "blocked-run.ts"),
+      content: "export const blocked = true;\n",
+    },
+  }, "deny", workerEnv, ["active run status blocked is not authorized"]);
+  fs.writeFileSync(hookRunPath, JSON.stringify(hookRun, null, 2));
+  const hookScopePath = path.join(tmp, "docs", "ai", "ACEF_ACTIVE_WORKER_SCOPE.json");
+  const hookScope = JSON.parse(fs.readFileSync(hookScopePath, "utf8"));
+  fs.writeFileSync(hookScopePath, JSON.stringify({ ...hookScope, runId: "RUN-stale" }, null, 2));
+  expectHookDecision("stale worker runId denies implementation write", {
+    tool_name: "Write",
+    cwd: tmp,
+    tool_input: {
+      file_path: path.join(tmp, "src", "stale-run.ts"),
+      content: "export const blocked = true;\n",
+    },
+  }, "deny", workerEnv, ["worker scope runId RUN-stale does not match active run RUN-hook"]);
+  fs.writeFileSync(hookScopePath, JSON.stringify(hookScope, null, 2));
 
   // --- Identity-absent graceful degradation -------------------------------------------
   // The harness (e.g. Claude Code subagents) does not propagate worker identity into hook
@@ -628,6 +665,7 @@ try {
   };
   function writeWorkerScope(overrides) {
     fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_ACTIVE_WORKER_SCOPE.json"), JSON.stringify({
+      runId: "RUN-hook",
       activeStory: "1.1",
       phase: "development",
       workerId: "ACEF_BMAD_WORKER",
@@ -724,6 +762,7 @@ try {
     },
   }, "deny", workerEnv);
   fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_ACTIVE_WORKER_SCOPE.json"), JSON.stringify({
+    runId: "RUN-hook",
     activeStory: "1.1",
     phase: "verify-patch",
     workerId: "ACEF_BMAD_WORKER",
@@ -769,6 +808,44 @@ try {
     },
   }, "deny", workerEnv);
   fs.rmSync(lightweight, { recursive: true, force: true });
+
+  const directHook = fs.mkdtempSync(path.join(os.tmpdir(), "acef-direct-hook-"));
+  fs.mkdirSync(path.join(directHook, "docs", "ai"), { recursive: true });
+  fs.writeFileSync(path.join(directHook, ".acef-lane"), "direct\n");
+  fs.writeFileSync(path.join(directHook, "docs", "ai", "ACEF_DIRECT_RUN.json"), JSON.stringify({
+    schema: "acef.direct-run.v1",
+    version: "1.0.0",
+    runId: "DIRECT-hook",
+    lane: "direct",
+    status: "active",
+    scope: "Contained source copy",
+    acceptance: ["Copy is updated."],
+    technicalBoundary: "localized-ui",
+    reversible: true,
+    riskTriggers: [],
+    baseCommit: null,
+    changedPaths: ["src/direct.ts"],
+    verification: [],
+    promotion: { decision: "stay-direct", reasons: [] },
+  }, null, 2));
+  expectHookDecision("direct run allows current-session implementation write", {
+    tool_name: "Write",
+    cwd: directHook,
+    tool_input: {
+      file_path: path.join(directHook, "src", "direct.ts"),
+      content: "export const direct = true;\n",
+    },
+  }, "allow");
+  expectHookDecision("direct run forbids worker spawn", {
+    tool_name: "Agent",
+    cwd: directHook,
+    tool_input: {
+      prompt: "Implement the contained direct task",
+    },
+  }, "deny", {}, ["direct lane forbids worker or subagent spawning"]);
+  fs.rmSync(directHook, { recursive: true, force: true });
+
+  fs.rmSync(path.join(tmp, "docs", "ai", "ACEF_ACTIVE_RUN.json"), { force: true });
 
   expectPass("preflight", ["--repo", tmp, "--check", "preflight"]);
   expectPass("adapter-freshness", ["--repo", tmp, "--check", "adapter-freshness", "--adapter", "docs/codebase-map.md"]);
@@ -1101,6 +1178,7 @@ try {
   apiEvidence.runnerProof = evidenceRunnerProof(apiEvidence);
   fs.writeFileSync(path.join(tmp, "docs", "ai", "evidence", "evidence-api.json"), JSON.stringify(apiEvidence, null, 2));
   fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_ACTIVE_WORKER_SCOPE.json"), JSON.stringify({
+    runId: "RUN-surface-validation",
     activeStory: "story 1.1",
     phase: "process-judge",
     workerId: "judge-surface",
@@ -1122,6 +1200,21 @@ try {
     ledgerPath: "docs/ai/ACEF_demo_DELIVERY_AUDIT.md",
     contextPath: "docs/ai/ACEF_CURRENT_CONTEXT.md",
   }, null, 2));
+  expectPass("run-authorization", ["--repo", tmp, "--check", "run-authorization"]);
+  const authorizedRun = JSON.parse(fs.readFileSync(path.join(tmp, "docs", "ai", "ACEF_ACTIVE_RUN.json"), "utf8"));
+  fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_ACTIVE_RUN.json"), JSON.stringify({
+    ...authorizedRun,
+    status: "blocked",
+  }, null, 2));
+  expectFail("run-authorization", ["--repo", tmp, "--check", "run-authorization"]);
+  fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_ACTIVE_RUN.json"), JSON.stringify(authorizedRun, null, 2));
+  const authorizedScope = JSON.parse(fs.readFileSync(path.join(tmp, "docs", "ai", "ACEF_ACTIVE_WORKER_SCOPE.json"), "utf8"));
+  fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_ACTIVE_WORKER_SCOPE.json"), JSON.stringify({
+    ...authorizedScope,
+    runId: "RUN-stale",
+  }, null, 2));
+  expectFail("run-authorization", ["--repo", tmp, "--check", "run-authorization"]);
+  fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_ACTIVE_WORKER_SCOPE.json"), JSON.stringify(authorizedScope, null, 2));
   expectFail("spec-readiness", ["--repo", tmp, "--check", "spec-readiness"]);
   expectFail("lane-selection", ["--repo", tmp, "--check", "lane-selection"]);
   fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_SPEC_READINESS.json"), JSON.stringify({
@@ -1307,6 +1400,30 @@ try {
   delete activeRunForGoalCoverage.goalCoverage;
   fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_ACTIVE_RUN.json"), JSON.stringify(activeRunForGoalCoverage, null, 2));
 
+  const reviewGateOne = path.join(tmp, "docs", "ai", "gates", "story-1-1-review-1.json");
+  const reviewGateTwo = path.join(tmp, "docs", "ai", "gates", "story-1-1-review-2.json");
+  fs.writeFileSync(reviewGateOne, JSON.stringify({
+    gateId: "story-1-1-review-1",
+    scope: "story 1.1",
+    verdict: "REVISE",
+    decidedBy: "judge-surface",
+    repositoryCommit: head,
+    createdAt: "2026-06-25T00:00:01.000Z",
+  }, null, 2));
+  fs.writeFileSync(reviewGateTwo, JSON.stringify({
+    gateId: "story-1-1-review-2",
+    scope: "story 1.1",
+    verdict: "FAIL",
+    decidedBy: "judge-surface",
+    repositoryCommit: head,
+    createdAt: "2026-06-25T00:00:02.000Z",
+  }, null, 2));
+  expectFail("review-circuit-breaker", ["--repo", tmp, "--check", "review-circuit-breaker"]);
+  expectFail("replan-counter", ["--repo", tmp, "--check", "replan-counter"]);
+  fs.rmSync(reviewGateTwo);
+  expectPass("review-circuit-breaker", ["--repo", tmp, "--check", "review-circuit-breaker"]);
+  fs.rmSync(reviewGateOne);
+
   const originalApiArtifact = fs.readFileSync(apiSurfaceArtifact, "utf8");
   const originalApiEvidence = JSON.parse(fs.readFileSync(path.join(tmp, "docs", "ai", "evidence", "evidence-api.json"), "utf8"));
   fs.writeFileSync(apiSurfaceArtifact, "PASS but not produced by the runner\n");
@@ -1484,6 +1601,7 @@ try {
     "- Do-not-copy: avoided `legacy.service.direct-fetch`.",
   ].join("\n"));
   fs.writeFileSync(path.join(scopedHook, "docs", "ai", "ACEF_ACTIVE_WORKER_SCOPE.json"), JSON.stringify({
+    runId: "RUN-scoped-hook",
     activeStory: "1.1",
     phase: "dev",
     workerId: "ACEF_BMAD_WORKER",
@@ -1492,6 +1610,18 @@ try {
     maxCommits: 1,
     canEditLedger: false,
     canSpawnAgents: false,
+  }, null, 2));
+  fs.writeFileSync(path.join(scopedHook, "docs", "ai", "ACEF_CURRENT_CONTEXT.md"), "active_story: 1.1\nactive_phase: dev\n");
+  fs.writeFileSync(path.join(scopedHook, "docs", "ai", "ACEF_ACTIVE_RUN.json"), JSON.stringify({
+    runId: "RUN-scoped-hook",
+    repo: "scoped-hook",
+    lane: "lightweight",
+    status: "active",
+    activeStory: "1.1",
+    activePhase: "development",
+    workerScopePath: "docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json",
+    ledgerPath: "docs/ai/ACEF_current_DELIVERY_AUDIT.md",
+    contextPath: "docs/ai/ACEF_CURRENT_CONTEXT.md",
   }, null, 2));
   expectHookDecision("active ledger allows current reuse evidence", {
     tool_name: "Write",
@@ -1517,6 +1647,7 @@ try {
     "- Do-not-copy: avoided `legacy.service.direct-fetch`.",
   ].join("\n"));
   fs.writeFileSync(path.join(partialHook, "docs", "ai", "ACEF_ACTIVE_WORKER_SCOPE.json"), JSON.stringify({
+    runId: "RUN-partial-hook",
     activeStory: "1.1",
     phase: "dev",
     workerId: "ACEF_BMAD_WORKER",
@@ -1525,6 +1656,18 @@ try {
     maxCommits: 1,
     canEditLedger: false,
     canSpawnAgents: false,
+  }, null, 2));
+  fs.writeFileSync(path.join(partialHook, "docs", "ai", "ACEF_CURRENT_CONTEXT.md"), "active_story: 1.1\nactive_phase: dev\n");
+  fs.writeFileSync(path.join(partialHook, "docs", "ai", "ACEF_ACTIVE_RUN.json"), JSON.stringify({
+    runId: "RUN-partial-hook",
+    repo: "partial-hook",
+    lane: "lightweight",
+    status: "active",
+    activeStory: "1.1",
+    activePhase: "development",
+    workerScopePath: "docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json",
+    ledgerPath: "docs/ai/ACEF_partial_DELIVERY_AUDIT.md",
+    contextPath: "docs/ai/ACEF_CURRENT_CONTEXT.md",
   }, null, 2));
   expectHookDecision("PARTIAL accepted guarded workshape allows source write", {
     tool_name: "Write",
@@ -1589,6 +1732,7 @@ try {
     contextPath: "docs/ai/ACEF_CURRENT_CONTEXT.md",
   }, null, 2));
   fs.writeFileSync(path.join(codexTmp, "docs", "ai", "ACEF_ACTIVE_WORKER_SCOPE.json"), JSON.stringify({
+    runId: "RUN-codex-guard",
     activeStory: "1.1",
     phase: "dev",
     workerId: "codex-worker",
@@ -1669,8 +1813,12 @@ try {
   if (!codexPreTool.some((entry) => (entry.hooks || []).some((hook) => String(hook.command || "").includes("context-mode hook codex pretooluse")))) {
     throw new Error("Expected installer to preserve existing Codex PreToolUse hook");
   }
-  if (!codexPreTool.some((entry) => (entry.hooks || []).some((hook) => String(hook.command || "").includes("acef-bmad-dispatcher.mjs")))) {
+  const codexDispatcherEntry = codexPreTool.find((entry) => (entry.hooks || []).some((hook) => String(hook.command || "").includes("acef-bmad-dispatcher.mjs")));
+  if (!codexDispatcherEntry) {
     throw new Error("Expected installer to add ACEF dispatcher to Codex PreToolUse hooks");
+  }
+  if (!String(codexDispatcherEntry.matcher || "").includes("spawn_agent")) {
+    throw new Error("Expected Codex dispatcher matcher to include worker spawn tools");
   }
   if (codexPreTool.some((entry) => (entry.hooks || []).some((hook) => String(hook.command || "").includes("acef-bmad-hard-wall.mjs")))) {
     throw new Error("Expected installer to remove old full ACEF guard from Codex PreToolUse hooks");
@@ -1678,6 +1826,11 @@ try {
   const installedClaudeSettings = JSON.parse(fs.readFileSync(path.join(installerHome, ".claude", "settings.json"), "utf8"));
   if (!String(JSON.stringify(installedClaudeSettings)).includes("acef-bmad-dispatcher.mjs")) {
     throw new Error("Expected installer to add ACEF dispatcher to Claude PreToolUse hooks");
+  }
+  const claudeDispatcherEntry = (installedClaudeSettings.hooks?.PreToolUse || [])
+    .find((entry) => (entry.hooks || []).some((hook) => String(hook.command || "").includes("acef-bmad-dispatcher.mjs")));
+  if (!String(claudeDispatcherEntry?.matcher || "").includes("Agent")) {
+    throw new Error("Expected Claude dispatcher matcher to include worker spawn tools");
   }
   if (fs.existsSync(path.join(installerHome, ".config", "opencode", "plugins", "acef-bmad-hard-wall.mjs"))) {
     throw new Error("Expected installer to remove old full ACEF guard sibling from global OpenCode plugin dir");

@@ -136,6 +136,12 @@ function makeRepo(name, mutate = (record) => record) {
     updatedAt: "2026-06-23T00:00:00.000Z",
   });
   write(repo, "docs/ai/ACEF_LIGHTWEIGHT_RUN.json", `${JSON.stringify(record, null, 2)}\n`);
+  write(repo, "docs/ai/ACEF_CURRENT_CONTEXT.md", [
+    "active_story: story 1.1",
+    "active_phase: closeout",
+    "source_ledger: docs/ai/ACEF_test_DELIVERY_AUDIT.md",
+    "",
+  ].join("\n"));
   write(repo, "docs/ai/ACEF_test_DELIVERY_AUDIT.md", [
     "# Test Delivery Audit",
     "",

@@ -2,7 +2,8 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const cp = require("node:child_process");
-const { parseActiveRun, parseWorkerScope } = require("./lib/acef-state-parser");
+const { parseWorkerScope } = require("./lib/acef-state-parser");
+const { inspectRunAuthorization } = require("./lib/acef-run-authorization");
 
 function usage() {
   console.log(`ACEF Codex guard
@@ -65,20 +66,12 @@ function readJson(filePath) {
 }
 
 function requireNextReady(repoRoot) {
-  const runPath = path.join(repoRoot, "docs", "ai", "ACEF_ACTIVE_RUN.json");
-  if (!exists(runPath)) fail("missing docs/ai/ACEF_ACTIVE_RUN.json; run acef-status/acef-next before worker writes");
-  let activeRun;
-  try {
-    activeRun = parseActiveRun(runPath);
-  } catch (error) {
-    fail(`invalid active run: ${error.message}`);
-  }
-  if (activeRun.status !== "active") fail(`active run is not active: ${activeRun.status}`);
-  const contextPath = path.join(repoRoot, activeRun.contextPath || "docs/ai/ACEF_CURRENT_CONTEXT.md");
-  if (!exists(contextPath)) fail(`current context not found: ${path.relative(repoRoot, contextPath)}`);
-  const ledgerPath = path.join(repoRoot, activeRun.ledgerPath);
-  if (!exists(ledgerPath)) fail(`active run ledger not found: ${activeRun.ledgerPath}`);
-  return activeRun;
+  const authorization = inspectRunAuthorization(repoRoot, {
+    requireWorkerScope: true,
+    requireScopeRunId: true,
+  });
+  if (!authorization.ok) fail(authorization.blockers.join("; "));
+  return authorization.activeRun;
 }
 
 function runGit(repoRoot, args) {

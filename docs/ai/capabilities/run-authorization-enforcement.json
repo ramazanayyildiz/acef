@@ -1,0 +1,90 @@
+{
+  "capabilityId": "run-authorization-enforcement",
+  "requestedIntent": "Stop ACEF work when active-run status, ledger/context identity, story, or worker-scope runId drift, while keeping one shared decision predicate across status, next-action projection, guards, hooks, and pre-commit.",
+  "status": "enforced",
+  "requiredLayers": [
+    "docs",
+    "schema",
+    "cli",
+    "validator",
+    "hook",
+    "tests",
+    "installer"
+  ],
+  "implementedLayers": {
+    "docs": [
+      "CHANGELOG.md#Run authorization and bounded review loops",
+      "method/STATE_MACHINE_CONTEXT.md",
+      "method/TYPED_STATE.md",
+      "method/RULE_ENFORCEMENT_MAP.md",
+      "skills/acef/references/ACEF_RULE_ENFORCEMENT_MAP.md"
+    ],
+    "schema": [
+      "schemas/worker-scope.schema.json"
+    ],
+    "cli": [
+      "scripts/lib/acef-run-authorization.js",
+      "scripts/acef-state",
+      "scripts/acef-status",
+      "scripts/acef-next",
+      "scripts/acef-codex-guard"
+    ],
+    "validator": [
+      "scripts/acef-process-validator#checkRunAuthorization",
+      "scripts/acef-process-validator#checkPrecommitGate"
+    ],
+    "hook": [
+      "claude-plugins/acef-bmad-guard/hooks/acef-bmad-hard-wall.mjs",
+      "claude-plugins/acef-bmad-guard/hooks/acef-precommit-gate.sh"
+    ],
+    "tests": [
+      "scripts/test-acef-run-authorization",
+      "scripts/test-acef-state",
+      "scripts/test-acef-next",
+      "scripts/test-acef-status",
+      "scripts/test-acef-lightweight-lifecycle",
+      "scripts/test-acef-process-validator",
+      "scripts/test-install-acef-tools",
+      "scripts/acef-empirical-validation",
+      "scripts/acef-epic-benchmark"
+    ],
+    "installer": [
+      "scripts/install-acef-tools",
+      "scripts/install-acef-bmad-guard"
+    ]
+  },
+  "limitations": [
+    "Worker-scope runId is optional in the schema so existing installed state can still be parsed, but runtime write authorization and pre-commit reject missing bindings until acef-state worker-scope regenerates the scope.",
+    "This is cooperative local enforcement and does not cryptographically protect state files from a malicious process with repository write access.",
+    "Target repositories must refresh ACEF tools and hooks before they consume this predicate."
+  ],
+  "evidence": [
+    {
+      "layer": "cli",
+      "ref": "scripts/lib/acef-run-authorization.js"
+    },
+    {
+      "layer": "hook",
+      "ref": "claude-plugins/acef-bmad-guard/hooks/acef-bmad-hard-wall.mjs"
+    },
+    {
+      "layer": "validator",
+      "ref": "scripts/acef-process-validator#checkRunAuthorization"
+    },
+    {
+      "layer": "tests",
+      "ref": "scripts/test-acef-run-authorization",
+      "note": "Covers valid, blocked, stale-runId, direct-mode authorization and enforces a 50 ms p95 local budget."
+    },
+    {
+      "layer": "tests",
+      "ref": "scripts/test-acef-process-validator",
+      "note": "Covers CLI validation plus hard-wall rejection of blocked and stale run state."
+    },
+    {
+      "layer": "installer",
+      "ref": "scripts/test-install-acef-tools"
+    }
+  ],
+  "createdAt": "2026-07-30"
+}

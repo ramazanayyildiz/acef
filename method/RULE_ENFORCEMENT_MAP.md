@@ -27,7 +27,7 @@ treated as enforcement.
 | Codex worker scope checks | `machinery` via repo-local ACEF hook + optional Codex dispatcher + `.acef/bin/acef-codex-guard` | machinery | `scripts/install-acef-bmad-guard --repo <repo>` installs `.acef/hooks`; `--global-dispatcher` wires a tiny `~/.codex/hooks.json` dispatcher that only forwards to repos with a local engine. Run the CLI guard before commit/certification or from git hooks/CI as a backstop. | Done |
 | OpenCode worker scope checks | `machinery` via repo-local ACEF hook + OpenCode `tool.execute.before` plugin | machinery | `scripts/install-acef-bmad-guard --repo <repo>` installs `.opencode/plugins/acef-bmad-hard-wall.js`; optional `--global-dispatcher` installs a user-level plugin that still dispatches to each repo's local `.acef/hooks` engine. | Done |
 | Verification requires clean tree | validator CLI | machinery | `.acef/bin/acef-process-validator --check clean-tree` blocks certification on uncommitted or untracked changes. | P0 |
-| 2x `REPLAN` escalates to human | validator CLI | machinery | `.acef/bin/acef-process-validator --check replan-counter`; hook/CI wiring still pending. | P0 |
+| Two consecutive typed non-PASS reviews stop patching and force `REPLAN/SPLIT` | typed gates + validator + pre-commit | machinery | `--check review-circuit-breaker` (legacy alias: `replan-counter`) consumes valid review/Judge gates for the active guarded/full-BMAD scope. | Done |
 | Artifact-claim reconciliation | validator CLI | machinery | `.acef/bin/acef-process-validator --check claims`; hook/CI wiring still pending. | P0 |
 | Epic N+1 blocked until Epic N Process Judge is `PASS` | hook partial + validator CLI | machinery | Hook exists for story commands; `--check epic-boundary` validates ledger/artifacts. | P0 |
 | Epic N+1 requires explicit human transition approval | typed receipt + hook + validator CLI | machinery | `acef-state approval --target-epic N --quote "Start Epic N"`; `--check epic-transition-approval --target-epic N` prefers the hashed human receipt. Generic "go on/devam/tamamla" is invalid. | Done |
@@ -36,7 +36,7 @@ treated as enforcement.
 | Adapter fresh before any non-direct route | validator CLI | machinery | `.acef/bin/acef-process-validator --check adapter-freshness`; direct intentionally uses targeted reads without adapter refresh. | P0 |
 | Preflight `PASS` before non-direct planning/implementation | validator CLI | machinery | `.acef/bin/acef-process-validator --check preflight`; direct uses its compact task record instead. | P0 |
 | Step ledger entry exists before workflow/read/task execution | hook partial + validator tests | machinery | ACEF/BMAD guard hook blocks phase/story Bash commands until the ledger row is `IN PROGRESS`; wider tool coverage can mature later. | P0 |
-| Worker stays inside one story/phase scope | hook + scope manifest | machinery | `docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json` binds implementation workers to `activeStory`, `phase`, `allowedPaths`, one commit budget, no ledger edits, and no subagent spawning. | P0 |
+| Worker stays inside one active run/story/phase scope | shared authorization + hook + scope manifest | machinery | `acef-state worker-scope` binds `runId`, `activeStory`, `phase`, `allowedPaths`, one commit budget, no ledger edits, and no subagent spawning; status/next/Codex guard/hard-wall/pre-commit consume the same authorization predicate. | Done |
 | Guarded test floor has at least one symbol-grounded boundary test | validator CLI + sharded Test Author | machinery + shard | `--check guarded-test-floor` reconciles an exact boundary symbol to an asserted test and dedicated Test Author. | P1 |
 | External framework API assumptions grounded before ATDD | shard + Process Judge | shard + machinery | Stories using third-party framework APIs require a spike/reference implementation before ATDD; fake descriptors, vendor overrides, monkey patches, and test-only shims are REPLAN triggers. | P1 |
 | Runtime shortcuts cannot replace production entrypoint tests | shard + Process Judge | shard + machinery | Story/epic close requires real HTTP/CLI/queue/scheduler/CMS-runtime smoke with content or negative assertions when that runtime path owns behavior. | P1 |
@@ -66,7 +66,7 @@ treated as enforcement.
 
 Build these before growing more prose:
 
-1. `REPLAN` counter validator. `.acef/bin/acef-process-validator --check replan-counter`
+1. Typed review circuit breaker. `.acef/bin/acef-process-validator --check review-circuit-breaker`
 2. Claimed-output path-exists validator. `.acef/bin/acef-process-validator --check claims`
 3. Epic gate state validator. `.acef/bin/acef-process-validator --check epic-boundary --target-epic N`
 4. Epic transition approval validator. `.acef/bin/acef-process-validator --check epic-transition-approval --target-epic N`

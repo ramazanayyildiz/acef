@@ -9,6 +9,29 @@ or evidence contract. Do not use it to claim implementation status; link to the 
 
 ## Unreleased
 
+### Run authorization and bounded review loops
+
+- Added one shared run-authorization predicate for `acef-status`, `acef-next`, `acef-codex-guard`, the cross-client
+  hard-wall hook, and pre-commit validation. Typed writes now fail closed when the active run is missing, non-active,
+  points at another ledger/context, or disagrees with the worker scope.
+- `acef-state worker-scope` now requires an active matching story and binds the active `runId` automatically. Legacy
+  scopes remain parseable but are not authorized for writes until regenerated.
+- Replaced the prose `2× REPLAN` counter with a typed guarded/full-BMAD review circuit breaker: two consecutive
+  non-`PASS` review/Judge gate verdicts for the active scope stop the patch loop and require `REPLAN/SPLIT`. The legacy
+  `replan-counter` check remains as an alias.
+- Wired both checks into guarded/full-BMAD pre-commit and closeout without adding a new agent, review round, or evidence
+  artifact. The authorization benchmark is enforced at p95 ≤50 ms.
+- Added `docs/ai/capabilities/run-authorization-enforcement.json` and
+  `docs/ai/capabilities/typed-review-circuit-breaker.json`, both at status `enforced`.
+
+### Direct-lane entry reduction
+
+- `acef-state direct-run --help` now provides the complete start/close/promote command surface without schema or source
+  inspection.
+- `acef-next` treats `ACEF_DIRECT_RUN.json` as the entire direct context boundary and emits the direct write/stop packet
+  without bootstrapping typed active-run, ledger, context, or worker artifacts.
+- The direct lane remains `enforced`, not `proven`; its real-task cost remeasurement remains a separate empirical gate.
+
 ### Direct task lane
 
 - Added the `direct` lane for reversible copy, style, localized UI/config/docs/mechanical changes and localized bug

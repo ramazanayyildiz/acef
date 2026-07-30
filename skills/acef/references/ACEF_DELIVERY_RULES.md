@@ -121,11 +121,14 @@ A lightweight task promotes to full BMAD when any of:
 - authz / tenant isolation / entitlement behavior is underspecified,
 - review needs repeated rounds just to discover basic requirements.
 
-`REPLAN` twice on the same scope → stop and escalate to the human.
+Two consecutive typed non-`PASS` review verdicts on the same guarded/full-BMAD scope → stop the patch loop and
+`REPLAN/SPLIT`. The breaker consumes gate records decided by code-review, test-review, or Process Judge actors; it does
+not grep prose or require reviewers to choose the literal word `REPLAN`.
 
 ## Discipline that travels with non-direct lanes (borrowed IN)
 - **Plan integrity** — no skip / reorder / shrink / expand scope without human approval.
-- **2×REPLAN → escalate** — the circuit breaker.
+- **2× typed non-PASS review → REPLAN/SPLIT** — the circuit breaker runs in guarded/full-BMAD closeout and
+  pre-commit. A later `PASS` resets the consecutive count.
 - **Fresh Judge review** (no self-approval) and **verify-patch on REVISE**.
 - **Review-patch hard stop** — if an independent reviewer returns `REVISE`, `BLOCK`, or `MERGE WITH REQUIRED PATCH`, the
   conductor records `docs/ai/ACEF_REVIEW_PATCH_REQUIRED.json` and stops. Only a separate `verify-patch` worker scoped in

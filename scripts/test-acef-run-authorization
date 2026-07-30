@@ -1,0 +1,118 @@
+#!/usr/bin/env node
+"use strict";
+
+const fs = require("node:fs");
+const os = require("node:os");
+const path = require("node:path");
+const { performance } = require("node:perf_hooks");
+const { inspectRunAuthorization } = require("./lib/acef-run-authorization");
+
+const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "acef-run-authorization-"));
+const docsAi = path.join(tmp, "docs", "ai");
+const activeRunPath = path.join(docsAi, "ACEF_ACTIVE_RUN.json");
+const workerScopePath = path.join(docsAi, "ACEF_ACTIVE_WORKER_SCOPE.json");
+
+function writeJson(filePath, value) {
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  fs.writeFileSync(filePath, `${JSON.stringify(value, null, 2)}\n`);
+}
+
+function percentile(values, quantile) {
+  const sorted = [...values].sort((left, right) => left - right);
+  return sorted[Math.min(sorted.length - 1, Math.ceil(sorted.length * quantile) - 1)];
+}
+
+try {
+  fs.mkdirSync(docsAi, { recursive: true });
+  fs.writeFileSync(path.join(docsAi, "ACEF_demo_DELIVERY_AUDIT.md"), "# Demo\n");
+  fs.writeFileSync(path.join(docsAi, "ACEF_ACTIVE_LEDGER"), "docs/ai/ACEF_demo_DELIVERY_AUDIT.md\n");
+  fs.writeFileSync(path.join(docsAi, "ACEF_CURRENT_CONTEXT.md"), "active_story: Story 1.1\n");
+
+  const activeRun = {
+    runId: "RUN-auth",
+    repo: "authorization-fixture",
+    lane: "guarded",
+    status: "active",
+    activeStory: "Story 1.1",
+    activePhase: "development",
+    workerScopePath: "docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json",
+    ledgerPath: "docs/ai/ACEF_demo_DELIVERY_AUDIT.md",
+    contextPath: "docs/ai/ACEF_CURRENT_CONTEXT.md",
+  };
+  const workerScope = {
+    runId: "RUN-auth",
+    activeStory: "Story 1.1",
+    phase: "development",
+    workerId: "dev-1",
+    allowedPaths: ["src/**"],
+    baseRef: "HEAD",
+    maxCommits: 1,
+    canEditLedger: false,
+    canSpawnAgents: false,
+  };
+  writeJson(activeRunPath, activeRun);
+  writeJson(workerScopePath, workerScope);
+
+  const valid = inspectRunAuthorization(tmp, {
+    requireWorkerScope: true,
+    requireScopeRunId: true,
+  });
+  if (!valid.ok || valid.mode !== "typed") {
+    throw new Error(`valid typed run was rejected: ${valid.blockers.join("; ")}`);
+  }
+
+  writeJson(activeRunPath, { ...activeRun, status: "blocked" });
+  const blocked = inspectRunAuthorization(tmp, { requireScopeRunId: true });
+  if (blocked.ok || !blocked.blockers.some((item) => item.includes("status blocked"))) {
+    throw new Error("blocked active run was not rejected");
+  }
+  writeJson(activeRunPath, activeRun);
+
+  writeJson(workerScopePath, { ...workerScope, runId: "RUN-stale" });
+  const stale = inspectRunAuthorization(tmp, { requireScopeRunId: true });
+  if (stale.ok || !stale.blockers.some((item) => item.includes("does not match active run"))) {
+    throw new Error("stale worker scope runId was not rejected");
+  }
+  writeJson(workerScopePath, workerScope);
+
+  const durations = [];
+  for (let index = 0; index < 500; index += 1) {
+    const started = performance.now();
+    const result = inspectRunAuthorization(tmp, {
+      requireWorkerScope: true,
+      requireScopeRunId: true,
+    });
+    durations.push(performance.now() - started);
+    if (!result.ok) throw new Error(`authorization benchmark iteration failed: ${result.blockers.join("; ")}`);
+  }
+  const p95 = percentile(durations, 0.95);
+  if (p95 > 50) throw new Error(`authorization p95 ${p95.toFixed(3)}ms exceeds 50ms budget`);
+
+  fs.rmSync(activeRunPath);
+  fs.rmSync(workerScopePath);
+  fs.rmSync(path.join(docsAi, "ACEF_ACTIVE_LEDGER"));
+  writeJson(path.join(docsAi, "ACEF_DIRECT_RUN.json"), {
+    schema: "acef.direct-run.v1",
+    version: "1.0.0",
+    runId: "DIRECT-auth",
+    lane: "direct",
+    status: "active",
+    scope: "Contained UI copy",
+    acceptance: ["Requested copy is visible."],
+    technicalBoundary: "localized-ui",
+    reversible: true,
+    riskTriggers: [],
+    baseCommit: null,
+    changedPaths: ["src/ui/copy.js"],
+    verification: [],
+    promotion: { decision: "stay-direct", reasons: [] },
+  });
+  const direct = inspectRunAuthorization(tmp, { allowDirect: true });
+  if (!direct.ok || direct.mode !== "direct" || direct.contextPath !== "docs/ai/ACEF_DIRECT_RUN.json") {
+    throw new Error(`valid direct run was rejected: ${direct.blockers.join("; ")}`);
+  }
+
+  console.log(`acef run authorization tests passed (p95=${p95.toFixed(3)}ms, n=500)`);
+} finally {
+  fs.rmSync(tmp, { recursive: true, force: true });
+}

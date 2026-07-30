@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 const fs = require("node:fs");
 const path = require("node:path");
-const { parseActiveRun, parseWorkerScope, parseWorkflow } = require("./lib/acef-state-parser");
+const { parseWorkflow } = require("./lib/acef-state-parser");
+const { inspectRunAuthorization } = require("./lib/acef-run-authorization");
 
 function usage() {
   console.log(`Usage: acef-next --repo <path> [--role <role>] [--format json]
@@ -29,34 +30,6 @@ function parseArgs(argv) {
   if (opts.format !== "json") throw new Error("--format currently supports only json");
   opts.repo = path.resolve(opts.repo);
   return opts;
-}
-
-function readTextIfExists(filePath) {
-  return fs.existsSync(filePath) ? fs.readFileSync(filePath, "utf8").trim() : null;
-}
-
-function existsRelative(repo, relativePath) {
-  return Boolean(relativePath) && fs.existsSync(path.join(repo, relativePath));
-}
-
-function loadActiveRun(repo) {
-  const filePath = path.join(repo, "docs", "ai", "ACEF_ACTIVE_RUN.json");
-  if (!fs.existsSync(filePath)) return { path: "docs/ai/ACEF_ACTIVE_RUN.json", exists: false, record: null, error: null };
-  try {
-    return { path: "docs/ai/ACEF_ACTIVE_RUN.json", exists: true, record: parseActiveRun(filePath), error: null };
-  } catch (error) {
-    return { path: "docs/ai/ACEF_ACTIVE_RUN.json", exists: true, record: null, error: error.message };
-  }
-}
-
-function loadWorkerScope(repo) {
-  const filePath = path.join(repo, "docs", "ai", "ACEF_ACTIVE_WORKER_SCOPE.json");
-  if (!fs.existsSync(filePath)) return { path: "docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json", exists: false, record: null, error: null };
-  try {
-    return { path: "docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json", exists: true, record: parseWorkerScope(filePath), error: null };
-  } catch (error) {
-    return { path: "docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json", exists: true, record: null, error: error.message };
-  }
 }
 
 function normalize(value) {
@@ -145,23 +118,75 @@ function loadWorkflow(repo, activeRunRecord) {
   }
 }
 
+function buildDirectNext(repo, authorization) {
+  const run = authorization.directRun;
+  const active = authorization.ok && run?.status === "active";
+  return {
+    schema: "acef.next.v1",
+    repo,
+    status: authorization.ok ? "ready" : "blocked",
+    blockers: authorization.blockers,
+    active_state: run ? {
+      lane: "direct",
+      phase: run.status,
+      story: run.scope,
+      role: "single-actor",
+      last_passed_gate: null,
+      next_allowed_action: active ? "implement_and_focused_verify" : null,
+      workflow_node_id: null,
+    } : null,
+    allowed: {
+      can_write: active,
+      paths: run?.changedPaths || [],
+      commands: run?.verification?.map((item) => item.command) || [],
+    },
+    forbidden: {
+      paths: ["docs/ai/ACEF_* except ACEF_DIRECT_RUN.json"],
+      actions: ["spawn_worker", "approve_gate", "edit_ledger", "start_next_story"],
+    },
+    context: {
+      current_context: "docs/ai/ACEF_DIRECT_RUN.json",
+      ledger: null,
+      worker_scope: null,
+      workflow: null,
+      inputs: ["docs/ai/ACEF_DIRECT_RUN.json"],
+      outputs: ["focused verification", "direct handoff"],
+    },
+    workflow_node: null,
+    evidence_required: active
+      ? ["focused_verification_command", "changed_files_summary", "promotion_check"]
+      : [],
+    stop_condition: run?.status === "complete"
+      ? "direct_handoff_complete"
+      : authorization.ok
+        ? "complete_or_promote_then_report"
+        : "fix_blockers_then_rerun_acef_next",
+  };
+}
+
 function buildNext(repo, roleOverride) {
-  const activeRun = loadActiveRun(repo);
-  const workerScope = loadWorkerScope(repo);
+  const authorization = inspectRunAuthorization(repo, {
+    allowDirect: true,
+    requireScopeRunId: true,
+  });
+  if (authorization.mode === "direct") return buildDirectNext(repo, authorization);
+  const activeRun = {
+    exists: Boolean(authorization.activeRun),
+    record: authorization.activeRun,
+    error: null,
+  };
+  const workerScope = {
+    exists: Boolean(authorization.workerScope),
+    record: authorization.workerScope,
+    error: null,
+    path: authorization.workerScopePath,
+  };
   const workflow = loadWorkflow(repo, activeRun.record);
-  const activeLedgerPath = readTextIfExists(path.join(repo, "docs", "ai", "ACEF_ACTIVE_LEDGER"));
-  const contextPath = activeRun.record?.contextPath || "docs/ai/ACEF_CURRENT_CONTEXT.md";
-  const ledgerPath = activeRun.record?.ledgerPath || activeLedgerPath || null;
-  const blockers = [];
+  const contextPath = authorization.contextPath;
+  const ledgerPath = authorization.ledgerPath;
+  const blockers = [...authorization.blockers];
 
   if (!fs.existsSync(path.join(repo, "AGENTS.md"))) blockers.push("missing AGENTS.md");
-  if (!activeRun.exists) blockers.push("missing docs/ai/ACEF_ACTIVE_RUN.json");
-  if (activeRun.error) blockers.push(`invalid active run: ${activeRun.error}`);
-  if (activeRun.record && activeRun.record.status !== "active") blockers.push(`active run is not active: ${activeRun.record.status}`);
-  if (!ledgerPath) blockers.push("missing active ledger path");
-  if (ledgerPath && !existsRelative(repo, ledgerPath)) blockers.push(`active ledger not found: ${ledgerPath}`);
-  if (!existsRelative(repo, contextPath)) blockers.push(`current context not found: ${contextPath}`);
-  if (workerScope.error) blockers.push(`invalid worker scope: ${workerScope.error}`);
   if (workflow.error) blockers.push(`invalid workflow state: ${workflow.error}`);
 
   const base = {

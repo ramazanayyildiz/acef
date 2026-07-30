@@ -14,7 +14,28 @@ const {
   parseWorkerScope,
 } = require("./lib/acef-state-parser");
 
-function usage() {
+function usage(command = "") {
+  if (command === "direct-run") {
+    console.log(`Usage: acef-state direct-run --repo <path> --run-id <id> --status active|complete|promoted [options]
+
+Start:
+  acef-state direct-run --repo . --run-id <id> --status active --scope <scope> --acceptance <criterion> --technical-boundary <kind> --reversible true --changed-path <target>
+  kind: copy | style | localized-ui | localized-config | docs | localized-bugfix | internal-mechanical
+
+Close:
+  acef-state direct-run --repo . --run-id <id> --status complete --changed-path <target> --verification-command <command> --verification-exit-code 0 --summary <handoff>
+
+Promote before implementation continues:
+  acef-state direct-run --repo . --run-id <id> --status promoted --promotion-decision <lane> --promotion-reason <reason>
+  lane: promote-lightweight | promote-full-bmad | promote-guarded
+
+The direct record is the compact context boundary. Do not inspect ACEF schemas or CLI source to discover these options.`);
+    return;
+  }
+  if (command === "worker-scope") {
+    console.log("Usage: acef-state worker-scope --repo <path> --story <scope> --phase <phase> --worker-id <id> --allow <glob>... [options]\n\nThe active run must exist and be active; its runId is bound into the scope automatically.");
+    return;
+  }
   console.log(`ACEF typed-state writer
 
 Usage:
@@ -34,6 +55,10 @@ function parseArgs(argv) {
   const opts = { command, repo: process.cwd(), allow: [], satisfies: [], evidence: [], surface: [], surfaceEvidence: [], binding: [], bindingEvidence: [], riskTrigger: [], clarifyingQuestion: [], inferredAnswer: [], unresolvedQuestion: [], requiredSurface: [], coveredSurface: [], goalEvidence: [], goalMissing: [], acceptance: [], changedPath: [], verificationCommand: [], verificationExitCode: [], unresolvedRisk: [], promotionReason: [], commandArgv: [] };
   for (let index = 0; index < rest.length; index += 1) {
     const arg = rest[index];
+    if (arg === "--help" || arg === "-h") {
+      opts.help = true;
+      continue;
+    }
     if (arg === "--") {
       opts.commandArgv = rest.slice(index + 1);
       break;
@@ -362,8 +387,16 @@ function writeActor(opts) {
 function writeWorkerScope(opts) {
   required(opts, ["story", "phase", "workerId"]);
   if (!opts.allow.length) throw new Error("worker-scope requires at least one --allow path");
+  const activeRunPath = path.join(opts.repo, "docs", "ai", "ACEF_ACTIVE_RUN.json");
+  if (!fs.existsSync(activeRunPath)) throw new Error("worker-scope requires docs/ai/ACEF_ACTIVE_RUN.json");
+  const activeRun = parseActiveRun(activeRunPath);
+  if (activeRun.status !== "active") throw new Error(`worker-scope requires active run status, got ${activeRun.status}`);
+  if (String(activeRun.activeStory) !== String(opts.story)) {
+    throw new Error(`worker-scope story ${opts.story} does not match active run story ${activeRun.activeStory}`);
+  }
   const requiresRoundTrip = opts.requiresRoundTrip === undefined ? undefined : parseBoolean(opts.requiresRoundTrip, "--requires-round-trip");
   const record = {
+    runId: activeRun.runId,
     activeStory: opts.story,
     phase: opts.phase,
     workerId: opts.workerId,
@@ -511,7 +544,7 @@ function writeGate(opts) {
 
 function main() {
   const opts = parseArgs(process.argv.slice(2));
-  if (!opts.command || opts.command === "help" || opts.command === "--help") return usage();
+  if (!opts.command || opts.command === "help" || opts.command === "--help" || opts.help) return usage(opts.command);
   runGit(opts.repo, ["rev-parse", "--git-dir"]);
   if (opts.command === "active-run") return writeActiveRun(opts);
   if (opts.command === "direct-run") return writeDirectRun(opts);

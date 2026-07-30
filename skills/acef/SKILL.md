@@ -48,6 +48,19 @@ delivery ledger, current-context slice, worker scope, or separate actors. Write 
 `acef-process-validator --check lane-closeout`. Promote before continuing if the validator or discovered scope rejects
 direct.
 
+The direct record is the entire ACEF context boundary. Do not read schemas, CLI source, method references, broad project
+documentation, or unrelated `AGENTS.md` references to discover the command. Use:
+
+```bash
+.acef/bin/acef-state direct-run --repo . --run-id <id> --status active --scope <scope> \
+  --acceptance <criterion> --technical-boundary <kind> --reversible true --changed-path <target>
+.acef/bin/acef-next --repo .
+```
+
+Close with the same run ID plus `--status complete`, the actual `--changed-path`, paired
+`--verification-command`/`--verification-exit-code`, and `--summary`. If exact syntax is needed, run only
+`.acef/bin/acef-state direct-run --help`; do not inspect implementation source.
+
 **Worker short-circuit (read this first):** if `docs/ai/ACEF_CURRENT_CONTEXT.md` exists and you are executing one
 assigned step as a scoped worker (developer, reviewer, test author), that file plus your worker scope IS your
 complete ACEF context. Do NOT read `references/*`, the operating model, delivery rules, or the full delivery

@@ -12,7 +12,7 @@ state moves into typed sidecars and is read through one parser library.
 | Active run, lane, story, phase | `docs/ai/ACEF_ACTIVE_RUN.json` |
 | Direct task scope, focused verification, handoff, and promotion | `docs/ai/ACEF_DIRECT_RUN.json` |
 | Worker identity and context profile | `docs/ai/actors/*.json` |
-| Active worker write boundary | `docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json` |
+| Active worker write boundary, including active-run `runId` | `docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json` |
 | Runtime command evidence | `docs/ai/evidence/*.json` |
 | Gate verdict | `docs/ai/gates/*.json` |
 | Human approval receipt | `docs/ai/approvals/*.json` |
@@ -54,6 +54,13 @@ scripts/install-acef-tools --repo /path/to/repo
 .acef/bin/acef-state actor --repo . --id dev-4-1 --story "Story 4.1" \
   --phase development --role developer --client codex --context-profile developer
 
+.acef/bin/acef-state active-run --repo . --run-id RUN-4-1 --lane guarded \
+  --status active --story "Story 4.1" --phase development \
+  --ledger docs/ai/ACEF_example_DELIVERY_AUDIT.md \
+  --context docs/ai/ACEF_CURRENT_CONTEXT.md \
+  --worker-role developer --actor dev-4-1 \
+  --worker-scope docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json
+
 .acef/bin/acef-state worker-scope --repo . --story "Story 4.1" --phase development \
   --worker-id dev-4-1 --allow 'app/**' --allow 'tests/**'
 
@@ -75,6 +82,9 @@ cite at least one successful evidence manifest whose raw hash, runner header, an
 
 Actor, evidence, gate, and approval records are immutable. `ACEF_DIRECT_RUN.json`, `ACEF_ACTIVE_RUN.json`, and
 `ACEF_ACTIVE_WORKER_SCOPE.json` are atomic singletons and may be replaced only as the run advances.
+`acef-state worker-scope` requires an active run, requires the same story, and copies the active `runId` into the scope.
+Legacy scopes without `runId` still parse for migration, but write authorization and pre-commit reject them until the
+scope is regenerated.
 
 ## Validator Contract
 
@@ -82,6 +92,7 @@ New typed runs use JSON first:
 
 ```bash
 .acef/bin/acef-process-validator --repo . --check actor-separation --ledger "$LEDGER"
+.acef/bin/acef-process-validator --repo . --check run-authorization
 .acef/bin/acef-process-validator --repo . --check worker-scope --ledger "$LEDGER"
 .acef/bin/acef-process-validator --repo . --check evidence-manifest --ledger "$LEDGER"
 .acef/bin/acef-process-validator --repo . --check gate-verdict --ledger "$LEDGER"

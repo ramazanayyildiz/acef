@@ -117,6 +117,34 @@ try {
   if (!readyJson.context.outputs.includes("docs/ai/reports/story-2-2-dev.md")) throw new Error("acef-next lost workflow outputs");
   if (readyJson.stop_condition !== "max_1_commit_then_report") throw new Error("acef-next lost worker stop condition");
 
+  fs.rmSync(path.join(tmp, "docs", "ai", "ACEF_ACTIVE_RUN.json"));
+  fs.rmSync(path.join(tmp, "docs", "ai", "ACEF_ACTIVE_WORKER_SCOPE.json"));
+  mustRun(state, [
+    "direct-run", "--repo", tmp,
+    "--run-id", "DIRECT-next-test",
+    "--status", "active",
+    "--scope", "Contained Story 2.2 UI copy",
+    "--acceptance", "Copy is updated",
+    "--technical-boundary", "localized-ui",
+    "--reversible", "true",
+    "--changed-path", "app/Story22.php",
+  ]);
+
+  const direct = mustRun(next, ["--repo", tmp]);
+  const directJson = JSON.parse(direct);
+  if (directJson.status !== "ready" || directJson.active_state.lane !== "direct") {
+    throw new Error(`acef-next did not select the active direct record:\n${direct}`);
+  }
+  if (directJson.context.current_context !== "docs/ai/ACEF_DIRECT_RUN.json") {
+    throw new Error("acef-next did not use the direct record as its compact context");
+  }
+  if (directJson.allowed.can_write !== true || !directJson.allowed.paths.includes("app/Story22.php")) {
+    throw new Error("acef-next did not expose the bounded direct write target");
+  }
+  if (!directJson.forbidden.actions.includes("spawn_worker")) {
+    throw new Error("acef-next direct packet should forbid worker spawning");
+  }
+
   console.log("acef-next tests passed");
 } finally {
   fs.rmSync(tmp, { recursive: true, force: true });

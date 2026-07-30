@@ -3,8 +3,10 @@ import fs from "node:fs";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { createRequire } from "node:module";
+import { fileURLToPath } from "node:url";
 
 const require = createRequire(import.meta.url);
+const hookDir = path.dirname(fileURLToPath(import.meta.url));
 
 function readStdin() {
   return new Promise((resolve) => {
@@ -29,6 +31,35 @@ function exists(filePath) {
     return fs.existsSync(filePath);
   } catch {
     return false;
+  }
+}
+
+function runAuthorization(repoRoot, options = {}) {
+  const candidates = [
+    path.join(repoRoot, ".acef", "bin", "lib", "acef-run-authorization.js"),
+    path.resolve(hookDir, "../../../scripts/lib/acef-run-authorization.js"),
+  ];
+  const libraryPath = candidates.find(exists);
+  if (!libraryPath) {
+    return {
+      ok: false,
+      mode: "typed",
+      blockers: ["ACEF run authorization library is not installed"],
+    };
+  }
+  try {
+    const { inspectRunAuthorization } = require(libraryPath);
+    return inspectRunAuthorization(repoRoot, {
+      allowDirect: true,
+      requireWorkerScope: options.requireWorkerScope === true,
+      requireScopeRunId: options.requireScopeRunId === true,
+    });
+  } catch (error) {
+    return {
+      ok: false,
+      mode: "typed",
+      blockers: [`ACEF run authorization failed: ${error.message}`],
+    };
   }
 }
 
@@ -991,6 +1022,33 @@ function p1ConformanceRestricted(repoRoot) {
     return;
   }
 
+  const command = isShellTool(toolName) ? shellCommand(input) : "";
+  const touchesImplementation = isWriteTool(toolName)
+    ? implementationPath(filePath, repoRoot)
+    : /^apply_patch$/i.test(toolName)
+      ? patchPaths.some((patchPath) => implementationPath(patchPath, repoRoot))
+      : isShellTool(toolName) && bashTouchesImplementation(command, cwd, repoRoot);
+  const spawnsWorker = /^(?:Task|Agent|spawn_agent)$/i.test(toolName)
+    || (isShellTool(toolName) && bashSpawnsAgent(command));
+  if (touchesImplementation || spawnsWorker) {
+    const authorization = runAuthorization(repoRoot, {
+      requireWorkerScope: true,
+      requireScopeRunId: true,
+    });
+    if (!authorization.ok) {
+      deny(`ACEF run authorization: ${authorization.blockers.join("; ")}`);
+      return;
+    }
+    if (authorization.mode === "direct") {
+      if (spawnsWorker) {
+        deny("ACEF direct lane forbids worker or subagent spawning; complete the contained task in the current session or promote it");
+        return;
+      }
+      allow("ACEF direct run authorized by ACEF_DIRECT_RUN.json");
+      return;
+    }
+  }
+
   const workerScopeReason = workerScopeRestricted(payload, toolName, input, cwd, repoRoot, filePath);
   if (workerScopeReason) {
     deny(workerScopeReason);
@@ -998,7 +1056,6 @@ function p1ConformanceRestricted(repoRoot) {
   }
 
   if (isShellTool(toolName)) {
-    const command = shellCommand(input);
     const ledgerReason = ledgerBeforeToolRestricted(command, repoRoot);
     if (ledgerReason) {
       deny(ledgerReason);
