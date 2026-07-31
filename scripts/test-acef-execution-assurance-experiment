@@ -9,6 +9,7 @@ const cp = require("node:child_process");
 const {
   assessTaskShape,
   buildPilotPlan,
+  captureGitDiff,
   environmentPreflight,
   parseIndependentTrace,
   preflightCatalog,
@@ -49,6 +50,20 @@ try {
   const env = environmentPreflight(tmp, { requiredPaths: ["missing.file"], probes: [] });
   assert.equal(env.ok, false);
   assert.equal(env.checkedBeforeTimedRun, true);
+
+  const diffRepo = path.join(tmp, "diff-repo");
+  fs.mkdirSync(diffRepo);
+  cp.spawnSync("git", ["init", "-q"], { cwd: diffRepo });
+  cp.spawnSync("git", ["config", "user.email", "acef-test@example.invalid"], { cwd: diffRepo });
+  cp.spawnSync("git", ["config", "user.name", "ACEF Test"], { cwd: diffRepo });
+  fs.writeFileSync(path.join(diffRepo, "value.txt"), "before\n");
+  cp.spawnSync("git", ["add", "."], { cwd: diffRepo });
+  cp.spawnSync("git", ["commit", "-qm", "base"], { cwd: diffRepo });
+  const base = cp.spawnSync("git", ["rev-parse", "HEAD"], { cwd: diffRepo, encoding: "utf8" }).stdout.trim();
+  fs.writeFileSync(path.join(diffRepo, "value.txt"), "after\n");
+  const capturedDiff = captureGitDiff(diffRepo, base);
+  assert.match(capturedDiff, /\+after/);
+  assert.equal(capturedDiff.endsWith("\n"), true, "captured patch must preserve its final newline");
 
   const plan = cp.spawnSync(process.execPath, [cli, "--manifest", manifestPath, "--plan"], { cwd: root, encoding: "utf8" });
   assert.equal(plan.status, 0, plan.stderr);

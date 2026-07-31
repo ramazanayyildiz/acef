@@ -9,6 +9,7 @@ const { performance } = require("node:perf_hooks");
 const {
   assessTaskShape,
   buildPilotPlan,
+  captureGitDiff,
   environmentPreflight,
   parseIndependentTrace,
   preflightCatalog,
@@ -46,6 +47,7 @@ function parseArgs(argv) {
     stage0: false,
     pilotPreflight: false,
     pilotRun: "",
+    pilotRetryInvalidated: false,
     force: false,
     keep: false,
   };
@@ -62,6 +64,7 @@ function parseArgs(argv) {
     else if (arg === "--stage0") opts.stage0 = true;
     else if (arg === "--pilot-preflight") opts.pilotPreflight = true;
     else if (arg === "--pilot-run") opts.pilotRun = argv[++index] || "";
+    else if (arg === "--pilot-retry-invalidated") opts.pilotRetryInvalidated = true;
     else if (arg === "--force") opts.force = true;
     else if (arg === "--keep") opts.keep = true;
     else throw new Error(`unknown argument: ${arg}`);
@@ -369,25 +372,38 @@ function changedPaths(repo, baseRef) {
   return [...new Set([...diff, ...working])].sort();
 }
 
-function existingPilotRun(resultsPath, attemptId) {
-  if (!fs.existsSync(resultsPath)) return false;
+function pilotRows(resultsPath, attemptId) {
+  if (!fs.existsSync(resultsPath)) return [];
   return fs.readFileSync(resultsPath, "utf8").split(/\r?\n/).filter(Boolean)
-    .some((line) => JSON.parse(line).attemptId === attemptId);
+    .map((line) => JSON.parse(line)).filter((row) => row.attemptId === attemptId);
+}
+
+function invalidatedAttempt(opts, attemptId) {
+  const adjudications = path.join(path.dirname(opts.pilotResults), "pilot-adjudications.jsonl");
+  if (!fs.existsSync(adjudications)) return false;
+  return fs.readFileSync(adjudications, "utf8").split(/\r?\n/).filter(Boolean)
+    .map((line) => JSON.parse(line))
+    .some((row) => row.attemptId === attemptId && row.disposition === "INVALIDATED");
 }
 
 function runPilotAttempt(manifest, opts) {
   const attempt = buildPilotPlan(manifest).find((entry) => entry.id === opts.pilotRun);
   if (!attempt) throw new Error(`pilot attempt not preregistered: ${opts.pilotRun}`);
-  if (existingPilotRun(opts.pilotResults, attempt.id)) throw new Error(`pilot attempt ${attempt.id} already has an immutable result row`);
+  const previousRows = pilotRows(opts.pilotResults, attempt.id);
+  if (previousRows.length && !(opts.pilotRetryInvalidated && invalidatedAttempt(opts, attempt.id))) {
+    throw new Error(`pilot attempt ${attempt.id} already has an immutable result row`);
+  }
+  const attemptOrdinal = previousRows.length + 1;
   const resolved = require("./lib/acef-execution-assurance-experiment").resolveCatalogTask(manifest, opts.manifest, attempt.taskId);
   if (resolved.kind !== "task") throw new Error(`${attempt.id} requires the epic/story pilot runner; single-task runner cannot execute ${resolved.kind}`);
   if (attempt.treatment !== "repo-native") {
     throw new Error(`${attempt.id} ACEF treatment execution is not enabled until exact-version installation/state orchestration is wired`);
   }
-  const prepared = prepareSingleTaskClone(resolved, attempt, opts);
+  const executionAttempt = { ...attempt, id: attemptOrdinal === 1 ? attempt.id : `${attempt.id}-r${attemptOrdinal}` };
+  const prepared = prepareSingleTaskClone(resolved, executionAttempt, opts);
   const precondition = execute(resolved.task.verify[0], resolved.task.verify.slice(1), prepared.clone, { timeout: 600000 });
   if (precondition.status === 0) throw new Error(`${attempt.id}: seeded precondition is not red`);
-  const rawPath = path.join(opts.pilotWorkspace, "raw", `${attempt.id}.jsonl`);
+  const rawPath = path.join(opts.pilotWorkspace, "raw", `${executionAttempt.id}.jsonl`);
   const startedAt = new Date().toISOString();
   const started = performance.now();
   const actor = launchPilotAgent(attempt, resolved, prepared.clone, manifest, rawPath);
@@ -396,8 +412,8 @@ function runPilotAttempt(manifest, opts) {
   const paths = changedPaths(prepared.clone, prepared.seededCommit);
   const scopeViolations = paths.filter((entry) => !isAllowedPath(entry, resolved.task.allowedPaths || []));
   const expectationFailures = evaluateExpectations(prepared.clone, resolved.task.expected || [], resolved.fixtureRoot);
-  const diff = must("git", ["diff", "--binary", prepared.seededCommit], prepared.clone);
-  const diffPath = path.join(opts.pilotWorkspace, "artifacts", `${attempt.id}.patch`);
+  const diff = captureGitDiff(prepared.clone, prepared.seededCommit);
+  const diffPath = path.join(opts.pilotWorkspace, "artifacts", `${executionAttempt.id}.patch`);
   fs.mkdirSync(path.dirname(diffPath), { recursive: true });
   fs.writeFileSync(diffPath, diff);
   const trace = parseIndependentTrace(actor.stdout);
@@ -407,6 +423,8 @@ function runPilotAttempt(manifest, opts) {
     schema: "acef.execution-assurance-pilot-attempt.v1",
     experimentId: manifest.experimentId,
     attemptId: attempt.id,
+    attemptOrdinal,
+    attemptRunId: executionAttempt.id,
     order: attempt.order,
     taskId: attempt.taskId,
     treatment: attempt.treatment,

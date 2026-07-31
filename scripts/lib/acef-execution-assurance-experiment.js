@@ -169,6 +169,16 @@ function environmentPreflight(repoRoot, contract) {
   };
 }
 
+function captureGitDiff(repoRoot, baseRef) {
+  const result = cp.spawnSync("git", ["diff", "--binary", baseRef], {
+    cwd: repoRoot,
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  if (result.status !== 0) throw new Error(`git diff failed: ${result.stderr || result.error?.message || "unknown error"}`);
+  return result.stdout || "";
+}
+
 function resolveCatalogTask(manifest, manifestPath, taskId) {
   const ref = manifest.taskCatalog?.[taskId];
   if (!ref) throw new Error(`unknown task catalog id ${taskId}`);
@@ -254,6 +264,7 @@ module.exports = {
   WORKFLOWS,
   assessTaskShape,
   buildPilotPlan,
+  captureGitDiff,
   environmentPreflight,
   parseIndependentTrace,
   preflightCatalog,

@@ -28,6 +28,9 @@ or evidence contract. Do not use it to claim implementation status; link to the 
   Repo Native executor. It records raw transcript and diff hashes, independent lifecycle counts, scope/fixture checks,
   timing and token usage, but remains provisional until a blind artifact-only Judge passes it. ACEF treatment execution
   fails closed until exact-version lifecycle orchestration is wired.
+- Preserved and invalidated the first Native sentinel after its independently captured patch proved non-replayable:
+  a trimming helper removed the final newline. Diff capture now preserves exact bytes and has a regression test; the
+  attempt must rerun fresh and is excluded from scored analysis despite its automated oracle passing.
 
 ### Execution workflow and assurance separated
 
