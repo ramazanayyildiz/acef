@@ -1,7 +1,8 @@
 # ACEF Execution/Assurance V2 Real-World Validation
 
 Status: preregistered; Stage 0 passed 6/6 on runner commit `e9eebb35c11f659f05b37392cbd7268bd4d2d0ba`;
-the 16-attempt pilot has not started, so no speed or quality claim is authorized.
+the first Native drift sentinel passed after one preserved harness-invalidated attempt and a fresh scored rerun. The
+legacy/candidate pairs have not started, so no ACEF speed or quality claim is authorized.
 
 ## Question
 
@@ -45,3 +46,6 @@ Green source tests prove only that framework machinery runs. They do not make th
 The runner records a task as `PROVISIONAL_PASS` after the independent automated oracle. Product-done remains false until
 the artifact-only blind judge records its verdict. ACEF treatment attempts remain fail-closed until exact-version
 installation and lifecycle orchestration are available; the runner must not silently substitute the current checkout.
+The Full + Guarded motivating pair installs each preregistered framework commit into an isolated epic clone and gives a
+fresh root conductor the entire original outcome. Compact ACEF treatment cells remain disabled until their exact-version
+state/closeout preparation is implemented.

@@ -31,6 +31,12 @@ or evidence contract. Do not use it to claim implementation status; link to the 
 - Preserved and invalidated the first Native sentinel after its independently captured patch proved non-replayable:
   a trimming helper removed the final newline. Diff capture now preserves exact bytes and has a regression test; the
   attempt must rerun fresh and is excluded from scored analysis despite its automated oracle passing.
+- The fresh Native sentinel rerun passed its automated oracle, replayed patch, and treatment-blinded independent Judge
+  with zero Critical/High/Medium findings or scope/test violations. It took 76.1 active seconds and 352,235 measured
+  input tokens. This is calibration evidence only; no legacy/candidate ACEF pair has completed.
+- Added exact-version Full + Guarded pilot preparation: each arm clones the pinned framework commit, installs its tools,
+  skills and hook into an isolated pinned Jakomeet clone, seeds all four hidden regressions, and assigns the complete
+  outcome to a fresh conductor. Compact ACEF treatment cells remain fail-closed rather than silently using current HEAD.
 
 ### Execution workflow and assurance separated
 

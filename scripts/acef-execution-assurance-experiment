@@ -290,7 +290,10 @@ function runStage0(manifest, opts) {
 }
 
 function applyTaskSetup(repo, resolved) {
-  for (const operation of resolved.task.setup || []) {
+  const operations = resolved.kind === "epic"
+    ? resolved.task.stories.flatMap((story) => story.setup || [])
+    : (resolved.task.setup || []);
+  for (const operation of operations) {
     const target = path.join(repo, operation.path);
     if (operation.type === "copy-fixture") {
       fs.mkdirSync(path.dirname(target), { recursive: true });
@@ -329,6 +332,34 @@ function prepareSingleTaskClone(resolved, attempt, opts) {
   return { clone, seededCommit };
 }
 
+function prepareEpicClone(resolved, attempt, opts) {
+  const prepared = prepareSingleTaskClone(resolved, attempt, opts);
+  for (const dir of [
+    "storage/framework/views", "storage/framework/cache/data", "storage/framework/sessions",
+    "storage/framework/testing", "storage/logs", "bootstrap/cache",
+  ]) fs.mkdirSync(path.join(prepared.clone, dir), { recursive: true });
+  return { ...prepared, seededCommit: commitAll(prepared.clone, `test: complete ${resolved.taskId} epic environment`) };
+}
+
+function frameworkCheckout(frameworkCommit, opts) {
+  const checkout = path.join(opts.pilotWorkspace, "frameworks", frameworkCommit);
+  if (fs.existsSync(path.join(checkout, ".git"))) return checkout;
+  fs.mkdirSync(path.dirname(checkout), { recursive: true });
+  must("git", ["clone", "-q", "--shared", "--no-hardlinks", root, checkout], root, { timeout: 300000 });
+  must("git", ["checkout", "-q", "--detach", frameworkCommit], checkout);
+  return checkout;
+}
+
+function installExactFramework(clone, attempt, manifest, opts) {
+  if (attempt.treatment === "repo-native") return null;
+  const framework = frameworkCheckout(attempt.frameworkCommit, opts);
+  must("node", [path.join(framework, "scripts", "install-acef-tools"), "--repo", clone], framework, { timeout: 300000 });
+  must("node", [path.join(framework, "scripts", "install-acef-skills"), "--repo", clone, "--tool", manifest.pilotRuntime.client, "--skill", "acef"], framework, { timeout: 300000 });
+  must("node", [path.join(framework, "scripts", "install-acef-bmad-guard"), "--repo", clone], framework, { timeout: 300000 });
+  commitAll(clone, `chore: install pinned framework ${attempt.frameworkCommit}`);
+  return framework;
+}
+
 function pilotPrompt(attempt, resolved) {
   const workflow = attempt.treatment === "repo-native"
     ? "Use only the repository's native workflow. Do not invoke, imitate, or create ACEF/BMAD artifacts."
@@ -345,6 +376,29 @@ function pilotPrompt(attempt, resolved) {
   ].join("\n");
 }
 
+function epicPilotPrompt(attempt, resolved) {
+  const treatmentInstruction = attempt.treatment === "legacy"
+    ? "Use the installed legacy ACEF controls together with the complete BMAD v2 story lifecycle and guarded/max-security assurance exactly as that version documents them. Do not omit a required phase and do not invent candidate workflow semantics."
+    : "Use ACEF Full (BMAD v2) with Guarded assurance exactly as the installed candidate version documents it. Guarded is an assurance overlay, not a second lifecycle.";
+  const stories = resolved.task.stories.map((story, index) => [
+    `${index + 1}. ${story.id}: ${story.prompt}`,
+    `   Allowed paths: ${story.allowedPaths.join(", ")}`,
+    `   Focused verification: ${story.verify.join(" ")}`,
+  ].join("\n")).join("\n");
+  return [
+    "Complete one controlled multi-story epic in this disposable clone. The measured unit is the complete original user outcome, not an individual story.",
+    treatmentInstruction,
+    "Load and follow the repo-local ACEF skill. Act as conductor and use fresh independent actors/sessions for every role the installed workflow requires. Preserve actor separation; do not self-approve.",
+    "If readiness requires splitting or replanning, record and perform it, but the outcome clock continues until the complete epic is product-done.",
+    "Use focused verification during stories and run the provided integration verification once at final closeout unless a recorded failure requires a retry.",
+    "Do not inspect experiment manifests, sibling worktrees, previous transcripts, or the other treatment. Do not push. Do not weaken or edit Benchmark* tests or phpunit.sqlite.xml.",
+    "Frozen epic stories:",
+    stories,
+    `Final integration verification: ${resolved.task.integration.verify.join(" ")}`,
+    "Final response must state RESULT=PASS or RESULT=FAIL, product outcome, story results, review rounds, broad-suite runs, unresolved Critical/High risks, and exact closeout status.",
+  ].join("\n");
+}
+
 function launchPilotAgent(attempt, resolved, clone, manifest, rawPath) {
   const runtime = manifest.pilotRuntime;
   const args = [
@@ -355,7 +409,7 @@ function launchPilotAgent(attempt, resolved, clone, manifest, rawPath) {
     "-C", clone,
   ];
   if (attempt.treatment === "repo-native") args.push("--ignore-rules");
-  args.push(pilotPrompt(attempt, resolved));
+  args.push(resolved.kind === "epic" ? epicPilotPrompt(attempt, resolved) : pilotPrompt(attempt, resolved));
   const result = execute("codex", args, clone, { timeout: attempt.activeTimeCapMinutes * 60 * 1000 });
   fs.mkdirSync(path.dirname(rawPath), { recursive: true });
   fs.writeFileSync(rawPath, result.stdout);
@@ -395,24 +449,38 @@ function runPilotAttempt(manifest, opts) {
   }
   const attemptOrdinal = previousRows.length + 1;
   const resolved = require("./lib/acef-execution-assurance-experiment").resolveCatalogTask(manifest, opts.manifest, attempt.taskId);
-  if (resolved.kind !== "task") throw new Error(`${attempt.id} requires the epic/story pilot runner; single-task runner cannot execute ${resolved.kind}`);
-  if (attempt.treatment !== "repo-native") {
-    throw new Error(`${attempt.id} ACEF treatment execution is not enabled until exact-version installation/state orchestration is wired`);
+  if (resolved.kind === "story") {
+    throw new Error(`${attempt.id} story treatment execution is not enabled until exact-version compact lifecycle orchestration is wired`);
+  }
+  if (resolved.kind === "task" && attempt.treatment !== "repo-native") {
+    throw new Error(`${attempt.id} ACEF single-task execution is not enabled until exact-version compact lifecycle orchestration is wired`);
   }
   const executionAttempt = { ...attempt, id: attemptOrdinal === 1 ? attempt.id : `${attempt.id}-r${attemptOrdinal}` };
-  const prepared = prepareSingleTaskClone(resolved, executionAttempt, opts);
-  const precondition = execute(resolved.task.verify[0], resolved.task.verify.slice(1), prepared.clone, { timeout: 600000 });
-  if (precondition.status === 0) throw new Error(`${attempt.id}: seeded precondition is not red`);
+  const prepared = resolved.kind === "epic"
+    ? prepareEpicClone(resolved, executionAttempt, opts)
+    : prepareSingleTaskClone(resolved, executionAttempt, opts);
+  installExactFramework(prepared.clone, attempt, manifest, opts);
+  const verificationContract = resolved.kind === "epic" ? resolved.task.integration : resolved.task;
+  const preconditions = resolved.kind === "epic" ? resolved.task.stories : [resolved.task];
+  for (const contract of preconditions) {
+    const precondition = execute(contract.verify[0], contract.verify.slice(1), prepared.clone, { timeout: 600000 });
+    if (precondition.status === 0) throw new Error(`${attempt.id}: ${contract.id || resolved.taskId} seeded precondition is not red`);
+  }
+  const scoredBase = commitAll(prepared.clone, `chore: freeze ${attempt.id} scored base`);
   const rawPath = path.join(opts.pilotWorkspace, "raw", `${executionAttempt.id}.jsonl`);
   const startedAt = new Date().toISOString();
   const started = performance.now();
   const actor = launchPilotAgent(attempt, resolved, prepared.clone, manifest, rawPath);
   const activeDeliverySeconds = Math.round((performance.now() - started) / 100) / 10;
-  const verification = execute(resolved.task.verify[0], resolved.task.verify.slice(1), prepared.clone, { timeout: 600000 });
-  const paths = changedPaths(prepared.clone, prepared.seededCommit);
-  const scopeViolations = paths.filter((entry) => !isAllowedPath(entry, resolved.task.allowedPaths || []));
-  const expectationFailures = evaluateExpectations(prepared.clone, resolved.task.expected || [], resolved.fixtureRoot);
-  const diff = captureGitDiff(prepared.clone, prepared.seededCommit);
+  const verification = execute(verificationContract.verify[0], verificationContract.verify.slice(1), prepared.clone, { timeout: 1200000 });
+  const paths = changedPaths(prepared.clone, scoredBase);
+  const allowedPaths = resolved.kind === "epic"
+    ? [...new Set(resolved.task.stories.flatMap((story) => story.allowedPaths || []))]
+    : (resolved.task.allowedPaths || []);
+  const harnessPaths = (entry) => /^(?:docs\/ai\/|_bmad-output\/|\.acef\/|\.codex\/|AGENTS\.md$)/.test(entry);
+  const scopeViolations = paths.filter((entry) => !harnessPaths(entry) && !isAllowedPath(entry, allowedPaths));
+  const expectationFailures = evaluateExpectations(prepared.clone, verificationContract.expected || [], resolved.fixtureRoot);
+  const diff = captureGitDiff(prepared.clone, scoredBase);
   const diffPath = path.join(opts.pilotWorkspace, "artifacts", `${executionAttempt.id}.patch`);
   fs.mkdirSync(path.dirname(diffPath), { recursive: true });
   fs.writeFileSync(diffPath, diff);
@@ -442,7 +510,7 @@ function runPilotAttempt(manifest, opts) {
     activeDeliverySeconds,
     wallTimeToProductDoneSeconds: null,
     timeToFirstValidGreenSeconds: null,
-    frameworkRuntimeSeconds: 0,
+    frameworkRuntimeSeconds: attempt.treatment === "repo-native" ? 0 : null,
     capped: actor.signal !== null,
     activeTimeCapMinutes: attempt.activeTimeCapMinutes,
     actorExitCode: actor.status,
