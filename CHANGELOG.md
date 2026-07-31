@@ -19,6 +19,8 @@ or evidence contract. Do not use it to claim implementation status; link to the 
   for OAuth/SSO/access-control/credentials/secrets/encryption/key rotation/subscriptions/refunds/data deletion/consent/
   retention/entitlements while keeping localized CSS/copy/docs deletion outside Guarded.
 - Capability maturity remains `enforced`: Stage 0 and the paired/live campaign must pass before `proven` or `installed`.
+- The pinned clean-tree Stage 0 run passed 6/6. This authorizes the paired pilot, not a speed/quality or installation
+  claim.
 
 ### Execution workflow and assurance separated
 

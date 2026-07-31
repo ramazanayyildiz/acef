@@ -1,6 +1,7 @@
 # ACEF Execution/Assurance V2 Real-World Validation
 
-Status: preregistered; Stage 0 not yet passed; no speed or quality claim is authorized.
+Status: preregistered; Stage 0 passed 6/6 on runner commit `e9eebb35c11f659f05b37392cbd7268bd4d2d0ba`;
+the 16-attempt pilot has not started, so no speed or quality claim is authorized.
 
 ## Question
 

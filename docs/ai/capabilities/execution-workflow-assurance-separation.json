@@ -60,7 +60,7 @@
     "Direct compatibility remains readable during the installed-project upgrade bridge, but new Direct admission is still rejected.",
     "Legacy active runs with lane guarded are intentionally fail-closed until a human selects the missing execution workflow.",
     "The capability is enforced in this source tree; target repositories must update their installed ACEF tools and hooks before they receive it.",
-    "The real-world paired pilot is preregistered under docs/experiments/execution-assurance-v2 but has not completed; this capability is not proven or installed."
+    "Deterministic Stage 0 passed 6/6, but the real-world paired pilot under docs/experiments/execution-assurance-v2 has not completed; this capability is not proven or installed."
   ],
   "evidence": [
     {
@@ -77,6 +77,11 @@
       "layer": "tests",
       "ref": "scripts/test-acef-execution-assurance-experiment",
       "note": "Validates the independent Stage 0 trap runner and the preregistered 16-attempt real-world pilot contract."
+    },
+    {
+      "layer": "tests",
+      "ref": "docs/experiments/execution-assurance-v2/STAGE0_RESULT.md",
+      "note": "Records the clean-tree 6/6 deterministic mechanism result without promoting empirical maturity."
     },
     {
       "layer": "installer",
