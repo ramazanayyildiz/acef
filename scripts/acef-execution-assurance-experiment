@@ -16,17 +16,21 @@ const {
   validateManifest,
 } = require("./lib/acef-execution-assurance-experiment");
 const { riskRequiresGuarded } = require("./lib/acef-execution-policy");
+const { parseJsonLines, codexMetrics, isAllowedPath } = require("./lib/acef-empirical");
+const { evaluateExpectations, linkDependencies } = require("./acef-empirical-validation");
 
 const root = path.resolve(__dirname, "..");
 const defaultManifest = path.join(root, "docs", "experiments", "execution-assurance-v2", "manifest.json");
 const defaultResults = path.join(root, "docs", "experiments", "execution-assurance-v2", "runs", "stage0.jsonl");
+const defaultPilotResults = path.join(root, "docs", "experiments", "execution-assurance-v2", "runs", "pilot.jsonl");
 
 function usage() {
-  console.log(`Usage: acef-execution-assurance-experiment [--manifest <path>] [--results <path>] [--preflight-output <path>] [--workspace <path>] [--plan] [--stage0] [--pilot-preflight] [--force] [--keep]
+  console.log(`Usage: acef-execution-assurance-experiment [--manifest <path>] [--results <path>] [--preflight-output <path>] [--pilot-results <path>] [--workspace <path>] [--pilot-workspace <path>] [--plan] [--stage0] [--pilot-preflight] [--pilot-run <attempt-id>] [--force] [--keep]
 
 --plan    Print the preregistered 16-attempt pilot without executing agents.
 --stage0  Execute the six deterministic mechanism/measurement traps in disposable repositories.
 --pilot-preflight  Resolve every task/fixture/commit/dependency before any timed agent run.
+--pilot-run <id>  Execute one preregistered single-task attempt and record a provisional, independently scored row.
 --force   Replace an existing Stage 0 result log. Without this flag results are immutable.`);
 }
 
@@ -35,10 +39,13 @@ function parseArgs(argv) {
     manifest: defaultManifest,
     results: defaultResults,
     preflightOutput: path.join(root, "docs", "experiments", "execution-assurance-v2", "pilot-preflight.json"),
+    pilotResults: defaultPilotResults,
     workspace: path.join(os.tmpdir(), "acef-execution-assurance-v2-stage0"),
+    pilotWorkspace: path.join(os.tmpdir(), "acef-execution-assurance-v2-pilot"),
     plan: false,
     stage0: false,
     pilotPreflight: false,
+    pilotRun: "",
     force: false,
     keep: false,
   };
@@ -48,16 +55,19 @@ function parseArgs(argv) {
     else if (arg === "--manifest") opts.manifest = path.resolve(argv[++index]);
     else if (arg === "--results") opts.results = path.resolve(argv[++index]);
     else if (arg === "--preflight-output") opts.preflightOutput = path.resolve(argv[++index]);
+    else if (arg === "--pilot-results") opts.pilotResults = path.resolve(argv[++index]);
     else if (arg === "--workspace") opts.workspace = path.resolve(argv[++index]);
+    else if (arg === "--pilot-workspace") opts.pilotWorkspace = path.resolve(argv[++index]);
     else if (arg === "--plan") opts.plan = true;
     else if (arg === "--stage0") opts.stage0 = true;
     else if (arg === "--pilot-preflight") opts.pilotPreflight = true;
+    else if (arg === "--pilot-run") opts.pilotRun = argv[++index] || "";
     else if (arg === "--force") opts.force = true;
     else if (arg === "--keep") opts.keep = true;
     else throw new Error(`unknown argument: ${arg}`);
   }
-  if ([opts.plan, opts.stage0, opts.pilotPreflight].filter(Boolean).length !== 1) {
-    throw new Error("select exactly one of --plan, --stage0, or --pilot-preflight");
+  if ([opts.plan, opts.stage0, opts.pilotPreflight, Boolean(opts.pilotRun)].filter(Boolean).length !== 1) {
+    throw new Error("select exactly one of --plan, --stage0, --pilot-preflight, or --pilot-run");
   }
   return opts;
 }
@@ -276,6 +286,173 @@ function runStage0(manifest, opts) {
   if (failed.length) process.exitCode = 1;
 }
 
+function applyTaskSetup(repo, resolved) {
+  for (const operation of resolved.task.setup || []) {
+    const target = path.join(repo, operation.path);
+    if (operation.type === "copy-fixture") {
+      fs.mkdirSync(path.dirname(target), { recursive: true });
+      fs.copyFileSync(path.join(resolved.fixtureRoot, operation.fixture), target);
+    } else if (operation.type === "replace") {
+      const text = fs.readFileSync(target, "utf8");
+      const count = text.split(operation.from).length - 1;
+      if (count !== Number(operation.count || 1)) {
+        throw new Error(`${resolved.taskId}: expected ${operation.count || 1} occurrence(s) in ${operation.path}, found ${count}`);
+      }
+      fs.writeFileSync(target, text.replace(operation.from, operation.to));
+    } else {
+      throw new Error(`${resolved.taskId}: unsupported setup operation ${operation.type}`);
+    }
+  }
+}
+
+function commitAll(repo, message) {
+  must("git", ["add", "-A"], repo);
+  const status = must("git", ["status", "--porcelain"], repo);
+  if (status) must("git", ["commit", "--no-verify", "-qm", message], repo);
+  return must("git", ["rev-parse", "HEAD"], repo);
+}
+
+function prepareSingleTaskClone(resolved, attempt, opts) {
+  const clone = path.join(opts.pilotWorkspace, "clones", attempt.id);
+  fs.rmSync(clone, { recursive: true, force: true });
+  fs.mkdirSync(path.dirname(clone), { recursive: true });
+  must("git", ["clone", "-q", "--shared", "--no-hardlinks", resolved.source, clone], root, { timeout: 300000 });
+  must("git", ["checkout", "-q", "--detach", resolved.commit], clone);
+  must("git", ["config", "user.email", "acef-pilot@example.invalid"], clone);
+  must("git", ["config", "user.name", "ACEF Pilot"], clone);
+  linkDependencies(clone, { id: resolved.taskId, stack: resolved.stack, source: resolved.source });
+  applyTaskSetup(clone, resolved);
+  const seededCommit = commitAll(clone, `test: seed ${resolved.taskId} pilot`);
+  return { clone, seededCommit };
+}
+
+function pilotPrompt(attempt, resolved) {
+  const workflow = attempt.treatment === "repo-native"
+    ? "Use only the repository's native workflow. Do not invoke, imitate, or create ACEF/BMAD artifacts."
+    : `Use the installed ACEF ${attempt.workflowId} workflow with ${attempt.assuranceProfile} assurance exactly as configured in this clone.`;
+  return [
+    "Complete one controlled real-world pilot task in this disposable clone.",
+    workflow,
+    `Original user outcome: ${resolved.task.prompt}`,
+    `Allowed production paths: ${(resolved.task.allowedPaths || []).join(", ")}`,
+    `Focused verification: ${(resolved.task.verify || []).join(" ")}`,
+    "Do not install dependencies, change benchmark/withheld tests, commit, push, use another task's transcript, or touch unrelated paths.",
+    "Implement the smallest production change, run the focused verification, and stop. Do not declare product-done merely because a unit test is green.",
+    "Final response: RESULT=PASS or RESULT=FAIL; changed paths; verification; unresolved risks.",
+  ].join("\n");
+}
+
+function launchPilotAgent(attempt, resolved, clone, manifest, rawPath) {
+  const runtime = manifest.pilotRuntime;
+  const args = [
+    "exec", "--json", "--ephemeral", "--ignore-user-config",
+    "--dangerously-bypass-approvals-and-sandbox", "--dangerously-bypass-hook-trust",
+    "--model", runtime.model,
+    "--config", `model_reasoning_effort=${JSON.stringify(runtime.reasoningEffort)}`,
+    "-C", clone,
+  ];
+  if (attempt.treatment === "repo-native") args.push("--ignore-rules");
+  args.push(pilotPrompt(attempt, resolved));
+  const result = execute("codex", args, clone, { timeout: attempt.activeTimeCapMinutes * 60 * 1000 });
+  fs.mkdirSync(path.dirname(rawPath), { recursive: true });
+  fs.writeFileSync(rawPath, result.stdout);
+  fs.writeFileSync(`${rawPath}.stderr`, result.stderr);
+  const metrics = codexMetrics(parseJsonLines(rawPath));
+  return { ...result, ...metrics };
+}
+
+function changedPaths(repo, baseRef) {
+  const diff = must("git", ["diff", "--name-only", `${baseRef}..HEAD`], repo).split(/\r?\n/).filter(Boolean);
+  const status = execute("git", ["status", "--porcelain=v1", "--untracked-files=all"], repo);
+  if (status.status !== 0) throw new Error(`git status failed: ${status.stderr || status.stdout}`);
+  const working = status.stdout.split(/\r?\n/).filter(Boolean).map((line) => line.slice(3));
+  return [...new Set([...diff, ...working])].sort();
+}
+
+function existingPilotRun(resultsPath, attemptId) {
+  if (!fs.existsSync(resultsPath)) return false;
+  return fs.readFileSync(resultsPath, "utf8").split(/\r?\n/).filter(Boolean)
+    .some((line) => JSON.parse(line).attemptId === attemptId);
+}
+
+function runPilotAttempt(manifest, opts) {
+  const attempt = buildPilotPlan(manifest).find((entry) => entry.id === opts.pilotRun);
+  if (!attempt) throw new Error(`pilot attempt not preregistered: ${opts.pilotRun}`);
+  if (existingPilotRun(opts.pilotResults, attempt.id)) throw new Error(`pilot attempt ${attempt.id} already has an immutable result row`);
+  const resolved = require("./lib/acef-execution-assurance-experiment").resolveCatalogTask(manifest, opts.manifest, attempt.taskId);
+  if (resolved.kind !== "task") throw new Error(`${attempt.id} requires the epic/story pilot runner; single-task runner cannot execute ${resolved.kind}`);
+  if (attempt.treatment !== "repo-native") {
+    throw new Error(`${attempt.id} ACEF treatment execution is not enabled until exact-version installation/state orchestration is wired`);
+  }
+  const prepared = prepareSingleTaskClone(resolved, attempt, opts);
+  const precondition = execute(resolved.task.verify[0], resolved.task.verify.slice(1), prepared.clone, { timeout: 600000 });
+  if (precondition.status === 0) throw new Error(`${attempt.id}: seeded precondition is not red`);
+  const rawPath = path.join(opts.pilotWorkspace, "raw", `${attempt.id}.jsonl`);
+  const startedAt = new Date().toISOString();
+  const started = performance.now();
+  const actor = launchPilotAgent(attempt, resolved, prepared.clone, manifest, rawPath);
+  const activeDeliverySeconds = Math.round((performance.now() - started) / 100) / 10;
+  const verification = execute(resolved.task.verify[0], resolved.task.verify.slice(1), prepared.clone, { timeout: 600000 });
+  const paths = changedPaths(prepared.clone, prepared.seededCommit);
+  const scopeViolations = paths.filter((entry) => !isAllowedPath(entry, resolved.task.allowedPaths || []));
+  const expectationFailures = evaluateExpectations(prepared.clone, resolved.task.expected || [], resolved.fixtureRoot);
+  const diff = must("git", ["diff", "--binary", prepared.seededCommit], prepared.clone);
+  const diffPath = path.join(opts.pilotWorkspace, "artifacts", `${attempt.id}.patch`);
+  fs.mkdirSync(path.dirname(diffPath), { recursive: true });
+  fs.writeFileSync(diffPath, diff);
+  const trace = parseIndependentTrace(actor.stdout);
+  const automatedOraclePassed = actor.status === 0 && verification.status === 0
+    && scopeViolations.length === 0 && expectationFailures.length === 0;
+  const row = {
+    schema: "acef.execution-assurance-pilot-attempt.v1",
+    experimentId: manifest.experimentId,
+    attemptId: attempt.id,
+    order: attempt.order,
+    taskId: attempt.taskId,
+    treatment: attempt.treatment,
+    workflowId: attempt.workflowId,
+    assuranceProfile: attempt.assuranceProfile,
+    frameworkCommit: attempt.frameworkCommit,
+    project: resolved.repo,
+    projectCommit: resolved.commit,
+    client: manifest.pilotRuntime.client,
+    clientVersion: manifest.pilotRuntime.clientVersion,
+    model: manifest.pilotRuntime.model,
+    reasoningEffort: manifest.pilotRuntime.reasoningEffort,
+    startedAt,
+    finishedAt: new Date().toISOString(),
+    activeDeliverySeconds,
+    wallTimeToProductDoneSeconds: null,
+    timeToFirstValidGreenSeconds: null,
+    frameworkRuntimeSeconds: 0,
+    capped: actor.signal !== null,
+    activeTimeCapMinutes: attempt.activeTimeCapMinutes,
+    actorExitCode: actor.status,
+    verificationExitCode: verification.status,
+    inputTokens: actor.input_tokens,
+    cachedInputTokens: actor.cached_input_tokens,
+    outputTokens: actor.output_tokens,
+    toolCalls: actor.tool_calls,
+    changedPaths: paths,
+    scopeViolations,
+    expectationFailures,
+    independentTrace: trace,
+    transcriptPath: rawPath,
+    transcriptSha256: sha256(actor.stdout),
+    stderrSha256: sha256(actor.stderr),
+    diffPath,
+    diffSha256: sha256(diff),
+    automatedOraclePassed,
+    blindJudgeStatus: "pending",
+    productDone: false,
+    result: automatedOraclePassed ? "PROVISIONAL_PASS" : "FAIL",
+  };
+  fs.mkdirSync(path.dirname(opts.pilotResults), { recursive: true });
+  fs.appendFileSync(opts.pilotResults, `${JSON.stringify(row)}\n`);
+  console.log(`${row.result} ${attempt.id}: automated=${automatedOraclePassed ? "PASS" : "FAIL"}; blind-judge=pending; product-done=false; active=${activeDeliverySeconds}s`);
+  console.log(`ARTIFACT ${diffPath}`);
+}
+
 function main() {
   const opts = parseArgs(process.argv.slice(2));
   const manifest = validateManifest(JSON.parse(fs.readFileSync(opts.manifest, "utf8")));
@@ -306,6 +483,10 @@ function main() {
     for (const check of row.checks) console.log(`${check.ok ? "PASS" : "FAIL"} ${check.taskId}${check.blockers.length ? `: ${check.blockers.join("; ")}` : ""}`);
     console.log(`PILOT_PREFLIGHT ${row.ok ? "PASS" : "FAIL"}: ${row.checks.filter((check) => check.ok).length}/${row.checks.length} tasks ready`);
     if (!row.ok) process.exitCode = 1;
+    return;
+  }
+  if (opts.pilotRun) {
+    runPilotAttempt(manifest, opts);
     return;
   }
   runStage0(manifest, opts);

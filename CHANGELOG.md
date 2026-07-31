@@ -24,6 +24,10 @@ or evidence contract. Do not use it to claim implementation status; link to the 
 - Added an immutable pilot catalog preflight that resolves every task selector, pinned source commit, fixture, and
   dependency tree before agent timing starts. Missing Browser RTS and MVT dependencies were found during shakeout and
   prepared before the scored preflight.
+- Pinned the stochastic runtime to Codex CLI 0.146.0 / `gpt-5.6-sol` / high reasoning and added the first single-task
+  Repo Native executor. It records raw transcript and diff hashes, independent lifecycle counts, scope/fixture checks,
+  timing and token usage, but remains provisional until a blind artifact-only Judge passes it. ACEF treatment execution
+  fails closed until exact-version lifecycle orchestration is wired.
 
 ### Execution workflow and assurance separated
 

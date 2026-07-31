@@ -41,3 +41,7 @@ small pilot. Installation/canary additionally requires independent live counters
 requires paired speed superiority plus at least 30 days across two projects with no treatment-attributable severe escape.
 
 Green source tests prove only that framework machinery runs. They do not make this capability `proven` or `installed`.
+
+The runner records a task as `PROVISIONAL_PASS` after the independent automated oracle. Product-done remains false until
+the artifact-only blind judge records its verdict. ACEF treatment attempts remain fail-closed until exact-version
+installation and lifecycle orchestration are available; the runner must not silently substitute the current checkout.

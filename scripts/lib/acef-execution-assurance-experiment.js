@@ -44,6 +44,13 @@ function validateManifest(manifest) {
   if (!Array.isArray(manifest.pilot?.attempts) || manifest.pilot.attempts.length !== 16) {
     throw new Error("pilot must preregister exactly 16 attempts");
   }
+  requireString(manifest.pilotRuntime?.client, "pilotRuntime.client");
+  requireString(manifest.pilotRuntime?.clientVersion, "pilotRuntime.clientVersion");
+  requireString(manifest.pilotRuntime?.model, "pilotRuntime.model");
+  requireString(manifest.pilotRuntime?.reasoningEffort, "pilotRuntime.reasoningEffort");
+  if (manifest.pilotRuntime.freshSession !== true || manifest.pilotRuntime.crossRunMemory !== false) {
+    throw new Error("pilot runtime must use fresh sessions with cross-run memory disabled");
+  }
   const attemptIds = manifest.pilot.attempts.map((attempt) => attempt.id);
   if (unique(attemptIds).length !== attemptIds.length) throw new Error("pilot attempt ids must be unique");
   for (const attempt of manifest.pilot.attempts) {
