@@ -87,9 +87,9 @@ function hasLaneMarker(dirPath) {
     ".acef-lane",
     ".acef-lightweight-lane",
     ".acef-bmad-lane",
-    ".bmad",
-    "_bmad",
-    "_bmad-output",
+    path.join("docs", "ai", "ACEF_ACTIVE_RUN.json"),
+    path.join("docs", "ai", "ACEF_LIGHTWEIGHT_RUN.json"),
+    path.join("docs", "ai", "ACEF_DIRECT_RUN.json"),
   ].some((name) => exists(path.join(dirPath, name)));
 }
 
@@ -940,16 +940,31 @@ function scopeFallbackDecision(toolName, input, cwd, repoRoot, filePath, patchPa
   };
 }
 
-function partialWorkshapeRestricted(registry, ledgerText) {
+function activeAssuranceProfile(repoRoot, ledgerText) {
+  const activeRunPath = path.join(repoRoot, "docs", "ai", "ACEF_ACTIVE_RUN.json");
+  if (exists(activeRunPath)) {
+    try {
+      const activeRun = JSON.parse(fs.readFileSync(activeRunPath, "utf8"));
+      if (activeRun.assuranceProfile === "guarded") return "guarded";
+      if (activeRun.assuranceProfile === "baseline") return "baseline";
+      if (activeRun.lane === "guarded") return "guarded";
+    } catch {
+      return "invalid";
+    }
+  }
+  return ledgerField(ledgerText, "track").toLowerCase() === "guarded" ? "guarded" : "baseline";
+}
+
+function partialWorkshapeRestricted(repoRoot, registry, ledgerText) {
   if (String(registry?.status || "").toUpperCase() !== "PARTIAL") return "";
 
-  const track = ledgerField(ledgerText, "track").toLowerCase();
+  const assurance = activeAssuranceProfile(repoRoot, ledgerText);
   const workShape = ledgerField(ledgerText, "workShape");
   const accepted = hasHumanRiskAcceptance(ledgerText);
   if (!workShape) return "ACEF conformance gate: PARTIAL registry requires ledger field workShape: <name> before implementation write.";
 
   const covered = new Set((registry.patterns || []).map((pattern) => String(pattern.workShape || "").trim()).filter(Boolean));
-  if (track === "guarded" && !accepted) {
+  if (assurance === "guarded" && !accepted) {
     return `ACEF conformance gate: PARTIAL registry blocks guarded workShape ${workShape} without human risk acceptance.`;
   }
   if (!covered.has(workShape) && !accepted) {
@@ -969,7 +984,7 @@ function p1ConformanceRestricted(repoRoot) {
   if (activeLedgerReason) return activeLedgerReason;
 
   const ledgerText = allLedgerText(repoRoot);
-  const partialReason = partialWorkshapeRestricted(registry, ledgerText);
+  const partialReason = partialWorkshapeRestricted(repoRoot, registry, ledgerText);
   if (partialReason) return partialReason;
 
   if (!/reuse[- ]before[- ]create|reuse probe|reuse check|nearest neighbor|golden neighbor/i.test(ledgerText)) {

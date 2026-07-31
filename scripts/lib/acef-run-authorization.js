@@ -86,6 +86,9 @@ function inspectRunAuthorization(repo, options = {}) {
   if (!allowedStatuses.has(activeRun.status)) {
     blockers.push(`active run status ${activeRun.status} is not authorized`);
   }
+  if (activeRun.executionMigrationRequired) {
+    blockers.push("legacy guarded active run requires explicit workflow migration before authorization");
+  }
 
   const ledgerPath = activeRun.ledgerPath
     || readPointer(path.join(repoRoot, "docs", "ai", "ACEF_ACTIVE_LEDGER"));

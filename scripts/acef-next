@@ -3,6 +3,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { parseWorkflow } = require("./lib/acef-state-parser");
 const { inspectRunAuthorization } = require("./lib/acef-run-authorization");
+const { displayName } = require("./lib/acef-execution-policy");
 
 function usage() {
   console.log(`Usage: acef-next --repo <path> [--role <role>] [--format json]
@@ -225,6 +226,10 @@ function buildNext(repo, roleOverride) {
   const role = roleOverride || activeRun.record.workerRole || workerScope.record?.workerId || null;
   base.active_state = {
     lane: activeRun.record.lane,
+    workflow: activeRun.record.workflowId,
+    assurance: activeRun.record.assuranceProfile,
+    scope_unit: activeRun.record.scopeUnit,
+    execution_path: displayName(activeRun.record),
     phase: activeRun.record.activePhase,
     story: activeRun.record.activeStory,
     role,

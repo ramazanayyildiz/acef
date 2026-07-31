@@ -40,13 +40,13 @@ Generic AI development frameworks are useful, but they fall short on real codeba
 
 ACEF is one package that unifies **five layers** — the actual delivery engine, not just an orchestration shell:
 
-1. **Operating model** — personas (Planner / Developer / Judge / Test Author / Doc Maintainer) + tracks (mechanical / standard / guarded). `method/OPERATING_MODEL.md`
+1. **Operating model** — personas, execution workflows (Fix / Standard / Full), assurance (Baseline / Guarded), and local implementation style (mechanical / standard). `method/OPERATING_MODEL.md`
 2. **Test & flow engine** — real skills for user-flow → test-cases → tests, and bootstrapping the first test. `method/TEST_PIPELINE.md` + `skills/`
 3. **BMAD v2 heavy lane** — the full story lifecycle for epics / risky work (drives BMAD-METHOD, with a hard
    installed-skill preflight). `method/BMAD_V2_LANE.md`
 4. **Codemap / project adapter** — grounds everything in *your* real repo and extracts the pattern registry for conformance, including local generation docs, skills, stubs, and the registration/discoverability/runtime evidence that defines a complete work shape (evidence-pinned, no embeddings). `skills/map-codebase` + `skills/acef-adapter`
-5. **Delivery rules (the glue)** — which work should enter ACEF: reversible contained changes stay in the native repo
-   workflow; scoped reviewed work → lightweight/quick-fix, epics → BMAD v2, and high-risk boundaries → guarded.
+5. **Delivery rules (the glue)** — first choose repository-native vs ACEF; then choose ACEF Fix, Standard, or Full
+   (BMAD v2) for execution depth; finally add Baseline or Guarded assurance independently from risk.
    `method/DELIVERY_RULES.md`
 
 A front-door agent (`acef`) ties them together and routes each request, so the user never has to pick a layer, route, or skill.
@@ -133,7 +133,8 @@ files the agent follows. No build, no npm, no services.
    ```
    Prefer repo-local `.claude/skills/`, `.codex/skills/`, and `.opencode/skills/` for project-specific ACEF work.
 3. **Use it** — open your own repo and run `/acef` (or just say "use acef"). It first decides whether ACEF controls are
-   warranted, then selects quick-fix, lightweight, full-BMAD, or guarded per `method/DELIVERY_RULES.md`.
+   warranted, then selects ACEF Fix (`quick-fix`), ACEF Standard (`lightweight`), or ACEF Full (`full-bmad`), and
+   independently selects Baseline or Guarded assurance per `method/DELIVERY_RULES.md`.
    Reversible contained single-boundary/single-surface tasks stay outside ACEF: use targeted reads, the smallest native
    repo patch, and focused verification without ACEF artifacts. Admitted concrete work first creates a target-run
    ledger, sets `ACEF_ACTIVE_LEDGER` or
@@ -173,8 +174,10 @@ files the agent follows. No build, no npm, no services.
    The dispatcher only forwards to a repo-local `.acef/hooks/acef-bmad-hard-wall.mjs` when one exists; repos without a
    local ACEF hook are allowed. The portable hook package lives in `claude-plugins/acef-bmad-guard/` for plugin-based
    Claude installs.
-   Existing retired direct records intentionally use no guard marker or worker-scope hook. Lightweight runs should create
-   `.acef-lightweight-lane` or `.acef-lane`; full BMAD runs use `.acef-bmad-lane` or BMAD runtime markers.
+   Existing retired direct records intentionally use no new admission. ACEF Fix/Standard runs may create
+   `.acef-lightweight-lane` or `.acef-lane`; ACEF Full may use `.acef-bmad-lane`. Typed
+   `docs/ai/ACEF_ACTIVE_RUN.json` also activates the guard. Stock `.bmad`, `_bmad`, and `_bmad-output` markers alone do
+   not activate ACEF.
    To scope hook conformance checks to the current run, set `ACEF_ACTIVE_LEDGER` or write the active ledger path into
    `docs/ai/ACEF_ACTIVE_LEDGER`.
    For implementation workers, also write `docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json` before dispatch. It binds the worker
@@ -253,12 +256,12 @@ plugin still dispatches to each repo's local `.acef/hooks` engine.
 
 OpenCode still needs the same ACEF run files as the other tools:
 
-1. Create a lane marker such as `.acef-lightweight-lane` or `.acef-bmad-lane`.
+1. Create typed `docs/ai/ACEF_ACTIVE_RUN.json` or an ACEF-owned marker such as `.acef-lightweight-lane` or `.acef-bmad-lane`.
 2. Set `docs/ai/ACEF_ACTIVE_LEDGER`.
 3. For implementation workers, write `docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json`.
 4. Restart OpenCode after installing or updating the plugin.
 
-The `method/` docs are the engine the agent follows (personas, tracks, lanes, the test pipeline). Read them to
+The `method/` docs are the engine the agent follows (personas, execution workflows, assurance, the test pipeline). Read them to
 understand how delivery actually runs; the agent applies them for you.
 
 ## Lean runtime

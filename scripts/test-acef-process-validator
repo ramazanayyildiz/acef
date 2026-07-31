@@ -786,12 +786,23 @@ try {
   const nonAcefRepo = path.join(fakeHome, "work", "browser-rts");
   fs.mkdirSync(path.join(fakeHome, ".bmad"), { recursive: true });
   fs.mkdirSync(nonAcefRepo, { recursive: true });
+  fs.mkdirSync(path.join(nonAcefRepo, ".bmad"), { recursive: true });
+  fs.mkdirSync(path.join(nonAcefRepo, "_bmad"), { recursive: true });
+  fs.mkdirSync(path.join(nonAcefRepo, "_bmad-output"), { recursive: true });
   expectHookDecision("home-level bmad marker does not activate unrelated repo", {
     tool_name: "Bash",
     cwd: nonAcefRepo,
     tool_input: {
       command: "npm install fast-check",
       cwd: nonAcefRepo,
+    },
+  }, "allow", { HOME: fakeHome });
+  expectHookDecision("stock BMAD markers do not activate ACEF", {
+    tool_name: "Write",
+    cwd: nonAcefRepo,
+    tool_input: {
+      file_path: path.join(nonAcefRepo, "src", "native-bmad.ts"),
+      content: "export const nativeBmad = true;\n",
     },
   }, "allow", { HOME: fakeHome });
 
@@ -1499,6 +1510,27 @@ try {
   ].join("\n"));
   expectFail("partial-workshape", ["--repo", tmp, "--check", "partial-workshape", "--ledger", "docs/ai/ACEF_guarded_DELIVERY_AUDIT.md"]);
 
+  const typedAssuranceRun = {
+    schema: "acef.active-run.v2",
+    runId: "RUN-typed-assurance",
+    repo: "fixture",
+    workflowId: "lightweight",
+    assuranceProfile: "baseline",
+    scopeUnit: "story",
+    workflowRationale: "Covered service work uses ACEF Standard.",
+    status: "active",
+    activeStory: "typed assurance",
+    activePhase: "intake",
+    ledgerPath: "docs/ai/ACEF_guarded_DELIVERY_AUDIT.md",
+  };
+  fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_ACTIVE_RUN.json"), JSON.stringify(typedAssuranceRun, null, 2));
+  expectPass("partial-workshape", ["--repo", tmp, "--check", "partial-workshape", "--ledger", "docs/ai/ACEF_guarded_DELIVERY_AUDIT.md"]);
+  typedAssuranceRun.assuranceProfile = "guarded";
+  typedAssuranceRun.assuranceRationale = "Typed assurance must override stale prose track.";
+  fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_ACTIVE_RUN.json"), JSON.stringify(typedAssuranceRun, null, 2));
+  expectFail("partial-workshape", ["--repo", tmp, "--check", "partial-workshape", "--ledger", "docs/ai/ACEF_guarded_DELIVERY_AUDIT.md"]);
+  fs.rmSync(path.join(tmp, "docs", "ai", "ACEF_ACTIVE_RUN.json"));
+
   fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_accepted_DELIVERY_AUDIT.md"), [
     "Status: PASS",
     "track: guarded",
@@ -1659,9 +1691,13 @@ try {
   }, null, 2));
   fs.writeFileSync(path.join(partialHook, "docs", "ai", "ACEF_CURRENT_CONTEXT.md"), "active_story: 1.1\nactive_phase: dev\n");
   fs.writeFileSync(path.join(partialHook, "docs", "ai", "ACEF_ACTIVE_RUN.json"), JSON.stringify({
+    schema: "acef.active-run.v2",
     runId: "RUN-partial-hook",
     repo: "partial-hook",
-    lane: "lightweight",
+    workflowId: "lightweight",
+    assuranceProfile: "baseline",
+    scopeUnit: "story",
+    workflowRationale: "Covered work uses ACEF Standard.",
     status: "active",
     activeStory: "1.1",
     activePhase: "development",
@@ -1677,6 +1713,38 @@ try {
       content: "export const accepted = true;\n",
     },
   }, "allow", workerEnv);
+  fs.writeFileSync(path.join(partialHook, "docs", "ai", "ACEF_partial_DELIVERY_AUDIT.md"), [
+    "Status: PASS",
+    "track: guarded",
+    "workShape: service",
+    "Reuse-before-create:",
+    "- Checked `src/services/current.ts` and `sharedApiClient`.",
+    "- Do-not-copy: avoided `legacy.service.direct-fetch`.",
+  ].join("\n"));
+  expectHookDecision("typed baseline overrides stale guarded prose", {
+    tool_name: "Write",
+    cwd: partialHook,
+    tool_input: {
+      file_path: path.join(partialHook, "src", "typed-baseline.ts"),
+      content: "export const typedBaseline = true;\n",
+    },
+  }, "allow", workerEnv);
+  const partialActiveRunPath = path.join(partialHook, "docs", "ai", "ACEF_ACTIVE_RUN.json");
+  const guardedPartialRun = JSON.parse(fs.readFileSync(partialActiveRunPath, "utf8"));
+  guardedPartialRun.assuranceProfile = "guarded";
+  guardedPartialRun.assuranceRationale = "Typed Guarded assurance must control the hook.";
+  fs.writeFileSync(partialActiveRunPath, JSON.stringify(guardedPartialRun, null, 2));
+  expectHookDecision("typed guarded assurance overrides stale prose", {
+    tool_name: "Write",
+    cwd: partialHook,
+    tool_input: {
+      file_path: path.join(partialHook, "src", "typed-guarded.ts"),
+      content: "export const typedGuarded = true;\n",
+    },
+  }, "deny", workerEnv, ["PARTIAL registry blocks guarded workShape service"]);
+  guardedPartialRun.assuranceProfile = "baseline";
+  delete guardedPartialRun.assuranceRationale;
+  fs.writeFileSync(partialActiveRunPath, JSON.stringify(guardedPartialRun, null, 2));
   fs.writeFileSync(path.join(partialHook, "docs", "ai", "ACEF_partial_DELIVERY_AUDIT.md"), [
     "Status: PASS",
     "track: standard",

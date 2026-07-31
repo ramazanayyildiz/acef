@@ -9,7 +9,7 @@ state moves into typed sidecars and is read through one parser library.
 
 | Information | Canonical owner |
 |---|---|
-| Active run, lane, story, phase | `docs/ai/ACEF_ACTIVE_RUN.json` |
+| Active run, execution workflow, assurance profile, scope unit, story, phase | `docs/ai/ACEF_ACTIVE_RUN.json` |
 | Direct task scope, focused verification, handoff, and promotion | `docs/ai/ACEF_DIRECT_RUN.json` |
 | Worker identity and context profile | `docs/ai/actors/*.json` |
 | Active worker write boundary, including active-run `runId` | `docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json` |
@@ -30,7 +30,7 @@ older ACEF repos migrate.
 
 The first typed-state slice defines these contracts:
 
-- `schemas/active-run.schema.json`
+- `schemas/active-run-v2.schema.json` (current; v1 remains readable for migration)
 - `schemas/direct-run.schema.json`
 - `schemas/actor.schema.json`
 - `schemas/evidence.schema.json`
@@ -50,7 +50,9 @@ scripts/install-acef-tools --repo /path/to/repo
 .acef/bin/acef-state actor --repo . --id dev-4-1 --story "Story 4.1" \
   --phase development --role developer --client codex --context-profile developer
 
-.acef/bin/acef-state active-run --repo . --run-id RUN-4-1 --lane guarded \
+.acef/bin/acef-state active-run --repo . --run-id RUN-4-1 \
+  --workflow-id lightweight --assurance guarded --scope-unit story \
+  --assurance-rationale "provider integration" \
   --status active --story "Story 4.1" --phase development \
   --ledger docs/ai/ACEF_example_DELIVERY_AUDIT.md \
   --context docs/ai/ACEF_CURRENT_CONTEXT.md \
@@ -73,6 +75,15 @@ scripts/install-acef-tools --repo /path/to/repo
 New direct-run admission is retired. `acef-state direct-run` remains available only when
 `docs/ai/ACEF_DIRECT_RUN.json` already exists with the same run ID, so old records can be closed or promoted without
 discarding history.
+
+Active-run v2 separates planning depth (`workflowId`: `quick-fix`, `lightweight`, or `full-bmad`) from risk assurance
+(`assuranceProfile`: `baseline` or `guarded`). Guarded is additive. A legacy active `lane: guarded` does not contain
+enough information to infer planning depth, so authorization fails closed until it is migrated explicitly:
+
+```bash
+.acef/bin/acef-state migrate-active-run --repo . \
+  --workflow-id lightweight --assurance guarded
+```
 
 `evidence-run` executes an argv command without a shell, stores stdout/stderr under
 `docs/ai/evidence/raw/`, hashes the raw artifact, records the Git commit/tree and actor, and preserves the command's

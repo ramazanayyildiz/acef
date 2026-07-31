@@ -1,6 +1,6 @@
 {
   "capabilityId": "lane-selection-closeout",
-  "requestedIntent": "Make ACEF lane choice and lane-specific closeout mechanically enforced instead of relying on agent judgment.",
+  "requestedIntent": "Mechanically enforce ACEF admission, execution-workflow choice, assurance-profile choice, and the composed workflow-plus-assurance closeout bundle.",
   "status": "proven",
   "requiredLayers": [
     "docs",
@@ -14,11 +14,13 @@
       "skills/acef/references/ACEF_OPERATING_MODEL.md#Lanes"
     ],
     "workflow": [
-      "schemas/active-run.schema.json",
+      "schemas/active-run-v2.schema.json",
       "schemas/direct-run.schema.json",
       "scripts/lib/acef-state-parser.js#parseActiveRun",
       "scripts/lib/acef-state-parser.js#parseDirectRun",
       "scripts/acef-state#writeActiveRun",
+      "scripts/acef-state#migrateActiveRun",
+      "scripts/lib/acef-execution-policy.js",
       "scripts/acef-state#writeDirectRun"
     ],
     "validator": [
@@ -26,6 +28,7 @@
       "scripts/acef-process-validator#checkLaneCloseout"
     ],
     "tests": [
+      "scripts/test-acef-execution-policy",
       "scripts/test-acef-direct-lifecycle",
       "scripts/test-acef-lightweight-lifecycle",
       "scripts/test-acef-process-validator",
@@ -33,9 +36,9 @@
     ]
   },
   "limitations": [
-    "Lane selection checks recorded riskTriggers and path-name risk inference; inference is heuristic and does not replace human review for unusual domain risks.",
+    "Workflow/assurance selection checks recorded riskTriggers and path-name risk inference; inference is heuristic and does not replace human review for unusual domain risks.",
     "Direct lane selection additionally checks one inferred product surface, declared changed paths, reversibility, focused verification, and promotion triggers; it is enforced but not yet empirically proven in a target repository.",
-    "Lane closeout bundles existing validator checks; future lane-specific rules must be added to the bundle explicitly."
+    "Closeout composes manifest-defined workflow controls with an additive assurance overlay; future controls must be added to the manifest and validator mapping explicitly."
   ],
   "evidence": [
     {
@@ -44,7 +47,7 @@
     },
     {
       "layer": "workflow",
-      "ref": "schemas/active-run.schema.json"
+      "ref": "schemas/active-run-v2.schema.json"
     },
     {
       "layer": "workflow",
@@ -65,6 +68,10 @@
     {
       "layer": "tests",
       "ref": "scripts/test-acef-lightweight-lifecycle"
+    },
+    {
+      "layer": "tests",
+      "ref": "scripts/test-acef-execution-policy"
     }
   ],
   "createdAt": "2026-06-25"

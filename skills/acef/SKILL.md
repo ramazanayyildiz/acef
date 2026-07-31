@@ -51,6 +51,12 @@ Admit the work to ACEF when persistence/migration, security/privacy/permissions,
 concurrency/fencing, state-machine behavior, tracking/reporting/analytics, a new pattern, scope expansion, multiple
 boundaries/surfaces, irreversible effects, or multi-session/worker coordination appears.
 
+For admitted work, route two independent dimensions. Select ACEF Fix (`quick-fix`), ACEF Standard (`lightweight`), or
+ACEF Full (`full-bmad`, BMAD v2) for execution depth. Then select Baseline or Guarded assurance from risk. Guarded is an
+additive overlay, never a fourth workflow and never a reason to repeat BMAD phases. Write typed active-run v2 state with
+`workflowId`, `assuranceProfile`, and `scopeUnit`; an active legacy `lane: guarded` must be explicitly migrated before
+continuing.
+
 New `direct` runs are retired because repeated real-task measurement remained slower and less reliable than both native
 and lightweight work. An existing `ACEF_DIRECT_RUN.json` is compatibility state only; use
 `.acef/bin/acef-state direct-run --help` to close or promote that existing record.

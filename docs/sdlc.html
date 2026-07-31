@@ -58,21 +58,21 @@
         </section>
 
         <section id="delivery"><h2><span class="ic" style="background:#f0eaff">⚙️</span>Delivery model</h2>
-          <p>ACEF selects one of five lanes and applies only that lane's closeout floor.</p>
+          <p>ACEF first decides native versus ACEF, then selects execution depth and risk assurance independently.</p>
           <table>
-            <tr><th>Lane</th><th>Use when</th><th>Gate</th></tr>
-            <tr><td><strong>Direct</strong></td><td>Reversible contained work with one technical boundary</td><td>Scope, acceptance, changed paths, focused verification, handoff, promotion check</td></tr>
-            <tr><td><strong>Quick-fix</strong></td><td>Narrow reproduced bugs needing before/after evidence</td><td>Compact lifecycle and independent review</td></tr>
-            <tr><td><strong>Lightweight</strong></td><td>Small, scoped, ongoing work</td><td>Planner / Developer / Judge, with mechanical · standard · guarded tracks</td></tr>
-            <tr><td><strong>Full BMAD v2</strong></td><td>Epics, large features, core behavior, multi-module, or risky-and-large work</td><td>Real BMAD conductor/skills must resolve, and each phase must bind to a separate worker persona</td></tr>
-            <tr><td><strong>Guarded</strong></td><td>Security, money, migration, provider, realtime, concurrency, or state-machine boundaries</td><td>Full typed closeout plus guarded boundary-test floor</td></tr>
+            <tr><th>Dimension</th><th>Choice</th><th>Meaning</th></tr>
+            <tr><td><strong>Admission</strong></td><td>Repository native</td><td>Reversible contained single-boundary/single-surface work; no ACEF artifacts</td></tr>
+            <tr><td><strong>Execution</strong></td><td>ACEF Fix</td><td>Narrow reproduced defects; compact before/after lifecycle</td></tr>
+            <tr><td><strong>Execution</strong></td><td>ACEF Standard</td><td>Scoped ordinary work; compact six-step lifecycle</td></tr>
+            <tr><td><strong>Execution</strong></td><td>ACEF Full (BMAD v2)</td><td>Planning-heavy stories and broad scope; one full BMAD lifecycle</td></tr>
+            <tr><td><strong>Assurance</strong></td><td>Baseline / Guarded</td><td>Guarded adds high-risk controls to the chosen execution workflow without repeating it</td></tr>
           </table>
           <div class="grid">
-            <div class="card" style="border-left-color:var(--rose)"><h3>Preflight + Story Judge</h3><p>Non-direct work requires <code>ACEF_PREFLIGHT.md</code> PASS before planning or implementation. Direct uses its compact task record and promotion check instead.</p></div>
+            <div class="card" style="border-left-color:var(--rose)"><h3>Preflight + Story Judge</h3><p>Admitted ACEF work requires <code>ACEF_PREFLIGHT.md</code> PASS before planning or implementation. Contained native work creates no ACEF artifacts.</p></div>
             <div class="card" style="border-left-color:var(--violet)"><h3>Epic Process Judge</h3><p>Before epic close, verify drift audit, trace, epic test-review, E2E/user-flow evidence, manual QA ledger, product-done audit, retrospective, and status close.</p></div>
             <div class="card" style="border-left-color:var(--blue)"><h3>Surface-realism</h3><p>When a story creates the first reusable UI/runtime pattern, it needs a round-trip proof through the real surface before other stories reuse it. UI epics need representative E2E at close.</p></div>
             <div class="card" style="border-left-color:var(--teal)"><h3>Test cases first</h3><p>For risky/large work, user flows become test cases before automation and before final story slicing.</p></div>
-            <div class="card" style="border-left-color:var(--amber)"><h3>Separation of powers</h3><p>The conductor routes the lifecycle. Test Author, Developer, Code Reviewer, Verify-Patch Reviewer, Test Reviewer, and Process Judge are separate actors. A worker cannot approve its own output.</p></div>
+            <div class="card" style="border-left-color:var(--amber)"><h3>Separation of powers</h3><p>ACEF Full uses six separate BMAD phase actors. Guarded Fix/Standard use distinct Developer and Process Judge actors plus an independent boundary test author. A worker cannot approve its own output.</p></div>
             <div class="card" style="border-left-color:var(--green)"><h3>Typed gate evidence</h3><p><code>acef-state</code> records each actor and worker scope, captures command output with a hash, and requires Process Judge PASS to cite successful evidence. Epic transitions use an exact hashed human approval quote.</p></div>
             <div class="card" style="border-left-color:var(--blue)"><h3>Seeded epic gates</h3><p>Epics/stories generation creates every <code>Epic N Process Judge [PENDING]</code> row up front. The next epic cannot start until the prior epic gate is <code>PASS</code>.</p></div>
             <div class="card" style="border-left-color:var(--green)"><h3>Architecture conformance</h3><p>Before epics/stories, an independent Architect or Process Judge checks codemap use, golden-neighbor claims, source discrepancies, counts, and do-not-copy entries. Findings need a ledger disposition before stories start.</p></div>

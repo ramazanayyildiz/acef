@@ -48,8 +48,9 @@ They answer questions that tests alone usually do not answer:
 - Did a worker continue into the next phase or story?
 - Did a gate pass because an artifact exists, or because the required evidence exists?
 
-These controls should be scaled by lane. Quick-fix and operator work should not carry full-BMAD ceremony, but guarded and
-full-BMAD work still need strong actor, scope, evidence, and gate boundaries.
+Controls are composed from execution workflow and assurance. ACEF Fix/Standard should not carry Full BMAD planning
+ceremony. ACEF Full and every Guarded combination still need the actor, scope, evidence, and gate boundaries selected
+by their bundles, without running the same validator twice.
 
 ## Why Typed State Exists
 
@@ -219,17 +220,17 @@ Use this table when deciding whether a lane needs the full artifact, a lighter f
 
 | Control | Primary failure mode | Role | Required dose | Backstop if lighter |
 | --- | --- | --- | --- | --- |
-| Worker scope | Scope escape before or during writes | Active enforcement | Quick-fix/lightweight/guarded/full-BMAD; strict actor+path binding for guarded/full-BMAD | Direct validates declared changed paths and promotes on expansion |
+| Worker scope | Scope escape before or during writes | Active enforcement | ACEF Fix/Standard/Full; Guarded strengthens actor+path binding | Direct validates declared changed paths and promotes on expansion |
 | Cold-read/current context | Chat-memory drift, stale story, wrong phase | Active guidance plus drift guard | Any cross-session, multi-agent, or drift-prone work | Tight single-context quick fix with explicit user scope |
-| Active run and `acef-next` | Wrong next action, phase jump, broad ledger reread | Active guidance | Lightweight/guarded/full-BMAD; optional compact form for quick-fix | Manual conductor check against ledger/status |
-| Actor records | Self-review, role collapse, unverifiable separation | Audit plus policy guard | Any lane with independent workers/reviewers; required for guarded/full-BMAD | Real separate-worker topology plus reviewer report, but less auditable |
-| Approval receipts | Ambiguous "continue" treated as new scope approval | Scope guard | Epic transitions, guarded starts, high-risk expansions | Fresh explicit user confirmation |
-| Evidence manifest | Stale output, wrong command, wrong commit, chat-only evidence | Audit plus evidence guard | Guarded/full-BMAD/unattended; lighter command log for quick-fix/lightweight | Skeptical re-run from disk |
-| Runner proof | Evidence record edited after command or detached from raw output | Cooperative integrity guard | Full-BMAD; guarded only when unattended/async (v2 thinning) | Skeptical re-run and raw log inspection |
-| Gate verdict | PASS without required evidence or wrong decision actor | Decision guard | Guarded/full-BMAD; lightweight closeout when typed gates are used | Manual closeout checklist plus independent review |
+| Active run and `acef-next` | Wrong next action, phase jump, broad ledger reread | Active guidance | ACEF Standard/Full; compact for Fix; Guarded strengthens the selected workflow | Manual conductor check against ledger/status |
+| Actor records | Self-review, role collapse, unverifiable separation | Audit plus policy guard | ACEF Full or any Guarded workflow; Fix/Standard when independently triggered | Real separate-worker topology plus reviewer report, but less auditable |
+| Approval receipts | Ambiguous "continue" treated as new scope approval | Scope guard | Epic transitions, non-Full Guarded epics, high-risk expansions | Fresh explicit user confirmation |
+| Evidence manifest | Stale output, wrong command, wrong commit, chat-only evidence | Audit plus evidence guard | ACEF Full or any Guarded workflow; lighter command log for Baseline Fix/Standard | Skeptical re-run from disk |
+| Runner proof | Evidence record edited after command or detached from raw output | Cooperative integrity guard | ACEF Full; Guarded when unattended/async (v2 thinning) | Skeptical re-run and raw log inspection |
+| Gate verdict | PASS without required evidence or wrong decision actor | Decision guard | ACEF Full or any Guarded workflow | Manual closeout checklist plus independent review |
 | Surface contract | Fake runtime proof, in-memory persistence, unreachable UI | Runtime floor | Non-direct user-visible or persistence-affecting feature lanes; direct promotes on multiple/high-risk surfaces and keeps focused runtime verification | Manual browser/runtime check with durable persistence proof |
 | Test-integrity check | Green-by-weakening-tests | Active guard | Any lane where tests are edited | Reviewer diff of assertions/skips/imports |
-| Lean evidence | Chat-only closeout or over-heavy closeout for small lanes | Evidence guard | Quick-fix/lightweight/guarded/full-BMAD; direct uses only its compact task record | Focused artifacts plus skeptical disk re-run |
+| Lean evidence | Chat-only closeout or over-heavy closeout for small workflows | Evidence guard | ACEF Fix/Standard/Full; Guarded raises the dose without replacing the workflow | Focused artifacts plus skeptical disk re-run |
 
 The table is intentionally not a universal "always require everything" rule. It is a dosing rule: if another stronger
 backstop is present and cheaper for the lane, use the lighter form; if no backstop catches the failure mode before harm,

@@ -1,0 +1,61 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://acef.local/schemas/lightweight-run-v2.schema.json",
+  "title": "ACEF Fix or Standard Lifecycle v2",
+  "type": "object",
+  "required": [
+    "schema",
+    "runId",
+    "workflowId",
+    "assuranceProfile",
+    "status",
+    "implementationActorId",
+    "reviewActorId",
+    "steps",
+    "promotion"
+  ],
+  "properties": {
+    "schema": { "const": "acef.lightweight-run.v2" },
+    "runId": { "type": "string", "minLength": 1 },
+    "workflowId": { "enum": ["quick-fix", "lightweight"] },
+    "assuranceProfile": { "enum": ["baseline", "guarded"] },
+    "status": { "enum": ["active", "blocked", "complete"] },
+    "implementationActorId": { "type": "string", "minLength": 1 },
+    "reviewActorId": { "type": "string", "minLength": 1 },
+    "steps": {
+      "type": "array",
+      "minItems": 6,
+      "maxItems": 6,
+      "items": {
+        "type": "object",
+        "required": ["name", "status", "evidencePaths"],
+        "properties": {
+          "name": { "type": "string", "minLength": 1 },
+          "status": { "enum": ["PENDING", "PASS", "BLOCKED"] },
+          "evidencePaths": {
+            "type": "array",
+            "items": { "type": "string", "minLength": 1 }
+          }
+        }
+      }
+    },
+    "promotion": {
+      "type": "object",
+      "required": ["decision", "triggers"],
+      "properties": {
+        "decision": {
+          "enum": ["stay-lightweight", "promote-full-bmad", "human-risk-acceptance"]
+        },
+        "triggers": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "surfaces": { "type": "array", "items": { "type": "string" } },
+    "surfaceEvidence": { "type": "array" },
+    "quickFix": { "type": "object" },
+    "updatedAt": { "type": ["string", "null"] }
+  },
+  "additionalProperties": false
+}

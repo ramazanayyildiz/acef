@@ -68,31 +68,19 @@ try {
   expectFail(/missing control\(s\): runner-proof/, "missing required control");
 
   const weakScope = readRecord();
-  weakScope.controls.find((control) => control.id === "worker-scope").laneDoses["quick-fix"].requirement = "optional";
+  weakScope.controls.find((control) => control.id === "worker-scope").workflowDoses["quick-fix"].requirement = "optional";
   writeRecord(weakScope);
-  expectFail(/worker-scope\.quick-fix must be required/, "worker scope cannot be optional");
+  expectFail(/effective worker-scope\.quick-fix\.baseline must be required/, "worker scope cannot be optional");
 
-  const weakDirectIntegrity = readRecord();
-  weakDirectIntegrity.controls.find((control) => control.id === "test-integrity").laneDoses.direct.requirement = "optional";
-  writeRecord(weakDirectIntegrity);
-  expectFail(/test-integrity\.direct must be required-if-triggered/, "direct keeps triggered test integrity");
-
-  const ceremonialDirect = readRecord();
-  ceremonialDirect.controls.find((control) => control.id === "worker-scope").laneDoses.direct.requirement = "optional";
-  ceremonialDirect.controls.find((control) => control.id === "worker-scope").laneDoses.direct.dose = "light";
-  ceremonialDirect.controls.find((control) => control.id === "worker-scope").laneDoses.direct.enforcementLevel = "documented";
-  writeRecord(ceremonialDirect);
-  expectFail(/worker-scope\.direct must be not-required/, "direct rejects optional worker-scope ceremony");
-
-  const heavyDirectBundle = readRecord();
-  heavyDirectBundle.laneBundles.direct = ["worker-scope"];
-  writeRecord(heavyDirectBundle);
-  expectFail(/laneBundles\.direct includes not-required control worker-scope/, "direct bundle rejects heavyweight controls");
+  const weakGuardedActors = readRecord();
+  weakGuardedActors.controls.find((control) => control.id === "actor-records").assuranceDoses.guarded.requirement = "optional";
+  writeRecord(weakGuardedActors);
+  expectFail(/effective actor-records\.quick-fix\.guarded must be required/, "guarded overlay cannot weaken actor separation");
 
   const missingBundle = readRecord();
-  missingBundle.laneBundles.guarded = missingBundle.laneBundles.guarded.filter((id) => id !== "evidence-manifest");
+  missingBundle.assuranceOverlays.guarded.bundleAdds = missingBundle.assuranceOverlays.guarded.bundleAdds.filter((id) => id !== "evidence-manifest");
   writeRecord(missingBundle);
-  expectFail(/laneBundles\.guarded missing required control\(s\): evidence-manifest/, "guarded bundle requires evidence manifest");
+  expectFail(/quick-fix\.guarded bundle missing required control\(s\): evidence-manifest/, "guarded bundle requires evidence manifest");
 
   fs.rmSync(path.join(tmp, "docs", "ai", "ACEF_CONTROL_DOSING.json"));
   expectFail(/Missing control dosing manifest/, "target repo without manifest fails explicit check");
@@ -137,10 +125,14 @@ try {
   fs.writeFileSync(path.join(tmp, "docs", "ai", "review.md"), "review report\n");
   fs.writeFileSync(path.join(tmp, "docs", "ai", "judge.md"), "judge report\n");
   fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_ACTIVE_RUN.json"), `${JSON.stringify({
+    schema: "acef.active-run.v2",
     runId: "RUN-guarded-missing-evidence",
     repo: "fixture",
-    lane: "guarded",
-    laneRationale: "Payment-adjacent guarded closeout requires typed evidence.",
+    workflowId: "lightweight",
+    assuranceProfile: "guarded",
+    scopeUnit: "story",
+    assuranceRationale: "Payment risk requires guarded assurance.",
+    workflowRationale: "Payment-adjacent scoped work uses ACEF Standard.",
     riskTriggers: ["payment"],
     status: "active",
     activeStory: "story 1.1",
@@ -151,6 +143,10 @@ try {
   const guardedOutput = `${guardedCloseout.stdout}\n${guardedCloseout.stderr}`;
   if (guardedCloseout.status === 0 || !/evidence-manifest: No typed evidence manifests/.test(guardedOutput)) {
     throw new Error(`guarded closeout without evidence manifest should fail through manifest-driven bundle:\n${guardedOutput}`);
+  }
+  const evidenceFailures = guardedOutput.match(/evidence-manifest: No typed evidence manifests/g) || [];
+  if (evidenceFailures.length !== 1) {
+    throw new Error(`closeout must share evidence-manifest and runner-proof validation instead of rerunning it:\n${guardedOutput}`);
   }
 
   console.log("acef control-dosing tests passed");

@@ -1,8 +1,8 @@
-# ACEF BMAD v2 Lane — the heavy lane (Layer 3)
+# ACEF Full (BMAD v2) — the planning-heavy execution workflow (Layer 3)
 
-The heavy delivery lane for **epics / large features / core-behavior / risky-and-large** work. It runs the full
-story lifecycle with hard gates. Small/ongoing work does **not** use this lane — it uses the lightweight lane
-(Layer 5 → Layer 1) and promotes here only when it grows (see `DELIVERY_RULES.md`).
+The Full execution workflow for **epics / large features / core-behavior / planning-heavy** work. It runs one complete
+story lifecycle with hard gates. Small/ongoing work uses ACEF Standard and promotes here only when planning or scope
+grows. Risk is orthogonal: Baseline or Guarded assurance may be applied without repeating this lifecycle.
 
 ## Dependency
 This lane is driven by **BMAD-METHOD** (https://github.com/bmad-code-org/BMAD-METHOD, MIT) — an installable agent

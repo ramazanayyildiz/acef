@@ -20,6 +20,17 @@ const {
   parseControlDosing,
 } = require("./lib/acef-state-parser");
 const { inspectRunAuthorization } = require("./lib/acef-run-authorization");
+const {
+  assuranceProfile,
+  displayName,
+  isFull,
+  isGuarded,
+  isHeavy,
+  resolveControlBundle,
+  resolveControlDose,
+  riskRequiresGuarded,
+  workflowId,
+} = require("./lib/acef-execution-policy");
 
 function usage() {
   console.log(`ACEF process validator
@@ -423,7 +434,7 @@ function isDispatchPhase(activeRun) {
 function specReadinessRequired(activeRun, triggers = []) {
   if (!activeRun) return false;
   if (!isDispatchPhase(activeRun)) return false;
-  if (["full-bmad", "guarded"].includes(activeRun.lane)) return true;
+  if (isHeavy(activeRun)) return true;
   const riskText = triggers.join(" ");
   return /(feature|crm|notes?|tracking|reporting|dashboard|workflow|persistence|database|schema|migration|auth|authorization|permission|roles?|payment|billing|invoice|accounting|finance|financial|revenue|expense|tax|ledger|muhasebe|payout|security|tenant|privacy|pii)/i.test(riskText);
 }
@@ -915,8 +926,8 @@ function reviewGateEntries(repoRoot, activeRun) {
 function checkReviewCircuitBreaker(repoRoot) {
   const activeRun = typedActiveRun(repoRoot);
   if (!activeRun) return result("review-circuit-breaker", true, "No typed active run");
-  if (!["guarded", "full-bmad"].includes(activeRun.lane)) {
-    return result("review-circuit-breaker", true, `${activeRun.lane} does not use the guarded review breaker`);
+  if (!isHeavy(activeRun)) {
+    return result("review-circuit-breaker", true, `${displayName(activeRun)} does not use the guarded review breaker`);
   }
   const reviewGates = reviewGateEntries(repoRoot, activeRun);
   const lastTwo = reviewGates.slice(-2);
@@ -1108,12 +1119,11 @@ function coveredWorkShapes(registry) {
   return new Set((registry.patterns || []).map((pattern) => String(pattern.workShape || "").trim()).filter(Boolean));
 }
 
-function partialWorkshapeVerdict(registry, ledgerText) {
+function partialWorkshapeVerdict(registry, ledgerText, guarded = false) {
   if (String(registry.status || "").toUpperCase() !== "PARTIAL") {
     return { ok: true, message: `Registry ${registry.status || "UNKNOWN"} does not require PARTIAL work-shape blocking` };
   }
 
-  const track = ledgerField(ledgerText, "track").toLowerCase();
   const workShape = ledgerField(ledgerText, "workShape");
   const accepted = hasHumanRiskAcceptance(ledgerText);
 
@@ -1121,7 +1131,7 @@ function partialWorkshapeVerdict(registry, ledgerText) {
 
   const covered = coveredWorkShapes(registry);
   const isCovered = covered.has(workShape);
-  if (track === "guarded" && !accepted) {
+  if (guarded && !accepted) {
     return { ok: false, message: `PARTIAL registry blocks guarded workShape ${workShape} without human risk acceptance` };
   }
   if (!isCovered && !accepted) {
@@ -1129,11 +1139,11 @@ function partialWorkshapeVerdict(registry, ledgerText) {
   }
 
   if (!isCovered && accepted) return { ok: true, message: `Uncovered workShape ${workShape} allowed by human risk acceptance` };
-  if (track === "guarded" && accepted) return { ok: true, message: `Guarded workShape ${workShape} allowed by human risk acceptance` };
+  if (guarded && accepted) return { ok: true, message: `Guarded workShape ${workShape} allowed by human risk acceptance` };
   return { ok: true, message: `PARTIAL registry covers workShape ${workShape}` };
 }
 
-function checkPartialWorkshape(ledgerPath, registryPath) {
+function checkPartialWorkshape(repoRoot, ledgerPath, registryPath) {
   if (!ledgerPath || !exists(ledgerPath)) return result("partial-workshape", false, "Missing ledger path");
 
   let registry;
@@ -1143,7 +1153,12 @@ function checkPartialWorkshape(ledgerPath, registryPath) {
     return result("partial-workshape", false, error.message);
   }
 
-  const verdict = partialWorkshapeVerdict(registry, read(ledgerPath));
+  const ledgerText = read(ledgerPath);
+  const activeRun = typedActiveRun(repoRoot);
+  const guarded = activeRun
+    ? isGuarded(activeRun)
+    : ledgerField(ledgerText, "track").toLowerCase() === "guarded";
+  const verdict = partialWorkshapeVerdict(registry, ledgerText, guarded);
   return result("partial-workshape", verdict.ok, verdict.message);
 }
 
@@ -1387,8 +1402,11 @@ function isFullBmad(text) {
 function checkGuardedTestFloor(repoRoot, ledgerPath) {
   if (!ledgerPath || !exists(ledgerPath)) return result("guarded-test-floor", false, "Missing ledger path");
   const text = read(ledgerPath);
-  const track = (ledgerField(text, "track") || ledgerField(text, "active_track")).toLowerCase();
-  if (track !== "guarded") return result("guarded-test-floor", true, "Track is not guarded");
+  const activeRun = typedActiveRun(repoRoot);
+  const guarded = activeRun
+    ? isGuarded(activeRun)
+    : (ledgerField(text, "track") || ledgerField(text, "active_track")).toLowerCase() === "guarded";
+  if (!guarded) return result("guarded-test-floor", true, "Assurance profile is not guarded");
 
   const section = extractSection(text, "Guarded Test Floor");
   if (!section) return result("guarded-test-floor", false, "Missing ## Guarded Test Floor section");
@@ -1437,7 +1455,9 @@ function typedActiveRun(repoRoot) {
 function checkTypedActorSeparation(repoRoot, activeRun) {
   const actorFiles = jsonRecords(path.join(repoRoot, "docs", "ai", "actors"));
   const actors = actorFiles.map(parseActorRecord).filter((actor) => normalizedScope(actor.story) === normalizedScope(activeRun.activeStory));
-  const requiredPhases = ["atdd", "development", "codereview", "verifypatch", "testreview", "processjudge"];
+  const requiredPhases = isFull(activeRun)
+    ? ["atdd", "development", "codereview", "verifypatch", "testreview", "processjudge"]
+    : ["development", "processjudge"];
   const byPhase = new Map();
   for (const actor of actors) {
     const phase = canonicalPhase(actor.phase);
@@ -1456,7 +1476,13 @@ function checkTypedActorSeparation(repoRoot, activeRun) {
     if (commitError) failures.push(commitError);
   }
   if (failures.length) return result("actor-separation", false, failures.join("; "));
-  return result("actor-separation", true, `Six typed full-BMAD phase actors are distinct for ${activeRun.activeStory}`);
+  return result(
+    "actor-separation",
+    true,
+    isFull(activeRun)
+      ? `Six typed Full BMAD phase actors are distinct for ${activeRun.activeStory}`
+      : `Guarded developer and Process Judge actors are distinct for ${activeRun.activeStory}`,
+  );
 }
 
 function checkActorSeparation(repoRoot, ledgerPath) {
@@ -1464,7 +1490,7 @@ function checkActorSeparation(repoRoot, ledgerPath) {
   const text = read(ledgerPath);
   const activeRun = typedActiveRun(repoRoot);
   if (activeRun) {
-    if (!["full-bmad", "guarded"].includes(activeRun.lane)) return result("actor-separation", true, "Typed lane is not full BMAD/guarded");
+    if (!isHeavy(activeRun)) return result("actor-separation", true, "Execution does not require typed actor separation");
     return checkTypedActorSeparation(repoRoot, activeRun);
   }
   if (!isFullBmad(text)) return result("actor-separation", true, "Lane is not full BMAD");
@@ -1597,8 +1623,8 @@ function gateDeciderIntegrityFailures(repoRoot, activeRun, gate) {
 function checkGateDecider(repoRoot) {
   const activeRun = typedActiveRun(repoRoot);
   if (!activeRun) return result("gate-decider", true, "No typed active run; legacy gate checks remain active");
-  if (!["full-bmad", "guarded"].includes(activeRun.lane)) {
-    return result("gate-decider", true, "Typed lane is not full BMAD/guarded");
+  if (!isHeavy(activeRun)) {
+    return result("gate-decider", true, "Execution does not require an independent gate decider");
   }
   const { gate, failures } = latestPassGateForActiveRun(repoRoot, activeRun);
   if (gate) failures.push(...gateDeciderIntegrityFailures(repoRoot, activeRun, gate));
@@ -1637,9 +1663,9 @@ function checkGateVerdict(repoRoot) {
         failures.push(error.message);
       }
     }
-    const fullSurfaceValidation = ["full-bmad", "guarded"].includes(activeRun.lane);
+    const fullSurfaceValidation = isHeavy(activeRun);
     if (fullSurfaceValidation && !activeScope?.surfaces?.length) {
-      failures.push(`${activeRun.lane} PASS gate requires active worker scope surfaces`);
+      failures.push(`${displayName(activeRun)} PASS gate requires active worker scope surfaces`);
     }
     if (fullSurfaceValidation && activeScope?.surfaces?.length) {
       for (const surface of missingInferredSurfaces(repoRoot, activeScope.surfaces, activeScope)) {
@@ -1649,7 +1675,7 @@ function checkGateVerdict(repoRoot) {
       for (const surface of activeScope.surfaces) {
         const match = surfaceEvidence.find((entry) => entry.surface === surface);
         if (!match) {
-          failures.push(`${activeRun.lane} PASS gate requires surface evidence for ${surface}`);
+          failures.push(`${displayName(activeRun)} PASS gate requires surface evidence for ${surface}`);
           continue;
         }
         try {
@@ -1753,8 +1779,8 @@ function checkSourceReconciliation(repoRoot, ledgerPath) {
   if (!ledgerPath || !exists(ledgerPath)) return result("source-reconciliation", false, "Missing ledger path");
   const text = read(ledgerPath);
   const activeRun = typedActiveRun(repoRoot);
-  if (activeRun && !["full-bmad", "guarded"].includes(activeRun.lane)) {
-    return result("source-reconciliation", true, "Lane is not full BMAD/guarded");
+  if (activeRun && !isFull(activeRun)) {
+    return result("source-reconciliation", true, "Workflow is not Full BMAD");
   }
   if (!activeRun && !isFullBmad(text)) return result("source-reconciliation", true, "Lane is not full BMAD");
   const section = extractSection(text, "Source Reconciliation");
@@ -1849,8 +1875,8 @@ function checkCurrentContext(repoRoot, ledgerPath) {
     max_lines: activeRun.maxLines === undefined || activeRun.maxLines === null ? "" : String(activeRun.maxLines),
   } : sessionHandoffFields(extractSection(ledgerText, "Current Context Contract"));
 
-  const fullBmad = activeRun ? ["full-bmad", "guarded"].includes(activeRun.lane) : isFullBmad(ledgerText);
-  if (!fullBmad) return result("current-context", true, "Lane is not full BMAD/guarded");
+  const fullBmad = activeRun ? isHeavy(activeRun) : isFullBmad(ledgerText);
+  if (!fullBmad) return result("current-context", true, "Execution does not require full current-context controls");
 
   if (!activeRun && !extractSection(ledgerText, "Current Context Contract")) {
     return result("current-context", false, "Missing ## Current Context Contract section");
@@ -2062,6 +2088,30 @@ function inferActiveLane(repoRoot, ledgerPath) {
   return "";
 }
 
+function inferActiveExecution(repoRoot, ledgerPath) {
+  const activeRun = typedActiveRun(repoRoot);
+  if (activeRun && activeRun.status !== "complete") {
+    return {
+      kind: "typed",
+      record: activeRun,
+      workflow: workflowId(activeRun) || normalizeLaneName(activeRun.lane),
+      assurance: assuranceProfile(activeRun),
+    };
+  }
+  const lane = inferActiveLane(repoRoot, ledgerPath);
+  if (lane === "direct") return { kind: "direct", record: null, workflow: "direct", assurance: "baseline" };
+  if (activeRun) {
+    return {
+      kind: "typed",
+      record: activeRun,
+      workflow: workflowId(activeRun) || normalizeLaneName(activeRun.lane),
+      assurance: assuranceProfile(activeRun),
+    };
+  }
+  if (lane === "guarded") return { kind: "legacy", record: null, workflow: "lightweight", assurance: "guarded" };
+  return { kind: "legacy", record: null, workflow: lane, assurance: "baseline" };
+}
+
 function controlDosingManifestPath(repoRoot) {
   const candidates = [
     path.join(repoRoot, "docs", "ai", "ACEF_CONTROL_DOSING.json"),
@@ -2084,8 +2134,16 @@ function controlById(controlDosing, controlId) {
   return controlDosing.record.controls.find((control) => control.id === controlId) || null;
 }
 
-function controlDoseForLane(controlDosing, controlId, lane) {
-  return controlById(controlDosing, controlId)?.laneDoses?.[lane] || null;
+function controlDoseForExecution(controlDosing, controlId, execution) {
+  if (execution.workflow === "direct") {
+    return controlById(controlDosing, controlId)?.laneDoses?.direct || null;
+  }
+  return resolveControlDose(
+    controlDosing.record,
+    controlId,
+    execution.workflow,
+    execution.assurance,
+  );
 }
 
 function checkLeanEvidence(repoRoot, ledgerPath) {
@@ -2096,9 +2154,15 @@ function checkLeanEvidence(repoRoot, ledgerPath) {
   } catch (error) {
     return result("lean-evidence", false, error.message);
   }
-  const lane = inferActiveLane(repoRoot, ledgerPath);
-  const dose = controlDoseForLane(controlDosing, "lean-evidence", lane);
-  if (!dose) return result("lean-evidence", false, `No lean-evidence dose for lane ${lane || "unknown"}`);
+  const execution = inferActiveExecution(repoRoot, ledgerPath);
+  const dose = controlDoseForExecution(controlDosing, "lean-evidence", execution);
+  if (!dose) {
+    return result(
+      "lean-evidence",
+      false,
+      `No lean-evidence dose for ${execution.workflow || "unknown"}/${execution.assurance}`,
+    );
+  }
 
   const text = read(ledgerPath);
   const section = extractSection(text, "Lean Evidence Contract");
@@ -2474,6 +2538,9 @@ function checkLaneSelection(repoRoot) {
     return result("lane-selection", true, "No typed active run; legacy lane selection checks remain active");
   }
   const failures = [];
+  if (activeRun.executionMigrationRequired) {
+    failures.push("legacy guarded active run requires explicit workflow migration before execution");
+  }
   if (isDispatchPhase(activeRun)) {
     const decision = activeRun.intakeDecision || null;
     if (!decision) {
@@ -2497,8 +2564,8 @@ function checkLaneSelection(repoRoot) {
       if (decision.executionApproved !== true) {
         failures.push("planning/execution requires explicit execution approval in intakeDecision");
       }
-      if (["full-bmad", "guarded"].includes(activeRun.lane) && decision.briefApproved !== true) {
-        failures.push(`${activeRun.lane} planning/execution requires approved interview brief before spec or plan`);
+      if (isFull(activeRun) && decision.briefApproved !== true) {
+        failures.push("Full BMAD planning/execution requires approved interview brief before spec or plan");
       }
     }
   }
@@ -2517,25 +2584,47 @@ function checkLaneSelection(repoRoot) {
   }
   const allTriggers = [...new Set([...triggers, ...inferredTriggers])];
   failures.push(...validateSpecReadinessForDispatch(repoRoot, activeRun, allTriggers));
-  if (!activeRun.laneRationale || !String(activeRun.laneRationale).trim()) {
-    failures.push("active run requires laneRationale");
+  const workflowRationale = activeRun.workflowRationale || activeRun.laneRationale;
+  if (!workflowRationale || !String(workflowRationale).trim()) {
+    failures.push("active run requires workflowRationale");
   }
-  const guardedTerms = /(auth|authorization|permission|role|payment|billing|invoice|accounting|finance|financial|revenue|expense|tax|ledger|muhasebe|migration|delete|destructive|security|token|session|webhook|irreversible|tenant|privacy|pii|external[-_ ]?provider|provider[-_ ]?integration|realtime|concurrency|fencing|state[-_ ]?machine)/i;
   const fullTerms = /(new-pattern|new abstraction|shared abstraction|unclear repro|scope expansion|broad refactor|crm|notes?|workflow|reporting|dashboard|tracking)/i;
-  const guardedTrigger = allTriggers.find((item) => guardedTerms.test(item));
+  const guardedTrigger = allTriggers.find((item) => riskRequiresGuarded([item]));
   const fullTrigger = allTriggers.find((item) => fullTerms.test(item));
-  if (guardedTrigger && activeRun.lane !== "guarded") {
-    failures.push(`risk trigger requires guarded lane: ${guardedTrigger}`);
+  if (guardedTrigger && !isGuarded(activeRun)) {
+    failures.push(`risk trigger requires guarded assurance: ${guardedTrigger}`);
   }
-  if (fullTrigger && ["quick-fix", "lightweight"].includes(activeRun.lane)) {
-    failures.push(`risk trigger requires full-bmad or guarded lane: ${fullTrigger}`);
+  if (fullTrigger && !isFull(activeRun)) {
+    failures.push(`planning/scope trigger requires Full BMAD workflow: ${fullTrigger}`);
   }
-  if (activeRun.lane === "quick-fix" && !triggers.includes("bugfix") && !triggers.includes("bug-fix") && !triggers.includes("defect")) {
-    failures.push("quick-fix lane requires bugfix/defect risk trigger");
+  if (workflowId(activeRun) === "quick-fix" && !triggers.includes("bugfix") && !triggers.includes("bug-fix") && !triggers.includes("defect")) {
+    failures.push("ACEF Fix requires bugfix/defect trigger");
+  }
+  if (isGuarded(activeRun) && activeRun.scopeUnit === "epic" && !isFull(activeRun)) {
+    if (!activeRun.assuranceApprovalId) {
+      failures.push("non-Full guarded epic requires a typed assurance approval");
+    } else {
+      const approvalPath = path.join(repoRoot, "docs", "ai", "approvals", `${activeRun.assuranceApprovalId}.json`);
+      try {
+        const approval = parseApproval(approvalPath);
+        if (!["APPROVE", "ACCEPT_RISK"].includes(approval.decision)) {
+          failures.push(`assurance approval ${approval.approvalId} does not authorize guarded epic execution`);
+        }
+        if (approval.actorType !== "human") {
+          failures.push(`assurance approval ${approval.approvalId} must be human`);
+        }
+        if (activeRun.activeEpic && approval.targetEpic !== undefined
+          && Number(activeRun.activeEpic) !== Number(approval.targetEpic)) {
+          failures.push(`assurance approval ${approval.approvalId} targets Epic ${approval.targetEpic}, not ${activeRun.activeEpic}`);
+        }
+      } catch (error) {
+        failures.push(`assurance approval invalid: ${error.message}`);
+      }
+    }
   }
   return failures.length
     ? result("lane-selection", false, failures.join("; "))
-    : result("lane-selection", true, `${activeRun.lane} lane selection is justified`);
+    : result("lane-selection", true, `${displayName(activeRun)} selection is justified`);
 }
 
 function checkSpecReadiness(repoRoot) {
@@ -2625,21 +2714,21 @@ function closeoutResultFailure(item) {
 
 function controlCheckForId(controlId, repoRoot, ledgerPath) {
   const checks = {
-    "worker-scope": () => checkWorkerScope(repoRoot),
-    "cold-read-current-context": () => checkCurrentContext(repoRoot, ledgerPath),
-    "active-run-next-action": () => checkCurrentContext(repoRoot, ledgerPath),
-    "actor-records": () => checkActorSeparation(repoRoot, ledgerPath),
-    "evidence-manifest": () => checkEvidenceManifests(repoRoot),
-    "runner-proof": () => checkEvidenceManifests(repoRoot),
-    "gate-verdict": () => checkGateVerdict(repoRoot),
-    "gate-decider": () => checkGateDecider(repoRoot),
-    "lean-evidence": () => checkLeanEvidence(repoRoot, ledgerPath),
+    "worker-scope": { key: "worker-scope", run: () => checkWorkerScope(repoRoot) },
+    "cold-read-current-context": { key: "current-context", run: () => checkCurrentContext(repoRoot, ledgerPath) },
+    "active-run-next-action": { key: "current-context", run: () => checkCurrentContext(repoRoot, ledgerPath) },
+    "actor-records": { key: "actor-separation", run: () => checkActorSeparation(repoRoot, ledgerPath) },
+    "evidence-manifest": { key: "evidence-manifest", run: () => checkEvidenceManifests(repoRoot) },
+    "runner-proof": { key: "evidence-manifest", run: () => checkEvidenceManifests(repoRoot) },
+    "gate-verdict": { key: "gate-verdict", run: () => checkGateVerdict(repoRoot) },
+    "gate-decider": { key: "gate-decider", run: () => checkGateDecider(repoRoot) },
+    "lean-evidence": { key: "lean-evidence", run: () => checkLeanEvidence(repoRoot, ledgerPath) },
   };
   return checks[controlId] || null;
 }
 
-function baseCloseoutChecks(lane, repoRoot, ledgerPath, adapterPath, registryPath) {
-  if (lane === "direct") {
+function baseCloseoutChecks(execution, repoRoot, ledgerPath, adapterPath, registryPath) {
+  if (execution.workflow === "direct") {
     return [
       () => checkLaneSelection(repoRoot),
       () => checkDirectLifecycle(repoRoot),
@@ -2650,25 +2739,27 @@ function baseCloseoutChecks(lane, repoRoot, ledgerPath, adapterPath, registryPat
     () => checkLaneSelection(repoRoot),
     () => checkSessionHandoff(repoRoot, ledgerPath, adapterPath, registryPath),
   ];
-  if (lane === "quick-fix" || lane === "lightweight") {
+  if (execution.workflow === "quick-fix" || execution.workflow === "lightweight") {
     checks.push(() => checkLightweightLifecycle(repoRoot));
   }
-  if (lane === "guarded" || lane === "full-bmad") {
+  if (execution.record && isHeavy(execution.record)) {
     checks.push(() => checkGoalCoverage(repoRoot));
-    checks.push(() => checkSourceReconciliation(repoRoot, ledgerPath));
     checks.push(() => checkReviewCircuitBreaker(repoRoot));
   }
-  if (lane === "guarded") {
+  if (execution.record && isFull(execution.record)) {
+    checks.push(() => checkSourceReconciliation(repoRoot, ledgerPath));
+  }
+  if (execution.assurance === "guarded") {
     checks.push(() => checkGuardedTestFloor(repoRoot, ledgerPath));
   }
   return checks;
 }
 
 function checkLaneCloseout(repoRoot, ledgerPath, adapterPath, registryPath) {
-  const lane = inferActiveLane(repoRoot, ledgerPath);
-  if (!lane) return result("lane-closeout", false, "Missing typed active run or lightweight run lane");
-  if (!["direct", "quick-fix", "lightweight", "guarded", "full-bmad"].includes(lane)) {
-    return result("lane-closeout", false, `Unsupported closeout lane: ${lane}`);
+  const execution = inferActiveExecution(repoRoot, ledgerPath);
+  if (!execution.workflow) return result("lane-closeout", false, "Missing typed active run or lightweight run workflow");
+  if (!["direct", "quick-fix", "lightweight", "full-bmad"].includes(execution.workflow)) {
+    return result("lane-closeout", false, `Unsupported closeout workflow: ${execution.workflow}`);
   }
 
   let controlDosing = null;
@@ -2678,19 +2769,33 @@ function checkLaneCloseout(repoRoot, ledgerPath, adapterPath, registryPath) {
     return result("lane-closeout", false, `control-dosing: ${error.message}`);
   }
 
-  const checks = [() => checkControlDosing(repoRoot), ...baseCloseoutChecks(lane, repoRoot, ledgerPath, adapterPath, registryPath)];
+  const checks = [
+    () => checkControlDosing(repoRoot),
+    ...baseCloseoutChecks(execution, repoRoot, ledgerPath, adapterPath, registryPath),
+  ];
   const scheduled = new Set();
-  for (const controlId of controlDosing.record.laneBundles[lane] || []) {
+  const bundle = execution.workflow === "direct"
+    ? []
+    : resolveControlBundle(
+      controlDosing.record,
+      execution.workflow,
+      execution.assurance,
+    );
+  for (const controlId of bundle) {
     const check = controlCheckForId(controlId, repoRoot, ledgerPath);
-    if (!check || scheduled.has(controlId)) continue;
-    scheduled.add(controlId);
-    checks.push(check);
+    if (!check || scheduled.has(check.key)) continue;
+    scheduled.add(check.key);
+    checks.push(check.run);
   }
 
   const failures = checks.map((check) => closeoutResultFailure(check())).filter(Boolean);
   return failures.length
     ? result("lane-closeout", false, failures.join("; "))
-    : result("lane-closeout", true, `${lane} closeout bundle passed`);
+    : result(
+      "lane-closeout",
+      true,
+      `${execution.workflow}/${execution.assurance} closeout bundle passed`,
+    );
 }
 
 function displayPath(repoRoot, filePath) {
@@ -2724,8 +2829,8 @@ function checkPrecommitGate(repoRoot) {
   const activeRunPath = path.join(repoRoot, "docs", "ai", "ACEF_ACTIVE_RUN.json");
   if (!exists(activeRunPath)) return result("precommit-gate", true, "No active ACEF run");
   const ledger = findLedger(repoRoot);
-  const lane = inferActiveLane(repoRoot, ledger);
-  const subChecks = lane === "guarded" || lane === "full-bmad"
+  const execution = inferActiveExecution(repoRoot, ledger);
+  const subChecks = execution.record && isHeavy(execution.record)
     ? ["run-authorization", "review-circuit-breaker", "gate-decider", "lean-evidence"]
     : ["run-authorization", "lean-evidence"];
   const failures = [];
@@ -2739,10 +2844,11 @@ function checkPrecommitGate(repoRoot) {
           : checkLeanEvidence(repoRoot, ledger);
     if (!sub.ok) failures.push(`${sub.name}: ${sub.message}`);
   }
+  const executionLabel = `${execution.workflow || "no-workflow"}/${execution.assurance}`;
   if (failures.length) {
-    return result("precommit-gate", false, `${lane || "no-lane"} pre-commit bundle failed — ${failures.join("; ")}`);
+    return result("precommit-gate", false, `${executionLabel} pre-commit bundle failed — ${failures.join("; ")}`);
   }
-  return result("precommit-gate", true, `${lane || "no-lane"} pre-commit bundle passed (${subChecks.join(", ")})`);
+  return result("precommit-gate", true, `${executionLabel} pre-commit bundle passed (${subChecks.join(", ")})`);
 }
 
 function capabilityChangePaths(repoRoot) {
@@ -2847,7 +2953,7 @@ function main() {
     if (check === "pattern-registry") return checkPatternRegistry(registry);
     if (check === "reuse-before-create") return checkReuseBeforeCreate(ledger, registry);
     if (check === "do-not-copy") return checkDoNotCopy(ledger, registry);
-    if (check === "partial-workshape") return checkPartialWorkshape(ledger, registry);
+    if (check === "partial-workshape") return checkPartialWorkshape(args.repo, ledger, registry);
     if (check === "finding-promotion") return checkFindingPromotion(ledger);
     if (check === "graduation-reconciliation") return checkGraduationReconciliation(args.repo, ledger);
     if (check === "vertical-slice") return checkVerticalSlice(args.repo, ledger);

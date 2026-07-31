@@ -14,6 +14,7 @@ const {
   parseGateVerdict,
   parseWorkerScope,
 } = require("./lib/acef-state-parser");
+const { riskRequiresGuarded } = require("./lib/acef-execution-policy");
 
 function usage(command = "") {
   if (command === "direct-run") {
@@ -39,7 +40,8 @@ The existing direct record is the compact compatibility context. Do not inspect 
   console.log(`ACEF typed-state writer
 
 Usage:
-  acef-state active-run --repo <path> --run-id <id> --lane <lane> --status <status> --story <scope> --phase <phase> --ledger <path> [--route <route> --route-confidence low|medium|high] [--goal-description <text> --goal-user-facing true|false --goal-completion-mode backend-capability|product-workspace|internal] [options]
+  acef-state active-run --repo <path> --run-id <id> --workflow-id quick-fix|lightweight|full-bmad --assurance baseline|guarded --scope-unit work-item|story|epic --status <status> --story <scope> --phase <phase> --ledger <path> [--route <route> --route-confidence low|medium|high] [--goal-description <text> --goal-user-facing true|false --goal-completion-mode backend-capability|product-workspace|internal] [options]
+  acef-state migrate-active-run --repo <path> --workflow-id quick-fix|lightweight|full-bmad [--assurance baseline|guarded] [--assurance-rationale <text>] [--assurance-approval <approval-id>]
   acef-state direct-run --repo <path> --run-id <id> --status active|complete|promoted --scope <scope> --acceptance <criterion>... --technical-boundary <kind> --reversible true [--changed-path <path>...] [--verification-command <command> --verification-exit-code <code>]... [options]
   acef-state actor --repo <path> --id <id> --story <scope> --phase <phase> --role <role> --client <client> --context-profile <profile> [options]
   acef-state worker-scope --repo <path> --story <scope> --phase <phase> --worker-id <id> --allow <glob>... [--surface <name>...] [--pattern-use <kind>] [--requires-round-trip true|false] [--binding <input>><output>:<field>[:defaultMaskingRisk]] [options]
@@ -279,12 +281,30 @@ function quoteArg(value) {
 }
 
 function writeActiveRun(opts) {
-  required(opts, ["runId", "lane", "status", "story", "phase", "ledger"]);
+  required(opts, ["runId", "status", "story", "phase", "ledger"]);
+  if (opts.lane === "guarded") {
+    throw new Error("lane guarded is legacy state; select --workflow-id quick-fix|lightweight|full-bmad and --assurance guarded");
+  }
+  const workflowId = opts.workflowId || opts.lane;
+  if (!workflowId) throw new Error("Missing required option(s): workflow-id");
+  const riskTriggers = opts.riskTrigger.length ? opts.riskTrigger : [];
+  const assuranceProfile = opts.assurance || (riskRequiresGuarded(riskTriggers) ? "guarded" : "baseline");
+  const scopeUnit = opts.scopeUnit || (opts.epic ? "epic" : "story");
+  const assuranceRationale = opts.assuranceRationale
+    || (assuranceProfile === "guarded" ? `risk triggers: ${riskTriggers.join(", ") || "explicit guarded selection"}` : null);
+  if (assuranceProfile === "guarded" && scopeUnit === "epic" && workflowId !== "full-bmad" && !opts.assuranceApproval) {
+    throw new Error("non-Full guarded epic requires --assurance-approval <typed approval id>");
+  }
   const record = {
+    schema: "acef.active-run.v2",
     runId: opts.runId,
     repo: path.basename(opts.repo),
-    lane: opts.lane,
-    track: opts.track || null,
+    workflowId,
+    assuranceProfile,
+    scopeUnit,
+    assuranceRationale,
+    assuranceApprovalId: opts.assuranceApproval ? safeId(opts.assuranceApproval, "assurance approval id") : null,
+    track: opts.track === "guarded" ? null : (opts.track || null),
     status: opts.status,
     activeEpic: opts.epic || null,
     activeStory: opts.story,
@@ -293,9 +313,9 @@ function writeActiveRun(opts) {
     goalCoverage: goalCoverage(opts),
     workerRole: opts.workerRole || null,
     activeActorId: opts.actor || null,
-    laneRationale: opts.laneRationale || null,
+    workflowRationale: opts.workflowRationale || opts.laneRationale || null,
     intakeDecision: intakeDecision(opts),
-    riskTriggers: opts.riskTrigger.length ? opts.riskTrigger : [],
+    riskTriggers,
     workerScopePath: opts.workerScope || null,
     workflowPath: opts.workflow || null,
     workflowNodeId: opts.workflowNode || null,
@@ -309,6 +329,60 @@ function writeActiveRun(opts) {
   const target = path.join(opts.repo, "docs", "ai", "ACEF_ACTIVE_RUN.json");
   atomicJson(target, record, { overwrite: true, validate: parseActiveRun });
   console.log(`WROTE active-run ${relative(opts.repo, target)}`);
+}
+
+function migrateActiveRun(opts) {
+  const target = path.join(opts.repo, "docs", "ai", "ACEF_ACTIVE_RUN.json");
+  if (!fs.existsSync(target)) throw new Error("migrate-active-run requires docs/ai/ACEF_ACTIVE_RUN.json");
+  const previous = parseActiveRun(target);
+  if (previous.schema === "acef.active-run.v2" && !previous.executionMigrationRequired) {
+    throw new Error("active run is already acef.active-run.v2");
+  }
+  if (previous.executionMigrationRequired && !opts.workflowId) {
+    throw new Error("legacy guarded active run requires explicit --workflow-id quick-fix|lightweight|full-bmad");
+  }
+  const workflowId = opts.workflowId || previous.workflowId;
+  const assuranceProfile = opts.assurance || previous.assuranceProfile || "baseline";
+  const scopeUnit = opts.scopeUnit || previous.scopeUnit || (previous.activeEpic ? "epic" : "story");
+  const assuranceRationale = opts.assuranceRationale
+    || previous.assuranceRationale
+    || (assuranceProfile === "guarded" ? "migrated legacy guarded run" : null);
+  const rawAssuranceApprovalId = opts.assuranceApproval || previous.assuranceApprovalId || null;
+  const assuranceApprovalId = rawAssuranceApprovalId
+    ? safeId(rawAssuranceApprovalId, "assurance approval id")
+    : null;
+  if (assuranceProfile === "guarded" && scopeUnit === "epic" && workflowId !== "full-bmad" && !assuranceApprovalId) {
+    throw new Error("non-Full guarded epic migration requires --assurance-approval <typed approval id>");
+  }
+  const {
+    lane: _lane,
+    laneRationale: legacyLaneRationale,
+    schema: _schema,
+    executionMigrationRequired: _migrationRequired,
+    workflowId: _workflowId,
+    assuranceProfile: _assuranceProfile,
+    scopeUnit: _scopeUnit,
+    workflowRationale: previousWorkflowRationale,
+    ...preserved
+  } = previous;
+  const record = {
+    ...preserved,
+    schema: "acef.active-run.v2",
+    workflowId,
+    assuranceProfile,
+    scopeUnit,
+    assuranceRationale,
+    assuranceApprovalId,
+    workflowRationale: opts.workflowRationale
+      || opts.laneRationale
+      || previousWorkflowRationale
+      || legacyLaneRationale
+      || null,
+    track: previous.track === "guarded" ? null : (previous.track || null),
+    updatedAt: new Date().toISOString(),
+  };
+  atomicJson(target, record, { overwrite: true, validate: parseActiveRun });
+  console.log(`MIGRATED active-run ${relative(opts.repo, target)} workflow=${workflowId} assurance=${assuranceProfile}`);
 }
 
 function writeDirectRun(opts) {
@@ -558,6 +632,7 @@ function main() {
   if (!opts.command || opts.command === "help" || opts.command === "--help" || opts.help) return usage(opts.command);
   runGit(opts.repo, ["rev-parse", "--git-dir"]);
   if (opts.command === "active-run") return writeActiveRun(opts);
+  if (opts.command === "migrate-active-run") return migrateActiveRun(opts);
   if (opts.command === "direct-run") return writeDirectRun(opts);
   if (opts.command === "actor") return writeActor(opts);
   if (opts.command === "worker-scope") return writeWorkerScope(opts);

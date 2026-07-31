@@ -56,10 +56,15 @@ try {
   runState(["evidence-run", "--repo", tmp, "--id", "EV-1", "--kind", "runtime-test", "--actor", "development", "--story", "Story 1.1", "--satisfies", "AC-1", "--", process.execPath, "-e", "console.log('real path ok')"]);
   runState(["gate", "--repo", tmp, "--id", "GATE-1", "--scope", "Story 1.1", "--verdict", "PASS", "--decided-by", "process-judge", "--evidence", "EV-1", "--surface-evidence", "ui:EV-1:true:true", "--binding-evidence", "admin>ui:image:EV-1:true:true"]);
 
-  if (readJson("docs/ai/ACEF_ACTIVE_RUN.json").activeActorId !== "process-judge") throw new Error("active-run actor binding missing");
-  if (readJson("docs/ai/ACEF_ACTIVE_RUN.json").intakeDecision.route !== "B") throw new Error("active-run intake decision missing");
-  if (readJson("docs/ai/ACEF_ACTIVE_RUN.json").activeGoal.completionMode !== "product-workspace") throw new Error("active-run activeGoal missing");
-  if (readJson("docs/ai/ACEF_ACTIVE_RUN.json").goalCoverage.coveredSurfaces[0] !== "ui") throw new Error("active-run goalCoverage missing");
+  const activeRun = readJson("docs/ai/ACEF_ACTIVE_RUN.json");
+  if (activeRun.schema !== "acef.active-run.v2" || activeRun.workflowId !== "full-bmad" || activeRun.assuranceProfile !== "baseline") {
+    throw new Error("active-run did not persist separate workflow and assurance state");
+  }
+  if (activeRun.lane !== undefined) throw new Error("active-run v2 persisted legacy lane state");
+  if (activeRun.activeActorId !== "process-judge") throw new Error("active-run actor binding missing");
+  if (activeRun.intakeDecision.route !== "B") throw new Error("active-run intake decision missing");
+  if (activeRun.activeGoal.completionMode !== "product-workspace") throw new Error("active-run activeGoal missing");
+  if (activeRun.goalCoverage.coveredSurfaces[0] !== "ui") throw new Error("active-run goalCoverage missing");
   const scope = readJson("docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json");
   if (scope.runId !== "RUN-1") throw new Error("worker scope runId binding missing");
   if (scope.canSpawnAgents !== false) throw new Error("worker scope is not fail-closed");
@@ -84,6 +89,22 @@ try {
     throw new Error("gate input-output evidence binding failed");
   }
 
+  const unapprovedGuardedEpic = cp.spawnSync(process.execPath, [
+    state, "active-run", "--repo", tmp,
+    "--run-id", "RUN-unapproved-guarded-epic",
+    "--workflow-id", "lightweight",
+    "--assurance", "guarded",
+    "--scope-unit", "epic",
+    "--status", "active",
+    "--story", "Epic 9",
+    "--phase", "development",
+    "--ledger", "docs/ai/ACEF_demo_DELIVERY_AUDIT.md",
+  ], { encoding: "utf8" });
+  if (unapprovedGuardedEpic.status === 0
+    || !`${unapprovedGuardedEpic.stdout}${unapprovedGuardedEpic.stderr}`.includes("requires --assurance-approval")) {
+    throw new Error("non-Full guarded epic did not require typed human approval id");
+  }
+
   const failed = cp.spawnSync(process.execPath, [state, "evidence-run", "--repo", tmp, "--id", "EV-fail", "--kind", "static-check", "--actor", "development", "--story", "Story 1.1", "--satisfies", "AC-fail", "--", process.execPath, "-e", "process.exit(7)"], { encoding: "utf8" });
   if (failed.status !== 7) throw new Error(`failed evidence did not preserve exit code: ${failed.status}`);
   if (readJson("docs/ai/evidence/EV-fail.json").exitCode !== 7) throw new Error("failed evidence manifest was not recorded");
@@ -93,6 +114,25 @@ try {
   if (dirty.status !== 0) throw new Error(`dirty evidence should preserve command success:\n${dirty.stdout}${dirty.stderr}`);
   const dirtyEvidence = readJson("docs/ai/evidence/EV-dirty.json");
   if (!dirtyEvidence.dirtyApplicationPathsBefore.includes("app/dirty-before.js")) throw new Error("dirty evidence did not record pre-existing dirty app path");
+
+  fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_ACTIVE_RUN.json"), `${JSON.stringify({
+    runId: "RUN-legacy-guarded",
+    repo: "fixture",
+    lane: "guarded",
+    status: "active",
+    activeStory: "Story legacy",
+    activePhase: "development",
+    ledgerPath: "docs/ai/ACEF_demo_DELIVERY_AUDIT.md"
+  }, null, 2)}\n`);
+  const ambiguousMigration = cp.spawnSync(process.execPath, [state, "migrate-active-run", "--repo", tmp], { encoding: "utf8" });
+  if (ambiguousMigration.status === 0 || !`${ambiguousMigration.stdout}${ambiguousMigration.stderr}`.includes("explicit --workflow-id")) {
+    throw new Error("legacy guarded migration did not require an explicit workflow choice");
+  }
+  runState(["migrate-active-run", "--repo", tmp, "--workflow-id", "lightweight", "--assurance", "guarded"]);
+  const migrated = readJson("docs/ai/ACEF_ACTIVE_RUN.json");
+  if (migrated.workflowId !== "lightweight" || migrated.assuranceProfile !== "guarded" || migrated.lane !== undefined) {
+    throw new Error("legacy guarded active run migration did not produce unambiguous v2 state");
+  }
 
   console.log("acef-state tests passed");
 } finally {

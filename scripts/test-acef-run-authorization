@@ -29,9 +29,13 @@ try {
   fs.writeFileSync(path.join(docsAi, "ACEF_CURRENT_CONTEXT.md"), "active_story: Story 1.1\n");
 
   const activeRun = {
+    schema: "acef.active-run.v2",
     runId: "RUN-auth",
     repo: "authorization-fixture",
-    lane: "guarded",
+    workflowId: "lightweight",
+    assuranceProfile: "guarded",
+    scopeUnit: "story",
+    assuranceRationale: "Authorization fixture exercises guarded assurance.",
     status: "active",
     activeStory: "Story 1.1",
     activePhase: "development",
@@ -60,6 +64,14 @@ try {
   if (!valid.ok || valid.mode !== "typed") {
     throw new Error(`valid typed run was rejected: ${valid.blockers.join("; ")}`);
   }
+
+  const { schema, workflowId, assuranceProfile, scopeUnit, assuranceRationale, ...legacyGuarded } = activeRun;
+  writeJson(activeRunPath, { ...legacyGuarded, lane: "guarded" });
+  const migrationRequired = inspectRunAuthorization(tmp, { requireScopeRunId: true });
+  if (migrationRequired.ok || !migrationRequired.blockers.some((item) => item.includes("explicit workflow migration"))) {
+    throw new Error("legacy guarded run did not fail closed for explicit workflow migration");
+  }
+  writeJson(activeRunPath, activeRun);
 
   writeJson(activeRunPath, { ...activeRun, status: "blocked" });
   const blocked = inspectRunAuthorization(tmp, { requireScopeRunId: true });

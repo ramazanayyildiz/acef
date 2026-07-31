@@ -50,7 +50,7 @@ wrong-commit, and chat-only evidence. They do not stop a malicious actor who can
 Gate verdicts make `PASS` a file-backed decision. They prevent story close because artifacts merely exist, Process Judge
 passes without successful evidence, skipped evidence hidden in prose, and stale or unrelated commands satisfying gates.
 They prove gate evidence was used by the right decision role; they do not prove semantic correctness by themselves. For
-guarded/full-BMAD work, the deciding actor must be a real Process Judge actor, not the implementation/developer actor.
+ACEF Full or Guarded work, the deciding actor must be a real Process Judge actor, not the implementation/developer actor.
 
 ## Why Approval Receipts Exist
 
@@ -99,17 +99,17 @@ Use this table to choose full artifact, lighter form, or human/backstop check:
 
 | Control | Role | Required dose | Backstop if lighter |
 | --- | --- | --- | --- |
-| Worker scope | Active enforcement | Quick-fix/lightweight/guarded/full-BMAD; strict actor+path binding for guarded/full-BMAD | Direct changed-path validation |
+| Worker scope | Active enforcement | ACEF Fix/Standard/Full; Guarded strengthens actor+path binding | Direct changed-path validation |
 | Cold-read/current context | Drift guard | Cross-session, multi-agent, or drift-prone work | Tight single-context quick fix |
-| Active run and `acef-next` | Next-action guard | Lightweight/guarded/full-BMAD; compact quick-fix form optional | Manual ledger/status check |
+| Active run and `acef-next` | Next-action guard | ACEF Standard/Full; compact for Fix; Guarded strengthens the selected workflow | Manual ledger/status check |
 | Actor records | Audit plus policy guard | Any independent workers/reviewers; required for guarded/full-BMAD | Real topology plus reviewer report |
 | Approval receipts | Scope guard | Epic transitions, guarded starts, high-risk expansions | Fresh explicit user confirmation |
-| Evidence manifest | Evidence guard | Guarded/full-BMAD/unattended; lighter command log for quick-fix/lightweight | Skeptical disk re-run |
+| Evidence manifest | Evidence guard | ACEF Full or any Guarded workflow; lighter command log for Baseline Fix/Standard | Skeptical disk re-run |
 | Runner proof | Cooperative integrity guard | Full-BMAD; guarded only when unattended/async (v2 thinning) | Skeptical re-run and raw log inspection |
-| Gate verdict | Decision guard | Guarded/full-BMAD; lightweight closeout when typed gates are used | Manual closeout checklist |
+| Gate verdict | Decision guard | ACEF Full or any Guarded workflow | Manual closeout checklist |
 | Surface contract | Runtime floor | Non-direct user-visible/persistence feature lanes; direct keeps focused runtime verification and promotes on expansion | Manual browser/runtime persistence proof |
 | Test-integrity check | Test-gutting guard | Any lane where tests are edited | Reviewer assertion/skip/import diff |
-| Lean evidence | Evidence guard | Quick-fix/lightweight/guarded/full-BMAD; direct uses only its compact task record | Focused artifacts plus skeptical disk re-run |
+| Lean evidence | Evidence guard | ACEF Fix/Standard/Full; Guarded raises dose without replacing workflow | Focused artifacts plus skeptical disk re-run |
 
 If another stronger backstop is present and cheaper for the lane, use the lighter form. If no backstop catches the
 failure mode before harm, keep the stronger control.

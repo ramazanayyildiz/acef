@@ -35,11 +35,15 @@ try {
   const workflowValidate = path.join(tmp, ".acef", "bin", "acef-workflow-validate");
   const parser = path.join(tmp, ".acef", "bin", "lib", "acef-state-parser.js");
   const authorization = path.join(tmp, ".acef", "bin", "lib", "acef-run-authorization.js");
+  const executionPolicy = path.join(tmp, ".acef", "bin", "lib", "acef-execution-policy.js");
   const installationHelper = path.join(tmp, ".acef", "bin", "lib", "acef-installation.js");
   const schema = path.join(tmp, ".acef", "schemas", "active-run.schema.json");
+  const activeRunV2Schema = path.join(tmp, ".acef", "schemas", "active-run-v2.schema.json");
+  const lightweightV2Schema = path.join(tmp, ".acef", "schemas", "lightweight-run-v2.schema.json");
   const directSchema = path.join(tmp, ".acef", "schemas", "direct-run.schema.json");
   const capabilitySchema = path.join(tmp, ".acef", "schemas", "capability-change.schema.json");
   const controlDosingSchema = path.join(tmp, ".acef", "schemas", "control-dosing.schema.json");
+  const controlDosingV2Schema = path.join(tmp, ".acef", "schemas", "control-dosing-v2.schema.json");
   const controlDosingManifest = path.join(tmp, ".acef", "control-dosing.json");
   const workflowSchema = path.join(tmp, ".acef", "schemas", "workflow.schema.json");
   const workflow = path.join(tmp, ".acef", "workflows", "lightweight-review.yaml");
@@ -52,13 +56,21 @@ try {
   if (!fs.existsSync(workflowValidate)) throw new Error("workflow validator was not installed");
   if (!fs.existsSync(parser)) throw new Error("parser support library was not installed");
   if (!fs.existsSync(authorization)) throw new Error("run authorization support library was not installed");
+  if (!fs.existsSync(executionPolicy)) throw new Error("execution policy support library was not installed");
   if (!fs.existsSync(installationHelper)) throw new Error("installation support library was not installed");
   if (!fs.existsSync(schema)) throw new Error("typed-state schemas were not installed");
+  if (!fs.existsSync(activeRunV2Schema)) throw new Error("active-run v2 schema was not installed");
+  if (!fs.existsSync(lightweightV2Schema)) throw new Error("lightweight-run v2 schema was not installed");
   if (!fs.existsSync(directSchema)) throw new Error("direct-run schema was not installed");
   if (!fs.existsSync(capabilitySchema)) throw new Error("capability-change schema was not installed");
   if (!fs.existsSync(controlDosingSchema)) throw new Error("control-dosing schema was not installed");
+  if (!fs.existsSync(controlDosingV2Schema)) throw new Error("control-dosing v2 schema was not installed");
   if (!fs.existsSync(controlDosingManifest)) throw new Error("control-dosing manifest was not installed");
-  if (!JSON.parse(fs.readFileSync(controlDosingManifest, "utf8")).retiredAdmissions.includes("direct")) {
+  const installedDosing = JSON.parse(fs.readFileSync(controlDosingManifest, "utf8"));
+  if (installedDosing.schema !== "acef.control-dosing.v2") {
+    throw new Error("installed control-dosing manifest is not workflow/assurance v2");
+  }
+  if (!installedDosing.retiredAdmissions.includes("direct")) {
     throw new Error("installed control-dosing manifest did not retire new direct admission");
   }
   if (!fs.existsSync(workflowSchema)) throw new Error("workflow schema was not installed");
@@ -187,6 +199,9 @@ try {
   const statusJson = JSON.parse(statusOutput);
   if (statusJson.status !== "ready") throw new Error(`installed status helper did not report ready:\n${statusOutput}`);
   if (statusJson.activeRun.activeStory !== "story 1.1") throw new Error("installed status helper did not read active run");
+  if (statusJson.activeRun.workflowId !== "full-bmad" || statusJson.activeRun.assuranceProfile !== "baseline") {
+    throw new Error("installed status helper did not expose separate workflow and assurance state");
+  }
   if (!statusJson.readOrder.includes("docs/ai/ACEF_CURRENT_CONTEXT.md")) throw new Error("installed status helper did not include current-context read order");
   if (statusJson.installation.sourceCommit !== installation.acefVersion.sourceCommit) throw new Error("installed status helper did not report ACEF installation version");
   if (!statusJson.installation.components.includes("tools")) throw new Error("installed status helper missing installed components");

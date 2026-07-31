@@ -1,6 +1,6 @@
 {
   "capabilityId": "control-dosing-enforcement",
-  "requestedIntent": "Turn ACEF's control-pricing rationale into a machine-readable lane/control dosing manifest with validator, lane-closeout consumer, dose-sensitive behavior, and installer support, so agents cannot silently rewrite which controls are required for direct, quick-fix, lightweight, guarded, and full-BMAD lanes.",
+  "requestedIntent": "Make control dose machine-readable by execution workflow and assurance profile, with a monotonic Guarded overlay, validator/closeout consumers, and installer support.",
   "status": "enforced",
   "requiredLayers": [
     "docs",
@@ -18,7 +18,7 @@
       "method/control-dosing.json"
     ],
     "schema": [
-      "schemas/control-dosing.schema.json"
+      "schemas/control-dosing-v2.schema.json"
     ],
     "validator": [
       "scripts/lib/acef-state-parser.js#parseControlDosing",
@@ -28,6 +28,7 @@
     ],
     "tests": [
       "scripts/test-acef-control-dosing",
+      "scripts/test-acef-execution-policy",
       "scripts/test-acef-direct-lifecycle",
       "scripts/test-acef-lightweight-lifecycle",
       "scripts/test-acef-process-validator",
@@ -38,14 +39,14 @@
     ]
   },
   "limitations": [
-    "This enforces the control dosing manifest, retired direct admission, lane-closeout manifest-driven control selection, direct compatibility's explicit no-ceremony dose, and lean-evidence behavior for heavier lanes; it does not replace the existing lane validators that verify actual run artifacts.",
+    "This enforces workflow bundles, the monotonic Guarded assurance overlay, retired Direct admission, manifest-driven closeout, and dose-sensitive lean evidence; it does not replace validators that verify actual run artifacts.",
     "Evidence manifests, gate verdicts, actor records, and surface evidence remain cooperative-local controls and do not provide cryptographic protection against a self-consistent forgery.",
     "Target repos must refresh ACEF tools before .acef/control-dosing.json and the control-dosing validator are installed locally."
   ],
   "evidence": [
     {
       "layer": "schema",
-      "ref": "schemas/control-dosing.schema.json"
+      "ref": "schemas/control-dosing-v2.schema.json"
     },
     {
       "layer": "validator",
@@ -66,6 +67,10 @@
     {
       "layer": "tests",
       "ref": "scripts/test-acef-control-dosing"
+    },
+    {
+      "layer": "tests",
+      "ref": "scripts/test-acef-execution-policy"
     },
     {
       "layer": "tests",

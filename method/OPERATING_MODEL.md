@@ -288,63 +288,61 @@ the review surface; the Developer never self-merges.
 
 | Persona | Role |
 |---|---|
-| **Planner** | Writes the task spec, sets acceptance criteria + test plan, assigns the track. No production code. |
-| **Test Author** | Guarded track only. Writes/​names the failing tests from the acceptance criteria, independently, before/alongside the Developer. |
+| **Planner** | Writes the task spec, sets acceptance criteria + test plan, and records execution/assurance decisions. No production code. |
+| **Test Author** | Required by Guarded assurance at the risky boundary. Writes/names failing tests independently before/alongside the Developer. |
 | **Developer** | Implements exactly one task, runs tests/gates, writes a Developer Report. |
 | **Judge** | Fresh review (never self-approval). Returns exactly one of `MERGE` / `REVISE` / `REPLAN`. |
-| **Process Judge** | Verifies the required process was actually followed. It checks route/lane/track, required skill paths, phase order, artifacts, and evidence before any story or task is marked `done`. It does not review implementation quality. |
+| **Process Judge** | Verifies the required process was followed. It checks admission, workflow, assurance, skill paths, phase order, artifacts, and evidence before `done`. It does not review implementation quality. |
 | **Epic Process Judge** | Runs only at epic close. It verifies the full epic gate chain before product-done/status close. |
 | **Documentation Maintainer** | Runs only on doc drift; updates docs to match behavior, never expands scope. |
 | **Human Architect** | Owns the plan, approves scope changes, gates, and done-state. |
 
-## Tracks
+## Implementation style
 
-The Planner assigns one **track** per task. The track sets which personas participate and which model tier runs
-(tier names — fast / balanced / frontier — map to concrete models via the adapter; cost decision, never a gate shortcut).
+`track` remains only a local implementation-style hint: `mechanical` for exact no-design changes and `standard` for
+work requiring code reading and local decisions. It may influence model choice, but it does not define lifecycle or
+risk. Guarded is exclusively an assurance profile. Persona participation comes from the execution workflow plus
+assurance bundle, so the same controls are not selected twice.
 
-| | Mechanical | Standard | Guarded |
-|---|---|---|---|
-| **Model tier** | fast | balanced | frontier |
-| **Planner** | spec + track | same | same |
-| **Test Author** | skip | skip | required (independent tests) |
-| **Developer** | implements + validates | implements + own tests | implements + runs Test Author's tests |
-| **Judge** | skip (auto-merge if validation passes) | reviews | reviews (stricter) |
-| **Doc Maintainer** | if needed | if needed | if needed |
-
-**When to use each:**
-- **Mechanical** — no design decision; spec says exactly what to create (skeletons, boilerplate, doc updates, scripts).
-- **Standard** — clear boundaries but requires reading code and local decisions (feature work, bug fixes, wiring).
-- **Guarded** — security-sensitive, cross-module, or architectural; wrong decisions are expensive (auth, tenant
-  isolation, payment, data/migrations, module-boundary contracts). When unsure, pick the higher track.
-
-**Track flows:** Mechanical = Planner → Developer → done · Standard = Planner → Developer → Judge · Guarded =
-Planner → Test Author + Developer (parallel) → Judge (full pipeline).
-
-Every implementation track uses the reuse-before-create gate. The gate can be tiny for mechanical/lightweight work, but
+Every implementation style uses the reuse-before-create gate. The gate can be tiny for mechanical/ACEF Standard work, but
 it must exist before new helpers, components, services, hooks, APIs, or patterns are written.
 
-## Lanes
+## Admission, execution workflow, and assurance
 
-The lane sets process weight; the track sets risk and persona participation. ACEF keeps BMAD's Quick Fix idea, but adds
-typed proof so quick fixes do not become unreviewed drive-by patches.
+ACEF makes three separate decisions. Do not collapse them into one lane name:
 
-| Lane | Use for | Mechanical controls |
+1. **Admission:** contained reversible single-boundary/single-surface work uses the repository-native workflow;
+   work that needs ACEF controls is admitted to ACEF.
+2. **Execution workflow:** planning depth and lifecycle weight.
+3. **Assurance profile:** risk controls added to the selected workflow.
+
+| Execution workflow | Stable ID | Use for | Base lifecycle |
+|---|---|---|---|
+| **ACEF Fix** | `quick-fix` | Narrow reproduced defects with clear before/after evidence. | Computed fix envelope, focused implementation, independent review, focused verification, closeout evidence. |
+| **ACEF Standard** | `lightweight` | Scoped ordinary features, config, docs, and contained non-defect work. | Compact six-step lifecycle with independent review and touched-surface validation. |
+| **ACEF Full (BMAD v2)** | `full-bmad` | Planning-heavy stories, broad features/refactors, new patterns, or unclear/coherent multi-boundary work. | BMAD readiness, ATDD, development, review, patch verification, test review, Process Judge, and Full closeout. |
+
+| Assurance profile | Use for | Additive controls |
 |---|---|---|
-| `direct` (retired compatibility) | Existing `ACEF_DIRECT_RUN.json` records only; no new admission. | Read/close/promote the existing compact record. New contained work stays outside ACEF. |
-| `quick-fix` | BMAD-style Quick Dev / Quick Fix work: narrow bug fixes, tiny regressions, localized patches. | Compact lifecycle, independent review actor, computed fix envelope, repro evidence, before/after patch evidence, test-integrity validation, touched-surface validation, promotion triggers. |
-| `lightweight` | Low-risk compact feature/config/doc/mechanical work that is not primarily a defect fix. | Compact lifecycle, independent review actor, touched-surface validation, promotion triggers. |
-| `full-bmad` | Normal feature/story work needing full planning, phase separation, and Process Judge close. | Current context, epic context pack when applicable, actor separation, worker scope, evidence manifests, gate verdict, source reconciliation. |
-| `guarded` | Auth, payment, security, data migration/deletion, permissions, irreversible side effects, or high-risk boundaries. | Full typed closeout plus guarded test floor and independent boundary test author. |
+| **Baseline** | No high-risk boundary trigger. | The selected workflow's base controls. |
+| **Guarded** | Persistence/migration, auth/security/privacy/permissions, money, provider integration, realtime, concurrency/fencing, state-machine behavior, destructive/irreversible effects. | Strong worker scope/current context, independent developer/Judge provenance, evidence manifests, evidence-backed PASS gate, guarded boundary test floor, and the two-non-PASS circuit breaker. |
+
+Guarded is not a fourth workflow and does not silently turn ACEF Fix or ACEF Standard into Full BMAD. It only adds
+assurance controls. `full-bmad + guarded` runs one Full lifecycle with the Guarded deltas; it does not repeat readiness,
+ATDD, review, verification, or closeout.
+
+The retired `direct` experiment is not a BMAD flow. Existing `ACEF_DIRECT_RUN.json` records remain readable only so
+they can be closed or promoted; new contained work stays outside ACEF.
 
 An existing direct compatibility run must promote before continuing when it becomes irreversible, touches more than one inferred product
 surface, expand beyond their declared paths, weaken tests, or encounter persistence, migration, auth/security/privacy,
 money, external-provider, realtime/concurrency/state-machine, tracking/reporting/analytics, or new-pattern work. Promote
-to `lightweight` for contained low-risk scope growth, `full-bmad` for coherent planning-heavy work, and `guarded` for
-high-risk boundaries.
+to ACEF Standard for contained scope growth or ACEF Full for planning-heavy work. High-risk boundaries select Guarded
+assurance independently of that workflow choice.
 
-Quick fixes must promote to `full-bmad` or `guarded` when reproduction is unclear, the patch expands beyond the stated
-scope, the touched surface is high-risk, the fix creates a new pattern, or the after-patch evidence does not directly
-cover the reproduced failure.
+ACEF Fix must promote to ACEF Full when reproduction is unclear, the patch expands beyond the stated scope, the fix
+creates a new pattern, or the after-patch evidence does not directly cover the reproduced failure. A high-risk surface
+adds Guarded assurance; it is not itself a planning-depth promotion.
 
 Quick-fix scope is intentionally wider than one implementation file. The conductor records a computed envelope in
 `docs/ai/ACEF_LIGHTWEIGHT_RUN.json`: implementation paths, tests that exercise the touched symbols/routes, fixtures,
@@ -356,25 +354,26 @@ bug surface.
 Parallel quick-fix workers need disjoint files and disjoint shared resources. Shared seeds, migrations, settings groups,
 fixtures, and shared UI sections count as conflicts even when filenames differ.
 
-ACEF admission and lane choice are mechanical gates, not only planning notes. New direct admission is disabled; typed
-active runs record `laneRationale` and `riskTriggers`. Existing direct records remain compatibility state. Run
+ACEF admission, workflow choice, and assurance choice are mechanical gates, not only planning notes. New direct
+admission is disabled. Typed v2 active runs record `workflowId`, `assuranceProfile`, `scopeUnit`, rationale, and
+`workflowRationale` and `riskTriggers`; legacy `laneRationale` remains readable during migration. Existing direct records remain compatibility state. Run
 `acef-process-validator --check lane-selection` before dispatch or closeout. Auth, payment, accounting/finance,
 invoice/billing, migration, deletion, security, token/session, webhook, tenant, PII, external-provider,
-realtime/concurrency/state-machine, or irreversible triggers require `guarded`, while new patterns, broad refactors,
-CRM/notes/tracking/reporting workflows, unclear reproduction, or scope expansion require `full-bmad` or `guarded`.
+realtime/concurrency/state-machine, or irreversible triggers require Guarded assurance. New patterns, broad refactors,
+CRM/notes/tracking/reporting workflows, unclear reproduction, or scope expansion require ACEF Full.
 The validator also infers obvious risk triggers from changed path names and fails when those inferred triggers were not
 declared.
 
 Admitted planning or execution phases must also record the intake decision in `docs/ai/ACEF_ACTIVE_RUN.json`. The decision names
 the route, confidence, clarifying questions that were asked, facts inferred without asking, and any unresolved questions.
 If no question was needed, the inference must be written down. Low/medium-confidence work must ask clarifying questions.
-`full-bmad` and `guarded` planning/execution require an approved interview brief and explicit execution approval. If
+ACEF Full planning/execution requires an approved interview brief and explicit execution approval. If
 unresolved questions remain, execution cannot be approved. This keeps router/intake from being skipped when agents are
 eager to start or tempted to invent a spec from a thin prompt.
 
-Closeout is also bundled by lane. Run `acef-process-validator --check lane-closeout` before reporting done. The
-meta-check invokes the required validator set for the active lane so a worker cannot pass one convenient check and skip
-the rest.
+Closeout composes the base workflow bundle with the assurance overlay. Run
+`acef-process-validator --check lane-closeout` before reporting done. Guarded can only add controls; the resolver never
+removes or weakens a base workflow requirement.
 
 ## Process gates
 

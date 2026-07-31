@@ -1,0 +1,102 @@
+#!/usr/bin/env node
+"use strict";
+
+const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const os = require("node:os");
+const path = require("node:path");
+const { parseControlDosing, parseLightweightRun } = require("./lib/acef-state-parser");
+const {
+  ASSURANCE_PROFILES,
+  WORKFLOW_IDS,
+  displayName,
+  isFull,
+  isGuarded,
+  isHeavy,
+  normalizeExecutionState,
+  resolveControlBundle,
+  resolveControlDose,
+  riskRequiresGuarded,
+} = require("./lib/acef-execution-policy");
+
+const manifest = parseControlDosing(path.resolve(__dirname, "..", "method", "control-dosing.json"));
+const requirementRank = { "not-required": 0, optional: 1, "required-if-triggered": 2, required: 3 };
+const doseRank = { none: 0, light: 1, compact: 2, full: 3 };
+
+assert.deepEqual(WORKFLOW_IDS, ["quick-fix", "lightweight", "full-bmad"]);
+assert.deepEqual(ASSURANCE_PROFILES, ["baseline", "guarded"]);
+
+for (const workflowId of WORKFLOW_IDS) {
+  const baseline = { workflowId, assuranceProfile: "baseline", scopeUnit: "story" };
+  const guarded = { workflowId, assuranceProfile: "guarded", scopeUnit: "story" };
+  assert.equal(isFull(baseline), workflowId === "full-bmad");
+  assert.equal(isGuarded(baseline), false);
+  assert.equal(isGuarded(guarded), true);
+  assert.equal(isHeavy(baseline), workflowId === "full-bmad");
+  assert.equal(isHeavy(guarded), true);
+  assert.match(displayName(guarded), /Guarded$/);
+
+  const baselineBundle = resolveControlBundle(manifest, workflowId, "baseline");
+  const guardedBundle = resolveControlBundle(manifest, workflowId, "guarded");
+  assert.equal(new Set(guardedBundle).size, guardedBundle.length, `${workflowId} guarded bundle contains duplicates`);
+  for (const controlId of baselineBundle) {
+    assert.ok(guardedBundle.includes(controlId), `${workflowId} guarded bundle removed ${controlId}`);
+  }
+  for (const control of manifest.controls) {
+    const base = resolveControlDose(manifest, control.id, workflowId, "baseline");
+    const overlay = resolveControlDose(manifest, control.id, workflowId, "guarded");
+    assert.ok(requirementRank[overlay.requirement] >= requirementRank[base.requirement], `${control.id} guarded requirement weakened`);
+    assert.ok(doseRank[overlay.dose] >= doseRank[base.dose], `${control.id} guarded dose weakened`);
+  }
+}
+
+assert.equal(riskRequiresGuarded(["copy"]), false);
+assert.equal(riskRequiresGuarded(["database migration"]), true);
+assert.equal(riskRequiresGuarded(["external-provider"]), true);
+
+const legacyGuarded = normalizeExecutionState({ lane: "guarded", activeEpic: null });
+assert.equal(legacyGuarded.executionMigrationRequired, true);
+assert.equal(legacyGuarded.workflowId, null);
+assert.equal(legacyGuarded.assuranceProfile, "guarded");
+
+const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "acef-execution-policy-"));
+try {
+  const lightweightPath = path.join(tmp, "ACEF_LIGHTWEIGHT_RUN.json");
+  const steps = [
+    "preflight-current-context",
+    "reuse-before-create",
+    "implementation",
+    "independent-review",
+    "focused-verification",
+    "closeout-evidence",
+  ].map((name) => ({ name, status: "PASS", evidencePaths: [`evidence/${name}.md`] }));
+  const v2Fix = {
+    schema: "acef.lightweight-run.v2",
+    runId: "FIX-v2",
+    workflowId: "quick-fix",
+    assuranceProfile: "guarded",
+    status: "complete",
+    implementationActorId: "dev-1",
+    reviewActorId: "judge-1",
+    steps,
+    promotion: { decision: "stay-lightweight", triggers: [] },
+  };
+  fs.writeFileSync(lightweightPath, JSON.stringify(v2Fix));
+  assert.throws(() => parseLightweightRun(lightweightPath), /complete quick-fix run requires quickFix evidence/);
+  v2Fix.quickFix = {
+    intent: "Repair bounded defect",
+    scope: "one surface",
+    reproEvidencePath: "evidence/repro.md",
+    beforePatchEvidencePath: "evidence/before.md",
+    afterPatchEvidencePath: "evidence/after.md",
+  };
+  fs.writeFileSync(lightweightPath, JSON.stringify(v2Fix));
+  const parsedFix = parseLightweightRun(lightweightPath);
+  assert.equal(parsedFix.workflowId, "quick-fix");
+  assert.equal(parsedFix.assuranceProfile, "guarded");
+  assert.equal(parsedFix.lane, "quick-fix");
+} finally {
+  fs.rmSync(tmp, { recursive: true, force: true });
+}
+
+console.log("acef execution policy tests passed (3 workflows x 2 assurance profiles)");

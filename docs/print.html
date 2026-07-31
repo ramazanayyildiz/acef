@@ -271,12 +271,12 @@ Captures (each field cites a source path):
             <code>scripts/install-acef-bmad-guard --repo /path/to/repo</code>; the installer writes the full guard into the repo's
             <code>.acef/hooks/</code> directory, installs a repo-local OpenCode plugin, and wires a git pre-commit gate
             (<code>acef-precommit-gate.sh</code>) that runs lean-evidence on active runs and also requires
-            <code>gate-decider</code> for guarded/full-BMAD commits; full <code>gate-verdict</code> remains a closeout/CI gate.
+            <code>gate-decider</code> for ACEF Full or Guarded commits; full <code>gate-verdict</code> remains a closeout/CI gate.
             Claude Code and Codex users can add
             <code>--global-dispatcher</code> once per machine for a tiny dispatcher that only forwards to repos with a local hook.
             Claude plugin users can enable that directory as a Claude Code plugin. The hook blocks dispatcher/conductor writes and blocks crossing into Epic N+1 until Epic N Process
             Judge is <code>PASS</code>. When the harness does not propagate worker identity (as with Claude Code subagents),
-            the hard wall degrades from per-actor to scope-level enforcement: a guarded write is allowed only when the
+            the hard wall degrades from per-actor to scope-level enforcement: an ACEF high-assurance write is allowed only when the
             conductor-written active worker scope is in an implementation phase and the path is in <code>allowedPaths</code>.
             Set <code>ACEF_WORKER_ID</code> to restore strict per-actor enforcement.
             Use <code>node scripts/smoke-acef-hook-active-ledger</code> to verify active
@@ -324,17 +324,17 @@ Captures (each field cites a source path):
         </section>
 
         <section id="delivery"><h2><span class="ic" style="background:#f0eaff">⚙️</span>Delivery model</h2>
-          <p>ACEF selects one of five lanes and applies only that lane's closeout floor.</p>
+          <p>ACEF first decides native versus ACEF, then selects execution depth and risk assurance independently.</p>
           <table>
-            <tr><th>Lane</th><th>Use when</th><th>Gate</th></tr>
-            <tr><td><strong>Direct</strong></td><td>Reversible contained work with one technical boundary</td><td>Scope, acceptance, changed paths, focused verification, handoff, promotion check</td></tr>
-            <tr><td><strong>Quick-fix</strong></td><td>Narrow reproduced bugs needing before/after evidence</td><td>Compact lifecycle and independent review</td></tr>
-            <tr><td><strong>Lightweight</strong></td><td>Small, scoped, ongoing work</td><td>Planner / Developer / Judge, with mechanical · standard · guarded tracks</td></tr>
-            <tr><td><strong>Full BMAD v2</strong></td><td>Epics, large features, core behavior, multi-module, or risky-and-large work</td><td>Real BMAD conductor/skills must resolve, and each phase must bind to a separate worker persona</td></tr>
-            <tr><td><strong>Guarded</strong></td><td>Security, money, migration, provider, realtime, concurrency, or state-machine boundaries</td><td>Full typed closeout plus guarded boundary-test floor</td></tr>
+            <tr><th>Dimension</th><th>Choice</th><th>Meaning</th></tr>
+            <tr><td><strong>Admission</strong></td><td>Repository native</td><td>Contained work; no ACEF artifacts</td></tr>
+            <tr><td><strong>Execution</strong></td><td>ACEF Fix</td><td>Narrow reproduced defects; compact before/after lifecycle</td></tr>
+            <tr><td><strong>Execution</strong></td><td>ACEF Standard</td><td>Scoped ordinary work; compact six-step lifecycle</td></tr>
+            <tr><td><strong>Execution</strong></td><td>ACEF Full (BMAD v2)</td><td>Planning-heavy scope; one full BMAD lifecycle</td></tr>
+            <tr><td><strong>Assurance</strong></td><td>Baseline / Guarded</td><td>Guarded adds high-risk controls without repeating execution</td></tr>
           </table>
           <div class="grid">
-            <div class="card" style="border-left-color:var(--rose)"><h3>Preflight + Story Judge</h3><p>Non-direct work requires <code>ACEF_PREFLIGHT.md</code> PASS before planning or implementation. Direct uses its compact task record and promotion check instead.</p></div>
+            <div class="card" style="border-left-color:var(--rose)"><h3>Preflight + Story Judge</h3><p>Admitted ACEF work requires <code>ACEF_PREFLIGHT.md</code> PASS before planning or implementation. Contained native work creates no ACEF artifacts.</p></div>
             <div class="card" style="border-left-color:var(--teal)"><h3>Intake decision</h3><p>Before planning or execution, typed runs record the route decision, confidence, questions asked or inferred answers, and unresolved questions.</p></div>
             <div class="card" style="border-left-color:var(--violet)"><h3>Epic Process Judge</h3><p>Before epic close, verify drift audit, trace, epic test-review, E2E/user-flow evidence, manual QA ledger, product-done audit, retrospective, and status close.</p></div>
             <div class="card" style="border-left-color:var(--blue)"><h3>Surface-realism</h3><p>When a story creates the first reusable UI/runtime pattern, it needs a round-trip proof through the real surface before other stories reuse it. UI epics need representative E2E at close.</p></div>

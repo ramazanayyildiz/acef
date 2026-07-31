@@ -1,6 +1,6 @@
 {
-  "schema": "acef.control-dosing.v1",
-  "version": "2026-07-30",
+  "schema": "acef.control-dosing.v2",
+  "version": "2026-07-31",
   "retiredAdmissions": [
     "direct"
   ],
@@ -10,13 +10,7 @@
       "primaryFailureMode": "Scope escape before or during writes.",
       "role": "active-enforcement",
       "trustCeiling": "mechanical",
-      "laneDoses": {
-        "direct": {
-          "requirement": "not-required",
-          "dose": "none",
-          "enforcementLevel": "not-applicable",
-          "backstop": "Direct is retired for new admission; existing compatibility records retain changed-path closeout."
-        },
+      "workflowDoses": {
         "quick-fix": {
           "requirement": "required",
           "dose": "compact",
@@ -29,17 +23,19 @@
           "enforcementLevel": "hook",
           "backstop": "Human diff review is weaker because it happens after the write."
         },
-        "guarded": {
-          "requirement": "required",
-          "dose": "full",
-          "enforcementLevel": "hook",
-          "backstop": "No cheaper backstop catches guarded scope escape before the write."
-        },
         "full-bmad": {
           "requirement": "required",
           "dose": "full",
           "enforcementLevel": "hook",
           "backstop": "No cheaper backstop catches BMAD scope escape before the write."
+        }
+      },
+      "assuranceDoses": {
+        "guarded": {
+          "requirement": "required",
+          "dose": "full",
+          "enforcementLevel": "hook",
+          "backstop": "No cheaper backstop catches guarded scope escape before the write."
         }
       }
     },
@@ -48,13 +44,7 @@
       "primaryFailureMode": "Chat-memory drift, stale story, wrong phase, or wrong active ledger.",
       "role": "active-guidance",
       "trustCeiling": "cooperative-local",
-      "laneDoses": {
-        "direct": {
-          "requirement": "not-required",
-          "dose": "none",
-          "enforcementLevel": "not-applicable",
-          "backstop": "Direct is retired for new admission; existing compatibility records remain one-session state."
-        },
+      "workflowDoses": {
         "quick-fix": {
           "requirement": "required-if-triggered",
           "dose": "light",
@@ -67,17 +57,19 @@
           "enforcementLevel": "validator",
           "backstop": "Manual conductor ledger checks are slower and easier to skip."
         },
-        "guarded": {
-          "requirement": "required",
-          "dose": "full",
-          "enforcementLevel": "validator",
-          "backstop": "Manual checks are not enough for guarded multi-actor dispatch."
-        },
         "full-bmad": {
           "requirement": "required",
           "dose": "full",
           "enforcementLevel": "validator",
           "backstop": "Manual checks are not enough for full-BMAD multi-phase dispatch."
+        }
+      },
+      "assuranceDoses": {
+        "guarded": {
+          "requirement": "required",
+          "dose": "full",
+          "enforcementLevel": "validator",
+          "backstop": "Manual checks are not enough for guarded multi-actor dispatch."
         }
       }
     },
@@ -86,13 +78,7 @@
       "primaryFailureMode": "Wrong next action, phase jump, or repeated full-ledger reread.",
       "role": "active-guidance",
       "trustCeiling": "cooperative-local",
-      "laneDoses": {
-        "direct": {
-          "requirement": "not-required",
-          "dose": "none",
-          "enforcementLevel": "not-applicable",
-          "backstop": "No new direct run may start; existing records keep their fixed compatibility transition."
-        },
+      "workflowDoses": {
         "quick-fix": {
           "requirement": "optional",
           "dose": "light",
@@ -105,17 +91,19 @@
           "enforcementLevel": "validator",
           "backstop": "Manual next-step checks are slower and less reproducible."
         },
-        "guarded": {
-          "requirement": "required",
-          "dose": "full",
-          "enforcementLevel": "validator",
-          "backstop": "Manual next-step checks are not enough for guarded work."
-        },
         "full-bmad": {
           "requirement": "required",
           "dose": "full",
           "enforcementLevel": "validator",
           "backstop": "Manual next-step checks are not enough for full-BMAD work."
+        }
+      },
+      "assuranceDoses": {
+        "guarded": {
+          "requirement": "required",
+          "dose": "full",
+          "enforcementLevel": "validator",
+          "backstop": "Manual next-step checks are not enough for guarded work."
         }
       }
     },
@@ -124,13 +112,7 @@
       "primaryFailureMode": "Self-review, role collapse, or unverifiable separation.",
       "role": "audit-telemetry",
       "trustCeiling": "audit-only",
-      "laneDoses": {
-        "direct": {
-          "requirement": "not-required",
-          "dose": "none",
-          "enforcementLevel": "not-applicable",
-          "backstop": "Existing retired direct records intentionally have no separate actor."
-        },
+      "workflowDoses": {
         "quick-fix": {
           "requirement": "required-if-triggered",
           "dose": "light",
@@ -143,13 +125,15 @@
           "enforcementLevel": "audit",
           "backstop": "Real separate-worker topology plus reviewer report, with weaker attribution."
         },
-        "guarded": {
+        "full-bmad": {
           "requirement": "required",
           "dose": "full",
           "enforcementLevel": "validator",
           "backstop": "Reviewer/conductor reports alone do not make separation auditable."
-        },
-        "full-bmad": {
+        }
+      },
+      "assuranceDoses": {
+        "guarded": {
           "requirement": "required",
           "dose": "full",
           "enforcementLevel": "validator",
@@ -162,13 +146,7 @@
       "primaryFailureMode": "Ambiguous continuation text treated as new scope approval.",
       "role": "scope-guard",
       "trustCeiling": "human-confirmed",
-      "laneDoses": {
-        "direct": {
-          "requirement": "not-required",
-          "dose": "none",
-          "enforcementLevel": "not-applicable",
-          "backstop": "Any expansion in an existing direct record requires promotion before continuing."
-        },
+      "workflowDoses": {
         "quick-fix": {
           "requirement": "optional",
           "dose": "light",
@@ -181,17 +159,19 @@
           "enforcementLevel": "human",
           "backstop": "Fresh explicit user confirmation before scope expansion."
         },
-        "guarded": {
-          "requirement": "required-if-triggered",
-          "dose": "full",
-          "enforcementLevel": "validator",
-          "backstop": "Fresh explicit user confirmation before guarded start or expansion."
-        },
         "full-bmad": {
           "requirement": "required-if-triggered",
           "dose": "full",
           "enforcementLevel": "validator",
           "backstop": "Fresh explicit user confirmation before epic transition or expansion."
+        }
+      },
+      "assuranceDoses": {
+        "guarded": {
+          "requirement": "required-if-triggered",
+          "dose": "full",
+          "enforcementLevel": "validator",
+          "backstop": "Fresh explicit user confirmation before guarded start or expansion."
         }
       }
     },
@@ -200,13 +180,7 @@
       "primaryFailureMode": "Stale output, wrong command, wrong commit, or chat-only evidence.",
       "role": "evidence-guard",
       "trustCeiling": "cooperative-local",
-      "laneDoses": {
-        "direct": {
-          "requirement": "not-required",
-          "dose": "none",
-          "enforcementLevel": "not-applicable",
-          "backstop": "Existing direct compatibility records keep only command and exit code."
-        },
+      "workflowDoses": {
         "quick-fix": {
           "requirement": "optional",
           "dose": "light",
@@ -219,17 +193,19 @@
           "enforcementLevel": "audit",
           "backstop": "Skeptical disk re-run plus lightweight surface evidence."
         },
-        "guarded": {
-          "requirement": "required",
-          "dose": "full",
-          "enforcementLevel": "validator",
-          "backstop": "Manual re-run can audit but should not replace guarded evidence manifests."
-        },
         "full-bmad": {
           "requirement": "required",
           "dose": "full",
           "enforcementLevel": "validator",
           "backstop": "Manual re-run can audit but should not replace full-BMAD evidence manifests."
+        }
+      },
+      "assuranceDoses": {
+        "guarded": {
+          "requirement": "required",
+          "dose": "full",
+          "enforcementLevel": "validator",
+          "backstop": "Manual re-run can audit but should not replace guarded evidence manifests."
         }
       }
     },
@@ -238,13 +214,7 @@
       "primaryFailureMode": "Evidence record edited after command or detached from raw output.",
       "role": "evidence-guard",
       "trustCeiling": "cooperative-local",
-      "laneDoses": {
-        "direct": {
-          "requirement": "not-required",
-          "dose": "none",
-          "enforcementLevel": "not-applicable",
-          "backstop": "Existing direct compatibility work uses attended focused verification."
-        },
+      "workflowDoses": {
         "quick-fix": {
           "requirement": "optional",
           "dose": "light",
@@ -257,17 +227,19 @@
           "enforcementLevel": "validator",
           "backstop": "Skeptical re-run and raw log inspection."
         },
-        "guarded": {
-          "requirement": "required-if-triggered",
-          "dose": "compact",
-          "enforcementLevel": "validator",
-          "backstop": "Skeptical re-run and raw log inspection (v2 thinning: attended guarded flows rely on the re-run backstop; unattended guarded work should trigger runner proof)."
-        },
         "full-bmad": {
           "requirement": "required",
           "dose": "full",
           "enforcementLevel": "validator",
           "backstop": "Raw log inspection can audit but should not replace full-BMAD runner proof."
+        }
+      },
+      "assuranceDoses": {
+        "guarded": {
+          "requirement": "required-if-triggered",
+          "dose": "compact",
+          "enforcementLevel": "validator",
+          "backstop": "Skeptical re-run and raw log inspection (v2 thinning: attended guarded flows rely on the re-run backstop; unattended guarded work should trigger runner proof)."
         }
       }
     },
@@ -276,13 +248,7 @@
       "primaryFailureMode": "PASS without required evidence or with the wrong decision actor.",
       "role": "decision-guard",
       "trustCeiling": "cooperative-local",
-      "laneDoses": {
-        "direct": {
-          "requirement": "not-required",
-          "dose": "none",
-          "enforcementLevel": "not-applicable",
-          "backstop": "Successful focused verification plus compact handoff closes an existing direct record."
-        },
+      "workflowDoses": {
         "quick-fix": {
           "requirement": "optional",
           "dose": "light",
@@ -295,17 +261,19 @@
           "enforcementLevel": "documented",
           "backstop": "Manual closeout checklist plus independent review."
         },
-        "guarded": {
-          "requirement": "required",
-          "dose": "full",
-          "enforcementLevel": "validator",
-          "backstop": "Manual closeout is weaker for guarded PASS decisions."
-        },
         "full-bmad": {
           "requirement": "required",
           "dose": "full",
           "enforcementLevel": "validator",
           "backstop": "Manual closeout is weaker for full-BMAD PASS decisions."
+        }
+      },
+      "assuranceDoses": {
+        "guarded": {
+          "requirement": "required",
+          "dose": "full",
+          "enforcementLevel": "validator",
+          "backstop": "Manual closeout is weaker for guarded PASS decisions."
         }
       }
     },
@@ -314,13 +282,7 @@
       "primaryFailureMode": "Fake runtime proof, in-memory persistence, or unreachable UI.",
       "role": "runtime-floor",
       "trustCeiling": "cooperative-local",
-      "laneDoses": {
-        "direct": {
-          "requirement": "not-required",
-          "dose": "none",
-          "enforcementLevel": "not-applicable",
-          "backstop": "Multiple or high-risk surfaces force promotion of an existing direct record."
-        },
+      "workflowDoses": {
         "quick-fix": {
           "requirement": "required-if-triggered",
           "dose": "compact",
@@ -333,13 +295,15 @@
           "enforcementLevel": "validator",
           "backstop": "Manual browser/runtime check with durable persistence proof."
         },
-        "guarded": {
+        "full-bmad": {
           "requirement": "required-if-triggered",
           "dose": "full",
           "enforcementLevel": "validator",
           "backstop": "Manual browser/runtime check with durable persistence proof."
-        },
-        "full-bmad": {
+        }
+      },
+      "assuranceDoses": {
+        "guarded": {
           "requirement": "required-if-triggered",
           "dose": "full",
           "enforcementLevel": "validator",
@@ -352,13 +316,7 @@
       "primaryFailureMode": "Green-by-weakening-tests when a worker edits tests.",
       "role": "test-integrity-guard",
       "trustCeiling": "cooperative-local",
-      "laneDoses": {
-        "direct": {
-          "requirement": "required-if-triggered",
-          "dose": "compact",
-          "enforcementLevel": "validator",
-          "backstop": "For existing direct records, test changes still trigger integrity validation."
-        },
+      "workflowDoses": {
         "quick-fix": {
           "requirement": "required-if-triggered",
           "dose": "compact",
@@ -371,17 +329,19 @@
           "enforcementLevel": "validator",
           "backstop": "Reviewer diff of assertions, skips, matchers, and implementation references."
         },
-        "guarded": {
-          "requirement": "required-if-triggered",
-          "dose": "full",
-          "enforcementLevel": "validator",
-          "backstop": "Reviewer diff is useful but should not replace guarded test-integrity evidence."
-        },
         "full-bmad": {
           "requirement": "required-if-triggered",
           "dose": "full",
           "enforcementLevel": "validator",
           "backstop": "Reviewer diff is useful but should not replace full-BMAD test-integrity evidence."
+        }
+      },
+      "assuranceDoses": {
+        "guarded": {
+          "requirement": "required-if-triggered",
+          "dose": "full",
+          "enforcementLevel": "validator",
+          "backstop": "Reviewer diff is useful but should not replace guarded test-integrity evidence."
         }
       }
     },
@@ -390,13 +350,7 @@
       "primaryFailureMode": "Closeout evidence lives in chat or asks small lanes for full multi-actor paperwork.",
       "role": "evidence-guard",
       "trustCeiling": "cooperative-local",
-      "laneDoses": {
-        "direct": {
-          "requirement": "not-required",
-          "dose": "none",
-          "enforcementLevel": "not-applicable",
-          "backstop": "ACEF_DIRECT_RUN.json remains the whole compatibility handoff for existing records."
-        },
+      "workflowDoses": {
         "quick-fix": {
           "requirement": "required",
           "dose": "light",
@@ -409,23 +363,24 @@
           "enforcementLevel": "validator",
           "backstop": "Lightweight lifecycle artifact, focused verification evidence, and session handoff."
         },
-        "guarded": {
-          "requirement": "required",
-          "dose": "full",
-          "enforcementLevel": "validator",
-          "backstop": "Manual audit can supplement but should not replace guarded closeout evidence."
-        },
         "full-bmad": {
           "requirement": "required",
           "dose": "full",
           "enforcementLevel": "validator",
           "backstop": "Manual audit can supplement but should not replace full-BMAD closeout evidence."
         }
+      },
+      "assuranceDoses": {
+        "guarded": {
+          "requirement": "required",
+          "dose": "full",
+          "enforcementLevel": "validator",
+          "backstop": "Manual audit can supplement but should not replace guarded closeout evidence."
+        }
       }
     }
   ],
-  "laneBundles": {
-    "direct": [],
+  "workflowBundles": {
     "quick-fix": [
       "worker-scope",
       "lean-evidence"
@@ -434,15 +389,6 @@
       "worker-scope",
       "cold-read-current-context",
       "active-run-next-action",
-      "lean-evidence"
-    ],
-    "guarded": [
-      "worker-scope",
-      "cold-read-current-context",
-      "active-run-next-action",
-      "actor-records",
-      "evidence-manifest",
-      "gate-verdict",
       "lean-evidence"
     ],
     "full-bmad": [
@@ -456,5 +402,19 @@
       "lean-evidence"
     ]
   },
-  "notes": "This manifest defines control dose by lane. Direct uses only its compact lifecycle validator plus triggered test-integrity checks; it has no worker, reviewer, evidence-manifest, runner-proof, gate, or ledger controls. V2 thinning (2026-07-02): runner-proof removed from the guarded bundle per report-v2 — no measured defect value on bounded single-step guarded work and the documented backstop (skeptical re-run) is available in attended guarded flows; full-bmad retains runner-proof for unattended/async work."
+  "assuranceOverlays": {
+    "guarded": {
+      "bundleAdds": [
+        "worker-scope",
+        "cold-read-current-context",
+        "active-run-next-action",
+        "actor-records",
+        "evidence-manifest",
+        "gate-verdict",
+        "lean-evidence"
+      ],
+      "description": "Guarded assurance is an additive maximum-strength overlay and may not weaken workflow controls."
+    }
+  },
+  "notes": "Execution workflow determines base controls; guarded assurance adds the former guarded safety contract orthogonally. Repo Native creates no ACEF run."
 }

@@ -2,6 +2,7 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const { inspectRunAuthorization } = require("./lib/acef-run-authorization");
+const { displayName } = require("./lib/acef-execution-policy");
 
 function usage() {
   console.log(`Usage: acef-status --repo <path> [--format text|json]
@@ -94,6 +95,10 @@ function buildStatus(repo) {
     activeRun: activeRun.record ? {
       runId: activeRun.record.runId,
       lane: activeRun.record.lane,
+      workflowId: activeRun.record.workflowId,
+      assuranceProfile: activeRun.record.assuranceProfile,
+      scopeUnit: activeRun.record.scopeUnit,
+      executionPath: displayName(activeRun.record),
       status: activeRun.record.status,
       activeEpic: activeRun.record.activeEpic ?? null,
       activeStory: activeRun.record.activeStory,
@@ -154,7 +159,9 @@ function printText(status) {
   for (const entry of status.readOrder) console.log(`- ${entry}`);
   if (status.activeRun) {
     console.log("active run:");
-    console.log(`- lane: ${status.activeRun.lane}`);
+    console.log(`- execution path: ${status.activeRun.executionPath}`);
+    console.log(`- workflow: ${status.activeRun.workflowId}`);
+    console.log(`- assurance: ${status.activeRun.assuranceProfile}`);
     console.log(`- status: ${status.activeRun.status}`);
     if (status.activeRun.activeEpic) console.log(`- epic: ${status.activeRun.activeEpic}`);
     console.log(`- story: ${status.activeRun.activeStory}`);

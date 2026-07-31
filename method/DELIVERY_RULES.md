@@ -39,39 +39,39 @@ Adapter/pattern-registry status controls what can proceed:
 
 ## Lanes
 
-| Lane | Use for | Engine |
-|---|---|---|
-| **Direct lane (retired compatibility)** | existing `ACEF_DIRECT_RUN.json` records only | read/close/promote the compact record; new contained work stays outside ACEF |
-| **Quick-fix lane** | narrow reproduced bug fixes with clear before/after evidence | compact lifecycle with independent review, repro evidence, before/after patch evidence, computed fix envelope, test-integrity validation, touched-surface validation, and promotion triggers |
-| **Lightweight lane** | small / scoped / ongoing non-bugfix work | the operating model (Layer 1): track → personas → Judge, evidence in the artifact + PR, borrowing review discipline without a full story lifecycle |
-| **Full BMAD v2** | epics, large features, core-behavior change, multi-module, new patterns, or broad refactors | the heavy story lifecycle (Layer 3) |
-| **Guarded lane** | auth, payment, security, data deletion/migration, permissions, irreversible side effects, or high-risk boundaries — at any scale | full typed closeout plus guarded test floor and independent boundary test author; **at epic scale, additionally the mandatory capstone close** — the BMAD v2 epic-close wrapper set at every epic boundary (see `GUARDED_LANE.md`) |
+| Execution workflow | Stable ID | Use for | Engine |
+|---|---|---|---|
+| **ACEF Fix** | `quick-fix` | narrow reproduced bug fixes | compact lifecycle, fix envelope, independent review, focused before/after verification |
+| **ACEF Standard** | `lightweight` | scoped ordinary feature/config/doc work | compact six-step lifecycle with independent review and touched-surface validation |
+| **ACEF Full (BMAD v2)** | `full-bmad` | planning-heavy stories, broad features/refactors, new patterns, or unclear scope | the full BMAD v2 story lifecycle |
 
-Native repository work is the default for truly contained, reversible work. The lightweight lane is Layer 1 for scoped work that still
-benefits from independent review. Quick-fix is the evidence-heavy reproduced-bug lane. Full BMAD v2 is the heavy lane
-for broad feature/story work. Guarded is the high-risk lane and inherits the full typed closeout checks; it
-scales — a guarded *epic* closes with the capstone wrapper set (guarded-story speed, heavy-lane certainty at the epic
-boundary; validated live before codification, see `GUARDED_LANE.md` for the evidence and the exact wrapper set).
-Most ordinary scoped feature work lives in the lightweight lane; tiny contained changes stay outside ACEF.
+Assurance is selected independently. **Baseline** uses the workflow bundle. **Guarded** adds high-risk controls for
+persistence/migration, auth/security/privacy/permissions, money, providers, realtime, concurrency/fencing,
+state-machine behavior, and destructive/irreversible effects. Guarded does not rerun the workflow lifecycle.
+
+Native repository work is the default for truly contained, reversible work. ACEF Standard handles scoped work that
+benefits from independent review, ACEF Fix handles reproduced defects, and ACEF Full handles planning-heavy scope.
+Guarded is an additive assurance profile available on all three workflows. A non-Full Guarded epic is exceptional and
+requires typed human approval; ordinary epics use ACEF Full, with Guarded added when risk requires it.
 
 **Surface declaration is lane-independent for admitted ACEF work.** Every admitted work item declares at intake
 which user-facing surface delivers it (`ui`, `admin`, `api`, `cli`, `queue`, …) or records `surface: none` with a
 justification. At close, the judging actor verifies the owning persona can actually reach the capability through
 that surface, or records a typed deferral that names the owning follow-up item — prose deferrals are invalid.
 Rationale: green services with no calling surface is the most common real-world delivery failure this framework
-has observed (twice — once pre-ACEF, once under the guarded lane when the precaution lived only in BMAD v2:
-observation O2-30). The lightweight lane is the most exposed because nothing else in it asks the question.
+has observed (twice — once pre-ACEF, once under the former Guarded-lane model when the precaution lived only in BMAD v2:
+observation O2-30). ACEF Standard is the most exposed because nothing else in its base workflow asks the question.
 
-When using the Claude Code guard hook, lightweight runs should create `.acef-lightweight-lane` (or the neutral
-`.acef-lane`) at the repo root while the run is active. Full BMAD runs use `.acef-bmad-lane` or BMAD runtime markers.
-Without a lane marker, Claude Code hooks cannot know a repo is inside an ACEF run and will allow by default.
+The guard hook activates only from ACEF-owned markers or typed ACEF state. Stock `.bmad`, `_bmad`, or `_bmad-output`
+directories do not activate ACEF. ACEF Fix/Standard may use `.acef-lightweight-lane` or `.acef-lane`; ACEF Full may use
+`.acef-bmad-lane`; `docs/ai/ACEF_ACTIVE_RUN.json` is itself an ACEF activation marker.
 
 Full BMAD v2 has a hard capability preflight: the real BMAD workflow must be installed/wired and its required skills or
 commands must resolve to paths before the lane starts. If BMAD is missing, ACEF stops and asks for installation/wiring or
-a lane decision. A generic subagent running a BMAD-like checklist is not valid BMAD. **No automatic fallback is allowed:**
+a workflow decision. A generic subagent running a BMAD-like checklist is not valid BMAD. **No automatic fallback is allowed:**
 classification says what the work needs; capability preflight proves what can actually run. If Route B needs BMAD and
 BMAD is unavailable, the verdict is `HALT` until the human explicitly chooses to install/wire BMAD or accepts a
-non-BMAD guarded lightweight exception.
+non-Full Guarded exception with typed human approval.
 
 Before any admitted ACEF lane executes, the conductor must write/update the preflight artifact described in `OPERATING_MODEL.md`.
 No preflight artifact with `PASS` means no planning, implementation, test generation, release, or done-state change.
@@ -84,18 +84,18 @@ the conductor must also complete the Active Run Bootstrap from `OPERATING_MODEL.
 `docs/ai/ACEF_ACTIVE_LEDGER`), and `## Session Handoff` recorded. Source repos used for evidence do not own the target
 run's gates.
 
-## Route → lane
+## Route → execution and assurance
 
-| Route | Lane | Track (lightweight) |
+| Request shape | Execution | Assurance |
 |---|---|---|
 | Tiny contained change | native repository workflow outside ACEF when reversible, single-boundary, and single-surface | — |
-| Small feature | lightweight | standard (guarded if it touches risk) |
-| Bug fix | native/outside ACEF when localized, reversible, and clear; quick-fix when repro/before-after evidence is warranted; guarded if high-risk; full BMAD if scope expands | standard / mechanical |
-| Large feature / epic | **full BMAD v2**, or **capstone** when the human explicitly accepts guarded-story depth (typed lane approval required) | — |
-| Test-case extraction · Test automation · Unit/integration | capability **inside a route**, not a lane | the test/flow skills (Layer 2) |
+| Small feature | ACEF Standard | Baseline or Guarded from risk |
+| Bug fix | native when contained; otherwise ACEF Fix; ACEF Full if planning/scope expands | Baseline or Guarded from risk |
+| Large feature / epic | ACEF Full (BMAD v2) by default | Baseline or Guarded from risk |
+| Test-case extraction · automation | capability inside the selected workflow | inherits selected assurance |
 
 **Test/flow work (D/E/F) is a capability set invoked inside a route, not a separate lane.** A small feature needing
-tests pulls the test skills in under the lightweight lane; an epic needing E2E pulls them in under BMAD v2.
+tests pulls the test skills into ACEF Standard; an epic needing E2E pulls them into ACEF Full.
 
 ## Promotion
 
@@ -103,11 +103,11 @@ An existing direct compatibility task promotes immediately when it becomes irrev
 paths outside its compact task record, weakens tests, or encounters persistence, migration, auth/security/privacy,
 money, external-provider, realtime/concurrency/state-machine, tracking/reporting/analytics, or a new pattern. Use
 `promote-lightweight` for contained low-risk growth, `promote-full-bmad` for planning-heavy coherent work, and
-`promote-guarded` for high-risk boundaries. Direct has no human-risk-acceptance bypass.
+select Guarded assurance for high-risk boundaries. Direct has no human-risk-acceptance bypass.
 
-A quick-fix promotes to full BMAD or guarded when the repro is unclear, the patch expands beyond the stated scope, the
-touched surface is high-risk, the fix creates a new pattern, or after-patch evidence does not directly cover the
-reproduced failure.
+ACEF Fix promotes to ACEF Full when the repro is unclear, scope expands, a new pattern appears, or after-patch evidence
+does not cover the reproduced failure. High risk changes assurance to Guarded; it does not independently change
+planning depth.
 
 Quick-fix scope is an envelope, not a narrow file hallway. At dispatch, compute and record implementation paths, tests
 that import/exercise those symbols or hit the route/runtime path, fixtures/snapshots, route or smoke files, and shared
@@ -176,7 +176,7 @@ or scope grows, preserve the existing promotion rules: promote to full BMAD or r
   `docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json` may edit implementation files until the marker is cleared.
 - **Reuse-before-create gate** — before implementation in every admitted ACEF lane, the worker records the work shape, registry
   entry used, golden neighbor checked, existing symbols searched, what was reused, and why any new pattern is needed.
-  This gate is short in the lightweight lane and story-scoped in full BMAD, but it is never skipped.
+  This gate is short in ACEF Standard and story-scoped in ACEF Full, but it is never skipped.
 - **Conformance feedback loop** — every conformance finding becomes a code patch, pattern-registry update,
   do-not-copy update, proposed mechanical check, or explicit human deferral. Findings do not disappear into chat.
 - **Architecture conformance before stories** — after architecture and before epics/stories, run an independent

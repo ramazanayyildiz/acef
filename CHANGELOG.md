@@ -9,6 +9,23 @@ or evidence contract. Do not use it to claim implementation status; link to the 
 
 ## Unreleased
 
+### Execution workflow and assurance separated
+
+- Replaced the overloaded Guarded lane model with two typed dimensions: execution workflow (`quick-fix`,
+  `lightweight`, `full-bmad`) and assurance profile (`baseline`, `guarded`). User-facing names are ACEF Fix, ACEF
+  Standard, and ACEF Full (BMAD v2).
+- Added active-run v2 state, explicit migration for ambiguous legacy `lane: guarded` runs, v2 control dosing, and a
+  monotonic overlay resolver so Guarded can add controls but cannot weaken the selected workflow.
+- Updated routing, authorization, status/next output, closeout, pre-commit checks, review circuit breaker, test floor,
+  and actor separation. Guarded Fix/Standard use compact developer/Judge separation; only ACEF Full requires the six
+  BMAD phase actors.
+- Closeout now shares identical validator executions across multiple control IDs, so current-context and evidence
+  provenance remain separately declared controls without rerunning the same expensive validation.
+- ACEF hook activation now requires ACEF-owned markers or typed ACEF state. Stock `.bmad`, `_bmad`, and
+  `_bmad-output` directories no longer activate ACEF by themselves.
+- Direct remains retired compatibility state during the upgrade bridge; it is not an execution workflow and no new
+  Direct admission is allowed.
+
 ### Direct admission retired after treatment recheck
 
 - Re-ran the 10 changed direct-treatment cells against the original 20 fixed baseline/lightweight controls after the

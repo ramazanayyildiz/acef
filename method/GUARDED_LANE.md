@@ -1,13 +1,17 @@
-# ACEF Guarded Lane — high-risk work at any scale, with the capstone close at epic scale
+# ACEF Guarded Assurance — high-risk controls at any execution depth
 
-The guarded lane is ACEF's high-risk delivery lane: auth, payment/entitlements, PII/data-protection, data
+> Compatibility note: the filename predates active-run v2. Guarded is now an assurance profile, not a lane.
+
+Guarded assurance covers auth, payment/entitlements, PII/data-protection, data
 deletion/migration, permissions, irreversible side effects (outbound email, external publishing), or any
-boundary where a mistake cannot be apologized away. It is one lane that scales with the work:
+boundary where a mistake cannot be apologized away. It composes with exactly one execution workflow:
 
-- **Story/work-item scale** — the classic guarded contract (below).
-- **Epic scale** — the same per-story contract, plus a mandatory **capstone**: the BMAD v2 epic-close wrapper
-  set at every epic boundary. The capstone is not a separate lane; it is what "guarded" means when the unit of
-  work is an epic.
+- **ACEF Fix + Guarded** — compact defect lifecycle plus the controls below.
+- **ACEF Standard + Guarded** — compact ordinary-work lifecycle plus the controls below.
+- **ACEF Full + Guarded** — one BMAD v2 lifecycle plus the controls below; BMAD phases are not repeated.
+
+At epic scope, ACEF Full is the default. Choosing non-Full + Guarded requires typed human approval and retains the
+epic-boundary capstone described below.
 
 ## Per story / work item (any scale)
 
@@ -84,16 +88,16 @@ The epic-scale rule was not designed on paper. It emerged from the 2026-07 jakom
 Owner ratification is a typed approval in the validation repo (`approval-capstone-lane-policy`, superseded by
 `approval-guarded-epic-scale-merge`).
 
-## Lane selection at epic scale
+## Execution selection at epic scale
 
-- Routing an epic to guarded instead of full BMAD v2 is a **human decision, never an agent default**: it
-  requires a typed lane approval with the owner's exact words (`acef-state approval`) and `laneRationale` set
-  on the active run. An agent that starts an epic in guarded without that record has reproduced the O2-19
+- Routing an epic to ACEF Fix/Standard + Guarded instead of ACEF Full + Guarded is a **human decision, never an agent default**: it
+  requires a typed approval with the owner's exact words (`acef-state approval`) and `assuranceApprovalId` set
+  on active-run v2. An agent that starts a non-Full Guarded epic without that record has reproduced the O2-19
   deviation.
 - Prefer **full BMAD v2** when the epic needs heavy *planning* discipline per story — ambiguous requirements,
   architecture conformance risk, unfamiliar stack — because guarded adds its extra weight at the close, not at
   readiness/ATDD time.
-- Prefer **guarded** when story specs are firm (code-grounded story cuts, established patterns, experienced
+- Prefer **ACEF Standard + Guarded** only when story specs are firm (code-grounded story cuts, established patterns, experienced
   conductor) and the dominant residual risk is integration/masking at the epic level — the failure class the
   capstone demonstrably catches.
 - Escalate mid-epic: if stories start failing readiness (soft ACs, replans), promote the remaining stories to
@@ -101,7 +105,8 @@ Owner ratification is a typed approval in the validation repo (`approval-capston
 
 ## Markers and state
 
-Runs use `.acef-lane` (or `.acef-lightweight-lane`) as the hook marker like other non-BMAD lanes, with
-`lane: "guarded"` on the active run and `laneRationale` citing the typed lane approval for epic-scale use.
+Runs use typed active-run v2 state with `workflowId`, `assuranceProfile: "guarded"`, and `scopeUnit`. ACEF Fix/Standard
+may use `.acef-lane` or `.acef-lightweight-lane`; ACEF Full may use `.acef-bmad-lane`. Stock BMAD directories do not
+activate ACEF. A legacy active `lane: "guarded"` is ambiguous and must be migrated explicitly before writes.
 Active-run updates are part of the story-open ritual — between-gate state staleness is a known drift mode
 (O2-25).

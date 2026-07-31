@@ -72,7 +72,10 @@ it does not prove the work is done.
   "schema": "acef.next.v1",
   "repo": "example",
   "active_state": {
-    "lane": "lightweight|bmad",
+    "workflow": "quick-fix|lightweight|full-bmad",
+    "assurance": "baseline|guarded",
+    "scope_unit": "work-item|story|epic",
+    "execution_path": "ACEF Standard · Guarded",
     "phase": "atdd|dev|review|judge|epic-close",
     "story": "4.1",
     "role": "developer",
@@ -110,7 +113,7 @@ where applicable; their full contents are not embedded.
 
 `acef-next` is a projection over existing ACEF state:
 
-- `ACEF_ACTIVE_RUN.json` provides lane, story, phase, status, and active ledger.
+- `ACEF_ACTIVE_RUN.json` provides execution workflow, assurance profile, scope unit, story, phase, status, and active ledger.
 - `docs/ai/actors/*.json` provides actor identity and allowed context profile.
 - `ACEF_ACTIVE_WORKER_SCOPE.json` provides the active-run `runId`, write paths, base ref, max commits, and
   no-spawn/no-ledger-edit boundaries.
@@ -119,7 +122,7 @@ where applicable; their full contents are not embedded.
 - Pattern registry and generated PR review profiles provide conformance slices.
 - `docs/ai/evidence/*.json` provides command evidence and raw artifact hashes.
 - `docs/ai/gates/*.json` provides gate verdicts.
-- `docs/ai/approvals/*.json` provides human approval receipts for guarded transitions.
+- `docs/ai/approvals/*.json` provides human approval receipts for epic transitions and non-Full Guarded epics.
 - The delivery ledger remains the durable narrative of the run.
 
 ## Must not do

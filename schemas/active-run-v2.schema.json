@@ -1,0 +1,143 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://acef.local/schemas/active-run-v2.schema.json",
+  "title": "ACEF Active Run v2",
+  "type": "object",
+  "required": ["schema", "runId", "repo", "workflowId", "assuranceProfile", "scopeUnit", "status", "activeStory", "activePhase", "ledgerPath"],
+  "additionalProperties": false,
+  "properties": {
+    "schema": { "type": "string", "const": "acef.active-run.v2" },
+    "runId": { "type": "string", "minLength": 1 },
+    "workflowId": { "type": "string", "enum": ["quick-fix", "lightweight", "full-bmad"] },
+    "assuranceProfile": { "type": "string", "enum": ["baseline", "guarded"] },
+    "scopeUnit": { "type": "string", "enum": ["work-item", "story", "epic"] },
+    "assuranceRationale": { "type": ["string", "null"] },
+    "assuranceApprovalId": {
+      "type": ["string", "null"],
+      "pattern": "^[A-Za-z0-9._-]+$"
+    },
+    "repo": { "type": "string", "minLength": 1 },
+    "track": { "type": ["string", "null"], "enum": ["mechanical", "standard", null] },
+    "status": { "type": "string", "enum": ["active", "paused", "blocked", "complete"] },
+    "activeEpic": { "type": ["string", "null"] },
+    "activeStory": { "type": "string", "minLength": 1 },
+    "activePhase": { "type": "string", "minLength": 1 },
+    "activeGoal": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "properties": {
+        "description": { "type": "string", "minLength": 1 },
+        "userFacing": { "type": "boolean" },
+        "completionMode": {
+          "type": "string",
+          "enum": ["backend-capability", "product-workspace", "internal"]
+        }
+      }
+    },
+    "goalCoverage": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "properties": {
+        "status": { "type": "string", "enum": ["PASS", "INCOMPLETE"] },
+        "storyType": {
+          "type": "string",
+          "enum": ["foundation", "backend-capability", "ui-surface", "integration", "closeout"]
+        },
+        "requiredSurfaces": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/surface" }
+        },
+        "coveredSurfaces": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/surface" }
+        },
+        "evidenceRefs": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "missing": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "notes": { "type": ["string", "null"] }
+      }
+    },
+    "workerRole": { "type": ["string", "null"] },
+    "activeActorId": { "type": ["string", "null"] },
+    "workflowRationale": { "type": ["string", "null"] },
+    "intakeDecision": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["route", "confidence"],
+      "properties": {
+        "route": { "type": "string", "minLength": 1 },
+        "confidence": { "type": "string", "enum": ["low", "medium", "high"] },
+        "clarifyingQuestions": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "inferredAnswers": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "unresolvedQuestions": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "briefApproved": { "type": "boolean" },
+        "approvalRequired": { "type": "boolean" },
+        "executionApproved": { "type": "boolean" }
+      }
+    },
+    "riskTriggers": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "specReadinessPath": { "type": ["string", "null"] },
+    "specReadiness": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "properties": {
+        "path": { "type": "string", "minLength": 1 },
+        "status": {
+          "type": "string",
+          "enum": ["PASS", "NEEDS_PM", "NEEDS_DISCOVERY", "NEEDS_BMAD", "NEEDS_GUARDED_DISCOVERY", "REJECT"]
+        }
+      }
+    },
+    "workerScopePath": { "type": ["string", "null"] },
+    "workflowPath": { "type": ["string", "null"] },
+    "workflowNodeId": { "type": ["string", "null"] },
+    "fullLedgerAccess": { "type": ["string", "null"] },
+    "maxLines": { "type": ["integer", "null"], "minimum": 1, "maximum": 150 },
+    "nextAllowedStep": { "type": ["string", "null"] },
+    "ledgerPath": { "type": "string", "minLength": 1 },
+    "contextPath": { "type": ["string", "null"] },
+    "updatedAt": { "type": ["string", "null"] }
+  },
+  "$defs": {
+    "surface": {
+      "type": "string",
+      "enum": [
+        "ui",
+        "admin",
+        "mobile",
+        "api",
+        "http",
+        "cli",
+        "queue",
+        "job",
+        "scheduler",
+        "storage",
+        "email",
+        "notification",
+        "webhook",
+        "integration",
+        "config",
+        "database",
+        "library",
+        "internal"
+      ]
+    }
+  }
+}

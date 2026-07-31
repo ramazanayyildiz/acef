@@ -215,7 +215,7 @@ try {
   }, null, 2)}\n`);
   const providerSelection = run(providerFeature, "lane-selection");
   assert.notEqual(providerSelection.status, 0);
-  assert.match(providerSelection.stdout, /requires guarded lane: external-provider/);
+  assert.match(providerSelection.stdout, /requires guarded assurance: external-provider/);
 
   const wrongOrder = makeRepo("wrong-order", (record) => {
     [record.steps[1], record.steps[2]] = [record.steps[2], record.steps[1]];
@@ -500,7 +500,7 @@ try {
   }, null, 2)}\n`);
   const guardedMisrouteResult = run(guardedMisroute, "lane-selection");
   assert.notEqual(guardedMisrouteResult.status, 0);
-  assert.match(guardedMisrouteResult.stdout, /requires guarded lane/);
+  assert.match(guardedMisrouteResult.stdout, /requires guarded assurance/);
 
   const missingQuickFix = makeRepo("missing-quick-fix", (record) => {
     record.lane = "quick-fix";

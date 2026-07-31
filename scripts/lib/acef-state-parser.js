@@ -1,5 +1,13 @@
 const fs = require("node:fs");
 const path = require("node:path");
+const {
+  ASSURANCE_PROFILES,
+  SCOPE_UNITS,
+  WORKFLOW_IDS,
+  normalizeExecutionState,
+  resolveControlBundle,
+  resolveControlDose,
+} = require("./acef-execution-policy");
 
 const SURFACE_VALUES = new Set([
   "ui", "admin", "mobile", "api", "http", "cli", "queue", "job", "scheduler", "storage",
@@ -80,8 +88,32 @@ function validateBindingEntry(item, index, label, { requireEvidence = false } = 
 
 function parseActiveRun(filePath) {
   const record = readJson(filePath);
-  requireFields(record, ["runId", "repo", "lane", "status", "activeStory", "activePhase", "ledgerPath"], "active run");
-  requireEnum(record, "lane", ["quick-fix", "lightweight", "full-bmad", "guarded", "custom"], "active run");
+  const v2 = record.schema === "acef.active-run.v2";
+  if (record.schema !== undefined && !v2) throw new Error(`active run has unsupported schema ${record.schema}`);
+  requireFields(
+    record,
+    v2
+      ? ["schema", "runId", "repo", "workflowId", "assuranceProfile", "scopeUnit", "status", "activeStory", "activePhase", "ledgerPath"]
+      : ["runId", "repo", "lane", "status", "activeStory", "activePhase", "ledgerPath"],
+    "active run",
+  );
+  if (v2) {
+    requireEnum(record, "workflowId", WORKFLOW_IDS, "active run");
+    requireEnum(record, "assuranceProfile", ASSURANCE_PROFILES, "active run");
+    requireEnum(record, "scopeUnit", SCOPE_UNITS, "active run");
+    if (record.lane !== undefined) throw new Error("active run v2 must use workflowId, not lane");
+    if (record.assuranceProfile === "guarded"
+      && (typeof record.assuranceRationale !== "string" || !record.assuranceRationale.trim())) {
+      throw new Error("guarded active run v2 requires assuranceRationale");
+    }
+    if (record.assuranceApprovalId !== undefined && record.assuranceApprovalId !== null
+      && (typeof record.assuranceApprovalId !== "string"
+        || !/^[A-Za-z0-9._-]+$/.test(record.assuranceApprovalId))) {
+      throw new Error("active run assuranceApprovalId must be a safe typed approval id");
+    }
+  } else {
+    requireEnum(record, "lane", ["quick-fix", "lightweight", "full-bmad", "guarded", "custom"], "active run");
+  }
   requireEnum(record, "status", ["active", "paused", "blocked", "complete"], "active run");
   if (record.maxLines !== undefined && record.maxLines !== null
     && (!Number.isInteger(record.maxLines) || record.maxLines < 1 || record.maxLines > 150)) {
@@ -90,6 +122,10 @@ function parseActiveRun(filePath) {
   if (record.laneRationale !== undefined && record.laneRationale !== null
     && (typeof record.laneRationale !== "string" || !record.laneRationale.trim())) {
     throw new Error("active run laneRationale must be a non-empty string");
+  }
+  if (record.workflowRationale !== undefined && record.workflowRationale !== null
+    && (typeof record.workflowRationale !== "string" || !record.workflowRationale.trim())) {
+    throw new Error("active run workflowRationale must be a non-empty string");
   }
   if (record.intakeDecision !== undefined && record.intakeDecision !== null) {
     const decision = record.intakeDecision;
@@ -138,7 +174,7 @@ function parseActiveRun(filePath) {
       if (coverage[field] !== undefined) requireStringArray(coverage, field, "active run goalCoverage");
     }
   }
-  return record;
+  return normalizeExecutionState(record);
 }
 
 function parseActorRecord(filePath) {
@@ -440,8 +476,21 @@ function parsePrReviewProfile(input, label = "PR review profile") {
 
 function parseLightweightRun(filePath) {
   const record = readJson(filePath);
-  requireFields(record, ["runId", "lane", "status", "implementationActorId", "reviewActorId", "steps", "promotion"], "lightweight run");
-  requireEnum(record, "lane", ["quick-fix", "lightweight", "guarded"], "lightweight run");
+  const v2 = record.schema === "acef.lightweight-run.v2";
+  requireFields(
+    record,
+    v2
+      ? ["schema", "runId", "workflowId", "assuranceProfile", "status", "implementationActorId", "reviewActorId", "steps", "promotion"]
+      : ["runId", "lane", "status", "implementationActorId", "reviewActorId", "steps", "promotion"],
+    "lightweight run",
+  );
+  if (v2) {
+    requireEnum(record, "workflowId", ["quick-fix", "lightweight"], "lightweight run");
+    requireEnum(record, "assuranceProfile", ASSURANCE_PROFILES, "lightweight run");
+    if (record.lane !== undefined) throw new Error("lightweight run v2 must use workflowId, not lane");
+  } else {
+    requireEnum(record, "lane", ["quick-fix", "lightweight", "guarded"], "lightweight run");
+  }
   requireEnum(record, "status", ["active", "blocked", "complete"], "lightweight run");
   if (record.implementationActorId === record.reviewActorId) throw new Error("lightweight run requires an independent review actor");
   const expected = ["preflight-current-context", "reuse-before-create", "implementation", "independent-review", "focused-verification", "closeout-evidence"];
@@ -521,10 +570,17 @@ function parseLightweightRun(filePath) {
       }
     }
   }
-  if (record.lane === "quick-fix" && record.status === "complete" && !record.quickFix) {
+  const lightweightWorkflow = v2
+    ? record.workflowId
+    : record.lane === "guarded" ? "lightweight" : record.lane;
+  if (lightweightWorkflow === "quick-fix" && record.status === "complete" && !record.quickFix) {
     throw new Error("complete quick-fix run requires quickFix evidence");
   }
-  return record;
+  if (v2) return { ...record, lane: record.workflowId };
+  if (record.lane === "guarded") {
+    return { ...record, workflowId: "lightweight", assuranceProfile: "guarded", lane: "lightweight" };
+  }
+  return { ...record, workflowId: record.lane, assuranceProfile: "baseline" };
 }
 
 function parseDirectRun(filePath) {
@@ -752,8 +808,78 @@ function parseControlDose(dose, label) {
   if (dose.requirement !== "not-required" && dose.dose === "none") throw new Error(`${label} required/optional controls cannot use dose none`);
 }
 
+function parseControlDosingV2(record) {
+  requireFields(record, ["schema", "version", "retiredAdmissions", "controls", "workflowBundles", "assuranceOverlays"], "control dosing v2");
+  if (typeof record.version !== "string" || !record.version.trim()) throw new Error("control dosing v2 version must be a non-empty string");
+  requireStringArray(record, "retiredAdmissions", "control dosing v2");
+  if (!record.retiredAdmissions.includes("direct")) throw new Error("control dosing v2 retiredAdmissions must include direct during bridge");
+  if (!Array.isArray(record.controls)) throw new Error("control dosing v2 controls must be an array");
+  requireObject(record, "workflowBundles", "control dosing v2");
+  requireObject(record, "assuranceOverlays", "control dosing v2");
+  requireObject(record.assuranceOverlays, "guarded", "control dosing v2 assuranceOverlays");
+  requireStringArray(record.assuranceOverlays.guarded, "bundleAdds", "control dosing v2 guarded overlay");
+
+  const seen = new Set();
+  for (const [index, control] of record.controls.entries()) {
+    if (!control || typeof control !== "object" || Array.isArray(control)) throw new Error(`control dosing v2 controls[${index}] must be an object`);
+    requireFields(control, ["id", "primaryFailureMode", "role", "trustCeiling", "workflowDoses", "assuranceDoses"], `control dosing v2 controls[${index}]`);
+    requireEnum(control, "id", CONTROL_DOSING_IDS, `control dosing v2 controls[${index}]`);
+    if (seen.has(control.id)) throw new Error(`control dosing v2 duplicate control id ${control.id}`);
+    seen.add(control.id);
+    requireObject(control, "workflowDoses", `control dosing v2 ${control.id}`);
+    requireObject(control, "assuranceDoses", `control dosing v2 ${control.id}`);
+    for (const workflow of WORKFLOW_IDS) parseControlDose(control.workflowDoses[workflow], `control dosing v2 ${control.id}.${workflow}`);
+    parseControlDose(control.assuranceDoses.guarded, `control dosing v2 ${control.id}.guarded`);
+  }
+  const missingControls = CONTROL_DOSING_IDS.filter((id) => !seen.has(id));
+  if (missingControls.length) throw new Error(`control dosing v2 missing control(s): ${missingControls.join(", ")}`);
+
+  for (const workflow of WORKFLOW_IDS) {
+    requireStringArray(record.workflowBundles, workflow, "control dosing v2 workflowBundles");
+  }
+  const guardedAdds = record.assuranceOverlays.guarded.bundleAdds;
+  for (const id of guardedAdds) {
+    if (!CONTROL_DOSING_IDS.includes(id)) throw new Error(`control dosing v2 guarded overlay has unknown control ${id}`);
+  }
+
+  const effectiveRules = [
+    ["worker-scope", WORKFLOW_IDS, "baseline", "required"],
+    ["evidence-manifest", ["full-bmad"], "baseline", "required"],
+    ["runner-proof", ["full-bmad"], "baseline", "required"],
+    ["gate-verdict", ["full-bmad"], "baseline", "required"],
+    ["actor-records", ["full-bmad"], "baseline", "required"],
+    ["surface-contract", WORKFLOW_IDS, "baseline", "required-if-triggered"],
+    ["test-integrity", WORKFLOW_IDS, "baseline", "required-if-triggered"],
+    ["lean-evidence", WORKFLOW_IDS, "baseline", "required"],
+    ["actor-records", WORKFLOW_IDS, "guarded", "required"],
+    ["evidence-manifest", WORKFLOW_IDS, "guarded", "required"],
+    ["gate-verdict", WORKFLOW_IDS, "guarded", "required"],
+    ["test-integrity", WORKFLOW_IDS, "guarded", "required-if-triggered"],
+  ];
+  for (const [controlId, workflows, assurance, requirement] of effectiveRules) {
+    for (const workflow of workflows) {
+      const dose = resolveControlDose(record, controlId, workflow, assurance);
+      if (dose?.requirement !== requirement) {
+        throw new Error(`control dosing v2 effective ${controlId}.${workflow}.${assurance} must be ${requirement}`);
+      }
+    }
+  }
+  for (const workflow of WORKFLOW_IDS) {
+    for (const assurance of ASSURANCE_PROFILES) {
+      const bundle = new Set(resolveControlBundle(record, workflow, assurance));
+      const required = record.controls
+        .filter((control) => resolveControlDose(record, control.id, workflow, assurance)?.requirement === "required")
+        .map((control) => control.id);
+      const missing = required.filter((id) => !bundle.has(id));
+      if (missing.length) throw new Error(`control dosing v2 ${workflow}.${assurance} bundle missing required control(s): ${missing.join(", ")}`);
+    }
+  }
+  return record;
+}
+
 function parseControlDosing(filePath) {
   const record = readJson(filePath);
+  if (record.schema === "acef.control-dosing.v2") return parseControlDosingV2(record);
   requireFields(record, ["schema", "version", "retiredAdmissions", "controls", "laneBundles"], "control dosing");
   if (record.schema !== "acef.control-dosing.v1") throw new Error("control dosing schema must be acef.control-dosing.v1");
   if (typeof record.version !== "string" || !record.version.trim()) throw new Error("control dosing version must be a non-empty string");
