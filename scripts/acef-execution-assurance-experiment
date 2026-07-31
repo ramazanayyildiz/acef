@@ -318,7 +318,7 @@ function commitAll(repo, message) {
   return must("git", ["rev-parse", "HEAD"], repo);
 }
 
-function prepareSingleTaskClone(resolved, attempt, opts) {
+function prepareSingleTaskClone(resolved, attempt, opts, options = {}) {
   const clone = path.join(opts.pilotWorkspace, "clones", attempt.id);
   fs.rmSync(clone, { recursive: true, force: true });
   fs.mkdirSync(path.dirname(clone), { recursive: true });
@@ -326,6 +326,7 @@ function prepareSingleTaskClone(resolved, attempt, opts) {
   must("git", ["checkout", "-q", "--detach", resolved.commit], clone);
   must("git", ["config", "user.email", "acef-pilot@example.invalid"], clone);
   must("git", ["config", "user.name", "ACEF Pilot"], clone);
+  if (options.beforeDependencies) options.beforeDependencies(clone);
   linkDependencies(clone, { id: resolved.taskId, stack: resolved.stack, source: resolved.source });
   applyTaskSetup(clone, resolved);
   const seededCommit = commitAll(clone, `test: seed ${resolved.taskId} pilot`);
@@ -333,12 +334,14 @@ function prepareSingleTaskClone(resolved, attempt, opts) {
 }
 
 function prepareEpicClone(resolved, attempt, opts) {
-  const prepared = prepareSingleTaskClone(resolved, attempt, opts);
-  for (const dir of [
-    "storage/framework/views", "storage/framework/cache/data", "storage/framework/sessions",
-    "storage/framework/testing", "storage/logs", "bootstrap/cache",
-  ]) fs.mkdirSync(path.join(prepared.clone, dir), { recursive: true });
-  return { ...prepared, seededCommit: commitAll(prepared.clone, `test: complete ${resolved.taskId} epic environment`) };
+  return prepareSingleTaskClone(resolved, attempt, opts, {
+    beforeDependencies(clone) {
+      for (const dir of [
+        "storage/framework/views", "storage/framework/cache/data", "storage/framework/sessions",
+        "storage/framework/testing", "storage/logs", "bootstrap/cache",
+      ]) fs.mkdirSync(path.join(clone, dir), { recursive: true });
+    },
+  });
 }
 
 function frameworkCheckout(frameworkCommit, opts) {

@@ -37,6 +37,9 @@ or evidence contract. Do not use it to claim implementation status; link to the 
 - Added exact-version Full + Guarded pilot preparation: each arm clones the pinned framework commit, installs its tools,
   skills and hook into an isolated pinned Jakomeet clone, seeds all four hidden regressions, and assigns the complete
   outcome to a fresh conductor. Compact ACEF treatment cells remain fail-closed rather than silently using current HEAD.
+- The first P0 preparation exposed a harness-ordering bug before the agent clock: Laravel's gitignored storage/cache
+  skeleton was created after Composer package discovery. Epic preparation now creates it before dependency linking;
+  the failed preparation is not a scored attempt.
 
 ### Execution workflow and assurance separated
 
