@@ -20,7 +20,8 @@ const cli = path.join(root, "scripts", "acef-execution-assurance-experiment");
 const manifest = validateManifest(JSON.parse(fs.readFileSync(manifestPath, "utf8")));
 
 assert.equal(buildPilotPlan(manifest).length, 16);
-assert.equal(buildPilotPlan(manifest)[0].frameworkCommit, "d8b816c");
+assert.equal(buildPilotPlan(manifest)[0].frameworkCommit, manifest.treatments.legacy.commit);
+assert.equal(buildPilotPlan(manifest)[1].frameworkCommit, manifest.treatments.candidate.commit);
 assert.equal(buildPilotPlan(manifest)[15].frameworkCommit, null);
 
 const ready = assessTaskShape({ technicalBoundaries: ["controller"], productSurfaces: ["ui"], acceptanceCriteriaCount: 3 });

@@ -4,7 +4,7 @@ Status: preregistered; Stage 0 not yet passed; no speed or quality claim is auth
 
 ## Question
 
-Does commit `9bb8ce2` reduce the delivery cost caused by overlapping ACEF/BMAD execution while preserving the safety
+Does candidate commit `076812348e1c88eb9139230a1cc2c9107dff9a12` reduce the delivery cost caused by overlapping ACEF/BMAD execution while preserving the safety
 properties of legacy commit `d8b816c`?
 
 The experimental unit is the original user outcome. Splitting one request into several stories does not stop the clock.
