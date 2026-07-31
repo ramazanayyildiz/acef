@@ -9,6 +9,17 @@ or evidence contract. Do not use it to claim implementation status; link to the 
 
 ## Unreleased
 
+### Execution/assurance real-world pilot preregistered
+
+- Added a separate execution/assurance experiment harness and a fixed 16-attempt paired pilot comparing legacy commit
+  `d8b816c`, the candidate architecture, and Repo Native calibration without mixing results into the older lane studies.
+- Added six deterministic pre-pilot traps for Guarded routing vocabulary, oversized-scope rejection, duplicate lifecycle
+  detection, worker scope enforcement, dirty-worktree refusal, and pre-timer environment diagnosis.
+- The first harness shakeout exposed missing Guarded synonyms and a contained-delete false positive. Expanded risk routing
+  for OAuth/SSO/access-control/credentials/secrets/encryption/key rotation/subscriptions/refunds/data deletion/consent/
+  retention/entitlements while keeping localized CSS/copy/docs deletion outside Guarded.
+- Capability maturity remains `enforced`: Stage 0 and the paired/live campaign must pass before `proven` or `installed`.
+
 ### Execution workflow and assurance separated
 
 - Replaced the overloaded Guarded lane model with two typed dimensions: execution workflow (`quick-fix`,

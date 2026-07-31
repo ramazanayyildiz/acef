@@ -44,6 +44,7 @@
     ],
     "tests": [
       "scripts/test-acef-execution-policy",
+      "scripts/test-acef-execution-assurance-experiment",
       "scripts/test-acef-state",
       "scripts/test-acef-control-dosing",
       "scripts/test-acef-run-authorization",
@@ -58,7 +59,8 @@
   "limitations": [
     "Direct compatibility remains readable during the installed-project upgrade bridge, but new Direct admission is still rejected.",
     "Legacy active runs with lane guarded are intentionally fail-closed until a human selects the missing execution workflow.",
-    "The capability is enforced in this source tree; target repositories must update their installed ACEF tools and hooks before they receive it."
+    "The capability is enforced in this source tree; target repositories must update their installed ACEF tools and hooks before they receive it.",
+    "The real-world paired pilot is preregistered under docs/experiments/execution-assurance-v2 but has not completed; this capability is not proven or installed."
   ],
   "evidence": [
     {
@@ -70,6 +72,11 @@
       "layer": "tests",
       "ref": "scripts/test-acef-process-validator",
       "note": "Exercises validator and hook enforcement, including stock BMAD non-activation."
+    },
+    {
+      "layer": "tests",
+      "ref": "scripts/test-acef-execution-assurance-experiment",
+      "note": "Validates the independent Stage 0 trap runner and the preregistered 16-attempt real-world pilot contract."
     },
     {
       "layer": "installer",

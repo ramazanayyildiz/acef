@@ -4,7 +4,8 @@ const WORKFLOW_IDS = Object.freeze(["quick-fix", "lightweight", "full-bmad"]);
 const ASSURANCE_PROFILES = Object.freeze(["baseline", "guarded"]);
 const SCOPE_UNITS = Object.freeze(["work-item", "story", "epic"]);
 
-const GUARDED_RISK_PATTERN = /(?:auth|authorization|permission|role|payment|billing|invoice|accounting|finance|financial|payout|migration|delete|destructive|security|token|session|webhook|irreversible|tenant|privacy|pii|personal[-_ ]?data|external[-_ ]?provider|provider[-_ ]?integration|realtime|concurrency|fencing|state[-_ ]?machine)/i;
+const GUARDED_RISK_PATTERN = /(?:auth(?:entication)?|authori[sz]ation|oauth|sso|permission|access[-_ ]?control|role|entitlement|credential|secret|encrypt|key[-_ ]?rotation|payment|billing|invoice|accounting|finance|financial|payout|subscription|refund|migration|delet(?:e|ion)|destructive|security|token|session|webhook|irreversible|tenant|privacy|pii|personal[-_ ]?data|consent|retention|external[-_ ]?provider|provider[-_ ]?integration|realtime|concurrency|fencing|state[-_ ]?machine)/i;
+const CONTAINED_DELETE_PATTERN = /^\s*(?:delete|remove)\s+(?:a\s+|the\s+)?(?:css|style|class|copy|text|label|comment|documentation|docs?|local[-_ ]?variable)\b/i;
 
 function legacyWorkflowId(record) {
   if (!record || typeof record !== "object") return null;
@@ -45,7 +46,11 @@ function requiresCapstone(record) {
 }
 
 function riskRequiresGuarded(riskTriggers = []) {
-  return riskTriggers.some((trigger) => GUARDED_RISK_PATTERN.test(String(trigger)));
+  return riskTriggers.some((trigger) => {
+    const value = String(trigger || "");
+    if (CONTAINED_DELETE_PATTERN.test(value)) return false;
+    return GUARDED_RISK_PATTERN.test(value);
+  });
 }
 
 function migrationRequired(record) {

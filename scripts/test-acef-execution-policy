@@ -53,6 +53,14 @@ for (const workflowId of WORKFLOW_IDS) {
 assert.equal(riskRequiresGuarded(["copy"]), false);
 assert.equal(riskRequiresGuarded(["database migration"]), true);
 assert.equal(riskRequiresGuarded(["external-provider"]), true);
+for (const trigger of [
+  "OAuth", "SSO", "access control", "credentials", "secrets", "encryption", "key rotation",
+  "subscription", "refund", "data deletion", "consent", "retention", "entitlements",
+]) {
+  assert.equal(riskRequiresGuarded([trigger]), true, `${trigger} must require Guarded assurance`);
+}
+assert.equal(riskRequiresGuarded(["delete CSS class"]), false);
+assert.equal(riskRequiresGuarded(["remove documentation comment"]), false);
 
 const legacyGuarded = normalizeExecutionState({ lane: "guarded", activeEpic: null });
 assert.equal(legacyGuarded.executionMigrationRequired, true);

@@ -1,0 +1,291 @@
+#!/usr/bin/env node
+"use strict";
+
+const fs = require("node:fs");
+const os = require("node:os");
+const path = require("node:path");
+const cp = require("node:child_process");
+const { performance } = require("node:perf_hooks");
+const {
+  assessTaskShape,
+  buildPilotPlan,
+  environmentPreflight,
+  parseIndependentTrace,
+  sha256,
+  validateManifest,
+} = require("./lib/acef-execution-assurance-experiment");
+const { riskRequiresGuarded } = require("./lib/acef-execution-policy");
+
+const root = path.resolve(__dirname, "..");
+const defaultManifest = path.join(root, "docs", "experiments", "execution-assurance-v2", "manifest.json");
+const defaultResults = path.join(root, "docs", "experiments", "execution-assurance-v2", "runs", "stage0.jsonl");
+
+function usage() {
+  console.log(`Usage: acef-execution-assurance-experiment [--manifest <path>] [--results <path>] [--workspace <path>] [--plan] [--stage0] [--force] [--keep]
+
+--plan    Print the preregistered 16-attempt pilot without executing agents.
+--stage0  Execute the six deterministic mechanism/measurement traps in disposable repositories.
+--force   Replace an existing Stage 0 result log. Without this flag results are immutable.`);
+}
+
+function parseArgs(argv) {
+  const opts = {
+    manifest: defaultManifest,
+    results: defaultResults,
+    workspace: path.join(os.tmpdir(), "acef-execution-assurance-v2-stage0"),
+    plan: false,
+    stage0: false,
+    force: false,
+    keep: false,
+  };
+  for (let index = 0; index < argv.length; index += 1) {
+    const arg = argv[index];
+    if (arg === "--help" || arg === "-h") { usage(); process.exit(0); }
+    else if (arg === "--manifest") opts.manifest = path.resolve(argv[++index]);
+    else if (arg === "--results") opts.results = path.resolve(argv[++index]);
+    else if (arg === "--workspace") opts.workspace = path.resolve(argv[++index]);
+    else if (arg === "--plan") opts.plan = true;
+    else if (arg === "--stage0") opts.stage0 = true;
+    else if (arg === "--force") opts.force = true;
+    else if (arg === "--keep") opts.keep = true;
+    else throw new Error(`unknown argument: ${arg}`);
+  }
+  if (opts.plan === opts.stage0) throw new Error("select exactly one of --plan or --stage0");
+  return opts;
+}
+
+function execute(command, args, cwd, options = {}) {
+  const result = cp.spawnSync(command, args, {
+    cwd,
+    encoding: "utf8",
+    timeout: options.timeout || 120000,
+    env: options.env || process.env,
+    input: options.input,
+    stdio: [options.input === undefined ? "ignore" : "pipe", "pipe", "pipe"],
+  });
+  return {
+    status: Number.isInteger(result.status) ? result.status : 1,
+    stdout: result.stdout || "",
+    stderr: result.stderr || result.error?.message || "",
+    signal: result.signal || null,
+  };
+}
+
+function must(command, args, cwd, options = {}) {
+  const result = execute(command, args, cwd, options);
+  if (result.status !== 0) throw new Error(`${command} ${args.join(" ")} failed: ${result.stderr || result.stdout}`);
+  return result.stdout.trim();
+}
+
+function writeJson(filePath, value) {
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  fs.writeFileSync(filePath, `${JSON.stringify(value, null, 2)}\n`);
+}
+
+function initRepo(dir) {
+  fs.rmSync(dir, { recursive: true, force: true });
+  fs.mkdirSync(path.join(dir, "src"), { recursive: true });
+  must("git", ["init", "-q"], dir);
+  must("git", ["config", "user.email", "acef-experiment@example.invalid"], dir);
+  must("git", ["config", "user.name", "ACEF Experiment"], dir);
+  fs.writeFileSync(path.join(dir, "src", "allowed.js"), "module.exports = true;\n");
+  fs.writeFileSync(path.join(dir, "README.md"), "# ACEF Stage 0 fixture\n");
+  must("git", ["add", "."], dir);
+  must("git", ["commit", "-qm", "fixture baseline"], dir);
+  must("node", [path.join(root, "scripts", "install-acef-tools"), "--repo", dir], root);
+}
+
+function bindActiveScope(dir) {
+  const docs = path.join(dir, "docs", "ai");
+  fs.mkdirSync(docs, { recursive: true });
+  fs.writeFileSync(path.join(docs, "ACEF_stage0_DELIVERY_AUDIT.md"), "# Stage 0\nStatus: active\n");
+  fs.writeFileSync(path.join(docs, "ACEF_ACTIVE_LEDGER"), "docs/ai/ACEF_stage0_DELIVERY_AUDIT.md\n");
+  fs.writeFileSync(path.join(docs, "ACEF_CURRENT_CONTEXT.md"), "active_story: D4\nactive_phase: development\n");
+  const base = must("git", ["rev-parse", "HEAD"], dir);
+  writeJson(path.join(docs, "ACEF_ACTIVE_RUN.json"), {
+    schema: "acef.active-run.v2",
+    runId: "STAGE0-D4",
+    repo: "stage0-scope",
+    workflowId: "quick-fix",
+    assuranceProfile: "guarded",
+    scopeUnit: "work-item",
+    assuranceRationale: "permission boundary",
+    status: "active",
+    activeStory: "D4",
+    activePhase: "development",
+    workflowRationale: "reproduced bounded permission defect",
+    riskTriggers: ["bugfix", "permission"],
+    workerScopePath: "docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json",
+    ledgerPath: "docs/ai/ACEF_stage0_DELIVERY_AUDIT.md",
+    contextPath: "docs/ai/ACEF_CURRENT_CONTEXT.md"
+  });
+  writeJson(path.join(docs, "ACEF_ACTIVE_WORKER_SCOPE.json"), {
+    runId: "STAGE0-D4",
+    activeStory: "D4",
+    phase: "development",
+    workerId: "stage0-worker",
+    allowedPaths: ["src/allowed.js"],
+    baseRef: base,
+    maxCommits: 1,
+    canEditLedger: false,
+    canSpawnAgents: false
+  });
+  must("git", ["add", "."], dir);
+  must("git", ["commit", "-qm", "bind stage0 scope"], dir);
+}
+
+function trapRoutingSweep() {
+  const positive = [
+    "auth", "authorization", "permissions", "access control", "OAuth", "SSO", "credentials", "secrets",
+    "encryption", "key rotation", "payment", "billing", "subscription", "refund", "payout", "database migration",
+    "data deletion", "privacy", "PII", "consent", "retention", "external provider", "webhook", "realtime",
+    "concurrency", "fencing", "state machine", "tenant isolation", "session token", "entitlements"
+  ];
+  const negative = ["copy", "CSS style", "documentation", "rename local variable", "delete CSS class"];
+  const misses = positive.filter((value) => !riskRequiresGuarded([value]));
+  const falsePositives = negative.filter((value) => riskRequiresGuarded([value]));
+  return {
+    pass: misses.length === 0 && falsePositives.length === 0,
+    observed: { positiveCases: positive.length, negativeCases: negative.length, misses, falsePositives },
+  };
+}
+
+function trapOversizedScope() {
+  const contained = assessTaskShape({
+    technicalBoundaries: ["controller"], productSurfaces: ["admin-ui"], acceptanceCriteriaCount: 3,
+  });
+  const giant = assessTaskShape({
+    technicalBoundaries: ["migration", "provider", "state-machine", "analytics"],
+    productSurfaces: ["public-ui", "reporting"], acceptanceCriteriaCount: 16,
+  });
+  return {
+    pass: contained.disposition === "READY" && giant.disposition === "REPLAN_SPLIT",
+    observed: { contained, giant },
+  };
+}
+
+function trapDuplicateLifecycle() {
+  const single = parseIndependentTrace("bmad-check-implementation-readiness\natdd\nbmad-dev-story\nbmad-code-review\nverify-patch\ntest-review\nprocess-judge\n");
+  const duplicated = parseIndependentTrace("bmad-code-review\nbmad-code-review\nprocess-judge\nprocess-judge\n");
+  return {
+    pass: !single.duplicateLifecycle && duplicated.duplicateLifecycle
+      && duplicated.duplicateLifecycleControls.includes("codeReview")
+      && duplicated.duplicateLifecycleControls.includes("processJudge"),
+    observed: { single: single.counts, duplicated: duplicated.counts, detected: duplicated.duplicateLifecycleControls },
+  };
+}
+
+function trapScopeWrite(workspace) {
+  const dir = path.join(workspace, "D4-scope-write");
+  initRepo(dir);
+  bindActiveScope(dir);
+  fs.writeFileSync(path.join(dir, "src", "forbidden.js"), "module.exports = false;\n");
+  const result = execute(path.join(dir, ".acef", "bin", "acef-codex-guard"), ["--repo", dir, "--role", "worker"], dir);
+  const output = `${result.stdout}\n${result.stderr}`;
+  return {
+    pass: result.status !== 0 && /outside allowedPaths/i.test(output),
+    observed: { exitCode: result.status, outputSha256: sha256(output), matchedScopeDenial: /outside allowedPaths/i.test(output) },
+  };
+}
+
+function trapDirtyWorktree(workspace) {
+  const dir = path.join(workspace, "D5-dirty-worktree");
+  initRepo(dir);
+  must("git", ["add", "."], dir);
+  must("git", ["commit", "-qm", "install tools"], dir);
+  fs.writeFileSync(path.join(dir, "src", "dirty.js"), "module.exports = 'dirty';\n");
+  const result = execute(path.join(dir, ".acef", "bin", "acef-process-validator"), ["--repo", dir, "--check", "clean-tree"], dir);
+  const output = `${result.stdout}\n${result.stderr}`;
+  return {
+    pass: result.status !== 0 && /working tree is dirty/i.test(output),
+    observed: { exitCode: result.status, outputSha256: sha256(output), matchedDirtyDenial: /working tree is dirty/i.test(output) },
+  };
+}
+
+function trapBrokenEnvironment(workspace) {
+  const dir = path.join(workspace, "D6-broken-environment");
+  initRepo(dir);
+  const check = environmentPreflight(dir, {
+    requiredPaths: ["vendor/autoload.php"],
+    probes: [[process.execPath, "-e", "process.exit(0)"]],
+  });
+  return {
+    pass: !check.ok && check.checkedBeforeTimedRun && check.missingPaths.includes("vendor/autoload.php"),
+    observed: check,
+  };
+}
+
+function runTrap(trap, workspace) {
+  if (trap.id === "D1-routing-sweep") return trapRoutingSweep();
+  if (trap.id === "D2-oversized-scope") return trapOversizedScope();
+  if (trap.id === "D3-duplicate-lifecycle") return trapDuplicateLifecycle();
+  if (trap.id === "D4-scope-write") return trapScopeWrite(workspace);
+  if (trap.id === "D5-dirty-worktree") return trapDirtyWorktree(workspace);
+  if (trap.id === "D6-broken-environment") return trapBrokenEnvironment(workspace);
+  throw new Error(`no Stage 0 implementation for ${trap.id}`);
+}
+
+function runStage0(manifest, opts) {
+  if (fs.existsSync(opts.results) && !opts.force) {
+    throw new Error(`immutable Stage 0 results already exist at ${opts.results}; use --force only for a documented harness rerun`);
+  }
+  fs.rmSync(opts.workspace, { recursive: true, force: true });
+  fs.mkdirSync(opts.workspace, { recursive: true });
+  fs.mkdirSync(path.dirname(opts.results), { recursive: true });
+  const runnerCommit = must("git", ["rev-parse", "HEAD"], root);
+  const runnerDirtyBefore = must("git", ["status", "--porcelain"], root) !== "";
+  const rows = [];
+  for (const trap of manifest.stage0.traps) {
+    const startedAt = new Date().toISOString();
+    const started = performance.now();
+    let outcome;
+    try {
+      outcome = runTrap(trap, opts.workspace);
+    } catch (error) {
+      outcome = { pass: false, observed: { error: error.message } };
+    }
+    const row = {
+      schema: "acef.execution-assurance-stage0-result.v1",
+      experimentId: manifest.experimentId,
+      trapId: trap.id,
+      candidateCommit: manifest.treatments.candidate.commit,
+      runnerCommit,
+      runnerDirtyBefore,
+      startedAt,
+      finishedAt: new Date().toISOString(),
+      runtimeMs: Math.round((performance.now() - started) * 1000) / 1000,
+      result: outcome.pass ? "PASS" : "FAIL",
+      observed: outcome.observed,
+      observedSha256: sha256(JSON.stringify(outcome.observed)),
+    };
+    fs.appendFileSync(opts.results, `${JSON.stringify(row)}\n`);
+    rows.push(row);
+    console.log(`${row.result} ${trap.id} (${row.runtimeMs}ms)`);
+  }
+  if (!opts.keep) fs.rmSync(opts.workspace, { recursive: true, force: true });
+  const failed = rows.filter((row) => row.result !== "PASS");
+  console.log(`STAGE0 ${failed.length ? "FAIL" : "PASS"}: ${rows.length - failed.length}/${rows.length} traps passed`);
+  if (failed.length) process.exitCode = 1;
+}
+
+function main() {
+  const opts = parseArgs(process.argv.slice(2));
+  const manifest = validateManifest(JSON.parse(fs.readFileSync(opts.manifest, "utf8")));
+  if (opts.plan) {
+    console.log(JSON.stringify({
+      experimentId: manifest.experimentId,
+      treatments: manifest.treatments,
+      count: manifest.pilot.attempts.length,
+      attempts: buildPilotPlan(manifest),
+    }, null, 2));
+    return;
+  }
+  runStage0(manifest, opts);
+}
+
+try {
+  main();
+} catch (error) {
+  console.error(`ACEF_EXECUTION_ASSURANCE_EXPERIMENT_ERROR: ${error.message}`);
+  process.exitCode = 1;
+}

@@ -1,0 +1,104 @@
+{
+  "schema": "acef.execution-assurance-experiment.v1",
+  "experimentId": "acef-execution-assurance-v2-real-pilot",
+  "preregisteredAt": "2026-07-31T00:00:00+03:00",
+  "hypothesis": "The candidate architecture removes duplicate ACEF/BMAD execution cost without increasing severe escapes or weakening mandatory Guarded routing.",
+  "experimentalUnit": "original-user-outcome",
+  "treatments": {
+    "legacy": {
+      "commit": "d8b816c",
+      "label": "legacy ACEF"
+    },
+    "candidate": {
+      "commit": "9bb8ce2",
+      "label": "execution-workflow/assurance separation"
+    },
+    "repo-native": {
+      "label": "repository-native calibration"
+    }
+  },
+  "measurement": {
+    "primary": "active_delivery_seconds",
+    "secondary": [
+      "wall_time_to_product_done_seconds",
+      "time_to_first_valid_green_seconds",
+      "framework_runtime_seconds",
+      "input_tokens",
+      "tool_calls",
+      "review_rounds",
+      "broad_suite_invocations",
+      "state_reconstruction_events"
+    ],
+    "independentSource": "raw transcript and command log, not ACEF self-report",
+    "censoring": "Record capped attempts at the cap; never discard them as ordinary infrastructure noise."
+  },
+  "qualityOracle": {
+    "requires": [
+      "frozen acceptance criteria",
+      "withheld behavioral tests",
+      "real product surface where applicable",
+      "no test weakening",
+      "no scope escape",
+      "artifact-only blind judge with no unresolved Critical or High"
+    ]
+  },
+  "stage0": {
+    "traps": [
+      { "id": "D1-routing-sweep", "description": "Mandatory Guarded vocabulary and safe negative controls route correctly." },
+      { "id": "D2-oversized-scope", "description": "Multi-boundary or acceptance-heavy work is rejected for split before execution." },
+      { "id": "D3-duplicate-lifecycle", "description": "Independent trace parsing detects repeated lifecycle controls." },
+      { "id": "D4-scope-write", "description": "Installed guard rejects an out-of-scope worker write." },
+      { "id": "D5-dirty-worktree", "description": "Installed validator rejects a dirty starting worktree." },
+      { "id": "D6-broken-environment", "description": "Experiment preflight rejects a missing dependency before the timed run." }
+    ]
+  },
+  "taskCatalog": {
+    "noise-fix": {
+      "sourceManifest": "../empirical-validation/manifest-v2-pilot.json",
+      "selector": "browser-rts-gather-modifier-bait"
+    },
+    "full-guarded-motivation": {
+      "sourceManifest": "../epic-benchmark/manifest.json",
+      "selector": "authz-fail-closed-hardening"
+    },
+    "fix-guarded": {
+      "sourceManifest": "../empirical-validation/manifest-v2.json",
+      "selector": "detaysoft-download-traversal-v2"
+    },
+    "standard-baseline": {
+      "sourceManifest": "../empirical-validation/manifest-v2-pilot.json",
+      "selector": "mvt-people-archive-leak"
+    },
+    "standard-guarded": {
+      "sourceManifest": "../epic-benchmark/manifest.json",
+      "selector": "s4-webhook-ingress-correctness"
+    }
+  },
+  "pilot": {
+    "attempts": [
+      { "id": "R1-legacy-1", "order": 1, "taskId": "noise-fix", "treatment": "legacy", "workflowId": "quick-fix", "assuranceProfile": "baseline", "activeTimeCapMinutes": 90 },
+      { "id": "R1-candidate-1", "order": 2, "taskId": "noise-fix", "treatment": "candidate", "workflowId": "quick-fix", "assuranceProfile": "baseline", "activeTimeCapMinutes": 90 },
+      { "id": "R1-candidate-2", "order": 3, "taskId": "noise-fix", "treatment": "candidate", "workflowId": "quick-fix", "assuranceProfile": "baseline", "activeTimeCapMinutes": 90 },
+      { "id": "R1-legacy-2", "order": 4, "taskId": "noise-fix", "treatment": "legacy", "workflowId": "quick-fix", "assuranceProfile": "baseline", "activeTimeCapMinutes": 90 },
+      { "id": "R1-legacy-3", "order": 5, "taskId": "noise-fix", "treatment": "legacy", "workflowId": "quick-fix", "assuranceProfile": "baseline", "activeTimeCapMinutes": 90 },
+      { "id": "R1-candidate-3", "order": 6, "taskId": "noise-fix", "treatment": "candidate", "workflowId": "quick-fix", "assuranceProfile": "baseline", "activeTimeCapMinutes": 90 },
+      { "id": "P0-legacy", "order": 7, "taskId": "full-guarded-motivation", "treatment": "legacy", "workflowId": "full-bmad", "assuranceProfile": "guarded", "activeTimeCapMinutes": 480 },
+      { "id": "P0-candidate", "order": 8, "taskId": "full-guarded-motivation", "treatment": "candidate", "workflowId": "full-bmad", "assuranceProfile": "guarded", "activeTimeCapMinutes": 480 },
+      { "id": "P1-legacy", "order": 9, "taskId": "fix-guarded", "treatment": "legacy", "workflowId": "quick-fix", "assuranceProfile": "guarded", "activeTimeCapMinutes": 90 },
+      { "id": "P1-candidate", "order": 10, "taskId": "fix-guarded", "treatment": "candidate", "workflowId": "quick-fix", "assuranceProfile": "guarded", "activeTimeCapMinutes": 90 },
+      { "id": "P2-legacy", "order": 11, "taskId": "standard-baseline", "treatment": "legacy", "workflowId": "lightweight", "assuranceProfile": "baseline", "activeTimeCapMinutes": 240 },
+      { "id": "P2-candidate", "order": 12, "taskId": "standard-baseline", "treatment": "candidate", "workflowId": "lightweight", "assuranceProfile": "baseline", "activeTimeCapMinutes": 240 },
+      { "id": "P3-legacy", "order": 13, "taskId": "standard-guarded", "treatment": "legacy", "workflowId": "lightweight", "assuranceProfile": "guarded", "activeTimeCapMinutes": 240 },
+      { "id": "P3-candidate", "order": 14, "taskId": "standard-guarded", "treatment": "candidate", "workflowId": "lightweight", "assuranceProfile": "guarded", "activeTimeCapMinutes": 240 },
+      { "id": "NATIVE-start", "order": 15, "taskId": "noise-fix", "treatment": "repo-native", "workflowId": "repo-native", "assuranceProfile": "not-applicable", "activeTimeCapMinutes": 90 },
+      { "id": "NATIVE-end", "order": 16, "taskId": "noise-fix", "treatment": "repo-native", "workflowId": "repo-native", "assuranceProfile": "not-applicable", "activeTimeCapMinutes": 90 }
+    ]
+  },
+  "stopRules": [
+    "mandatory Guarded miss",
+    "unauthorized write",
+    "accepted scope/evidence/test bypass",
+    "duplicate Full+Guarded lifecycle",
+    "candidate-only unresolved Critical or High"
+  ]
+}

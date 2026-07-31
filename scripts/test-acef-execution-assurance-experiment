@@ -1,0 +1,72 @@
+#!/usr/bin/env node
+"use strict";
+
+const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const os = require("node:os");
+const path = require("node:path");
+const cp = require("node:child_process");
+const {
+  assessTaskShape,
+  buildPilotPlan,
+  environmentPreflight,
+  parseIndependentTrace,
+  validateManifest,
+} = require("./lib/acef-execution-assurance-experiment");
+
+const root = path.resolve(__dirname, "..");
+const manifestPath = path.join(root, "docs", "experiments", "execution-assurance-v2", "manifest.json");
+const cli = path.join(root, "scripts", "acef-execution-assurance-experiment");
+const manifest = validateManifest(JSON.parse(fs.readFileSync(manifestPath, "utf8")));
+
+assert.equal(buildPilotPlan(manifest).length, 16);
+assert.equal(buildPilotPlan(manifest)[0].frameworkCommit, "d8b816c");
+assert.equal(buildPilotPlan(manifest)[15].frameworkCommit, null);
+
+const ready = assessTaskShape({ technicalBoundaries: ["controller"], productSurfaces: ["ui"], acceptanceCriteriaCount: 3 });
+assert.equal(ready.disposition, "READY");
+const oversized = assessTaskShape({
+  technicalBoundaries: ["migration", "provider", "analytics"],
+  productSurfaces: ["public-ui", "reporting"],
+  acceptanceCriteriaCount: 16,
+});
+assert.equal(oversized.disposition, "REPLAN_SPLIT");
+assert.equal(oversized.technicalBoundaryCount, 3);
+
+const trace = parseIndependentTrace("bmad-code-review\nbmad-code-review\nprocess-judge\n");
+assert.equal(trace.duplicateLifecycle, true);
+assert.deepEqual(trace.duplicateLifecycleControls, ["codeReview"]);
+
+const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "acef-execution-assurance-test-"));
+try {
+  const env = environmentPreflight(tmp, { requiredPaths: ["missing.file"], probes: [] });
+  assert.equal(env.ok, false);
+  assert.equal(env.checkedBeforeTimedRun, true);
+
+  const plan = cp.spawnSync(process.execPath, [cli, "--manifest", manifestPath, "--plan"], { cwd: root, encoding: "utf8" });
+  assert.equal(plan.status, 0, plan.stderr);
+  assert.equal(JSON.parse(plan.stdout).count, 16);
+
+  const results = path.join(tmp, "stage0.jsonl");
+  const workspace = path.join(tmp, "workspace");
+  const stage0 = cp.spawnSync(process.execPath, [cli, "--manifest", manifestPath, "--results", results, "--workspace", workspace, "--stage0"], {
+    cwd: root,
+    encoding: "utf8",
+    timeout: 120000,
+  });
+  assert.equal(stage0.status, 0, `${stage0.stdout}\n${stage0.stderr}`);
+  const rows = fs.readFileSync(results, "utf8").trim().split(/\n/).map(JSON.parse);
+  assert.equal(rows.length, 6);
+  assert.deepEqual(rows.map((row) => row.result), ["PASS", "PASS", "PASS", "PASS", "PASS", "PASS"]);
+
+  const immutable = cp.spawnSync(process.execPath, [cli, "--manifest", manifestPath, "--results", results, "--workspace", workspace, "--stage0"], {
+    cwd: root,
+    encoding: "utf8",
+  });
+  assert.notEqual(immutable.status, 0);
+  assert.match(`${immutable.stdout}\n${immutable.stderr}`, /immutable Stage 0 results already exist/);
+} finally {
+  fs.rmSync(tmp, { recursive: true, force: true });
+}
+
+console.log("acef execution-assurance experiment tests passed");
