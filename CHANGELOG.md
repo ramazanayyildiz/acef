@@ -21,6 +21,9 @@ or evidence contract. Do not use it to claim implementation status; link to the 
 - Capability maturity remains `enforced`: Stage 0 and the paired/live campaign must pass before `proven` or `installed`.
 - The pinned clean-tree Stage 0 run passed 6/6. This authorizes the paired pilot, not a speed/quality or installation
   claim.
+- Added an immutable pilot catalog preflight that resolves every task selector, pinned source commit, fixture, and
+  dependency tree before agent timing starts. Missing Browser RTS and MVT dependencies were found during shakeout and
+  prepared before the scored preflight.
 
 ### Execution workflow and assurance separated
 

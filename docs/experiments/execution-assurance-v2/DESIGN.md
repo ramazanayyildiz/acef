@@ -16,11 +16,13 @@ is only a calibration arm for contained work; it is never the safety comparator 
 
 1. Run the six deterministic Stage 0 traps from the preregistered manifest.
 2. Stop and repair the mechanism or measurement harness if any trap fails.
-3. Run the 16-attempt pilot in its recorded order, using disposable clones, fresh sessions, pinned clients/models, and
+3. Run `--pilot-preflight` and require every referenced selector, pinned source commit, fixture, and dependency tree to
+   resolve before starting an agent clock.
+4. Run the 16-attempt pilot in its recorded order, using disposable clones, fresh sessions, pinned clients/models, and
    disabled cross-run memory.
-4. Let an artifact-only blind judge assess the final diff and product surface. Do not give the judge transcripts or ACEF
+5. Let an artifact-only blind judge assess the final diff and product surface. Do not give the judge transcripts or ACEF
    self-reports.
-5. Expand only in batches of four to six matched pairs when the pilot is safe but statistically inconclusive.
+6. Expand only in batches of four to six matched pairs when the pilot is safe but statistically inconclusive.
 
 ## Timing and attribution
 

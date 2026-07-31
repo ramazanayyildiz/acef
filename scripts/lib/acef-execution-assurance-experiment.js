@@ -162,6 +162,84 @@ function environmentPreflight(repoRoot, contract) {
   };
 }
 
+function resolveCatalogTask(manifest, manifestPath, taskId) {
+  const ref = manifest.taskCatalog?.[taskId];
+  if (!ref) throw new Error(`unknown task catalog id ${taskId}`);
+  const sourceManifestPath = path.resolve(path.dirname(manifestPath), ref.sourceManifest);
+  const sourceManifest = JSON.parse(fs.readFileSync(sourceManifestPath, "utf8"));
+  let task = (sourceManifest.tasks || []).find((entry) => entry.id === ref.selector) || null;
+  let kind = "task";
+  if (!task && sourceManifest.epic?.id === ref.selector) {
+    task = sourceManifest.epic;
+    kind = "epic";
+  }
+  if (!task) {
+    task = (sourceManifest.epic?.stories || []).find((entry) => entry.id === ref.selector) || null;
+    if (task) kind = "story";
+  }
+  if (!task) throw new Error(`${taskId}: selector ${ref.selector} not found in ${ref.sourceManifest}`);
+  return {
+    taskId,
+    selector: ref.selector,
+    kind,
+    sourceManifestPath,
+    fixtureRoot: path.join(path.dirname(sourceManifestPath), "fixtures"),
+    repo: sourceManifest.repo || task.repo,
+    stack: sourceManifest.stack || task.stack,
+    source: sourceManifest.source || task.source,
+    commit: sourceManifest.commit || task.commit,
+    task,
+  };
+}
+
+function setupOperations(resolved) {
+  if (resolved.kind === "epic") return resolved.task.stories.flatMap((story) => story.setup || []);
+  return resolved.task.setup || [];
+}
+
+function preflightCatalog(manifest, manifestPath) {
+  const checks = [];
+  for (const taskId of Object.keys(manifest.taskCatalog || {})) {
+    let resolved;
+    try {
+      resolved = resolveCatalogTask(manifest, manifestPath, taskId);
+    } catch (error) {
+      checks.push({ taskId, ok: false, blockers: [error.message] });
+      continue;
+    }
+    const blockers = [];
+    if (!resolved.source || !fs.existsSync(path.join(resolved.source, ".git"))) blockers.push(`missing git source ${resolved.source || "(unset)"}`);
+    if (!resolved.commit) blockers.push("missing pinned source commit");
+    if (!resolved.stack) blockers.push("missing stack");
+    if (!blockers.length) {
+      const commit = cp.spawnSync("git", ["-C", resolved.source, "cat-file", "-e", `${resolved.commit}^{commit}`], { encoding: "utf8" });
+      if (commit.status !== 0) blockers.push(`pinned commit unavailable: ${resolved.commit}`);
+      if (resolved.stack === "php-laravel" && !fs.existsSync(path.join(resolved.source, "vendor", "autoload.php"))) {
+        blockers.push("source vendor/autoload.php missing");
+      }
+      if (resolved.stack?.startsWith("typescript-") && !fs.existsSync(path.join(resolved.source, "node_modules"))) {
+        blockers.push("source node_modules missing");
+      }
+    }
+    for (const operation of setupOperations(resolved)) {
+      if (operation.type === "copy-fixture" && !fs.existsSync(path.join(resolved.fixtureRoot, operation.fixture))) {
+        blockers.push(`missing fixture ${operation.fixture}`);
+      }
+    }
+    checks.push({
+      taskId,
+      selector: resolved.selector,
+      kind: resolved.kind,
+      repo: resolved.repo,
+      stack: resolved.stack,
+      sourceCommit: resolved.commit,
+      ok: blockers.length === 0,
+      blockers,
+    });
+  }
+  return { ok: checks.every((check) => check.ok), checks };
+}
+
 module.exports = {
   ASSURANCE_PROFILES,
   CONTROL_PATTERNS,
@@ -171,6 +249,8 @@ module.exports = {
   buildPilotPlan,
   environmentPreflight,
   parseIndependentTrace,
+  preflightCatalog,
+  resolveCatalogTask,
   sha256,
   validateManifest,
 };

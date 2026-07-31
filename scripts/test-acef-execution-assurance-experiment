@@ -11,6 +11,8 @@ const {
   buildPilotPlan,
   environmentPreflight,
   parseIndependentTrace,
+  preflightCatalog,
+  resolveCatalogTask,
   validateManifest,
 } = require("./lib/acef-execution-assurance-experiment");
 
@@ -24,6 +26,9 @@ assert.equal(pilotPlan.length, 16);
 assert.equal(pilotPlan.find((attempt) => attempt.id === "R1-legacy-1").frameworkCommit, manifest.treatments.legacy.commit);
 assert.equal(pilotPlan.find((attempt) => attempt.id === "R1-candidate-1").frameworkCommit, manifest.treatments.candidate.commit);
 assert.equal(pilotPlan.find((attempt) => attempt.id === "NATIVE-end").frameworkCommit, null);
+assert.equal(resolveCatalogTask(manifest, manifestPath, "noise-fix").selector, "browser-rts-gather-modifier-bait");
+assert.equal(resolveCatalogTask(manifest, manifestPath, "full-guarded-motivation").kind, "epic");
+assert.equal(preflightCatalog(manifest, manifestPath).checks.length, 5);
 
 const ready = assessTaskShape({ technicalBoundaries: ["controller"], productSurfaces: ["ui"], acceptanceCriteriaCount: 3 });
 assert.equal(ready.disposition, "READY");

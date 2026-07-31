@@ -11,6 +11,7 @@ const {
   buildPilotPlan,
   environmentPreflight,
   parseIndependentTrace,
+  preflightCatalog,
   sha256,
   validateManifest,
 } = require("./lib/acef-execution-assurance-experiment");
@@ -21,10 +22,11 @@ const defaultManifest = path.join(root, "docs", "experiments", "execution-assura
 const defaultResults = path.join(root, "docs", "experiments", "execution-assurance-v2", "runs", "stage0.jsonl");
 
 function usage() {
-  console.log(`Usage: acef-execution-assurance-experiment [--manifest <path>] [--results <path>] [--workspace <path>] [--plan] [--stage0] [--force] [--keep]
+  console.log(`Usage: acef-execution-assurance-experiment [--manifest <path>] [--results <path>] [--preflight-output <path>] [--workspace <path>] [--plan] [--stage0] [--pilot-preflight] [--force] [--keep]
 
 --plan    Print the preregistered 16-attempt pilot without executing agents.
 --stage0  Execute the six deterministic mechanism/measurement traps in disposable repositories.
+--pilot-preflight  Resolve every task/fixture/commit/dependency before any timed agent run.
 --force   Replace an existing Stage 0 result log. Without this flag results are immutable.`);
 }
 
@@ -32,9 +34,11 @@ function parseArgs(argv) {
   const opts = {
     manifest: defaultManifest,
     results: defaultResults,
+    preflightOutput: path.join(root, "docs", "experiments", "execution-assurance-v2", "pilot-preflight.json"),
     workspace: path.join(os.tmpdir(), "acef-execution-assurance-v2-stage0"),
     plan: false,
     stage0: false,
+    pilotPreflight: false,
     force: false,
     keep: false,
   };
@@ -43,14 +47,18 @@ function parseArgs(argv) {
     if (arg === "--help" || arg === "-h") { usage(); process.exit(0); }
     else if (arg === "--manifest") opts.manifest = path.resolve(argv[++index]);
     else if (arg === "--results") opts.results = path.resolve(argv[++index]);
+    else if (arg === "--preflight-output") opts.preflightOutput = path.resolve(argv[++index]);
     else if (arg === "--workspace") opts.workspace = path.resolve(argv[++index]);
     else if (arg === "--plan") opts.plan = true;
     else if (arg === "--stage0") opts.stage0 = true;
+    else if (arg === "--pilot-preflight") opts.pilotPreflight = true;
     else if (arg === "--force") opts.force = true;
     else if (arg === "--keep") opts.keep = true;
     else throw new Error(`unknown argument: ${arg}`);
   }
-  if (opts.plan === opts.stage0) throw new Error("select exactly one of --plan or --stage0");
+  if ([opts.plan, opts.stage0, opts.pilotPreflight].filter(Boolean).length !== 1) {
+    throw new Error("select exactly one of --plan, --stage0, or --pilot-preflight");
+  }
   return opts;
 }
 
@@ -278,6 +286,26 @@ function main() {
       count: manifest.pilot.attempts.length,
       attempts: buildPilotPlan(manifest),
     }, null, 2));
+    return;
+  }
+  if (opts.pilotPreflight) {
+    if (fs.existsSync(opts.preflightOutput) && !opts.force) {
+      throw new Error(`immutable pilot preflight already exists at ${opts.preflightOutput}; use --force only for a documented rerun`);
+    }
+    const preflight = preflightCatalog(manifest, opts.manifest);
+    const row = {
+      schema: "acef.execution-assurance-pilot-preflight.v1",
+      experimentId: manifest.experimentId,
+      candidateCommit: manifest.treatments.candidate.commit,
+      runnerCommit: must("git", ["rev-parse", "HEAD"], root),
+      runnerDirtyBefore: must("git", ["status", "--porcelain"], root) !== "",
+      checkedAt: new Date().toISOString(),
+      ...preflight,
+    };
+    writeJson(opts.preflightOutput, row);
+    for (const check of row.checks) console.log(`${check.ok ? "PASS" : "FAIL"} ${check.taskId}${check.blockers.length ? `: ${check.blockers.join("; ")}` : ""}`);
+    console.log(`PILOT_PREFLIGHT ${row.ok ? "PASS" : "FAIL"}: ${row.checks.filter((check) => check.ok).length}/${row.checks.length} tasks ready`);
+    if (!row.ok) process.exitCode = 1;
     return;
   }
   runStage0(manifest, opts);
