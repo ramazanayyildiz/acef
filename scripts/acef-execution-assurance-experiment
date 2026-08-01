@@ -822,6 +822,53 @@ function loadCollaborationEvidence(rawPath, expectedContract, expectedSession = 
   if (!sessionPath) return { ok: false, threadId, sessionPath: null, failures: ["Codex session transcript not found"] };
   const evidence = parseCollaborationEvidence(rawText, fs.readFileSync(sessionPath, "utf8"), expectedContract, expectedSession);
   const failures = [...evidence.failures];
+  const dispatchTraceContract = [...(evidence.dispatchTraceContract || evidence.actorContract || [])];
+  let typedAuxiliaryCloseoutChains = 0;
+  const auxiliaryDispatches = (evidence.dispatches || []).filter((entry) => entry.auxiliary);
+  if (auxiliaryDispatches.length) {
+    try {
+      const parser = installedStateParser(expectedSession.cwd);
+      const actorDir = path.join(expectedSession.cwd, "docs", "ai", "actors");
+      const actors = new Map();
+      if (fs.existsSync(actorDir)) for (const entry of fs.readdirSync(actorDir).filter((name) => name.endsWith(".json"))) {
+        const actor = parser.parseActorRecord(path.join(actorDir, entry));
+        actors.set(actor.actorInstanceId, actor);
+      }
+      const phaseMap = {
+        atdd: "atdd",
+        development: "development",
+        codereview: "code-review",
+        verifypatch: "verify-patch",
+        testreview: "test-review",
+        processjudge: "process-judge",
+      };
+      for (const dispatch of auxiliaryDispatches) {
+        const actor = actors.get(dispatch.taskName);
+        if (!actor) {
+          failures.push(`${dispatch.taskName}: auxiliary typed actor record missing`);
+          continue;
+        }
+        const control = phaseMap[canonicalLifecyclePhase(actor.phase || actor.role)];
+        if (control) {
+          const inferredIndex = dispatchTraceContract.findIndex((entry) => entry.auxiliary && entry.taskName === dispatch.taskName);
+          const typed = {
+            scope: actor.story,
+            control,
+            persona: actor.role,
+            retryable: false,
+            retryOrdinal: 0,
+            auxiliary: true,
+            taskName: dispatch.taskName,
+          };
+          if (inferredIndex >= 0) dispatchTraceContract[inferredIndex] = typed;
+          else dispatchTraceContract.push(typed);
+        }
+        if (/closeout|coverage|trace|stat|quality/i.test(`${actor.phase} ${actor.role}`)) typedAuxiliaryCloseoutChains += 1;
+      }
+    } catch (error) {
+      failures.push(`auxiliary typed actor reconciliation failed: ${error.message}`);
+    }
+  }
   for (const binding of evidence.correctionBindings || []) failures.push(...validateCorrectionBinding(expectedSession.cwd, binding));
   const childSessions = [];
   for (const dispatch of evidence.dispatches || []) {
@@ -883,7 +930,15 @@ function loadCollaborationEvidence(rawPath, expectedContract, expectedSession = 
       completedAt: completion?.completed_at || null,
     });
   }
-  return { ...evidence, ok: failures.length === 0, failures, sessionPath, childSessions };
+  return {
+    ...evidence,
+    ok: failures.length === 0,
+    failures,
+    sessionPath,
+    childSessions,
+    dispatchTraceContract,
+    closeoutCreatedMandatoryChains: Math.max(evidence.closeoutCreatedMandatoryChains || 0, typedAuxiliaryCloseoutChains),
+  };
 }
 
 function canonicalLifecyclePhase(value) {
