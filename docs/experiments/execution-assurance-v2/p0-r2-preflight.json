@@ -1,0 +1,51 @@
+{
+  "schema": "acef.execution-assurance-pilot-preflight.v1",
+  "experimentId": "acef-execution-assurance-v2-p0-r2",
+  "candidateCommit": "815d6d0644898af8e1db7a6e5a8f018356f278a2",
+  "manifestSha256": "6ec6f42f7e865b8b1c66d0042e20cca1e2cad4b95d50342a087ecbd0208ff19e",
+  "runnerCommit": "61a43edefb7f596e006e941fdc48c6c7d137f5c2",
+  "runnerDirtyBefore": false,
+  "runnerSourceSha256": "2055361c2b45413ac819f1f4394d0da62a2537013e68b6b36c5c418fa4153489",
+  "checkedAt": "2026-08-01T19:37:03.501Z",
+  "ok": true,
+  "checks": [
+    {
+      "taskId": "full-guarded-motivation",
+      "selector": "authz-fail-closed-hardening",
+      "kind": "epic",
+      "repo": "jakomeet",
+      "stack": "php-laravel",
+      "sourceCommit": "a12ac50441114943efd099f9e601bbee4a9d8a12",
+      "setupDirs": [
+        "tests/Integration",
+        "tests/Performance"
+      ],
+      "setupFiles": [
+        {
+          "path": "/tmp/jako-bench-webhook/database/testing.sqlite",
+          "mode": "truncate"
+        }
+      ],
+      "ok": true,
+      "blockers": []
+    }
+  ],
+  "collaborationCanary": {
+    "ok": true,
+    "checkedAt": "2026-08-01T19:37:03.465Z",
+    "clientPath": "/opt/homebrew/Caskroom/codex/0.146.0/bin/codex",
+    "clientBinarySha256": "ae1d3ffe6d48aec6a4dc3f50e7eb8e0d11962485a6a9406c5a7012139383da02",
+    "clientVersion": "codex-cli 0.146.0",
+    "model": "gpt-5.6-sol",
+    "reasoningEffort": "high",
+    "threadId": "019fbed4-2496-7422-a490-a437a8ff4746",
+    "exitCode": 0,
+    "expectedActorCount": 1,
+    "observedActorCount": 1,
+    "receiverThreadIds": [
+      "019fbed4-581a-7082-ab62-32b7cffb1f40"
+    ],
+    "sessionSha256": "10ab2b20bbaf09a0bb6a90429c26d8fd26dbc87547619ae2e7e866b5454d6c5d",
+    "failures": []
+  }
+}
