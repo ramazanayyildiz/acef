@@ -2,9 +2,9 @@
   "schema": "acef.execution-assurance-pilot-preflight.v1",
   "experimentId": "acef-execution-assurance-v2-real-pilot",
   "candidateCommit": "076812348e1c88eb9139230a1cc2c9107dff9a12",
-  "runnerCommit": "b7d2c95f2390ddbdd72621c33042ea7a6cdf3fee",
+  "runnerCommit": "ee711bf6ac10cc8fe35fcb5388a3d297a1151fe4",
   "runnerDirtyBefore": false,
-  "checkedAt": "2026-07-31T20:56:14.438Z",
+  "checkedAt": "2026-08-01T09:31:24.541Z",
   "ok": true,
   "checks": [
     {
@@ -14,6 +14,8 @@
       "repo": "browser-rts",
       "stack": "typescript-vite",
       "sourceCommit": "34a38aab02984b249e3ce3c99311c6cb7faf3d8b",
+      "setupDirs": [],
+      "setupFiles": [],
       "ok": true,
       "blockers": []
     },
@@ -24,6 +26,16 @@
       "repo": "jakomeet",
       "stack": "php-laravel",
       "sourceCommit": "a12ac50441114943efd099f9e601bbee4a9d8a12",
+      "setupDirs": [
+        "tests/Integration",
+        "tests/Performance"
+      ],
+      "setupFiles": [
+        {
+          "path": "/tmp/jako-bench-webhook/database/testing.sqlite",
+          "mode": "truncate"
+        }
+      ],
       "ok": true,
       "blockers": []
     },
@@ -34,6 +46,8 @@
       "repo": "detaysoft2026",
       "stack": "php-laravel",
       "sourceCommit": "aaf9d6bd5bb5dab571e485d12a9f4c06d0a3fc09",
+      "setupDirs": [],
+      "setupFiles": [],
       "ok": true,
       "blockers": []
     },
@@ -44,6 +58,8 @@
       "repo": "mvt-nextjs",
       "stack": "typescript-nextjs",
       "sourceCommit": "6a7c35783a283ab1df14209538b12bc42c3e8198",
+      "setupDirs": [],
+      "setupFiles": [],
       "ok": true,
       "blockers": []
     },
@@ -54,6 +70,16 @@
       "repo": "jakomeet",
       "stack": "php-laravel",
       "sourceCommit": "a12ac50441114943efd099f9e601bbee4a9d8a12",
+      "setupDirs": [
+        "tests/Integration",
+        "tests/Performance"
+      ],
+      "setupFiles": [
+        {
+          "path": "/tmp/jako-bench-webhook/database/testing.sqlite",
+          "mode": "truncate"
+        }
+      ],
       "ok": true,
       "blockers": []
     }
