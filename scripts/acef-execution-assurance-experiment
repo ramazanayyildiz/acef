@@ -693,30 +693,35 @@ function parseCollaborationEvidence(rawText, sessionText, expectedContract, expe
 function correctionSessionWrites(sessionText, repoRoot) {
   const paths = [];
   const unsafeShellMutations = [];
+  const unsafeDelegations = [];
   for (const line of String(sessionText || "").split(/\r?\n/).filter(Boolean)) {
     let event;
     try { event = JSON.parse(line); } catch { continue; }
     const payload = event.payload || {};
     if (event.type !== "response_item" || payload.type !== "function_call") continue;
+    const rawArguments = String(payload.arguments || "");
     let args = {};
-    try { args = JSON.parse(payload.arguments || "{}"); } catch {}
+    try { args = JSON.parse(rawArguments || "{}"); } catch {}
     const name = String(payload.name || "");
-    if (/apply_patch/i.test(name)) {
-      const patchText = String(args.input || args.patch || "");
+    if (payload.namespace === "collaboration" && /spawn_agent/i.test(name)) {
+      unsafeDelegations.push(name);
+    }
+    if (/apply_patch/i.test(name) || /tools\.apply_patch\s*\(/.test(rawArguments)) {
+      const patchText = String(args.input || args.patch || rawArguments);
       for (const match of patchText.matchAll(/^\*\*\* (?:Add|Update|Delete) File:\s+(.+?)\s*$/gm)) {
         paths.push(path.resolve(repoRoot, match[1]));
       }
     } else if (/write|edit|notebook/i.test(name)) {
       const target = args.file_path || args.filePath || args.path || args.notebook_path;
       if (target) paths.push(path.resolve(repoRoot, target));
-    } else if (/exec_command|shell|bash/i.test(name)) {
-      const command = String(args.cmd || args.command || "");
-      if (/(?:^|\s)(?:sed\s+-i|perl\s+-pi|tee|cp|mv|touch|rm|mkdir)(?:\s|$)|(?:^|[^>])>{1,2}(?!>)/.test(command)) {
+    } else if (/exec_command|shell|bash/i.test(name) || /tools\.exec_command\s*\(/.test(rawArguments)) {
+      const command = String(args.cmd || args.command || rawArguments);
+      if (/(?:^|\s)(?:sed\s+-i|perl\s+-pi|tee|cp|mv|touch|rm|mkdir)(?:\s|$)|(?:^|[^>])>{1,2}(?!>)|(?:writeFile|write_text|\.write\s*\(|open\s*\([^)]*["']w)/.test(command)) {
         unsafeShellMutations.push(command);
       }
     }
   }
-  return { paths: [...new Set(paths)], unsafeShellMutations };
+  return { paths: [...new Set(paths)], unsafeShellMutations, unsafeDelegations };
 }
 
 function isCorrectionArtifactPath(filePath, repoRoot) {
@@ -767,6 +772,7 @@ function loadCollaborationEvidence(rawPath, expectedContract, expectedSession = 
       const forbidden = writes.paths.filter((entry) => !isCorrectionArtifactPath(entry, expectedSession.cwd));
       if (forbidden.length) failures.push(`${dispatch.taskName}: correction wrote outside test artifacts: ${forbidden.map((entry) => path.relative(expectedSession.cwd, entry)).join(", ")}`);
       if (writes.unsafeShellMutations.length) failures.push(`${dispatch.taskName}: correction used an unscoped shell mutation`);
+      if (writes.unsafeDelegations.length) failures.push(`${dispatch.taskName}: correction actor delegated work`);
     }
     childSessions.push({
       taskName: dispatch.taskName,

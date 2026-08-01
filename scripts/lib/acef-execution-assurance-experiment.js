@@ -53,6 +53,36 @@ function validateManifest(manifest) {
     if (JSON.stringify(treatments) !== JSON.stringify(["candidate", "legacy"])) {
       throw new Error("matched P0 repair pair must contain exactly one legacy and one candidate attempt");
     }
+    const taskIds = unique(manifest.pilot.attempts.map((attempt) => attempt.taskId));
+    if (taskIds.length !== 1) throw new Error("matched P0 repair pair must use one identical task");
+    if (manifest.pilot.attempts.some((attempt) => attempt.workflowId !== "full-bmad" || attempt.assuranceProfile !== "guarded")) {
+      throw new Error("matched P0 repair pair must use full-bmad with guarded assurance in both arms");
+    }
+    const gates = manifest.promotionGates || {};
+    if (gates.product?.allStoriesComplete !== true || gates.product?.blindJudge !== "PASS"
+      || gates.product?.maximumCritical !== 0 || gates.product?.maximumHigh !== 0) {
+      throw new Error("matched P0 repair pair must freeze the product PASS and zero Critical/High gate");
+    }
+    if (gates.process?.automatedOracle !== "PASS" || gates.process?.epicProcessJudgeCount !== 1
+      || gates.process?.maximumScopePhaseResultViolations !== 0 || gates.process?.maximumDuplicateLifecycles !== 0
+      || gates.process?.maximumCloseoutCreatedMandatoryChains !== 0) {
+      throw new Error("matched P0 repair pair must freeze the process gate");
+    }
+    if (gates.budget?.maximumVerifyPatchRetriesPerStory !== 1 || gates.budget?.maximumAtddCorrectionsPerStory !== 1
+      || gates.budget?.secondFailureDisposition !== "REPLAN_SPLIT") {
+      throw new Error("matched P0 repair pair must freeze bounded retry/correction budgets");
+    }
+    if (gates.reachability?.mandatoryThresholdsRemainSatisfiable !== true
+      || gates.reachability?.inventoryFrozenBeforeExecution !== true) {
+      throw new Error("matched P0 repair pair must freeze reachability gates");
+    }
+    if (gates.costAfterProductPass?.maximumActiveDeliverySeconds !== 13100
+      || gates.costAfterProductPass?.maximumInputTokens !== 52000000
+      || gates.costAfterProductPass?.maximumToolCalls !== 424
+      || gates.costAfterProductPass?.failFastCannotWin !== true
+      || gates.passingDisposition !== "controlled-canary-only") {
+      throw new Error("matched P0 repair pair must freeze cost gates and canary-only disposition");
+    }
   }
   requireString(manifest.pilotRuntime?.client, "pilotRuntime.client");
   requireString(manifest.pilotRuntime?.clientVersion, "pilotRuntime.clientVersion");

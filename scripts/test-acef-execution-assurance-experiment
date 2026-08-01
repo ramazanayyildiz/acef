@@ -249,6 +249,13 @@ const correctionWrites = correctionSessionWrites(JSON.stringify({
   payload: { type: "function_call", name: "apply_patch", arguments: JSON.stringify({ input: "*** Begin Patch\n*** Update File: app/Unsafe.php\n*** End Patch" }) },
 }), root);
 assert.deepEqual(correctionWrites.paths.map((entry) => path.relative(root, entry)), ["app/Unsafe.php"]);
+assert.equal(correctionSessionWrites(JSON.stringify({
+  type: "response_item",
+  payload: { type: "function_call", namespace: "collaboration", name: "spawn_agent", arguments: "{}" },
+}), root).unsafeDelegations.length, 1, "ATDD correction workers cannot delegate another correction chain");
+const invalidRepairManifest = structuredClone(repairManifest);
+invalidRepairManifest.promotionGates.costAfterProductPass.failFastCannotWin = false;
+assert.throws(() => validateManifest(invalidRepairManifest), /cost gates/);
 for (const marker of [".acef-lane", ".acef-bmad-lane", ".acef-lightweight-lane", "docs/ai/ACEF_ACTIVE_RUN.json"]) {
   assert.equal(isPilotHarnessPath(marker), true, `${marker} must be treated as harness state`);
 }
