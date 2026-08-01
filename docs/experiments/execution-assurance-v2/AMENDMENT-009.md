@@ -14,11 +14,12 @@ absence of every regression case in the protected benchmark into a pre-developme
 post-green expansion/test-review boundary; the frozen scope expressly prohibited editing the protected benchmark.
 
 Disposition for the historical result: `OVERRULE` as an execution decision, without changing the recorded failed row.
-The old candidate is not resumed or rescored.
+The independent report-only adjudication, its actor/thread identity, exact input hashes, final-answer hash, and transcript
+hash are recorded in `P0_ATDD_ADJUDICATION.json`. The old candidate is not resumed or rescored.
 
 ## Candidate repair
 
-Candidate commit `815d6d0644898af8e1db7a6e5a8f018356f278a2` adds:
+Candidate commit `041d849d00922389e26e84a470dc7e7502541a83` adds:
 
 - one fresh report-only adjudication after ATDD `REVISE`;
 - at most one findings-hash-bound, test-artifact-only correction when the adjudication is upheld;

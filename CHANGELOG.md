@@ -25,7 +25,7 @@ or evidence contract. Do not use it to claim implementation status; link to the 
   mentions.
 - Kept the capability at `enforced`. These changes repair mechanisms exposed by the failed first P0 pair; a new complete
   matched pair is still required before canary authorization.
-- Preregistered that fresh matched pair in `manifest-p0-r2.json`; it pins candidate commit `815d6d0`, preserves the
+- Preregistered that fresh matched pair in `manifest-p0-r2.json`; it pins candidate commit `041d849`, preserves the
   original product task and caps, and scores cost only after both product and process gates pass.
 
 ### Execution/assurance real-world pilot preregistered
