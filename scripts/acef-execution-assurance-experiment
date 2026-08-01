@@ -15,6 +15,7 @@ const {
   environmentPreflight,
   isPilotHarnessPath,
   parseIndependentTrace,
+  parseLifecycleDispatchTrace,
   pilotAttemptHistory,
   preflightCatalog,
   readPilotResultRow,
@@ -432,23 +433,34 @@ function epicPilotPrompt(attempt, resolved) {
     : "Use ACEF Full (BMAD v2) with Guarded assurance exactly as the installed candidate version documents it. Guarded is an assurance overlay, not a second lifecycle.";
   const stories = resolved.task.stories.map((story, index) => [
     `${index + 1}. ${story.id}: ${story.prompt}`,
+    `   Depends on: ${(story.dependsOn || []).join(", ") || "none"}`,
     `   Allowed paths: ${story.allowedPaths.join(", ")}`,
     `   Focused verification: ${story.verify.join(" ")}`,
   ].join("\n")).join("\n");
   const actorContract = lifecycleActorContract(resolved).map((entry) =>
     `- ${entry.taskName}: scope=${entry.scope} control=${entry.control} actor=${entry.taskName} persona=${entry.persona}`
   ).join("\n");
+  const recoveryInstruction = attempt.treatment === "candidate"
+    ? [
+      "Initial ATDD is sufficient when it maps every acceptance criterion and produces one genuine red test on the critical vertical path. Criteria that are regression-only need not all be red before development; expand them before test-review. Do not reject a valid critical-path red merely because protected or frozen-scope tests do not cover every regression case.",
+      "If an ATDD actor still returns REVISE, do not stop or retry it. Spawn exactly one fresh report-only <atdd-task-name>_adjudication1 actor whose first tuple is scope=<story> control=atdd-adjudication actor=<task-name> persona=test-reviewer and give it only the frozen story contract, ATDD report, protected-path rules, and REVISE findings. Persist that exact typed actor phase/role. It must end ACTOR_RESULT=PASS plus ATDD_ADJUDICATION=OVERRULE or ATDD_ADJUDICATION=UPHOLD.",
+      "OVERRULE means the critical-path red is sufficient and development continues. UPHOLD permits exactly one fresh <atdd-task-name>_correction1 actor whose first tuple is scope=<story> control=atdd-correction actor=<task-name> persona=test-author. Persist that exact typed actor phase/role. Its spawn message must contain CORRECTION_SCOPE=test-artifacts-only and CORRECTION_FINDINGS_SHA256=<sha256 of the exact parent-delivered ATDD REVISE final answer>; it may change only non-protected tests and test report artifacts, never production. A second incomplete ATDD result is REPLAN/SPLIT.",
+      "If a story becomes REPLAN/SPLIT, quarantine it and every transitive dependent story, but continue every pending story with no dependency edge to the quarantined set and no shared safety invariant. The epic product gate still fails while any story is quarantined.",
+    ].join(" ")
+    : "ATDD, development, and test-review cannot be retried. Code-review, verify-patch, and process-judge may each use at most one retry only after ACTOR_RESULT=REVISE.";
   return [
     "Complete one controlled multi-story epic in this disposable clone. The measured unit is the complete original user outcome, not an individual story.",
     treatmentInstruction,
     "Load and follow the repo-local ACEF skill. Act as conductor and use fresh independent actors/sessions for every role the installed workflow requires. Preserve actor separation; do not self-approve.",
     "For each contract row below, call spawn_agent exactly once using the exact task_name and fork_turns=none before accepting that phase. Give the fresh actor a bounded artifact-only message: put the listed scope/control/actor/persona tuple first, then only the exact files/commit/question it needs. Require its final line to be ACTOR_RESULT=PASS or ACTOR_RESULT=REVISE, wait for that actor's FINAL_ANSWER, and persist a typed actor record whose actorInstanceId exactly equals task_name. Do not combine rows in one actor.",
-    "ATDD, development, and test-review cannot be retried. Code-review, verify-patch, and process-judge may each use at most one retry only after ACTOR_RESULT=REVISE; its exact task_name must be <base>_retry1 and it must finish ACTOR_RESULT=PASS. Never replay a full lifecycle vector.",
+    recoveryInstruction,
+    "Development and test-review cannot be retried. Code-review, verify-patch, and process-judge may each use at most one retry only after ACTOR_RESULT=REVISE; its exact task_name must be <base>_retry1 and it must finish ACTOR_RESULT=PASS. Never replay a full lifecycle vector.",
     "Each story Process Judge must persist a typed PASS gate for that story. After the one final integration verification, the separate epic Process Judge must persist a typed PASS gate with scope=epic and must not be any story actor.",
     "Required independently observable actor contract:",
     actorContract,
     "If readiness requires splitting or replanning, record and perform it, but the outcome clock continues until the complete epic is product-done.",
-    "Use focused verification during stories and run the provided integration verification once at final closeout unless a recorded failure requires a retry.",
+    "The mandatory closeout inventory is frozen to the listed contract rows before execution. Use focused verification during stories and run the provided integration verification once at final closeout unless that command itself fails once. Trace, statistics, coverage analysis, test quality, documentation, and closeout review are evidence views only: do not spawn actors, create mandatory work items, enlarge the denominator, or open another closeout chain for them.",
+    "Before every write, reconcile the exact target against the active story's allowed paths and protected paths. A worker must refuse the write before mutation when it is outside scope; post-hoc cleanup does not cure a scope violation.",
     "Do not inspect experiment manifests, sibling worktrees, previous transcripts, or the other treatment. Do not push. Do not weaken or edit Benchmark* tests or phpunit.sqlite.xml.",
     "Frozen epic stories:",
     stories,
@@ -525,7 +537,12 @@ function parseCollaborationEvidence(rawText, sessionText, expectedContract, expe
       && payload.namespace === "collaboration" && payload.name === "spawn_agent") {
       let args = {};
       try { args = JSON.parse(payload.arguments || "{}"); } catch {}
-      calls.set(payload.call_id, { taskName: args.task_name || "", forkTurns: args.fork_turns, callId: payload.call_id });
+      calls.set(payload.call_id, {
+        taskName: args.task_name || "",
+        forkTurns: args.fork_turns,
+        message: args.message || "",
+        callId: payload.call_id,
+      });
     }
     if (event.type === "event_msg" && payload.type === "sub_agent_activity" && payload.kind === "started") {
       started.set(payload.event_id, payload.agent_thread_id || "");
@@ -557,25 +574,89 @@ function parseCollaborationEvidence(rawText, sessionText, expectedContract, expe
   const relevant = [];
   const acceptedActors = [];
   const observedContract = [];
+  const knownTaskNames = new Set();
   for (const expected of expectedContract) {
     const baseMatches = dispatches.filter((entry) => entry.taskName === expected.taskName);
     const retryMatches = dispatches.map((entry) => {
       const match = entry.taskName.match(new RegExp(`^${expected.taskName}_retry([1-9]\\d*)$`));
       return match ? { ...entry, retryOrdinal: Number(match[1]) } : null;
     }).filter(Boolean).sort((left, right) => left.retryOrdinal - right.retryOrdinal);
+    knownTaskNames.add(expected.taskName);
+    for (const retry of retryMatches) knownTaskNames.add(retry.taskName);
     if (baseMatches.length !== 1) failures.push(`${expected.taskName}: expected one base spawn, observed ${baseMatches.length}`);
     if (retryMatches.length && !expected.retryable) failures.push(`${expected.taskName}: retries are not allowed for ${expected.control}`);
     if (retryMatches.length > 1) failures.push(`${expected.taskName}: circuit breaker allows at most one retry`);
     if (retryMatches.some((entry, index) => entry.retryOrdinal !== index + 1)) failures.push(`${expected.taskName}: retry ordinals must be contiguous from 1`);
     const attempts = [...baseMatches, ...retryMatches];
     relevant.push(...attempts);
-    observedContract.push(...attempts.map((entry) => ({ ...expected, taskName: entry.taskName })));
+    observedContract.push(...attempts.map((entry) => ({ ...expected, taskName: entry.taskName, retryOrdinal: entry.retryOrdinal || 0 })));
     for (const entry of attempts) {
       if (!entry.receiverThreadId) failures.push(`${entry.taskName}: missing receiver thread id`);
       if (entry.forkTurns !== "none") failures.push(`${entry.taskName}: fork_turns must be none`);
       if (!entry.parentFinalText) failures.push(`${entry.taskName}: missing parent-delivered FINAL_ANSWER`);
     }
-    if (attempts.length) {
+    if (expected.control === "atdd" && baseMatches.length === 1) {
+      const base = baseMatches[0];
+      const basePassed = /\bACTOR_RESULT=PASS\b/.test(base.parentFinalText);
+      const baseRevised = /\bACTOR_RESULT=REVISE\b/.test(base.parentFinalText);
+      const adjudicationTaskName = `${expected.taskName}_adjudication1`;
+      const correctionTaskName = `${expected.taskName}_correction1`;
+      const adjudications = dispatches.filter((entry) => entry.taskName === adjudicationTaskName);
+      const corrections = dispatches.filter((entry) => entry.taskName === correctionTaskName);
+      for (const entry of [...adjudications, ...corrections]) {
+        knownTaskNames.add(entry.taskName);
+        relevant.push(entry);
+        if (!entry.receiverThreadId) failures.push(`${entry.taskName}: missing receiver thread id`);
+        if (entry.forkTurns !== "none") failures.push(`${entry.taskName}: fork_turns must be none`);
+        if (!entry.parentFinalText) failures.push(`${entry.taskName}: missing parent-delivered FINAL_ANSWER`);
+      }
+      if (basePassed) {
+        if (adjudications.length || corrections.length) failures.push(`${expected.taskName}: PASS must not create ATDD correction work`);
+        acceptedActors.push({ ...expected, taskName: base.taskName, receiverThreadId: base.receiverThreadId });
+      } else if (baseRevised) {
+        if (adjudications.length !== 1) failures.push(`${expected.taskName}: REVISE requires exactly one independent adjudication`);
+        if (adjudications.length === 1) {
+          const adjudication = adjudications[0];
+          const disposition = adjudication.parentFinalText.match(/\bATDD_ADJUDICATION=(OVERRULE|UPHOLD)\b/)?.[1] || "";
+          if (!/\bACTOR_RESULT=PASS\b/.test(adjudication.parentFinalText) || !disposition) {
+            failures.push(`${adjudicationTaskName}: adjudication must PASS with ATDD_ADJUDICATION=OVERRULE or UPHOLD`);
+          }
+          observedContract.push({
+            scope: expected.scope,
+            control: "atdd-adjudication",
+            persona: "test-reviewer",
+            retryable: false,
+            taskName: adjudicationTaskName,
+          });
+          if (disposition === "OVERRULE") {
+            if (corrections.length) failures.push(`${expected.taskName}: overruled REVISE must not create a correction actor`);
+            acceptedActors.push({ ...expected, taskName: adjudicationTaskName, receiverThreadId: adjudication.receiverThreadId });
+          }
+          if (disposition === "UPHOLD") {
+            if (corrections.length !== 1) failures.push(`${expected.taskName}: upheld REVISE requires exactly one correction actor`);
+            if (corrections.length === 1) {
+              const correction = corrections[0];
+              if (!/\bACTOR_RESULT=PASS\b/.test(correction.parentFinalText)) failures.push(`${correctionTaskName}: correction result is not PASS`);
+              const correctionHash = correction.message.match(/\bCORRECTION_FINDINGS_SHA256=([a-f0-9]{64})\b/)?.[1] || "";
+              if (!/\bCORRECTION_SCOPE=test-artifacts-only\b/.test(correction.message)
+                || correctionHash !== sha256(base.parentFinalText)) {
+                failures.push(`${correctionTaskName}: correction input is not findings-bound and test-artifact-only`);
+              }
+              observedContract.push({
+                scope: expected.scope,
+                control: "atdd-correction",
+                persona: "test-author",
+                retryable: false,
+                taskName: correctionTaskName,
+              });
+              acceptedActors.push({ ...expected, taskName: correctionTaskName, receiverThreadId: correction.receiverThreadId });
+            }
+          }
+        }
+      } else {
+        failures.push(`${expected.taskName}: ATDD result must be PASS or REVISE`);
+      }
+    } else if (attempts.length) {
       const accepted = attempts[attempts.length - 1];
       if (!/\bACTOR_RESULT=PASS\b/.test(accepted.parentFinalText)) failures.push(`${accepted.taskName}: final actor result is not PASS`);
       for (const superseded of attempts.slice(0, -1)) {
@@ -584,6 +665,10 @@ function parseCollaborationEvidence(rawText, sessionText, expectedContract, expe
       acceptedActors.push({ ...expected, taskName: accepted.taskName, receiverThreadId: accepted.receiverThreadId });
     }
   }
+  const unexpected = dispatches.filter((entry) => !knownTaskNames.has(entry.taskName));
+  if (unexpected.length) {
+    failures.push(`unexpected lifecycle/closeout actors: ${unexpected.map((entry) => entry.taskName).join(", ")}`);
+  }
   const receiverIds = relevant.map((entry) => entry.receiverThreadId).filter(Boolean);
   if (new Set(receiverIds).size !== receiverIds.length) failures.push("lifecycle actors do not have distinct receiver thread ids");
   return {
@@ -591,6 +676,9 @@ function parseCollaborationEvidence(rawText, sessionText, expectedContract, expe
     threadId,
     expectedActorCount: expectedContract.length,
     observedActorCount: relevant.length,
+    frozenMandatoryActorCount: expectedContract.length,
+    unexpectedActorCount: unexpected.length,
+    closeoutCreatedMandatoryChains: unexpected.filter((entry) => /closeout|coverage|trace|stat|quality/i.test(entry.taskName)).length,
     dispatches: relevant,
     actorContract: observedContract,
     acceptedActors,
@@ -600,6 +688,43 @@ function parseCollaborationEvidence(rawText, sessionText, expectedContract, expe
     sessionClientVersion: sessionMeta?.cli_version || null,
     sessionCwd: sessionMeta?.cwd || null,
   };
+}
+
+function correctionSessionWrites(sessionText, repoRoot) {
+  const paths = [];
+  const unsafeShellMutations = [];
+  for (const line of String(sessionText || "").split(/\r?\n/).filter(Boolean)) {
+    let event;
+    try { event = JSON.parse(line); } catch { continue; }
+    const payload = event.payload || {};
+    if (event.type !== "response_item" || payload.type !== "function_call") continue;
+    let args = {};
+    try { args = JSON.parse(payload.arguments || "{}"); } catch {}
+    const name = String(payload.name || "");
+    if (/apply_patch/i.test(name)) {
+      const patchText = String(args.input || args.patch || "");
+      for (const match of patchText.matchAll(/^\*\*\* (?:Add|Update|Delete) File:\s+(.+?)\s*$/gm)) {
+        paths.push(path.resolve(repoRoot, match[1]));
+      }
+    } else if (/write|edit|notebook/i.test(name)) {
+      const target = args.file_path || args.filePath || args.path || args.notebook_path;
+      if (target) paths.push(path.resolve(repoRoot, target));
+    } else if (/exec_command|shell|bash/i.test(name)) {
+      const command = String(args.cmd || args.command || "");
+      if (/(?:^|\s)(?:sed\s+-i|perl\s+-pi|tee|cp|mv|touch|rm|mkdir)(?:\s|$)|(?:^|[^>])>{1,2}(?!>)/.test(command)) {
+        unsafeShellMutations.push(command);
+      }
+    }
+  }
+  return { paths: [...new Set(paths)], unsafeShellMutations };
+}
+
+function isCorrectionArtifactPath(filePath, repoRoot) {
+  const relative = path.relative(repoRoot, filePath).replaceAll(path.sep, "/");
+  if (!relative || relative.startsWith("../") || path.isAbsolute(relative)) return false;
+  if (/^(?:tests?|spec)(?:\/|$)/i.test(relative) && !/(?:^|\/)Benchmark[^/]*Test\.(?:php|js|ts|tsx)$/i.test(relative)) return true;
+  return /^_bmad-output\/test-artifacts\//.test(relative)
+    || /^docs\/ai\/reports\//.test(relative);
 }
 
 function loadCollaborationEvidence(rawPath, expectedContract, expectedSession = {}) {
@@ -636,6 +761,12 @@ function loadCollaborationEvidence(rawPath, expectedContract, expectedSession = 
       const parentResult = dispatch.parentFinalText.match(/\bACTOR_RESULT=(PASS|REVISE|FAIL|BLOCKED|REPLAN)\b/)?.[1] || "";
       const childResult = String(completion.last_agent_message || "").match(/\bACTOR_RESULT=(PASS|REVISE|FAIL|BLOCKED|REPLAN)\b/)?.[1] || "";
       if (!childResult || childResult !== parentResult) failures.push(`${dispatch.taskName}: child/parent actor result mismatch`);
+    }
+    if (/_atdd_correction1$/.test(dispatch.taskName)) {
+      const writes = correctionSessionWrites(childText, expectedSession.cwd);
+      const forbidden = writes.paths.filter((entry) => !isCorrectionArtifactPath(entry, expectedSession.cwd));
+      if (forbidden.length) failures.push(`${dispatch.taskName}: correction wrote outside test artifacts: ${forbidden.map((entry) => path.relative(expectedSession.cwd, entry)).join(", ")}`);
+      if (writes.unsafeShellMutations.length) failures.push(`${dispatch.taskName}: correction used an unscoped shell mutation`);
     }
     childSessions.push({
       taskName: dispatch.taskName,
@@ -1163,7 +1294,7 @@ function finalizePilotAttempt(manifest, opts, checkpoint) {
   const diffPath = path.join(opts.pilotWorkspace, "artifacts", `${checkpoint.attemptRunId}.patch`);
   fs.mkdirSync(path.dirname(diffPath), { recursive: true });
   fs.writeFileSync(diffPath, diff);
-  const trace = parseIndependentTrace(`${actor.stdout}\nscope=epic ${verificationContract.verify.join(" ")}\n`, {
+  const commandTrace = parseIndependentTrace(`${actor.stdout}\nscope=epic ${verificationContract.verify.join(" ")}\n`, {
     scopeIds: resolved.kind === "epic" ? resolved.task.stories.map((story) => story.id) : [resolved.taskId],
     retryableControls: ["codeReview", "verifyPatch"],
     requiredControlsPerScope: attempt.treatment === "repo-native" ? []
@@ -1186,6 +1317,12 @@ function finalizePilotAttempt(manifest, opts, checkpoint) {
       collaborationEvidence.acceptedActors || actorContract,
     )
     : { ok: true, actorCount: 0, gateCount: 0, failures: [] };
+  const trace = actorContract.length
+    ? parseLifecycleDispatchTrace(collaborationEvidence.actorContract || [], {
+      scopeIds: resolved.task.stories.map((story) => story.id),
+      requiredControlsPerScope: ["atdd", "development", "code-review", "verify-patch", "test-review", "process-judge"],
+    })
+    : commandTrace;
   if (actorContract.length) {
     checkpoint = {
       ...checkpoint,
@@ -1199,6 +1336,7 @@ function finalizePilotAttempt(manifest, opts, checkpoint) {
   const automatedOraclePassed = actor.status === 0 && verification.status === 0
     && scopeViolations.length === 0 && expectationFailures.length === 0
     && collaborationEvidence.ok && durableLifecycleEvidence.ok
+    && trace.scopeAttributionComplete && trace.lifecycleComplete && !trace.duplicateLifecycle
     && treatmentState.ok;
   const row = {
     schema: "acef.execution-assurance-pilot-attempt.v1",
@@ -1242,6 +1380,7 @@ function finalizePilotAttempt(manifest, opts, checkpoint) {
     scopeViolations,
     expectationFailures,
     independentTrace: trace,
+    commandTrace,
     collaborationEvidence,
     durableLifecycleEvidence,
     treatmentState,
@@ -1427,6 +1566,7 @@ if (require.main === module) {
 }
 
 module.exports = {
+  correctionSessionWrites,
   ensureActorRequest,
   evaluateTreatmentState,
   finalizePilotAttempt,

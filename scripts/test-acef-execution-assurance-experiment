@@ -11,13 +11,16 @@ const {
   assessTaskShape,
   buildPilotPlan,
   captureGitDiff,
+  dependencyAwareQuarantine,
   environmentPreflight,
   isPilotHarnessPath,
   parseIndependentTrace,
+  parseLifecycleDispatchTrace,
   pilotAttemptHistory,
   preflightCatalog,
   readPilotResultRow,
   resolveCatalogTask,
+  sha256,
   spawnCaptured,
   validateManifest,
 } = require("./lib/acef-execution-assurance-experiment");
@@ -27,6 +30,7 @@ const manifestPath = path.join(root, "docs", "experiments", "execution-assurance
 const cli = path.join(root, "scripts", "acef-execution-assurance-experiment");
 const actorCli = path.join(root, "scripts", "acef-execution-assurance-actor");
 const {
+  correctionSessionWrites,
   ensureActorRequest,
   evaluateTreatmentState,
   finalizePilotAttempt,
@@ -90,6 +94,44 @@ assert.equal(parseCollaborationEvidence(syntheticRaw, syntheticSession, epicActo
 assert.equal(parseCollaborationEvidence(syntheticRaw,
   syntheticSession.replace('\\"fork_turns\\":\\"none\\"', '\\"fork_turns\\":\\"all\\"'), epicActorContract).ok, false,
 "unbounded full-history actor context must fail lifecycle evidence");
+const firstAtdd = epicActorContract[0];
+const adjudicationName = `${firstAtdd.taskName}_adjudication1`;
+const revisedWithAdjudication = [
+  syntheticSession.replace("ACTOR_RESULT=PASS", "ACTOR_RESULT=REVISE"),
+  JSON.stringify({ type: "response_item", payload: { type: "function_call", namespace: "collaboration", name: "spawn_agent", call_id: "adjudicate-1", arguments: JSON.stringify({ task_name: adjudicationName, fork_turns: "none", message: "frozen findings only" }) } }),
+  JSON.stringify({ type: "event_msg", payload: { type: "sub_agent_activity", event_id: "adjudicate-1", agent_thread_id: "receiver-adjudication", kind: "started" } }),
+  JSON.stringify({ type: "response_item", payload: {
+    type: "agent_message", author: `/root/${adjudicationName}`,
+    content: [{ type: "input_text", text: `Message Type: FINAL_ANSWER\nSender: /root/${adjudicationName}\nPayload:\nATDD_ADJUDICATION=OVERRULE\nACTOR_RESULT=PASS` }],
+  } }),
+].join("\n");
+assert.equal(parseCollaborationEvidence(syntheticRaw, revisedWithAdjudication, epicActorContract).ok, true,
+  "one fresh adjudicator may overrule an over-broad ATDD REVISE without replaying ATDD");
+const correctionName = `${firstAtdd.taskName}_correction1`;
+const revisedAtddFinalText = parseCollaborationEvidence(
+  syntheticRaw,
+  syntheticSession.replace("ACTOR_RESULT=PASS", "ACTOR_RESULT=REVISE"),
+  epicActorContract,
+).dispatches.find((entry) => entry.taskName === firstAtdd.taskName).parentFinalText;
+function upheldCorrectionSession(correctionMessage) {
+  return [
+    syntheticSession.replace("ACTOR_RESULT=PASS", "ACTOR_RESULT=REVISE"),
+    JSON.stringify({ type: "response_item", payload: { type: "function_call", namespace: "collaboration", name: "spawn_agent", call_id: "adjudicate-uphold", arguments: JSON.stringify({ task_name: adjudicationName, fork_turns: "none", message: "frozen findings only" }) } }),
+    JSON.stringify({ type: "event_msg", payload: { type: "sub_agent_activity", event_id: "adjudicate-uphold", agent_thread_id: "receiver-adjudication-uphold", kind: "started" } }),
+    JSON.stringify({ type: "response_item", payload: { type: "agent_message", author: `/root/${adjudicationName}`, content: [{ type: "input_text", text: `Message Type: FINAL_ANSWER\nSender: /root/${adjudicationName}\nPayload:\nATDD_ADJUDICATION=UPHOLD\nACTOR_RESULT=PASS` }] } }),
+    JSON.stringify({ type: "response_item", payload: { type: "function_call", namespace: "collaboration", name: "spawn_agent", call_id: "correct-1", arguments: JSON.stringify({ task_name: correctionName, fork_turns: "none", message: correctionMessage }) } }),
+    JSON.stringify({ type: "event_msg", payload: { type: "sub_agent_activity", event_id: "correct-1", agent_thread_id: "receiver-correction", kind: "started" } }),
+    JSON.stringify({ type: "response_item", payload: { type: "agent_message", author: `/root/${correctionName}`, content: [{ type: "input_text", text: `Message Type: FINAL_ANSWER\nSender: /root/${correctionName}\nPayload:\nACTOR_RESULT=PASS` }] } }),
+  ].join("\n");
+}
+assert.equal(parseCollaborationEvidence(syntheticRaw, upheldCorrectionSession(
+  `CORRECTION_SCOPE=test-artifacts-only CORRECTION_FINDINGS_SHA256=${sha256(revisedAtddFinalText)}`,
+), epicActorContract).ok, true, "one findings-bound test-only ATDD correction is allowed after an upheld finding");
+assert.equal(parseCollaborationEvidence(syntheticRaw, upheldCorrectionSession("fix whatever is needed"), epicActorContract).ok, false,
+  "an unbound or production-capable correction must fail closed");
+assert.equal(parseCollaborationEvidence(syntheticRaw, `${syntheticSession}\n${JSON.stringify({
+  type: "response_item", payload: { type: "function_call", namespace: "collaboration", name: "spawn_agent", call_id: "extra-closeout", arguments: JSON.stringify({ task_name: "coverage_closeout_reviewer", fork_turns: "none" }) },
+})}`, epicActorContract).ok, false, "closeout cannot expand the frozen actor inventory");
 const forgedSingleDispatch = parseCollaborationEvidence(syntheticRaw, [
   JSON.stringify({ type: "session_meta", payload: { session_id: "parent-thread", timestamp: "2026-08-01T00:00:00.000Z", cwd: root, cli_version: "0.146.0" } }),
   JSON.stringify({ type: "response_item", payload: { type: "function_call", namespace: "collaboration", name: "spawn_agent", call_id: "one", arguments: JSON.stringify({ task_name: epicActorContract[0].taskName, fork_turns: "none" }) } }),
@@ -143,6 +185,20 @@ const oversized = assessTaskShape({
 });
 assert.equal(oversized.disposition, "REPLAN_SPLIT");
 assert.equal(oversized.technicalBoundaryCount, 3);
+const dependencyStories = [
+  { id: "s1", dependsOn: [] },
+  { id: "s2", dependsOn: [] },
+  { id: "s3", dependsOn: ["s2"] },
+  { id: "s4", dependsOn: [] },
+];
+assert.deepEqual(dependencyAwareQuarantine(dependencyStories, "s2"), {
+  wholeRunHalt: false,
+  quarantined: ["s2", "s3"],
+  runnable: ["s1", "s4"],
+});
+assert.equal(dependencyAwareQuarantine(dependencyStories, "s2", { sharedSafetyInvariant: true }).wholeRunHalt, true);
+assert.throws(() => dependencyAwareQuarantine([{ id: "s1", dependsOn: ["missing"] }], "s1"), /unknown story/);
+assert.throws(() => dependencyAwareQuarantine([{ id: "s1", dependsOn: ["s2"] }, { id: "s2", dependsOn: ["s1"] }], "s1"), /cycle/);
 
 const trace = parseIndependentTrace("bmad-code-review\nbmad-code-review\nprocess-judge\n");
 assert.equal(trace.duplicateLifecycle, true);
@@ -170,6 +226,23 @@ const testTrace = parseIndependentTrace("vendor/bin/phpunit --filter=FocusedTest
 assert.equal(testTrace.counts.broadSuite, 1, "focused test must not be counted as a broad suite");
 const mixedTestTrace = parseIndependentTrace("php artisan test && php artisan test --filter=A\n");
 assert.equal(mixedTestTrace.counts.broadSuite, 1, "mixed shell commands must count only the unfiltered suite");
+const dispatchTrace = parseLifecycleDispatchTrace([
+  { scope: "S1", control: "atdd", taskName: "s1_atdd", retryable: false },
+  { scope: "S1", control: "development", taskName: "s1_dev", retryable: false },
+  { scope: "S1", control: "code-review", taskName: "s1_review", retryable: true },
+  { scope: "S1", control: "code-review", taskName: "s1_review_retry1", retryable: true, retryOrdinal: 1 },
+], { scopeIds: ["S1"], requiredControlsPerScope: ["atdd", "development", "code-review"] });
+assert.equal(dispatchTrace.lifecycleComplete, true);
+assert.equal(dispatchTrace.duplicateLifecycle, false, "one typed retry is not a duplicate lifecycle");
+assert.equal(parseLifecycleDispatchTrace([
+  { scope: "S1", control: "atdd", taskName: "s1_atdd", retryable: false },
+  { scope: "S1", control: "atdd", taskName: "s1_atdd_again", retryable: false },
+], { scopeIds: ["S1"] }).duplicateLifecycle, true);
+const correctionWrites = correctionSessionWrites(JSON.stringify({
+  type: "response_item",
+  payload: { type: "function_call", name: "apply_patch", arguments: JSON.stringify({ input: "*** Begin Patch\n*** Update File: app/Unsafe.php\n*** End Patch" }) },
+}), root);
+assert.deepEqual(correctionWrites.paths.map((entry) => path.relative(root, entry)), ["app/Unsafe.php"]);
 for (const marker of [".acef-lane", ".acef-bmad-lane", ".acef-lightweight-lane", "docs/ai/ACEF_ACTIVE_RUN.json"]) {
   assert.equal(isPilotHarnessPath(marker), true, `${marker} must be treated as harness state`);
 }

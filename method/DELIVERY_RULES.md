@@ -135,6 +135,17 @@ Two consecutive typed non-`PASS` review verdicts on the same guarded/full-BMAD s
 `REPLAN/SPLIT`. The breaker consumes gate records decided by code-review, test-review, or Process Judge actors; it does
 not grep prose or require reviewers to choose the literal word `REPLAN`.
 
+Full-BMAD ATDD starts with the critical vertical path. The Test Author maps every acceptance criterion, but regression-
+only criteria do not each need a red test before the first implementation. When ATDD returns `REVISE`, do not blindly
+repeat the phase and do not halt the whole epic. One fresh, report-only Test Reviewer adjudicates the frozen story
+contract and the exact findings. An over-broad rejection is overruled without replaying ATDD. A valid gap permits one
+fresh Test Author correction limited to non-protected tests and test artifacts; the correction receives only the
+findings and their hash. A second incomplete result is `REPLAN/SPLIT`.
+
+`REPLAN/SPLIT` quarantines the failed scope and its transitive dependants. Independent scopes continue unless a declared
+dependency edge or shared safety invariant makes continuation unsafe. Quarantine never converts the epic product gate
+to PASS: every mandatory story must still complete before product closeout.
+
 ## PR review and lightweight review contract
 
 PR review is a first-class lightweight entry point, not a shortened full-BMAD imitation. Default input is bounded to
@@ -212,6 +223,9 @@ or scope grows, preserve the existing promotion rules: promote to full BMAD or r
   repo re-reading is blocked unless the story introduces a new/guarded/risky surface. Run `--check epic-context-pack`.
 - **Process Judge gates** — story/task close and epic close must prove the required steps, skills, and artifacts were
   actually used before status changes to `done`.
+- **Non-recursive closeout** — freeze the mandatory story/actor/gate inventory before execution. Closeout may inspect
+  existing evidence, but trace, statistics, coverage, documentation, test-quality, and audit views cannot add mandatory
+  work items, enlarge a threshold denominator, spawn a second closeout chain, or make their own gate unreachable.
 - **Seeded epic gates** — full BMAD epics/stories generation must seed `Epic N Process Judge [PENDING]` rows/artifacts
   before implementation starts. The final story in an epic points to that epic gate, and Epic N+1 cannot start until
   Epic N Process Judge is `PASS`.

@@ -20,6 +20,7 @@
     "stories": [
       {
         "id": "s1-resolver-fail-closed",
+        "dependsOn": [],
         "prompt": "Fix the route-permission resolver so malformed permission expressions fail closed. Today, when a config entry decomposes to zero AND-clauses after trim+filter (entries like an empty string, ' & ', or ' | '), the resolver returns a TYPE_NONE requirement and the route silently opens to any authenticated user; missing-route handling already fails closed — make malformed expressions behave consistently with it. The pre-existing resolver unit test encodes the old fail-open expectations for these malformed inputs; updating those specific expectations to the new fail-closed contract is part of this story. Do not touch the benchmark test file.",
         "allowedPaths": [
           "packages/platform/authz/src/Http/RouteRequirementResolver.php",
@@ -47,6 +48,7 @@
       },
       {
         "id": "s2-middleware-idempotency",
+        "dependsOn": [],
         "prompt": "Add a run-once guard to the route-capability middleware so that a request passing through the middleware twice (double registration) is evaluated only once. Behavior for single execution must be unchanged. Do not touch the benchmark test file.",
         "allowedPaths": [
           "packages/platform/authz/src/Http/RouteCapabilityMiddleware.php"
@@ -73,6 +75,7 @@
       },
       {
         "id": "s3-legacy-alias-cleanup",
+        "dependsOn": ["s2-middleware-idempotency"],
         "prompt": "Remove the legacy route.permission middleware alias from route registrations. The route-capability middleware is already appended globally to the web group, so routes that still carry the route.permission alias run it twice. Remove the route-level alias usages so every route is evaluated exactly once, with behavior unchanged. The previous story added a run-once guard; this story removes the redundant registrations themselves. Do not touch the benchmark test file.",
         "allowedPaths": [
           "routes/web.php",
@@ -103,6 +106,7 @@
       },
       {
         "id": "s4-webhook-ingress-correctness",
+        "dependsOn": [],
         "prompt": "Fix two webhook ingress defects in the billing module. First: the Revolut webhook controller's outer catch-all returns 202 Accepted on unhandled infrastructure errors (for example a refused database connection), which tells the provider not to retry and silently loses events — it must return 500 while keeping the existing explicit dispatch-error handling. Second: the webhook processing job's duplicate-detection misses the SQLite unique-constraint error string that the ingress dedup service already handles — unify constraint-violation detection between the service and the job so crash recovery works on both database engines. Do not touch the benchmark test file or the phpunit.sqlite.xml config.",
         "allowedPaths": [
           "app/Modules/Billing/Http/Controllers/RevolutWebhookController.php",

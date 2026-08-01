@@ -112,6 +112,13 @@ A worker launched before this bootstrap is drift. Stop, record it, patch the amb
 - No unapproved installs, code edits, deploys, migrations, broad automation, or pushes.
 - No generic subagent work may be called BMAD. BMAD requires the real runtime/skills and disk evidence.
 - Conductor coordinates; it does not author implementation, ATDD, code review, verify-patch, test review, or Process Judge work in full BMAD.
+- Full-BMAD ATDD needs one genuine critical-path red plus a map of every criterion; regression-only criteria need not all
+  be red before implementation. A `REVISE` gets one fresh report-only adjudication, then at most one findings-hash-bound,
+  test-artifact-only correction. Never replay the ATDD lifecycle; a second incomplete result is `REPLAN/SPLIT`.
+- Quarantine a failed story and its transitive dependants while continuing dependency-independent stories. Halt the
+  whole run only for a declared dependency or shared safety invariant; quarantined work still fails product closeout.
+- Freeze the mandatory closeout inventory before execution. Closeout analysis may not create actors, mandatory work,
+  a larger denominator, or another closeout chain.
 - Full BMAD delegation is approved once per run for ACEF-required persona workers only; generic delegation remains forbidden.
 - Every multi-step feature uses preflight + delivery ledger + Process Judge gates.
 - Epic N+1 needs Epic N Process Judge `PASS` and explicit Epic Transition Approval; generic “go on/devam/continue” is not approval.

@@ -96,6 +96,47 @@ function assessTaskShape(task) {
   };
 }
 
+function dependencyAwareQuarantine(stories, failedStoryId, options = {}) {
+  const ids = new Set((stories || []).map((story) => story.id));
+  if (!ids.has(failedStoryId)) throw new Error(`unknown failed story ${failedStoryId}`);
+  for (const story of stories || []) {
+    for (const dependency of story.dependsOn || []) {
+      if (!ids.has(dependency)) throw new Error(`${story.id} depends on unknown story ${dependency}`);
+    }
+  }
+  const byId = new Map((stories || []).map((story) => [story.id, story]));
+  const visiting = new Set();
+  const visited = new Set();
+  function visit(storyId) {
+    if (visiting.has(storyId)) throw new Error(`story dependency cycle includes ${storyId}`);
+    if (visited.has(storyId)) return;
+    visiting.add(storyId);
+    for (const dependency of byId.get(storyId)?.dependsOn || []) visit(dependency);
+    visiting.delete(storyId);
+    visited.add(storyId);
+  }
+  for (const storyId of ids) visit(storyId);
+  if (options.sharedSafetyInvariant === true) {
+    return { wholeRunHalt: true, quarantined: [...ids], runnable: [] };
+  }
+  const quarantined = new Set([failedStoryId]);
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const story of stories || []) {
+      if (!quarantined.has(story.id) && (story.dependsOn || []).some((dependency) => quarantined.has(dependency))) {
+        quarantined.add(story.id);
+        changed = true;
+      }
+    }
+  }
+  return {
+    wholeRunHalt: false,
+    quarantined: [...quarantined],
+    runnable: [...ids].filter((id) => !quarantined.has(id)),
+  };
+}
+
 const CONTROL_PATTERNS = Object.freeze({
   readiness: /\b(?:bmad-check-implementation-readiness|check-implementation-readiness|spec-readiness)\b/gi,
   atdd: /\b(?:bmad-atdd|test-design-atdd|atdd)\b/gi,
@@ -189,6 +230,45 @@ function parseIndependentTrace(text, options = {}) {
     duplicateLifecycleControls,
     duplicateLifecycle: duplicateLifecycleControls.length > 0,
     sha256: sha256(normalizedText),
+  };
+}
+
+function parseLifecycleDispatchTrace(dispatches, options = {}) {
+  const lifecycleControls = ["atdd", "development", "code-review", "verify-patch", "test-review", "process-judge"];
+  const scopeIds = unique((options.scopeIds || []).map(String).filter(Boolean));
+  const requiredControlsPerScope = options.requiredControlsPerScope || [];
+  const perScope = {};
+  for (const scopeId of [...scopeIds, "epic"]) {
+    perScope[scopeId] = Object.fromEntries(lifecycleControls.map((controlId) => [controlId, 0]));
+  }
+  const unattributed = [];
+  for (const dispatch of dispatches || []) {
+    if (!lifecycleControls.includes(dispatch.control)) continue;
+    if (!perScope[dispatch.scope]) {
+      unattributed.push(dispatch.taskName || `${dispatch.scope}:${dispatch.control}`);
+      continue;
+    }
+    perScope[dispatch.scope][dispatch.control] += 1;
+  }
+  const duplicateLifecycleControls = Object.entries(perScope).flatMap(([scopeId, counts]) => lifecycleControls
+    .filter((controlId) => counts[controlId] > 1
+      && !(dispatches || []).filter((entry) => entry.scope === scopeId && entry.control === controlId)
+        .slice(1).every((entry) => entry.retryOrdinal === 1 && entry.retryable === true))
+    .map((controlId) => `${scopeId}:${controlId}`));
+  const missingRequiredControls = scopeIds.flatMap((scopeId) => requiredControlsPerScope
+    .filter((controlId) => Number(perScope[scopeId]?.[controlId] || 0) < 1)
+    .map((controlId) => `${scopeId}:${controlId}`));
+  return {
+    source: "collaboration-dispatches",
+    perScope,
+    scopeAttributionComplete: unattributed.length === 0,
+    unattributedLifecycleEvents: unattributed.length,
+    unattributed,
+    lifecycleComplete: missingRequiredControls.length === 0,
+    missingRequiredControls,
+    duplicateLifecycleControls,
+    duplicateLifecycle: duplicateLifecycleControls.length > 0,
+    sha256: sha256(JSON.stringify(dispatches || [])),
   };
 }
 
@@ -402,6 +482,13 @@ function preflightCatalog(manifest, manifestPath) {
         blockers.push(`missing fixture ${operation.fixture}`);
       }
     }
+    if (resolved.kind === "epic") {
+      try {
+        for (const story of resolved.task.stories || []) dependencyAwareQuarantine(resolved.task.stories, story.id);
+      } catch (error) {
+        blockers.push(error.message);
+      }
+    }
     checks.push({
       taskId,
       selector: resolved.selector,
@@ -424,12 +511,14 @@ module.exports = {
   TREATMENTS,
   WORKFLOWS,
   assessTaskShape,
+  dependencyAwareQuarantine,
   acquireFinalizationClaim,
   buildPilotPlan,
   captureGitDiff,
   environmentPreflight,
   isPilotHarnessPath,
   parseIndependentTrace,
+  parseLifecycleDispatchTrace,
   pilotAttemptHistory,
   preflightCatalog,
   resolveCatalogTask,

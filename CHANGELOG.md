@@ -9,6 +9,19 @@ or evidence contract. Do not use it to claim implementation status; link to the 
 
 ## Unreleased
 
+### Full + Guarded candidate recovery policy hardened
+
+- Replaced the one-strike ATDD stop with a bounded exception path: one fresh report-only adjudication, followed only
+  when upheld by one findings-hash-bound, test-artifact-only correction. Initial ATDD now targets the critical vertical
+  path while mapping regression-only acceptance criteria for expansion before test review.
+- Added dependency-aware quarantine semantics so a failed story blocks its transitive dependants without discarding
+  evidence from independent stories; shared safety invariants still halt the run.
+- Froze the mandatory actor inventory before execution and made unexpected closeout/coverage/trace/statistics actors an
+  oracle failure. Lifecycle duplication is now measured from typed collaboration dispatches rather than textual command
+  mentions.
+- Kept the capability at `enforced`. These changes repair mechanisms exposed by the failed first P0 pair; a new complete
+  matched pair is still required before canary authorization.
+
 ### Execution/assurance real-world pilot preregistered
 
 - Added a separate execution/assurance experiment harness and a fixed 16-attempt paired pilot comparing legacy commit
