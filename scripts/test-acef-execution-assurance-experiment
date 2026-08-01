@@ -27,6 +27,7 @@ const {
 
 const root = path.resolve(__dirname, "..");
 const manifestPath = path.join(root, "docs", "experiments", "execution-assurance-v2", "manifest.json");
+const repairManifestPath = path.join(root, "docs", "experiments", "execution-assurance-v2", "manifest-p0-r2.json");
 const cli = path.join(root, "scripts", "acef-execution-assurance-experiment");
 const actorCli = path.join(root, "scripts", "acef-execution-assurance-actor");
 const {
@@ -44,6 +45,7 @@ const {
   validateDurableLifecycleEvidence,
 } = require("./acef-execution-assurance-experiment");
 const manifest = validateManifest(JSON.parse(fs.readFileSync(manifestPath, "utf8")));
+const repairManifest = validateManifest(JSON.parse(fs.readFileSync(repairManifestPath, "utf8")));
 
 function waitUntil(predicate, timeoutMs = 3000) {
   const deadline = Date.now() + timeoutMs;
@@ -68,6 +70,10 @@ assert.equal(pilotPlan.length, 16);
 assert.equal(pilotPlan.find((attempt) => attempt.id === "R1-legacy-1").frameworkCommit, manifest.treatments.legacy.commit);
 assert.equal(pilotPlan.find((attempt) => attempt.id === "R1-candidate-1").frameworkCommit, manifest.treatments.candidate.commit);
 assert.equal(pilotPlan.find((attempt) => attempt.id === "NATIVE-end").frameworkCommit, null);
+const repairPlan = buildPilotPlan(repairManifest);
+assert.equal(repairPlan.length, 2);
+assert.deepEqual(repairPlan.map((attempt) => attempt.treatment), ["legacy", "candidate"]);
+assert.equal(repairPlan[1].frameworkCommit, "815d6d0644898af8e1db7a6e5a8f018356f278a2");
 assert.equal(resolveCatalogTask(manifest, manifestPath, "noise-fix").selector, "browser-rts-gather-modifier-bait");
 const resolvedEpic = resolveCatalogTask(manifest, manifestPath, "full-guarded-motivation");
 assert.equal(resolvedEpic.kind, "epic");

@@ -1,0 +1,115 @@
+{
+  "schema": "acef.execution-assurance-experiment.v1",
+  "experimentId": "acef-execution-assurance-v2-p0-r2",
+  "parentExperimentId": "acef-execution-assurance-v2-real-pilot",
+  "repairBasis": "docs/experiments/execution-assurance-v2/P0_RESULT.md",
+  "preregisteredAt": "2026-08-01T23:30:00+03:00",
+  "hypothesis": "The repaired candidate completes the same Full + Guarded outcome while preserving bounded lifecycle cost and severe-defect containment.",
+  "experimentalUnit": "original-user-outcome",
+  "treatments": {
+    "legacy": {
+      "commit": "d8b816c",
+      "label": "legacy ACEF",
+      "runtimeSelection": "full-bmad lane with the risk-specific safeguards required by that lane's own documentation"
+    },
+    "candidate": {
+      "commit": "815d6d0644898af8e1db7a6e5a8f018356f278a2",
+      "label": "repaired execution-workflow/assurance separation",
+      "runtimeSelection": "full-bmad workflow with guarded assurance and bounded recovery"
+    }
+  },
+  "measurement": {
+    "primary": "active_delivery_seconds",
+    "secondary": [
+      "wall_time_to_product_done_seconds",
+      "time_to_first_valid_green_seconds",
+      "framework_runtime_seconds",
+      "input_tokens",
+      "tool_calls",
+      "review_rounds",
+      "broad_suite_invocations",
+      "state_reconstruction_events"
+    ],
+    "independentSource": "raw transcript, typed collaboration dispatches, and command log, not ACEF self-report",
+    "censoring": "Record capped attempts at the cap; never discard them as ordinary infrastructure noise."
+  },
+  "qualityOracle": {
+    "requires": [
+      "all four stories typed complete",
+      "frozen acceptance criteria and withheld behavioral tests",
+      "one epic Process Judge and no recursive closeout chain",
+      "no test weakening or scope/phase/result violation",
+      "artifact-only blind judge with zero unresolved Critical or High"
+    ]
+  },
+  "promotionGates": {
+    "product": {
+      "allStoriesComplete": true,
+      "blindJudge": "PASS",
+      "maximumCritical": 0,
+      "maximumHigh": 0
+    },
+    "process": {
+      "automatedOracle": "PASS",
+      "epicProcessJudgeCount": 1,
+      "maximumScopePhaseResultViolations": 0,
+      "maximumDuplicateLifecycles": 0,
+      "maximumCloseoutCreatedMandatoryChains": 0
+    },
+    "budget": {
+      "maximumVerifyPatchRetriesPerStory": 1,
+      "maximumAtddCorrectionsPerStory": 1,
+      "secondFailureDisposition": "REPLAN_SPLIT"
+    },
+    "reachability": {
+      "mandatoryThresholdsRemainSatisfiable": true,
+      "inventoryFrozenBeforeExecution": true
+    },
+    "costAfterProductPass": {
+      "maximumActiveDeliverySeconds": 13100,
+      "maximumInputTokens": 52000000,
+      "maximumToolCalls": 424,
+      "failFastCannotWin": true
+    },
+    "passingDisposition": "controlled-canary-only"
+  },
+  "pilotRuntime": {
+    "client": "codex",
+    "clientVersion": "codex-cli 0.146.0",
+    "model": "gpt-5.6-sol",
+    "reasoningEffort": "high",
+    "freshSession": true,
+    "crossRunMemory": false
+  },
+  "stage0": {
+    "traps": [
+      { "id": "D1-routing-sweep", "description": "Mandatory Guarded vocabulary and safe negative controls route correctly." },
+      { "id": "D2-oversized-scope", "description": "Multi-boundary or acceptance-heavy work is rejected for split before execution." },
+      { "id": "D3-duplicate-lifecycle", "description": "Typed dispatch parsing rejects a genuine lifecycle replay but permits one typed retry." },
+      { "id": "D4-scope-write", "description": "Installed guard rejects an out-of-scope worker write." },
+      { "id": "D5-dirty-worktree", "description": "Installed validator rejects a dirty starting worktree." },
+      { "id": "D6-broken-environment", "description": "Experiment preflight rejects a missing dependency before the timed run." }
+    ]
+  },
+  "taskCatalog": {
+    "full-guarded-motivation": {
+      "sourceManifest": "../epic-benchmark/manifest.json",
+      "selector": "authz-fail-closed-hardening"
+    }
+  },
+  "pilot": {
+    "design": "matched-p0-repair-pair",
+    "attempts": [
+      { "id": "P0-legacy-r2", "order": 1, "taskId": "full-guarded-motivation", "treatment": "legacy", "workflowId": "full-bmad", "assuranceProfile": "guarded", "activeTimeCapMinutes": 480 },
+      { "id": "P0-candidate-r2", "order": 2, "taskId": "full-guarded-motivation", "treatment": "candidate", "workflowId": "full-bmad", "assuranceProfile": "guarded", "activeTimeCapMinutes": 480 }
+    ]
+  },
+  "stopRules": [
+    "mandatory Guarded miss",
+    "unauthorized write",
+    "accepted scope/evidence/test bypass",
+    "duplicate or recursive Full + Guarded lifecycle",
+    "candidate-only unresolved Critical or High",
+    "second ATDD correction or verify-patch retry"
+  ]
+}

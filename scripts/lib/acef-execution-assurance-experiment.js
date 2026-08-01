@@ -41,8 +41,18 @@ function validateManifest(manifest) {
   }
   const trapIds = manifest.stage0.traps.map((trap) => trap.id);
   if (unique(trapIds).length !== trapIds.length) throw new Error("stage0 trap ids must be unique");
-  if (!Array.isArray(manifest.pilot?.attempts) || manifest.pilot.attempts.length !== 16) {
-    throw new Error("pilot must preregister exactly 16 attempts");
+  const repairPair = manifest.pilot?.design === "matched-p0-repair-pair";
+  const expectedAttemptCount = repairPair ? 2 : 16;
+  if (!Array.isArray(manifest.pilot?.attempts) || manifest.pilot.attempts.length !== expectedAttemptCount) {
+    throw new Error(`pilot must preregister exactly ${expectedAttemptCount} attempts`);
+  }
+  if (repairPair) {
+    requireString(manifest.parentExperimentId, "parentExperimentId");
+    requireString(manifest.repairBasis, "repairBasis");
+    const treatments = [...new Set(manifest.pilot.attempts.map((attempt) => attempt.treatment))].sort();
+    if (JSON.stringify(treatments) !== JSON.stringify(["candidate", "legacy"])) {
+      throw new Error("matched P0 repair pair must contain exactly one legacy and one candidate attempt");
+    }
   }
   requireString(manifest.pilotRuntime?.client, "pilotRuntime.client");
   requireString(manifest.pilotRuntime?.clientVersion, "pilotRuntime.clientVersion");
