@@ -75,7 +75,7 @@ assert.equal(pilotPlan.find((attempt) => attempt.id === "NATIVE-end").frameworkC
 const repairPlan = buildPilotPlan(repairManifest);
 assert.equal(repairPlan.length, 2);
 assert.deepEqual(repairPlan.map((attempt) => attempt.treatment), ["legacy", "candidate"]);
-assert.equal(repairPlan[1].frameworkCommit, "041d849d00922389e26e84a470dc7e7502541a83");
+assert.equal(repairPlan[1].frameworkCommit, "3ab76cc113f6cb7c75b5cfac525fca7b2351b10a");
 assert.equal(resolveCatalogTask(manifest, manifestPath, "noise-fix").selector, "browser-rts-gather-modifier-bait");
 const resolvedEpic = resolveCatalogTask(manifest, manifestPath, "full-guarded-motivation");
 assert.equal(resolvedEpic.kind, "epic");
