@@ -445,7 +445,7 @@ function epicPilotPrompt(attempt, resolved) {
     ? [
       "Initial ATDD is sufficient when it maps every acceptance criterion and produces one genuine red test on the critical vertical path. Criteria that are regression-only need not all be red before development; expand them before test-review. Do not reject a valid critical-path red merely because protected or frozen-scope tests do not cover every regression case.",
       "If an ATDD actor still returns REVISE, do not stop or retry it. Spawn exactly one fresh report-only <atdd-task-name>_adjudication1 actor whose first tuple is scope=<story> control=atdd-adjudication actor=<task-name> persona=test-reviewer and give it only the frozen story contract, ATDD report, protected-path rules, and REVISE findings. Persist that exact typed actor phase/role. It must end ACTOR_RESULT=PASS plus ATDD_ADJUDICATION=OVERRULE or ATDD_ADJUDICATION=UPHOLD.",
-      "OVERRULE means the critical-path red is sufficient and development continues. UPHOLD permits exactly one fresh <atdd-task-name>_correction1 actor whose first tuple is scope=<story> control=atdd-correction actor=<task-name> persona=test-author. Before spawning it, persist and commit docs/ai/corrections/<correction-task-name>.json with schema=acef.atdd-correction.v1, sourceActorId=<atdd-task-name>, correctionActorId=<correction-task-name>, scope=test-artifacts-only, findingsSha256=<sha256 of the exact parent-delivered ATDD REVISE final answer>, and explicit allowedPaths limited to non-protected tests/test reports. Persist the exact typed actor phase/role. The correction may change only those paths, never production. A second incomplete ATDD result is REPLAN/SPLIT.",
+      "OVERRULE means the critical-path red is sufficient and development continues. UPHOLD permits exactly one fresh <atdd-task-name>_correction1 actor whose first tuple is scope=<story> control=atdd-correction actor=<task-name> persona=test-author. Before spawning it, persist and commit docs/ai/corrections/<correction-task-name>.json with schema=acef.atdd-correction.v1, sourceActorId=<atdd-task-name>, correctionActorId=<correction-task-name>, scope=test-artifacts-only, findingsSha256=<sha256 of the exact parent-delivered ATDD REVISE final answer>, and explicit allowedPaths limited to non-protected tests/test reports. Persist the exact typed actor phase/role. The correction may change only those paths, never production. Every exec_command must contain exactly one literal allowlisted read or focused-test command; use separate calls, with no shell separators, pipelines, substitutions, dynamic command variables, or dynamic apply_patch construction. A second incomplete ATDD result is REPLAN/SPLIT.",
       "If a story becomes REPLAN/SPLIT, quarantine it and every transitive dependent story, but continue every pending story with no dependency edge to the quarantined set and no shared safety invariant. The epic product gate still fails while any story is quarantined.",
     ].join(" ")
     : "Follow the installed legacy treatment's own ATDD and retry rules. Do not synthesize candidate adjudication, correction, quarantine, or lifecycle-budget semantics.";
@@ -605,8 +605,8 @@ function parseCollaborationEvidence(rawText, sessionText, expectedContract, expe
     }
     if (expected.control === "atdd" && baseMatches.length === 1 && legacyPolicy) {
       const accepted = attempts.at(-1);
-      if (!/\bACTOR_RESULT=(?:PASS|REVISE)\b/.test(accepted.parentFinalText)) {
-        failures.push(`${accepted.taskName}: legacy ATDD result is not explicit`);
+      if (!/\bACTOR_RESULT=PASS\b/.test(accepted.parentFinalText)) {
+        failures.push(`${accepted.taskName}: legacy ATDD result is not PASS`);
       }
       acceptedActors.push({ ...expected, taskName: accepted.taskName, receiverThreadId: accepted.receiverThreadId });
     } else if (expected.control === "atdd" && baseMatches.length === 1) {
@@ -673,7 +673,7 @@ function parseCollaborationEvidence(rawText, sessionText, expectedContract, expe
     } else if (attempts.length) {
       const accepted = attempts[attempts.length - 1];
       if (!legacyPolicy && !/\bACTOR_RESULT=PASS\b/.test(accepted.parentFinalText)) failures.push(`${accepted.taskName}: final actor result is not PASS`);
-      if (legacyPolicy && !/\bACTOR_RESULT=(?:PASS|REVISE)\b/.test(accepted.parentFinalText)) failures.push(`${accepted.taskName}: legacy actor result is not explicit`);
+      if (legacyPolicy && !/\bACTOR_RESULT=PASS\b/.test(accepted.parentFinalText)) failures.push(`${accepted.taskName}: legacy actor result is not PASS`);
       for (const superseded of legacyPolicy ? [] : attempts.slice(0, -1)) {
         if (!/\bACTOR_RESULT=REVISE\b/.test(superseded.parentFinalText)) failures.push(`${superseded.taskName}: retry requires prior ACTOR_RESULT=REVISE`);
       }
@@ -690,6 +690,9 @@ function parseCollaborationEvidence(rawText, sessionText, expectedContract, expe
       if (!entry.receiverThreadId) failures.push(`${entry.taskName}: auxiliary actor receiver thread id missing`);
       if (entry.forkTurns !== "none") failures.push(`${entry.taskName}: auxiliary actor fork_turns must be none`);
       if (!entry.parentFinalText) failures.push(`${entry.taskName}: auxiliary actor parent-delivered FINAL_ANSWER missing`);
+      if (/\bACTOR_RESULT=(?:REVISE|FAIL|BLOCKED|REPLAN)\b/.test(entry.parentFinalText)) {
+        failures.push(`${entry.taskName}: auxiliary actor returned a terminal non-success result`);
+      }
     }
   }
   const allDispatches = [...relevant, ...(expectedSession.allowUnexpectedActors === true ? unexpected : [])];
@@ -762,22 +765,57 @@ function correctionSessionWrites(sessionText, repoRoot) {
     }
     if (/apply_patch/i.test(name) || /tools\.apply_patch\s*\(/.test(rawArguments)) {
       const patchText = String(args.input || args.patch || normalizedArguments);
+      let observedPatchPaths = 0;
       for (const match of patchText.matchAll(/^\*\*\* (?:Add|Update|Delete) File:\s+(.+?)\s*$/gm)) {
         paths.push(path.resolve(repoRoot, match[1]));
+        observedPatchPaths += 1;
       }
-    } else if (/write|edit|notebook/i.test(name)) {
+      if (observedPatchPaths === 0) unsafeShellMutations.push(`unobservable apply_patch: ${rawArguments}`);
+    }
+    if (/write|edit|notebook/i.test(name)) {
       const target = args.file_path || args.filePath || args.path || args.notebook_path;
       if (target) paths.push(path.resolve(repoRoot, target));
-    } else if (/exec_command|shell|bash/i.test(name) || /tools\.exec_command\s*\(/.test(rawArguments)) {
-      const command = String(args.cmd || args.command || rawArguments);
-      const allowedReadOrTest = /(?:git\s+(?:status|diff|show)|\brg\b|\bsed\s+-n\b|\bcat\b|\bls\b|\bfind\b|\bwc\b|\bshasum\b|\bsha256sum\b|php\s+artisan\s+test|vendor\/bin\/phpunit|(?:npm|pnpm|yarn)\s+test|npx\s+(?:vitest|playwright)\s+test|composer\s+test)/.test(command);
-      const mutationSignal = /(?:^|\s)(?:sed\s+-i|perl\s+-pi|tee|cp|mv|touch|rm|mkdir|install|dd)(?:\s|$)|(?:^|[^>])>{1,2}(?!>)|(?:writeFile|write_text|file_put_contents|\.write\s*\(|open\s*\([^)]*["']w)|\b(?:python\d*|php|node|ruby|perl)\s+(?:-c|-e|-r)\b/.test(command);
-      if (!allowedReadOrTest || mutationSignal) {
-        unsafeShellMutations.push(command);
+    }
+    if (/exec_command|shell|bash/i.test(name) || /tools\.exec_command\s*\(/.test(rawArguments)) {
+      const commands = extractCorrectionShellCommands(args, rawArguments);
+      if (!commands.length) unsafeShellMutations.push(rawArguments);
+      for (const command of commands) {
+        if (!isAllowedCorrectionShellCommand(command)) unsafeShellMutations.push(command);
       }
     }
   }
   return { paths: [...new Set(paths)], unsafeShellMutations, unsafeDelegations };
+}
+
+function extractCorrectionShellCommands(args, rawArguments) {
+  if (typeof args.cmd === "string") return [args.cmd];
+  if (typeof args.command === "string") return [args.command];
+  const source = String(rawArguments || "");
+  const callCount = [...source.matchAll(/tools\.exec_command\s*\(/g)].length;
+  const commands = [];
+  for (const match of source.matchAll(/tools\.exec_command\s*\(\s*\{\s*(?:cmd|command)\s*:\s*("(?:\\.|[^"\\])*")/g)) {
+    try { commands.push(JSON.parse(match[1])); } catch { return []; }
+  }
+  return commands.length === callCount ? commands : [];
+}
+
+function isAllowedCorrectionShellCommand(command) {
+  const normalized = String(command || "").trim();
+  if (!normalized || /[\r\n;|&<>`]/.test(normalized) || /\$\(/.test(normalized)) return false;
+  if (/\bgit\s+(?:diff|show)\b.*(?:--ext-diff|--textconv)\b/.test(normalized)) return false;
+  if (/\brg\b.*(?:--pre|--pre-glob)\b/.test(normalized)) return false;
+  return [
+    /^git\s+status(?:\s+(?:--short|--branch|--porcelain(?:=v[12])?))*$/,
+    /^git\s+(?:diff|show)(?:\s+[A-Za-z0-9_./:@=,+~-]+)*$/,
+    /^rg(?:\s+--?[A-Za-z0-9][A-Za-z0-9-]*(?:=[A-Za-z0-9_./:@,+~-]+)?|\s+[^\s;|&<>`]+)+$/,
+    /^sed\s+-n\s+['"]?\d+(?:,\d+)?p['"]?\s+[^\s;|&<>`]+$/,
+    /^(?:cat|ls|wc|shasum|sha256sum)(?:\s+[^\s;|&<>`]+)+$/,
+    /^php\s+artisan\s+test(?:\s+[^\s;|&<>`]+)*$/,
+    /^vendor\/bin\/phpunit(?:\s+[^\s;|&<>`]+)*$/,
+    /^(?:npm|pnpm|yarn)\s+test(?:\s+[^\s;|&<>`]+)*$/,
+    /^npx\s+(?:vitest|playwright)\s+test(?:\s+[^\s;|&<>`]+)*$/,
+    /^composer\s+test(?:\s+[^\s;|&<>`]+)*$/,
+  ].some((pattern) => pattern.test(normalized));
 }
 
 function isCorrectionArtifactPath(filePath, repoRoot) {

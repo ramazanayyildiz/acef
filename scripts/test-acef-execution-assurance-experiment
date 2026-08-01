@@ -127,7 +127,7 @@ assert.equal(parseCollaborationEvidence(
   syntheticSession.replace("ACTOR_RESULT=PASS", "ACTOR_RESULT=REVISE"),
   epicActorContract,
   { legacyPolicy: true, allowUnexpectedActors: true },
-).ok, true, "candidate adjudication must not be required by the legacy comparator");
+).ok, false, "terminal legacy REVISE must stop without imposing candidate adjudication");
 const correctionName = `${firstAtdd.taskName}_correction1`;
 const revisedAtddFinalText = parseCollaborationEvidence(
   syntheticRaw,
@@ -168,6 +168,19 @@ const legacyAuxiliaryEvidence = parseCollaborationEvidence(syntheticRaw, legacyA
 });
 assert.equal(legacyAuxiliaryEvidence.ok, true, "candidate closeout policy must not contaminate the legacy comparator");
 assert.equal(legacyAuxiliaryEvidence.dispatches.at(-1).auxiliary, true, "legacy auxiliary provenance must remain in measured dispatches");
+for (const terminalResult of ["REVISE", "FAIL", "BLOCKED", "REPLAN"]) {
+  const terminalAuxiliarySession = legacyAuxiliarySession.replace("legacy evidence complete", `ACTOR_RESULT=${terminalResult}`);
+  assert.equal(parseCollaborationEvidence(syntheticRaw, terminalAuxiliarySession, epicActorContract, {
+    allowUnexpectedActors: true,
+    legacyPolicy: true,
+  }).ok, false, `legacy auxiliary ${terminalResult} cannot be accepted as successful evidence`);
+}
+assert.equal(parseCollaborationEvidence(
+  syntheticRaw,
+  syntheticSession.replace("ACTOR_RESULT=PASS", "ACTOR_RESULT=REVISE"),
+  epicActorContract,
+  { allowUnexpectedActors: true, legacyPolicy: true },
+).ok, false, "legacy required actors must not finish at REVISE");
 const forgedSingleDispatch = parseCollaborationEvidence(syntheticRaw, [
   JSON.stringify({ type: "session_meta", payload: { session_id: "parent-thread", timestamp: "2026-08-01T00:00:00.000Z", cwd: root, cli_version: "0.146.0" } }),
   JSON.stringify({ type: "response_item", payload: { type: "function_call", namespace: "collaboration", name: "spawn_agent", call_id: "one", arguments: JSON.stringify({ task_name: epicActorContract[0].taskName, fork_turns: "none" }) } }),
@@ -287,8 +300,34 @@ assert.deepEqual(customToolCorrectionWrites.paths.map((entry) => path.relative(r
   "pinned Codex custom_tool_call/input writes must be observable");
 assert.equal(correctionSessionWrites(JSON.stringify({
   type: "response_item",
+  payload: { type: "custom_tool_call", name: "exec", input: "const parts=['*** Begin Patch','*** Update '+'File: app/Unsafe.php','*** End Patch']; await tools.apply_patch(parts.join('\\n'));" },
+}), root).unsafeShellMutations.length, 1, "dynamically constructed patches must fail closed when their paths are not observable");
+assert.equal(correctionSessionWrites(JSON.stringify({
+  type: "response_item",
   payload: { type: "custom_tool_call", name: "exec", input: "const r=await tools.exec_command({cmd:\"php -r 'file_put_contents(\\\"app/Unsafe.php\\\", \\\"x\\\");'\"}); text(r.output);" },
 }), root).unsafeShellMutations.length, 1, "arbitrary interpreter writes must fail the bounded ATDD shell allowlist");
+assert.equal(correctionSessionWrites(JSON.stringify({
+  type: "response_item",
+  payload: { type: "custom_tool_call", name: "exec", input: "const patch = \"*** Begin Patch\\n*** Update File: tests/Feature/FocusedTest.php\\n*** End Patch\"; await tools.apply_patch(patch); const r=await tools.exec_command({cmd:\"php -r 'file_put_contents(\\\"app/Unsafe.php\\\", \\\"x\\\");'\"}); text(r.output);" },
+}), root).unsafeShellMutations.length, 1, "a safe apply_patch in the same custom call cannot hide an unsafe shell mutation");
+for (const command of [
+  "git status; git apply /tmp/evil.patch",
+  "git status; truncate -s 0 app/Unsafe.php",
+  "git status; chmod 000 app/Unsafe.php",
+]) {
+  assert.equal(correctionSessionWrites(JSON.stringify({
+    type: "response_item",
+    payload: { type: "function_call", name: "exec_command", arguments: JSON.stringify({ cmd: command }) },
+  }), root).unsafeShellMutations.length, 1, `allowed command prefixes cannot hide mutations: ${command}`);
+}
+assert.equal(correctionSessionWrites(JSON.stringify({
+  type: "response_item",
+  payload: { type: "custom_tool_call", name: "exec", input: "const r=await tools.exec_command({cmd:\"php artisan test --filter=FocusedTest\"}); text(r.output);" },
+}), root).unsafeShellMutations.length, 0, "one structurally allowed focused test command remains permitted");
+assert.equal(correctionSessionWrites(JSON.stringify({
+  type: "response_item",
+  payload: { type: "custom_tool_call", name: "exec", input: "const decoy={cmd:\"git status\"}; const evil=\"php -r 'file_put_contents(\\\"app/Unsafe.php\\\", \\\"x\\\");'\"; await tools.exec_command({cmd:evil});" },
+}), root).unsafeShellMutations.length, 1, "an unrelated safe literal cannot hide a dynamically supplied exec command");
 assert.equal(correctionSessionWrites(JSON.stringify({
   type: "response_item",
   payload: { type: "function_call", namespace: "collaboration", name: "spawn_agent", arguments: "{}" },
