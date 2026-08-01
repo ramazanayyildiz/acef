@@ -104,7 +104,7 @@ const CONTROL_PATTERNS = Object.freeze({
   verifyPatch: /\bverify-patch\b/gi,
   testReview: /\btest-review\b/gi,
   processJudge: /\bprocess-judge\b/gi,
-  broadSuite: /\b(?:php\s+artisan\s+test|vendor\/bin\/phpunit|npm\s+test|pnpm\s+test|npx\s+(?:vitest|playwright)\s+test)\b/gi,
+  broadSuite: /\b(?:(?:php\s+artisan\s+test|vendor\/bin\/phpunit)\b(?![^\n]*--filter)|npm\s+test|pnpm\s+test|npx\s+(?:vitest|playwright)\s+test)\b/gi,
   stateReconstruction: /\b(?:ACEF_ACTIVE_RUN|ACEF_CURRENT_CONTEXT|ACEF_ACTIVE_LEDGER|acef-status|acef-next)\b/gi,
 });
 
@@ -112,17 +112,127 @@ function countMatches(text, pattern) {
   return (String(text || "").match(pattern) || []).length;
 }
 
-function parseIndependentTrace(text) {
+function countBroadSuiteInvocations(text) {
+  return String(text || "").split(/&&|\|\||;/).reduce((count, segment) => {
+    const command = segment.trim();
+    if (!command) return count;
+    if (/\b(?:php\s+artisan\s+test|vendor\/bin\/phpunit)\b/i.test(command)) {
+      return count + (/\s--filter(?:=|\s)/i.test(command) ? 0 : 1);
+    }
+    return count + (/\b(?:npm\s+test|pnpm\s+test|npx\s+(?:vitest|playwright)\s+test)\b/i.test(command) ? 1 : 0);
+  }, 0);
+}
+
+function traceEventTexts(text) {
+  return String(text || "").split(/\r?\n/).filter(Boolean).flatMap((line) => {
+    try {
+      const event = JSON.parse(line);
+      if (!event.type) return [line];
+      if (event.type !== "item.completed") return [];
+      const item = event.item || {};
+      if (item.type === "command_execution") return [String(item.command || "")];
+      if (/tool_call$/.test(String(item.type || ""))) return [JSON.stringify(item)];
+      return [];
+    } catch {
+      return [line];
+    }
+  });
+}
+
+function parseIndependentTrace(text, options = {}) {
+  const events = traceEventTexts(text);
+  const normalizedText = events.join("\n");
   const counts = {};
-  for (const [controlId, pattern] of Object.entries(CONTROL_PATTERNS)) counts[controlId] = countMatches(text, pattern);
+  for (const [controlId, pattern] of Object.entries(CONTROL_PATTERNS)) {
+    counts[controlId] = controlId === "broadSuite"
+      ? events.reduce((total, event) => total + countBroadSuiteInvocations(event), 0)
+      : countMatches(normalizedText, pattern);
+  }
   const lifecycleControls = ["readiness", "atdd", "development", "codeReview", "verifyPatch", "testReview", "processJudge"];
-  const duplicateLifecycleControls = lifecycleControls.filter((controlId) => counts[controlId] > 1);
+  const scopeIds = unique((options.scopeIds || []).map(String).filter(Boolean));
+  const retryable = new Set(options.retryableControls || []);
+  const perScope = {};
+  if (scopeIds.length) {
+    for (const event of events) {
+      const matchedScopes = scopeIds.filter((scopeId) => event.includes(scopeId));
+      const scopeId = matchedScopes.length === 1 ? matchedScopes[0]
+        : (matchedScopes.length > 1 ? "ambiguous" : (/\bepic\b/i.test(event) ? "epic" : "unscoped"));
+      perScope[scopeId] ||= Object.fromEntries(Object.keys(CONTROL_PATTERNS).map((controlId) => [controlId, 0]));
+      for (const [controlId, pattern] of Object.entries(CONTROL_PATTERNS)) {
+        perScope[scopeId][controlId] += controlId === "broadSuite"
+          ? countBroadSuiteInvocations(event)
+          : countMatches(event, pattern);
+      }
+    }
+  } else {
+    perScope.global = { ...counts };
+  }
+  const attributableScopes = new Set([...scopeIds, "epic"]);
+  const duplicateLifecycleControls = scopeIds.length
+    ? Object.entries(perScope).filter(([scopeId]) => attributableScopes.has(scopeId)).flatMap(([scopeId, scopeCounts]) => lifecycleControls
+      .filter((controlId) => scopeCounts[controlId] > 1 && !retryable.has(controlId))
+      .map((controlId) => `${scopeId}:${controlId}`))
+    : lifecycleControls.filter((controlId) => counts[controlId] > 1 && !retryable.has(controlId));
+  const unattributedLifecycleEvents = ["unscoped", "ambiguous"].reduce((total, scopeId) => total
+    + lifecycleControls.reduce((sum, controlId) => sum + Number(perScope[scopeId]?.[controlId] || 0), 0), 0);
+  const requiredControlsPerScope = options.requiredControlsPerScope || [];
+  const missingRequiredControls = scopeIds.flatMap((scopeId) => requiredControlsPerScope
+    .filter((controlId) => Number(perScope[scopeId]?.[controlId] || 0) < 1)
+    .map((controlId) => `${scopeId}:${controlId}`));
   return {
     counts,
+    perScope,
+    scopeAttributionComplete: unattributedLifecycleEvents === 0,
+    unattributedLifecycleEvents,
+    lifecycleComplete: missingRequiredControls.length === 0,
+    missingRequiredControls,
     duplicateLifecycleControls,
     duplicateLifecycle: duplicateLifecycleControls.length > 0,
-    sha256: sha256(text),
+    sha256: sha256(normalizedText),
   };
+}
+
+function readPilotResultRow(resultsPath, attemptRunId) {
+  if (!fs.existsSync(resultsPath)) return null;
+  return fs.readFileSync(resultsPath, "utf8").split(/\r?\n/).filter(Boolean)
+    .map((line) => JSON.parse(line))
+    .find((row) => row.attemptRunId === attemptRunId) || null;
+}
+
+function acquireFinalizationClaim(resultsPath, attemptRunId, lockRoot = path.dirname(resultsPath)) {
+  const safeId = String(attemptRunId).replace(/[^A-Za-z0-9._-]/g, "_");
+  const lockPath = path.join(lockRoot, `.finalize-${safeId}.lock`);
+  const claim = () => {
+    fs.mkdirSync(lockPath);
+    fs.writeFileSync(path.join(lockPath, "owner.json"), `${JSON.stringify({ pid: process.pid, acquiredAt: new Date().toISOString() })}\n`);
+  };
+  fs.mkdirSync(lockRoot, { recursive: true });
+  try {
+    claim();
+  } catch (error) {
+    if (error.code !== "EEXIST") throw error;
+    let owner = null;
+    try { owner = JSON.parse(fs.readFileSync(path.join(lockPath, "owner.json"), "utf8")); } catch {}
+    if (!owner) {
+      const ageMs = Date.now() - fs.statSync(lockPath).mtimeMs;
+      if (ageMs < 10000) throw new Error(`finalization already in progress for ${attemptRunId}`);
+    }
+    let alive = false;
+    if (Number.isInteger(owner?.pid)) {
+      try { process.kill(owner.pid, 0); alive = true; } catch {}
+    }
+    if (alive) throw new Error(`finalization already in progress for ${attemptRunId} by pid ${owner.pid}`);
+    fs.rmSync(lockPath, { recursive: true, force: true });
+    claim();
+  }
+  return {
+    lockPath,
+    release() { fs.rmSync(lockPath, { recursive: true, force: true }); },
+  };
+}
+
+function isPilotHarnessPath(entry) {
+  return /^(?:docs\/ai\/|_bmad-output\/|\.acef(?:-bmad|-lightweight)?-lane$)/.test(String(entry || ""));
 }
 
 function buildPilotPlan(manifest) {
@@ -179,6 +289,53 @@ function captureGitDiff(repoRoot, baseRef) {
   return result.stdout || "";
 }
 
+function spawnCaptured(command, args, cwd, stdoutPath, stderrPath, options = {}) {
+  fs.mkdirSync(path.dirname(stdoutPath), { recursive: true });
+  fs.mkdirSync(path.dirname(stderrPath), { recursive: true });
+  const stdoutFd = fs.openSync(stdoutPath, "w");
+  const stderrFd = fs.openSync(stderrPath, "w");
+  let result;
+  try {
+    result = cp.spawnSync(command, args, {
+      cwd,
+      timeout: options.timeout || 120000,
+      env: options.env || process.env,
+      input: options.input,
+      stdio: [options.input === undefined ? "ignore" : "pipe", stdoutFd, stderrFd],
+    });
+  } finally {
+    fs.closeSync(stdoutFd);
+    fs.closeSync(stderrFd);
+  }
+  if (result.error) fs.appendFileSync(stderrPath, `${result.error.message}\n`);
+  return {
+    status: Number.isInteger(result.status) ? result.status : 1,
+    signal: result.signal || null,
+  };
+}
+
+function pilotAttemptHistory(resultsPath, attemptId) {
+  const readRows = (filePath) => fs.existsSync(filePath)
+    ? fs.readFileSync(filePath, "utf8").split(/\r?\n/).filter(Boolean).map((line) => JSON.parse(line))
+    : [];
+  const results = readRows(resultsPath)
+    .filter((row) => row.attemptId === attemptId)
+    .map((row) => ({ ordinal: Number(row.attemptOrdinal || 1), invalidated: false, source: "result" }));
+  const adjudicationsPath = path.join(path.dirname(resultsPath), "pilot-adjudications.jsonl");
+  const adjudications = readRows(adjudicationsPath)
+    .filter((row) => row.attemptId === attemptId)
+    .map((row) => ({
+      ordinal: Number(row.attemptOrdinal || 1),
+      invalidated: row.disposition === "INVALIDATED",
+      source: "adjudication",
+    }));
+  const history = [...results, ...adjudications].sort((left, right) => left.ordinal - right.ordinal
+    || (left.source === "result" ? -1 : 1));
+  const maxOrdinal = history.reduce((maximum, entry) => Math.max(maximum, entry.ordinal), 0);
+  const latest = history.filter((entry) => entry.ordinal === maxOrdinal).at(-1) || null;
+  return { maxOrdinal, latest };
+}
+
 function resolveCatalogTask(manifest, manifestPath, taskId) {
   const ref = manifest.taskCatalog?.[taskId];
   if (!ref) throw new Error(`unknown task catalog id ${taskId}`);
@@ -205,6 +362,8 @@ function resolveCatalogTask(manifest, manifestPath, taskId) {
     stack: sourceManifest.stack || task.stack,
     source: sourceManifest.source || task.source,
     commit: sourceManifest.commit || task.commit,
+    setupDirs: sourceManifest.setupDirs || task.setupDirs || [],
+    setupFiles: sourceManifest.setupFiles || task.setupFiles || [],
     task,
   };
 }
@@ -250,6 +409,8 @@ function preflightCatalog(manifest, manifestPath) {
       repo: resolved.repo,
       stack: resolved.stack,
       sourceCommit: resolved.commit,
+      setupDirs: resolved.setupDirs,
+      setupFiles: resolved.setupFiles,
       ok: blockers.length === 0,
       blockers,
     });
@@ -263,12 +424,17 @@ module.exports = {
   TREATMENTS,
   WORKFLOWS,
   assessTaskShape,
+  acquireFinalizationClaim,
   buildPilotPlan,
   captureGitDiff,
   environmentPreflight,
+  isPilotHarnessPath,
   parseIndependentTrace,
+  pilotAttemptHistory,
   preflightCatalog,
   resolveCatalogTask,
+  readPilotResultRow,
   sha256,
+  spawnCaptured,
   validateManifest,
 };

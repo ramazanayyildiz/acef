@@ -1,8 +1,9 @@
 # ACEF Execution/Assurance V2 Real-World Validation
 
 Status: preregistered; Stage 0 passed 6/6 on runner commit `e9eebb35c11f659f05b37392cbd7268bd4d2d0ba`;
-the first Native drift sentinel passed after one preserved harness-invalidated attempt and a fresh scored rerun. The
-legacy/candidate pairs have not started, so no ACEF speed or quality claim is authorized.
+the first Native drift sentinel passed after one preserved harness-invalidated attempt and a fresh scored rerun. One
+unscored P0 legacy launch was invalidated before producing an attempt row; the legacy/candidate pair has not produced a
+valid result, so no ACEF speed or quality claim is authorized.
 
 ## Question
 
@@ -12,6 +13,12 @@ properties of legacy commit `d8b816c`?
 The experimental unit is the original user outcome. Splitting one request into several stories does not stop the clock.
 The primary comparison is paired legacy-versus-candidate execution on the same frozen task and source commit. Repo Native
 is only a calibration arm for contained work; it is never the safety comparator for Guarded work.
+
+`assuranceProfile: guarded` is the experiment's normalized risk stratum across arms, not a claim that legacy ACEF had a
+composable assurance axis. For P0 the policy-compliant legacy runtime is its single `full-bmad` lane, including the
+risk-specific safeguards that lane's own documentation requires. The candidate runtime is `full-bmad` plus its typed
+Guarded assurance profile. A historical legacy `guarded`-lane-plus-Full-BMAD hybrid is recorded only as a misapplication
+case and is not a causal comparator.
 
 ## Sequence
 

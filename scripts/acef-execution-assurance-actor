@@ -1,0 +1,107 @@
+#!/usr/bin/env node
+"use strict";
+
+const fs = require("node:fs");
+const path = require("node:path");
+const cp = require("node:child_process");
+const { sha256 } = require("./lib/acef-execution-assurance-experiment");
+
+function writeJsonAtomic(filePath, value) {
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  const temporary = `${filePath}.${process.pid}.tmp`;
+  fs.writeFileSync(temporary, `${JSON.stringify(value, null, 2)}\n`);
+  fs.renameSync(temporary, filePath);
+}
+
+function groupAlive(pid) {
+  try { process.kill(-pid, 0); return true; } catch { return false; }
+}
+
+function stopGroup(pid, signal) {
+  try { process.kill(-pid, signal); } catch (error) {
+    if (error.code !== "ESRCH") throw error;
+  }
+}
+
+function wait(milliseconds) {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
+
+async function runCaptured(request, onSpawn) {
+  fs.mkdirSync(path.dirname(request.stdoutPath), { recursive: true });
+  fs.mkdirSync(path.dirname(request.stderrPath), { recursive: true });
+  const stdoutFd = fs.openSync(request.stdoutPath, "w");
+  const stderrFd = fs.openSync(request.stderrPath, "w");
+  const child = cp.spawn(request.command, request.args, {
+    cwd: request.cwd,
+    env: process.env,
+    detached: true,
+    stdio: ["ignore", stdoutFd, stderrFd],
+  });
+  onSpawn(child.pid);
+  let timedOut = false;
+  let forceKillTimer = null;
+  const timer = setTimeout(() => {
+    timedOut = true;
+    stopGroup(child.pid, "SIGTERM");
+    forceKillTimer = setTimeout(() => stopGroup(child.pid, "SIGKILL"), 1000);
+  }, Number(request.timeoutMs || 120000));
+  const outcome = await new Promise((resolve, reject) => {
+    child.once("error", reject);
+    child.once("exit", (code, signal) => resolve({ code, signal }));
+  }).finally(() => {
+    clearTimeout(timer);
+    if (forceKillTimer) clearTimeout(forceKillTimer);
+  });
+  if (groupAlive(child.pid)) {
+    stopGroup(child.pid, "SIGTERM");
+    await wait(250);
+  }
+  if (groupAlive(child.pid)) {
+    stopGroup(child.pid, "SIGKILL");
+    for (let index = 0; index < 20 && groupAlive(child.pid); index += 1) await wait(50);
+  }
+  fs.closeSync(stdoutFd);
+  fs.closeSync(stderrFd);
+  if (groupAlive(child.pid)) throw new Error(`actor process group ${child.pid} did not quiesce`);
+  return {
+    status: Number.isInteger(outcome.code) ? outcome.code : 1,
+    signal: outcome.signal || (timedOut ? "SIGTERM" : null),
+    timedOut,
+  };
+}
+
+async function main() {
+  const requestPath = process.argv[2];
+  if (!requestPath) throw new Error("actor request path is required");
+  const requestBytes = fs.readFileSync(requestPath, "utf8");
+  const request = JSON.parse(requestBytes);
+  const startedAt = new Date().toISOString();
+  const recordStart = (processGroupPid = null) => request.startPath && writeJsonAtomic(request.startPath, {
+    schema: "acef.execution-assurance-actor-start.v1",
+    requestPath,
+    requestSha256: sha256(requestBytes),
+    launchNonce: request.launchNonce || null,
+    supervisorPid: process.pid,
+    processGroupPid,
+    startedAt,
+  });
+  recordStart();
+  const result = await runCaptured(request, (processGroupPid) => recordStart(processGroupPid));
+  writeJsonAtomic(request.receiptPath, {
+    schema: "acef.execution-assurance-actor-receipt.v1",
+    requestPath,
+    requestSha256: sha256(requestBytes),
+    launchNonce: request.launchNonce || null,
+    startedAt,
+    finishedAt: new Date().toISOString(),
+    status: result.status,
+    signal: result.signal,
+    timedOut: result.timedOut,
+  });
+}
+
+main().catch((error) => {
+  console.error(error.stack || error.message);
+  process.exitCode = 1;
+});

@@ -7,12 +7,16 @@ const path = require("node:path");
 const cp = require("node:child_process");
 const { performance } = require("node:perf_hooks");
 const {
+  acquireFinalizationClaim,
   assessTaskShape,
   buildPilotPlan,
   captureGitDiff,
   environmentPreflight,
+  isPilotHarnessPath,
   parseIndependentTrace,
+  pilotAttemptHistory,
   preflightCatalog,
+  readPilotResultRow,
   sha256,
   validateManifest,
 } = require("./lib/acef-execution-assurance-experiment");
@@ -26,12 +30,13 @@ const defaultResults = path.join(root, "docs", "experiments", "execution-assuran
 const defaultPilotResults = path.join(root, "docs", "experiments", "execution-assurance-v2", "runs", "pilot.jsonl");
 
 function usage() {
-  console.log(`Usage: acef-execution-assurance-experiment [--manifest <path>] [--results <path>] [--preflight-output <path>] [--pilot-results <path>] [--workspace <path>] [--pilot-workspace <path>] [--plan] [--stage0] [--pilot-preflight] [--pilot-run <attempt-id>] [--force] [--keep]
+  console.log(`Usage: acef-execution-assurance-experiment [--manifest <path>] [--results <path>] [--preflight-output <path>] [--pilot-results <path>] [--workspace <path>] [--pilot-workspace <path>] [--plan] [--stage0] [--pilot-preflight] [--pilot-run <attempt-id>] [--pilot-finalize <attempt-id>] [--force] [--keep]
 
 --plan    Print the preregistered 16-attempt pilot without executing agents.
 --stage0  Execute the six deterministic mechanism/measurement traps in disposable repositories.
 --pilot-preflight  Resolve every task/fixture/commit/dependency before any timed agent run.
 --pilot-run <id>  Execute one preregistered single-task attempt and record a provisional, independently scored row.
+--pilot-finalize <id>  Finalize the latest durable actor checkpoint after an interrupted parent session.
 --force   Replace an existing Stage 0 result log. Without this flag results are immutable.`);
 }
 
@@ -47,6 +52,7 @@ function parseArgs(argv) {
     stage0: false,
     pilotPreflight: false,
     pilotRun: "",
+    pilotFinalize: "",
     pilotRetryInvalidated: false,
     force: false,
     keep: false,
@@ -64,13 +70,14 @@ function parseArgs(argv) {
     else if (arg === "--stage0") opts.stage0 = true;
     else if (arg === "--pilot-preflight") opts.pilotPreflight = true;
     else if (arg === "--pilot-run") opts.pilotRun = argv[++index] || "";
+    else if (arg === "--pilot-finalize") opts.pilotFinalize = argv[++index] || "";
     else if (arg === "--pilot-retry-invalidated") opts.pilotRetryInvalidated = true;
     else if (arg === "--force") opts.force = true;
     else if (arg === "--keep") opts.keep = true;
     else throw new Error(`unknown argument: ${arg}`);
   }
-  if ([opts.plan, opts.stage0, opts.pilotPreflight, Boolean(opts.pilotRun)].filter(Boolean).length !== 1) {
-    throw new Error("select exactly one of --plan, --stage0, --pilot-preflight, or --pilot-run");
+  if ([opts.plan, opts.stage0, opts.pilotPreflight, Boolean(opts.pilotRun), Boolean(opts.pilotFinalize)].filter(Boolean).length !== 1) {
+    throw new Error("select exactly one of --plan, --stage0, --pilot-preflight, --pilot-run, or --pilot-finalize");
   }
   return opts;
 }
@@ -101,6 +108,13 @@ function must(command, args, cwd, options = {}) {
 function writeJson(filePath, value) {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
   fs.writeFileSync(filePath, `${JSON.stringify(value, null, 2)}\n`);
+}
+
+function writeJsonAtomic(filePath, value) {
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  const temporary = `${filePath}.${process.pid}.tmp`;
+  fs.writeFileSync(temporary, `${JSON.stringify(value, null, 2)}\n`);
+  fs.renameSync(temporary, filePath);
 }
 
 function initRepo(dir) {
@@ -337,16 +351,34 @@ function prepareEpicClone(resolved, attempt, opts) {
   return prepareSingleTaskClone(resolved, attempt, opts, {
     beforeDependencies(clone) {
       for (const dir of [
+        ...(resolved.setupDirs || []),
         "storage/framework/views", "storage/framework/cache/data", "storage/framework/sessions",
         "storage/framework/testing", "storage/logs", "bootstrap/cache",
       ]) fs.mkdirSync(path.join(clone, dir), { recursive: true });
+      for (const file of resolved.setupFiles || []) {
+        const allowedTemporaryRoot = file.path.startsWith(`${os.tmpdir()}${path.sep}`)
+          || file.path.startsWith("/tmp/") || file.path.startsWith("/private/tmp/");
+        if (file.mode !== "truncate" || !path.isAbsolute(file.path) || !allowedTemporaryRoot) {
+          throw new Error(`${resolved.taskId}: unsafe setup file declaration ${file.path || "(missing)"}`);
+        }
+        fs.mkdirSync(path.dirname(file.path), { recursive: true });
+        fs.writeFileSync(file.path, "");
+      }
     },
   });
 }
 
 function frameworkCheckout(frameworkCommit, opts) {
   const checkout = path.join(opts.pilotWorkspace, "frameworks", frameworkCommit);
-  if (fs.existsSync(path.join(checkout, ".git"))) return checkout;
+  if (fs.existsSync(path.join(checkout, ".git"))) {
+    if (must("git", ["rev-parse", "HEAD"], checkout) !== must("git", ["rev-parse", frameworkCommit], root)) {
+      throw new Error(`cached framework checkout ${frameworkCommit} is at the wrong commit`);
+    }
+    if (must("git", ["status", "--porcelain"], checkout) !== "") {
+      throw new Error(`cached framework checkout ${frameworkCommit} is dirty`);
+    }
+    return checkout;
+  }
   fs.mkdirSync(path.dirname(checkout), { recursive: true });
   must("git", ["clone", "-q", "--shared", "--no-hardlinks", root, checkout], root, { timeout: 300000 });
   must("git", ["checkout", "-q", "--detach", frameworkCommit], checkout);
@@ -361,6 +393,13 @@ function installExactFramework(clone, attempt, manifest, opts) {
   must("node", [path.join(framework, "scripts", "install-acef-bmad-guard"), "--repo", clone], framework, { timeout: 300000 });
   commitAll(clone, `chore: install pinned framework ${attempt.frameworkCommit}`);
   return framework;
+}
+
+function isBehavioralRed(result) {
+  const output = `${result.stdout}\n${result.stderr}`;
+  const infrastructureFailure = /(?:Could not open input file|command not found|No such file or directory|autoload\.php.*not found|SQLSTATE\[[^\]]+\].*(?:connection refused|unknown database)|Class [^\n]+ not found)/i.test(output);
+  const assertionFailure = /(?:FAILURES!|Failed asserting that|AssertionFailedError|\b[1-9]\d* failure(?:s)?\b|\bFAILED\b[^\n]*(?:Test|Tests|Assertion))/i.test(output);
+  return result.status === 1 && assertionFailure && !infrastructureFailure;
 }
 
 function pilotPrompt(attempt, resolved) {
@@ -381,7 +420,7 @@ function pilotPrompt(attempt, resolved) {
 
 function epicPilotPrompt(attempt, resolved) {
   const treatmentInstruction = attempt.treatment === "legacy"
-    ? "Use the installed legacy ACEF controls together with the complete BMAD v2 story lifecycle and guarded/max-security assurance exactly as that version documents them. Do not omit a required phase and do not invent candidate workflow semantics."
+    ? "Use the installed legacy ACEF full-bmad lane exactly as that version documents it. Apply the risk-specific safeguards its own full-BMAD contract requires for auth, billing, and webhook stories. Do not select or synthesize the separate legacy guarded lane, candidate execution/assurance axes, or a hybrid active state."
     : "Use ACEF Full (BMAD v2) with Guarded assurance exactly as the installed candidate version documents it. Guarded is an assurance overlay, not a second lifecycle.";
   const stories = resolved.task.stories.map((story, index) => [
     `${index + 1}. ${story.id}: ${story.prompt}`,
@@ -392,6 +431,7 @@ function epicPilotPrompt(attempt, resolved) {
     "Complete one controlled multi-story epic in this disposable clone. The measured unit is the complete original user outcome, not an individual story.",
     treatmentInstruction,
     "Load and follow the repo-local ACEF skill. Act as conductor and use fresh independent actors/sessions for every role the installed workflow requires. Preserve actor separation; do not self-approve.",
+    "For measurement attribution, prefix every story lifecycle actor/tool dispatch with scope=<story-id> using the exact frozen ID below; prefix epic wrapper dispatches with scope=epic.",
     "If readiness requires splitting or replanning, record and perform it, but the outcome clock continues until the complete epic is product-done.",
     "Use focused verification during stories and run the provided integration verification once at final closeout unless a recorded failure requires a retry.",
     "Do not inspect experiment manifests, sibling worktrees, previous transcripts, or the other treatment. Do not push. Do not weaken or edit Benchmark* tests or phpunit.sqlite.xml.",
@@ -402,7 +442,7 @@ function epicPilotPrompt(attempt, resolved) {
   ].join("\n");
 }
 
-function launchPilotAgent(attempt, resolved, clone, manifest, rawPath) {
+function pilotAgentRequest(attempt, resolved, clone, manifest, rawPath, receiptPath) {
   const runtime = manifest.pilotRuntime;
   const args = [
     "exec", "--json", "--ephemeral", "--ignore-user-config",
@@ -413,12 +453,117 @@ function launchPilotAgent(attempt, resolved, clone, manifest, rawPath) {
   ];
   if (attempt.treatment === "repo-native") args.push("--ignore-rules");
   args.push(resolved.kind === "epic" ? epicPilotPrompt(attempt, resolved) : pilotPrompt(attempt, resolved));
-  const result = execute("codex", args, clone, { timeout: attempt.activeTimeCapMinutes * 60 * 1000 });
-  fs.mkdirSync(path.dirname(rawPath), { recursive: true });
-  fs.writeFileSync(rawPath, result.stdout);
-  fs.writeFileSync(`${rawPath}.stderr`, result.stderr);
-  const metrics = codexMetrics(parseJsonLines(rawPath));
-  return { ...result, ...metrics };
+  return {
+    command: "codex",
+    args,
+    cwd: clone,
+    stdoutPath: rawPath,
+    stderrPath: `${rawPath}.stderr`,
+    receiptPath,
+    timeoutMs: attempt.activeTimeCapMinutes * 60 * 1000,
+  };
+}
+
+function launchPilotAgent(requestPath, cwd) {
+  const actorScript = path.join(root, "scripts", "acef-execution-assurance-actor");
+  const child = cp.spawn(process.execPath, [actorScript, requestPath], {
+    cwd,
+    detached: true,
+    stdio: "ignore",
+  });
+  child.unref();
+  return child.pid;
+}
+
+function waitForFile(filePath, timeoutMs) {
+  const deadline = Date.now() + timeoutMs;
+  const signal = new Int32Array(new SharedArrayBuffer(4));
+  while (Date.now() < deadline) {
+    if (fs.existsSync(filePath)) return true;
+    Atomics.wait(signal, 0, 0, 1000);
+  }
+  return fs.existsSync(filePath);
+}
+
+function processAlive(pid) {
+  if (!Number.isInteger(pid)) return false;
+  try { process.kill(pid, 0); return true; } catch { return false; }
+}
+
+function processGroupAlive(pid) {
+  if (!Number.isInteger(pid)) return false;
+  try { process.kill(-pid, 0); return true; } catch { return false; }
+}
+
+function waitForReceiptOrExit(receiptPath, supervisorPid, timeoutMs) {
+  const deadline = Date.now() + timeoutMs;
+  const signal = new Int32Array(new SharedArrayBuffer(4));
+  while (Date.now() < deadline) {
+    if (fs.existsSync(receiptPath)) return "receipt";
+    if (!processAlive(supervisorPid)) return "exited";
+    Atomics.wait(signal, 0, 0, 1000);
+  }
+  return fs.existsSync(receiptPath) ? "receipt" : "timeout";
+}
+
+function ensureActorRequestLocked(checkpoint, config, graceChecked = false) {
+  if (fs.existsSync(config.receiptPath)) {
+    const receipt = JSON.parse(fs.readFileSync(config.receiptPath, "utf8"));
+    if (receipt.requestSha256 !== config.requestSha256 || receipt.launchNonce !== config.launchNonce) {
+      throw new Error(`${checkpoint.attemptRunId} ${config.label} receipt binding mismatch`);
+    }
+    return checkpoint;
+  }
+  if (fs.existsSync(config.startPath)) {
+    const started = JSON.parse(fs.readFileSync(config.startPath, "utf8"));
+    if (started.requestSha256 !== config.requestSha256 || started.launchNonce !== config.launchNonce) {
+      throw new Error(`${checkpoint.attemptRunId} ${config.label} start binding mismatch`);
+    }
+    if (processAlive(started.supervisorPid)) {
+      const waitResult = waitForReceiptOrExit(config.receiptPath, started.supervisorPid, config.timeoutMs + 60000);
+      if (waitResult === "receipt") return ensureActorRequestLocked(checkpoint, config, true);
+      if (waitResult === "timeout") {
+        throw new Error(`${checkpoint.attemptRunId} ${config.label} is still running or has no receipt`);
+      }
+    }
+    if (processGroupAlive(started.processGroupPid)) {
+      try { process.kill(-started.processGroupPid, "SIGKILL"); } catch (error) {
+        if (error.code !== "ESRCH") throw error;
+      }
+      const signal = new Int32Array(new SharedArrayBuffer(4));
+      for (let index = 0; index < 40 && processGroupAlive(started.processGroupPid); index += 1) Atomics.wait(signal, 0, 0, 50);
+      if (processGroupAlive(started.processGroupPid)) throw new Error(`${checkpoint.attemptRunId} orphaned ${config.label} group did not quiesce`);
+    }
+    if (!config.relaunchAfterStartedExit) {
+      throw new Error(`${checkpoint.attemptRunId} ${config.label} started but exited without a receipt; side effects are indeterminate and the attempt must be adjudicated, not replayed`);
+    }
+    fs.renameSync(config.startPath, `${config.startPath}.orphaned-${Date.now()}`);
+  } else if (!graceChecked) {
+    waitForFile(config.startPath, 2000);
+    return ensureActorRequestLocked(checkpoint, config, true);
+  }
+  const supervisorPid = launchPilotAgent(config.requestPath, checkpoint.clone);
+  const launched = { ...checkpoint, status: config.status, [config.pidField]: supervisorPid };
+  writeJsonAtomic(checkpoint.checkpointPath, launched);
+  if (!waitForFile(config.receiptPath, config.timeoutMs + 60000)) {
+    throw new Error(`${checkpoint.attemptRunId} ${config.label} has no receipt; retry later`);
+  }
+  return ensureActorRequestLocked(launched, config, true);
+}
+
+function ensureActorRequest(checkpoint, config, graceChecked = false) {
+  if (fs.existsSync(config.receiptPath)) return ensureActorRequestLocked(checkpoint, config, graceChecked);
+  const pilotWorkspace = path.dirname(path.dirname(checkpoint.checkpointPath));
+  const claim = acquireFinalizationClaim(
+    checkpoint.checkpointPath,
+    `${checkpoint.attemptRunId}-${config.label}-launch`,
+    path.join(pilotWorkspace, "launch-locks"),
+  );
+  try {
+    return ensureActorRequestLocked(checkpoint, config, graceChecked);
+  } finally {
+    claim.release();
+  }
 }
 
 function changedPaths(repo, baseRef) {
@@ -429,73 +574,238 @@ function changedPaths(repo, baseRef) {
   return [...new Set([...diff, ...working])].sort();
 }
 
-function pilotRows(resultsPath, attemptId) {
-  if (!fs.existsSync(resultsPath)) return [];
-  return fs.readFileSync(resultsPath, "utf8").split(/\r?\n/).filter(Boolean)
-    .map((line) => JSON.parse(line)).filter((row) => row.attemptId === attemptId);
+function findPilotAttempt(manifest, attemptId) {
+  const attempt = buildPilotPlan(manifest).find((entry) => entry.id === attemptId);
+  if (!attempt) throw new Error(`pilot attempt not preregistered: ${attemptId}`);
+  return attempt;
 }
 
-function invalidatedAttempt(opts, attemptId) {
-  const adjudications = path.join(path.dirname(opts.pilotResults), "pilot-adjudications.jsonl");
-  if (!fs.existsSync(adjudications)) return false;
-  return fs.readFileSync(adjudications, "utf8").split(/\r?\n/).filter(Boolean)
-    .map((line) => JSON.parse(line))
-    .some((row) => row.attemptId === attemptId && row.disposition === "INVALIDATED");
+function pilotCheckpointPath(opts, attemptRunId) {
+  return path.join(opts.pilotWorkspace, "checkpoints", `${attemptRunId}.json`);
 }
 
-function runPilotAttempt(manifest, opts) {
-  const attempt = buildPilotPlan(manifest).find((entry) => entry.id === opts.pilotRun);
-  if (!attempt) throw new Error(`pilot attempt not preregistered: ${opts.pilotRun}`);
-  const previousRows = pilotRows(opts.pilotResults, attempt.id);
-  if (previousRows.length && !(opts.pilotRetryInvalidated && invalidatedAttempt(opts, attempt.id))) {
-    throw new Error(`pilot attempt ${attempt.id} already has an immutable result row`);
+function resolvedTaskSha256(resolved) {
+  return sha256(JSON.stringify({
+    taskId: resolved.taskId,
+    selector: resolved.selector,
+    kind: resolved.kind,
+    sourceManifestPath: resolved.sourceManifestPath,
+    fixtureRoot: resolved.fixtureRoot,
+    repo: resolved.repo,
+    stack: resolved.stack,
+    source: resolved.source,
+    commit: resolved.commit,
+    setupDirs: resolved.setupDirs,
+    setupFiles: resolved.setupFiles,
+    task: resolved.task,
+  }));
+}
+
+function reconcileFinalizedCheckpoint(checkpoint, row) {
+  writeJsonAtomic(checkpoint.checkpointPath, {
+    ...checkpoint,
+    status: "finalized",
+    finalizedAt: row.finishedAt,
+    result: row.result,
+    reconciledFromResult: true,
+  });
+}
+
+function validateCheckpointInputs(opts, checkpoint, resolved, receipt) {
+  const checks = [
+    [path.resolve(opts.manifest) === checkpoint.manifestPath, "manifest path drift"],
+    [sha256(fs.readFileSync(opts.manifest, "utf8")) === checkpoint.manifestSha256, "manifest content drift"],
+    [resolvedTaskSha256(resolved) === checkpoint.resolvedTaskSha256, "resolved task/oracle drift"],
+    [path.resolve(opts.pilotResults) === checkpoint.pilotResultsPath, "pilot results destination drift"],
+    [must("git", ["rev-parse", "HEAD"], root) === checkpoint.runnerCommit, "runner commit drift"],
+    [sha256(must("git", ["status", "--porcelain"], root)) === checkpoint.runnerWorktreeSha256, "runner worktree drift"],
+    [sha256(fs.readFileSync(checkpoint.requestPath, "utf8")) === checkpoint.requestSha256, "actor request drift"],
+    [receipt.requestPath === checkpoint.requestPath, "receipt request path mismatch"],
+    [receipt.requestSha256 === checkpoint.requestSha256, "receipt request hash mismatch"],
+    [receipt.launchNonce === checkpoint.actorLaunchNonce, "receipt launch nonce mismatch"],
+  ];
+  const failed = checks.filter(([ok]) => !ok).map(([, message]) => message);
+  if (failed.length) throw new Error(`${checkpoint.attemptRunId} checkpoint input validation failed: ${failed.join("; ")}`);
+}
+
+function evaluateTreatmentState(clone, attempt) {
+  if (attempt.treatment === "repo-native") return { ok: true, expected: "repo-native", observed: null, failures: [] };
+  const activeRunPath = path.join(clone, "docs", "ai", "ACEF_ACTIVE_RUN.json");
+  if (!fs.existsSync(activeRunPath)) {
+    return { ok: false, expected: attempt.treatment, observed: null, failures: ["missing ACEF_ACTIVE_RUN.json"] };
   }
-  const attemptOrdinal = previousRows.length + 1;
+  const observed = JSON.parse(fs.readFileSync(activeRunPath, "utf8"));
+  const failures = [];
+  if (attempt.treatment === "legacy") {
+    if (observed.lane !== "full-bmad") failures.push(`legacy lane is ${observed.lane || "missing"}, expected full-bmad`);
+    if (observed.workflowId || observed.assuranceProfile) failures.push("legacy state invented candidate execution/assurance axes");
+  } else {
+    if (observed.workflowId !== attempt.workflowId) failures.push(`candidate workflowId is ${observed.workflowId || "missing"}`);
+    if (observed.assuranceProfile !== attempt.assuranceProfile) failures.push(`candidate assuranceProfile is ${observed.assuranceProfile || "missing"}`);
+  }
+  return {
+    ok: failures.length === 0,
+    expected: attempt.treatment === "legacy" ? { lane: "full-bmad" }
+      : { workflowId: attempt.workflowId, assuranceProfile: attempt.assuranceProfile },
+    observed,
+    observedSha256: sha256(JSON.stringify(observed)),
+    failures,
+  };
+}
+
+function latestPilotCheckpoint(opts, attemptId) {
+  const directory = path.join(opts.pilotWorkspace, "checkpoints");
+  if (!fs.existsSync(directory)) throw new Error(`no durable checkpoint exists for ${attemptId}`);
+  const checkpoints = fs.readdirSync(directory).filter((entry) => entry.endsWith(".json"))
+    .map((entry) => JSON.parse(fs.readFileSync(path.join(directory, entry), "utf8")))
+    .filter((entry) => entry.attemptId === attemptId)
+    .sort((left, right) => Number(right.attemptOrdinal) - Number(left.attemptOrdinal));
+  if (!checkpoints.length) throw new Error(`no durable checkpoint exists for ${attemptId}`);
+  return checkpoints[0];
+}
+
+function ensureVerification(checkpoint, verificationContract) {
+  const verificationCommandSha256 = sha256(JSON.stringify(verificationContract.verify));
+  if (checkpoint.verificationCommandSha256 && checkpoint.verificationCommandSha256 !== verificationCommandSha256) {
+    throw new Error(`${checkpoint.attemptRunId} verification command drift`);
+  }
+  if (checkpoint.verificationReceiptPath && fs.existsSync(checkpoint.verificationReceiptPath)) {
+    const receipt = JSON.parse(fs.readFileSync(checkpoint.verificationReceiptPath, "utf8"));
+    if (receipt.requestSha256 !== checkpoint.verificationRequestSha256
+      || receipt.launchNonce !== checkpoint.verificationLaunchNonce) {
+      throw new Error(`${checkpoint.attemptRunId} verification receipt hash mismatch`);
+    }
+    return { checkpoint, verification: { status: receipt.status, signal: receipt.signal } };
+  }
+  if (checkpoint.verificationStarted) {
+    const resumed = ensureActorRequest(checkpoint, {
+      label: "verification",
+      requestPath: checkpoint.verificationRequestPath,
+      receiptPath: checkpoint.verificationReceiptPath,
+      startPath: checkpoint.verificationStartPath,
+      requestSha256: checkpoint.verificationRequestSha256,
+      launchNonce: checkpoint.verificationLaunchNonce,
+      timeoutMs: checkpoint.verificationTimeoutMs,
+      status: "verifying",
+      pidField: "verificationPid",
+      relaunchAfterStartedExit: true,
+    });
+    return ensureVerification(resumed, verificationContract);
+  }
+  const pilotWorkspace = path.dirname(path.dirname(checkpoint.checkpointPath));
+  const base = path.join(pilotWorkspace, "verification", checkpoint.attemptRunId);
+  const requestPath = `${base}.request.json`;
+  const receiptPath = `${base}.receipt.json`;
+  const request = {
+    command: verificationContract.verify[0],
+    args: verificationContract.verify.slice(1),
+    cwd: checkpoint.clone,
+    stdoutPath: `${base}.stdout`,
+    stderrPath: `${base}.stderr`,
+    receiptPath,
+    startPath: `${base}.started.json`,
+    launchNonce: `${checkpoint.attemptRunId}:verification:v1`,
+    timeoutMs: 1200000,
+  };
+  writeJsonAtomic(requestPath, request);
+  let verifyingCheckpoint = {
+    ...checkpoint,
+    status: "verifying",
+    verificationStarted: true,
+    verificationTimeoutMs: request.timeoutMs,
+    verificationCommandSha256,
+    verificationRequestPath: requestPath,
+    verificationRequestSha256: sha256(fs.readFileSync(requestPath, "utf8")),
+    verificationReceiptPath: receiptPath,
+    verificationStartPath: request.startPath,
+    verificationLaunchNonce: request.launchNonce,
+  };
+  writeJsonAtomic(checkpoint.checkpointPath, verifyingCheckpoint);
+  return ensureVerification(verifyingCheckpoint, verificationContract);
+}
+
+function finalizePilotAttempt(manifest, opts, checkpoint) {
+  const existing = readPilotResultRow(opts.pilotResults, checkpoint.attemptRunId);
+  if (existing) {
+    reconcileFinalizedCheckpoint(checkpoint, existing);
+    console.log(`ALREADY_FINALIZED ${checkpoint.attemptRunId}: ${existing.result}`);
+    return;
+  }
+  if (checkpoint.status === "finalized") throw new Error(`${checkpoint.attemptRunId} is finalized but its immutable result row is missing`);
+  const actorRequest = JSON.parse(fs.readFileSync(checkpoint.requestPath, "utf8"));
+  checkpoint = ensureActorRequest(checkpoint, {
+    label: "actor",
+    requestPath: checkpoint.requestPath,
+    receiptPath: checkpoint.receiptPath,
+    startPath: checkpoint.actorStartPath,
+    requestSha256: checkpoint.requestSha256,
+    launchNonce: checkpoint.actorLaunchNonce,
+    timeoutMs: actorRequest.timeoutMs,
+    status: "running",
+    pidField: "actorPid",
+  });
+  const attempt = findPilotAttempt(manifest, checkpoint.attemptId);
   const resolved = require("./lib/acef-execution-assurance-experiment").resolveCatalogTask(manifest, opts.manifest, attempt.taskId);
-  if (resolved.kind === "story") {
-    throw new Error(`${attempt.id} story treatment execution is not enabled until exact-version compact lifecycle orchestration is wired`);
-  }
-  if (resolved.kind === "task" && attempt.treatment !== "repo-native") {
-    throw new Error(`${attempt.id} ACEF single-task execution is not enabled until exact-version compact lifecycle orchestration is wired`);
-  }
-  const executionAttempt = { ...attempt, id: attemptOrdinal === 1 ? attempt.id : `${attempt.id}-r${attemptOrdinal}` };
-  const prepared = resolved.kind === "epic"
-    ? prepareEpicClone(resolved, executionAttempt, opts)
-    : prepareSingleTaskClone(resolved, executionAttempt, opts);
-  installExactFramework(prepared.clone, attempt, manifest, opts);
   const verificationContract = resolved.kind === "epic" ? resolved.task.integration : resolved.task;
-  const preconditions = resolved.kind === "epic" ? resolved.task.stories : [resolved.task];
-  for (const contract of preconditions) {
-    const precondition = execute(contract.verify[0], contract.verify.slice(1), prepared.clone, { timeout: 600000 });
-    if (precondition.status === 0) throw new Error(`${attempt.id}: ${contract.id || resolved.taskId} seeded precondition is not red`);
-  }
-  const scoredBase = commitAll(prepared.clone, `chore: freeze ${attempt.id} scored base`);
-  const rawPath = path.join(opts.pilotWorkspace, "raw", `${executionAttempt.id}.jsonl`);
-  const startedAt = new Date().toISOString();
-  const started = performance.now();
-  const actor = launchPilotAgent(attempt, resolved, prepared.clone, manifest, rawPath);
-  const activeDeliverySeconds = Math.round((performance.now() - started) / 100) / 10;
-  const verification = execute(verificationContract.verify[0], verificationContract.verify.slice(1), prepared.clone, { timeout: 1200000 });
-  const paths = changedPaths(prepared.clone, scoredBase);
+  const receipt = JSON.parse(fs.readFileSync(checkpoint.receiptPath, "utf8"));
+  validateCheckpointInputs(opts, checkpoint, resolved, receipt);
+  const claim = acquireFinalizationClaim(
+    opts.pilotResults,
+    checkpoint.attemptRunId,
+    path.join(opts.pilotWorkspace, "finalization-locks"),
+  );
+  try {
+    const racedResult = readPilotResultRow(opts.pilotResults, checkpoint.attemptRunId);
+    if (racedResult) {
+      reconcileFinalizedCheckpoint(checkpoint, racedResult);
+      console.log(`ALREADY_FINALIZED ${checkpoint.attemptRunId}: ${racedResult.result}`);
+      return;
+    }
+  const stdout = fs.readFileSync(checkpoint.rawPath, "utf8");
+  const stderr = fs.readFileSync(`${checkpoint.rawPath}.stderr`, "utf8");
+  const actor = {
+    status: receipt.status,
+    signal: receipt.signal,
+    stdout,
+    stderr,
+    ...codexMetrics(parseJsonLines(checkpoint.rawPath)),
+  };
+  const activeDeliverySeconds = Math.round((new Date(receipt.finishedAt) - new Date(receipt.startedAt)) / 100) / 10;
+  const verified = ensureVerification(checkpoint, verificationContract);
+  checkpoint = verified.checkpoint;
+  const verificationRequest = JSON.parse(fs.readFileSync(checkpoint.verificationRequestPath, "utf8"));
+  const verification = {
+    ...verified.verification,
+    stdoutSha256: sha256(fs.readFileSync(verificationRequest.stdoutPath, "utf8")),
+    stderrSha256: sha256(fs.readFileSync(verificationRequest.stderrPath, "utf8")),
+  };
+  const paths = changedPaths(checkpoint.clone, checkpoint.scoredBase);
   const allowedPaths = resolved.kind === "epic"
     ? [...new Set(resolved.task.stories.flatMap((story) => story.allowedPaths || []))]
     : (resolved.task.allowedPaths || []);
-  const harnessPaths = (entry) => /^(?:docs\/ai\/|_bmad-output\/|\.acef\/|\.codex\/|AGENTS\.md$)/.test(entry);
-  const scopeViolations = paths.filter((entry) => !harnessPaths(entry) && !isAllowedPath(entry, allowedPaths));
-  const expectationFailures = evaluateExpectations(prepared.clone, verificationContract.expected || [], resolved.fixtureRoot);
-  const diff = captureGitDiff(prepared.clone, scoredBase);
-  const diffPath = path.join(opts.pilotWorkspace, "artifacts", `${executionAttempt.id}.patch`);
+  const scopeViolations = paths.filter((entry) => !isPilotHarnessPath(entry) && !isAllowedPath(entry, allowedPaths));
+  const expectationFailures = evaluateExpectations(checkpoint.clone, verificationContract.expected || [], resolved.fixtureRoot);
+  const diff = captureGitDiff(checkpoint.clone, checkpoint.scoredBase);
+  const diffPath = path.join(opts.pilotWorkspace, "artifacts", `${checkpoint.attemptRunId}.patch`);
   fs.mkdirSync(path.dirname(diffPath), { recursive: true });
   fs.writeFileSync(diffPath, diff);
-  const trace = parseIndependentTrace(actor.stdout);
+  const trace = parseIndependentTrace(`${actor.stdout}\nscope=epic ${verificationContract.verify.join(" ")}\n`, {
+    scopeIds: resolved.kind === "epic" ? resolved.task.stories.map((story) => story.id) : [resolved.taskId],
+    retryableControls: ["codeReview", "verifyPatch"],
+    requiredControlsPerScope: attempt.treatment === "repo-native" ? []
+      : ["readiness", "atdd", "development", "codeReview", "testReview", "processJudge"],
+  });
+  const treatmentState = evaluateTreatmentState(checkpoint.clone, attempt);
   const automatedOraclePassed = actor.status === 0 && verification.status === 0
-    && scopeViolations.length === 0 && expectationFailures.length === 0;
+    && scopeViolations.length === 0 && expectationFailures.length === 0
+    && trace.scopeAttributionComplete && trace.lifecycleComplete && !trace.duplicateLifecycle
+    && treatmentState.ok;
   const row = {
     schema: "acef.execution-assurance-pilot-attempt.v1",
     experimentId: manifest.experimentId,
     attemptId: attempt.id,
-    attemptOrdinal,
-    attemptRunId: executionAttempt.id,
+    attemptOrdinal: checkpoint.attemptOrdinal,
+    attemptRunId: checkpoint.attemptRunId,
     order: attempt.order,
     taskId: attempt.taskId,
     treatment: attempt.treatment,
@@ -508,7 +818,7 @@ function runPilotAttempt(manifest, opts) {
     clientVersion: manifest.pilotRuntime.clientVersion,
     model: manifest.pilotRuntime.model,
     reasoningEffort: manifest.pilotRuntime.reasoningEffort,
-    startedAt,
+    startedAt: receipt.startedAt,
     finishedAt: new Date().toISOString(),
     activeDeliverySeconds,
     wallTimeToProductDoneSeconds: null,
@@ -518,6 +828,10 @@ function runPilotAttempt(manifest, opts) {
     activeTimeCapMinutes: attempt.activeTimeCapMinutes,
     actorExitCode: actor.status,
     verificationExitCode: verification.status,
+    verificationCommandSha256: checkpoint.verificationCommandSha256,
+    verificationReceiptPath: checkpoint.verificationReceiptPath,
+    verificationStdoutSha256: verification.stdoutSha256,
+    verificationStderrSha256: verification.stderrSha256,
     inputTokens: actor.input_tokens,
     cachedInputTokens: actor.cached_input_tokens,
     outputTokens: actor.output_tokens,
@@ -526,7 +840,8 @@ function runPilotAttempt(manifest, opts) {
     scopeViolations,
     expectationFailures,
     independentTrace: trace,
-    transcriptPath: rawPath,
+    treatmentState,
+    transcriptPath: checkpoint.rawPath,
     transcriptSha256: sha256(actor.stdout),
     stderrSha256: sha256(actor.stderr),
     diffPath,
@@ -538,8 +853,99 @@ function runPilotAttempt(manifest, opts) {
   };
   fs.mkdirSync(path.dirname(opts.pilotResults), { recursive: true });
   fs.appendFileSync(opts.pilotResults, `${JSON.stringify(row)}\n`);
+  writeJsonAtomic(checkpoint.checkpointPath, { ...checkpoint, status: "finalized", finalizedAt: row.finishedAt, result: row.result });
   console.log(`${row.result} ${attempt.id}: automated=${automatedOraclePassed ? "PASS" : "FAIL"}; blind-judge=pending; product-done=false; active=${activeDeliverySeconds}s`);
   console.log(`ARTIFACT ${diffPath}`);
+  } finally {
+    claim.release();
+  }
+}
+
+function runPilotAttempt(manifest, opts) {
+  const attempt = findPilotAttempt(manifest, opts.pilotRun);
+  const history = pilotAttemptHistory(opts.pilotResults, attempt.id);
+  if (history.maxOrdinal > 0) {
+    if (!history.latest?.invalidated) {
+      throw new Error(`pilot attempt ${attempt.id} already has an immutable result row`);
+    }
+    if (!opts.pilotRetryInvalidated) {
+      throw new Error(`pilot attempt ${attempt.id} was invalidated; rerun requires --pilot-retry-invalidated`);
+    }
+  }
+  if (must("git", ["status", "--porcelain"], root) !== "") {
+    throw new Error(`${attempt.id}: runner worktree must be clean before a scored pilot launch`);
+  }
+  const attemptOrdinal = history.maxOrdinal + 1;
+  const resolved = require("./lib/acef-execution-assurance-experiment").resolveCatalogTask(manifest, opts.manifest, attempt.taskId);
+  if (resolved.kind === "story") {
+    throw new Error(`${attempt.id} story treatment execution is not enabled until exact-version compact lifecycle orchestration is wired`);
+  }
+  if (resolved.kind === "task" && attempt.treatment !== "repo-native") {
+    throw new Error(`${attempt.id} ACEF single-task execution is not enabled until exact-version compact lifecycle orchestration is wired`);
+  }
+  const executionAttempt = { ...attempt, id: attemptOrdinal === 1 ? attempt.id : `${attempt.id}-r${attemptOrdinal}` };
+  const checkpointPath = pilotCheckpointPath(opts, executionAttempt.id);
+  if (fs.existsSync(checkpointPath)) {
+    throw new Error(`${executionAttempt.id} already has a durable checkpoint; use --pilot-finalize ${attempt.id}`);
+  }
+  const prepared = resolved.kind === "epic"
+    ? prepareEpicClone(resolved, executionAttempt, opts)
+    : prepareSingleTaskClone(resolved, executionAttempt, opts);
+  installExactFramework(prepared.clone, attempt, manifest, opts);
+  const verificationContract = resolved.kind === "epic" ? resolved.task.integration : resolved.task;
+  const preconditions = resolved.kind === "epic" ? resolved.task.stories : [resolved.task];
+  for (const contract of preconditions) {
+    const precondition = execute(contract.verify[0], contract.verify.slice(1), prepared.clone, { timeout: 600000 });
+    if (precondition.status === 0) throw new Error(`${attempt.id}: ${contract.id || resolved.taskId} seeded precondition is not red`);
+    if (!isBehavioralRed(precondition)) {
+      throw new Error(`${attempt.id}: ${contract.id || resolved.taskId} precondition failed for a non-behavioral reason`);
+    }
+  }
+  const scoredBase = commitAll(prepared.clone, `chore: freeze ${attempt.id} scored base`);
+  const rawPath = path.join(opts.pilotWorkspace, "raw", `${executionAttempt.id}.jsonl`);
+  const receiptPath = path.join(opts.pilotWorkspace, "receipts", `${executionAttempt.id}.json`);
+  const requestPath = path.join(opts.pilotWorkspace, "requests", `${executionAttempt.id}.json`);
+  const request = pilotAgentRequest(attempt, resolved, prepared.clone, manifest, rawPath, receiptPath);
+  request.startPath = `${rawPath}.started.json`;
+  request.launchNonce = `${executionAttempt.id}:actor:v1`;
+  writeJsonAtomic(requestPath, request);
+  const checkpoint = {
+    schema: "acef.execution-assurance-pilot-checkpoint.v1",
+    experimentId: manifest.experimentId,
+    checkpointPath,
+    attemptId: attempt.id,
+    attemptOrdinal,
+    attemptRunId: executionAttempt.id,
+    clone: prepared.clone,
+    scoredBase,
+    rawPath,
+    requestPath,
+    receiptPath,
+    actorStartPath: request.startPath,
+    actorLaunchNonce: request.launchNonce,
+    requestSha256: sha256(fs.readFileSync(requestPath, "utf8")),
+    manifestPath: path.resolve(opts.manifest),
+    manifestSha256: sha256(fs.readFileSync(opts.manifest, "utf8")),
+    resolvedTaskSha256: resolvedTaskSha256(resolved),
+    pilotResultsPath: path.resolve(opts.pilotResults),
+    runnerCommit: must("git", ["rev-parse", "HEAD"], root),
+    runnerWorktreeSha256: sha256(must("git", ["status", "--porcelain"], root)),
+    status: "prepared",
+    preparedAt: new Date().toISOString(),
+  };
+  writeJsonAtomic(checkpointPath, checkpoint);
+  const runningCheckpoint = ensureActorRequest(checkpoint, {
+    label: "actor",
+    requestPath,
+    receiptPath,
+    startPath: request.startPath,
+    requestSha256: checkpoint.requestSha256,
+    launchNonce: request.launchNonce,
+    timeoutMs: request.timeoutMs,
+    status: "running",
+    pidField: "actorPid",
+  });
+  finalizePilotAttempt(manifest, opts, runningCheckpoint);
 }
 
 function main() {
@@ -578,12 +984,27 @@ function main() {
     runPilotAttempt(manifest, opts);
     return;
   }
+  if (opts.pilotFinalize) {
+    finalizePilotAttempt(manifest, opts, latestPilotCheckpoint(opts, opts.pilotFinalize));
+    return;
+  }
   runStage0(manifest, opts);
 }
 
-try {
-  main();
-} catch (error) {
-  console.error(`ACEF_EXECUTION_ASSURANCE_EXPERIMENT_ERROR: ${error.message}`);
-  process.exitCode = 1;
+if (require.main === module) {
+  try {
+    main();
+  } catch (error) {
+    console.error(`ACEF_EXECUTION_ASSURANCE_EXPERIMENT_ERROR: ${error.message}`);
+    process.exitCode = 1;
+  }
 }
+
+module.exports = {
+  ensureActorRequest,
+  evaluateTreatmentState,
+  finalizePilotAttempt,
+  isBehavioralRed,
+  reconcileFinalizedCheckpoint,
+  resolvedTaskSha256,
+};

@@ -7,20 +7,44 @@ const os = require("node:os");
 const path = require("node:path");
 const cp = require("node:child_process");
 const {
+  acquireFinalizationClaim,
   assessTaskShape,
   buildPilotPlan,
   captureGitDiff,
   environmentPreflight,
+  isPilotHarnessPath,
   parseIndependentTrace,
+  pilotAttemptHistory,
   preflightCatalog,
+  readPilotResultRow,
   resolveCatalogTask,
+  spawnCaptured,
   validateManifest,
 } = require("./lib/acef-execution-assurance-experiment");
 
 const root = path.resolve(__dirname, "..");
 const manifestPath = path.join(root, "docs", "experiments", "execution-assurance-v2", "manifest.json");
 const cli = path.join(root, "scripts", "acef-execution-assurance-experiment");
+const actorCli = path.join(root, "scripts", "acef-execution-assurance-actor");
+const {
+  ensureActorRequest,
+  evaluateTreatmentState,
+  finalizePilotAttempt,
+  isBehavioralRed,
+  resolvedTaskSha256,
+} = require("./acef-execution-assurance-experiment");
 const manifest = validateManifest(JSON.parse(fs.readFileSync(manifestPath, "utf8")));
+const pilotResultsPath = path.join(root, "docs", "experiments", "execution-assurance-v2", "runs", "pilot.jsonl");
+
+function waitUntil(predicate, timeoutMs = 3000) {
+  const deadline = Date.now() + timeoutMs;
+  const signal = new Int32Array(new SharedArrayBuffer(4));
+  while (Date.now() < deadline) {
+    if (predicate()) return true;
+    Atomics.wait(signal, 0, 0, 20);
+  }
+  return false;
+}
 
 const pilotPlan = buildPilotPlan(manifest);
 assert.equal(pilotPlan.length, 16);
@@ -28,8 +52,19 @@ assert.equal(pilotPlan.find((attempt) => attempt.id === "R1-legacy-1").framework
 assert.equal(pilotPlan.find((attempt) => attempt.id === "R1-candidate-1").frameworkCommit, manifest.treatments.candidate.commit);
 assert.equal(pilotPlan.find((attempt) => attempt.id === "NATIVE-end").frameworkCommit, null);
 assert.equal(resolveCatalogTask(manifest, manifestPath, "noise-fix").selector, "browser-rts-gather-modifier-bait");
-assert.equal(resolveCatalogTask(manifest, manifestPath, "full-guarded-motivation").kind, "epic");
+const resolvedEpic = resolveCatalogTask(manifest, manifestPath, "full-guarded-motivation");
+assert.equal(resolvedEpic.kind, "epic");
+assert.deepEqual(resolvedEpic.setupDirs, ["tests/Integration", "tests/Performance"]);
+assert.deepEqual(resolvedEpic.setupFiles, [{ path: "/tmp/jako-bench-webhook/database/testing.sqlite", mode: "truncate" }]);
 assert.equal(preflightCatalog(manifest, manifestPath).checks.length, 5);
+assert.deepEqual(pilotAttemptHistory(pilotResultsPath, "P0-legacy"), {
+  maxOrdinal: 1,
+  latest: { ordinal: 1, invalidated: true, source: "adjudication" },
+});
+assert.deepEqual(pilotAttemptHistory(pilotResultsPath, "NATIVE-start"), {
+  maxOrdinal: 2,
+  latest: { ordinal: 2, invalidated: false, source: "result" },
+});
 
 const ready = assessTaskShape({ technicalBoundaries: ["controller"], productSurfaces: ["ui"], acceptanceCriteriaCount: 3 });
 assert.equal(ready.disposition, "READY");
@@ -44,6 +79,38 @@ assert.equal(oversized.technicalBoundaryCount, 3);
 const trace = parseIndependentTrace("bmad-code-review\nbmad-code-review\nprocess-judge\n");
 assert.equal(trace.duplicateLifecycle, true);
 assert.deepEqual(trace.duplicateLifecycleControls, ["codeReview"]);
+const scopedTrace = parseIndependentTrace([
+  "S1 bmad-atdd", "S1 bmad-dev-story", "S1 bmad-code-review", "S1 process-judge",
+  "S2 bmad-atdd", "S2 bmad-dev-story", "S2 bmad-code-review", "S2 process-judge",
+  "S3 bmad-atdd", "S3 bmad-dev-story", "S3 bmad-code-review", "S3 process-judge",
+  "S4 bmad-atdd", "S4 bmad-dev-story", "S4 bmad-code-review", "S4 process-judge",
+].join("\n"), { scopeIds: ["S1", "S2", "S3", "S4"], retryableControls: ["codeReview", "verifyPatch"] });
+assert.equal(scopedTrace.duplicateLifecycle, false, "one lifecycle per epic story is not duplication");
+const scopedDuplicate = parseIndependentTrace("S1 bmad-atdd\nS1 bmad-atdd\n", { scopeIds: ["S1", "S2"] });
+assert.deepEqual(scopedDuplicate.duplicateLifecycleControls, ["S1:atdd"]);
+const missingLifecycle = parseIndependentTrace("S1 bmad-atdd\n", {
+  scopeIds: ["S1"],
+  requiredControlsPerScope: ["atdd", "development", "codeReview"],
+});
+assert.equal(missingLifecycle.lifecycleComplete, false);
+assert.deepEqual(missingLifecycle.missingRequiredControls, ["S1:development", "S1:codeReview"]);
+const unscopedTrace = parseIndependentTrace("bmad-atdd\n", { scopeIds: ["S1"] });
+assert.equal(unscopedTrace.duplicateLifecycle, false);
+assert.equal(unscopedTrace.scopeAttributionComplete, false);
+assert.equal(unscopedTrace.unattributedLifecycleEvents, 1);
+const testTrace = parseIndependentTrace("vendor/bin/phpunit --filter=FocusedTest\nphp artisan test\n");
+assert.equal(testTrace.counts.broadSuite, 1, "focused test must not be counted as a broad suite");
+const mixedTestTrace = parseIndependentTrace("php artisan test && php artisan test --filter=A\n");
+assert.equal(mixedTestTrace.counts.broadSuite, 1, "mixed shell commands must count only the unfiltered suite");
+for (const marker of [".acef-lane", ".acef-bmad-lane", ".acef-lightweight-lane", "docs/ai/ACEF_ACTIVE_RUN.json"]) {
+  assert.equal(isPilotHarnessPath(marker), true, `${marker} must be treated as harness state`);
+}
+assert.equal(isPilotHarnessPath("app/Http/Controller.php"), false);
+for (const staticFrameworkPath of ["AGENTS.md", ".acef/bin/acef-state", ".codex/skills/acef/SKILL.md"]) {
+  assert.equal(isPilotHarnessPath(staticFrameworkPath), false, `${staticFrameworkPath} must remain immutable after scored base`);
+}
+assert.equal(isBehavioralRed({ status: 1, stdout: "FAILURES! Failed asserting that false is true", stderr: "" }), true);
+assert.equal(isBehavioralRed({ status: 1, stdout: "", stderr: "Could not open input file: artisan" }), false);
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "acef-execution-assurance-test-"));
 try {
@@ -64,6 +131,374 @@ try {
   const capturedDiff = captureGitDiff(diffRepo, base);
   assert.match(capturedDiff, /\+after/);
   assert.equal(capturedDiff.endsWith("\n"), true, "captured patch must preserve its final newline");
+
+  const capturedStdout = path.join(tmp, "large-actor.jsonl");
+  const capturedStderr = path.join(tmp, "large-actor.stderr");
+  const largeCapture = spawnCaptured(
+    process.execPath,
+    ["-e", "process.stdout.write('x'.repeat(2 * 1024 * 1024)); process.stderr.write('y'.repeat(1536 * 1024));"],
+    tmp,
+    capturedStdout,
+    capturedStderr,
+  );
+  assert.equal(largeCapture.status, 0);
+  assert.equal(fs.statSync(capturedStdout).size, 2 * 1024 * 1024);
+  assert.equal(fs.statSync(capturedStderr).size, 1536 * 1024);
+
+  const interruptedStdout = path.join(tmp, "interrupted-actor.jsonl");
+  const interruptedStderr = path.join(tmp, "interrupted-actor.stderr");
+  const helper = [
+    `const { spawnCaptured } = require(${JSON.stringify(path.join(root, "scripts/lib/acef-execution-assurance-experiment.js"))});`,
+    `spawnCaptured(process.execPath, ["-e", "process.stdout.write('durable-out\\\\n'); process.stderr.write('durable-err\\\\n'); setTimeout(() => {}, 30000);"], process.cwd(), ${JSON.stringify(interruptedStdout)}, ${JSON.stringify(interruptedStderr)}, { timeout: 30000 });`,
+  ].join(" ");
+  const captureParent = cp.spawn(process.execPath, ["-e", helper], {
+    cwd: tmp,
+    detached: true,
+    stdio: "ignore",
+  });
+  assert.equal(waitUntil(() => fs.existsSync(interruptedStdout)
+    && fs.readFileSync(interruptedStdout, "utf8").includes("durable-out")
+    && fs.existsSync(interruptedStderr)
+    && fs.readFileSync(interruptedStderr, "utf8").includes("durable-err")), true,
+  "actor output must be durable before parent completion");
+  process.kill(-captureParent.pid, "SIGTERM");
+  captureParent.unref();
+  assert.match(fs.readFileSync(interruptedStdout, "utf8"), /durable-out/);
+  assert.match(fs.readFileSync(interruptedStderr, "utf8"), /durable-err/);
+
+  const detachedRequestPath = path.join(tmp, "detached-request.json");
+  const detachedReceiptPath = path.join(tmp, "detached-receipt.json");
+  const detachedStdout = path.join(tmp, "detached-actor.jsonl");
+  const detachedStderr = path.join(tmp, "detached-actor.stderr");
+  fs.writeFileSync(detachedRequestPath, `${JSON.stringify({
+    command: process.execPath,
+    args: ["-e", "process.stdout.write('detached-out\\n'); process.stderr.write('detached-err\\n');"],
+    cwd: tmp,
+    stdoutPath: detachedStdout,
+    stderrPath: detachedStderr,
+    receiptPath: detachedReceiptPath,
+    timeoutMs: 3000,
+  })}\n`);
+  const detachedActor = cp.spawn(process.execPath, [actorCli, detachedRequestPath], {
+    cwd: tmp,
+    detached: true,
+    stdio: "ignore",
+  });
+  detachedActor.unref();
+  assert.equal(waitUntil(() => fs.existsSync(detachedReceiptPath)), true, "detached actor must publish an exit receipt");
+  assert.equal(JSON.parse(fs.readFileSync(detachedReceiptPath, "utf8")).status, 0);
+  assert.match(fs.readFileSync(detachedStdout, "utf8"), /detached-out/);
+  assert.match(fs.readFileSync(detachedStderr, "utf8"), /detached-err/);
+
+  const preparedRequestPath = path.join(tmp, "prepared-request.json");
+  const preparedReceiptPath = path.join(tmp, "prepared-receipt.json");
+  const preparedStartPath = path.join(tmp, "prepared-start.json");
+  const preparedCheckpointPath = path.join(tmp, "prepared-checkpoint.json");
+  const preparedRequest = {
+    command: process.execPath,
+    args: ["-e", "process.stdout.write('prepared-recovered\\n')"],
+    cwd: tmp,
+    stdoutPath: path.join(tmp, "prepared.stdout"),
+    stderrPath: path.join(tmp, "prepared.stderr"),
+    receiptPath: preparedReceiptPath,
+    startPath: preparedStartPath,
+    launchNonce: "prepared:v1",
+    timeoutMs: 3000,
+  };
+  fs.writeFileSync(preparedRequestPath, `${JSON.stringify(preparedRequest, null, 2)}\n`);
+  const preparedRequestSha = require("./lib/acef-execution-assurance-experiment").sha256(fs.readFileSync(preparedRequestPath, "utf8"));
+  const preparedCheckpoint = {
+    attemptRunId: "prepared-fixture",
+    checkpointPath: preparedCheckpointPath,
+    clone: tmp,
+    status: "prepared",
+  };
+  fs.writeFileSync(preparedCheckpointPath, `${JSON.stringify(preparedCheckpoint, null, 2)}\n`);
+  const recoveredCheckpoint = ensureActorRequest(preparedCheckpoint, {
+    label: "actor",
+    requestPath: preparedRequestPath,
+    receiptPath: preparedReceiptPath,
+    startPath: preparedStartPath,
+    requestSha256: preparedRequestSha,
+    launchNonce: preparedRequest.launchNonce,
+    timeoutMs: preparedRequest.timeoutMs,
+    status: "running",
+    pidField: "actorPid",
+  });
+  assert.equal(fs.existsSync(preparedReceiptPath), true, "prepared-before-spawn checkpoint must recover and launch once");
+  assert.equal(recoveredCheckpoint.status, "running");
+
+  const concurrentDir = path.join(tmp, "concurrent-launch");
+  fs.mkdirSync(concurrentDir, { recursive: true });
+  const concurrentRequestPath = path.join(concurrentDir, "request.json");
+  const concurrentReceiptPath = path.join(concurrentDir, "receipt.json");
+  const concurrentStartPath = path.join(concurrentDir, "start.json");
+  const concurrentCheckpointPath = path.join(concurrentDir, "checkpoints", "run.json");
+  const concurrentCounter = path.join(concurrentDir, "counter.txt");
+  const concurrentRequest = {
+    command: process.execPath,
+    args: ["-e", `require('fs').appendFileSync(${JSON.stringify(concurrentCounter)}, 'launch\\n'); setTimeout(() => {}, 300);`],
+    cwd: concurrentDir,
+    stdoutPath: path.join(concurrentDir, "stdout"),
+    stderrPath: path.join(concurrentDir, "stderr"),
+    receiptPath: concurrentReceiptPath,
+    startPath: concurrentStartPath,
+    launchNonce: "concurrent:v1",
+    timeoutMs: 3000,
+  };
+  fs.writeFileSync(concurrentRequestPath, `${JSON.stringify(concurrentRequest, null, 2)}\n`);
+  fs.mkdirSync(path.dirname(concurrentCheckpointPath), { recursive: true });
+  const concurrentCheckpoint = {
+    attemptRunId: "concurrent-fixture",
+    checkpointPath: concurrentCheckpointPath,
+    clone: concurrentDir,
+    status: "prepared",
+  };
+  fs.writeFileSync(concurrentCheckpointPath, `${JSON.stringify(concurrentCheckpoint, null, 2)}\n`);
+  const concurrentRequestSha = require("./lib/acef-execution-assurance-experiment").sha256(fs.readFileSync(concurrentRequestPath, "utf8"));
+  const concurrentHelperPath = path.join(concurrentDir, "launch-helper.js");
+  fs.writeFileSync(concurrentHelperPath, [
+    `const { ensureActorRequest } = require(${JSON.stringify(cli)});`,
+    `const checkpoint=${JSON.stringify(concurrentCheckpoint)};`,
+    `ensureActorRequest(checkpoint, ${JSON.stringify({
+      label: "actor",
+      requestPath: concurrentRequestPath,
+      receiptPath: concurrentReceiptPath,
+      startPath: concurrentStartPath,
+      requestSha256: concurrentRequestSha,
+      launchNonce: concurrentRequest.launchNonce,
+      timeoutMs: concurrentRequest.timeoutMs,
+      status: "running",
+      pidField: "actorPid",
+    })});`,
+  ].join("\n"));
+  const launchOne = cp.spawn(process.execPath, [concurrentHelperPath], { cwd: concurrentDir, stdio: "ignore" });
+  const launchTwo = cp.spawn(process.execPath, [concurrentHelperPath], { cwd: concurrentDir, stdio: "ignore" });
+  launchOne.unref();
+  launchTwo.unref();
+  assert.equal(waitUntil(() => fs.existsSync(concurrentReceiptPath), 7000), true, "one concurrent launch caller must complete");
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 300);
+  assert.equal(fs.readFileSync(concurrentCounter, "utf8").trim().split(/\n/).length, 1,
+    "concurrent recovery must launch the request exactly once");
+
+  const indeterminateDir = path.join(tmp, "indeterminate-start");
+  fs.mkdirSync(path.join(indeterminateDir, "checkpoints"), { recursive: true });
+  const indeterminateCounter = path.join(indeterminateDir, "counter.txt");
+  const indeterminateRequestPath = path.join(indeterminateDir, "request.json");
+  const indeterminateStartPath = path.join(indeterminateDir, "start.json");
+  const indeterminateReceiptPath = path.join(indeterminateDir, "receipt.json");
+  const indeterminateCheckpointPath = path.join(indeterminateDir, "checkpoints", "run.json");
+  const indeterminateRequest = {
+    command: process.execPath,
+    args: ["-e", `require('fs').appendFileSync(${JSON.stringify(indeterminateCounter)}, 'effect\\n')`],
+    cwd: indeterminateDir,
+    stdoutPath: path.join(indeterminateDir, "stdout"),
+    stderrPath: path.join(indeterminateDir, "stderr"),
+    receiptPath: indeterminateReceiptPath,
+    startPath: indeterminateStartPath,
+    launchNonce: "indeterminate:v1",
+    timeoutMs: 3000,
+  };
+  fs.writeFileSync(indeterminateRequestPath, `${JSON.stringify(indeterminateRequest, null, 2)}\n`);
+  const indeterminateRequestSha = require("./lib/acef-execution-assurance-experiment").sha256(fs.readFileSync(indeterminateRequestPath, "utf8"));
+  fs.writeFileSync(indeterminateStartPath, `${JSON.stringify({
+    requestSha256: indeterminateRequestSha,
+    launchNonce: indeterminateRequest.launchNonce,
+    supervisorPid: 2147483647,
+    processGroupPid: null,
+  })}\n`);
+  const indeterminateCheckpoint = {
+    attemptRunId: "indeterminate-fixture",
+    checkpointPath: indeterminateCheckpointPath,
+    clone: indeterminateDir,
+    status: "running",
+  };
+  fs.writeFileSync(indeterminateCheckpointPath, `${JSON.stringify(indeterminateCheckpoint)}\n`);
+  assert.throws(() => ensureActorRequest(indeterminateCheckpoint, {
+    label: "actor",
+    requestPath: indeterminateRequestPath,
+    receiptPath: indeterminateReceiptPath,
+    startPath: indeterminateStartPath,
+    requestSha256: indeterminateRequestSha,
+    launchNonce: indeterminateRequest.launchNonce,
+    timeoutMs: indeterminateRequest.timeoutMs,
+    status: "running",
+    pidField: "actorPid",
+  }), /side effects are indeterminate/);
+  assert.equal(fs.existsSync(indeterminateCounter), false, "started main actor without receipt must never be replayed");
+
+  const treatmentRepo = path.join(tmp, "treatment-state");
+  fs.mkdirSync(path.join(treatmentRepo, "docs/ai"), { recursive: true });
+  fs.writeFileSync(path.join(treatmentRepo, "docs/ai/ACEF_ACTIVE_RUN.json"), `${JSON.stringify({ lane: "guarded" })}\n`);
+  const invalidLegacyState = evaluateTreatmentState(treatmentRepo, { treatment: "legacy" });
+  assert.equal(invalidLegacyState.ok, false);
+  assert.match(invalidLegacyState.failures.join(";"), /expected full-bmad/);
+  fs.writeFileSync(path.join(treatmentRepo, "docs/ai/ACEF_ACTIVE_RUN.json"), `${JSON.stringify({
+    workflowId: "full-bmad",
+    assuranceProfile: "guarded",
+  })}\n`);
+  assert.equal(evaluateTreatmentState(treatmentRepo, {
+    treatment: "candidate",
+    workflowId: "full-bmad",
+    assuranceProfile: "guarded",
+  }).ok, true);
+
+  const lateWrite = path.join(tmp, "late-grandchild-write.txt");
+  const timeoutRequestPath = path.join(tmp, "timeout-request.json");
+  const timeoutReceiptPath = path.join(tmp, "timeout-receipt.json");
+  const lateChild = `process.on('SIGTERM',()=>{}); setTimeout(() => require('fs').writeFileSync(${JSON.stringify(lateWrite)}, 'escaped'), 1800); setTimeout(() => {}, 30000);`;
+  const parentWithGrandchild = `const cp=require('child_process'); process.on('SIGTERM',()=>{}); cp.spawn(process.execPath,['-e',${JSON.stringify(lateChild)}],{stdio:'ignore'}); setTimeout(() => {}, 30000);`;
+  fs.writeFileSync(timeoutRequestPath, `${JSON.stringify({
+    command: process.execPath,
+    args: ["-e", parentWithGrandchild],
+    cwd: tmp,
+    stdoutPath: path.join(tmp, "timeout.stdout"),
+    stderrPath: path.join(tmp, "timeout.stderr"),
+    receiptPath: timeoutReceiptPath,
+    timeoutMs: 100,
+  })}\n`);
+  const timeoutActor = cp.spawn(process.execPath, [actorCli, timeoutRequestPath], {
+    cwd: tmp,
+    detached: true,
+    stdio: "ignore",
+  });
+  timeoutActor.unref();
+  assert.equal(waitUntil(() => fs.existsSync(timeoutReceiptPath)), true, "timed-out actor must publish an exit receipt");
+  assert.equal(JSON.parse(fs.readFileSync(timeoutReceiptPath, "utf8")).timedOut, true);
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 1000);
+  assert.equal(fs.existsSync(lateWrite), false, "timed-out actor descendants must not mutate after receipt");
+
+  const sameOrdinalResults = path.join(tmp, "same-ordinal", "pilot.jsonl");
+  fs.mkdirSync(path.dirname(sameOrdinalResults), { recursive: true });
+  fs.writeFileSync(sameOrdinalResults, `${JSON.stringify({ attemptId: "A", attemptOrdinal: 1, result: "PROVISIONAL_PASS" })}\n`);
+  fs.writeFileSync(path.join(path.dirname(sameOrdinalResults), "pilot-adjudications.jsonl"),
+    `${JSON.stringify({ attemptId: "A", attemptOrdinal: 1, disposition: "INVALIDATED" })}\n`);
+  assert.deepEqual(pilotAttemptHistory(sameOrdinalResults, "A"), {
+    maxOrdinal: 1,
+    latest: { ordinal: 1, invalidated: true, source: "adjudication" },
+  });
+
+  const claimResults = path.join(tmp, "claim", "pilot.jsonl");
+  const firstClaim = acquireFinalizationClaim(claimResults, "A-r1");
+  assert.throws(() => acquireFinalizationClaim(claimResults, "A-r1"), /finalization already in progress/);
+  firstClaim.release();
+  const resultRow = { attemptRunId: "A-r1", result: "PASS", finishedAt: "2026-08-01T00:00:00Z" };
+  fs.mkdirSync(path.dirname(claimResults), { recursive: true });
+  fs.appendFileSync(claimResults, `${JSON.stringify(resultRow)}\n`);
+  assert.deepEqual(readPilotResultRow(claimResults, "A-r1"), resultRow);
+
+  const finalizeRepo = path.join(tmp, "finalize-repo");
+  fs.mkdirSync(path.join(finalizeRepo, "src"), { recursive: true });
+  fs.mkdirSync(path.join(finalizeRepo, "tests"), { recursive: true });
+  cp.spawnSync("git", ["init", "-q"], { cwd: finalizeRepo });
+  cp.spawnSync("git", ["config", "user.email", "acef-test@example.invalid"], { cwd: finalizeRepo });
+  cp.spawnSync("git", ["config", "user.name", "ACEF Test"], { cwd: finalizeRepo });
+  fs.writeFileSync(path.join(finalizeRepo, "src/value.js"), "module.exports = 'before';\n");
+  fs.writeFileSync(path.join(finalizeRepo, "tests/verify.js"), "const assert=require('assert'); assert.equal(require('../src/value'), 'after');\n");
+  cp.spawnSync("git", ["add", "."], { cwd: finalizeRepo });
+  cp.spawnSync("git", ["commit", "-qm", "base"], { cwd: finalizeRepo });
+  const finalizeBase = cp.spawnSync("git", ["rev-parse", "HEAD"], { cwd: finalizeRepo, encoding: "utf8" }).stdout.trim();
+  fs.writeFileSync(path.join(finalizeRepo, "src/value.js"), "module.exports = 'after';\n");
+
+  const finalizeManifestPath = path.join(tmp, "finalize-manifest.json");
+  const sourceManifestPath = path.join(tmp, "mini-source.json");
+  fs.writeFileSync(sourceManifestPath, `${JSON.stringify({
+    repo: "finalize-fixture",
+    stack: "node",
+    source: finalizeRepo,
+    commit: finalizeBase,
+    tasks: [{
+      id: "mini",
+      prompt: "Change value to after.",
+      allowedPaths: ["src/value.js"],
+      verify: [process.execPath, "tests/verify.js"],
+      expected: [],
+    }],
+  }, null, 2)}\n`);
+  const finalizeManifest = JSON.parse(JSON.stringify(manifest));
+  finalizeManifest.taskCatalog["noise-fix"] = { sourceManifest: "./mini-source.json", selector: "mini" };
+  fs.writeFileSync(finalizeManifestPath, `${JSON.stringify(finalizeManifest, null, 2)}\n`);
+  const finalizeResolved = resolveCatalogTask(finalizeManifest, finalizeManifestPath, "noise-fix");
+  const finalizeWorkspace = path.join(tmp, "finalize-workspace");
+  const finalizeResults = path.join(tmp, "finalize-results", "pilot.jsonl");
+  const finalizeRaw = path.join(finalizeWorkspace, "raw", "FINALIZE-fixture.jsonl");
+  const finalizeRequest = path.join(finalizeWorkspace, "requests", "FINALIZE-fixture.json");
+  const finalizeReceipt = path.join(finalizeWorkspace, "receipts", "FINALIZE-fixture.json");
+  const finalizeCheckpointPath = path.join(finalizeWorkspace, "checkpoints", "FINALIZE-fixture.json");
+  fs.mkdirSync(path.dirname(finalizeRaw), { recursive: true });
+  fs.mkdirSync(path.dirname(finalizeRequest), { recursive: true });
+  fs.mkdirSync(path.dirname(finalizeReceipt), { recursive: true });
+  fs.mkdirSync(path.dirname(finalizeCheckpointPath), { recursive: true });
+  fs.writeFileSync(finalizeRaw, `${JSON.stringify({ type: "turn.completed", usage: { input_tokens: 1, cached_input_tokens: 0, output_tokens: 1 } })}\n`);
+  fs.writeFileSync(`${finalizeRaw}.stderr`, "");
+  const finalizeActorRequest = {
+    command: process.execPath,
+    args: ["-e", "process.exit(0)"],
+    cwd: finalizeRepo,
+    stdoutPath: finalizeRaw,
+    stderrPath: `${finalizeRaw}.stderr`,
+    receiptPath: finalizeReceipt,
+    startPath: `${finalizeRaw}.started.json`,
+    launchNonce: "FINALIZE-fixture:actor:v1",
+    timeoutMs: 3000,
+  };
+  fs.writeFileSync(finalizeRequest, `${JSON.stringify(finalizeActorRequest, null, 2)}\n`);
+  const finalizeRequestSha = require("./lib/acef-execution-assurance-experiment").sha256(fs.readFileSync(finalizeRequest, "utf8"));
+  fs.writeFileSync(finalizeReceipt, `${JSON.stringify({
+    schema: "acef.execution-assurance-actor-receipt.v1",
+    requestPath: finalizeRequest,
+    requestSha256: finalizeRequestSha,
+    launchNonce: finalizeActorRequest.launchNonce,
+    startedAt: "2026-08-01T00:00:00.000Z",
+    finishedAt: "2026-08-01T00:00:01.000Z",
+    status: 0,
+    signal: null,
+    timedOut: false,
+  }, null, 2)}\n`);
+  const runnerCommit = cp.spawnSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).stdout.trim();
+  const runnerStatus = cp.spawnSync("git", ["status", "--porcelain"], { cwd: root, encoding: "utf8" }).stdout.trim();
+  const sha = require("./lib/acef-execution-assurance-experiment").sha256;
+  const finalizeCheckpoint = {
+    schema: "acef.execution-assurance-pilot-checkpoint.v1",
+    experimentId: finalizeManifest.experimentId,
+    checkpointPath: finalizeCheckpointPath,
+    attemptId: "NATIVE-start",
+    attemptOrdinal: 99,
+    attemptRunId: "FINALIZE-fixture",
+    clone: finalizeRepo,
+    scoredBase: finalizeBase,
+    rawPath: finalizeRaw,
+    requestPath: finalizeRequest,
+    receiptPath: finalizeReceipt,
+    actorStartPath: finalizeActorRequest.startPath,
+    actorLaunchNonce: finalizeActorRequest.launchNonce,
+    requestSha256: finalizeRequestSha,
+    manifestPath: finalizeManifestPath,
+    manifestSha256: sha(fs.readFileSync(finalizeManifestPath, "utf8")),
+    resolvedTaskSha256: resolvedTaskSha256(finalizeResolved),
+    pilotResultsPath: finalizeResults,
+    runnerCommit,
+    runnerWorktreeSha256: sha(runnerStatus),
+    status: "running",
+  };
+  fs.writeFileSync(finalizeCheckpointPath, `${JSON.stringify(finalizeCheckpoint, null, 2)}\n`);
+  const finalizeOpts = {
+    manifest: finalizeManifestPath,
+    pilotResults: finalizeResults,
+    pilotWorkspace: finalizeWorkspace,
+  };
+  finalizePilotAttempt(finalizeManifest, finalizeOpts, finalizeCheckpoint);
+  finalizePilotAttempt(finalizeManifest, finalizeOpts, finalizeCheckpoint);
+  const finalizedRows = fs.readFileSync(finalizeResults, "utf8").trim().split(/\n/).map(JSON.parse);
+  assert.equal(finalizedRows.length, 1, "repeated finalization must append exactly one immutable row");
+  assert.equal(finalizedRows[0].result, "PROVISIONAL_PASS");
+  assert.equal(JSON.parse(fs.readFileSync(finalizeCheckpointPath, "utf8")).status, "finalized");
+
+  const invalidatedWithoutRetry = cp.spawnSync(process.execPath, [
+    cli, "--manifest", manifestPath, "--pilot-results", pilotResultsPath, "--pilot-run", "P0-legacy",
+  ], { cwd: root, encoding: "utf8" });
+  assert.notEqual(invalidatedWithoutRetry.status, 0);
+  assert.match(`${invalidatedWithoutRetry.stdout}\n${invalidatedWithoutRetry.stderr}`, /rerun requires --pilot-retry-invalidated/);
 
   const plan = cp.spawnSync(process.execPath, [cli, "--manifest", manifestPath, "--plan"], { cwd: root, encoding: "utf8" });
   assert.equal(plan.status, 0, plan.stderr);
