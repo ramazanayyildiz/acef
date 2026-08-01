@@ -2,6 +2,7 @@
 "use strict";
 
 const fs = require("node:fs");
+const crypto = require("node:crypto");
 const os = require("node:os");
 const path = require("node:path");
 const cp = require("node:child_process");
@@ -391,15 +392,22 @@ function installExactFramework(clone, attempt, manifest, opts) {
   must("node", [path.join(framework, "scripts", "install-acef-tools"), "--repo", clone], framework, { timeout: 300000 });
   must("node", [path.join(framework, "scripts", "install-acef-skills"), "--repo", clone, "--tool", manifest.pilotRuntime.client, "--skill", "acef"], framework, { timeout: 300000 });
   must("node", [path.join(framework, "scripts", "install-acef-bmad-guard"), "--repo", clone], framework, { timeout: 300000 });
+  forceTrackInstalledFramework(clone);
   commitAll(clone, `chore: install pinned framework ${attempt.frameworkCommit}`);
   return framework;
+}
+
+function forceTrackInstalledFramework(clone) {
+  for (const entry of [".codex/skills/acef"]) {
+    if (fs.existsSync(path.join(clone, entry))) must("git", ["add", "-f", "--", entry], clone);
+  }
 }
 
 function isBehavioralRed(result) {
   const output = `${result.stdout}\n${result.stderr}`;
   const infrastructureFailure = /(?:Could not open input file|command not found|No such file or directory|autoload\.php.*not found|SQLSTATE\[[^\]]+\].*(?:connection refused|unknown database)|Class [^\n]+ not found)/i.test(output);
-  const assertionFailure = /(?:FAILURES!|Failed asserting that|AssertionFailedError|\b[1-9]\d* failure(?:s)?\b|\bFAILED\b[^\n]*(?:Test|Tests|Assertion))/i.test(output);
-  return result.status === 1 && assertionFailure && !infrastructureFailure;
+  const assertionFailure = /(?:FAILURES!|Failed asserting that|AssertionFailedError|\b[1-9]\d* failure(?:s)?\b|Tests:\s+\d+\s+failed|\bFAILED\b[^\n]*(?:Test|Tests|Assertion))/i.test(output);
+  return [1, 2].includes(result.status) && assertionFailure && !infrastructureFailure;
 }
 
 function pilotPrompt(attempt, resolved) {
@@ -427,11 +435,18 @@ function epicPilotPrompt(attempt, resolved) {
     `   Allowed paths: ${story.allowedPaths.join(", ")}`,
     `   Focused verification: ${story.verify.join(" ")}`,
   ].join("\n")).join("\n");
+  const actorContract = lifecycleActorContract(resolved).map((entry) =>
+    `- ${entry.taskName}: scope=${entry.scope} control=${entry.control} actor=${entry.taskName} persona=${entry.persona}`
+  ).join("\n");
   return [
     "Complete one controlled multi-story epic in this disposable clone. The measured unit is the complete original user outcome, not an individual story.",
     treatmentInstruction,
     "Load and follow the repo-local ACEF skill. Act as conductor and use fresh independent actors/sessions for every role the installed workflow requires. Preserve actor separation; do not self-approve.",
-    "For measurement attribution, prefix every story lifecycle actor/tool dispatch with scope=<story-id> using the exact frozen ID below; prefix epic wrapper dispatches with scope=epic.",
+    "For each contract row below, call spawn_agent exactly once using the exact task_name and fork_turns=none before accepting that phase. Give the fresh actor a bounded artifact-only message: put the listed scope/control/actor/persona tuple first, then only the exact files/commit/question it needs. Require its final line to be ACTOR_RESULT=PASS or ACTOR_RESULT=REVISE, wait for that actor's FINAL_ANSWER, and persist a typed actor record whose actorInstanceId exactly equals task_name. Do not combine rows in one actor.",
+    "ATDD, development, and test-review cannot be retried. Code-review, verify-patch, and process-judge may each use at most one retry only after ACTOR_RESULT=REVISE; its exact task_name must be <base>_retry1 and it must finish ACTOR_RESULT=PASS. Never replay a full lifecycle vector.",
+    "Each story Process Judge must persist a typed PASS gate for that story. After the one final integration verification, the separate epic Process Judge must persist a typed PASS gate with scope=epic and must not be any story actor.",
+    "Required independently observable actor contract:",
+    actorContract,
     "If readiness requires splitting or replanning, record and perform it, but the outcome clock continues until the complete epic is product-done.",
     "Use focused verification during stories and run the provided integration verification once at final closeout unless a recorded failure requires a retry.",
     "Do not inspect experiment manifests, sibling worktrees, previous transcripts, or the other treatment. Do not push. Do not weaken or edit Benchmark* tests or phpunit.sqlite.xml.",
@@ -442,10 +457,358 @@ function epicPilotPrompt(attempt, resolved) {
   ].join("\n");
 }
 
-function pilotAgentRequest(attempt, resolved, clone, manifest, rawPath, receiptPath) {
+function sha256File(filePath) {
+  return crypto.createHash("sha256").update(fs.readFileSync(filePath)).digest("hex");
+}
+
+function normalizedActorToken(value) {
+  return String(value || "").toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+}
+
+function lifecycleActorContract(resolved) {
+  const phases = [
+    ["atdd", "test-author", false],
+    ["development", "developer", false],
+    ["code-review", "code-reviewer", true],
+    ["verify-patch", "patch-verifier", true],
+    ["test-review", "test-reviewer", false],
+    ["process-judge", "process-judge", true],
+  ];
+  const storyEntries = resolved.task.stories.flatMap((story) => phases.map(([control, persona, retryable]) => ({
+    scope: story.id,
+    control,
+    persona,
+    retryable,
+    taskName: `acef_${normalizedActorToken(story.id)}_${normalizedActorToken(control)}`,
+  })));
+  return [...storyEntries, {
+    scope: "epic",
+    control: "process-judge",
+    persona: "process-judge",
+    retryable: true,
+    taskName: "acef_epic_process_judge",
+  }];
+}
+
+function findCodexSessionTranscript(threadId, sessionRoot = path.join(process.env.CODEX_HOME || path.join(os.homedir(), ".codex"), "sessions")) {
+  if (!threadId || !fs.existsSync(sessionRoot)) return null;
+  const pending = [sessionRoot];
+  while (pending.length) {
+    const directory = pending.pop();
+    for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+      const fullPath = path.join(directory, entry.name);
+      if (entry.isDirectory()) pending.push(fullPath);
+      else if (entry.isFile() && entry.name.includes(threadId) && entry.name.endsWith(".jsonl")) return fullPath;
+    }
+  }
+  return null;
+}
+
+function parseCollaborationEvidence(rawText, sessionText, expectedContract, expectedSession = {}) {
+  let threadId = null;
+  for (const line of String(rawText || "").split(/\r?\n/).filter(Boolean)) {
+    try {
+      const event = JSON.parse(line);
+      if (event.type === "thread.started") threadId = event.thread_id || null;
+    } catch {}
+  }
+  const calls = new Map();
+  const started = new Map();
+  const completedAuthors = new Map();
+  let sessionMeta = null;
+  for (const line of String(sessionText || "").split(/\r?\n/).filter(Boolean)) {
+    let event;
+    try { event = JSON.parse(line); } catch { continue; }
+    const payload = event.payload || {};
+    if (event.type === "session_meta") sessionMeta = payload;
+    if (event.type === "response_item" && payload.type === "function_call"
+      && payload.namespace === "collaboration" && payload.name === "spawn_agent") {
+      let args = {};
+      try { args = JSON.parse(payload.arguments || "{}"); } catch {}
+      calls.set(payload.call_id, { taskName: args.task_name || "", forkTurns: args.fork_turns, callId: payload.call_id });
+    }
+    if (event.type === "event_msg" && payload.type === "sub_agent_activity" && payload.kind === "started") {
+      started.set(payload.event_id, payload.agent_thread_id || "");
+    }
+    if (event.type === "response_item" && payload.type === "agent_message" && payload.author) {
+      const content = Array.isArray(payload.content)
+        ? payload.content.map((entry) => entry.text || entry.output_text || "").join("\n")
+        : String(payload.text || "");
+      const list = completedAuthors.get(payload.author) || [];
+      list.push(content);
+      completedAuthors.set(payload.author, list);
+    }
+  }
+  const dispatches = [...calls.values()].map((call) => ({
+    ...call,
+    receiverThreadId: started.get(call.callId) || "",
+    parentFinalText: [...(completedAuthors.get(`/root/${call.taskName}`) || []), ...(completedAuthors.get(call.taskName) || [])]
+      .find((content) => /Message Type:\s*FINAL_ANSWER/i.test(content) && new RegExp(`Sender:\\s*\\/root\\/${call.taskName}(?:\\s|$)`).test(content)) || "",
+  }));
+  const failures = [];
+  if (!sessionMeta) failures.push("session metadata missing");
+  else {
+    if (sessionMeta.session_id !== threadId) failures.push("session id does not match stdout thread.started");
+    if (expectedSession.cwd && fs.realpathSync(sessionMeta.cwd) !== fs.realpathSync(expectedSession.cwd)) failures.push("session cwd mismatch");
+    if (expectedSession.clientVersion && sessionMeta.cli_version !== expectedSession.clientVersion) failures.push("session client version mismatch");
+    if (expectedSession.startedAt && new Date(sessionMeta.timestamp) < new Date(new Date(expectedSession.startedAt).getTime() - 60000)) failures.push("session predates actor receipt");
+    if (expectedSession.finishedAt && new Date(sessionMeta.timestamp) > new Date(new Date(expectedSession.finishedAt).getTime() + 60000)) failures.push("session postdates actor receipt");
+  }
+  const relevant = [];
+  const acceptedActors = [];
+  const observedContract = [];
+  for (const expected of expectedContract) {
+    const baseMatches = dispatches.filter((entry) => entry.taskName === expected.taskName);
+    const retryMatches = dispatches.map((entry) => {
+      const match = entry.taskName.match(new RegExp(`^${expected.taskName}_retry([1-9]\\d*)$`));
+      return match ? { ...entry, retryOrdinal: Number(match[1]) } : null;
+    }).filter(Boolean).sort((left, right) => left.retryOrdinal - right.retryOrdinal);
+    if (baseMatches.length !== 1) failures.push(`${expected.taskName}: expected one base spawn, observed ${baseMatches.length}`);
+    if (retryMatches.length && !expected.retryable) failures.push(`${expected.taskName}: retries are not allowed for ${expected.control}`);
+    if (retryMatches.length > 1) failures.push(`${expected.taskName}: circuit breaker allows at most one retry`);
+    if (retryMatches.some((entry, index) => entry.retryOrdinal !== index + 1)) failures.push(`${expected.taskName}: retry ordinals must be contiguous from 1`);
+    const attempts = [...baseMatches, ...retryMatches];
+    relevant.push(...attempts);
+    observedContract.push(...attempts.map((entry) => ({ ...expected, taskName: entry.taskName })));
+    for (const entry of attempts) {
+      if (!entry.receiverThreadId) failures.push(`${entry.taskName}: missing receiver thread id`);
+      if (entry.forkTurns !== "none") failures.push(`${entry.taskName}: fork_turns must be none`);
+      if (!entry.parentFinalText) failures.push(`${entry.taskName}: missing parent-delivered FINAL_ANSWER`);
+    }
+    if (attempts.length) {
+      const accepted = attempts[attempts.length - 1];
+      if (!/\bACTOR_RESULT=PASS\b/.test(accepted.parentFinalText)) failures.push(`${accepted.taskName}: final actor result is not PASS`);
+      for (const superseded of attempts.slice(0, -1)) {
+        if (!/\bACTOR_RESULT=REVISE\b/.test(superseded.parentFinalText)) failures.push(`${superseded.taskName}: retry requires prior ACTOR_RESULT=REVISE`);
+      }
+      acceptedActors.push({ ...expected, taskName: accepted.taskName, receiverThreadId: accepted.receiverThreadId });
+    }
+  }
+  const receiverIds = relevant.map((entry) => entry.receiverThreadId).filter(Boolean);
+  if (new Set(receiverIds).size !== receiverIds.length) failures.push("lifecycle actors do not have distinct receiver thread ids");
+  return {
+    ok: failures.length === 0,
+    threadId,
+    expectedActorCount: expectedContract.length,
+    observedActorCount: relevant.length,
+    dispatches: relevant,
+    actorContract: observedContract,
+    acceptedActors,
+    failures,
+    sessionSha256: sha256(sessionText),
+    sessionStartedAt: sessionMeta?.timestamp || null,
+    sessionClientVersion: sessionMeta?.cli_version || null,
+    sessionCwd: sessionMeta?.cwd || null,
+  };
+}
+
+function loadCollaborationEvidence(rawPath, expectedContract, expectedSession = {}) {
+  const rawText = fs.readFileSync(rawPath, "utf8");
+  let threadId = null;
+  for (const line of rawText.split(/\r?\n/).filter(Boolean)) {
+    try { const event = JSON.parse(line); if (event.type === "thread.started") threadId = event.thread_id; } catch {}
+  }
+  const sessionPath = findCodexSessionTranscript(threadId);
+  if (!sessionPath) return { ok: false, threadId, sessionPath: null, failures: ["Codex session transcript not found"] };
+  const evidence = parseCollaborationEvidence(rawText, fs.readFileSync(sessionPath, "utf8"), expectedContract, expectedSession);
+  const failures = [...evidence.failures];
+  const childSessions = [];
+  for (const dispatch of evidence.dispatches || []) {
+    const childPath = findCodexSessionTranscript(dispatch.receiverThreadId);
+    if (!childPath) { failures.push(`${dispatch.taskName}: child session transcript missing`); continue; }
+    const childText = fs.readFileSync(childPath, "utf8");
+    let meta = null;
+    let completion = null;
+    for (const line of childText.split(/\r?\n/).filter(Boolean)) {
+      try {
+        const event = JSON.parse(line);
+        if (event.type === "session_meta") meta = event.payload || null;
+        if (event.type === "event_msg" && event.payload?.type === "task_complete") completion = event.payload;
+      } catch {}
+    }
+    if (!meta || meta.id !== dispatch.receiverThreadId || meta.parent_thread_id !== threadId
+      || meta.agent_path !== `/root/${dispatch.taskName}`
+      || meta.source?.subagent?.thread_spawn?.parent_thread_id !== threadId) {
+      failures.push(`${dispatch.taskName}: child session provenance mismatch`);
+    }
+    if (!completion) failures.push(`${dispatch.taskName}: child task_complete missing`);
+    else {
+      const parentResult = dispatch.parentFinalText.match(/\bACTOR_RESULT=(PASS|REVISE|FAIL|BLOCKED|REPLAN)\b/)?.[1] || "";
+      const childResult = String(completion.last_agent_message || "").match(/\bACTOR_RESULT=(PASS|REVISE|FAIL|BLOCKED|REPLAN)\b/)?.[1] || "";
+      if (!childResult || childResult !== parentResult) failures.push(`${dispatch.taskName}: child/parent actor result mismatch`);
+    }
+    childSessions.push({
+      taskName: dispatch.taskName,
+      threadId: dispatch.receiverThreadId,
+      sessionSha256: sha256(childText),
+      completedAt: completion?.completed_at || null,
+    });
+  }
+  return { ...evidence, ok: failures.length === 0, failures, sessionPath, childSessions };
+}
+
+function canonicalLifecyclePhase(value) {
+  const token = normalizedActorToken(value).replace(/_/g, "");
+  const aliases = { codereviewer: "codereview", reviewer: "codereview", patchverifier: "verifypatch", testreviewer: "testreview", judge: "processjudge", epicprocessjudge: "processjudge" };
+  return aliases[token] || token;
+}
+
+function installedStateParser(clone) {
+  const parserPath = path.join(clone, ".acef", "bin", "lib", "acef-state-parser.js");
+  if (!fs.existsSync(parserPath)) throw new Error(`installed treatment state parser missing: ${parserPath}`);
+  return require(parserPath);
+}
+
+function validateDurableLifecycleEvidence(clone, expectedContract, acceptedActors = expectedContract) {
+  const failures = [];
+  let parser;
+  try { parser = installedStateParser(clone); }
+  catch (error) { return { ok: false, actorCount: 0, gateCount: 0, failures: [error.message] }; }
+  const actorDir = path.join(clone, "docs", "ai", "actors");
+  const gateDir = path.join(clone, "docs", "ai", "gates");
+  const actors = new Map();
+  if (fs.existsSync(actorDir)) for (const entry of fs.readdirSync(actorDir).filter((name) => name.endsWith(".json"))) {
+    try {
+      const actor = parser.parseActorRecord(path.join(actorDir, entry));
+      if (actors.has(actor.actorInstanceId)) failures.push(`${entry}: duplicate actorInstanceId ${actor.actorInstanceId}`);
+      actors.set(actor.actorInstanceId, actor);
+    }
+    catch (error) { failures.push(`${entry}: ${error.message}`); }
+  }
+  const gates = [];
+  if (fs.existsSync(gateDir)) for (const entry of fs.readdirSync(gateDir).filter((name) => name.endsWith(".json"))) {
+    try { gates.push(parser.parseGateVerdict(path.join(gateDir, entry))); }
+    catch (error) { failures.push(`${entry}: ${error.message}`); }
+  }
+  for (const expected of expectedContract) {
+    const actor = actors.get(expected.taskName);
+    if (!actor) { failures.push(`${expected.taskName}: typed actor record missing`); continue; }
+    if (normalizedActorToken(actor.story) !== normalizedActorToken(expected.scope)) failures.push(`${expected.taskName}: actor scope mismatch`);
+    if (canonicalLifecyclePhase(actor.phase) !== canonicalLifecyclePhase(expected.control)) failures.push(`${expected.taskName}: actor phase mismatch`);
+    if (canonicalLifecyclePhase(actor.role) !== canonicalLifecyclePhase(expected.persona)) failures.push(`${expected.taskName}: actor persona mismatch`);
+    const ancestor = execute("git", ["merge-base", "--is-ancestor", actor.inputCommit, "HEAD"], clone);
+    if (ancestor.status !== 0) failures.push(`${expected.taskName}: inputCommit is not an ancestor of HEAD`);
+  }
+  const scopes = [...new Set(expectedContract.map((entry) => entry.scope))];
+  for (const scope of scopes) {
+    const judge = acceptedActors.find((entry) => entry.scope === scope && entry.control === "process-judge");
+    const gate = gates.find((entry) => entry.verdict === "PASS"
+      && normalizedActorToken(entry.scope) === normalizedActorToken(scope)
+      && entry.decidedBy === judge?.taskName);
+    if (!gate) { failures.push(`${scope}: typed PASS gate from required Process Judge missing`); continue; }
+    if (!Array.isArray(gate.evidenceIds) || !gate.evidenceIds.length) failures.push(`${scope}: PASS gate has no evidenceIds`);
+    if (execute("git", ["merge-base", "--is-ancestor", gate.repositoryCommit, "HEAD"], clone).status !== 0) {
+      failures.push(`${scope}: gate repositoryCommit is not an ancestor of HEAD`);
+    }
+    for (const evidenceId of gate.evidenceIds || []) {
+      const evidencePath = path.join(clone, "docs", "ai", "evidence", `${evidenceId}.json`);
+      try {
+        const evidence = parser.parseEvidenceManifest(evidencePath);
+        if (evidence.evidenceId !== evidenceId) failures.push(`${scope}: evidence filename/id mismatch for ${evidenceId}`);
+        if (evidence.exitCode !== 0) failures.push(`${scope}: evidence ${evidenceId} failed`);
+        if (normalizedActorToken(evidence.story) !== normalizedActorToken(scope)) failures.push(`${scope}: evidence ${evidenceId} scope mismatch`);
+        if (!actors.has(evidence.actorInstanceId)) failures.push(`${scope}: evidence ${evidenceId} actor is missing`);
+        else if (normalizedActorToken(actors.get(evidence.actorInstanceId).story) !== normalizedActorToken(scope)) failures.push(`${scope}: evidence ${evidenceId} actor scope mismatch`);
+        if (execute("git", ["merge-base", "--is-ancestor", evidence.repositoryCommit, "HEAD"], clone).status !== 0) failures.push(`${scope}: evidence ${evidenceId} repositoryCommit is not an ancestor of HEAD`);
+        const rawArtifact = path.resolve(clone, evidence.rawArtifact.path);
+        const relative = path.relative(clone, rawArtifact);
+        if (!relative || relative.startsWith("..") || path.isAbsolute(relative)) failures.push(`${scope}: evidence ${evidenceId} artifact escapes clone`);
+        else if (!fs.existsSync(rawArtifact)) failures.push(`${scope}: evidence ${evidenceId} artifact missing`);
+        else if (path.relative(fs.realpathSync(clone), fs.realpathSync(rawArtifact)).startsWith("..") || sha256File(rawArtifact) !== evidence.rawArtifact.sha256) failures.push(`${scope}: evidence ${evidenceId} artifact/hash mismatch`);
+      } catch (error) { failures.push(`${scope}: evidence ${evidenceId}: ${error.message}`); }
+    }
+  }
+  return { ok: failures.length === 0, actorCount: actors.size, gateCount: gates.length, failures };
+}
+
+function runnerSourceSha256() {
+  const sourcePaths = [
+    "scripts/acef-execution-assurance-experiment",
+    "scripts/acef-execution-assurance-actor",
+    "scripts/lib/acef-execution-assurance-experiment.js",
+    "scripts/lib/acef-state-parser.js",
+    "scripts/lib/acef-execution-policy.js",
+    "scripts/lib/acef-empirical.js",
+    "scripts/acef-empirical-validation",
+  ];
+  return sha256(sourcePaths.map((entry) => `${entry}\0${fs.readFileSync(path.join(root, entry), "utf8")}\0`).join(""));
+}
+
+function runCollaborationCanary(manifest) {
+  const runtime = resolvePinnedClient(manifest.pilotRuntime);
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "acef-pilot-collaboration-canary-"));
+  const taskName = "acef_pilot_canary";
+  try {
+    must("git", ["init", "-q"], directory);
+    must("git", ["config", "user.email", "acef-canary@example.invalid"], directory);
+    must("git", ["config", "user.name", "ACEF Canary"], directory);
+    fs.writeFileSync(path.join(directory, "README.md"), "ACEF collaboration canary\n");
+    must("git", ["add", "README.md"], directory);
+    must("git", ["commit", "-qm", "canary"], directory);
+    const prompt = `Call collaboration.spawn_agent exactly once with task_name=${taskName}, fork_turns=none, and ask it to reply exactly ACTOR_RESULT=PASS. Then call wait_agent until that exact child returns a final answer. Reply RESULT=PASS only after the real child result; otherwise RESULT=FAIL.`;
+    const result = execute(runtime.clientPath, [
+      "exec", "--json", "--ignore-user-config",
+      "--dangerously-bypass-approvals-and-sandbox", "--dangerously-bypass-hook-trust",
+      "--model", manifest.pilotRuntime.model,
+      "--config", `model_reasoning_effort=${JSON.stringify(manifest.pilotRuntime.reasoningEffort)}`,
+      "-C", directory,
+      prompt,
+    ], directory, { timeout: 180000 });
+    let threadId = null;
+    for (const line of result.stdout.split(/\r?\n/).filter(Boolean)) {
+      try { const event = JSON.parse(line); if (event.type === "thread.started") threadId = event.thread_id; } catch {}
+    }
+    const expected = [{ scope: "canary", control: "spawn", persona: "probe", retryable: false, taskName }];
+    const rawPath = path.join(directory, "canary-raw.jsonl");
+    fs.writeFileSync(rawPath, result.stdout);
+    const evidence = threadId
+      ? loadCollaborationEvidence(rawPath, expected, {
+        cwd: directory,
+        clientVersion: runtime.observedClientVersion.replace(/^codex-cli\s+/, ""),
+      })
+      : { ok: false, threadId, failures: ["canary session transcript not found"], dispatches: [] };
+    const ok = result.status === 0 && evidence.ok;
+    return {
+      ok,
+      checkedAt: new Date().toISOString(),
+      clientPath: runtime.clientPath,
+      clientBinarySha256: runtime.clientBinarySha256,
+      clientVersion: runtime.observedClientVersion,
+      model: manifest.pilotRuntime.model,
+      reasoningEffort: manifest.pilotRuntime.reasoningEffort,
+      threadId,
+      exitCode: result.status,
+      expectedActorCount: evidence.expectedActorCount || 1,
+      observedActorCount: evidence.observedActorCount || 0,
+      receiverThreadIds: (evidence.dispatches || []).map((entry) => entry.receiverThreadId).filter(Boolean),
+      sessionSha256: evidence.sessionSha256 || null,
+      failures: [...(evidence.failures || []), ...(result.status === 0 ? [] : [`client exited ${result.status}`])],
+    };
+  } finally {
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
+}
+
+function resolvePinnedClient(runtime) {
+  const discovered = path.isAbsolute(runtime.client)
+    ? runtime.client
+    : must("which", [runtime.client], root);
+  const clientPath = fs.realpathSync(discovered);
+  const observedClientVersion = must(clientPath, ["--version"], root);
+  if (observedClientVersion !== runtime.clientVersion) {
+    throw new Error(`pilot client version mismatch: observed ${observedClientVersion}, expected ${runtime.clientVersion}`);
+  }
+  return {
+    clientPath,
+    clientBinarySha256: sha256File(clientPath),
+    observedClientVersion,
+  };
+}
+
+function pilotAgentRequest(attempt, resolved, clone, manifest, rawPath, receiptPath, clientRuntime) {
   const runtime = manifest.pilotRuntime;
   const args = [
-    "exec", "--json", "--ephemeral", "--ignore-user-config",
+    "exec", "--json", "--ignore-user-config",
     "--dangerously-bypass-approvals-and-sandbox", "--dangerously-bypass-hook-trust",
     "--model", runtime.model,
     "--config", `model_reasoning_effort=${JSON.stringify(runtime.reasoningEffort)}`,
@@ -454,7 +817,7 @@ function pilotAgentRequest(attempt, resolved, clone, manifest, rawPath, receiptP
   if (attempt.treatment === "repo-native") args.push("--ignore-rules");
   args.push(resolved.kind === "epic" ? epicPilotPrompt(attempt, resolved) : pilotPrompt(attempt, resolved));
   return {
-    command: "codex",
+    command: clientRuntime.clientPath,
     args,
     cwd: clone,
     stdoutPath: rawPath,
@@ -611,7 +974,8 @@ function reconcileFinalizedCheckpoint(checkpoint, row) {
   });
 }
 
-function validateCheckpointInputs(opts, checkpoint, resolved, receipt) {
+function validateCheckpointInputs(opts, checkpoint, resolved, receipt, manifest) {
+  const clientRuntime = resolvePinnedClient(manifest.pilotRuntime);
   const checks = [
     [path.resolve(opts.manifest) === checkpoint.manifestPath, "manifest path drift"],
     [sha256(fs.readFileSync(opts.manifest, "utf8")) === checkpoint.manifestSha256, "manifest content drift"],
@@ -623,6 +987,9 @@ function validateCheckpointInputs(opts, checkpoint, resolved, receipt) {
     [receipt.requestPath === checkpoint.requestPath, "receipt request path mismatch"],
     [receipt.requestSha256 === checkpoint.requestSha256, "receipt request hash mismatch"],
     [receipt.launchNonce === checkpoint.actorLaunchNonce, "receipt launch nonce mismatch"],
+    [clientRuntime.clientPath === checkpoint.clientPath, "pilot client path drift"],
+    [clientRuntime.clientBinarySha256 === checkpoint.clientBinarySha256, "pilot client binary drift"],
+    [clientRuntime.observedClientVersion === checkpoint.observedClientVersion, "pilot client version drift"],
   ];
   const failed = checks.filter(([ok]) => !ok).map(([, message]) => message);
   if (failed.length) throw new Error(`${checkpoint.attemptRunId} checkpoint input validation failed: ${failed.join("; ")}`);
@@ -634,8 +1001,14 @@ function evaluateTreatmentState(clone, attempt) {
   if (!fs.existsSync(activeRunPath)) {
     return { ok: false, expected: attempt.treatment, observed: null, failures: ["missing ACEF_ACTIVE_RUN.json"] };
   }
-  const observed = JSON.parse(fs.readFileSync(activeRunPath, "utf8"));
+  let observed;
   const failures = [];
+  try {
+    observed = JSON.parse(fs.readFileSync(activeRunPath, "utf8"));
+    installedStateParser(clone).parseActiveRun(activeRunPath);
+  } catch (error) {
+    return { ok: false, expected: attempt.treatment, observed: null, failures: [`invalid typed active run: ${error.message}`] };
+  }
   if (attempt.treatment === "legacy") {
     if (observed.lane !== "full-bmad") failures.push(`legacy lane is ${observed.lane || "missing"}, expected full-bmad`);
     if (observed.workflowId || observed.assuranceProfile) failures.push("legacy state invented candidate execution/assurance axes");
@@ -643,6 +1016,7 @@ function evaluateTreatmentState(clone, attempt) {
     if (observed.workflowId !== attempt.workflowId) failures.push(`candidate workflowId is ${observed.workflowId || "missing"}`);
     if (observed.assuranceProfile !== attempt.assuranceProfile) failures.push(`candidate assuranceProfile is ${observed.assuranceProfile || "missing"}`);
   }
+  if (observed.status !== "complete") failures.push(`active run status is ${observed.status || "missing"}, expected complete`);
   return {
     ok: failures.length === 0,
     expected: attempt.treatment === "legacy" ? { lane: "full-bmad" }
@@ -748,7 +1122,7 @@ function finalizePilotAttempt(manifest, opts, checkpoint) {
   const resolved = require("./lib/acef-execution-assurance-experiment").resolveCatalogTask(manifest, opts.manifest, attempt.taskId);
   const verificationContract = resolved.kind === "epic" ? resolved.task.integration : resolved.task;
   const receipt = JSON.parse(fs.readFileSync(checkpoint.receiptPath, "utf8"));
-  validateCheckpointInputs(opts, checkpoint, resolved, receipt);
+  validateCheckpointInputs(opts, checkpoint, resolved, receipt, manifest);
   const claim = acquireFinalizationClaim(
     opts.pilotResults,
     checkpoint.attemptRunId,
@@ -795,10 +1169,36 @@ function finalizePilotAttempt(manifest, opts, checkpoint) {
     requiredControlsPerScope: attempt.treatment === "repo-native" ? []
       : ["readiness", "atdd", "development", "codeReview", "testReview", "processJudge"],
   });
+  const actorContract = resolved.kind === "epic" && attempt.treatment !== "repo-native"
+    ? lifecycleActorContract(resolved) : [];
+  const collaborationEvidence = actorContract.length
+    ? loadCollaborationEvidence(checkpoint.rawPath, actorContract, {
+      cwd: checkpoint.clone,
+      clientVersion: checkpoint.observedClientVersion.replace(/^codex-cli\s+/, ""),
+      startedAt: receipt.startedAt,
+      finishedAt: receipt.finishedAt,
+    })
+    : { ok: true, expectedActorCount: 0, observedActorCount: 0, dispatches: [], failures: [] };
+  const durableLifecycleEvidence = actorContract.length
+    ? validateDurableLifecycleEvidence(
+      checkpoint.clone,
+      collaborationEvidence.actorContract || actorContract,
+      collaborationEvidence.acceptedActors || actorContract,
+    )
+    : { ok: true, actorCount: 0, gateCount: 0, failures: [] };
+  if (actorContract.length) {
+    checkpoint = {
+      ...checkpoint,
+      collaborationThreadId: collaborationEvidence.threadId || null,
+      collaborationSessionPath: collaborationEvidence.sessionPath || null,
+      collaborationSessionSha256: collaborationEvidence.sessionSha256 || null,
+    };
+    writeJsonAtomic(checkpoint.checkpointPath, checkpoint);
+  }
   const treatmentState = evaluateTreatmentState(checkpoint.clone, attempt);
   const automatedOraclePassed = actor.status === 0 && verification.status === 0
     && scopeViolations.length === 0 && expectationFailures.length === 0
-    && trace.scopeAttributionComplete && trace.lifecycleComplete && !trace.duplicateLifecycle
+    && collaborationEvidence.ok && durableLifecycleEvidence.ok
     && treatmentState.ok;
   const row = {
     schema: "acef.execution-assurance-pilot-attempt.v1",
@@ -815,7 +1215,9 @@ function finalizePilotAttempt(manifest, opts, checkpoint) {
     project: resolved.repo,
     projectCommit: resolved.commit,
     client: manifest.pilotRuntime.client,
-    clientVersion: manifest.pilotRuntime.clientVersion,
+    clientPath: checkpoint.clientPath,
+    clientBinarySha256: checkpoint.clientBinarySha256,
+    clientVersion: checkpoint.observedClientVersion,
     model: manifest.pilotRuntime.model,
     reasoningEffort: manifest.pilotRuntime.reasoningEffort,
     startedAt: receipt.startedAt,
@@ -840,6 +1242,8 @@ function finalizePilotAttempt(manifest, opts, checkpoint) {
     scopeViolations,
     expectationFailures,
     independentTrace: trace,
+    collaborationEvidence,
+    durableLifecycleEvidence,
     treatmentState,
     transcriptPath: checkpoint.rawPath,
     transcriptSha256: sha256(actor.stdout),
@@ -875,6 +1279,18 @@ function runPilotAttempt(manifest, opts) {
   if (must("git", ["status", "--porcelain"], root) !== "") {
     throw new Error(`${attempt.id}: runner worktree must be clean before a scored pilot launch`);
   }
+  const clientRuntime = resolvePinnedClient(manifest.pilotRuntime);
+  if (!fs.existsSync(opts.preflightOutput)) throw new Error(`${attempt.id}: pilot preflight artifact is missing`);
+  const pilotPreflight = JSON.parse(fs.readFileSync(opts.preflightOutput, "utf8"));
+  const preflightFailures = [];
+  if (!pilotPreflight.ok) preflightFailures.push("pilot preflight is not PASS");
+  if (!pilotPreflight.collaborationCanary?.ok) preflightFailures.push("collaboration canary is not PASS");
+  if (pilotPreflight.runnerDirtyBefore !== false) preflightFailures.push("preflight runner worktree was dirty");
+  if (pilotPreflight.runnerSourceSha256 !== runnerSourceSha256()) preflightFailures.push("preflight runner source drift");
+  if (pilotPreflight.manifestSha256 !== sha256(fs.readFileSync(opts.manifest, "utf8"))) preflightFailures.push("preflight manifest binding drift");
+  if (pilotPreflight.collaborationCanary?.clientBinarySha256 !== clientRuntime.clientBinarySha256) preflightFailures.push("preflight client binary drift");
+  if (pilotPreflight.collaborationCanary?.clientVersion !== clientRuntime.observedClientVersion) preflightFailures.push("preflight client version drift");
+  if (preflightFailures.length) throw new Error(`${attempt.id}: ${preflightFailures.join("; ")}`);
   const attemptOrdinal = history.maxOrdinal + 1;
   const resolved = require("./lib/acef-execution-assurance-experiment").resolveCatalogTask(manifest, opts.manifest, attempt.taskId);
   if (resolved.kind === "story") {
@@ -905,7 +1321,7 @@ function runPilotAttempt(manifest, opts) {
   const rawPath = path.join(opts.pilotWorkspace, "raw", `${executionAttempt.id}.jsonl`);
   const receiptPath = path.join(opts.pilotWorkspace, "receipts", `${executionAttempt.id}.json`);
   const requestPath = path.join(opts.pilotWorkspace, "requests", `${executionAttempt.id}.json`);
-  const request = pilotAgentRequest(attempt, resolved, prepared.clone, manifest, rawPath, receiptPath);
+  const request = pilotAgentRequest(attempt, resolved, prepared.clone, manifest, rawPath, receiptPath, clientRuntime);
   request.startPath = `${rawPath}.started.json`;
   request.launchNonce = `${executionAttempt.id}:actor:v1`;
   writeJsonAtomic(requestPath, request);
@@ -930,6 +1346,9 @@ function runPilotAttempt(manifest, opts) {
     pilotResultsPath: path.resolve(opts.pilotResults),
     runnerCommit: must("git", ["rev-parse", "HEAD"], root),
     runnerWorktreeSha256: sha256(must("git", ["status", "--porcelain"], root)),
+    clientPath: clientRuntime.clientPath,
+    clientBinarySha256: clientRuntime.clientBinarySha256,
+    observedClientVersion: clientRuntime.observedClientVersion,
     status: "prepared",
     preparedAt: new Date().toISOString(),
   };
@@ -964,18 +1383,25 @@ function main() {
     if (fs.existsSync(opts.preflightOutput) && !opts.force) {
       throw new Error(`immutable pilot preflight already exists at ${opts.preflightOutput}; use --force only for a documented rerun`);
     }
+    const runnerDirtyBefore = must("git", ["status", "--porcelain"], root) !== "";
     const preflight = preflightCatalog(manifest, opts.manifest);
+    const collaborationCanary = runCollaborationCanary(manifest);
     const row = {
       schema: "acef.execution-assurance-pilot-preflight.v1",
       experimentId: manifest.experimentId,
       candidateCommit: manifest.treatments.candidate.commit,
+      manifestSha256: sha256(fs.readFileSync(opts.manifest, "utf8")),
       runnerCommit: must("git", ["rev-parse", "HEAD"], root),
-      runnerDirtyBefore: must("git", ["status", "--porcelain"], root) !== "",
+      runnerDirtyBefore,
+      runnerSourceSha256: runnerSourceSha256(),
       checkedAt: new Date().toISOString(),
       ...preflight,
+      collaborationCanary,
+      ok: preflight.ok && collaborationCanary.ok,
     };
     writeJson(opts.preflightOutput, row);
     for (const check of row.checks) console.log(`${check.ok ? "PASS" : "FAIL"} ${check.taskId}${check.blockers.length ? `: ${check.blockers.join("; ")}` : ""}`);
+    console.log(`${collaborationCanary.ok ? "PASS" : "FAIL"} collaboration-canary${collaborationCanary.failures.length ? `: ${collaborationCanary.failures.join("; ")}` : ""}`);
     console.log(`PILOT_PREFLIGHT ${row.ok ? "PASS" : "FAIL"}: ${row.checks.filter((check) => check.ok).length}/${row.checks.length} tasks ready`);
     if (!row.ok) process.exitCode = 1;
     return;
@@ -1004,7 +1430,13 @@ module.exports = {
   ensureActorRequest,
   evaluateTreatmentState,
   finalizePilotAttempt,
+  forceTrackInstalledFramework,
   isBehavioralRed,
+  lifecycleActorContract,
+  parseCollaborationEvidence,
   reconcileFinalizedCheckpoint,
+  resolvePinnedClient,
+  runnerSourceSha256,
+  validateDurableLifecycleEvidence,
   resolvedTaskSha256,
 };

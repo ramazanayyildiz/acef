@@ -16,6 +16,9 @@ no attributable duplicate lifecycle, and policy-valid treatment state (`lane: fu
 full-bmad` plus `assuranceProfile: guarded` for candidate). Static installed framework/rule paths are no longer exempt
 from scope enforcement. Seeded RED checks must be behavioral assertion failures, cached framework checkouts must remain
 clean at their pinned commit, and broad-suite counting is shell-segment aware.
+Installed skill paths that a subject repository ignores are force-tracked into the scored base so later mutations remain
+visible to scope enforcement. The resolved client path, exact reported version, and executable SHA-256 are also bound
+into the durable checkpoint and revalidated before scoring, preventing a same-name client replacement during recovery.
 
 These are measurement and fail-closed corrections made before any scored P0 result. Frozen product behavior, source and
 framework commits, model, acceptance tests, allowed production paths, time caps, and decision thresholds are unchanged.

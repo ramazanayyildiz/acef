@@ -30,8 +30,14 @@ const {
   ensureActorRequest,
   evaluateTreatmentState,
   finalizePilotAttempt,
+  forceTrackInstalledFramework,
   isBehavioralRed,
+  lifecycleActorContract,
+  parseCollaborationEvidence,
+  resolvePinnedClient,
   resolvedTaskSha256,
+  runnerSourceSha256,
+  validateDurableLifecycleEvidence,
 } = require("./acef-execution-assurance-experiment");
 const manifest = validateManifest(JSON.parse(fs.readFileSync(manifestPath, "utf8")));
 const pilotResultsPath = path.join(root, "docs", "experiments", "execution-assurance-v2", "runs", "pilot.jsonl");
@@ -46,6 +52,14 @@ function waitUntil(predicate, timeoutMs = 3000) {
   return false;
 }
 
+function installStateParserFixture(repo) {
+  const target = path.join(repo, ".acef", "bin", "lib");
+  fs.mkdirSync(target, { recursive: true });
+  for (const entry of ["acef-state-parser.js", "acef-execution-policy.js"]) {
+    fs.copyFileSync(path.join(root, "scripts", "lib", entry), path.join(target, entry));
+  }
+}
+
 const pilotPlan = buildPilotPlan(manifest);
 assert.equal(pilotPlan.length, 16);
 assert.equal(pilotPlan.find((attempt) => attempt.id === "R1-legacy-1").frameworkCommit, manifest.treatments.legacy.commit);
@@ -56,7 +70,53 @@ const resolvedEpic = resolveCatalogTask(manifest, manifestPath, "full-guarded-mo
 assert.equal(resolvedEpic.kind, "epic");
 assert.deepEqual(resolvedEpic.setupDirs, ["tests/Integration", "tests/Performance"]);
 assert.deepEqual(resolvedEpic.setupFiles, [{ path: "/tmp/jako-bench-webhook/database/testing.sqlite", mode: "truncate" }]);
+const epicActorContract = lifecycleActorContract(resolvedEpic);
+assert.equal(epicActorContract.length, 25, "four stories need six actors each plus one epic Process Judge");
+const syntheticRaw = `${JSON.stringify({ type: "thread.started", thread_id: "parent-thread" })}\n`;
+const syntheticSession = [JSON.stringify({ type: "session_meta", payload: {
+  session_id: "parent-thread", timestamp: "2026-08-01T00:00:00.000Z", cwd: root, cli_version: "0.146.0",
+} }), ...epicActorContract.flatMap((entry, index) => {
+  const callId = `call-${index}`;
+  const receiver = `receiver-${index}`;
+  return [
+    JSON.stringify({ type: "response_item", payload: { type: "function_call", namespace: "collaboration", name: "spawn_agent", call_id: callId, arguments: JSON.stringify({ task_name: entry.taskName, fork_turns: "none" }) } }),
+    JSON.stringify({ type: "event_msg", payload: { type: "sub_agent_activity", event_id: callId, agent_thread_id: receiver, kind: "started" } }),
+    JSON.stringify({ type: "response_item", payload: {
+      type: "agent_message", author: `/root/${entry.taskName}`,
+      content: [{ type: "input_text", text: `Message Type: FINAL_ANSWER\nTask name: /root\nSender: /root/${entry.taskName}\nPayload:\nACTOR_RESULT=PASS` }],
+    } }),
+  ];
+})].join("\n");
+assert.equal(parseCollaborationEvidence(syntheticRaw, syntheticSession, epicActorContract).ok, true);
+assert.equal(parseCollaborationEvidence(syntheticRaw,
+  syntheticSession.replace('\\"fork_turns\\":\\"none\\"', '\\"fork_turns\\":\\"all\\"'), epicActorContract).ok, false,
+"unbounded full-history actor context must fail lifecycle evidence");
+const forgedSingleDispatch = parseCollaborationEvidence(syntheticRaw, [
+  JSON.stringify({ type: "session_meta", payload: { session_id: "parent-thread", timestamp: "2026-08-01T00:00:00.000Z", cwd: root, cli_version: "0.146.0" } }),
+  JSON.stringify({ type: "response_item", payload: { type: "function_call", namespace: "collaboration", name: "spawn_agent", call_id: "one", arguments: JSON.stringify({ task_name: epicActorContract[0].taskName, fork_turns: "none" }) } }),
+  JSON.stringify({ type: "event_msg", payload: { type: "sub_agent_activity", event_id: "one", agent_thread_id: "receiver-one", kind: "started" } }),
+  JSON.stringify({ type: "response_item", payload: {
+    type: "agent_message", author: `/root/${epicActorContract[0].taskName}`,
+    content: [{ type: "input_text", text: `Message Type: FINAL_ANSWER\nSender: /root/${epicActorContract[0].taskName}\nPayload:\nACTOR_RESULT=PASS` }],
+  } }),
+].join("\n"), epicActorContract);
+assert.equal(forgedSingleDispatch.ok, false, "one generic dispatch must not satisfy a full epic lifecycle");
+const retryVectorSession = [syntheticSession, ...epicActorContract.flatMap((entry, index) => {
+  const callId = `retry-call-${index}`;
+  const taskName = `${entry.taskName}_retry1`;
+  return [
+    JSON.stringify({ type: "response_item", payload: { type: "function_call", namespace: "collaboration", name: "spawn_agent", call_id: callId, arguments: JSON.stringify({ task_name: taskName, fork_turns: "none" }) } }),
+    JSON.stringify({ type: "event_msg", payload: { type: "sub_agent_activity", event_id: callId, agent_thread_id: `retry-receiver-${index}`, kind: "started" } }),
+    JSON.stringify({ type: "response_item", payload: {
+      type: "agent_message", author: `/root/${taskName}`,
+      content: [{ type: "input_text", text: `Message Type: FINAL_ANSWER\nSender: /root/${taskName}\nPayload:\nACTOR_RESULT=PASS` }],
+    } }),
+  ];
+})].join("\n");
+assert.equal(parseCollaborationEvidence(syntheticRaw, retryVectorSession, epicActorContract).ok, false,
+  "a suffixed second full lifecycle vector must trip the circuit breaker");
 assert.equal(preflightCatalog(manifest, manifestPath).checks.length, 5);
+assert.match(runnerSourceSha256(), /^[a-f0-9]{64}$/);
 assert.deepEqual(pilotAttemptHistory(pilotResultsPath, "P0-legacy"), {
   maxOrdinal: 1,
   latest: { ordinal: 1, invalidated: true, source: "adjudication" },
@@ -110,6 +170,7 @@ for (const staticFrameworkPath of ["AGENTS.md", ".acef/bin/acef-state", ".codex/
   assert.equal(isPilotHarnessPath(staticFrameworkPath), false, `${staticFrameworkPath} must remain immutable after scored base`);
 }
 assert.equal(isBehavioralRed({ status: 1, stdout: "FAILURES! Failed asserting that false is true", stderr: "" }), true);
+assert.equal(isBehavioralRed({ status: 2, stdout: "Tests: 1 failed (1 assertions)", stderr: "InvalidCountException" }), true);
 assert.equal(isBehavioralRed({ status: 1, stdout: "", stderr: "Could not open input file: artisan" }), false);
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "acef-execution-assurance-test-"));
@@ -131,6 +192,77 @@ try {
   const capturedDiff = captureGitDiff(diffRepo, base);
   assert.match(capturedDiff, /\+after/);
   assert.equal(capturedDiff.endsWith("\n"), true, "captured patch must preserve its final newline");
+
+  const ignoredFrameworkRepo = path.join(tmp, "ignored-framework-repo");
+  fs.mkdirSync(path.join(ignoredFrameworkRepo, ".codex", "skills", "acef"), { recursive: true });
+  cp.spawnSync("git", ["init", "-q"], { cwd: ignoredFrameworkRepo });
+  cp.spawnSync("git", ["config", "user.email", "acef-test@example.invalid"], { cwd: ignoredFrameworkRepo });
+  cp.spawnSync("git", ["config", "user.name", "ACEF Test"], { cwd: ignoredFrameworkRepo });
+  fs.writeFileSync(path.join(ignoredFrameworkRepo, ".gitignore"), ".codex/\n");
+  fs.writeFileSync(path.join(ignoredFrameworkRepo, ".codex", "skills", "acef", "SKILL.md"), "installed\n");
+  cp.spawnSync("git", ["add", ".gitignore"], { cwd: ignoredFrameworkRepo });
+  forceTrackInstalledFramework(ignoredFrameworkRepo);
+  cp.spawnSync("git", ["commit", "-qm", "scored base"], { cwd: ignoredFrameworkRepo });
+  const ignoredFrameworkBase = cp.spawnSync("git", ["rev-parse", "HEAD"], { cwd: ignoredFrameworkRepo, encoding: "utf8" }).stdout.trim();
+  fs.writeFileSync(path.join(ignoredFrameworkRepo, ".codex", "skills", "acef", "SKILL.md"), "mutated\n");
+  assert.match(captureGitDiff(ignoredFrameworkRepo, ignoredFrameworkBase), /\+mutated/, "ignored installed skill mutations must remain visible");
+
+  const lifecycleRepo = path.join(tmp, "durable-lifecycle-repo");
+  fs.mkdirSync(path.join(lifecycleRepo, "docs", "ai", "actors"), { recursive: true });
+  fs.mkdirSync(path.join(lifecycleRepo, "docs", "ai", "gates"), { recursive: true });
+  fs.mkdirSync(path.join(lifecycleRepo, "docs", "ai", "evidence"), { recursive: true });
+  cp.spawnSync("git", ["init", "-q"], { cwd: lifecycleRepo });
+  cp.spawnSync("git", ["config", "user.email", "acef-test@example.invalid"], { cwd: lifecycleRepo });
+  cp.spawnSync("git", ["config", "user.name", "ACEF Test"], { cwd: lifecycleRepo });
+  installStateParserFixture(lifecycleRepo);
+  fs.writeFileSync(path.join(lifecycleRepo, "README.md"), "fixture\n");
+  cp.spawnSync("git", ["add", "."], { cwd: lifecycleRepo });
+  cp.spawnSync("git", ["commit", "-qm", "base"], { cwd: lifecycleRepo });
+  const lifecycleBase = cp.spawnSync("git", ["rev-parse", "HEAD"], { cwd: lifecycleRepo, encoding: "utf8" }).stdout.trim();
+  const lifecycleExpected = [{ scope: "epic", control: "process-judge", persona: "process-judge", taskName: "acef_epic_process_judge" }];
+  const lifecycleRaw = path.join(lifecycleRepo, "docs", "ai", "evidence", "epic-closeout.log");
+  fs.writeFileSync(lifecycleRaw, "PASS\n");
+  const lifecycleSha = require("./lib/acef-execution-assurance-experiment").sha256;
+  fs.writeFileSync(path.join(lifecycleRepo, "docs", "ai", "actors", "acef_epic_process_judge.json"), `${JSON.stringify({
+    actorInstanceId: "acef_epic_process_judge", story: "epic", phase: "epic-process-judge", role: "process-judge",
+    client: "codex", inputCommit: lifecycleBase, allowedContextProfile: "artifact-only",
+  })}\n`);
+  fs.writeFileSync(path.join(lifecycleRepo, "docs", "ai", "evidence", "epic-closeout.json"), `${JSON.stringify({
+    evidenceId: "epic-closeout", kind: "static-check", command: "fixture", exitCode: 0,
+    repositoryCommit: lifecycleBase, actorInstanceId: "acef_epic_process_judge", story: "epic",
+    rawArtifact: { path: "docs/ai/evidence/epic-closeout.log", sha256: lifecycleSha("PASS\n") },
+    runnerProof: { schema: "fixture.v1", runner: "fixture", sha256: "a".repeat(64) }, satisfies: ["epic-closeout"],
+  })}\n`);
+  const lifecycleGatePath = path.join(lifecycleRepo, "docs", "ai", "gates", "epic-closeout.json");
+  fs.writeFileSync(lifecycleGatePath, `${JSON.stringify({
+    gateId: "epic-closeout", scope: "epic", verdict: "PASS", decidedBy: "acef_epic_process_judge",
+    repositoryCommit: lifecycleBase, evidenceIds: ["epic-closeout"],
+  })}\n`);
+  assert.equal(validateDurableLifecycleEvidence(lifecycleRepo, lifecycleExpected).ok, true);
+  fs.writeFileSync(lifecycleGatePath, `${JSON.stringify({
+    gateId: "epic-closeout", scope: "epic", verdict: "PASS", decidedBy: "acef_epic_process_judge",
+    repositoryCommit: lifecycleBase, evidenceIds: [],
+  })}\n`);
+  assert.equal(validateDurableLifecycleEvidence(lifecycleRepo, lifecycleExpected).ok, false, "PASS gate without evidence must fail");
+  const lifecycleEvidencePath = path.join(lifecycleRepo, "docs", "ai", "evidence", "epic-closeout.json");
+  const validLifecycleEvidence = JSON.parse(fs.readFileSync(lifecycleEvidencePath, "utf8"));
+  fs.writeFileSync(lifecycleEvidencePath, `${JSON.stringify({ ...validLifecycleEvidence, evidenceId: "wrong-id" })}\n`);
+  fs.writeFileSync(lifecycleGatePath, `${JSON.stringify({
+    gateId: "epic-closeout", scope: "epic", verdict: "PASS", decidedBy: "acef_epic_process_judge",
+    repositoryCommit: lifecycleBase, evidenceIds: ["epic-closeout"],
+  })}\n`);
+  assert.equal(validateDurableLifecycleEvidence(lifecycleRepo, lifecycleExpected).ok, false, "evidence filename/id mismatch must fail");
+  fs.writeFileSync(lifecycleEvidencePath, `${JSON.stringify(validLifecycleEvidence)}\n`);
+  fs.writeFileSync(lifecycleGatePath, `${JSON.stringify({
+    gateId: "epic-closeout", scope: "epic", verdict: "PASS", decidedBy: "self-approved",
+    repositoryCommit: lifecycleBase, evidenceIds: ["epic-closeout"],
+  })}\n`);
+  assert.equal(validateDurableLifecycleEvidence(lifecycleRepo, lifecycleExpected).ok, false, "self-approved gate must fail durable lifecycle validation");
+
+  const pinnedNode = resolvePinnedClient({ client: process.execPath, clientVersion: process.version });
+  assert.equal(pinnedNode.clientPath, fs.realpathSync(process.execPath));
+  assert.match(pinnedNode.clientBinarySha256, /^[a-f0-9]{64}$/);
+  assert.throws(() => resolvePinnedClient({ client: process.execPath, clientVersion: "wrong-version" }), /version mismatch/);
 
   const capturedStdout = path.join(tmp, "large-actor.jsonl");
   const capturedStderr = path.join(tmp, "large-actor.stderr");
@@ -329,13 +461,26 @@ try {
 
   const treatmentRepo = path.join(tmp, "treatment-state");
   fs.mkdirSync(path.join(treatmentRepo, "docs/ai"), { recursive: true });
-  fs.writeFileSync(path.join(treatmentRepo, "docs/ai/ACEF_ACTIVE_RUN.json"), `${JSON.stringify({ lane: "guarded" })}\n`);
+  installStateParserFixture(treatmentRepo);
+  fs.writeFileSync(path.join(treatmentRepo, "docs/ai/ACEF_ACTIVE_RUN.json"), `${JSON.stringify({
+    runId: "legacy-test", repo: "fixture", lane: "guarded", status: "complete",
+    activeStory: "story", activePhase: "closeout", ledgerPath: "docs/ai/ACEF_DELIVERY_LEDGER.md",
+  })}\n`);
   const invalidLegacyState = evaluateTreatmentState(treatmentRepo, { treatment: "legacy" });
   assert.equal(invalidLegacyState.ok, false);
   assert.match(invalidLegacyState.failures.join(";"), /expected full-bmad/);
   fs.writeFileSync(path.join(treatmentRepo, "docs/ai/ACEF_ACTIVE_RUN.json"), `${JSON.stringify({
+    schema: "acef.active-run.v2",
+    runId: "candidate-test",
+    repo: "fixture",
     workflowId: "full-bmad",
     assuranceProfile: "guarded",
+    assuranceRationale: "fixture risk",
+    scopeUnit: "story",
+    status: "complete",
+    activeStory: "story",
+    activePhase: "closeout",
+    ledgerPath: "docs/ai/ACEF_DELIVERY_LEDGER.md",
   })}\n`);
   assert.equal(evaluateTreatmentState(treatmentRepo, {
     treatment: "candidate",
@@ -479,6 +624,9 @@ try {
     pilotResultsPath: finalizeResults,
     runnerCommit,
     runnerWorktreeSha256: sha(runnerStatus),
+    clientPath: resolvePinnedClient(finalizeManifest.pilotRuntime).clientPath,
+    clientBinarySha256: resolvePinnedClient(finalizeManifest.pilotRuntime).clientBinarySha256,
+    observedClientVersion: resolvePinnedClient(finalizeManifest.pilotRuntime).observedClientVersion,
     status: "running",
   };
   fs.writeFileSync(finalizeCheckpointPath, `${JSON.stringify(finalizeCheckpoint, null, 2)}\n`);
