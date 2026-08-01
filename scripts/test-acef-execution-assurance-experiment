@@ -40,7 +40,6 @@ const {
   validateDurableLifecycleEvidence,
 } = require("./acef-execution-assurance-experiment");
 const manifest = validateManifest(JSON.parse(fs.readFileSync(manifestPath, "utf8")));
-const pilotResultsPath = path.join(root, "docs", "experiments", "execution-assurance-v2", "runs", "pilot.jsonl");
 
 function waitUntil(predicate, timeoutMs = 3000) {
   const deadline = Date.now() + timeoutMs;
@@ -117,14 +116,23 @@ assert.equal(parseCollaborationEvidence(syntheticRaw, retryVectorSession, epicAc
   "a suffixed second full lifecycle vector must trip the circuit breaker");
 assert.equal(preflightCatalog(manifest, manifestPath).checks.length, 5);
 assert.match(runnerSourceSha256(), /^[a-f0-9]{64}$/);
-assert.deepEqual(pilotAttemptHistory(pilotResultsPath, "P0-legacy"), {
-  maxOrdinal: 1,
-  latest: { ordinal: 1, invalidated: true, source: "adjudication" },
-});
-assert.deepEqual(pilotAttemptHistory(pilotResultsPath, "NATIVE-start"), {
-  maxOrdinal: 2,
-  latest: { ordinal: 2, invalidated: false, source: "result" },
-});
+const historyFixture = fs.mkdtempSync(path.join(os.tmpdir(), "acef-pilot-history-test-"));
+try {
+  const historyResults = path.join(historyFixture, "pilot.jsonl");
+  fs.writeFileSync(historyResults, `${JSON.stringify({ attemptId: "NATIVE-start", attemptOrdinal: 2 })}\n`);
+  fs.writeFileSync(path.join(historyFixture, "pilot-adjudications.jsonl"),
+    `${JSON.stringify({ attemptId: "P0-legacy", attemptOrdinal: 1, disposition: "INVALIDATED" })}\n`);
+  assert.deepEqual(pilotAttemptHistory(historyResults, "P0-legacy"), {
+    maxOrdinal: 1,
+    latest: { ordinal: 1, invalidated: true, source: "adjudication" },
+  });
+  assert.deepEqual(pilotAttemptHistory(historyResults, "NATIVE-start"), {
+    maxOrdinal: 2,
+    latest: { ordinal: 2, invalidated: false, source: "result" },
+  });
+} finally {
+  fs.rmSync(historyFixture, { recursive: true, force: true });
+}
 
 const ready = assessTaskShape({ technicalBoundaries: ["controller"], productSurfaces: ["ui"], acceptanceCriteriaCount: 3 });
 assert.equal(ready.disposition, "READY");
@@ -642,8 +650,13 @@ try {
   assert.equal(finalizedRows[0].result, "PROVISIONAL_PASS");
   assert.equal(JSON.parse(fs.readFileSync(finalizeCheckpointPath, "utf8")).status, "finalized");
 
+  const invalidatedHistory = path.join(tmp, "invalidated-history");
+  const invalidatedResults = path.join(invalidatedHistory, "pilot.jsonl");
+  fs.mkdirSync(invalidatedHistory, { recursive: true });
+  fs.writeFileSync(path.join(invalidatedHistory, "pilot-adjudications.jsonl"),
+    `${JSON.stringify({ attemptId: "P0-legacy", attemptOrdinal: 1, disposition: "INVALIDATED" })}\n`);
   const invalidatedWithoutRetry = cp.spawnSync(process.execPath, [
-    cli, "--manifest", manifestPath, "--pilot-results", pilotResultsPath, "--pilot-run", "P0-legacy",
+    cli, "--manifest", manifestPath, "--pilot-results", invalidatedResults, "--pilot-run", "P0-legacy",
   ], { cwd: root, encoding: "utf8" });
   assert.notEqual(invalidatedWithoutRetry.status, 0);
   assert.match(`${invalidatedWithoutRetry.stdout}\n${invalidatedWithoutRetry.stderr}`, /rerun requires --pilot-retry-invalidated/);

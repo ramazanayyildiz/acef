@@ -40,6 +40,12 @@ or evidence contract. Do not use it to claim implementation status; link to the 
 - The first P0 preparation exposed a harness-ordering bug before the agent clock: Laravel's gitignored storage/cache
   skeleton was created after Composer package discovery. Epic preparation now creates it before dependency linking;
   the failed preparation is not a scored attempt.
+- Completed the first scored P0 Full + Guarded pair. Legacy took 26,151.6 active seconds and produced a blind-Judge product
+  PASS, but failed process closeout after recursive epic review/coverage work left the run blocked. Candidate stopped
+  fail-closed after 4,632.8 seconds when Story 2 ATDD returned REVISE, and the blind Judge found three unfinished High
+  product outcomes. The candidate used 82.3% less active time and 82.0% fewer tool calls, but this is fail-fast cost
+  evidence rather than delivery-speed superiority because the original outcome was incomplete. Capability maturity
+  remains `enforced`; see `docs/experiments/execution-assurance-v2/P0_RESULT.md`.
 
 ### Execution workflow and assurance separated
 

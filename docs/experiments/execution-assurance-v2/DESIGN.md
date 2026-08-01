@@ -1,9 +1,10 @@
 # ACEF Execution/Assurance V2 Real-World Validation
 
 Status: preregistered; Stage 0 passed 6/6 on runner commit `e9eebb35c11f659f05b37392cbd7268bd4d2d0ba`;
-the first Native drift sentinel passed after one preserved harness-invalidated attempt and a fresh scored rerun. One
-unscored P0 legacy launch was invalidated before producing an attempt row; the legacy/candidate pair has not produced a
-valid result, so no ACEF speed or quality claim is authorized.
+the first Native drift sentinel passed after one preserved harness-invalidated attempt and a fresh scored rerun. The
+first scored P0 pair completed without an eligible successful pair: legacy was product-complete but process-invalid,
+while candidate stopped fail-closed during Story 2 and was product-incomplete. See `P0_RESULT.md`. No ACEF speed, quality,
+proof, installation, or rollout claim is authorized.
 
 ## Question
 
