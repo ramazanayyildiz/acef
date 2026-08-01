@@ -19,6 +19,7 @@ const {
   pilotAttemptHistory,
   preflightCatalog,
   readPilotResultRow,
+  resolveCatalogTask,
   sha256,
   validateManifest,
 } = require("./lib/acef-execution-assurance-experiment");
@@ -444,22 +445,27 @@ function epicPilotPrompt(attempt, resolved) {
     ? [
       "Initial ATDD is sufficient when it maps every acceptance criterion and produces one genuine red test on the critical vertical path. Criteria that are regression-only need not all be red before development; expand them before test-review. Do not reject a valid critical-path red merely because protected or frozen-scope tests do not cover every regression case.",
       "If an ATDD actor still returns REVISE, do not stop or retry it. Spawn exactly one fresh report-only <atdd-task-name>_adjudication1 actor whose first tuple is scope=<story> control=atdd-adjudication actor=<task-name> persona=test-reviewer and give it only the frozen story contract, ATDD report, protected-path rules, and REVISE findings. Persist that exact typed actor phase/role. It must end ACTOR_RESULT=PASS plus ATDD_ADJUDICATION=OVERRULE or ATDD_ADJUDICATION=UPHOLD.",
-      "OVERRULE means the critical-path red is sufficient and development continues. UPHOLD permits exactly one fresh <atdd-task-name>_correction1 actor whose first tuple is scope=<story> control=atdd-correction actor=<task-name> persona=test-author. Persist that exact typed actor phase/role. Its spawn message must contain CORRECTION_SCOPE=test-artifacts-only and CORRECTION_FINDINGS_SHA256=<sha256 of the exact parent-delivered ATDD REVISE final answer>; it may change only non-protected tests and test report artifacts, never production. A second incomplete ATDD result is REPLAN/SPLIT.",
+      "OVERRULE means the critical-path red is sufficient and development continues. UPHOLD permits exactly one fresh <atdd-task-name>_correction1 actor whose first tuple is scope=<story> control=atdd-correction actor=<task-name> persona=test-author. Before spawning it, persist and commit docs/ai/corrections/<correction-task-name>.json with schema=acef.atdd-correction.v1, sourceActorId=<atdd-task-name>, correctionActorId=<correction-task-name>, scope=test-artifacts-only, findingsSha256=<sha256 of the exact parent-delivered ATDD REVISE final answer>, and explicit allowedPaths limited to non-protected tests/test reports. Persist the exact typed actor phase/role. The correction may change only those paths, never production. A second incomplete ATDD result is REPLAN/SPLIT.",
       "If a story becomes REPLAN/SPLIT, quarantine it and every transitive dependent story, but continue every pending story with no dependency edge to the quarantined set and no shared safety invariant. The epic product gate still fails while any story is quarantined.",
     ].join(" ")
-    : "ATDD, development, and test-review cannot be retried. Code-review, verify-patch, and process-judge may each use at most one retry only after ACTOR_RESULT=REVISE.";
+    : "Follow the installed legacy treatment's own ATDD and retry rules. Do not synthesize candidate adjudication, correction, quarantine, or lifecycle-budget semantics.";
+  const closeoutInstruction = attempt.treatment === "candidate"
+    ? "The mandatory closeout inventory is frozen to the listed contract rows before execution. Use focused verification during stories and run the provided integration verification once at final closeout unless that command itself fails once. Trace, statistics, coverage analysis, test quality, documentation, and closeout review are evidence views only: do not spawn actors, create mandatory work items, enlarge the denominator, or open another closeout chain for them."
+    : "Use the installed legacy treatment's closeout workflow exactly. Additional legacy-required actors or evidence work are permitted and measured; do not apply the candidate's frozen-inventory/non-recursive policy to this arm.";
   return [
     "Complete one controlled multi-story epic in this disposable clone. The measured unit is the complete original user outcome, not an individual story.",
     treatmentInstruction,
     "Load and follow the repo-local ACEF skill. Act as conductor and use fresh independent actors/sessions for every role the installed workflow requires. Preserve actor separation; do not self-approve.",
     "For each contract row below, call spawn_agent exactly once using the exact task_name and fork_turns=none before accepting that phase. Give the fresh actor a bounded artifact-only message: put the listed scope/control/actor/persona tuple first, then only the exact files/commit/question it needs. Require its final line to be ACTOR_RESULT=PASS or ACTOR_RESULT=REVISE, wait for that actor's FINAL_ANSWER, and persist a typed actor record whose actorInstanceId exactly equals task_name. Do not combine rows in one actor.",
     recoveryInstruction,
-    "Development and test-review cannot be retried. Code-review, verify-patch, and process-judge may each use at most one retry only after ACTOR_RESULT=REVISE; its exact task_name must be <base>_retry1 and it must finish ACTOR_RESULT=PASS. Never replay a full lifecycle vector.",
+    attempt.treatment === "candidate"
+      ? "Development and test-review cannot be retried. Code-review, verify-patch, and story process-judge may each use at most one retry only after ACTOR_RESULT=REVISE; its exact task_name must be <base>_retry1 and it must finish ACTOR_RESULT=PASS. The epic Process Judge cannot retry. Never replay a full lifecycle vector."
+      : "The exact named rows below remain the minimum independently observable lifecycle contract; legacy-required auxiliary work remains allowed and measured.",
     "Each story Process Judge must persist a typed PASS gate for that story. After the one final integration verification, the separate epic Process Judge must persist a typed PASS gate with scope=epic and must not be any story actor.",
     "Required independently observable actor contract:",
     actorContract,
     "If readiness requires splitting or replanning, record and perform it, but the outcome clock continues until the complete epic is product-done.",
-    "The mandatory closeout inventory is frozen to the listed contract rows before execution. Use focused verification during stories and run the provided integration verification once at final closeout unless that command itself fails once. Trace, statistics, coverage analysis, test quality, documentation, and closeout review are evidence views only: do not spawn actors, create mandatory work items, enlarge the denominator, or open another closeout chain for them.",
+    closeoutInstruction,
     "Before every write, reconcile the exact target against the active story's allowed paths and protected paths. A worker must refuse the write before mutation when it is outside scope; post-hoc cleanup does not cure a scope violation.",
     "Do not inspect experiment manifests, sibling worktrees, previous transcripts, or the other treatment. Do not push. Do not weaken or edit Benchmark* tests or phpunit.sqlite.xml.",
     "Frozen epic stories:",
@@ -497,7 +503,7 @@ function lifecycleActorContract(resolved) {
     scope: "epic",
     control: "process-judge",
     persona: "process-judge",
-    retryable: true,
+    retryable: false,
     taskName: "acef_epic_process_judge",
   }];
 }
@@ -574,7 +580,9 @@ function parseCollaborationEvidence(rawText, sessionText, expectedContract, expe
   const relevant = [];
   const acceptedActors = [];
   const observedContract = [];
+  const correctionBindings = [];
   const knownTaskNames = new Set();
+  const legacyPolicy = expectedSession.legacyPolicy === true;
   for (const expected of expectedContract) {
     const baseMatches = dispatches.filter((entry) => entry.taskName === expected.taskName);
     const retryMatches = dispatches.map((entry) => {
@@ -584,9 +592,9 @@ function parseCollaborationEvidence(rawText, sessionText, expectedContract, expe
     knownTaskNames.add(expected.taskName);
     for (const retry of retryMatches) knownTaskNames.add(retry.taskName);
     if (baseMatches.length !== 1) failures.push(`${expected.taskName}: expected one base spawn, observed ${baseMatches.length}`);
-    if (retryMatches.length && !expected.retryable) failures.push(`${expected.taskName}: retries are not allowed for ${expected.control}`);
-    if (retryMatches.length > 1) failures.push(`${expected.taskName}: circuit breaker allows at most one retry`);
-    if (retryMatches.some((entry, index) => entry.retryOrdinal !== index + 1)) failures.push(`${expected.taskName}: retry ordinals must be contiguous from 1`);
+    if (!legacyPolicy && retryMatches.length && !expected.retryable) failures.push(`${expected.taskName}: retries are not allowed for ${expected.control}`);
+    if (!legacyPolicy && retryMatches.length > 1) failures.push(`${expected.taskName}: circuit breaker allows at most one retry`);
+    if (!legacyPolicy && retryMatches.some((entry, index) => entry.retryOrdinal !== index + 1)) failures.push(`${expected.taskName}: retry ordinals must be contiguous from 1`);
     const attempts = [...baseMatches, ...retryMatches];
     relevant.push(...attempts);
     observedContract.push(...attempts.map((entry) => ({ ...expected, taskName: entry.taskName, retryOrdinal: entry.retryOrdinal || 0 })));
@@ -595,7 +603,13 @@ function parseCollaborationEvidence(rawText, sessionText, expectedContract, expe
       if (entry.forkTurns !== "none") failures.push(`${entry.taskName}: fork_turns must be none`);
       if (!entry.parentFinalText) failures.push(`${entry.taskName}: missing parent-delivered FINAL_ANSWER`);
     }
-    if (expected.control === "atdd" && baseMatches.length === 1) {
+    if (expected.control === "atdd" && baseMatches.length === 1 && legacyPolicy) {
+      const accepted = attempts.at(-1);
+      if (!/\bACTOR_RESULT=(?:PASS|REVISE)\b/.test(accepted.parentFinalText)) {
+        failures.push(`${accepted.taskName}: legacy ATDD result is not explicit`);
+      }
+      acceptedActors.push({ ...expected, taskName: accepted.taskName, receiverThreadId: accepted.receiverThreadId });
+    } else if (expected.control === "atdd" && baseMatches.length === 1) {
       const base = baseMatches[0];
       const basePassed = /\bACTOR_RESULT=PASS\b/.test(base.parentFinalText);
       const baseRevised = /\bACTOR_RESULT=REVISE\b/.test(base.parentFinalText);
@@ -637,11 +651,11 @@ function parseCollaborationEvidence(rawText, sessionText, expectedContract, expe
             if (corrections.length === 1) {
               const correction = corrections[0];
               if (!/\bACTOR_RESULT=PASS\b/.test(correction.parentFinalText)) failures.push(`${correctionTaskName}: correction result is not PASS`);
-              const correctionHash = correction.message.match(/\bCORRECTION_FINDINGS_SHA256=([a-f0-9]{64})\b/)?.[1] || "";
-              if (!/\bCORRECTION_SCOPE=test-artifacts-only\b/.test(correction.message)
-                || correctionHash !== sha256(base.parentFinalText)) {
-                failures.push(`${correctionTaskName}: correction input is not findings-bound and test-artifact-only`);
-              }
+              correctionBindings.push({
+                taskName: correctionTaskName,
+                sourceTaskName: expected.taskName,
+                findingsSha256: sha256(base.parentFinalText),
+              });
               observedContract.push({
                 scope: expected.scope,
                 control: "atdd-correction",
@@ -658,18 +672,28 @@ function parseCollaborationEvidence(rawText, sessionText, expectedContract, expe
       }
     } else if (attempts.length) {
       const accepted = attempts[attempts.length - 1];
-      if (!/\bACTOR_RESULT=PASS\b/.test(accepted.parentFinalText)) failures.push(`${accepted.taskName}: final actor result is not PASS`);
-      for (const superseded of attempts.slice(0, -1)) {
+      if (!legacyPolicy && !/\bACTOR_RESULT=PASS\b/.test(accepted.parentFinalText)) failures.push(`${accepted.taskName}: final actor result is not PASS`);
+      if (legacyPolicy && !/\bACTOR_RESULT=(?:PASS|REVISE)\b/.test(accepted.parentFinalText)) failures.push(`${accepted.taskName}: legacy actor result is not explicit`);
+      for (const superseded of legacyPolicy ? [] : attempts.slice(0, -1)) {
         if (!/\bACTOR_RESULT=REVISE\b/.test(superseded.parentFinalText)) failures.push(`${superseded.taskName}: retry requires prior ACTOR_RESULT=REVISE`);
       }
       acceptedActors.push({ ...expected, taskName: accepted.taskName, receiverThreadId: accepted.receiverThreadId });
     }
   }
   const unexpected = dispatches.filter((entry) => !knownTaskNames.has(entry.taskName));
-  if (unexpected.length) {
+  if (unexpected.length && expectedSession.allowUnexpectedActors !== true) {
     failures.push(`unexpected lifecycle/closeout actors: ${unexpected.map((entry) => entry.taskName).join(", ")}`);
   }
-  const receiverIds = relevant.map((entry) => entry.receiverThreadId).filter(Boolean);
+  if (expectedSession.allowUnexpectedActors === true) {
+    for (const entry of unexpected) {
+      entry.auxiliary = true;
+      if (!entry.receiverThreadId) failures.push(`${entry.taskName}: auxiliary actor receiver thread id missing`);
+      if (entry.forkTurns !== "none") failures.push(`${entry.taskName}: auxiliary actor fork_turns must be none`);
+      if (!entry.parentFinalText) failures.push(`${entry.taskName}: auxiliary actor parent-delivered FINAL_ANSWER missing`);
+    }
+  }
+  const allDispatches = [...relevant, ...(expectedSession.allowUnexpectedActors === true ? unexpected : [])];
+  const receiverIds = allDispatches.map((entry) => entry.receiverThreadId).filter(Boolean);
   if (new Set(receiverIds).size !== receiverIds.length) failures.push("lifecycle actors do not have distinct receiver thread ids");
   return {
     ok: failures.length === 0,
@@ -679,14 +703,43 @@ function parseCollaborationEvidence(rawText, sessionText, expectedContract, expe
     frozenMandatoryActorCount: expectedContract.length,
     unexpectedActorCount: unexpected.length,
     closeoutCreatedMandatoryChains: unexpected.filter((entry) => /closeout|coverage|trace|stat|quality/i.test(entry.taskName)).length,
-    dispatches: relevant,
+    correctionBindings,
+    dispatches: allDispatches,
     actorContract: observedContract,
+    dispatchTraceContract: [...observedContract, ...unexpected.map((entry) => inferAuxiliaryDispatch(entry, expectedContract)).filter(Boolean)],
     acceptedActors,
     failures,
     sessionSha256: sha256(sessionText),
     sessionStartedAt: sessionMeta?.timestamp || null,
     sessionClientVersion: sessionMeta?.cli_version || null,
     sessionCwd: sessionMeta?.cwd || null,
+  };
+}
+
+function inferAuxiliaryDispatch(dispatch, expectedContract) {
+  const token = normalizedActorToken(dispatch.taskName);
+  const controls = [
+    ["verify-patch", /verify_patch/],
+    ["test-review", /test_review/],
+    ["code-review", /code_review|reviewer/],
+    ["process-judge", /process_judge/],
+    ["development", /development|dev_story|developer/],
+    ["atdd", /atdd/],
+  ];
+  const control = controls.find(([, pattern]) => pattern.test(token))?.[0];
+  if (!control) return null;
+  const scopes = [...new Set(expectedContract.map((entry) => entry.scope))];
+  const scope = scopes.find((entry) => token.includes(normalizedActorToken(entry))) || (/epic/.test(token) ? "epic" : null);
+  if (!scope) return null;
+  const retryOrdinal = Number(token.match(/retry_?(\d+)$/)?.[1] || 0);
+  return {
+    scope,
+    control,
+    persona: "legacy-auxiliary",
+    retryable: retryOrdinal === 1,
+    retryOrdinal,
+    auxiliary: true,
+    taskName: dispatch.taskName,
   };
 }
 
@@ -698,8 +751,9 @@ function correctionSessionWrites(sessionText, repoRoot) {
     let event;
     try { event = JSON.parse(line); } catch { continue; }
     const payload = event.payload || {};
-    if (event.type !== "response_item" || payload.type !== "function_call") continue;
-    const rawArguments = String(payload.arguments || "");
+    if (event.type !== "response_item" || !["function_call", "custom_tool_call"].includes(payload.type)) continue;
+    const rawArguments = String(payload.arguments || payload.input || "");
+    const normalizedArguments = rawArguments.replaceAll("\\n", "\n").replaceAll('\\"', '"');
     let args = {};
     try { args = JSON.parse(rawArguments || "{}"); } catch {}
     const name = String(payload.name || "");
@@ -707,7 +761,7 @@ function correctionSessionWrites(sessionText, repoRoot) {
       unsafeDelegations.push(name);
     }
     if (/apply_patch/i.test(name) || /tools\.apply_patch\s*\(/.test(rawArguments)) {
-      const patchText = String(args.input || args.patch || rawArguments);
+      const patchText = String(args.input || args.patch || normalizedArguments);
       for (const match of patchText.matchAll(/^\*\*\* (?:Add|Update|Delete) File:\s+(.+?)\s*$/gm)) {
         paths.push(path.resolve(repoRoot, match[1]));
       }
@@ -716,7 +770,9 @@ function correctionSessionWrites(sessionText, repoRoot) {
       if (target) paths.push(path.resolve(repoRoot, target));
     } else if (/exec_command|shell|bash/i.test(name) || /tools\.exec_command\s*\(/.test(rawArguments)) {
       const command = String(args.cmd || args.command || rawArguments);
-      if (/(?:^|\s)(?:sed\s+-i|perl\s+-pi|tee|cp|mv|touch|rm|mkdir)(?:\s|$)|(?:^|[^>])>{1,2}(?!>)|(?:writeFile|write_text|\.write\s*\(|open\s*\([^)]*["']w)/.test(command)) {
+      const allowedReadOrTest = /(?:git\s+(?:status|diff|show)|\brg\b|\bsed\s+-n\b|\bcat\b|\bls\b|\bfind\b|\bwc\b|\bshasum\b|\bsha256sum\b|php\s+artisan\s+test|vendor\/bin\/phpunit|(?:npm|pnpm|yarn)\s+test|npx\s+(?:vitest|playwright)\s+test|composer\s+test)/.test(command);
+      const mutationSignal = /(?:^|\s)(?:sed\s+-i|perl\s+-pi|tee|cp|mv|touch|rm|mkdir|install|dd)(?:\s|$)|(?:^|[^>])>{1,2}(?!>)|(?:writeFile|write_text|file_put_contents|\.write\s*\(|open\s*\([^)]*["']w)|\b(?:python\d*|php|node|ruby|perl)\s+(?:-c|-e|-r)\b/.test(command);
+      if (!allowedReadOrTest || mutationSignal) {
         unsafeShellMutations.push(command);
       }
     }
@@ -732,6 +788,30 @@ function isCorrectionArtifactPath(filePath, repoRoot) {
     || /^docs\/ai\/reports\//.test(relative);
 }
 
+function validateCorrectionBinding(repoRoot, binding) {
+  const recordPath = path.join(repoRoot, "docs", "ai", "corrections", `${binding.taskName}.json`);
+  if (!fs.existsSync(recordPath)) return [`${binding.taskName}: durable correction binding missing`];
+  let record;
+  try { record = JSON.parse(fs.readFileSync(recordPath, "utf8")); }
+  catch { return [`${binding.taskName}: durable correction binding is invalid JSON`]; }
+  const failures = [];
+  if (record.schema !== "acef.atdd-correction.v1") failures.push(`${binding.taskName}: correction binding schema mismatch`);
+  if (record.sourceActorId !== binding.sourceTaskName) failures.push(`${binding.taskName}: correction source actor mismatch`);
+  if (record.correctionActorId !== binding.taskName) failures.push(`${binding.taskName}: correction actor mismatch`);
+  if (record.scope !== "test-artifacts-only") failures.push(`${binding.taskName}: correction scope is not test-artifacts-only`);
+  if (record.findingsSha256 !== binding.findingsSha256) failures.push(`${binding.taskName}: correction findings hash mismatch`);
+  if (!Array.isArray(record.allowedPaths) || !record.allowedPaths.length) failures.push(`${binding.taskName}: correction allowedPaths missing`);
+  else {
+    for (const entry of record.allowedPaths) {
+      if (typeof entry !== "string" || /[*?\[\]{}]/.test(entry) || path.isAbsolute(entry) || entry.split(/[\\/]/).includes("..")
+        || !isCorrectionArtifactPath(path.resolve(repoRoot, entry), repoRoot)) {
+        failures.push(`${binding.taskName}: invalid correction allowedPath ${String(entry)}`);
+      }
+    }
+  }
+  return failures;
+}
+
 function loadCollaborationEvidence(rawPath, expectedContract, expectedSession = {}) {
   const rawText = fs.readFileSync(rawPath, "utf8");
   let threadId = null;
@@ -742,6 +822,7 @@ function loadCollaborationEvidence(rawPath, expectedContract, expectedSession = 
   if (!sessionPath) return { ok: false, threadId, sessionPath: null, failures: ["Codex session transcript not found"] };
   const evidence = parseCollaborationEvidence(rawText, fs.readFileSync(sessionPath, "utf8"), expectedContract, expectedSession);
   const failures = [...evidence.failures];
+  for (const binding of evidence.correctionBindings || []) failures.push(...validateCorrectionBinding(expectedSession.cwd, binding));
   const childSessions = [];
   for (const dispatch of evidence.dispatches || []) {
     const childPath = findCodexSessionTranscript(dispatch.receiverThreadId);
@@ -765,14 +846,35 @@ function loadCollaborationEvidence(rawPath, expectedContract, expectedSession = 
     else {
       const parentResult = dispatch.parentFinalText.match(/\bACTOR_RESULT=(PASS|REVISE|FAIL|BLOCKED|REPLAN)\b/)?.[1] || "";
       const childResult = String(completion.last_agent_message || "").match(/\bACTOR_RESULT=(PASS|REVISE|FAIL|BLOCKED|REPLAN)\b/)?.[1] || "";
-      if (!childResult || childResult !== parentResult) failures.push(`${dispatch.taskName}: child/parent actor result mismatch`);
+      if (dispatch.auxiliary && !parentResult && !childResult) {
+        if (!dispatch.parentFinalText.includes(String(completion.last_agent_message || ""))) failures.push(`${dispatch.taskName}: auxiliary child/parent final answer mismatch`);
+      } else if (!childResult || childResult !== parentResult) failures.push(`${dispatch.taskName}: child/parent actor result mismatch`);
     }
-    if (/_atdd_correction1$/.test(dispatch.taskName)) {
+    if (/_atdd_(?:correction|adjudication)1$/.test(dispatch.taskName)) {
       const writes = correctionSessionWrites(childText, expectedSession.cwd);
-      const forbidden = writes.paths.filter((entry) => !isCorrectionArtifactPath(entry, expectedSession.cwd));
-      if (forbidden.length) failures.push(`${dispatch.taskName}: correction wrote outside test artifacts: ${forbidden.map((entry) => path.relative(expectedSession.cwd, entry)).join(", ")}`);
-      if (writes.unsafeShellMutations.length) failures.push(`${dispatch.taskName}: correction used an unscoped shell mutation`);
-      if (writes.unsafeDelegations.length) failures.push(`${dispatch.taskName}: correction actor delegated work`);
+      const adjudication = /_atdd_adjudication1$/.test(dispatch.taskName);
+      let allowedCorrectionPaths = null;
+      if (!adjudication) {
+        try {
+          const bindingPath = path.join(expectedSession.cwd, "docs", "ai", "corrections", `${dispatch.taskName}.json`);
+          const binding = JSON.parse(fs.readFileSync(bindingPath, "utf8"));
+          allowedCorrectionPaths = new Set((binding.allowedPaths || []).map((entry) => path.resolve(expectedSession.cwd, entry)));
+          const spawnCommit = meta?.git?.commit_hash || "";
+          const bindingRelative = path.relative(expectedSession.cwd, bindingPath).replaceAll(path.sep, "/");
+          const committedBinding = spawnCommit
+            ? execute("git", ["show", `${spawnCommit}:${bindingRelative}`], expectedSession.cwd)
+            : { status: 1, stdout: "" };
+          if (committedBinding.status !== 0 || sha256(committedBinding.stdout) !== sha256(fs.readFileSync(bindingPath, "utf8"))) {
+            failures.push(`${dispatch.taskName}: correction binding was not committed unchanged before spawn`);
+          }
+        } catch {}
+      }
+      const forbidden = writes.paths.filter((entry) => adjudication
+        ? !/^docs\/ai\/reports\//.test(path.relative(expectedSession.cwd, entry).replaceAll(path.sep, "/"))
+        : !isCorrectionArtifactPath(entry, expectedSession.cwd) || !allowedCorrectionPaths?.has(entry));
+      if (forbidden.length) failures.push(`${dispatch.taskName}: bounded ATDD actor wrote outside its allowed artifacts: ${forbidden.map((entry) => path.relative(expectedSession.cwd, entry)).join(", ")}`);
+      if (writes.unsafeShellMutations.length) failures.push(`${dispatch.taskName}: bounded ATDD actor used an unscoped shell mutation`);
+      if (writes.unsafeDelegations.length) failures.push(`${dispatch.taskName}: bounded ATDD actor delegated work`);
     }
     childSessions.push({
       taskName: dispatch.taskName,
@@ -1085,6 +1187,13 @@ function pilotCheckpointPath(opts, attemptRunId) {
 }
 
 function resolvedTaskSha256(resolved) {
+  const setup = resolved.kind === "epic"
+    ? resolved.task.stories.flatMap((story) => story.setup || [])
+    : (resolved.task.setup || []);
+  const fixtureHashes = setup.filter((operation) => operation.type === "copy-fixture").map((operation) => ({
+    fixture: operation.fixture,
+    sha256: sha256(fs.readFileSync(path.join(resolved.fixtureRoot, operation.fixture))),
+  }));
   return sha256(JSON.stringify({
     taskId: resolved.taskId,
     selector: resolved.selector,
@@ -1097,8 +1206,17 @@ function resolvedTaskSha256(resolved) {
     commit: resolved.commit,
     setupDirs: resolved.setupDirs,
     setupFiles: resolved.setupFiles,
+    sourceManifestSha256: sha256(fs.readFileSync(resolved.sourceManifestPath)),
+    fixtureHashes,
     task: resolved.task,
   }));
+}
+
+function catalogTaskBindings(manifest, manifestPath) {
+  return Object.keys(manifest.taskCatalog || {}).sort().map((taskId) => {
+    const resolved = resolveCatalogTask(manifest, manifestPath, taskId);
+    return { taskId, resolvedTaskSha256: resolvedTaskSha256(resolved) };
+  });
 }
 
 function reconcileFinalizedCheckpoint(checkpoint, row) {
@@ -1314,6 +1432,8 @@ function finalizePilotAttempt(manifest, opts, checkpoint) {
       clientVersion: checkpoint.observedClientVersion.replace(/^codex-cli\s+/, ""),
       startedAt: receipt.startedAt,
       finishedAt: receipt.finishedAt,
+      allowUnexpectedActors: attempt.treatment === "legacy",
+      legacyPolicy: attempt.treatment === "legacy",
     })
     : { ok: true, expectedActorCount: 0, observedActorCount: 0, dispatches: [], failures: [] };
   const durableLifecycleEvidence = actorContract.length
@@ -1324,7 +1444,7 @@ function finalizePilotAttempt(manifest, opts, checkpoint) {
     )
     : { ok: true, actorCount: 0, gateCount: 0, failures: [] };
   const trace = actorContract.length
-    ? parseLifecycleDispatchTrace(collaborationEvidence.actorContract || [], {
+    ? parseLifecycleDispatchTrace(collaborationEvidence.dispatchTraceContract || collaborationEvidence.actorContract || [], {
       scopeIds: resolved.task.stories.map((story) => story.id),
       requiredControlsPerScope: ["atdd", "development", "code-review", "verify-patch", "test-review", "process-judge"],
     })
@@ -1342,6 +1462,7 @@ function finalizePilotAttempt(manifest, opts, checkpoint) {
   const automatedOraclePassed = actor.status === 0 && verification.status === 0
     && scopeViolations.length === 0 && expectationFailures.length === 0
     && collaborationEvidence.ok && durableLifecycleEvidence.ok
+    && (!actorContract.length || collaborationEvidence.closeoutCreatedMandatoryChains === 0)
     && trace.scopeAttributionComplete && trace.lifecycleComplete && !trace.duplicateLifecycle
     && treatmentState.ok;
   const row = {
@@ -1425,6 +1546,7 @@ function runPilotAttempt(manifest, opts) {
     throw new Error(`${attempt.id}: runner worktree must be clean before a scored pilot launch`);
   }
   const clientRuntime = resolvePinnedClient(manifest.pilotRuntime);
+  const resolved = resolveCatalogTask(manifest, opts.manifest, attempt.taskId);
   if (!fs.existsSync(opts.preflightOutput)) throw new Error(`${attempt.id}: pilot preflight artifact is missing`);
   const pilotPreflight = JSON.parse(fs.readFileSync(opts.preflightOutput, "utf8"));
   const preflightFailures = [];
@@ -1433,11 +1555,14 @@ function runPilotAttempt(manifest, opts) {
   if (pilotPreflight.runnerDirtyBefore !== false) preflightFailures.push("preflight runner worktree was dirty");
   if (pilotPreflight.runnerSourceSha256 !== runnerSourceSha256()) preflightFailures.push("preflight runner source drift");
   if (pilotPreflight.manifestSha256 !== sha256(fs.readFileSync(opts.manifest, "utf8"))) preflightFailures.push("preflight manifest binding drift");
+  const preflightTaskBinding = (pilotPreflight.taskBindings || []).find((entry) => entry.taskId === attempt.taskId);
+  if (!preflightTaskBinding || preflightTaskBinding.resolvedTaskSha256 !== resolvedTaskSha256(resolved)) {
+    preflightFailures.push("preflight resolved task/fixture binding drift");
+  }
   if (pilotPreflight.collaborationCanary?.clientBinarySha256 !== clientRuntime.clientBinarySha256) preflightFailures.push("preflight client binary drift");
   if (pilotPreflight.collaborationCanary?.clientVersion !== clientRuntime.observedClientVersion) preflightFailures.push("preflight client version drift");
   if (preflightFailures.length) throw new Error(`${attempt.id}: ${preflightFailures.join("; ")}`);
   const attemptOrdinal = history.maxOrdinal + 1;
-  const resolved = require("./lib/acef-execution-assurance-experiment").resolveCatalogTask(manifest, opts.manifest, attempt.taskId);
   if (resolved.kind === "story") {
     throw new Error(`${attempt.id} story treatment execution is not enabled until exact-version compact lifecycle orchestration is wired`);
   }
@@ -1539,6 +1664,7 @@ function main() {
       runnerCommit: must("git", ["rev-parse", "HEAD"], root),
       runnerDirtyBefore,
       runnerSourceSha256: runnerSourceSha256(),
+      taskBindings: catalogTaskBindings(manifest, opts.manifest),
       checkedAt: new Date().toISOString(),
       ...preflight,
       collaborationCanary,
@@ -1572,6 +1698,7 @@ if (require.main === module) {
 }
 
 module.exports = {
+  catalogTaskBindings,
   correctionSessionWrites,
   ensureActorRequest,
   evaluateTreatmentState,
@@ -1584,5 +1711,6 @@ module.exports = {
   resolvePinnedClient,
   runnerSourceSha256,
   validateDurableLifecycleEvidence,
+  validateCorrectionBinding,
   resolvedTaskSha256,
 };

@@ -10,6 +10,7 @@ const {
   parseGateVerdict,
   parseApproval,
   parseWorkerScope,
+  parseAtddCorrection,
   parseWorkflow,
   parseFreshness,
   safeRelative,
@@ -108,6 +109,25 @@ try {
     canSpawnAgents: false,
   });
   if (parseWorkerScope(workerScope).workerId !== "dev-1") throw new Error("worker scope parse failed");
+  const atddCorrection = path.join(tmp, "atdd-correction.json");
+  fs.writeFileSync(atddCorrection, `${JSON.stringify({
+    schema: "acef.atdd-correction.v1",
+    sourceActorId: "story-atdd",
+    correctionActorId: "story-atdd-correction1",
+    scope: "test-artifacts-only",
+    findingsSha256: "a".repeat(64),
+    allowedPaths: ["tests/Feature/FocusedTest.php"],
+  })}\n`);
+  if (parseAtddCorrection(atddCorrection).correctionActorId !== "story-atdd-correction1") throw new Error("ATDD correction parse failed");
+  fs.writeFileSync(atddCorrection, `${JSON.stringify({
+    schema: "acef.atdd-correction.v1",
+    sourceActorId: "story-atdd",
+    correctionActorId: "story-atdd-correction1",
+    scope: "test-artifacts-only",
+    findingsSha256: "a".repeat(64),
+    allowedPaths: ["tests/**"],
+  })}\n`);
+  assertThrows(() => parseAtddCorrection(atddCorrection), /without globs/, "unsafe ATDD correction scope");
   const workflow = write("workflows/lightweight-review.yaml", [
     "workflow: lightweight-review",
     "version: 1",

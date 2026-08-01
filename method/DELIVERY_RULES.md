@@ -140,7 +140,10 @@ only criteria do not each need a red test before the first implementation. When 
 repeat the phase and do not halt the whole epic. One fresh, report-only Test Reviewer adjudicates the frozen story
 contract and the exact findings. An over-broad rejection is overruled without replaying ATDD. A valid gap permits one
 fresh Test Author correction limited to non-protected tests and test artifacts; the correction receives only the
-findings and their hash. A second incomplete result is `REPLAN/SPLIT`.
+findings and their hash. Because some runtimes encrypt delegated prompt text at rest, the conductor persists a typed
+`docs/ai/corrections/<actor>.json` binding and commits it before dispatch: source/correction actor IDs, exact findings SHA-256,
+`scope: test-artifacts-only`, and explicit non-glob allowed paths. The oracle reconciles that record with the parent
+result and the correction actor's real write calls. A second incomplete result is `REPLAN/SPLIT`.
 
 `REPLAN/SPLIT` quarantines the failed scope and its transitive dependants. Independent scopes continue unless a declared
 dependency edge or shared safety invariant makes continuation unsafe. Quarantine never converts the epic product gate

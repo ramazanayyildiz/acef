@@ -114,7 +114,9 @@ A worker launched before this bootstrap is drift. Stop, record it, patch the amb
 - Conductor coordinates; it does not author implementation, ATDD, code review, verify-patch, test review, or Process Judge work in full BMAD.
 - Full-BMAD ATDD needs one genuine critical-path red plus a map of every criterion; regression-only criteria need not all
   be red before implementation. A `REVISE` gets one fresh report-only adjudication, then at most one findings-hash-bound,
-  test-artifact-only correction. Never replay the ATDD lifecycle; a second incomplete result is `REPLAN/SPLIT`.
+  test-artifact-only correction. Before correction dispatch, persist and commit `docs/ai/corrections/<actor>.json` with the source
+  and correction actor IDs, exact parent-result SHA-256, `scope: test-artifacts-only`, and explicit non-glob allowed
+  paths. Never replay the ATDD lifecycle; a second incomplete result is `REPLAN/SPLIT`.
 - Quarantine a failed story and its transitive dependants while continuing dependency-independent stories. Halt the
   whole run only for a declared dependency or shared safety invariant; quarantined work still fails product closeout.
 - Freeze the mandatory closeout inventory before execution. Closeout analysis may not create actors, mandatory work,

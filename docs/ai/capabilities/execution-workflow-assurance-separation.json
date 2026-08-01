@@ -21,12 +21,14 @@
     ],
     "schema": [
       "schemas/active-run-v2.schema.json",
+      "schemas/atdd-correction.schema.json",
       "schemas/lightweight-run-v2.schema.json",
       "schemas/control-dosing-v2.schema.json"
     ],
     "workflow": [
       "scripts/lib/acef-execution-policy.js",
       "scripts/lib/acef-state-parser.js#parseActiveRun",
+      "scripts/lib/acef-state-parser.js#parseAtddCorrection",
       "scripts/acef-state#writeActiveRun",
       "scripts/acef-state#migrateActiveRun",
       "method/control-dosing.json"
@@ -93,6 +95,11 @@
       "layer": "tests",
       "ref": "docs/experiments/execution-assurance-v2/AMENDMENT-009.md",
       "note": "Records the independent ATDD adjudication, bounded recovery changes, and frozen acceptance gates for a fresh matched P0 repair pair."
+    },
+    {
+      "layer": "tests",
+      "ref": "docs/experiments/execution-assurance-v2/P0_ATDD_ADJUDICATION.json",
+      "note": "Binds the independent historical Story 2 ATDD OVERRULE to exact input, final-answer, actor/thread, and transcript hashes without mutating the failed result."
     },
     {
       "layer": "tests",

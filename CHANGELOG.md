@@ -14,6 +14,10 @@ or evidence contract. Do not use it to claim implementation status; link to the 
 - Replaced the one-strike ATDD stop with a bounded exception path: one fresh report-only adjudication, followed only
   when upheld by one findings-hash-bound, test-artifact-only correction. Initial ATDD now targets the critical vertical
   path while mapping regression-only acceptance criteria for expansion before test review.
+- Bound correction authority through a durable pre-dispatch record because pinned Codex transcripts encrypt spawn
+  messages at rest; the oracle now reads real `custom_tool_call/input` events and audits adjudication as report-only.
+- Added an installed typed schema/parser for that correction record, requires the binding to exist unchanged in the
+  correction child's spawn commit, and deny-lists arbitrary shell execution through a narrow read/test allowlist.
 - Added dependency-aware quarantine semantics so a failed story blocks its transitive dependants without discarding
   evidence from independent stories; shared safety invariants still halt the run.
 - Froze the mandatory actor inventory before execution and made unexpected closeout/coverage/trace/statistics actors an

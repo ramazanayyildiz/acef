@@ -276,6 +276,20 @@ function parseWorkerScope(filePath) {
   return record;
 }
 
+function parseAtddCorrection(filePath) {
+  const record = readJson(filePath);
+  requireFields(record, ["schema", "sourceActorId", "correctionActorId", "scope", "findingsSha256", "allowedPaths"], "ATDD correction");
+  requireEnum(record, "schema", ["acef.atdd-correction.v1"], "ATDD correction");
+  requireEnum(record, "scope", ["test-artifacts-only"], "ATDD correction");
+  if (!/^[a-f0-9]{64}$/.test(record.findingsSha256)) throw new Error("ATDD correction findingsSha256 must be lowercase SHA-256");
+  requireStringArray(record, "allowedPaths", "ATDD correction", { nonEmpty: true });
+  if (new Set(record.allowedPaths).size !== record.allowedPaths.length) throw new Error("ATDD correction allowedPaths must be unique");
+  if (record.allowedPaths.some((entry) => path.isAbsolute(entry) || entry.split(/[\\/]/).includes("..") || /[*?\[\]{}]/.test(entry))) {
+    throw new Error("ATDD correction allowedPaths must be explicit repo-relative paths without globs or ..");
+  }
+  return record;
+}
+
 function parseScalar(value) {
   return String(value || "").trim().replace(/^["']|["']$/g, "");
 }
@@ -1027,6 +1041,7 @@ module.exports = {
   parseGateVerdict,
   parseApproval,
   parseWorkerScope,
+  parseAtddCorrection,
   parseWorkflow,
   parsePrReview,
   parsePrReviewProfile,

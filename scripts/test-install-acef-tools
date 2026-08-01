@@ -39,6 +39,7 @@ try {
   const installationHelper = path.join(tmp, ".acef", "bin", "lib", "acef-installation.js");
   const schema = path.join(tmp, ".acef", "schemas", "active-run.schema.json");
   const activeRunV2Schema = path.join(tmp, ".acef", "schemas", "active-run-v2.schema.json");
+  const atddCorrectionSchema = path.join(tmp, ".acef", "schemas", "atdd-correction.schema.json");
   const lightweightV2Schema = path.join(tmp, ".acef", "schemas", "lightweight-run-v2.schema.json");
   const directSchema = path.join(tmp, ".acef", "schemas", "direct-run.schema.json");
   const capabilitySchema = path.join(tmp, ".acef", "schemas", "capability-change.schema.json");
@@ -60,6 +61,7 @@ try {
   if (!fs.existsSync(installationHelper)) throw new Error("installation support library was not installed");
   if (!fs.existsSync(schema)) throw new Error("typed-state schemas were not installed");
   if (!fs.existsSync(activeRunV2Schema)) throw new Error("active-run v2 schema was not installed");
+  if (!fs.existsSync(atddCorrectionSchema)) throw new Error("ATDD correction schema was not installed");
   if (!fs.existsSync(lightweightV2Schema)) throw new Error("lightweight-run v2 schema was not installed");
   if (!fs.existsSync(directSchema)) throw new Error("direct-run schema was not installed");
   if (!fs.existsSync(capabilitySchema)) throw new Error("capability-change schema was not installed");

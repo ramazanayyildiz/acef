@@ -31,6 +31,7 @@ const repairManifestPath = path.join(root, "docs", "experiments", "execution-ass
 const cli = path.join(root, "scripts", "acef-execution-assurance-experiment");
 const actorCli = path.join(root, "scripts", "acef-execution-assurance-actor");
 const {
+  catalogTaskBindings,
   correctionSessionWrites,
   ensureActorRequest,
   evaluateTreatmentState,
@@ -43,6 +44,7 @@ const {
   resolvedTaskSha256,
   runnerSourceSha256,
   validateDurableLifecycleEvidence,
+  validateCorrectionBinding,
 } = require("./acef-execution-assurance-experiment");
 const manifest = validateManifest(JSON.parse(fs.readFileSync(manifestPath, "utf8")));
 const repairManifest = validateManifest(JSON.parse(fs.readFileSync(repairManifestPath, "utf8")));
@@ -81,6 +83,13 @@ assert.deepEqual(resolvedEpic.setupDirs, ["tests/Integration", "tests/Performanc
 assert.deepEqual(resolvedEpic.setupFiles, [{ path: "/tmp/jako-bench-webhook/database/testing.sqlite", mode: "truncate" }]);
 const epicActorContract = lifecycleActorContract(resolvedEpic);
 assert.equal(epicActorContract.length, 25, "four stories need six actors each plus one epic Process Judge");
+assert.equal(epicActorContract.at(-1).retryable, false, "the exact-one epic Process Judge cannot retry");
+assert.equal(catalogTaskBindings(repairManifest, repairManifestPath)[0].resolvedTaskSha256, resolvedTaskSha256(resolveCatalogTask(
+  repairManifest, repairManifestPath, "full-guarded-motivation",
+)));
+const changedResolvedEpic = structuredClone(resolvedEpic);
+changedResolvedEpic.task.stories[0].dependsOn = ["synthetic-drift"];
+assert.notEqual(resolvedTaskSha256(changedResolvedEpic), resolvedTaskSha256(resolvedEpic), "task inventory drift must change its preflight binding");
 const syntheticRaw = `${JSON.stringify({ type: "thread.started", thread_id: "parent-thread" })}\n`;
 const syntheticSession = [JSON.stringify({ type: "session_meta", payload: {
   session_id: "parent-thread", timestamp: "2026-08-01T00:00:00.000Z", cwd: root, cli_version: "0.146.0",
@@ -113,6 +122,12 @@ const revisedWithAdjudication = [
 ].join("\n");
 assert.equal(parseCollaborationEvidence(syntheticRaw, revisedWithAdjudication, epicActorContract).ok, true,
   "one fresh adjudicator may overrule an over-broad ATDD REVISE without replaying ATDD");
+assert.equal(parseCollaborationEvidence(
+  syntheticRaw,
+  syntheticSession.replace("ACTOR_RESULT=PASS", "ACTOR_RESULT=REVISE"),
+  epicActorContract,
+  { legacyPolicy: true, allowUnexpectedActors: true },
+).ok, true, "candidate adjudication must not be required by the legacy comparator");
 const correctionName = `${firstAtdd.taskName}_correction1`;
 const revisedAtddFinalText = parseCollaborationEvidence(
   syntheticRaw,
@@ -130,14 +145,29 @@ function upheldCorrectionSession(correctionMessage) {
     JSON.stringify({ type: "response_item", payload: { type: "agent_message", author: `/root/${correctionName}`, content: [{ type: "input_text", text: `Message Type: FINAL_ANSWER\nSender: /root/${correctionName}\nPayload:\nACTOR_RESULT=PASS` }] } }),
   ].join("\n");
 }
-assert.equal(parseCollaborationEvidence(syntheticRaw, upheldCorrectionSession(
-  `CORRECTION_SCOPE=test-artifacts-only CORRECTION_FINDINGS_SHA256=${sha256(revisedAtddFinalText)}`,
-), epicActorContract).ok, true, "one findings-bound test-only ATDD correction is allowed after an upheld finding");
-assert.equal(parseCollaborationEvidence(syntheticRaw, upheldCorrectionSession("fix whatever is needed"), epicActorContract).ok, false,
-  "an unbound or production-capable correction must fail closed");
+const upheldCorrectionEvidence = parseCollaborationEvidence(syntheticRaw, upheldCorrectionSession("encrypted-at-rest"), epicActorContract);
+assert.equal(upheldCorrectionEvidence.ok, true, "one upheld correction is accepted at the transcript layer");
+assert.deepEqual(upheldCorrectionEvidence.correctionBindings, [{
+  taskName: correctionName,
+  sourceTaskName: firstAtdd.taskName,
+  findingsSha256: sha256(revisedAtddFinalText),
+}], "the durable correction contract must bind the exact parent-delivered findings independently of encrypted spawn text");
 assert.equal(parseCollaborationEvidence(syntheticRaw, `${syntheticSession}\n${JSON.stringify({
   type: "response_item", payload: { type: "function_call", namespace: "collaboration", name: "spawn_agent", call_id: "extra-closeout", arguments: JSON.stringify({ task_name: "coverage_closeout_reviewer", fork_turns: "none" }) },
 })}`, epicActorContract).ok, false, "closeout cannot expand the frozen actor inventory");
+const legacyAuxiliaryName = "legacy_required_auxiliary";
+const legacyAuxiliarySession = [
+  syntheticSession,
+  JSON.stringify({ type: "response_item", payload: { type: "function_call", namespace: "collaboration", name: "spawn_agent", call_id: "legacy-extra", arguments: JSON.stringify({ task_name: legacyAuxiliaryName, fork_turns: "none" }) } }),
+  JSON.stringify({ type: "event_msg", payload: { type: "sub_agent_activity", event_id: "legacy-extra", agent_thread_id: "legacy-extra-thread", kind: "started" } }),
+  JSON.stringify({ type: "response_item", payload: { type: "agent_message", author: `/root/${legacyAuxiliaryName}`, content: [{ type: "input_text", text: `Message Type: FINAL_ANSWER\nSender: /root/${legacyAuxiliaryName}\nPayload:\nlegacy evidence complete` }] } }),
+].join("\n");
+const legacyAuxiliaryEvidence = parseCollaborationEvidence(syntheticRaw, legacyAuxiliarySession, epicActorContract, {
+  allowUnexpectedActors: true,
+  legacyPolicy: true,
+});
+assert.equal(legacyAuxiliaryEvidence.ok, true, "candidate closeout policy must not contaminate the legacy comparator");
+assert.equal(legacyAuxiliaryEvidence.dispatches.at(-1).auxiliary, true, "legacy auxiliary provenance must remain in measured dispatches");
 const forgedSingleDispatch = parseCollaborationEvidence(syntheticRaw, [
   JSON.stringify({ type: "session_meta", payload: { session_id: "parent-thread", timestamp: "2026-08-01T00:00:00.000Z", cwd: root, cli_version: "0.146.0" } }),
   JSON.stringify({ type: "response_item", payload: { type: "function_call", namespace: "collaboration", name: "spawn_agent", call_id: "one", arguments: JSON.stringify({ task_name: epicActorContract[0].taskName, fork_turns: "none" }) } }),
@@ -249,6 +279,16 @@ const correctionWrites = correctionSessionWrites(JSON.stringify({
   payload: { type: "function_call", name: "apply_patch", arguments: JSON.stringify({ input: "*** Begin Patch\n*** Update File: app/Unsafe.php\n*** End Patch" }) },
 }), root);
 assert.deepEqual(correctionWrites.paths.map((entry) => path.relative(root, entry)), ["app/Unsafe.php"]);
+const customToolCorrectionWrites = correctionSessionWrites(JSON.stringify({
+  type: "response_item",
+  payload: { type: "custom_tool_call", name: "exec", input: "const patch = \"*** Begin Patch\\n*** Update File: tests/Feature/FocusedTest.php\\n*** End Patch\"; await tools.apply_patch(patch);" },
+}), root);
+assert.deepEqual(customToolCorrectionWrites.paths.map((entry) => path.relative(root, entry)), ["tests/Feature/FocusedTest.php"],
+  "pinned Codex custom_tool_call/input writes must be observable");
+assert.equal(correctionSessionWrites(JSON.stringify({
+  type: "response_item",
+  payload: { type: "custom_tool_call", name: "exec", input: "const r=await tools.exec_command({cmd:\"php -r 'file_put_contents(\\\"app/Unsafe.php\\\", \\\"x\\\");'\"}); text(r.output);" },
+}), root).unsafeShellMutations.length, 1, "arbitrary interpreter writes must fail the bounded ATDD shell allowlist");
 assert.equal(correctionSessionWrites(JSON.stringify({
   type: "response_item",
   payload: { type: "function_call", namespace: "collaboration", name: "spawn_agent", arguments: "{}" },
@@ -256,6 +296,27 @@ assert.equal(correctionSessionWrites(JSON.stringify({
 const invalidRepairManifest = structuredClone(repairManifest);
 invalidRepairManifest.promotionGates.costAfterProductPass.failFastCannotWin = false;
 assert.throws(() => validateManifest(invalidRepairManifest), /cost gates/);
+const correctionBindingRepo = fs.mkdtempSync(path.join(os.tmpdir(), "acef-correction-binding-test-"));
+try {
+  fs.mkdirSync(path.join(correctionBindingRepo, "docs", "ai", "corrections"), { recursive: true });
+  const binding = { taskName: correctionName, sourceTaskName: firstAtdd.taskName, findingsSha256: sha256(revisedAtddFinalText) };
+  const bindingPath = path.join(correctionBindingRepo, "docs", "ai", "corrections", `${correctionName}.json`);
+  fs.writeFileSync(bindingPath, `${JSON.stringify({
+    schema: "acef.atdd-correction.v1",
+    sourceActorId: firstAtdd.taskName,
+    correctionActorId: correctionName,
+    scope: "test-artifacts-only",
+    findingsSha256: binding.findingsSha256,
+    allowedPaths: ["tests/Feature/FocusedTest.php", "docs/ai/reports/atdd-correction.md"],
+  })}\n`);
+  assert.deepEqual(validateCorrectionBinding(correctionBindingRepo, binding), []);
+  const invalidBinding = JSON.parse(fs.readFileSync(bindingPath, "utf8"));
+  invalidBinding.allowedPaths = ["tests/Feature/BenchmarkProtectedTest.php"];
+  fs.writeFileSync(bindingPath, `${JSON.stringify(invalidBinding)}\n`);
+  assert.match(validateCorrectionBinding(correctionBindingRepo, binding).join("; "), /invalid correction allowedPath/);
+} finally {
+  fs.rmSync(correctionBindingRepo, { recursive: true, force: true });
+}
 for (const marker of [".acef-lane", ".acef-bmad-lane", ".acef-lightweight-lane", "docs/ai/ACEF_ACTIVE_RUN.json"]) {
   assert.equal(isPilotHarnessPath(marker), true, `${marker} must be treated as harness state`);
 }
