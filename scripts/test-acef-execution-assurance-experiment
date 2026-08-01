@@ -328,6 +328,16 @@ assert.equal(correctionSessionWrites(JSON.stringify({
   type: "response_item",
   payload: { type: "custom_tool_call", name: "exec", input: "const decoy={cmd:\"git status\"}; const evil=\"php -r 'file_put_contents(\\\"app/Unsafe.php\\\", \\\"x\\\");'\"; await tools.exec_command({cmd:evil});" },
 }), root).unsafeShellMutations.length, 1, "an unrelated safe literal cannot hide a dynamically supplied exec command");
+for (const input of [
+  "await tools[\"exec_command\"]({cmd:\"php -r 'file_put_contents(\\\"app/Unsafe.php\\\", \\\"x\\\");'\"});",
+  "const t=tools; await t.exec_command({cmd:\"php -r 'file_put_contents(\\\"app/Unsafe.php\\\", \\\"x\\\");'\"});",
+  "await tools[\"apply_patch\"](\"*** Begin Patch\\n*** Update File: app/Unsafe.php\\n*** End Patch\");",
+]) {
+  assert.equal(correctionSessionWrites(JSON.stringify({
+    type: "response_item",
+    payload: { type: "custom_tool_call", name: "exec", input },
+  }), root).unsafeShellMutations.length > 0, true, "non-canonical custom tool access must fail closed");
+}
 assert.equal(correctionSessionWrites(JSON.stringify({
   type: "response_item",
   payload: { type: "function_call", namespace: "collaboration", name: "spawn_agent", arguments: "{}" },

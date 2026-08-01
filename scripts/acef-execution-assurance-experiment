@@ -760,6 +760,13 @@ function correctionSessionWrites(sessionText, repoRoot) {
     let args = {};
     try { args = JSON.parse(rawArguments || "{}"); } catch {}
     const name = String(payload.name || "");
+    if (payload.type === "custom_tool_call" && name === "exec") {
+      const toolReferences = [...rawArguments.matchAll(/\btools\b/g)].length;
+      const canonicalToolCalls = [...rawArguments.matchAll(/\btools\.(?:apply_patch|exec_command)\s*\(/g)].length;
+      if (toolReferences !== canonicalToolCalls) {
+        unsafeShellMutations.push(`unrecognized custom tool access: ${rawArguments}`);
+      }
+    }
     if (payload.namespace === "collaboration" && /spawn_agent/i.test(name)) {
       unsafeDelegations.push(name);
     }
