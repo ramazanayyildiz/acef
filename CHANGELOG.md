@@ -9,6 +9,20 @@ or evidence contract. Do not use it to claim implementation status; link to the 
 
 ## Unreleased
 
+### Full story lifecycle v3.6 deterministic-close rehearsal
+
+- Removed the contradictory requirement that a genuine test-runner failure must name the editable ATDD path. Guarded
+  runs may execute an immutable verification test while deterministic close continues to require a clean test-only red
+  commit, authentic production assertions, exact-command red-to-green ancestry, semantic test continuity, and clean
+  runner proof.
+- Added a full deterministic-gate regression using an editable ATDD test and a distinct frozen verification test. The
+  complete repository suite passed 30/30; clean preflight passed task/canary/environment and four reference validations;
+  Stage 0 passed 6/6.
+- Recorded the immutable non-scored v3.6 rehearsal FAIL after 930.9 active seconds. The repaired red/green evidence was
+  accepted, but both Story 1 reviewers used schema-invalid enum spellings in their one-shot completion reports. The
+  system correctly stopped, yet could not route the real HIGH finding into bounded Developer repair. No promotion or
+  maturity change is implied.
+
 ### Full story lifecycle v3.5 measured-failure recovery preparation
 
 - Classified unsuffixed and suffixed delivery ledgers plus the active-ledger pointer consistently as control state, so

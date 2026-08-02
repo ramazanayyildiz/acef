@@ -40,7 +40,10 @@
       "docs/experiments/execution-assurance-v35/DESIGN.md",
       "docs/experiments/execution-assurance-v35/PREPARATION_RESULT.md",
       "docs/experiments/execution-assurance-v35/manifest.json",
-      "docs/experiments/execution-assurance-v35/P0_RESULT.md"
+      "docs/experiments/execution-assurance-v35/P0_RESULT.md",
+      "docs/experiments/execution-assurance-v36/DESIGN.md",
+      "docs/experiments/execution-assurance-v36/rehearsal-manifest.json",
+      "docs/experiments/execution-assurance-v36/REHEARSAL_RESULT.md"
     ],
     "schema": [
       "schemas/active-run-v2.schema.json",
@@ -100,7 +103,7 @@
     "The failed v3 P0 artifacts remain immutable. V3.1 repaired real-environment preflight, story-tree scope, reviewer completion, and measurement ceilings, but its P0 still failed process closeout after exhausting 21 actor invocations; its blind Judge was mechanically blocked because packet validation omitted frozen testPaths.",
     "V3.2 accepts frozen testPaths as blinded product artifacts, raises only the actor hard cap to the observed 25-invocation recovery envelope, renders acceptance criteria explicitly, and excludes readiness notes from bound close packages.",
     "The v3.2 P0 admitted and completed blind judgment but failed automated, process, product, broad-closeout, and harness-wait gates. It exposed a namespaced-call ATDD authenticity false negative and a contradictory frozen Story 2 ATDD contract, so the capability remains enforced rather than proven.",
-    "The v3.3, v3.4, and v3.5 P0 attempts are immutable automated and blind failures. V3.5 repaired the measured legacy-ledger, durability-dosing, repair-test continuity, reviewer-result, retry-topology, and generic MySQL oracle gaps before its first-story stop, but deterministic close rejected a genuine test-only-red/production-only-green sequence because of a red-evidence path-continuity anomaly. Stories 2–4 and epic closeout did not run. Maturity remains enforced rather than proven."
+    "The v3.3, v3.4, and v3.5 P0 attempts are immutable automated and blind failures. V3.6 repaired the v3.5 frozen-verification path anomaly in repository tests and accepted the real rehearsal red/green chain, but the non-scored rehearsal stopped when both one-shot reviewer completions used schema-invalid enum spellings. Stories 2–4 and epic closeout did not complete. Maturity remains enforced rather than proven."
   ],
   "evidence": [
     {
@@ -217,6 +220,11 @@
       "layer": "artifact",
       "ref": "docs/experiments/execution-assurance-v35/P0_RESULT.md",
       "note": "Records the immutable v3.5 automated/blind FAIL, 1,160.1-second fail-fast measurement, successful first-pass typed reviewers, deterministic Story 1 red-evidence path-continuity anomaly, and three HIGH blind findings for the undelivered stories."
+    },
+    {
+      "layer": "artifact",
+      "ref": "docs/experiments/execution-assurance-v36/REHEARSAL_RESULT.md",
+      "note": "Records the immutable non-scored v3.6 rehearsal FAIL, accepted frozen-verification red/green chain, zero coordination idle, schema-invalid one-shot reviewer completions, and the decision to keep maturity enforced."
     },
     {
       "layer": "artifact",
