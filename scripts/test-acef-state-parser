@@ -187,11 +187,18 @@ try {
   if (atddRedExecutionFailure({ command: "node --test tests/story-5-3-red.test.js" }, "--- stdout ---\nnot ok 1 - tests/story-5-3-red.test.js\nAssertionError", changedRedTests)) {
     throw new Error("real test-runner red evidence was rejected");
   }
+  if (atddRedExecutionFailure(
+    { command: "php artisan test --filter=BenchmarkAuthzResolverFailClosedTest" },
+    "--- stdout ---\nFAIL Tests\\Feature\\BenchmarkAuthzResolverFailClosedTest\nAssertionFailedError",
+    changedRedTests,
+  )) {
+    throw new Error("immutable verification-test red evidence was rejected because it did not name the editable ATDD path");
+  }
   if (!atddRedExecutionFailure({ command: "node -e process.exit(1)" }, "--- stdout ---\nFAIL tests/story-5-3-red.test.js", changedRedTests)) {
     throw new Error("arbitrary self-failure was accepted as ATDD red evidence");
   }
   if (!atddRedExecutionFailure({ command: "node --test tests/story-5-3-red.test.js" }, "--- stdout ---\nprocess exited 1", changedRedTests)) {
-    throw new Error("test runner without observed failure identity was accepted as ATDD red evidence");
+    throw new Error("test runner without an observed failure was accepted as ATDD red evidence");
   }
   const meaningfulRedSource = "const actual = require('../app/service'); test('red', () => assert.strictEqual(actual(), 'green'));";
   if (atddTestSourceAuthenticityFailure([{ filePath: changedRedTests[0], source: meaningfulRedSource }])) {

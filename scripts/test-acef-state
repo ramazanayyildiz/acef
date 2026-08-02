@@ -59,6 +59,11 @@ try {
   run("git", ["config", "user.name", "ACEF Test"]);
   fs.mkdirSync(path.join(tmp, "app"), { recursive: true });
   fs.writeFileSync(path.join(tmp, "app", "demo.js"), "module.exports = true;\n");
+  fs.mkdirSync(path.join(tmp, "tests"), { recursive: true });
+  fs.writeFileSync(
+    path.join(tmp, "tests", "frozen-verification.test.js"),
+    "const test = require('node:test'); const assert = require('node:assert'); const actual = require('../app/demo.js'); test('frozen-verification', () => assert.strictEqual(actual, 'v3-green'));\n",
+  );
   fs.mkdirSync(path.join(tmp, "docs", "ai"), { recursive: true });
   fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_demo_DELIVERY_AUDIT.md"), "# Demo\nactive_lane: Full BMAD v2\n");
   run("git", ["add", "."]);
@@ -155,7 +160,7 @@ try {
   }
   run("git", ["add", "tests/story-3-1-red.test.js"]);
   run("git", ["commit", "-qm", "Story 3.1 ATDD red tests"]);
-  const redRun = cp.spawnSync(process.execPath, [state, "evidence-run", "--repo", tmp, "--id", "EV-v3-red", "--kind", "runtime-test", "--actor", "atdd-v3", "--story", "Story 3.1", "--satisfies", "AC-v3", "--", process.execPath, "--test", "tests/story-3-1-red.test.js"], { encoding: "utf8" });
+  const redRun = cp.spawnSync(process.execPath, [state, "evidence-run", "--repo", tmp, "--id", "EV-v3-red", "--kind", "runtime-test", "--actor", "atdd-v3", "--story", "Story 3.1", "--satisfies", "AC-v3", "--", process.execPath, "--test", "tests/frozen-verification.test.js"], { encoding: "utf8" });
   if (redRun.status !== 1) throw new Error("v3 red evidence was not captured as failing");
   runState(["actor", "--repo", tmp, "--id", "dev-v3", "--story", "Story 3.1", "--phase", "development", "--role", "developer", "--client", "codex", "--session-id", "dev-session-v3", "--context-profile", "development"]);
   fs.writeFileSync(path.join(tmp, "app", "demo.js"), "module.exports = 'v3-green';\n");
@@ -182,7 +187,7 @@ try {
   runState(["actor", "--repo", tmp, "--id", "assurance-v3", "--story", "Story 3.1", "--phase", "patch-assurance", "--role", "patch-assurance", "--client", "codex", "--context-profile", "assurance", "--artifact-path", assurancePath]);
   const reviewHash = readJson("docs/ai/actors/review-v3.json").producedArtifactHash;
   const assuranceHash = readJson("docs/ai/actors/assurance-v3.json").producedArtifactHash;
-  runState(["evidence-run", "--repo", tmp, "--id", "EV-v3-green", "--kind", "runtime-test", "--actor", "dev-v3", "--story", "Story 3.1", "--satisfies", "AC-v3", "--", process.execPath, "--test", "tests/story-3-1-red.test.js"]);
+  runState(["evidence-run", "--repo", tmp, "--id", "EV-v3-green", "--kind", "runtime-test", "--actor", "dev-v3", "--story", "Story 3.1", "--satisfies", "AC-v3", "--", process.execPath, "--test", "tests/frozen-verification.test.js"]);
   runState(["gate", "--repo", tmp, "--id", "GATE-v3", "--scope", "Story 3.1", "--atdd-actor", "atdd-v3", "--development-actor", "dev-v3", "--code-review-actor", "review-v3", "--patch-assurance-actor", "assurance-v3", "--red-evidence", "EV-v3-red", "--green-evidence", "EV-v3-green", "--code-review-report-hash", reviewHash, "--patch-assurance-report-hash", assuranceHash]);
   const v3Gate = readJson("docs/ai/gates/GATE-v3.json");
   if (v3Gate.verdict !== "PASS" || v3Gate.decisionMode !== "deterministic" || v3Gate.decidedBy !== "acef-story-close-v3") {

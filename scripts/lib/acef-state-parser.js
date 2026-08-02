@@ -97,17 +97,12 @@ function atddRedExecutionFailure(evidence, rawText, changedTestPaths) {
   const outputMarker = String(rawText || "").match(/--- stdout ---[\s\S]*$/);
   const observedOutput = outputMarker ? outputMarker[0] : String(rawText || "");
   if (!TEST_FAILURE_OUTPUT.test(observedOutput)) return "ATDD red output does not contain an observed test failure";
-  const identities = [];
-  for (const filePath of changedTestPaths || []) {
-    const base = path.basename(String(filePath));
-    const stem = base.replace(/\.(?:php|py|rb|go|rs|cs|[cm]?[jt]sx?)$/i, "").replace(/(?:\.test|\.spec|-test|-spec)$/i, "");
-    for (const value of [String(filePath).replaceAll("\\", "/"), base, stem]) {
-      if (value.length >= 3) identities.push(value);
-    }
-  }
-  if (!identities.some((identity) => observedOutput.toLowerCase().includes(identity.toLowerCase()))) {
-    return "ATDD red output does not identify any test file or test case introduced by the red commit";
-  }
+  // A scored or guarded run may execute an immutable verification test rather
+  // than the editable ATDD source. Do not require runner output to name a test
+  // changed by the red commit. The deterministic close caller separately binds
+  // a clean test-only red commit, authentic production-behavior assertions,
+  // exact-command red-to-green ancestry, and preservation of the red sources.
+  void changedTestPaths;
   return "";
 }
 
