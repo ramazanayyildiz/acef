@@ -111,7 +111,9 @@ A worker launched before this bootstrap is drift. Stop, record it, patch the amb
 
 - No unapproved installs, code edits, deploys, migrations, broad automation, or pushes.
 - No generic subagent work may be called BMAD. BMAD requires the real runtime/skills and disk evidence.
-- Conductor coordinates; it does not author implementation, ATDD, code review, verify-patch, test review, or Process Judge work in full BMAD.
+- Conductor coordinates; it does not perform lifecycle actor work in Full BMAD. New `four-actor-v3` runs separate ATDD,
+  Development, Code Review, and report-only Patch Assurance plus any conditional Story Process Judge; existing
+  `six-actor-v2` runs retain Verify-Patch, Test Review, and Story Process Judge.
 - Full-BMAD ATDD needs one genuine critical-path red plus a map of every criterion; regression-only criteria need not all
   be red before implementation. A `REVISE` gets one fresh report-only adjudication, then at most one findings-hash-bound,
   test-artifact-only correction. Before correction dispatch, persist and commit `docs/ai/corrections/<actor>.json` with the source

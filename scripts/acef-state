@@ -12,7 +12,13 @@ const {
   parseDirectRun,
   parseEvidenceManifest,
   parseGateVerdict,
+  parseReviewReport,
+  parseDeveloperRepair,
+  parseProcessJudgeDecision,
   parseWorkerScope,
+  atddRedExecutionFailure,
+  atddTestSourceAuthenticityFailure,
+  atddGreenTestContinuityFailure,
 } = require("./lib/acef-state-parser");
 const { riskRequiresGuarded } = require("./lib/acef-execution-policy");
 
@@ -40,21 +46,24 @@ The existing direct record is the compact compatibility context. Do not inspect 
   console.log(`ACEF typed-state writer
 
 Usage:
-  acef-state active-run --repo <path> --run-id <id> --workflow-id quick-fix|lightweight|full-bmad --assurance baseline|guarded --scope-unit work-item|story|epic --status <status> --story <scope> --phase <phase> --ledger <path> [--route <route> --route-confidence low|medium|high] [--goal-description <text> --goal-user-facing true|false --goal-completion-mode backend-capability|product-workspace|internal] [options]
+  acef-state active-run --repo <path> --run-id <id> --workflow-id quick-fix|lightweight|full-bmad [--full-flow-contract six-actor-v2|four-actor-v3] --assurance baseline|guarded --scope-unit work-item|story|epic [--expected-story <story>...] --status <status> --story <scope> --phase <phase> --ledger <path> [--route <route> --route-confidence low|medium|high] [--goal-description <text> --goal-user-facing true|false --goal-completion-mode backend-capability|product-workspace|internal] [options]
   acef-state migrate-active-run --repo <path> --workflow-id quick-fix|lightweight|full-bmad [--assurance baseline|guarded] [--assurance-rationale <text>] [--assurance-approval <approval-id>]
   acef-state direct-run --repo <path> --run-id <id> --status active|complete|promoted --scope <scope> --acceptance <criterion>... --technical-boundary <kind> --reversible true [--changed-path <path>...] [--verification-command <command> --verification-exit-code <code>]... [options]
   acef-state actor --repo <path> --id <id> --story <scope> --phase <phase> --role <role> --client <client> --context-profile <profile> [options]
   acef-state worker-scope --repo <path> --story <scope> --phase <phase> --worker-id <id> --allow <glob>... [--surface <name>...] [--pattern-use <kind>] [--requires-round-trip true|false] [--binding <input>><output>:<field>[:defaultMaskingRisk]] [options]
   acef-state approval --repo <path> --id <id> --decision APPROVE|REJECT|ACCEPT_RISK --scope <scope> --quote <exact human words> [options]
   acef-state evidence-run --repo <path> --id <id> --kind <kind> --actor <id> --story <scope> --satisfies <id>... -- <command> [args...]
-  acef-state gate --repo <path> --id <id> --scope <scope> --verdict <verdict> --decided-by <actor-id> [--evidence <id>...] [--surface-evidence <surface:evidenceId[:roundTrip][:firstUse]>...] [--binding-evidence <input>><output>:<field>:<evidenceId>[:nonDefaultValue][:defaultRejected]] [options]
+  acef-state developer-repair --repo <path> --id <id> --prior-gate <gate-id> --developer-actor <actor-id>
+  acef-state judge-decision --repo <path> --id <id> --gate-id <future-gate-id> --actor <judge-id> --trigger ambiguity|waiver|evidence-conflict|gate-anomaly --evidence <id>...
+  acef-state gate --repo <path> --id <id> --scope <scope> --verdict <verdict> --decided-by <actor-id> [--evidence <id>...] [options]
+  acef-state gate --repo <path> --id <id> --scope <scope> --atdd-actor <id> --development-actor <id> --code-review-actor <id> --patch-assurance-actor <id> --red-evidence <id> --green-evidence <id> --code-review-report-hash <sha256> --patch-assurance-report-hash <sha256> [--review-cycle 0|1|2] [--unresolved-finding SEVERITY:id] [--process-judge-actor <id> --judge-trigger ambiguity|waiver|evidence-conflict|gate-anomaly] [--verdict <computed-verdict>] [options]
 
 Record files are written under docs/ai. Immutable records refuse overwrite; active-run and worker-scope are atomic singletons.`);
 }
 
 function parseArgs(argv) {
   const [command, ...rest] = argv;
-  const opts = { command, repo: process.cwd(), allow: [], satisfies: [], evidence: [], surface: [], surfaceEvidence: [], binding: [], bindingEvidence: [], riskTrigger: [], clarifyingQuestion: [], inferredAnswer: [], unresolvedQuestion: [], requiredSurface: [], coveredSurface: [], goalEvidence: [], goalMissing: [], acceptance: [], changedPath: [], verificationCommand: [], verificationExitCode: [], unresolvedRisk: [], promotionReason: [], commandArgv: [] };
+  const opts = { command, repo: process.cwd(), allow: [], satisfies: [], evidence: [], surface: [], surfaceEvidence: [], binding: [], bindingEvidence: [], riskTrigger: [], clarifyingQuestion: [], inferredAnswer: [], unresolvedQuestion: [], requiredSurface: [], coveredSurface: [], goalEvidence: [], goalMissing: [], acceptance: [], changedPath: [], verificationCommand: [], verificationExitCode: [], unresolvedRisk: [], unresolvedFinding: [], promotionReason: [], expectedStory: [], commandArgv: [] };
   for (let index = 0; index < rest.length; index += 1) {
     const arg = rest[index];
     if (arg === "--help" || arg === "-h") {
@@ -74,7 +83,7 @@ function parseArgs(argv) {
     const value = rest[index + 1];
     if (value === undefined || value.startsWith("--")) throw new Error(`Missing value for ${arg}`);
     index += 1;
-    if (["allow", "satisfies", "evidence", "surface", "surfaceEvidence", "binding", "bindingEvidence", "riskTrigger", "clarifyingQuestion", "inferredAnswer", "unresolvedQuestion", "requiredSurface", "coveredSurface", "goalEvidence", "goalMissing", "acceptance", "changedPath", "verificationCommand", "verificationExitCode", "unresolvedRisk", "promotionReason"].includes(key)) opts[key].push(value);
+    if (["allow", "satisfies", "evidence", "surface", "surfaceEvidence", "binding", "bindingEvidence", "riskTrigger", "clarifyingQuestion", "inferredAnswer", "unresolvedQuestion", "requiredSurface", "coveredSurface", "goalEvidence", "goalMissing", "acceptance", "changedPath", "verificationCommand", "verificationExitCode", "unresolvedRisk", "unresolvedFinding", "promotionReason", "expectedStory"].includes(key)) opts[key].push(value);
     else opts[key] = value;
   }
   opts.repo = path.resolve(opts.repo);
@@ -195,6 +204,10 @@ function gitTree(repo) {
   return runGit(repo, ["rev-parse", "HEAD^{tree}"]);
 }
 
+function gitTreeAt(repo, commit) {
+  return runGit(repo, ["rev-parse", `${commit}^{tree}`]);
+}
+
 function sha256(value) {
   return crypto.createHash("sha256").update(value).digest("hex");
 }
@@ -233,9 +246,7 @@ function dirtyDigest(repo) {
 
 function isControlPath(filePath) {
   const normalized = filePath.replaceAll(path.sep, "/");
-  return /^docs\/ai\/(?:actors|evidence|gates|approvals)\//.test(normalized)
-    || /^docs\/ai\/ACEF_(?:ACTIVE_RUN|ACTIVE_WORKER_SCOPE|CURRENT_CONTEXT|ACTIVE_LEDGER|DIRECT_RUN)(?:\.json)?$/.test(normalized)
-    || /^docs\/ai\/ACEF_.*_DELIVERY_AUDIT\.md$/.test(normalized);
+  return /^docs\/ai\/(?:ACEF_(?:ACTIVE_RUN\.json|ACTIVE_WORKER_SCOPE\.json|DIRECT_RUN\.json|CURRENT_CONTEXT\.md|[^/]+_DELIVERY_AUDIT\.md)|actors\/|gates\/|evidence\/|reports\/|approvals\/|repairs\/|judges\/)/.test(normalized);
 }
 
 function dirtyApplicationPaths(repo) {
@@ -280,6 +291,18 @@ function quoteArg(value) {
   return /^[A-Za-z0-9_./:@%+=,-]+$/.test(value) ? value : `'${value.replaceAll("'", `'\\''`)}'`;
 }
 
+function lifecycleRecordsExist(repo) {
+  const candidates = [
+    path.join(repo, "docs", "ai", "actors"),
+    path.join(repo, "docs", "ai", "gates"),
+  ];
+  for (const dirPath of candidates) {
+    if (!fs.existsSync(dirPath)) continue;
+    if (fs.readdirSync(dirPath).some((name) => name.endsWith(".json"))) return true;
+  }
+  return false;
+}
+
 function writeActiveRun(opts) {
   required(opts, ["runId", "status", "story", "phase", "ledger"]);
   if (opts.lane === "guarded") {
@@ -287,9 +310,38 @@ function writeActiveRun(opts) {
   }
   const workflowId = opts.workflowId || opts.lane;
   if (!workflowId) throw new Error("Missing required option(s): workflow-id");
+  const target = path.join(opts.repo, "docs", "ai", "ACEF_ACTIVE_RUN.json");
+  const previous = fs.existsSync(target) ? parseActiveRun(target) : null;
+  const sameRun = previous?.schema === "acef.active-run.v2" && previous.runId === opts.runId;
+  const previousContract = sameRun ? previous.fullFlowContract : undefined;
+  const previousSemanticContract = sameRun ? (previousContract || "six-actor-v2") : undefined;
+  if (sameRun && opts.fullFlowContract && previousSemanticContract !== opts.fullFlowContract
+    && lifecycleRecordsExist(opts.repo)) {
+    throw new Error(`fullFlowContract is immutable after actor/gate creation within run ${opts.runId}: ${previousSemanticContract} -> ${opts.fullFlowContract}`);
+  }
+  // Compatibility rule: an already-existing missing contract remains legacy v2.
+  // A genuinely new Full run defaults to v3.
+  const fullFlowContract = sameRun
+    ? (opts.fullFlowContract || previousContract)
+    : (workflowId === "full-bmad" ? (opts.fullFlowContract || "four-actor-v3") : opts.fullFlowContract);
+  if (fullFlowContract && workflowId !== "full-bmad") {
+    throw new Error("--full-flow-contract is only valid with --workflow-id full-bmad");
+  }
   const riskTriggers = opts.riskTrigger.length ? opts.riskTrigger : [];
   const assuranceProfile = opts.assurance || (riskRequiresGuarded(riskTriggers) ? "guarded" : "baseline");
   const scopeUnit = opts.scopeUnit || (opts.epic ? "epic" : "story");
+  const expectedStories = opts.expectedStory.length ? [...new Set(opts.expectedStory)] : (sameRun ? previous.expectedStories : undefined);
+  if (sameRun && previous.expectedStories && opts.expectedStory.length
+    && JSON.stringify(previous.expectedStories) !== JSON.stringify(expectedStories)) {
+    throw new Error("expectedStories inventory is frozen when a four-actor-v3 run is created");
+  }
+  if (fullFlowContract === "four-actor-v3" && !expectedStories?.length) {
+    throw new Error("new four-actor-v3 run requires at least one --expected-story before lifecycle work begins");
+  }
+  if (fullFlowContract === "four-actor-v3" && scopeUnit === "story"
+    && !expectedStories.some((story) => normalizedScope(story) === normalizedScope(opts.story))) {
+    throw new Error(`active story ${opts.story} is not in the frozen expectedStories inventory`);
+  }
   const assuranceRationale = opts.assuranceRationale
     || (assuranceProfile === "guarded" ? `risk triggers: ${riskTriggers.join(", ") || "explicit guarded selection"}` : null);
   if (assuranceProfile === "guarded" && scopeUnit === "epic" && workflowId !== "full-bmad" && !opts.assuranceApproval) {
@@ -300,8 +352,10 @@ function writeActiveRun(opts) {
     runId: opts.runId,
     repo: path.basename(opts.repo),
     workflowId,
+    ...(fullFlowContract ? { fullFlowContract } : {}),
     assuranceProfile,
     scopeUnit,
+    ...(expectedStories ? { expectedStories } : {}),
     assuranceRationale,
     assuranceApprovalId: opts.assuranceApproval ? safeId(opts.assuranceApproval, "assurance approval id") : null,
     track: opts.track === "guarded" ? null : (opts.track || null),
@@ -326,7 +380,6 @@ function writeActiveRun(opts) {
     contextPath: opts.context || null,
     updatedAt: new Date().toISOString(),
   };
-  const target = path.join(opts.repo, "docs", "ai", "ACEF_ACTIVE_RUN.json");
   atomicJson(target, record, { overwrite: true, validate: parseActiveRun });
   console.log(`WROTE active-run ${relative(opts.repo, target)}`);
 }
@@ -342,6 +395,10 @@ function migrateActiveRun(opts) {
     throw new Error("legacy guarded active run requires explicit --workflow-id quick-fix|lightweight|full-bmad");
   }
   const workflowId = opts.workflowId || previous.workflowId;
+  const fullFlowContract = opts.fullFlowContract || previous.fullFlowContract;
+  if (fullFlowContract && workflowId !== "full-bmad") {
+    throw new Error("--full-flow-contract is only valid with --workflow-id full-bmad");
+  }
   const assuranceProfile = opts.assurance || previous.assuranceProfile || "baseline";
   const scopeUnit = opts.scopeUnit || previous.scopeUnit || (previous.activeEpic ? "epic" : "story");
   const assuranceRationale = opts.assuranceRationale
@@ -354,12 +411,21 @@ function migrateActiveRun(opts) {
   if (assuranceProfile === "guarded" && scopeUnit === "epic" && workflowId !== "full-bmad" && !assuranceApprovalId) {
     throw new Error("non-Full guarded epic migration requires --assurance-approval <typed approval id>");
   }
+  const expectedStories = opts.expectedStory.length ? [...new Set(opts.expectedStory)] : previous.expectedStories;
+  if (fullFlowContract === "four-actor-v3" && !expectedStories?.length) {
+    throw new Error("four-actor-v3 migration requires at least one --expected-story inventory entry before lifecycle work begins");
+  }
+  if (fullFlowContract === "four-actor-v3" && scopeUnit === "story"
+    && !expectedStories.some((story) => normalizedScope(story) === normalizedScope(previous.activeStory))) {
+    throw new Error(`active story ${previous.activeStory} is not in the frozen expectedStories inventory`);
+  }
   const {
     lane: _lane,
     laneRationale: legacyLaneRationale,
     schema: _schema,
     executionMigrationRequired: _migrationRequired,
     workflowId: _workflowId,
+    fullFlowContract: _fullFlowContract,
     assuranceProfile: _assuranceProfile,
     scopeUnit: _scopeUnit,
     workflowRationale: previousWorkflowRationale,
@@ -369,8 +435,10 @@ function migrateActiveRun(opts) {
     ...preserved,
     schema: "acef.active-run.v2",
     workflowId,
+    ...(fullFlowContract ? { fullFlowContract } : {}),
     assuranceProfile,
     scopeUnit,
+    ...(expectedStories ? { expectedStories } : {}),
     assuranceRationale,
     assuranceApprovalId,
     workflowRationale: opts.workflowRationale
@@ -448,8 +516,30 @@ function writeDirectRun(opts) {
 
 function writeActor(opts) {
   required(opts, ["id", "story", "phase", "role", "client", "contextProfile"]);
+  let producedArtifactPath = null;
+  let producedArtifactHash = opts.artifactHash || null;
+  if (opts.artifactPath) {
+    const artifactPath = path.resolve(opts.repo, opts.artifactPath);
+    const relativeArtifactPath = relative(opts.repo, artifactPath);
+    if (!relativeArtifactPath || relativeArtifactPath.startsWith("..") || path.isAbsolute(relativeArtifactPath)) {
+      throw new Error("--artifact-path must stay inside the repository");
+    }
+    if (!fs.existsSync(artifactPath) || !fs.statSync(artifactPath).isFile()) throw new Error(`--artifact-path does not exist: ${opts.artifactPath}`);
+    producedArtifactPath = relativeArtifactPath;
+    const computedHash = sha256(fs.readFileSync(artifactPath));
+    if (producedArtifactHash && producedArtifactHash !== computedHash) throw new Error("--artifact-hash does not match --artifact-path contents");
+    producedArtifactHash = computedHash;
+  }
+  const activeRunPath = path.join(opts.repo, "docs", "ai", "ACEF_ACTIVE_RUN.json");
+  const activeRun = fs.existsSync(activeRunPath) ? parseActiveRun(activeRunPath) : null;
+  const v3 = activeRun?.fullFlowContract === "four-actor-v3";
+  if (v3 && normalizedScope(opts.story) !== normalizedScope(activeRun.activeStory)) throw new Error("four-actor-v3 actor story must match active run scope");
+  if (v3 && canonicalGatePhase(opts.phase) === "development" && !opts.sessionId) {
+    throw new Error("four-actor-v3 Developer actor requires --session-id for repair continuity");
+  }
   const record = {
     actorInstanceId: opts.id,
+    ...(v3 ? { runId: activeRun.runId, fullFlowContract: activeRun.fullFlowContract, storyInventory: activeRun.expectedStories } : {}),
     story: opts.story,
     phase: opts.phase,
     role: opts.role,
@@ -461,7 +551,8 @@ function writeActor(opts) {
     inputCommit: opts.inputCommit || gitCommit(opts.repo),
     inputTree: opts.inputTree || gitTree(opts.repo),
     allowedContextProfile: opts.contextProfile,
-    producedArtifactHash: opts.artifactHash || null,
+    producedArtifactHash,
+    producedArtifactPath,
     createdAt: new Date().toISOString(),
   };
   const target = actorPath(opts.repo, opts.id);
@@ -592,39 +683,563 @@ function writeEvidence(opts) {
   }
 }
 
-function writeGate(opts) {
+function normalizedScope(value) {
+  return String(value || "").toLowerCase().replace(/[^a-z0-9]+/g, "");
+}
+
+function canonicalGatePhase(value) {
+  const phase = normalizedScope(value);
+  const aliases = {
+    dev: "development",
+    developer: "development",
+    review: "codereview",
+    reviewer: "codereview",
+    codereviewer: "codereview",
+    testreview: "patchassurance",
+    testreviewer: "patchassurance",
+    verifypatch: "patchassurance",
+    verifier: "patchassurance",
+    processjudge: "processjudge",
+    storyprocessjudge: "processjudge",
+  };
+  return aliases[phase] || phase;
+}
+
+function gitIsAncestor(repo, ancestor, descendant) {
+  return cp.spawnSync("git", ["merge-base", "--is-ancestor", ancestor, descendant], {
+    cwd: repo,
+    stdio: "ignore",
+  }).status === 0;
+}
+
+function applicationChangedSince(repo, fromCommit, toCommit = "HEAD") {
+  try {
+    const output = runGit(repo, ["diff", "--name-only", `${fromCommit}..${toCommit}`]);
+    return output.split(/\r?\n/).filter(Boolean).filter((filePath) => !isControlPath(filePath));
+  } catch {
+    return ["<invalid-commit-range>"];
+  }
+}
+
+function testPath(filePath) {
+  return /(^|\/)(__tests__|tests?|specs?)(\/|$)|(\.|-)(test|spec)\.[cm]?[jt]sx?$|Test\.(php|py|rb|cs)$/i.test(String(filePath || ""));
+}
+
+function applicationTreeDigest(repo, commit = "HEAD") {
+  const output = runGit(repo, ["ls-tree", "-r", "--full-tree", commit]);
+  const applicationEntries = output.split(/\r?\n/).filter(Boolean).filter((line) => {
+    const filePath = line.slice(line.indexOf("\t") + 1);
+    return !isControlPath(filePath);
+  });
+  return sha256(applicationEntries.join("\n"));
+}
+
+function gateEvidence(repo, evidenceId, scope, { enforceScope = true } = {}) {
+  const evidence = parseEvidenceManifest(evidencePath(repo, evidenceId));
+  if (enforceScope && normalizedScope(evidence.story) !== normalizedScope(scope)) {
+    throw new Error(`gate evidence ${evidenceId} belongs to ${evidence.story}, not ${scope}`);
+  }
+  const rawPath = path.resolve(repo, evidence.rawArtifact.path);
+  if (!fs.existsSync(rawPath) || sha256(fs.readFileSync(rawPath)) !== evidence.rawArtifact.sha256) {
+    throw new Error(`Evidence ${evidenceId} raw artifact hash mismatch`);
+  }
+  if (evidence.runnerProof?.schema !== "acef-evidence-runner-proof-v1"
+    || evidence.runnerProof?.runner !== "acef-state evidence-run"
+    || evidence.runnerProof?.sha256 !== evidenceRunnerProof(evidence)) {
+    throw new Error(`Evidence ${evidenceId} runner proof mismatch`);
+  }
+  return evidence;
+}
+
+function parseUnresolvedFindings(entries) {
+  return entries.map((entry) => {
+    const [rawSeverity, ...idParts] = String(entry).split(":");
+    const severity = rawSeverity.toUpperCase();
+    const id = idParts.join(":");
+    if (!["LOW", "MEDIUM", "HIGH", "CRITICAL"].includes(severity) || !id) {
+      throw new Error("--unresolved-finding must be LOW|MEDIUM|HIGH|CRITICAL:id");
+    }
+    return { severity, id };
+  });
+}
+
+function priorDeterministicStoryGates(repo, scope, activeRun) {
+  const gateDir = path.join(repo, "docs", "ai", "gates");
+  if (!fs.existsSync(gateDir)) return [];
+  const records = [];
+  for (const fileName of fs.readdirSync(gateDir).filter((name) => name.endsWith(".json")).sort()) {
+    const filePath = path.join(gateDir, fileName);
+    let gate;
+    try {
+      gate = parseGateVerdict(filePath);
+    } catch (error) {
+      throw new Error(`cannot compute deterministic repair cycle with invalid gate ${fileName}: ${error.message}`);
+    }
+    if (gate.gateType !== "deterministic-story-close-v3" || gate.runId !== activeRun.runId
+      || gate.fullFlowContract !== activeRun.fullFlowContract || normalizedScope(gate.scope) !== normalizedScope(scope)) continue;
+    records.push({ gate, fileName });
+  }
+  return records.sort((left, right) => {
+    if (left.gate.reviewCycle !== right.gate.reviewCycle) return left.gate.reviewCycle - right.gate.reviewCycle;
+    const timeOrder = String(left.gate.createdAt || "").localeCompare(String(right.gate.createdAt || ""));
+    return timeOrder || left.fileName.localeCompare(right.fileName);
+  });
+}
+
+function boundReviewReport(repo, actor, expectedPhase, scope, activeRun) {
+  if (!actor.producedArtifactPath) throw new Error(`${expectedPhase} actor requires producedArtifactPath for v3 close`);
+  const reportPath = path.resolve(repo, actor.producedArtifactPath);
+  const relativePath = relative(repo, reportPath);
+  if (!relativePath || relativePath.startsWith("..") || path.isAbsolute(relativePath) || !fs.existsSync(reportPath)) {
+    throw new Error(`${expectedPhase} review report path is missing or escapes the repository`);
+  }
+  const reportHash = sha256(fs.readFileSync(reportPath));
+  if (reportHash !== actor.producedArtifactHash) throw new Error(`${expectedPhase} review report hash does not match actor record`);
+  const report = parseReviewReport(reportPath);
+  if (report.actorInstanceId !== actor.actorInstanceId
+    || report.runId !== activeRun.runId
+    || report.fullFlowContract !== activeRun.fullFlowContract
+    || actor.runId !== activeRun.runId
+    || actor.fullFlowContract !== activeRun.fullFlowContract
+    || normalizedScope(report.story) !== normalizedScope(scope)
+    || canonicalGatePhase(report.phase) !== expectedPhase
+    || report.inputCommit !== actor.inputCommit
+    || report.inputTree !== actor.inputTree) {
+    throw new Error(`${expectedPhase} review report identity/scope/input binding mismatch`);
+  }
+  return { report, path: relativePath, hash: reportHash };
+}
+
+function derivedReviewDispositions(codeReviewReport, patchAssuranceReport) {
+  const findings = new Map();
+  for (const report of [codeReviewReport, patchAssuranceReport]) {
+    for (const finding of report.findings) {
+      if (findings.has(finding.id)) throw new Error(`duplicate review finding id across reports: ${finding.id}`);
+      findings.set(finding.id, finding);
+    }
+  }
+  return [...findings.values()].map((finding) => {
+    const disposition = { id: finding.id, severity: finding.severity, status: finding.status };
+    if (finding.reason) disposition.reason = finding.reason;
+    if (finding.approvalId) disposition.approvalId = finding.approvalId;
+    return disposition;
+  }).sort((left, right) => left.id.localeCompare(right.id));
+}
+
+function writeDeterministicStoryCloseGate(opts, activeRun) {
+  required(opts, [
+    "id", "scope", "atddActor", "developmentActor", "codeReviewActor", "patchAssuranceActor",
+    "redEvidence", "greenEvidence",
+  ]);
+  if (normalizedScope(opts.scope) !== normalizedScope(activeRun.activeStory)) {
+    throw new Error(`gate scope ${opts.scope} does not match active story ${activeRun.activeStory}`);
+  }
+  const actorIds = {
+    atdd: opts.atddActor,
+    development: opts.developmentActor,
+    codeReview: opts.codeReviewActor,
+    patchAssurance: opts.patchAssuranceActor,
+  };
+  const actors = Object.fromEntries(Object.entries(actorIds).map(([role, id]) => [role, parseActorRecord(actorPath(opts.repo, id))]));
+  const expectedPhases = { atdd: "atdd", development: "development", codeReview: "codereview", patchAssurance: "patchassurance" };
+  const failures = [];
+  const actorSeparation = new Set(Object.values(actorIds)).size === 4;
+  if (!actorSeparation) failures.push("four story-close actors are not distinct");
+  let scopeBinding = true;
+  for (const [role, actor] of Object.entries(actors)) {
+    if (actor.runId !== activeRun.runId || actor.fullFlowContract !== activeRun.fullFlowContract) {
+      scopeBinding = false;
+      failures.push(`${role} actor run/contract binding mismatch`);
+    }
+    if (JSON.stringify(actor.storyInventory) !== JSON.stringify(activeRun.expectedStories)) {
+      scopeBinding = false;
+      failures.push(`${role} actor frozen story inventory mismatch`);
+    }
+    if (normalizedScope(actor.story) !== normalizedScope(opts.scope)) {
+      scopeBinding = false;
+      failures.push(`${role} actor belongs to ${actor.story}`);
+    }
+    if (canonicalGatePhase(actor.phase) !== expectedPhases[role]) {
+      scopeBinding = false;
+      failures.push(`${role} actor phase is ${actor.phase}`);
+    }
+  }
+
+  const red = gateEvidence(opts.repo, opts.redEvidence, opts.scope);
+  const green = gateEvidence(opts.repo, opts.greenEvidence, opts.scope);
+  const head = gitCommit(opts.repo);
+  const tree = gitTree(opts.repo);
+  const applicationTree = applicationTreeDigest(opts.repo);
+  const redGreenChronology = red.exitCode !== 0
+    && green.exitCode === 0
+    && red.actorInstanceId === actorIds.atdd
+    && [actorIds.development, actorIds.patchAssurance].includes(green.actorInstanceId)
+    && red.command === green.command
+    && gitIsAncestor(opts.repo, red.repositoryCommit, green.repositoryCommit)
+    && (!red.finishedAt || !green.startedAt || new Date(red.finishedAt) <= new Date(green.startedAt));
+  if (!redGreenChronology) failures.push("red-to-green evidence chronology or actor binding failed");
+  let atddTestOnlyRed = false;
+  try {
+    const redParent = runGit(opts.repo, ["rev-parse", `${red.repositoryCommit}^`]);
+    const redPaths = applicationChangedSince(opts.repo, redParent, red.repositoryCommit);
+    const redRaw = fs.readFileSync(path.resolve(opts.repo, red.rawArtifact.path), "utf8");
+    const redSources = redPaths.map((filePath) => ({ filePath, source: runGit(opts.repo, ["show", `${red.repositoryCommit}:${filePath}`]) }));
+    const greenSources = redPaths.map((filePath) => ({ filePath, source: runGit(opts.repo, ["show", `${green.repositoryCommit}:${filePath}`]) }));
+    atddTestOnlyRed = redPaths.length > 0
+      && redPaths.every(testPath)
+      && red.repositoryTree === gitTreeAt(opts.repo, red.repositoryCommit)
+      && gitIsAncestor(opts.repo, red.repositoryCommit, actors.development.inputCommit)
+      && !atddRedExecutionFailure(red, redRaw, redPaths)
+      && !atddTestSourceAuthenticityFailure(redSources)
+      && !atddGreenTestContinuityFailure(redSources, greenSources);
+  } catch {
+    atddTestOnlyRed = false;
+  }
+  if (!atddTestOnlyRed) failures.push("ATDD red evidence must bind a failing test-only commit that precedes Development");
+
+  // The deterministic close package is the durable red-to-green chain, not only
+  // the final green receipt. Always cite both so package/experiment validators
+  // can require both manifests and raw artifacts to be committed unchanged.
+  const closingEvidenceIds = [...new Set([opts.redEvidence, opts.greenEvidence, ...opts.evidence])];
+  let runnerProof = true;
+  for (const evidenceId of closingEvidenceIds) {
+    const evidence = gateEvidence(opts.repo, evidenceId, opts.scope);
+    const expectedRed = evidenceId === opts.redEvidence;
+    if ((!expectedRed && evidence.exitCode !== 0)
+      || (expectedRed && evidence.exitCode === 0)
+      || (!expectedRed && applicationChangedSince(opts.repo, evidence.repositoryCommit).length)
+      || (evidence.dirtyApplicationPathsBefore || []).length
+      || (evidence.dirtyApplicationPathsAfter || []).length) {
+      runnerProof = false;
+      failures.push(`closing evidence ${evidenceId} is failed, dirty, or stale for application tree ${applicationTree}`);
+    }
+  }
+
+  const finalTreeReview = gitIsAncestor(opts.repo, actors.codeReview.inputCommit, head)
+    && applicationChangedSince(opts.repo, actors.codeReview.inputCommit, head).filter((filePath) => !testPath(filePath)).length === 0;
+  const patchAssurance = gitIsAncestor(opts.repo, actors.patchAssurance.inputCommit, head)
+    && actors.patchAssurance.inputTree === gitTreeAt(opts.repo, actors.patchAssurance.inputCommit)
+    && applicationTreeDigest(opts.repo, actors.patchAssurance.inputCommit) === applicationTree
+    && applicationChangedSince(opts.repo, actors.patchAssurance.inputCommit, head).length === 0;
+  if (!finalTreeReview) failures.push("code-review actor did not inspect the final application tree");
+  if (!patchAssurance) failures.push("patch-assurance actor did not inspect the final application tree");
+
+  const codeReviewBinding = boundReviewReport(opts.repo, actors.codeReview, "codereview", opts.scope, activeRun);
+  const patchAssuranceBinding = boundReviewReport(opts.repo, actors.patchAssurance, "patchassurance", opts.scope, activeRun);
+  const reportHashes = { codeReview: codeReviewBinding.hash, patchAssurance: patchAssuranceBinding.hash };
+  const reportPaths = { codeReview: codeReviewBinding.path, patchAssurance: patchAssuranceBinding.path };
+  if (opts.codeReviewReportHash && opts.codeReviewReportHash !== reportHashes.codeReview) throw new Error("--code-review-report-hash does not match bound review report");
+  if (opts.patchAssuranceReportHash && opts.patchAssuranceReportHash !== reportHashes.patchAssurance) throw new Error("--patch-assurance-report-hash does not match bound assurance report");
+  const hashBinding = true;
+
+  const findingDispositions = derivedReviewDispositions(codeReviewBinding.report, patchAssuranceBinding.report);
+  const unresolvedFindings = findingDispositions
+    .filter((finding) => finding.status === "OPEN")
+    .map(({ severity, id }) => ({ severity, id }));
+  if (opts.unresolvedFinding.length) {
+    const claimed = parseUnresolvedFindings(opts.unresolvedFinding).sort((left, right) => left.id.localeCompare(right.id));
+    if (JSON.stringify(claimed) !== JSON.stringify(unresolvedFindings)) {
+      throw new Error("--unresolved-finding does not match findings derived from bound review reports");
+    }
+  }
+  const findingsResolved = unresolvedFindings.length === 0
+    && codeReviewBinding.report.verdict === "PASS"
+    && patchAssuranceBinding.report.verdict === "PASS";
+  if (!findingsResolved) failures.push(`unresolved findings remain: ${unresolvedFindings.map((finding) => `${finding.severity}:${finding.id}`).join(", ")}`);
+  if (dirtyApplicationPaths(opts.repo).length) {
+    runnerProof = false;
+    failures.push("working tree contains uncommitted application paths");
+  }
+
+  let processJudge;
+  if (opts.judgeTrigger || opts.processJudgeActor) {
+    required(opts, ["judgeTrigger", "processJudgeActor", "judgeDecision"]);
+    if (!["ambiguity", "waiver", "evidence-conflict", "gate-anomaly"].includes(opts.judgeTrigger)) {
+      throw new Error("--judge-trigger must be ambiguity, waiver, evidence-conflict, or gate-anomaly");
+    }
+    const judge = parseActorRecord(actorPath(opts.repo, opts.processJudgeActor));
+    if (normalizedScope(judge.story) !== normalizedScope(opts.scope)
+      || canonicalGatePhase(judge.phase) !== "processjudge"
+      || Object.values(actorIds).includes(opts.processJudgeActor)) {
+      throw new Error("conditional Process Judge must be a distinct process-judge actor for the active story");
+    }
+    const decisionPath = path.resolve(opts.repo, opts.judgeDecision);
+    const relativeDecisionPath = relative(opts.repo, decisionPath);
+    if (!relativeDecisionPath || relativeDecisionPath.startsWith("..") || !fs.existsSync(decisionPath)) throw new Error("--judge-decision must be an existing repository file");
+    const decisionSha256 = sha256(fs.readFileSync(decisionPath));
+    const decision = parseProcessJudgeDecision(decisionPath);
+    const expectedJudgeVerdict = opts.judgeTrigger === "waiver" ? "APPROVE_WAIVER" : "ACKNOWLEDGE";
+    if (decision.runId !== activeRun.runId || decision.fullFlowContract !== activeRun.fullFlowContract
+      || normalizedScope(decision.story) !== normalizedScope(opts.scope) || decision.trigger !== opts.judgeTrigger
+      || decision.actorId !== opts.processJudgeActor || decision.gateId !== opts.id
+      || JSON.stringify(decision.evidenceIds) !== JSON.stringify(closingEvidenceIds)
+      || decision.verdict !== expectedJudgeVerdict) {
+      throw new Error("conditional Process Judge decision run/gate/trigger/evidence binding mismatch");
+    }
+    processJudge = { trigger: opts.judgeTrigger, actorId: opts.processJudgeActor, decisionPath: relativeDecisionPath, decisionSha256, verdict: decision.verdict };
+  }
+  const deferredFindings = findingDispositions.filter((finding) => finding.status === "DEFERRED");
+  if (deferredFindings.length) {
+    if (processJudge?.trigger !== "waiver") throw new Error("DEFERRED findings require a conditional Story Process Judge with --judge-trigger waiver");
+    for (const finding of deferredFindings) {
+      const approval = parseApproval(path.join(opts.repo, "docs", "ai", "approvals", `${safeId(finding.approvalId, "finding approval id")}.json`));
+      if (approval.actorType !== "human" || approval.decision !== "ACCEPT_RISK" || normalizedScope(approval.scope) !== normalizedScope(opts.scope)) {
+        throw new Error(`DEFERRED finding ${finding.id} requires a human ACCEPT_RISK approval scoped to ${opts.scope}`);
+      }
+    }
+  }
+
+  const executedChecks = {
+    actorSeparation,
+    atddTestOnlyRed,
+    redGreenChronology,
+    finalTreeReview,
+    patchAssurance,
+    findingsResolved,
+    runnerProof,
+    scopeBinding,
+    hashBinding,
+  };
+  const mechanicalPass = Object.values(executedChecks).every(Boolean);
+  const priorGates = priorDeterministicStoryGates(opts.repo, opts.scope, activeRun);
+  const priorGate = priorGates.length ? priorGates.at(-1).gate : null;
+  const previousCycle = priorGate ? priorGate.reviewCycle : -1;
+  if (previousCycle >= 2) {
+    throw new Error("deterministic story close exhausted two repair cycles; REPLAN/SPLIT is required before another gate attempt");
+  }
+  if (priorGate && priorGate.verdict !== "REVISE") {
+    throw new Error(`deterministic ${priorGate.verdict} gate is terminal; a repair gate may follow only REVISE`);
+  }
+  const reviewCycle = previousCycle + 1;
+  if (opts.reviewCycle !== undefined && Number(opts.reviewCycle) !== reviewCycle) {
+    throw new Error(`--review-cycle is mechanically derived as ${reviewCycle}; caller supplied ${opts.reviewCycle}`);
+  }
+  let repair;
+  if (reviewCycle > 0) {
+    if (priorGate.actors?.development !== actorIds.development) {
+      throw new Error(`repair cycle ${reviewCycle} must reactivate original Developer ${priorGate.actors?.development || "missing"}`);
+    }
+    required(opts, ["repairReceipt"]);
+    const receiptPath = path.resolve(opts.repo, opts.repairReceipt);
+    const relativeReceiptPath = relative(opts.repo, receiptPath);
+    if (!relativeReceiptPath || relativeReceiptPath.startsWith("..") || !fs.existsSync(receiptPath)) throw new Error("--repair-receipt must be an existing repository file");
+    const receiptSha256 = sha256(fs.readFileSync(receiptPath));
+    const receipt = parseDeveloperRepair(receiptPath);
+    const findingsSha256 = sha256(JSON.stringify(priorGate.unresolvedFindings || []));
+    if (receipt.runId !== activeRun.runId || receipt.fullFlowContract !== activeRun.fullFlowContract
+      || normalizedScope(receipt.story) !== normalizedScope(opts.scope) || receipt.cycle !== reviewCycle
+      || receipt.priorGateId !== priorGate.gateId || receipt.findingsSha256 !== findingsSha256
+      || receipt.developerActorId !== actorIds.development || receipt.developerSessionId !== actors.development.sessionId
+      || receipt.preCommit !== priorGate.applicationCommit || receipt.preTree !== priorGate.applicationTree
+      || receipt.postCommit !== head || receipt.postTree !== applicationTree
+      || !gitIsAncestor(opts.repo, receipt.preCommit, receipt.postCommit)
+      || applicationChangedSince(opts.repo, receipt.preCommit, receipt.postCommit).length === 0) {
+      throw new Error("Developer repair receipt run/findings/session/commit/tree binding mismatch");
+    }
+    repair = { cycle: reviewCycle, priorGateId: priorGate.gateId, developerActorId: actorIds.development, receiptPath: relativeReceiptPath, receiptSha256 };
+  }
+  const verdict = mechanicalPass ? "PASS" : (reviewCycle >= 2 ? "REPLAN" : "REVISE");
+  if (opts.verdict && opts.verdict !== verdict) {
+    throw new Error(`requested verdict ${opts.verdict} cannot override computed verdict ${verdict}: ${failures.join("; ")}`);
+  }
+  const record = {
+    gateId: opts.id,
+    runId: activeRun.runId,
+    fullFlowContract: activeRun.fullFlowContract,
+    storyInventory: activeRun.expectedStories,
+    gateType: "deterministic-story-close-v3",
+    decisionMode: "deterministic",
+    scope: opts.scope,
+    verdict,
+    decidedBy: "acef-story-close-v3",
+    repositoryCommit: head,
+    repositoryTree: tree,
+    applicationCommit: head,
+    applicationTree,
+    validatorVersion: "acef-story-close-v3.0.0",
+    actors: actorIds,
+    redEvidenceId: opts.redEvidence,
+    greenEvidenceId: opts.greenEvidence,
+    executedChecks,
+    reviewCycle,
+    ...(repair ? { repair } : {}),
+    unresolvedFindings,
+    findingDispositions,
+    reportHashes,
+    reportPaths,
+    ...(processJudge ? { processJudge } : {}),
+    evidenceIds: closingEvidenceIds,
+    surfaceEvidence: parseSurfaceEvidence(opts.surfaceEvidence),
+    inputOutputEvidence: parseBindingEvidence(opts.bindingEvidence),
+    notes: [opts.notes, ...failures].filter(Boolean).join("; ") || null,
+    createdAt: new Date().toISOString(),
+  };
+  const target = path.join(opts.repo, "docs", "ai", "gates", `${safeId(opts.id, "gate id")}.json`);
+  atomicJson(target, record, { validate: parseGateVerdict });
+  console.log(`WROTE deterministic story-close gate ${relative(opts.repo, target)} verdict=${verdict}`);
+}
+
+function writeLegacyGate(opts) {
   required(opts, ["id", "scope", "verdict", "decidedBy"]);
+  const activeRunPath = path.join(opts.repo, "docs", "ai", "ACEF_ACTIVE_RUN.json");
+  const activeRun = fs.existsSync(activeRunPath) ? parseActiveRun(activeRunPath) : null;
   const judge = parseActorRecord(actorPath(opts.repo, opts.decidedBy));
-  if (/^\s*story\b/i.test(opts.scope) && judge.story.toLowerCase().replace(/[^a-z0-9]+/g, "") !== opts.scope.toLowerCase().replace(/[^a-z0-9]+/g, "")) {
+  if (activeRun?.fullFlowContract === "four-actor-v3"
+    && (judge.runId !== activeRun.runId || judge.fullFlowContract !== activeRun.fullFlowContract
+      || JSON.stringify(judge.storyInventory) !== JSON.stringify(activeRun.expectedStories)
+      || normalizedScope(judge.story) !== normalizedScope(opts.scope))) {
+    throw new Error("four-actor-v3 Epic gate actor must bind the active run/contract/scope");
+  }
+  if (/^\s*story\b/i.test(opts.scope) && normalizedScope(judge.story) !== normalizedScope(opts.scope)) {
     throw new Error(`gate actor ${opts.decidedBy} belongs to ${judge.story}, not ${opts.scope}`);
   }
   if (opts.verdict === "PASS" && !opts.evidence.length) throw new Error("PASS gate requires at least one --evidence id");
   for (const evidenceId of opts.evidence) {
-    const evidence = parseEvidenceManifest(evidencePath(opts.repo, evidenceId));
+    const evidence = gateEvidence(opts.repo, evidenceId, opts.scope, { enforceScope: /^\s*story\b/i.test(opts.scope) });
     if (opts.verdict === "PASS" && evidence.exitCode !== 0) throw new Error(`PASS gate cannot cite failed evidence ${evidenceId}`);
-    if (/^\s*story\b/i.test(opts.scope) && evidence.story.toLowerCase().replace(/[^a-z0-9]+/g, "") !== opts.scope.toLowerCase().replace(/[^a-z0-9]+/g, "")) {
-      throw new Error(`gate evidence ${evidenceId} belongs to ${evidence.story}, not ${opts.scope}`);
-    }
-    const rawPath = path.resolve(opts.repo, evidence.rawArtifact.path);
-    if (!fs.existsSync(rawPath) || sha256(fs.readFileSync(rawPath)) !== evidence.rawArtifact.sha256) {
-      throw new Error(`Evidence ${evidenceId} raw artifact hash mismatch`);
-    }
   }
   const record = {
     gateId: opts.id,
+    ...(activeRun?.fullFlowContract === "four-actor-v3"
+      ? { runId: activeRun.runId, fullFlowContract: activeRun.fullFlowContract, storyInventory: activeRun.expectedStories }
+      : {}),
+    gateType: "actor-decided-v1",
+    decisionMode: "actor",
     scope: opts.scope,
     verdict: opts.verdict,
     decidedBy: opts.decidedBy,
     repositoryCommit: gitCommit(opts.repo),
+    repositoryTree: gitTree(opts.repo),
     evidenceIds: opts.evidence,
     surfaceEvidence: parseSurfaceEvidence(opts.surfaceEvidence),
     inputOutputEvidence: parseBindingEvidence(opts.bindingEvidence),
     notes: opts.notes || null,
     createdAt: new Date().toISOString(),
   };
+  if (activeRun?.fullFlowContract === "four-actor-v3" && activeRun.scopeUnit === "epic") {
+    const storyGates = [];
+    const gateDir = path.join(opts.repo, "docs", "ai", "gates");
+    if (fs.existsSync(gateDir)) {
+      for (const fileName of fs.readdirSync(gateDir).filter((name) => name.endsWith(".json"))) {
+        const candidate = parseGateVerdict(path.join(gateDir, fileName));
+        if (candidate.gateType === "deterministic-story-close-v3"
+          && candidate.runId === activeRun.runId && candidate.fullFlowContract === activeRun.fullFlowContract) storyGates.push(candidate);
+      }
+    }
+    const byStory = new Map();
+    for (const candidate of storyGates) {
+      const key = normalizedScope(candidate.scope);
+      if (!byStory.has(key)) byStory.set(key, []);
+      byStory.get(key).push(candidate);
+    }
+    const expectedKeys = new Map((activeRun.expectedStories || []).map((story) => [normalizedScope(story), story]));
+    const missingStories = [...expectedKeys].filter(([key]) => !byStory.has(key)).map(([, story]) => story);
+    const unexpectedStories = [...byStory].filter(([key]) => !expectedKeys.has(key)).map(([, entries]) => entries[0].scope);
+    if (missingStories.length || unexpectedStories.length) {
+      throw new Error(`Epic story inventory mismatch; missing=${missingStories.join(", ") || "none"}; unexpected=${unexpectedStories.join(", ") || "none"}`);
+    }
+    for (const [key, story] of expectedKeys) {
+      const entries = byStory.get(key);
+      entries.sort((left, right) => left.reviewCycle - right.reviewCycle);
+      const passes = entries.filter((candidate) => candidate.verdict === "PASS");
+      if (passes.length !== 1 || entries.at(-1).verdict !== "PASS") {
+        throw new Error(`${story} must have exactly one terminal deterministic PASS before Epic close`);
+      }
+      if (!record.evidenceIds.includes(passes[0].greenEvidenceId)) {
+        throw new Error(`Epic close must aggregate ${passes[0].scope} green evidence ${passes[0].greenEvidenceId}`);
+      }
+    }
+  }
   const target = path.join(opts.repo, "docs", "ai", "gates", `${safeId(opts.id, "gate id")}.json`);
   atomicJson(target, record, { validate: parseGateVerdict });
   console.log(`WROTE gate ${relative(opts.repo, target)} verdict=${opts.verdict}`);
+}
+
+function activeV3Run(repo) {
+  const activeRunPath = path.join(repo, "docs", "ai", "ACEF_ACTIVE_RUN.json");
+  if (!fs.existsSync(activeRunPath)) throw new Error("four-actor-v3 artifact writer requires docs/ai/ACEF_ACTIVE_RUN.json");
+  const activeRun = parseActiveRun(activeRunPath);
+  if (activeRun.status !== "active" || activeRun.fullFlowContract !== "four-actor-v3") {
+    throw new Error("artifact writer requires an active four-actor-v3 run");
+  }
+  return activeRun;
+}
+
+function writeDeveloperRepair(opts) {
+  required(opts, ["id", "priorGate", "developerActor"]);
+  const activeRun = activeV3Run(opts.repo);
+  const priorPath = path.join(opts.repo, "docs", "ai", "gates", `${safeId(opts.priorGate, "prior gate id")}.json`);
+  const priorGate = parseGateVerdict(priorPath);
+  const developer = parseActorRecord(actorPath(opts.repo, opts.developerActor));
+  const cycle = priorGate.reviewCycle + 1;
+  const postCommit = gitCommit(opts.repo);
+  const postTree = applicationTreeDigest(opts.repo);
+  if (priorGate.gateType !== "deterministic-story-close-v3" || priorGate.verdict !== "REVISE"
+    || priorGate.runId !== activeRun.runId || priorGate.fullFlowContract !== activeRun.fullFlowContract
+    || normalizedScope(priorGate.scope) !== normalizedScope(activeRun.activeStory)
+    || priorGate.actors?.development !== developer.actorInstanceId
+    || developer.runId !== activeRun.runId || developer.fullFlowContract !== activeRun.fullFlowContract
+    || !developer.sessionId || cycle < 1 || cycle > 2
+    || !gitIsAncestor(opts.repo, priorGate.applicationCommit, postCommit)
+    || applicationChangedSince(opts.repo, priorGate.applicationCommit, postCommit).length === 0) {
+    throw new Error("Developer repair can only bind the original Developer/session and a real post-REVISE application change");
+  }
+  const record = {
+    schema: "acef.developer-repair.v3", runId: activeRun.runId, fullFlowContract: activeRun.fullFlowContract,
+    story: activeRun.activeStory, cycle, priorGateId: priorGate.gateId,
+    findingsSha256: sha256(JSON.stringify(priorGate.unresolvedFindings || [])),
+    developerActorId: developer.actorInstanceId, developerSessionId: developer.sessionId,
+    preCommit: priorGate.applicationCommit, preTree: priorGate.applicationTree,
+    postCommit, postTree, createdAt: new Date().toISOString(),
+  };
+  const target = path.join(opts.repo, "docs", "ai", "repairs", `${safeId(opts.id, "repair id")}.json`);
+  atomicJson(target, record, { validate: parseDeveloperRepair });
+  console.log(`WROTE Developer repair ${relative(opts.repo, target)} cycle=${cycle}`);
+}
+
+function writeJudgeDecision(opts) {
+  required(opts, ["id", "gateId", "actor", "trigger"]);
+  if (!opts.evidence.length) throw new Error("judge-decision requires at least one --evidence id");
+  if (!["ambiguity", "waiver", "evidence-conflict", "gate-anomaly"].includes(opts.trigger)) {
+    throw new Error("--trigger must be ambiguity, waiver, evidence-conflict, or gate-anomaly");
+  }
+  const activeRun = activeV3Run(opts.repo);
+  const judge = parseActorRecord(actorPath(opts.repo, opts.actor));
+  if (judge.runId !== activeRun.runId || judge.fullFlowContract !== activeRun.fullFlowContract
+    || normalizedScope(judge.story) !== normalizedScope(activeRun.activeStory)
+    || canonicalGatePhase(judge.phase) !== "processjudge") {
+    throw new Error("judge-decision actor must be a Process Judge bound to the active v3 run/story");
+  }
+  for (const evidenceId of opts.evidence) gateEvidence(opts.repo, evidenceId, activeRun.activeStory);
+  const record = {
+    schema: "acef.process-judge-decision.v3", runId: activeRun.runId, fullFlowContract: activeRun.fullFlowContract,
+    story: activeRun.activeStory, trigger: opts.trigger, actorId: judge.actorInstanceId,
+    gateId: opts.gateId, evidenceIds: [...new Set(opts.evidence)],
+    verdict: opts.trigger === "waiver" ? "APPROVE_WAIVER" : "ACKNOWLEDGE", createdAt: new Date().toISOString(),
+  };
+  const target = path.join(opts.repo, "docs", "ai", "judges", `${safeId(opts.id, "judge decision id")}.json`);
+  atomicJson(target, record, { validate: parseProcessJudgeDecision });
+  console.log(`WROTE Process Judge decision ${relative(opts.repo, target)} verdict=${record.verdict}`);
+}
+
+function writeGate(opts) {
+  const activeRunPath = path.join(opts.repo, "docs", "ai", "ACEF_ACTIVE_RUN.json");
+  const activeRun = fs.existsSync(activeRunPath) ? parseActiveRun(activeRunPath) : null;
+  if (activeRun?.fullFlowContract === "four-actor-v3") {
+    if (normalizedScope(opts.scope) !== normalizedScope(activeRun.activeStory)) {
+      throw new Error(`four-actor-v3 cannot write a gate for inactive scope ${opts.scope}; active scope is ${activeRun.activeStory}`);
+    }
+    if (activeRun.scopeUnit === "epic") {
+      if (!opts.decidedBy || opts.atddActor) throw new Error("four-actor-v3 Epic scope requires an actor-decided Epic Process Judge gate");
+      return writeLegacyGate(opts);
+    }
+    if (activeRun.scopeUnit !== "story") throw new Error(`four-actor-v3 gate routing requires scopeUnit story or epic, got ${activeRun.scopeUnit}`);
+    if (opts.decidedBy && !opts.atddActor) {
+      throw new Error("four-actor-v3 story gates must use deterministic story-close inputs; actor-decided gates remain available for epic scope");
+    }
+    return writeDeterministicStoryCloseGate(opts, activeRun);
+  }
+  return writeLegacyGate(opts);
 }
 
 function main() {
@@ -638,6 +1253,8 @@ function main() {
   if (opts.command === "worker-scope") return writeWorkerScope(opts);
   if (opts.command === "approval") return writeApproval(opts);
   if (opts.command === "evidence-run") return writeEvidence(opts);
+  if (opts.command === "developer-repair") return writeDeveloperRepair(opts);
+  if (opts.command === "judge-decision") return writeJudgeDecision(opts);
   if (opts.command === "gate") return writeGate(opts);
   throw new Error(`Unknown command: ${opts.command}`);
 }

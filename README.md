@@ -22,8 +22,8 @@ full write-up in `docs/experiments/empirical-validation/report-v2.md`:
 What ACEF's process controls still offer is what `method/CONTROL_RATIONALE.md` always documented: auditable actor
 separation, scope fencing, durable evidence, and drift control for **unattended, multi-session, or multi-worker**
 delivery — a regime the current benchmark does not exercise. Measuring that regime (multi-step epic benchmarks) is
-the next validation frontier; until then, always-on controls justified only by single-step defect-catching are being
-thinned per `method/STABILIZATION_ROADMAP.md`, and the control freeze stays in force.
+the next validation frontier. The v2 evidence and treatment remain frozen; later control changes use a new versioned
+contract and experiment instead of rewriting that result.
 
 ACEF still does not promote SQLite, vector, graph, SCIP, Serena, Codebase-Memory, or Context Mode-backed retrieval
 as defaults.
@@ -189,12 +189,13 @@ files the agent follows. No build, no npm, no services.
    .acef/bin/acef-state worker-scope --repo . --story "Story 4.1" --phase development \
      --worker-id dev-4-1 --allow 'app/**' --allow 'tests/**'
    ```
-   The same CLI captures hashed runtime evidence, Process Judge gate verdicts, and exact human approval receipts.
+   The same CLI captures hashed runtime evidence, deterministic v3 story-close gates, legacy/Judge gate verdicts, and
+   exact human approval receipts.
    See [`method/TYPED_STATE.md`](method/TYPED_STATE.md).
    Generate `docs/ai/ACEF_CURRENT_CONTEXT.md` at each phase transition and run
    `.acef/bin/acef-process-validator --check current-context`. This file is a maximum-150-line, role-specific hot slice;
-   the append-only ledger remains authoritative. Ordinary workers do not receive the full ledger, Story Process Judge
-   receives only its story slice, and Epic Process Judge may read the full ledger.
+   the append-only ledger remains authoritative. Ordinary workers do not receive the full ledger, a conditional Story
+   Process Judge receives only its story close package, and the Epic Process Judge may read the full ledger.
 
 ## Codex support
 
@@ -410,9 +411,10 @@ Route B starts with a hard preflight. ACEF must resolve the real BMAD conductor/
 If BMAD is missing, ACEF must stop and ask you to install/wire it or choose a different lane. A generic subagent running
 a BMAD-like checklist is not BMAD.
 
-Route B also requires actor separation. Planning, ATDD, development, code review, verify-patch, test review, and
-Process Judge must record distinct valid persona actors. A generic worker is invalid unless it is explicitly bound to a
-BMAD/ACEF persona in the artifact evidence.
+Route B also requires actor separation. New `four-actor-v3` stories record distinct ATDD, Development, Code Review, and
+Patch Assurance actors; close is deterministic and a Story Process Judge runs only for a waiver, evidence conflict,
+ambiguity, or gate anomaly. Existing `six-actor-v2` runs retain their separate Verify-Patch, Test Review, and Story
+Process Judge records. A generic worker is invalid unless explicitly bound to a BMAD/ACEF persona in artifact evidence.
 
 Route B also requires seeded epic gates. When epics/stories are generated, every epic gets an `Epic N Process Judge
 [PENDING]` row or artifact before implementation starts. The last story in an epic points to that gate, and the next
@@ -426,11 +428,13 @@ ACEF separates implementation review from process review:
   generation, release, or done-state changes. It records route/lane/track, required skills, resolved paths, adapter
   freshness, test setup, API/backend source of truth, risk gates, approvals, and a `PASS` / `FAIL` / `HALT` verdict.
 - **Judge** reviews the change and returns `MERGE` / `REVISE` / `REPLAN`.
-- **Process Judge** verifies that the required route/lane/track, skills, phase order, and artifacts were actually used
-  before a story/task is marked `done`.
-- **Actor separation** is part of the gate: every story ledger must record ATDD actor, Developer actor, Code Review
-  actor, Verify-Patch actor, Test Review actor, and Process Judge actor. Self-review is invalid on full BMAD work and
-  cannot be waived on guarded stories.
+- **Process Judge** verifies that the required workflow, assurance profile, skills, phase order, and artifacts were
+  actually used. It is mandatory at epic close and conditional at `four-actor-v3` story close; legacy
+  `six-actor-v2` story gates remain actor-decided.
+- **Actor separation** is part of the gate: new `four-actor-v3` story evidence records distinct ATDD, Developer, Code
+  Review, and Patch Assurance actors plus any conditional Story Process Judge. Existing `six-actor-v2` stories retain
+  Verify-Patch, Test Review, and Story Process Judge records. Self-review is invalid on Full work and cannot be waived
+  by Guarded assurance.
 - **Epic Process Judge** verifies epic closeout gates before an epic is product-done: drift audit when needed, trace,
   epic test-review, E2E/user-flow evidence, manual QA ledger, product-done audit, retrospective, and final status close.
   If the epic contains UI/user-facing claims, it needs at least one representative E2E/browser/screen flow at epic close.

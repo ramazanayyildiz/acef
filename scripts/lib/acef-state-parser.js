@@ -71,8 +71,71 @@ function requireObject(record, field, label) {
   }
 }
 
+function rejectUnknownFields(record, fields, label) {
+  const allowed = new Set(fields);
+  const unknown = Object.keys(record).filter((field) => !allowed.has(field));
+  if (unknown.length) throw new Error(`${label} has unknown field(s): ${unknown.join(", ")}`);
+}
+
 function requireSurface(value, label) {
   if (!SURFACE_VALUES.has(value)) throw new Error(`${label} has unknown surface ${value}`);
+}
+
+function normalizedRecordScope(value) {
+  return String(value || "").toLowerCase().replace(/[^a-z0-9]+/g, "");
+}
+
+const TEST_RUNNER_COMMAND = /(?:^|\s)(?:(?:[^\s]+[\\/])?node(?:\.exe)?\s+--test\b|(?:npm|pnpm|yarn|bun)\s+(?:run\s+)?test\b|php\s+artisan\s+test\b|(?:vendor\/bin\/)?(?:phpunit|pest)\b|(?:python(?:3)?\s+-m\s+)?pytest\b|go\s+test\b|cargo\s+test\b|dotnet\s+test\b|(?:mvnw?|gradlew?)\s+[^\n]*(?:test|check)\b|rspec\b|(?:vitest|jest)\b)/i;
+const TEST_FAILURE_OUTPUT = /(?:\bFAIL(?:ED|URE|URES)?\b|\bnot ok\b|AssertionError|assertion failed|\btests? failed\b|\berror:\s|\bexpected\b[^\n]+\bactual\b|\bpanic:\s)/i;
+
+function atddRedExecutionFailure(evidence, rawText, changedTestPaths) {
+  const command = String(evidence?.command || "").trim();
+  if (!TEST_RUNNER_COMMAND.test(command)) return "ATDD red command is not a recognized test-runner invocation";
+  if (/(?:^|\s)(?:node|python(?:3)?|php|ruby)\s+(?:-e|-c|-r)\b/i.test(command)) {
+    return "ATDD red command uses an arbitrary interpreter self-failure instead of a test runner";
+  }
+  const outputMarker = String(rawText || "").match(/--- stdout ---[\s\S]*$/);
+  const observedOutput = outputMarker ? outputMarker[0] : String(rawText || "");
+  if (!TEST_FAILURE_OUTPUT.test(observedOutput)) return "ATDD red output does not contain an observed test failure";
+  const identities = [];
+  for (const filePath of changedTestPaths || []) {
+    const base = path.basename(String(filePath));
+    const stem = base.replace(/\.(?:php|py|rb|go|rs|cs|[cm]?[jt]sx?)$/i, "").replace(/(?:\.test|\.spec|-test|-spec)$/i, "");
+    for (const value of [String(filePath).replaceAll("\\", "/"), base, stem]) {
+      if (value.length >= 3) identities.push(value);
+    }
+  }
+  if (!identities.some((identity) => observedOutput.toLowerCase().includes(identity.toLowerCase()))) {
+    return "ATDD red output does not identify any test file or test case introduced by the red commit";
+  }
+  return "";
+}
+
+function atddTestSourceAuthenticityFailure(testSources) {
+  const authentic = (testSources || []).some(({ source }) => {
+    const text = String(source || "");
+    if (/\bprocess\s*\.\s*exit\s*\(|\bos\s*\.\s*_exit\s*\(|\bsys\s*\.\s*exit\s*\(/i.test(text)) return false;
+    const declaration = /\b(?:test|it|describe)\s*\(|\b(?:public\s+)?function\s+test[A-Za-z0-9_]*\s*\(|#\[\s*Test\s*\]|\bdef\s+test_[A-Za-z0-9_]*\s*\(|\bfunc\s+Test[A-Za-z0-9_]*\s*\(|#\[test\]|\[(?:Test|Fact|Theory)\]/i.test(text);
+    const assertion = /\bassert[A-Za-z0-9_]*\s*\(|\bexpect\s*\(|\b(?:assert|require)\s*\.|->assert[A-Za-z0-9_]*\s*\(|\bshould\b|\bpanic!\s*\(/i.test(text);
+    const productionReference = /(?:require\s*\(\s*["']\.{1,2}\/|from\s+["']\.{1,2}\/|from\s+(?:app|src|modules|lib)\b|\buse\s+(?:App|Domain|Modules)\\|\b(?:got|actual|result|response)\s*(?::=|=)\s*[A-Za-z_$][\w$]*(?:\.|\()|\b[A-Z][A-Za-z0-9_]*(?:::|\.)[A-Za-z0-9_]+\s*\()/i.test(text);
+    const literalVsLiteral = /(?:assert(?:\.[A-Za-z0-9_]+)?|expect)\s*\(\s*(["'`][^"'`]*["'`]|-?\d+(?:\.\d+)?|true|false|null)\s*,\s*(["'`][^"'`]*["'`]|-?\d+(?:\.\d+)?|true|false|null)\s*\)/i.test(text);
+    const selfComparison = /(?:assert(?:\.[A-Za-z0-9_]+)?)\s*\(\s*([A-Za-z_$][\w$]*)\s*,\s*\1\s*\)/i.test(text);
+    const expectSelfComparison = /expect\s*\(\s*([A-Za-z_$][\w$]*)\s*\)\s*\.\s*(?:toBe|toEqual|toStrictEqual)\s*\(\s*\1\s*\)/i.test(text);
+    const expectLiteralComparison = /expect\s*\(\s*(?:["'`][^"'`]*["'`]|-?\d+(?:\.\d+)?|true|false|null)\s*\)\s*\.\s*(?:toBe|toEqual|toStrictEqual)\s*\(\s*(?:["'`][^"'`]*["'`]|-?\d+(?:\.\d+)?|true|false|null)\s*\)/i.test(text);
+    return declaration && assertion && productionReference && !literalVsLiteral && !selfComparison && !expectSelfComparison && !expectLiteralComparison;
+  });
+  return authentic ? "" : "ATDD red commit lacks a non-circular test assertion over production behavior";
+}
+
+function atddGreenTestContinuityFailure(redSources, greenSources) {
+  const greenByPath = new Map((greenSources || []).map((entry) => [entry.filePath, String(entry.source || "")]));
+  const normalized = (value) => String(value || "").replace(/\/\*[\s\S]*?\*\/|\/\/[^\n]*|#[^\[\n][^\n]*/g, "").replace(/\s+/g, "");
+  const weakened = (redSources || []).filter((entry) => {
+    const redFingerprint = normalized(entry.source);
+    const greenContent = normalized(greenByPath.get(entry.filePath));
+    return !redFingerprint || !greenContent.includes(redFingerprint);
+  });
+  return weakened.length ? `green evidence removed or weakened critical ATDD test content: ${weakened.map((entry) => entry.filePath).join(", ")}` : "";
 }
 
 function validateBindingEntry(item, index, label, { requireEvidence = false } = {}) {
@@ -99,8 +162,26 @@ function parseActiveRun(filePath) {
   );
   if (v2) {
     requireEnum(record, "workflowId", WORKFLOW_IDS, "active run");
+    if (record.fullFlowContract !== undefined) {
+      requireEnum(record, "fullFlowContract", ["six-actor-v2", "four-actor-v3"], "active run");
+      if (record.workflowId !== "full-bmad") {
+        throw new Error("active run fullFlowContract is only valid for full-bmad workflow");
+      }
+    }
     requireEnum(record, "assuranceProfile", ASSURANCE_PROFILES, "active run");
     requireEnum(record, "scopeUnit", SCOPE_UNITS, "active run");
+    if (record.expectedStories !== undefined) {
+      requireStringArray(record, "expectedStories", "active run", { nonEmpty: true });
+      if (new Set(record.expectedStories).size !== record.expectedStories.length) throw new Error("active run expectedStories must be unique");
+    }
+    if (record.fullFlowContract === "four-actor-v3"
+      && (!Array.isArray(record.expectedStories) || !record.expectedStories.length)) {
+      throw new Error("four-actor-v3 active run requires frozen expectedStories inventory");
+    }
+    if (record.fullFlowContract === "four-actor-v3" && record.scopeUnit === "story"
+      && !record.expectedStories.some((story) => normalizedRecordScope(story) === normalizedRecordScope(record.activeStory))) {
+      throw new Error("four-actor-v3 activeStory must belong to expectedStories inventory");
+    }
     if (record.lane !== undefined) throw new Error("active run v2 must use workflowId, not lane");
     if (record.assuranceProfile === "guarded"
       && (typeof record.assuranceRationale !== "string" || !record.assuranceRationale.trim())) {
@@ -180,6 +261,76 @@ function parseActiveRun(filePath) {
 function parseActorRecord(filePath) {
   const record = readJson(filePath);
   requireFields(record, ["actorInstanceId", "story", "phase", "role", "client", "inputCommit", "allowedContextProfile"], "actor record");
+  if (record.runId !== undefined && (typeof record.runId !== "string" || !record.runId.trim())) throw new Error("actor record runId must be non-empty");
+  if (record.fullFlowContract !== undefined) requireEnum(record, "fullFlowContract", ["six-actor-v2", "four-actor-v3"], "actor record");
+  if (record.fullFlowContract === "four-actor-v3") {
+    requireFields(record, ["runId", "storyInventory"], "four-actor-v3 actor record");
+    requireStringArray(record, "storyInventory", "four-actor-v3 actor record", { nonEmpty: true });
+    if (new Set(record.storyInventory).size !== record.storyInventory.length) throw new Error("four-actor-v3 actor storyInventory must be unique");
+  }
+  if (record.producedArtifactPath !== undefined && record.producedArtifactPath !== null
+    && (typeof record.producedArtifactPath !== "string" || !record.producedArtifactPath.trim())) {
+    throw new Error("actor record producedArtifactPath must be a non-empty string");
+  }
+  return record;
+}
+
+function parseReviewReport(filePath) {
+  const record = readJson(filePath);
+  const fields = ["schema", "runId", "fullFlowContract", "actorInstanceId", "story", "phase", "inputCommit", "inputTree", "verdict", "findings"];
+  rejectUnknownFields(record, fields, "review report");
+  requireFields(record, fields, "review report");
+  if (record.schema !== "acef.review-report.v3") throw new Error("review report schema must be acef.review-report.v3");
+  if (typeof record.runId !== "string" || !record.runId.trim()) throw new Error("review report runId must be non-empty");
+  if (record.fullFlowContract !== "four-actor-v3") throw new Error("review report fullFlowContract must be four-actor-v3");
+  requireEnum(record, "phase", ["code-review", "patch-assurance"], "review report");
+  requireEnum(record, "verdict", ["PASS", "REVISE", "REPLAN"], "review report");
+  if (!Array.isArray(record.findings)) throw new Error("review report findings must be an array");
+  for (const [index, finding] of record.findings.entries()) {
+    if (!finding || typeof finding !== "object" || Array.isArray(finding)) throw new Error(`review report findings[${index}] must be an object`);
+    requireFields(finding, ["id", "severity", "status"], `review report findings[${index}]`);
+    rejectUnknownFields(finding, ["id", "severity", "status", "reason", "approvalId"], `review report findings[${index}]`);
+    requireEnum(finding, "severity", ["LOW", "MEDIUM", "HIGH", "CRITICAL"], `review report findings[${index}]`);
+    requireEnum(finding, "status", ["OPEN", "RESOLVED", "DISMISSED", "DEFERRED"], `review report findings[${index}]`);
+    if (finding.status === "DISMISSED" && (typeof finding.reason !== "string" || !finding.reason.trim())) {
+      throw new Error(`review report findings[${index}] DISMISSED requires a reviewer reason`);
+    }
+    if (finding.status === "DEFERRED" && (typeof finding.approvalId !== "string" || !/^[A-Za-z0-9._-]+$/.test(finding.approvalId))) {
+      throw new Error(`review report findings[${index}] DEFERRED requires a typed approvalId`);
+    }
+    if (["DISMISSED", "DEFERRED"].includes(finding.status) && ["HIGH", "CRITICAL"].includes(finding.severity)) {
+      throw new Error(`review report findings[${index}] cannot ${finding.status.toLowerCase()} ${finding.severity} findings`);
+    }
+  }
+  if (record.verdict === "PASS" && record.findings.some((finding) => finding.status === "OPEN")) {
+    throw new Error("PASS review report cannot contain OPEN findings");
+  }
+  if (record.verdict !== "PASS" && !record.findings.some((finding) => finding.status === "OPEN")) {
+    throw new Error(`${record.verdict} review report requires at least one OPEN finding`);
+  }
+  return record;
+}
+
+function parseDeveloperRepair(filePath) {
+  const record = readJson(filePath);
+  const fields = ["schema", "runId", "fullFlowContract", "story", "cycle", "priorGateId", "findingsSha256", "developerActorId", "developerSessionId", "preCommit", "preTree", "postCommit", "postTree", "createdAt"];
+  rejectUnknownFields(record, fields, "developer repair receipt");
+  requireFields(record, fields, "developer repair receipt");
+  if (record.schema !== "acef.developer-repair.v3" || record.fullFlowContract !== "four-actor-v3") throw new Error("developer repair receipt schema/contract mismatch");
+  if (!Number.isInteger(record.cycle) || record.cycle < 1 || record.cycle > 2) throw new Error("developer repair receipt cycle must be 1 or 2");
+  if (!/^[a-f0-9]{64}$/.test(record.findingsSha256)) throw new Error("developer repair receipt findingsSha256 must be sha256");
+  return record;
+}
+
+function parseProcessJudgeDecision(filePath) {
+  const record = readJson(filePath);
+  const fields = ["schema", "runId", "fullFlowContract", "story", "trigger", "actorId", "gateId", "evidenceIds", "verdict", "createdAt"];
+  rejectUnknownFields(record, fields, "Process Judge decision");
+  requireFields(record, fields, "Process Judge decision");
+  if (record.schema !== "acef.process-judge-decision.v3" || record.fullFlowContract !== "four-actor-v3") throw new Error("Process Judge decision schema/contract mismatch");
+  requireEnum(record, "trigger", ["ambiguity", "waiver", "evidence-conflict", "gate-anomaly"], "Process Judge decision");
+  requireEnum(record, "verdict", ["ACKNOWLEDGE", "APPROVE_WAIVER"], "Process Judge decision");
+  requireStringArray(record, "evidenceIds", "Process Judge decision", { nonEmpty: true });
   return record;
 }
 
@@ -221,6 +372,80 @@ function parseGateVerdict(filePath) {
   }
   if (record.verdict === "PASS" && (!Array.isArray(record.evidenceIds) || !record.evidenceIds.length)) {
     throw new Error("PASS gate verdict requires evidenceIds");
+  }
+  if (record.gateType !== undefined) {
+    requireEnum(record, "gateType", ["actor-decided-v1", "deterministic-story-close-v3"], "gate verdict");
+  }
+  if (record.fullFlowContract === "four-actor-v3") {
+    requireFields(record, ["runId", "storyInventory"], "four-actor-v3 gate verdict");
+    requireStringArray(record, "storyInventory", "four-actor-v3 gate verdict", { nonEmpty: true });
+    if (new Set(record.storyInventory).size !== record.storyInventory.length) throw new Error("four-actor-v3 gate storyInventory must be unique");
+  }
+  if (record.fullFlowContract === "four-actor-v3" && record.gateType === "actor-decided-v1") {
+    requireStringArray(record, "storyInventory", "four-actor-v3 Epic gate", { nonEmpty: true });
+    if (new Set(record.storyInventory).size !== record.storyInventory.length) throw new Error("four-actor-v3 Epic gate storyInventory must be unique");
+  }
+  if (record.decisionMode !== undefined) requireEnum(record, "decisionMode", ["actor", "deterministic"], "gate verdict");
+  if (record.gateType === "deterministic-story-close-v3") {
+    requireFields(record, [
+      "runId", "fullFlowContract", "repositoryTree", "applicationCommit", "applicationTree", "validatorVersion", "actors",
+      "redEvidenceId", "greenEvidenceId", "executedChecks", "reviewCycle", "unresolvedFindings", "findingDispositions", "reportHashes", "reportPaths",
+    ], "deterministic story-close gate");
+    if (record.fullFlowContract !== "four-actor-v3") throw new Error("deterministic story-close gate fullFlowContract must be four-actor-v3");
+    if (record.decisionMode !== "deterministic" || record.decidedBy !== "acef-story-close-v3") {
+      throw new Error("deterministic story-close gate must be decided mechanically by acef-story-close-v3");
+    }
+    const roles = ["atdd", "development", "codeReview", "patchAssurance"];
+    requireObject(record, "actors", "deterministic story-close gate");
+    requireFields(record.actors, roles, "deterministic story-close gate actors");
+    if (new Set(roles.map((role) => record.actors[role])).size !== roles.length) {
+      throw new Error("deterministic story-close gate actors must be distinct");
+    }
+    requireObject(record, "executedChecks", "deterministic story-close gate");
+    const checks = ["actorSeparation", "atddTestOnlyRed", "redGreenChronology", "finalTreeReview", "patchAssurance", "findingsResolved", "runnerProof", "scopeBinding", "hashBinding"];
+    requireFields(record.executedChecks, checks, "deterministic story-close gate executedChecks");
+    if (checks.some((check) => typeof record.executedChecks[check] !== "boolean")) {
+      throw new Error("deterministic story-close gate executedChecks values must be boolean");
+    }
+    if (record.verdict === "PASS" && checks.some((check) => record.executedChecks[check] !== true)) {
+      throw new Error("deterministic story-close PASS requires every mechanical check to pass");
+    }
+    if (!Number.isInteger(record.reviewCycle) || record.reviewCycle < 0 || record.reviewCycle > 2) {
+      throw new Error("deterministic story-close gate reviewCycle must be an integer between 0 and 2");
+    }
+    if (record.reviewCycle > 0) {
+      requireObject(record, "repair", "deterministic story-close gate");
+      requireFields(record.repair, ["cycle", "priorGateId", "developerActorId", "receiptPath", "receiptSha256"], "deterministic story-close gate repair");
+      if (record.repair.cycle !== record.reviewCycle) throw new Error("deterministic story-close repair cycle must match reviewCycle");
+      if (!/^[a-f0-9]{64}$/.test(record.repair.receiptSha256)) throw new Error("deterministic story-close repair receiptSha256 must be sha256");
+    }
+    if (!Array.isArray(record.unresolvedFindings)) throw new Error("deterministic story-close gate unresolvedFindings must be an array");
+    for (const [index, finding] of record.unresolvedFindings.entries()) {
+      if (!finding || typeof finding !== "object") throw new Error(`deterministic story-close gate unresolvedFindings[${index}] must be an object`);
+      requireFields(finding, ["severity", "id"], `deterministic story-close gate unresolvedFindings[${index}]`);
+      requireEnum(finding, "severity", ["LOW", "MEDIUM", "HIGH", "CRITICAL"], `deterministic story-close gate unresolvedFindings[${index}]`);
+    }
+    if (!Array.isArray(record.findingDispositions)) throw new Error("deterministic story-close gate findingDispositions must be an array");
+    for (const [index, finding] of record.findingDispositions.entries()) {
+      if (!finding || typeof finding !== "object") throw new Error(`deterministic story-close gate findingDispositions[${index}] must be an object`);
+      requireFields(finding, ["id", "severity", "status"], `deterministic story-close gate findingDispositions[${index}]`);
+      requireEnum(finding, "severity", ["LOW", "MEDIUM", "HIGH", "CRITICAL"], `deterministic story-close gate findingDispositions[${index}]`);
+      requireEnum(finding, "status", ["OPEN", "RESOLVED", "DISMISSED", "DEFERRED"], `deterministic story-close gate findingDispositions[${index}]`);
+    }
+    requireObject(record, "reportHashes", "deterministic story-close gate");
+    requireFields(record.reportHashes, ["codeReview", "patchAssurance"], "deterministic story-close gate reportHashes");
+    for (const hash of Object.values(record.reportHashes)) {
+      if (!/^[a-f0-9]{64}$/.test(hash)) throw new Error("deterministic story-close gate report hashes must be lowercase sha256 values");
+    }
+    requireObject(record, "reportPaths", "deterministic story-close gate");
+    requireFields(record.reportPaths, ["codeReview", "patchAssurance"], "deterministic story-close gate reportPaths");
+    if (record.processJudge !== undefined) {
+      requireObject(record, "processJudge", "deterministic story-close gate");
+      requireFields(record.processJudge, ["trigger", "actorId", "decisionPath", "decisionSha256", "verdict"], "deterministic story-close gate processJudge");
+      requireEnum(record.processJudge, "trigger", ["ambiguity", "waiver", "evidence-conflict", "gate-anomaly"], "deterministic story-close gate processJudge");
+      requireEnum(record.processJudge, "verdict", ["ACKNOWLEDGE", "APPROVE_WAIVER"], "deterministic story-close gate processJudge");
+      if (!/^[a-f0-9]{64}$/.test(record.processJudge.decisionSha256)) throw new Error("deterministic story-close gate Process Judge decisionSha256 must be sha256");
+    }
   }
   return record;
 }
@@ -1037,6 +1262,9 @@ function safeRelative(filePath, root) {
 module.exports = {
   parseActiveRun,
   parseActorRecord,
+  parseReviewReport,
+  parseDeveloperRepair,
+  parseProcessJudgeDecision,
   parseEvidenceManifest,
   parseGateVerdict,
   parseApproval,
@@ -1054,5 +1282,8 @@ module.exports = {
   parseControlDosing,
   parseSpecReadiness,
   parseFreshness,
+  atddRedExecutionFailure,
+  atddTestSourceAuthenticityFailure,
+  atddGreenTestContinuityFailure,
   safeRelative,
 };

@@ -1,0 +1,105 @@
+{
+  "capabilityId": "full-flow-v3-deterministic-close",
+  "requestedIntent": "Preserve ACEF Full and Guarded risk controls while removing duplicate per-story assurance passes through a versioned four-actor lifecycle, deterministic story close, conditional adjudication, and bounded repair.",
+  "status": "enforced",
+  "requiredLayers": [
+    "docs",
+    "schema",
+    "cli",
+    "validator",
+    "hook",
+    "workflow",
+    "tests",
+    "installer"
+  ],
+  "implementedLayers": {
+    "docs": [
+      "AGENTS.md#ACEF Admission",
+      "README.md#Dependency: BMAD (large-feature flow only)",
+      "CHANGELOG.md#Full story lifecycle v3 removes duplicate assurance passes",
+      "method/BMAD_V2_LANE.md#Full flow contract versions",
+      "method/CONTROL_RATIONALE.md#Why Gate Verdicts Exist",
+      "method/OPERATING_MODEL.md#Current Context Hot Slice",
+      "method/TYPED_STATE.md#Operational Writer",
+      "skills/acef/references/ACEF_BMAD_V2_LANE.md",
+      "skills/acef/references/ACEF_CONTROL_RATIONALE.md",
+      "skills/acef/references/ACEF_DELIVERY_RULES.md",
+      "skills/acef/references/ACEF_OPERATING_MODEL.md",
+      "skills/acef/references/ACEF_RULE_ENFORCEMENT_MAP.md",
+      "docs/experiments/execution-assurance-v2/P0_R2_RESULT.md",
+      "docs/experiments/execution-assurance-v3/DESIGN.md"
+    ],
+    "schema": [
+      "schemas/active-run-v2.schema.json",
+      "schemas/actor.schema.json",
+      "schemas/gate.schema.json",
+      "schemas/review-report-v3.schema.json",
+      "schemas/developer-repair-v3.schema.json",
+      "schemas/process-judge-decision-v3.schema.json"
+    ],
+    "cli": [
+      "scripts/acef-state#writeActiveRun",
+      "scripts/acef-state#writeDeterministicStoryCloseGate",
+      "scripts/acef-state#writeDeveloperRepair",
+      "scripts/acef-state#writeJudgeDecision",
+      "scripts/acef-status",
+      "scripts/acef-next"
+    ],
+    "validator": [
+      "scripts/acef-process-validator#checkTypedActorSeparation",
+      "scripts/acef-process-validator#deterministicGateIntegrityFailures",
+      "scripts/acef-process-validator#checkGateVerdict",
+      "scripts/acef-process-validator#checkPrecommitGate"
+    ],
+    "hook": [
+      "claude-plugins/acef-bmad-guard/hooks/acef-bmad-hard-wall.mjs"
+    ],
+    "workflow": [
+      "scripts/acef-execution-assurance-experiment",
+      "scripts/lib/acef-execution-assurance-experiment.js",
+      "docs/experiments/execution-assurance-v3/manifest.json#judgmentContract",
+      "docs/experiments/execution-assurance-v3/DESIGN.md#Product judgment and final result"
+    ],
+    "tests": [
+      "scripts/test-acef-state",
+      "scripts/test-acef-typed-state-validator",
+      "scripts/test-acef-process-validator",
+      "scripts/test-acef-execution-assurance-experiment"
+    ],
+    "installer": [
+      "scripts/install-acef-tools",
+      "scripts/install-acef-bmad-guard",
+      "scripts/test-install-acef-tools"
+    ]
+  },
+  "limitations": [
+    "Existing Full active runs without fullFlowContract remain six-actor-v2; v3 is not an in-place migration after lifecycle evidence exists.",
+    "The deterministic gate validates typed local artifacts, Git ancestry, hashes, and runner proof; it does not defeat a malicious actor able to forge the repository and every local record.",
+    "A Product Outcome Verifier remains conditional for user/runtime surfaces; the backend P0 candidate uses the frozen withheld behavioral oracle plus the mandatory Epic Process Judge.",
+    "The capability is enforced in this source tree but is not installed in target repositories until their ACEF tools, skills, schemas, and hooks are refreshed.",
+    "The frozen v3 P0 candidate manifest still awaits implementation-commit binding; after binding, the preregistered candidate must complete successfully before this capability can be called proven or authorized beyond a controlled canary."
+  ],
+  "evidence": [
+    {
+      "layer": "tests",
+      "ref": "scripts/test-acef-state",
+      "note": "Covers v3 defaulting, run-contract immutability, scopeUnit-derived gate routing, run-creation-frozen story inventory carried into actors and story/Epic gates, computed close verdicts, actor separation, authentic test-runner red evidence, and non-weakening red-to-green test binding."
+    },
+    {
+      "layer": "tests",
+      "ref": "scripts/test-acef-process-validator",
+      "note": "Covers v2/v3 compatibility, real typed review-report binding, deterministic gate integrity, historical evidence ancestry, recomputed Patch Assurance final application/test-tree freshness, Epic Judge closeout, explicit v3 hook write authority, and terminal pre-commit behavior."
+    },
+    {
+      "layer": "tests",
+      "ref": "scripts/test-acef-execution-assurance-experiment",
+      "note": "Covers four-actor topology parsing, conditional Judges, bounded Developer repair, exact-one regular-file close packages, aggregate conductor/child cost, terminal zero-write infrastructure retries, product-only harness-launched blind judgment, actor budgets, and separate harness-wait accounting."
+    },
+    {
+      "layer": "artifact",
+      "ref": "docs/experiments/execution-assurance-v3/manifest.json",
+      "note": "Freezes the real-world P0 candidate and its quality, cost, topology, retry, and stop thresholds; the preregistration becomes active after implementation-commit binding."
+    }
+  ],
+  "createdAt": "2026-08-02"
+}

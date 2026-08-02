@@ -96,6 +96,9 @@ function buildStatus(repo) {
       runId: activeRun.record.runId,
       lane: activeRun.record.lane,
       workflowId: activeRun.record.workflowId,
+      fullFlowContract: activeRun.record.workflowId === "full-bmad"
+        ? (activeRun.record.fullFlowContract || "six-actor-v2")
+        : null,
       assuranceProfile: activeRun.record.assuranceProfile,
       scopeUnit: activeRun.record.scopeUnit,
       executionPath: displayName(activeRun.record),
@@ -161,6 +164,7 @@ function printText(status) {
     console.log("active run:");
     console.log(`- execution path: ${status.activeRun.executionPath}`);
     console.log(`- workflow: ${status.activeRun.workflowId}`);
+    if (status.activeRun.fullFlowContract) console.log(`- full flow contract: ${status.activeRun.fullFlowContract}`);
     console.log(`- assurance: ${status.activeRun.assuranceProfile}`);
     console.log(`- status: ${status.activeRun.status}`);
     if (status.activeRun.activeEpic) console.log(`- epic: ${status.activeRun.activeEpic}`);

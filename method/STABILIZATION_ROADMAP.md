@@ -40,16 +40,16 @@ The v2 matrix ran: 72/72 valid (`docs/experiments/empirical-validation/report-v2
 lane at ceiling on the expanded lane-sensitive task set; single genuine differentiation in 72 runs. Per the
 pre-committed WS4 rule, the active posture is now:
 
-- the control freeze stays in force;
+- the completed v2 treatment and evidence stay frozen; later changes require a versioned contract and new measurement;
 - always-on controls justified only by single-step defect-catching are thinned (first move: `runner-proof`
   removed from the guarded lane bundle — its documented backstop, the skeptical re-run, is available in guarded
   flows; full-BMAD keeps it);
 - the next validation frontier is a multi-step epic benchmark, where drift/separation controls plausibly earn
   their cost. No thinning of worker-scope, gate decision, or test-integrity guards without that measurement.
 
-## Control Freeze (v2 round)
+## Archived Control Freeze (v2 round)
 
-Until the v2 empirical matrix has run and its verdict is written down, the enforcement surface is **frozen**:
+The enforcement surface below was frozen until the completed v2 empirical matrix and verdict were written down:
 
 - `scripts/acef-process-validator`, `method/control-dosing.json`, and the guard hooks accept **bug fixes only** —
   a check that fires wrongly may be fixed; no new checks, gates, dosing rules, or lenses may be added.

@@ -8,6 +8,7 @@ const cp = require("node:child_process");
 const TREATMENTS = Object.freeze(["legacy", "candidate", "repo-native"]);
 const WORKFLOWS = Object.freeze(["quick-fix", "lightweight", "full-bmad", "repo-native"]);
 const ASSURANCE_PROFILES = Object.freeze(["baseline", "guarded", "not-applicable"]);
+const ACTOR_CONTRACT_VERSIONS = Object.freeze(["six-actor-v2", "four-actor-v3"]);
 
 function sha256(value) {
   return crypto.createHash("sha256").update(String(value || "")).digest("hex");
@@ -19,6 +20,17 @@ function requireString(value, label) {
 
 function unique(values) {
   return [...new Set(values)];
+}
+
+function actorContractVersionForAttempt(manifest, attempt) {
+  const version = attempt.actorContractVersion
+    || manifest.treatments?.[attempt.treatment]?.actorContractVersion
+    || manifest.actorContractVersion
+    || "six-actor-v2";
+  if (!ACTOR_CONTRACT_VERSIONS.includes(version)) {
+    throw new Error(`${attempt.id || "attempt"}.actorContractVersion is invalid`);
+  }
+  return version;
 }
 
 function validateManifest(manifest) {
@@ -42,7 +54,8 @@ function validateManifest(manifest) {
   const trapIds = manifest.stage0.traps.map((trap) => trap.id);
   if (unique(trapIds).length !== trapIds.length) throw new Error("stage0 trap ids must be unique");
   const repairPair = manifest.pilot?.design === "matched-p0-repair-pair";
-  const expectedAttemptCount = repairPair ? 2 : 16;
+  const v3Candidate = manifest.pilot?.design === "single-p0-v3-candidate";
+  const expectedAttemptCount = repairPair ? 2 : (v3Candidate ? 1 : 16);
   if (!Array.isArray(manifest.pilot?.attempts) || manifest.pilot.attempts.length !== expectedAttemptCount) {
     throw new Error(`pilot must preregister exactly ${expectedAttemptCount} attempts`);
   }
@@ -84,6 +97,41 @@ function validateManifest(manifest) {
       throw new Error("matched P0 repair pair must freeze cost gates and canary-only disposition");
     }
   }
+  if (v3Candidate) {
+    const [attempt] = manifest.pilot.attempts;
+    if (attempt.treatment !== "candidate" || attempt.workflowId !== "full-bmad" || attempt.assuranceProfile !== "guarded") {
+      throw new Error("v3 P0 candidate must use candidate/full-bmad/guarded");
+    }
+    if (actorContractVersionForAttempt(manifest, attempt) !== "four-actor-v3") {
+      throw new Error("v3 P0 candidate must use four-actor-v3");
+    }
+    const process = manifest.promotionGates?.process || {};
+    if (process.deterministicStoryClose !== true || process.conditionalStoryProcessJudge !== true
+      || process.epicProcessJudgeCount !== 1 || process.maximumBroadSuiteInvocations !== 1
+      || process.oneFormalStoryCloseEvidencePackage !== true) {
+      throw new Error("v3 P0 candidate must freeze deterministic story close and one epic closeout");
+    }
+    const judgment = manifest.judgmentContract || {};
+    if (judgment.schema !== "acef.execution-assurance-pilot-judgment.v3" || judgment.appendOnly !== true
+      || judgment.immutableDerivedVerdict !== true || judgment.pendingMayBeSupersededByNewPacket !== true
+      || judgment.terminalVerdictsImmutable !== true
+      || JSON.stringify(judgment.keyFields) !== JSON.stringify(["experimentId", "attemptId", "attemptRunId", "attemptOrdinal", "diffSha256", "judgePacketId", "judgePacketSha256"])) {
+      throw new Error("v3 P0 candidate must freeze append-only judgment and immutable verdict binding");
+    }
+    const budget = manifest.promotionGates?.budget || {};
+    if (budget.baseActorCount !== 17 || budget.maximumActorInvocations !== 21
+      || budget.maximumRepairCyclesPerStory !== 2 || budget.thirdRepairDisposition !== "REPLAN_SPLIT"
+      || budget.maximumInfrastructureRetriesPerInvocation !== 1 || budget.maximumInfrastructureRetriesTotal !== 3
+      || budget.maximumInputTokens !== 36000000 || budget.maximumToolCalls !== 300
+      || budget.targetStoryActiveSeconds !== 2100 || budget.maximumStoryActiveSeconds !== 3000
+      || budget.targetActiveDeliverySeconds !== 9000 || budget.maximumActiveDeliverySeconds !== 10800
+      || budget.maximumHarnessWaitSeconds !== 1200 || budget.maximumHarnessWaitShare !== 0.25) {
+      throw new Error("v3 P0 candidate must freeze actor, repair, time, token, tool, and harness-wait budgets");
+    }
+    if (attempt.activeTimeCapMinutes * 60 !== budget.maximumActiveDeliverySeconds) {
+      throw new Error("v3 P0 candidate active cap must equal its hard active-delivery budget");
+    }
+  }
   requireString(manifest.pilotRuntime?.client, "pilotRuntime.client");
   requireString(manifest.pilotRuntime?.clientVersion, "pilotRuntime.clientVersion");
   requireString(manifest.pilotRuntime?.model, "pilotRuntime.model");
@@ -111,6 +159,7 @@ function validateManifest(manifest) {
       throw new Error(`${attempt.id}.activeTimeCapMinutes must be positive`);
     }
     if (!manifest.taskCatalog?.[attempt.taskId]) throw new Error(`${attempt.id}.taskId is missing from taskCatalog`);
+    actorContractVersionForAttempt(manifest, attempt);
   }
   const orders = manifest.pilot.attempts.map((attempt) => attempt.order);
   if (unique(orders).length !== orders.length || Math.min(...orders) !== 1 || Math.max(...orders) !== orders.length) {
@@ -182,6 +231,7 @@ const CONTROL_PATTERNS = Object.freeze({
   atdd: /\b(?:bmad-atdd|test-design-atdd|atdd)\b/gi,
   development: /\b(?:bmad-dev-story|dev-story|developer-implementation)\b/gi,
   codeReview: /\b(?:bmad-code-review|code-review)\b/gi,
+  patchAssurance: /\b(?:patch-assurance|patch assurance)\b/gi,
   verifyPatch: /\bverify-patch\b/gi,
   testReview: /\btest-review\b/gi,
   processJudge: /\bprocess-judge\b/gi,
@@ -229,7 +279,7 @@ function parseIndependentTrace(text, options = {}) {
       ? events.reduce((total, event) => total + countBroadSuiteInvocations(event), 0)
       : countMatches(normalizedText, pattern);
   }
-  const lifecycleControls = ["readiness", "atdd", "development", "codeReview", "verifyPatch", "testReview", "processJudge"];
+  const lifecycleControls = ["readiness", "atdd", "development", "codeReview", "patchAssurance", "verifyPatch", "testReview", "processJudge"];
   const scopeIds = unique((options.scopeIds || []).map(String).filter(Boolean));
   const retryable = new Set(options.retryableControls || []);
   const perScope = {};
@@ -274,9 +324,11 @@ function parseIndependentTrace(text, options = {}) {
 }
 
 function parseLifecycleDispatchTrace(dispatches, options = {}) {
-  const lifecycleControls = ["atdd", "development", "code-review", "verify-patch", "test-review", "process-judge"];
+  const lifecycleControls = ["atdd", "development", "code-review", "patch-assurance", "verify-patch", "test-review", "process-judge"];
   const scopeIds = unique((options.scopeIds || []).map(String).filter(Boolean));
   const requiredControlsPerScope = options.requiredControlsPerScope || [];
+  const maximumRetryOrdinal = Number(options.maximumRetryOrdinal || 1);
+  const globalRepairCycles = options.globalRepairCycles === true;
   const perScope = {};
   for (const scopeId of [...scopeIds, "epic"]) {
     perScope[scopeId] = Object.fromEntries(lifecycleControls.map((controlId) => [controlId, 0]));
@@ -291,9 +343,18 @@ function parseLifecycleDispatchTrace(dispatches, options = {}) {
     perScope[dispatch.scope][dispatch.control] += 1;
   }
   const duplicateLifecycleControls = Object.entries(perScope).flatMap(([scopeId, counts]) => lifecycleControls
-    .filter((controlId) => counts[controlId] > 1
-      && !(dispatches || []).filter((entry) => entry.scope === scopeId && entry.control === controlId)
-        .slice(1).every((entry) => entry.retryOrdinal === 1 && entry.retryable === true))
+    .filter((controlId) => {
+      if (counts[controlId] <= 1) return false;
+      const retries = (dispatches || []).filter((entry) => entry.scope === scopeId && entry.control === controlId).slice(1);
+      if (globalRepairCycles && ["code-review", "patch-assurance"].includes(controlId)) {
+        const ordinals = retries.map((entry) => Number(entry.retryOrdinal || 0));
+        return !(retries.every((entry) => entry.retryable === true)
+          && new Set(ordinals).size === ordinals.length
+          && ordinals.every((ordinal) => ordinal >= 1 && ordinal <= maximumRetryOrdinal));
+      }
+      return !retries.every((entry, index) => entry.retryable === true
+        && entry.retryOrdinal === index + 1 && entry.retryOrdinal <= maximumRetryOrdinal);
+    })
     .map((controlId) => `${scopeId}:${controlId}`));
   const missingRequiredControls = scopeIds.flatMap((scopeId) => requiredControlsPerScope
     .filter((controlId) => Number(perScope[scopeId]?.[controlId] || 0) < 1)
@@ -317,6 +378,267 @@ function readPilotResultRow(resultsPath, attemptRunId) {
   return fs.readFileSync(resultsPath, "utf8").split(/\r?\n/).filter(Boolean)
     .map((line) => JSON.parse(line))
     .find((row) => row.attemptRunId === attemptRunId) || null;
+}
+
+function validatePilotJudgment(judgment, attempt, manifest) {
+  if (!judgment || typeof judgment !== "object" || Array.isArray(judgment)) throw new Error("judgment must be an object");
+  if (judgment.schema !== "acef.execution-assurance-pilot-judgment.v3") {
+    throw new Error("judgment schema must be acef.execution-assurance-pilot-judgment.v3");
+  }
+  for (const field of ["experimentId", "attemptId", "attemptRunId", "diffSha256", "judgePacketId", "judgePacketSha256",
+    "judgeModel", "judgeReceiptPath", "judgeReceiptSha256", "judgeSessionId", "productDoneReceiptSha256", "judgedAt"]) {
+    requireString(judgment[field], `judgment.${field}`);
+  }
+  if (!Number.isInteger(judgment.attemptOrdinal) || judgment.attemptOrdinal < 1) {
+    throw new Error("judgment.attemptOrdinal must be a positive integer");
+  }
+  for (const field of ["diffSha256", "judgePacketSha256", "judgeReceiptSha256", "productDoneReceiptSha256"]) {
+    if (!/^[a-f0-9]{64}$/.test(judgment[field])) throw new Error(`judgment.${field} must be a lowercase sha256`);
+  }
+  if (!["PENDING", "PASS", "FAIL"].includes(judgment.verdict)) throw new Error("judgment.verdict is invalid");
+  if (judgment.treatmentBlinded !== true || judgment.transcriptWithheld !== true) {
+    throw new Error("judgment must be treatment-blinded with transcript withheld");
+  }
+  if (typeof judgment.scopeViolation !== "boolean" || typeof judgment.testWeakening !== "boolean") {
+    throw new Error("judgment scopeViolation and testWeakening must be boolean");
+  }
+  if (typeof judgment.productOutcomeComplete !== "boolean") throw new Error("judgment.productOutcomeComplete must be boolean");
+  if (!Array.isArray(judgment.findings)) throw new Error("judgment.findings must be an array");
+  const findingIds = new Set();
+  for (const [index, finding] of judgment.findings.entries()) {
+    if (!finding || typeof finding !== "object" || Array.isArray(finding)) throw new Error(`judgment.findings[${index}] must be an object`);
+    requireString(finding.id, `judgment.findings[${index}].id`);
+    if (findingIds.has(finding.id)) throw new Error(`judgment finding id is duplicated: ${finding.id}`);
+    findingIds.add(finding.id);
+    if (!["CRITICAL", "HIGH", "MEDIUM", "LOW"].includes(finding.severity)) {
+      throw new Error(`judgment.findings[${index}].severity is invalid`);
+    }
+  }
+  if (!Number.isFinite(Date.parse(judgment.judgedAt))) throw new Error("judgment.judgedAt must be an ISO timestamp");
+  if (Object.prototype.hasOwnProperty.call(judgment, "productDoneAt")) throw new Error("judgment must not self-attest productDoneAt");
+  if (judgment.experimentId !== manifest.experimentId || judgment.experimentId !== attempt.experimentId) {
+    throw new Error("judgment experimentId does not match manifest and attempt");
+  }
+  for (const field of ["attemptId", "attemptRunId", "attemptOrdinal", "diffSha256"]) {
+    if (judgment[field] !== attempt[field]) throw new Error(`judgment ${field} does not match immutable attempt`);
+  }
+  if (judgment.judgePacketSha256 !== attempt.judgePacketSha256) throw new Error("judgment judgePacketSha256 does not match immutable attempt");
+  if (!fs.existsSync(attempt.judgePacketPath) || sha256(fs.readFileSync(attempt.judgePacketPath, "utf8")) !== attempt.judgePacketSha256) {
+    throw new Error("immutable artifact-only judge packet is missing or changed");
+  }
+  const judgePacket = JSON.parse(fs.readFileSync(attempt.judgePacketPath, "utf8"));
+  if (judgePacket.schema !== "acef.execution-assurance-judge-packet.v1" || judgePacket.artifactOnly !== true
+    || judgePacket.treatmentDisclosed !== false || judgePacket.transcriptIncluded !== false
+    || judgePacket.experimentId !== attempt.experimentId || judgePacket.attemptId !== attempt.attemptId
+    || judgePacket.attemptRunId !== attempt.attemptRunId || judgePacket.attemptOrdinal !== attempt.attemptOrdinal) {
+    throw new Error("immutable judge packet identity or blindness contract is invalid");
+  }
+  const productContractSha256 = sha256(JSON.stringify(judgePacket.productContract));
+  const contractStoryInventory = (judgePacket.productContract?.stories || []).map((story) => story.id);
+  if (judgePacket.productContract?.schema !== "acef.execution-assurance-product-contract.v1"
+    || judgePacket.productContractSha256 !== productContractSha256
+    || judgePacket.productContractSha256 !== attempt.productContractSha256
+    || judgePacket.withheldOracleSha256 !== attempt.withheldOracleSha256
+    || JSON.stringify(judgePacket.storyInventory || []) !== JSON.stringify(attempt.storyInventory || [])
+    || JSON.stringify(contractStoryInventory) !== JSON.stringify(attempt.storyInventory || [])) {
+    throw new Error("judge packet frozen product contract or withheld-oracle binding is invalid");
+  }
+  if (!judgePacket.diff || judgePacket.diff.path !== attempt.diffPath || judgePacket.diff.sha256 !== attempt.diffSha256
+    || !fs.existsSync(judgePacket.diff.path) || sha256(fs.readFileSync(judgePacket.diff.path, "utf8")) !== attempt.diffSha256) {
+    throw new Error("judge packet referenced diff artifact is missing, changed, or does not match the immutable attempt");
+  }
+  const allowedProductPaths = new Set((judgePacket.productContract.stories || []).flatMap((story) => story.allowedPaths || []));
+  const diffPaths = fs.readFileSync(judgePacket.diff.path, "utf8").split(/\r?\n/).flatMap((line) => {
+    const match = line.match(/^diff --git a\/(.+) b\/(.+)$/);
+    return match ? [match[1], match[2]] : [];
+  });
+  if (!Array.isArray(judgePacket.changedPaths)
+    || judgePacket.changedPaths.some((entry) => isPilotHarnessPath(entry) || !allowedProductPaths.has(entry))
+    || diffPaths.some((entry) => isPilotHarnessPath(entry) || !allowedProductPaths.has(entry))) {
+    throw new Error("judge packet leaks treatment/control artifacts outside the frozen product contract");
+  }
+  const expectedInputBundleSha256 = sha256(JSON.stringify({
+    productContractSha256: judgePacket.productContractSha256,
+    withheldOracleSha256: judgePacket.withheldOracleSha256,
+    productDiffSha256: judgePacket.diff.sha256,
+    productChangedPaths: judgePacket.changedPaths,
+    verificationReceiptSha256: judgePacket.verification?.receiptSha256,
+    verificationStdoutSha256: judgePacket.verification?.stdoutSha256,
+    verificationStderrSha256: judgePacket.verification?.stderrSha256,
+  }));
+  if (judgePacket.inputBundleSha256 !== expectedInputBundleSha256
+    || judgePacket.inputBundleSha256 !== attempt.judgeInputBundleSha256) {
+    throw new Error("judge packet input bundle hash is invalid");
+  }
+  if (judgment.productDoneReceiptSha256 !== attempt.productDoneReceiptSha256) {
+    throw new Error("judgment productDoneReceiptSha256 does not match immutable attempt");
+  }
+  if (!fs.existsSync(attempt.productDoneReceiptPath)
+    || sha256(fs.readFileSync(attempt.productDoneReceiptPath, "utf8")) !== attempt.productDoneReceiptSha256) {
+    throw new Error("harness product-done receipt is missing or changed");
+  }
+  const productReceipt = JSON.parse(fs.readFileSync(attempt.productDoneReceiptPath, "utf8"));
+  const receiptFinishedAt = productReceipt.finishedAt;
+  const productDoneAt = attempt.harnessProductDoneAt;
+  if (!Number.isFinite(Date.parse(receiptFinishedAt))
+    || (productDoneAt !== null && productDoneAt !== receiptFinishedAt)
+    || Date.parse(receiptFinishedAt) < Date.parse(attempt.startedAt) || Date.parse(receiptFinishedAt) > Date.parse(attempt.finishedAt)) {
+    throw new Error("harness productDoneAt is outside the immutable attempt interval");
+  }
+  if (!fs.existsSync(judgment.judgeReceiptPath)
+    || sha256(fs.readFileSync(judgment.judgeReceiptPath, "utf8")) !== judgment.judgeReceiptSha256) {
+    throw new Error("judge receipt is missing or changed");
+  }
+  const judgeReceipt = JSON.parse(fs.readFileSync(judgment.judgeReceiptPath, "utf8"));
+  for (const field of ["experimentId", "attemptRunId", "judgePacketSha256", "inputBundleSha256", "productContractSha256",
+    "judgeSessionId", "sessionTranscriptPath", "sessionTranscriptSha256", "judgeModel", "reasoningEffort",
+    "clientPath", "clientBinarySha256", "clientVersion", "requestPath", "requestSha256", "actorReceiptPath",
+    "actorReceiptSha256", "promptSha256", "startedAt", "finishedAt"]) {
+    requireString(judgeReceipt[field], `judge receipt.${field}`);
+  }
+  if (judgeReceipt.schema !== "acef.execution-assurance-judge-receipt.v1"
+    || judgeReceipt.experimentId !== attempt.experimentId || judgeReceipt.attemptRunId !== attempt.attemptRunId
+    || judgeReceipt.judgePacketSha256 !== attempt.judgePacketSha256 || judgeReceipt.judgeSessionId !== judgment.judgeSessionId
+    || judgeReceipt.inputBundleSha256 !== attempt.judgeInputBundleSha256
+    || judgeReceipt.productContractSha256 !== attempt.productContractSha256
+    || judgeReceipt.judgeModel !== manifest.pilotRuntime.model || judgment.judgeModel !== manifest.pilotRuntime.model
+    || judgeReceipt.reasoningEffort !== manifest.pilotRuntime.reasoningEffort
+    || judgeReceipt.freshSession !== true || judgeReceipt.artifactOnly !== true || judgeReceipt.treatmentBlinded !== true
+    || judgeReceipt.transcriptWithheld !== true || judgeReceipt.crossRunMemory !== false || judgeReceipt.parentSessionId !== null) {
+    throw new Error("judge receipt provenance is not fresh, artifact-only, and blinded");
+  }
+  const judgeRoot = fs.realpathSync(attempt.judgeLaunchRoot);
+  const receiptReal = fs.realpathSync(judgment.judgeReceiptPath);
+  if (path.relative(judgeRoot, receiptReal).startsWith("..") || path.isAbsolute(path.relative(judgeRoot, receiptReal))) {
+    throw new Error("judge receipt was not created inside the harness-owned launch root");
+  }
+  if (!fs.existsSync(judgeReceipt.requestPath) || sha256(fs.readFileSync(judgeReceipt.requestPath, "utf8")) !== judgeReceipt.requestSha256
+    || !fs.existsSync(judgeReceipt.actorReceiptPath) || sha256(fs.readFileSync(judgeReceipt.actorReceiptPath, "utf8")) !== judgeReceipt.actorReceiptSha256) {
+    throw new Error("judge launch request or actor receipt is missing or changed");
+  }
+  const judgeRequest = JSON.parse(fs.readFileSync(judgeReceipt.requestPath, "utf8"));
+  const judgeActorReceipt = JSON.parse(fs.readFileSync(judgeReceipt.actorReceiptPath, "utf8"));
+  if (!fs.existsSync(judgeReceipt.clientPath) || sha256(fs.readFileSync(judgeReceipt.clientPath)) !== judgeReceipt.clientBinarySha256
+    || judgeReceipt.clientVersion !== manifest.pilotRuntime.clientVersion || judgeRequest.command !== judgeReceipt.clientPath
+    || fs.realpathSync(judgeRequest.cwd) !== path.dirname(receiptReal)
+    || sha256(String(judgeRequest.args?.at(-1) || "")) !== judgeReceipt.promptSha256
+    || !judgeRequest.args?.includes(manifest.pilotRuntime.model)
+    || !judgeRequest.args?.includes(`model_reasoning_effort=${JSON.stringify(manifest.pilotRuntime.reasoningEffort)}`)
+    || judgeActorReceipt.status !== 0 || judgeActorReceipt.requestSha256 !== judgeReceipt.requestSha256
+    || judgeActorReceipt.launchNonce !== judgeRequest.launchNonce) {
+    throw new Error("judge receipt is not bound to the pinned client/model/reasoning launch");
+  }
+  if (!Number.isFinite(Date.parse(judgeReceipt.startedAt)) || !Number.isFinite(Date.parse(judgeReceipt.finishedAt))
+    || Date.parse(judgeReceipt.startedAt) < Date.parse(attempt.finishedAt)
+    || Date.parse(judgeReceipt.finishedAt) < Date.parse(judgeReceipt.startedAt)
+    || Date.parse(judgeReceipt.finishedAt) > Date.parse(judgment.judgedAt)) {
+    throw new Error("judge receipt timestamps are invalid");
+  }
+  if (!fs.existsSync(judgeReceipt.sessionTranscriptPath)
+    || sha256(fs.readFileSync(judgeReceipt.sessionTranscriptPath, "utf8")) !== judgeReceipt.sessionTranscriptSha256) {
+    throw new Error("judge session transcript is missing or changed");
+  }
+  const judgeSessionRows = fs.readFileSync(judgeReceipt.sessionTranscriptPath, "utf8").split(/\r?\n/).filter(Boolean).flatMap((line) => {
+    try { return [JSON.parse(line)]; } catch { return []; }
+  });
+  const judgeSessionMeta = judgeSessionRows.find((row) => row.type === "session_meta")?.payload;
+  if (!judgeSessionMeta || (judgeSessionMeta.id || judgeSessionMeta.session_id) !== judgment.judgeSessionId
+    || judgeSessionMeta.parent_thread_id || judgeSessionMeta.cwd !== judgeRequest.cwd
+    || judgeSessionMeta.cli_version !== judgeReceipt.clientVersion.replace(/^codex-cli\s+/, "")) {
+    throw new Error("judge session transcript provenance mismatch");
+  }
+  const finalAnswers = judgeSessionRows.flatMap((row) => {
+    const payload = row.payload || {};
+    if (row.type === "event_msg" && payload.type === "agent_message" && payload.phase === "final_answer") {
+      return [{ text: String(payload.message || ""), timestamp: row.timestamp || null }];
+    }
+    if (row.type === "response_item" && payload.type === "agent_message") {
+      const text = Array.isArray(payload.content)
+        ? payload.content.map((entry) => entry.text || entry.output_text || "").join("\n") : String(payload.text || "");
+      return /Message Type:\s*FINAL_ANSWER/i.test(text) ? [{ text, timestamp: row.timestamp || null }] : [];
+    }
+    if (row.type === "response_item" && payload.type === "message" && payload.role === "assistant") {
+      const text = Array.isArray(payload.content)
+        ? payload.content.map((entry) => entry.text || entry.output_text || "").join("\n") : "";
+      return text ? [{ text, timestamp: row.timestamp || null }] : [];
+    }
+    return [];
+  }).filter((entry) => /\bJUDGE_VERDICT=(?:PENDING|PASS|FAIL)\b/.test(entry.text));
+  if (!finalAnswers.length) throw new Error("judge session transcript lacks a bound final Judge answer");
+  const judgeFinal = finalAnswers.at(-1);
+  const expectedFindingsSha256 = sha256(JSON.stringify(judgment.findings));
+  const expectedMarkers = [
+    `JUDGE_PACKET_SHA256=${attempt.judgePacketSha256}`,
+    `JUDGE_INPUT_BUNDLE_SHA256=${attempt.judgeInputBundleSha256}`,
+    `PRODUCT_CONTRACT_SHA256=${attempt.productContractSha256}`,
+    `JUDGE_VERDICT=${judgment.verdict}`,
+    `PRODUCT_OUTCOME_COMPLETE=${judgment.productOutcomeComplete}`,
+    `SCOPE_VIOLATION=${judgment.scopeViolation}`,
+    `TEST_WEAKENING=${judgment.testWeakening}`,
+    `FINDINGS_SHA256=${expectedFindingsSha256}`,
+  ];
+  if (!expectedMarkers.every((marker) => judgeFinal.text.includes(marker))) {
+    throw new Error("judge session final answer does not match the ingested verdict and findings");
+  }
+  if (!Number.isFinite(Date.parse(judgeFinal.timestamp))
+    || Date.parse(judgeFinal.timestamp) < Date.parse(judgeReceipt.startedAt)
+    || Date.parse(judgeFinal.timestamp) > Date.parse(judgeReceipt.finishedAt)) {
+    throw new Error("judge session final answer timestamp is outside its bound receipt");
+  }
+  const critical = judgment.findings.filter((entry) => entry.severity === "CRITICAL").length;
+  const high = judgment.findings.filter((entry) => entry.severity === "HIGH").length;
+  if (judgment.verdict === "PASS") {
+    if (!judgment.productOutcomeComplete || !productDoneAt) throw new Error("PASS judgment requires completed product outcome and harness productDoneAt");
+    if (critical > Number(manifest.promotionGates?.product?.maximumCritical || 0)
+      || high > Number(manifest.promotionGates?.product?.maximumHigh || 0)) {
+      throw new Error("PASS judgment exceeds the frozen Critical/High finding gate");
+    }
+    if (judgment.scopeViolation || judgment.testWeakening) throw new Error("PASS judgment cannot accept scope violation or test weakening");
+  } else if (judgment.productOutcomeComplete) {
+    throw new Error(`${judgment.verdict} judgment cannot declare product complete`);
+  }
+  return judgment;
+}
+
+function derivePilotVerdict(manifest, attempt, judgment) {
+  validatePilotJudgment(judgment, attempt, manifest);
+  const findingCounts = Object.fromEntries(["CRITICAL", "HIGH", "MEDIUM", "LOW"].map((severity) => [
+    severity.toLowerCase(), judgment.findings.filter((entry) => entry.severity === severity).length,
+  ]));
+  const productEligible = judgment.verdict === "PASS" && judgment.productOutcomeComplete
+    && findingCounts.critical <= Number(manifest.promotionGates.product.maximumCritical || 0)
+    && findingCounts.high <= Number(manifest.promotionGates.product.maximumHigh || 0);
+  const processEligible = attempt.processOraclePassed !== undefined
+    ? attempt.processOraclePassed === true : attempt.automatedOraclePassed === true;
+  const budgetEligible = attempt.pilotBudgets?.applicable === true ? attempt.pilotBudgets.ok === true : true;
+  const promotionEligible = productEligible && processEligible && budgetEligible;
+  const result = judgment.verdict === "PENDING" ? "PENDING"
+    : promotionEligible ? "PASS"
+      : productEligible ? (processEligible ? "PRODUCT_PASS_BUDGET_FAIL" : "PRODUCT_PASS_PROCESS_FAIL")
+        : "FAIL";
+  return {
+    schema: "acef.execution-assurance-pilot-verdict.v1",
+    experimentId: judgment.experimentId,
+    attemptId: judgment.attemptId,
+    attemptRunId: judgment.attemptRunId,
+    attemptOrdinal: judgment.attemptOrdinal,
+    diffSha256: judgment.diffSha256,
+    sourceAttemptSha256: sha256(JSON.stringify(attempt)),
+    judgmentSha256: sha256(JSON.stringify(judgment)),
+    blindJudgeStatus: judgment.verdict,
+    productDone: productEligible,
+    productDoneAt: productEligible ? attempt.harnessProductDoneAt : null,
+    wallTimeToProductDoneSeconds: productEligible
+      ? Math.round((Date.parse(attempt.harnessProductDoneAt) - Date.parse(attempt.startedAt)) / 100) / 10 : null,
+    findingCounts,
+    productEligible,
+    processEligible,
+    budgetEligible,
+    promotionEligible,
+    attemptResult: attempt.result,
+    result,
+    derivedAt: judgment.judgedAt,
+  };
 }
 
 function acquireFinalizationClaim(resultsPath, attemptRunId, lockRoot = path.dirname(resultsPath)) {
@@ -361,6 +683,7 @@ function buildPilotPlan(manifest) {
     .sort((left, right) => left.order - right.order)
     .map((attempt) => ({
       ...attempt,
+      actorContractVersion: actorContractVersionForAttempt(manifest, attempt),
       frameworkCommit: attempt.treatment === "repo-native" ? null : manifest.treatments[attempt.treatment].commit,
       experimentId: manifest.experimentId,
     }));
@@ -399,8 +722,10 @@ function environmentPreflight(repoRoot, contract) {
   };
 }
 
-function captureGitDiff(repoRoot, baseRef) {
-  const result = cp.spawnSync("git", ["diff", "--binary", baseRef], {
+function captureGitDiff(repoRoot, baseRef, pathspecs = []) {
+  const args = ["diff", "--binary", baseRef];
+  if (pathspecs.length) args.push("--", ...pathspecs);
+  const result = cp.spawnSync("git", args, {
     cwd: repoRoot,
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"],
@@ -546,12 +871,15 @@ function preflightCatalog(manifest, manifestPath) {
 }
 
 module.exports = {
+  ACTOR_CONTRACT_VERSIONS,
   ASSURANCE_PROFILES,
   CONTROL_PATTERNS,
   TREATMENTS,
   WORKFLOWS,
   assessTaskShape,
+  actorContractVersionForAttempt,
   dependencyAwareQuarantine,
+  derivePilotVerdict,
   acquireFinalizationClaim,
   buildPilotPlan,
   captureGitDiff,
@@ -566,4 +894,5 @@ module.exports = {
   sha256,
   spawnCaptured,
   validateManifest,
+  validatePilotJudgment,
 };

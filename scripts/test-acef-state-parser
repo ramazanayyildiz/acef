@@ -8,11 +8,17 @@ const {
   parseActorRecord,
   parseEvidenceManifest,
   parseGateVerdict,
+  parseReviewReport,
+  parseDeveloperRepair,
+  parseProcessJudgeDecision,
   parseApproval,
   parseWorkerScope,
   parseAtddCorrection,
   parseWorkflow,
   parseFreshness,
+  atddRedExecutionFailure,
+  atddTestSourceAuthenticityFailure,
+  atddGreenTestContinuityFailure,
   safeRelative,
 } = require("./lib/acef-state-parser");
 
@@ -46,6 +52,26 @@ try {
     ledgerPath: "docs/ai/ACEF_demo_DELIVERY_AUDIT.md",
   });
   if (parseActiveRun(activeRun).activeStory !== "Story 5.2") throw new Error("active run parse failed");
+  const v3ActiveRun = write("docs/ai/ACEF_ACTIVE_RUN_V3.json", {
+    schema: "acef.active-run.v2",
+    runId: "RUN-v3",
+    repo: "demo",
+    workflowId: "full-bmad",
+    fullFlowContract: "four-actor-v3",
+    assuranceProfile: "guarded",
+    assuranceRationale: "security boundary",
+    scopeUnit: "story",
+    expectedStories: ["Story 5.3"],
+    status: "active",
+    activeStory: "Story 5.3",
+    activePhase: "atdd",
+    ledgerPath: "docs/ai/ACEF_demo_DELIVERY_AUDIT.md",
+  });
+  if (parseActiveRun(v3ActiveRun).fullFlowContract !== "four-actor-v3") throw new Error("v3 active run parse failed");
+  const missingV3Inventory = JSON.parse(fs.readFileSync(v3ActiveRun, "utf8"));
+  delete missingV3Inventory.expectedStories;
+  write("missing-v3-inventory.json", missingV3Inventory);
+  assertThrows(() => parseActiveRun(path.join(tmp, "missing-v3-inventory.json")), /requires frozen expectedStories inventory/, "v3 initial inventory");
 
   const actor = write("docs/ai/actors/dev-1.json", {
     actorInstanceId: "dev-1",
@@ -86,6 +112,107 @@ try {
     evidenceIds: ["EV-1"],
   });
   if (parseGateVerdict(gate).verdict !== "PASS") throw new Error("gate parse failed");
+  const v3Gate = write("docs/ai/gates/story-5-3.json", {
+    gateId: "story-5-3-close",
+    runId: "RUN-v3",
+    fullFlowContract: "four-actor-v3",
+    storyInventory: ["Story 5.3"],
+    gateType: "deterministic-story-close-v3",
+    decisionMode: "deterministic",
+    scope: "Story 5.3",
+    verdict: "PASS",
+    decidedBy: "acef-story-close-v3",
+    repositoryCommit: "abc123",
+    repositoryTree: "tree123",
+    applicationCommit: "abc123",
+    applicationTree: "tree123",
+    validatorVersion: "acef-story-close-v3.0.0",
+    actors: { atdd: "a", development: "b", codeReview: "c", patchAssurance: "d" },
+    redEvidenceId: "EV-red",
+    greenEvidenceId: "EV-green",
+    executedChecks: { actorSeparation: true, atddTestOnlyRed: true, redGreenChronology: true, finalTreeReview: true, patchAssurance: true, findingsResolved: true, runnerProof: true, scopeBinding: true, hashBinding: true },
+    reviewCycle: 0,
+    unresolvedFindings: [],
+    findingDispositions: [],
+    reportHashes: { codeReview: "a".repeat(64), patchAssurance: "b".repeat(64) },
+    reportPaths: { codeReview: "docs/ai/reports/code.json", patchAssurance: "docs/ai/reports/assurance.json" },
+    evidenceIds: ["EV-green"],
+  });
+  if (parseGateVerdict(v3Gate).decisionMode !== "deterministic") throw new Error("v3 gate parse failed");
+  const badV3Gate = JSON.parse(fs.readFileSync(v3Gate, "utf8"));
+  badV3Gate.executedChecks.hashBinding = false;
+  write("bad-v3-gate.json", badV3Gate);
+  assertThrows(() => parseGateVerdict(path.join(tmp, "bad-v3-gate.json")), /every mechanical check/, "bad v3 PASS gate");
+  const reviewReport = write("docs/ai/reports/review-v3.json", {
+    schema: "acef.review-report.v3",
+    runId: "RUN-v3",
+    fullFlowContract: "four-actor-v3",
+    actorInstanceId: "review-v3",
+    story: "Story 5.3",
+    phase: "code-review",
+    inputCommit: "abc123",
+    inputTree: "tree123",
+    verdict: "PASS",
+    findings: [{ id: "LOW-1", severity: "LOW", status: "DISMISSED", reason: "Not reproducible at the boundary" }],
+  });
+  if (parseReviewReport(reviewReport).findings[0].status !== "DISMISSED") throw new Error("review report v3 parse failed");
+  const invalidHighDismissal = JSON.parse(fs.readFileSync(reviewReport, "utf8"));
+  invalidHighDismissal.findings = [{ id: "HIGH-1", severity: "HIGH", status: "DISMISSED", reason: "ignore" }];
+  write("invalid-high-dismissal.json", invalidHighDismissal);
+  assertThrows(() => parseReviewReport(path.join(tmp, "invalid-high-dismissal.json")), /cannot dismissed high|cannot dismiss high/i, "high dismissal policy");
+  const invalidDeferral = { ...invalidHighDismissal, findings: [{ id: "LOW-2", severity: "LOW", status: "DEFERRED" }] };
+  write("invalid-deferral.json", invalidDeferral);
+  assertThrows(() => parseReviewReport(path.join(tmp, "invalid-deferral.json")), /requires a typed approvalId/, "deferred approval binding");
+  const emptyRevise = { ...JSON.parse(fs.readFileSync(reviewReport, "utf8")), verdict: "REVISE", findings: [] };
+  write("empty-revise.json", emptyRevise);
+  assertThrows(() => parseReviewReport(path.join(tmp, "empty-revise.json")), /requires at least one OPEN finding/, "empty repair findings");
+  const invalidReviewPhase = { ...JSON.parse(fs.readFileSync(reviewReport, "utf8")), phase: "test-review" };
+  write("invalid-review-phase.json", invalidReviewPhase);
+  assertThrows(() => parseReviewReport(path.join(tmp, "invalid-review-phase.json")), /phase must be one of/, "review phase schema parity");
+  const repairReceipt = write("docs/ai/repairs/repair-v3.json", {
+    schema: "acef.developer-repair.v3", runId: "RUN-v3", fullFlowContract: "four-actor-v3",
+    story: "Story 5.3", cycle: 1, priorGateId: "story-5-3-close", findingsSha256: "c".repeat(64),
+    developerActorId: "dev-v3", developerSessionId: "session-v3", preCommit: "abc123", preTree: "tree123",
+    postCommit: "def456", postTree: "tree456", createdAt: "2026-08-02T00:00:00Z",
+  });
+  if (parseDeveloperRepair(repairReceipt).cycle !== 1) throw new Error("Developer repair receipt parse failed");
+  const judgeDecision = write("docs/ai/judges/judge-v3.json", {
+    schema: "acef.process-judge-decision.v3", runId: "RUN-v3", fullFlowContract: "four-actor-v3",
+    story: "Story 5.3", trigger: "ambiguity", actorId: "judge-v3", gateId: "story-5-3-close",
+    evidenceIds: ["EV-red", "EV-green"], verdict: "ACKNOWLEDGE", createdAt: "2026-08-02T00:00:00Z",
+  });
+  if (parseProcessJudgeDecision(judgeDecision).verdict !== "ACKNOWLEDGE") throw new Error("Process Judge decision parse failed");
+  const changedRedTests = ["tests/story-5-3-red.test.js"];
+  if (atddRedExecutionFailure({ command: "node --test tests/story-5-3-red.test.js" }, "--- stdout ---\nnot ok 1 - tests/story-5-3-red.test.js\nAssertionError", changedRedTests)) {
+    throw new Error("real test-runner red evidence was rejected");
+  }
+  if (!atddRedExecutionFailure({ command: "node -e process.exit(1)" }, "--- stdout ---\nFAIL tests/story-5-3-red.test.js", changedRedTests)) {
+    throw new Error("arbitrary self-failure was accepted as ATDD red evidence");
+  }
+  if (!atddRedExecutionFailure({ command: "node --test tests/story-5-3-red.test.js" }, "--- stdout ---\nprocess exited 1", changedRedTests)) {
+    throw new Error("test runner without observed failure identity was accepted as ATDD red evidence");
+  }
+  const meaningfulRedSource = "const actual = require('../app/service'); test('red', () => assert.strictEqual(actual(), 'green'));";
+  if (atddTestSourceAuthenticityFailure([{ filePath: changedRedTests[0], source: meaningfulRedSource }])) {
+    throw new Error("real test declaration/assertion was rejected");
+  }
+  if (!atddTestSourceAuthenticityFailure([{ filePath: changedRedTests[0], source: "test('red', () => assert.strictEqual('red', 'green'));" }])) {
+    throw new Error("literal-vs-literal assertion was accepted as production behavior proof");
+  }
+  if (!atddTestSourceAuthenticityFailure([{ filePath: changedRedTests[0], source: "const actual = require('../app/service'); test('red', () => expect(actual).toBe(actual));" }])) {
+    throw new Error("expect self-comparison was accepted as production behavior proof");
+  }
+  if (!atddTestSourceAuthenticityFailure([{ filePath: changedRedTests[0], source: "process.exit(1);" }])) {
+    throw new Error("pure self-exit test source was accepted as authentic ATDD");
+  }
+  if (atddGreenTestContinuityFailure(
+    [{ filePath: changedRedTests[0], source: meaningfulRedSource }],
+    [{ filePath: changedRedTests[0], source: `${meaningfulRedSource}\ntest('extra', () => assert.ok(actual()));` }],
+  )) throw new Error("additive green coverage incorrectly weakened the red test fingerprint");
+  if (!atddGreenTestContinuityFailure(
+    [{ filePath: changedRedTests[0], source: meaningfulRedSource }],
+    [{ filePath: changedRedTests[0], source: "const actual = require('../app/service'); test('red', () => assert.strictEqual(actual(), actual()));" }],
+  )) throw new Error("green self-comparison weakening preserved the ATDD fingerprint");
 
   const approval = write("docs/ai/approvals/APP-1.json", {
     approvalId: "APP-1",

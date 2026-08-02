@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://acef.local/schemas/process-judge-decision-v3.schema.json",
+  "title": "ACEF Conditional Story Process Judge Decision v3",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "runId", "fullFlowContract", "story", "trigger", "actorId", "gateId", "evidenceIds", "verdict", "createdAt"],
+  "properties": {
+    "schema": { "const": "acef.process-judge-decision.v3" },
+    "runId": { "type": "string", "minLength": 1 },
+    "fullFlowContract": { "const": "four-actor-v3" },
+    "story": { "type": "string", "minLength": 1 },
+    "trigger": { "type": "string", "enum": ["ambiguity", "waiver", "evidence-conflict", "gate-anomaly"] },
+    "actorId": { "type": "string", "minLength": 1 },
+    "gateId": { "type": "string", "minLength": 1 },
+    "evidenceIds": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 } },
+    "verdict": { "type": "string", "enum": ["ACKNOWLEDGE", "APPROVE_WAIVER"] },
+    "createdAt": { "type": "string", "minLength": 1 }
+  }
+}

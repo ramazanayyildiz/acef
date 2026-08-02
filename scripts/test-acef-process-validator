@@ -780,7 +780,79 @@ try {
       content: "export const verifyPatch = true;\n",
     },
   }, "allow", workerEnv);
+  const v3HookRun = JSON.parse(fs.readFileSync(path.join(tmp, "docs", "ai", "ACEF_ACTIVE_RUN.json"), "utf8"));
+  const { lane: _v3LegacyLane, ...v3HookBase } = v3HookRun;
+  fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_ACTIVE_RUN.json"), JSON.stringify({
+    ...v3HookBase,
+    schema: "acef.active-run.v2",
+    workflowId: "full-bmad",
+    assuranceProfile: "baseline",
+    scopeUnit: "story",
+    fullFlowContract: "four-actor-v3",
+    expectedStories: ["1.1"],
+  }, null, 2));
+  writeWorkerScope({ phase: "development", workerId: "ACEF_BMAD_WORKER", allowedPaths: ["src/**", "tests/**"] });
+  expectHookDecision("v3 review patch gate reactivates scoped developer", {
+    tool_name: "Write",
+    cwd: tmp,
+    tool_input: {
+      file_path: path.join(tmp, "src", "review-fix-v3.ts"),
+      content: "export const developerRepair = true;\n",
+    },
+  }, "allow", workerEnv);
+  writeWorkerScope({ phase: "verify-patch", workerId: "ACEF_BMAD_WORKER", allowedPaths: ["src/**", "tests/**"] });
+  expectHookDecision("v3 review patch gate rejects retired verify-patch editor", {
+    tool_name: "Write",
+    cwd: tmp,
+    tool_input: {
+      file_path: path.join(tmp, "src", "review-fix-v3.ts"),
+      content: "export const retiredVerifyPatch = true;\n",
+    },
+  }, "deny", workerEnv, ["unknown phase alias"]);
   fs.rmSync(path.join(tmp, "docs", "ai", "ACEF_REVIEW_PATCH_REQUIRED.json"));
+  writeWorkerScope({ phase: "code-review", workerId: "ACEF_BMAD_WORKER", allowedPaths: ["src/**", "tests/**", "docs/ai/reports/**"] });
+  expectHookDecision("v3 code review is report-only despite broad allowedPaths", {
+    tool_name: "Write", cwd: tmp,
+    tool_input: { file_path: path.join(tmp, "src", "reviewer-edit.ts"), content: "export const forbidden = true;\n" },
+  }, "deny", workerEnv, ["report-only"]);
+  expectHookDecision("v3 code review may write its report artifact", {
+    tool_name: "Write", cwd: tmp,
+    tool_input: { file_path: path.join(tmp, "docs", "ai", "reports", "review-v3.json"), content: "{}\n" },
+  }, "allow", workerEnv);
+  writeWorkerScope({ phase: "code-reviewer", workerId: "ACEF_BMAD_WORKER", allowedPaths: ["src/**", "docs/ai/reports/**"] });
+  expectHookDecision("v3 code-reviewer alias remains report-only", {
+    tool_name: "Write", cwd: tmp,
+    tool_input: { file_path: path.join(tmp, "src", "alias-reviewer-edit.ts"), content: "export const forbidden = true;\n" },
+  }, "deny", workerEnv, ["report-only"]);
+  expectHookDecision("v3 code-reviewer alias may write scoped report", {
+    tool_name: "Write", cwd: tmp,
+    tool_input: { file_path: path.join(tmp, "docs", "ai", "reports", "alias-review-v3.json"), content: "{}\n" },
+  }, "allow", workerEnv);
+  writeWorkerScope({ phase: "patch-assurance", workerId: "ACEF_BMAD_WORKER", allowedPaths: ["src/**", "tests/**", "docs/ai/reports/**"] });
+  expectHookDecision("v3 patch assurance is report-only despite broad allowedPaths", {
+    tool_name: "Write", cwd: tmp,
+    tool_input: { file_path: path.join(tmp, "tests", "assurance-edit.test.ts"), content: "test('forbidden', () => {});\n" },
+  }, "deny", workerEnv, ["report-only"]);
+  writeWorkerScope({ phase: "patch-assurance-reviewer", workerId: "ACEF_BMAD_WORKER", allowedPaths: ["src/**", "docs/ai/reports/**"] });
+  expectHookDecision("v3 patch-assurance-reviewer alias remains report-only", {
+    tool_name: "Write", cwd: tmp,
+    tool_input: { file_path: path.join(tmp, "src", "alias-assurance-edit.ts"), content: "export const forbidden = true;\n" },
+  }, "deny", workerEnv, ["report-only"]);
+  writeWorkerScope({ phase: "review-finalizer", workerId: "ACEF_BMAD_WORKER", allowedPaths: ["src/**"] });
+  expectHookDecision("v3 unknown phase alias fails closed", {
+    tool_name: "Write", cwd: tmp,
+    tool_input: { file_path: path.join(tmp, "src", "unknown-phase-edit.ts"), content: "export const forbidden = true;\n" },
+  }, "deny", workerEnv, ["unknown phase alias"]);
+  writeWorkerScope({ phase: "atdd", workerId: "ACEF_BMAD_WORKER", allowedPaths: ["src/**", "tests/**"] });
+  expectHookDecision("v3 ATDD may write scoped test envelope", {
+    tool_name: "Write", cwd: tmp,
+    tool_input: { file_path: path.join(tmp, "tests", "atdd-envelope.test.ts"), content: "test('red', () => expect(service()).toBe(true));\n" },
+  }, "allow", workerEnv);
+  expectHookDecision("v3 ATDD cannot write application paths", {
+    tool_name: "Write", cwd: tmp,
+    tool_input: { file_path: path.join(tmp, "src", "atdd-app-edit.ts"), content: "export const forbidden = true;\n" },
+  }, "deny", workerEnv, ["test envelope"]);
+  fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_ACTIVE_RUN.json"), JSON.stringify(v3HookRun, null, 2));
 
   const fakeHome = fs.mkdtempSync(path.join(os.tmpdir(), "acef-home-"));
   const nonAcefRepo = path.join(fakeHome, "work", "browser-rts");
@@ -1357,15 +1429,26 @@ try {
   fs.writeFileSync(path.join(tmp, "docs", "ai", "evidence", "evidence-ui.json"), JSON.stringify(durableUiEvidence, null, 2));
   expectPass("gate-verdict", ["--repo", tmp, "--check", "gate-verdict"]);
 
-  // precommit-gate (lane-aware bundle): the certification path and the commit path must not
-  // diverge on actor certification. With a good guarded gate in place, the bundle passes;
-  // flipping the gate to a developer-self-decided one must BLOCK the commit (the STU360-001
-  // hole); switching the lane to lightweight must NOT require gate-decider at all.
+  // precommit-gate is phase-aware: ATDD/development commits must not require a final
+  // Process Judge (the bootstrap cycle), while closeout still blocks self-certification.
   const precommitGate = JSON.parse(fs.readFileSync(path.join(tmp, "docs", "ai", "gates", "story-1-1.json"), "utf8"));
   const precommitRun = JSON.parse(fs.readFileSync(path.join(tmp, "docs", "ai", "ACEF_ACTIVE_RUN.json"), "utf8"));
   expectPass("precommit-gate", ["--repo", tmp, "--check", "precommit-gate"]);
   fs.writeFileSync(path.join(tmp, "docs", "ai", "gates", "story-1-1.json"), JSON.stringify({ ...precommitGate, decidedBy: "dev-surface" }, null, 2));
+  expectPass("precommit-gate", ["--repo", tmp, "--check", "precommit-gate"]);
+  run("git", ["add", "docs/ai/gates/story-1-1.json"], { cwd: tmp });
   expectFail("precommit-gate", ["--repo", tmp, "--check", "precommit-gate"]);
+  run("git", ["reset", "-q", "--", "docs/ai/gates/story-1-1.json"], { cwd: tmp });
+  expectPass("precommit-gate", ["--repo", tmp, "--check", "precommit-gate"]);
+  fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_ACTIVE_RUN.json"), JSON.stringify({ ...precommitRun, activePhase: "closeout" }, null, 2));
+  expectFail("precommit-gate", ["--repo", tmp, "--check", "precommit-gate"]);
+  fs.writeFileSync(path.join(tmp, "docs", "ai", "gates", "story-1-1.json"), JSON.stringify(precommitGate, null, 2));
+  const closeJudgeReport = path.join(tmp, "docs", "ai", "reports", "story-1-1-process-judge.md");
+  const closeJudgeReportText = fs.readFileSync(closeJudgeReport, "utf8");
+  fs.rmSync(closeJudgeReport);
+  expectFail("precommit-gate", ["--repo", tmp, "--check", "precommit-gate"]);
+  fs.writeFileSync(closeJudgeReport, closeJudgeReportText);
+  expectPass("precommit-gate", ["--repo", tmp, "--check", "precommit-gate"]);
   fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_ACTIVE_RUN.json"), JSON.stringify({ ...precommitRun, lane: "lightweight" }, null, 2));
   expectPass("precommit-gate", ["--repo", tmp, "--check", "precommit-gate"]);
   fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_ACTIVE_RUN.json"), JSON.stringify(precommitRun, null, 2));
@@ -1451,6 +1534,55 @@ try {
   fs.rmSync(path.join(tmp, "docs", "ai", "actors"), { recursive: true, force: true });
   fs.rmSync(path.join(tmp, "docs", "ai", "evidence"), { recursive: true, force: true });
   fs.rmSync(path.join(tmp, "docs", "ai", "gates"), { recursive: true, force: true });
+
+  fs.mkdirSync(path.join(tmp, "docs", "ai", "actors"), { recursive: true });
+  fs.mkdirSync(path.join(tmp, "docs", "ai", "evidence"), { recursive: true });
+  fs.mkdirSync(path.join(tmp, "docs", "ai", "gates"), { recursive: true });
+  fs.mkdirSync(path.join(tmp, "docs", "ai", "reports"), { recursive: true });
+  fs.writeFileSync(path.join(tmp, "docs", "ai", "actors", "epic-1-judge.json"), JSON.stringify({
+    actorInstanceId: "epic-1-judge", runId: "RUN-epic-close", fullFlowContract: "four-actor-v3",
+    storyInventory: ["Story 1.1"],
+    story: "Epic 1", phase: "epic-process-judge", role: "epic-process-judge",
+    client: "codex", inputCommit: head, allowedContextProfile: "epic-judge",
+  }, null, 2));
+  const epicEvidenceCommand = "node epic-integration.js";
+  const epicEvidenceArtifact = path.join(tmp, "docs", "ai", "reports", "epic-1-integration.log");
+  fs.writeFileSync(epicEvidenceArtifact, runnerArtifact(epicEvidenceCommand, 0, "epic integration PASS"));
+  const epicEvidence = {
+    evidenceId: "epic-1-evidence", kind: "runtime-test", command: epicEvidenceCommand, exitCode: 0,
+    repositoryCommit: head, dirtyDigest: null, actorInstanceId: "epic-1-judge", story: "Epic 1",
+    rawArtifact: { path: "docs/ai/reports/epic-1-integration.log", sha256: sha256File(epicEvidenceArtifact) },
+    satisfies: ["epic integration"],
+  };
+  epicEvidence.runnerProof = evidenceRunnerProof(epicEvidence);
+  fs.writeFileSync(path.join(tmp, "docs", "ai", "evidence", "epic-1-evidence.json"), JSON.stringify(epicEvidence, null, 2));
+  fs.writeFileSync(path.join(tmp, "docs", "ai", "gates", "epic-1.json"), JSON.stringify({
+    gateId: "epic-1", runId: "RUN-epic-close", fullFlowContract: "four-actor-v3",
+    gateType: "actor-decided-v1", decisionMode: "actor", scope: "Epic 1", verdict: "PASS",
+    storyInventory: ["Story 1.1"],
+    decidedBy: "epic-1-judge", repositoryCommit: head, evidenceIds: ["epic-1-evidence"], createdAt: "2026-06-25T01:00:00.000Z",
+  }, null, 2));
+  fs.writeFileSync(path.join(tmp, "docs", "ai", "gates", "story-1-1-v3-pass.json"), JSON.stringify({
+    gateId: "story-1-1-v3-pass", runId: "RUN-epic-close", fullFlowContract: "four-actor-v3",
+    storyInventory: ["Story 1.1"],
+    gateType: "deterministic-story-close-v3", decisionMode: "deterministic", scope: "Story 1.1", verdict: "PASS",
+    decidedBy: "acef-story-close-v3", repositoryCommit: head, repositoryTree: head,
+    applicationCommit: head, applicationTree: head, validatorVersion: "acef-story-close-v3.0.0",
+    actors: { atdd: "fixture-atdd", development: "fixture-dev", codeReview: "fixture-review", patchAssurance: "fixture-assurance" },
+    redEvidenceId: "fixture-red", greenEvidenceId: "epic-1-evidence",
+    executedChecks: { actorSeparation: true, atddTestOnlyRed: true, redGreenChronology: true, finalTreeReview: true, patchAssurance: true, findingsResolved: true, runnerProof: true, scopeBinding: true, hashBinding: true },
+    reviewCycle: 0, unresolvedFindings: [], findingDispositions: [],
+    reportHashes: { codeReview: "a".repeat(64), patchAssurance: "b".repeat(64) },
+    reportPaths: { codeReview: "docs/ai/reports/fixture-review.json", patchAssurance: "docs/ai/reports/fixture-assurance.json" },
+    evidenceIds: ["fixture-red", "epic-1-evidence"], createdAt: "2026-06-25T00:59:00.000Z",
+  }, null, 2));
+  fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_ACTIVE_RUN.json"), JSON.stringify({
+    schema: "acef.active-run.v2", runId: "RUN-epic-close", repo: "fixture", workflowId: "full-bmad",
+    fullFlowContract: "four-actor-v3", assuranceProfile: "baseline", scopeUnit: "epic", expectedStories: ["Story 1.1"], status: "active",
+    activeStory: "Epic 1", activePhase: "closeout", ledgerPath: "docs/ai/ACEF_demo_DELIVERY_AUDIT.md",
+  }, null, 2));
+  expectPass("epic-process-judge", ["--repo", tmp, "--check", "epic-process-judge"]);
+  fs.rmSync(path.join(tmp, "docs", "ai", "ACEF_ACTIVE_RUN.json"));
 
   expectPass("session-handoff", ["--repo", tmp, "--check", "session-handoff", "--ledger", "docs/ai/ACEF_demo_DELIVERY_AUDIT.md"]);
   expectPass("claims", ["--repo", tmp, "--check", "claims", "--ledger", "docs/ai/ACEF_demo_DELIVERY_AUDIT.md"]);

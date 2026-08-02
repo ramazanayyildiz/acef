@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://acef.local/schemas/developer-repair-v3.schema.json",
+  "title": "ACEF Developer Repair Receipt v3",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "runId", "fullFlowContract", "story", "cycle", "priorGateId", "findingsSha256", "developerActorId", "developerSessionId", "preCommit", "preTree", "postCommit", "postTree", "createdAt"],
+  "properties": {
+    "schema": { "const": "acef.developer-repair.v3" },
+    "runId": { "type": "string", "minLength": 1 },
+    "fullFlowContract": { "const": "four-actor-v3" },
+    "story": { "type": "string", "minLength": 1 },
+    "cycle": { "type": "integer", "minimum": 1, "maximum": 2 },
+    "priorGateId": { "type": "string", "minLength": 1 },
+    "findingsSha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "developerActorId": { "type": "string", "minLength": 1 },
+    "developerSessionId": { "type": "string", "minLength": 1 },
+    "preCommit": { "type": "string", "minLength": 1 },
+    "preTree": { "type": "string", "minLength": 1 },
+    "postCommit": { "type": "string", "minLength": 1 },
+    "postTree": { "type": "string", "minLength": 1 },
+    "createdAt": { "type": "string", "minLength": 1 }
+  }
+}

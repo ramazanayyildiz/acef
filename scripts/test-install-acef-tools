@@ -39,6 +39,9 @@ try {
   const installationHelper = path.join(tmp, ".acef", "bin", "lib", "acef-installation.js");
   const schema = path.join(tmp, ".acef", "schemas", "active-run.schema.json");
   const activeRunV2Schema = path.join(tmp, ".acef", "schemas", "active-run-v2.schema.json");
+  const reviewReportV3Schema = path.join(tmp, ".acef", "schemas", "review-report-v3.schema.json");
+  const developerRepairV3Schema = path.join(tmp, ".acef", "schemas", "developer-repair-v3.schema.json");
+  const processJudgeDecisionV3Schema = path.join(tmp, ".acef", "schemas", "process-judge-decision-v3.schema.json");
   const atddCorrectionSchema = path.join(tmp, ".acef", "schemas", "atdd-correction.schema.json");
   const lightweightV2Schema = path.join(tmp, ".acef", "schemas", "lightweight-run-v2.schema.json");
   const directSchema = path.join(tmp, ".acef", "schemas", "direct-run.schema.json");
@@ -61,6 +64,9 @@ try {
   if (!fs.existsSync(installationHelper)) throw new Error("installation support library was not installed");
   if (!fs.existsSync(schema)) throw new Error("typed-state schemas were not installed");
   if (!fs.existsSync(activeRunV2Schema)) throw new Error("active-run v2 schema was not installed");
+  if (!fs.existsSync(reviewReportV3Schema)) throw new Error("review-report v3 schema was not installed");
+  if (!fs.existsSync(developerRepairV3Schema)) throw new Error("developer-repair v3 schema was not installed");
+  if (!fs.existsSync(processJudgeDecisionV3Schema)) throw new Error("Process Judge decision v3 schema was not installed");
   if (!fs.existsSync(atddCorrectionSchema)) throw new Error("ATDD correction schema was not installed");
   if (!fs.existsSync(lightweightV2Schema)) throw new Error("lightweight-run v2 schema was not installed");
   if (!fs.existsSync(directSchema)) throw new Error("direct-run schema was not installed");
@@ -177,6 +183,7 @@ try {
     "--lane", "full-bmad",
     "--status", "active",
     "--story", "story 1.1",
+    "--expected-story", "story 1.1",
     "--phase", "development",
     "--worker-role", "developer",
     "--full-ledger-access", "denied",

@@ -24,6 +24,41 @@ function readJson(rel) {
   return JSON.parse(fs.readFileSync(path.join(tmp, rel), "utf8"));
 }
 
+function sha256File(rel) {
+  return crypto.createHash("sha256").update(fs.readFileSync(path.join(tmp, rel))).digest("hex");
+}
+
+function writeReviewReport(rel, { actorInstanceId, story, phase, verdict = "PASS", findings = [] }) {
+  const filePath = path.join(tmp, rel);
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  const activeRun = readJson("docs/ai/ACEF_ACTIVE_RUN.json");
+  fs.writeFileSync(filePath, `${JSON.stringify({
+    schema: "acef.review-report.v3",
+    runId: activeRun.runId,
+    fullFlowContract: activeRun.fullFlowContract,
+    actorInstanceId,
+    story,
+    phase,
+    inputCommit: run("git", ["rev-parse", "HEAD"]).trim(),
+    inputTree: run("git", ["rev-parse", "HEAD^{tree}"]).trim(),
+    verdict,
+    findings,
+  }, null, 2)}\n`);
+  return rel;
+}
+
+function evidenceRunnerProof(record) {
+  return crypto.createHash("sha256").update(JSON.stringify({
+    schema: "acef-evidence-runner-proof-v1", runner: "acef-state evidence-run",
+    evidenceId: record.evidenceId, kind: record.kind, command: record.command, exitCode: record.exitCode,
+    startedAt: record.startedAt || null, finishedAt: record.finishedAt || null,
+    repositoryCommit: record.repositoryCommit, repositoryTree: record.repositoryTree || null,
+    dirtyDigest: record.dirtyDigest, dirtyApplicationPathsBefore: record.dirtyApplicationPathsBefore || [],
+    dirtyApplicationPathsAfter: record.dirtyApplicationPathsAfter || [], environmentDigest: record.environmentDigest || null,
+    actorInstanceId: record.actorInstanceId, story: record.story, rawArtifact: record.rawArtifact, satisfies: record.satisfies,
+  })).digest("hex");
+}
+
 function stateRun(args) {
   return run("node", [state, ...args]);
 }
@@ -57,7 +92,7 @@ try {
   for (const phase of ["atdd", "development", "code-review", "verify-patch", "test-review", "process-judge"]) {
     stateRun(["actor", "--repo", tmp, "--id", phase, "--story", "Story 1.1", "--phase", phase, "--role", phase, "--client", "codex", "--context-profile", phase]);
   }
-  stateRun(["active-run", "--repo", tmp, "--run-id", "RUN-1", "--lane", "full-bmad", "--status", "active", "--story", "Story 1.1", "--phase", "process-judge", "--ledger", "docs/ai/ACEF_demo_DELIVERY_AUDIT.md", "--worker-role", "process-judge", "--actor", "process-judge", "--worker-scope", "docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json", "--route", "B", "--route-confidence", "high", "--clarifying-question", "Is this large feature scope clear?", "--inferred-answer", "The fixture uses full BMAD state.", "--approval-required", "true", "--brief-approved", "true", "--execution-approved", "true"]);
+  stateRun(["active-run", "--repo", tmp, "--run-id", "RUN-1", "--lane", "full-bmad", "--full-flow-contract", "six-actor-v2", "--status", "active", "--story", "Story 1.1", "--phase", "process-judge", "--ledger", "docs/ai/ACEF_demo_DELIVERY_AUDIT.md", "--worker-role", "process-judge", "--actor", "process-judge", "--worker-scope", "docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json", "--route", "B", "--route-confidence", "high", "--clarifying-question", "Is this large feature scope clear?", "--inferred-answer", "The fixture uses full BMAD state.", "--approval-required", "true", "--brief-approved", "true", "--execution-approved", "true"]);
   stateRun(["worker-scope", "--repo", tmp, "--story", "Story 1.1", "--phase", "process-judge", "--worker-id", "process-judge", "--allow", "app/**", "--surface", "ui", "--pattern-use", "new-reusable-pattern", "--requires-round-trip", "true", "--binding", "admin>ui:image:true"]);
   stateRun(["approval", "--repo", tmp, "--id", "APP-2", "--decision", "APPROVE", "--scope", "epic:2", "--target-epic", "2", "--quote", "Start Epic 2"]);
   stateRun(["evidence-run", "--repo", tmp, "--id", "EV-1", "--kind", "runtime-test", "--actor", "development", "--story", "Story 1.1", "--satisfies", "AC-1", "--", process.execPath, "-e", "console.log('ok')"]);
@@ -143,6 +178,115 @@ try {
   fs.appendFileSync(rawPath, "tampered\n");
   expectFail("evidence-manifest", /raw artifact hash mismatch/);
   expectFail("gate-verdict", /raw artifact hash mismatch/);
+
+  stateRun(["active-run", "--repo", tmp, "--run-id", "RUN-v3", "--workflow-id", "full-bmad", "--expected-story", "Story 3.1", "--status", "active", "--story", "Story 3.1", "--phase", "atdd", "--ledger", "docs/ai/ACEF_demo_DELIVERY_AUDIT.md"]);
+  stateRun(["actor", "--repo", tmp, "--id", "atdd-v3", "--story", "Story 3.1", "--phase", "atdd", "--role", "test-author", "--client", "codex", "--context-profile", "atdd"]);
+  fs.mkdirSync(path.join(tmp, "tests"), { recursive: true });
+  fs.writeFileSync(path.join(tmp, "tests", "story-3-1-red.test.js"), "const test = require('node:test'); const assert = require('node:assert'); const actual = require('../app/demo.js'); test('story-3-1-red', () => assert.strictEqual(actual, 'validator-v3'));\n");
+  run("git", ["add", "tests/story-3-1-red.test.js"]);
+  run("git", ["commit", "-qm", "Story 3.1 ATDD red tests"]);
+  const red = cp.spawnSync(process.execPath, [state, "evidence-run", "--repo", tmp, "--id", "EV-v3-red", "--kind", "runtime-test", "--actor", "atdd-v3", "--story", "Story 3.1", "--satisfies", "AC-v3", "--", process.execPath, "--test", "tests/story-3-1-red.test.js"], { encoding: "utf8" });
+  if (red.status !== 1) throw new Error("v3 validator fixture did not capture red evidence");
+  stateRun(["actor", "--repo", tmp, "--id", "dev-v3", "--story", "Story 3.1", "--phase", "development", "--role", "developer", "--client", "codex", "--session-id", "dev-session-v3", "--context-profile", "development"]);
+  fs.writeFileSync(path.join(tmp, "app", "demo.js"), "module.exports = 'validator-v3';\n");
+  run("git", ["add", "app/demo.js"]);
+  run("git", ["commit", "-qm", "v3 validator app tree"]);
+  const reviewPath = writeReviewReport("docs/ai/reports/review-v3.json", { actorInstanceId: "review-v3", story: "Story 3.1", phase: "code-review" });
+  const assurancePath = writeReviewReport("docs/ai/reports/assurance-v3.json", { actorInstanceId: "assurance-v3", story: "Story 3.1", phase: "patch-assurance" });
+  stateRun(["actor", "--repo", tmp, "--id", "review-v3", "--story", "Story 3.1", "--phase", "code-review", "--role", "code-reviewer", "--client", "codex", "--context-profile", "review", "--artifact-path", reviewPath]);
+  stateRun(["actor", "--repo", tmp, "--id", "assurance-v3", "--story", "Story 3.1", "--phase", "patch-assurance", "--role", "patch-assurance", "--client", "codex", "--context-profile", "assurance", "--artifact-path", assurancePath]);
+  const reviewHash = readJson("docs/ai/actors/review-v3.json").producedArtifactHash;
+  const assuranceHash = readJson("docs/ai/actors/assurance-v3.json").producedArtifactHash;
+  stateRun(["evidence-run", "--repo", tmp, "--id", "EV-v3-green", "--kind", "runtime-test", "--actor", "dev-v3", "--story", "Story 3.1", "--satisfies", "AC-v3", "--", process.execPath, "--test", "tests/story-3-1-red.test.js"]);
+  stateRun(["active-run", "--repo", tmp, "--run-id", "RUN-v3", "--workflow-id", "full-bmad", "--status", "active", "--story", "Story 3.1", "--phase", "patch-assurance", "--ledger", "docs/ai/ACEF_demo_DELIVERY_AUDIT.md", "--worker-role", "patch-assurance", "--actor", "assurance-v3", "--worker-scope", "docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json"]);
+  stateRun(["worker-scope", "--repo", tmp, "--story", "Story 3.1", "--phase", "patch-assurance", "--worker-id", "assurance-v3", "--allow", "app/**", "--surface", "internal", "--requires-round-trip", "false"]);
+  stateRun(["gate", "--repo", tmp, "--id", "GATE-v3", "--scope", "Story 3.1", "--atdd-actor", "atdd-v3", "--development-actor", "dev-v3", "--code-review-actor", "review-v3", "--patch-assurance-actor", "assurance-v3", "--red-evidence", "EV-v3-red", "--green-evidence", "EV-v3-green", "--code-review-report-hash", reviewHash, "--patch-assurance-report-hash", assuranceHash, "--surface-evidence", "internal:EV-v3-green"]);
+  expectPass("actor-separation");
+  expectPass("evidence-manifest");
+  expectPass("gate-decider");
+  expectPass("gate-verdict");
+  const cleanGreen = readJson("docs/ai/evidence/EV-v3-green.json");
+  const dirtyBeforeGreen = { ...cleanGreen, dirtyApplicationPathsBefore: ["app/temporarily-dirty.js"] };
+  dirtyBeforeGreen.runnerProof = { ...dirtyBeforeGreen.runnerProof, sha256: evidenceRunnerProof(dirtyBeforeGreen) };
+  writeJson("docs/ai/evidence/EV-v3-green.json", dirtyBeforeGreen);
+  expectFail("gate-verdict", /dirty application paths before or after|captured with dirty application paths/);
+  writeJson("docs/ai/evidence/EV-v3-green.json", cleanGreen);
+  expectPass("gate-verdict");
+  const deterministicGate = readJson("docs/ai/gates/GATE-v3.json");
+  deterministicGate.reportHashes.codeReview = "e".repeat(64);
+  writeJson("docs/ai/gates/GATE-v3.json", deterministicGate);
+  expectFail("gate-verdict", /code-review report hash mismatch/);
+  const restoredGate = { ...deterministicGate, reportHashes: { ...deterministicGate.reportHashes, codeReview: reviewHash } };
+  writeJson("docs/ai/gates/GATE-v3.json", restoredGate);
+  expectPass("gate-verdict");
+
+  const staleRunGate = { ...restoredGate, runId: "RUN-old", gateId: "GATE-v3-old-run", createdAt: "2999-01-01T00:00:00Z" };
+  writeJson("docs/ai/gates/GATE-v3-old-run.json", staleRunGate);
+  expectPass("gate-verdict");
+  const frozenInventoryRun = readJson("docs/ai/ACEF_ACTIVE_RUN.json");
+  writeJson("docs/ai/ACEF_ACTIVE_RUN.json", { ...frozenInventoryRun, expectedStories: ["Story 3.1", "Story 3.2"] });
+  expectFail("actor-separation", /actor frozen story inventory mismatch/);
+  expectFail("gate-decider", /deterministic gate frozen story inventory mismatch/);
+  writeJson("docs/ai/ACEF_ACTIVE_RUN.json", frozenInventoryRun);
+  expectPass("actor-separation");
+
+  const actorGate = {
+    gateId: "GATE-v3-actor", runId: "RUN-v3", fullFlowContract: "four-actor-v3",
+    gateType: "actor-decided-v1", decisionMode: "actor", scope: "Story 3.1", verdict: "PASS",
+    storyInventory: ["Story 3.1"],
+    decidedBy: "assurance-v3", repositoryCommit: run("git", ["rev-parse", "HEAD"]).trim(),
+    repositoryTree: run("git", ["rev-parse", "HEAD^{tree}"]).trim(), evidenceIds: ["EV-v3-green"],
+    createdAt: "2999-01-02T00:00:00Z",
+  };
+  writeJson("docs/ai/gates/GATE-v3-actor.json", actorGate);
+  expectFail("gate-decider", /four-actor-v3 story PASS cannot use an actor-decided gate/);
+  fs.rmSync(path.join(tmp, "docs/ai/gates/GATE-v3-actor.json"));
+  expectPass("gate-decider");
+
+  const activeBeforeNamedEpic = readJson("docs/ai/ACEF_ACTIVE_RUN.json");
+  writeJson("docs/ai/ACEF_ACTIVE_RUN.json", { ...activeBeforeNamedEpic, activeStory: "Epic 3.1", scopeUnit: "story", expectedStories: ["Epic 3.1"] });
+  writeJson("docs/ai/gates/GATE-v3-named-epic.json", { ...actorGate, gateId: "GATE-v3-named-epic", scope: "Epic 3.1" });
+  expectFail("gate-decider", /four-actor-v3 story PASS cannot use an actor-decided gate/);
+  fs.rmSync(path.join(tmp, "docs/ai/gates/GATE-v3-named-epic.json"));
+  writeJson("docs/ai/ACEF_ACTIVE_RUN.json", activeBeforeNamedEpic);
+  expectPass("gate-decider");
+
+  const originalAssuranceActor = readJson("docs/ai/actors/assurance-v3.json");
+  const originalAssuranceReport = readJson(assurancePath);
+  const originalAssuranceGate = readJson("docs/ai/gates/GATE-v3.json");
+  const redCommit = readJson("docs/ai/evidence/EV-v3-red.json").repositoryCommit;
+  const redTree = run("git", ["rev-parse", `${redCommit}^{tree}`]).trim();
+  writeJson(assurancePath, { ...originalAssuranceReport, inputCommit: redCommit, inputTree: redTree });
+  const forgedAssuranceHash = sha256File(assurancePath);
+  writeJson("docs/ai/actors/assurance-v3.json", {
+    ...originalAssuranceActor, inputCommit: redCommit, inputTree: redTree, producedArtifactHash: forgedAssuranceHash,
+  });
+  writeJson("docs/ai/gates/GATE-v3.json", {
+    ...originalAssuranceGate, reportHashes: { ...originalAssuranceGate.reportHashes, patchAssurance: forgedAssuranceHash },
+  });
+  expectFail("gate-verdict", /patch-assurance actor did not inspect the final application\/test tree/);
+  writeJson(assurancePath, originalAssuranceReport);
+  writeJson("docs/ai/actors/assurance-v3.json", originalAssuranceActor);
+  writeJson("docs/ai/gates/GATE-v3.json", originalAssuranceGate);
+  expectPass("gate-verdict");
+
+  const originalReport = readJson(reviewPath);
+  writeJson(reviewPath, { ...originalReport, runId: "RUN-old" });
+  expectFail("gate-verdict", /review report hash mismatch|identity\/scope\/input binding mismatch/);
+  writeJson(reviewPath, originalReport);
+  expectPass("gate-verdict");
+
+  fs.writeFileSync(path.join(tmp, "tests", "story-3-1-red.test.js"), "const test = require('node:test'); const assert = require('node:assert'); const actual = require('../app/demo.js'); test('story-3-1-red', () => assert.strictEqual(actual, actual));\n");
+  run("git", ["add", "tests/story-3-1-red.test.js"]);
+  run("git", ["commit", "-qm", "weaken critical ATDD assertion"]);
+  const weakenedGreen = {
+    ...cleanGreen,
+    repositoryCommit: run("git", ["rev-parse", "HEAD"]).trim(),
+    repositoryTree: run("git", ["rev-parse", "HEAD^{tree}"]).trim(),
+  };
+  weakenedGreen.runnerProof = { ...weakenedGreen.runnerProof, sha256: evidenceRunnerProof(weakenedGreen) };
+  writeJson("docs/ai/evidence/EV-v3-green.json", weakenedGreen);
+  expectFail("gate-decider", /ATDD red evidence is not bound to a test-only commit preceding Development/);
 
   console.log("acef typed-state validator tests passed");
 } finally {

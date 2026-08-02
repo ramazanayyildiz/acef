@@ -78,9 +78,9 @@ deferred/out-of-scope work, known pitfalls, artifact paths, and role-specific in
 | ATDD | context pack slice + acceptance criteria + target test paths |
 | Developer | ATDD artifact + failing summary + target app/test paths |
 | Code Reviewer | targeted diff summary + touched files + acceptance-criteria matrix + generated PR review profile |
-| Verify-Patch | required review actions + affected paths/tests only |
-| Test Reviewer | changed tests + test strategy + concise command evidence |
-| Story Process Judge | story artifacts + compact ledger slice + command evidence |
+| Patch Assurance | final-tree diff + tests + required review actions + concise command evidence |
+| Repair Developer | affected paths/tests + findings hash only |
+| Conditional Story Process Judge | story close package + mechanical failure/ambiguity trigger |
 | Epic Process Judge | full ledger + epic artifacts + integration/runtime evidence |
 
 Record the contract in the ledger:
@@ -96,8 +96,8 @@ full_ledger_access: denied
 max_lines: 150
 ```
 
-Ordinary workers use `full_ledger_access: denied`; Story Process Judge uses `story-slice`; only Epic Process Judge uses
-`allowed`. Run `.acef/bin/acef-process-validator --check current-context` before dispatch.
+Ordinary workers use `full_ledger_access: denied`; a conditional Story Process Judge uses `story-slice`; only Epic
+Process Judge uses `allowed`. Run `.acef/bin/acef-process-validator --check current-context` before dispatch.
 
 ## Lean Output Budget
 
@@ -180,13 +180,16 @@ Every story close must include two canonical ledger facts, even when the full ev
 1. **ATDD red-before-dev evidence.** If a story uses ATDD, the ledger or story Process Judge row records the test-only
    commit/artifact, the expected-fail command, the observed failing count or failure summary, and the development commit
    that followed it. A passing final suite is not enough; the run must prove the test was red before implementation.
-2. **Actor identity summary.** The canonical ledger row records the actor identity for each phase that ran: Planner,
-   ATDD/Test Author, Developer, Code Reviewer, Verify-Patch, Test Reviewer, and Process Judge as applicable. It may link
-   to detailed reports, but the ledger row must be enough to see that the author did not approve its own work.
+2. **Actor identity summary.** The canonical ledger row records the actor identity for each phase that ran. New
+   `four-actor-v3` stories require ATDD/Test Author, Developer, Code Reviewer, and Patch Assurance Reviewer plus any
+   conditional Story Process Judge. Existing `six-actor-v2` stories retain Verify-Patch, Test Reviewer, and Story
+   Process Judge. It may link to detailed reports, but the ledger row must show that the author did not approve its own
+   work.
 3. **Surface validation evidence.** Lightweight, full BMAD, and guarded close all require touched-surface validation.
    Full BMAD and guarded story close require typed worker-scope `surfaces` and a typed PASS gate whose
    `surfaceEvidence` covers every touched surface. If the story changed UI, API, worker, command, hook, job, or
-   integration behavior, the Process Judge must cite successful evidence for that surface before closing. Lightweight
+   integration behavior, the v3 close gate (or legacy Process Judge) must cite successful evidence for that surface
+   before closing. Lightweight
    close requires the same declaration in `docs/ai/ACEF_LIGHTWEIGHT_RUN.json`: `surfaces` names every touched surface and
    `surfaceEvidence` records the command, evidence path, success result, and runner proof for each one.
    Validators also infer obvious surfaces from changed path names and fail if those surfaces were not declared; this is a
@@ -202,9 +205,9 @@ Every story close must include two canonical ledger facts, even when the full ev
    `.acef/bin/acef-process-validator --check goal-coverage` before saying a workspace, console, staff flow, CRM, finance
    screen, capture, manage, or tracking goal is complete.
 
-Lean chains may omit optional review phases only when explicitly authorized for low-risk work. They still require
-red-before-dev evidence when ATDD is used and a distinct Process Judge identity in the canonical ledger. Guarded work
-cannot use the lean chain.
+Lean chains may omit optional review phases only when explicitly authorized for low-risk non-Full work. They still
+require red-before-dev evidence when ATDD is used and a distinct independent reviewer/Judge identity in the canonical
+ledger. Guarded work cannot use the lean chain; `four-actor-v3` Full uses its deterministic four-actor contract instead.
 
 ## Implementation Shape Review
 
@@ -320,7 +323,7 @@ ACEF makes three separate decisions. Do not collapse them into one lane name:
 |---|---|---|---|
 | **ACEF Fix** | `quick-fix` | Narrow reproduced defects with clear before/after evidence. | Computed fix envelope, focused implementation, independent review, focused verification, closeout evidence. |
 | **ACEF Standard** | `lightweight` | Scoped ordinary features, config, docs, and contained non-defect work. | Compact six-step lifecycle with independent review and touched-surface validation. |
-| **ACEF Full (BMAD v2)** | `full-bmad` | Planning-heavy stories, broad features/refactors, new patterns, or unclear/coherent multi-boundary work. | BMAD readiness, ATDD, development, review, patch verification, test review, Process Judge, and Full closeout. |
+| **ACEF Full (BMAD v2)** | `full-bmad` | Planning-heavy stories, broad features/refactors, new patterns, or unclear/coherent multi-boundary work. | New `four-actor-v3` runs use readiness, ATDD, development, parallel Code Review + report-only Patch Assurance, deterministic story close, and one Epic Process Judge. Existing `six-actor-v2` runs keep their frozen lifecycle. |
 
 | Assurance profile | Use for | Additive controls |
 |---|---|---|
@@ -545,31 +548,31 @@ reviews the workflow claim. A workflow claim is invalid unless the required skil
 on disk.
 
 In full BMAD, the conductor is also separate from the story workers. It coordinates step order only. It must not act as
-the ATDD author, implementing actor, code reviewer, verifier, test reviewer, or Process Judge. A code-review claim is
+the ATDD author, implementing actor, Code Reviewer, Patch Assurance reviewer, or Process Judge. A review claim is
 invalid if the reviewer is the same worker identity that authored the code. Guarded payment/auth/entitlement/data
 stories cannot use self-review.
 
-BMAD story evidence must include persona identity for every required worker phase. Valid persona identities are:
-PM/Planner, UX Designer, Architect, Test Author/Tester, Developer, Code Reviewer/Judge, Verify-Patch Reviewer, Test
-Reviewer, Process Judge, and Documentation Maintainer. A generic or conductor identity does not satisfy a worker phase.
+BMAD story evidence must include persona identity for every required worker phase. New `four-actor-v3` stories require
+Test Author/Tester, Developer, Code Reviewer/Judge, and Patch Assurance Reviewer; Planner, UX, Architect, conditional
+Process Judge, Product Outcome Verifier, and Documentation Maintainer apply when their gates require them. Legacy
+`six-actor-v2` stories retain Verify-Patch and Test Reviewer identities. A generic or conductor identity is invalid.
 
 When the full BMAD lane is authorized, delegation to those ACEF-required persona workers should be approved once at run
 start and recorded in the ledger. The approval is not a blank check: it covers only the required persona phases in the
 current ACEF run. Each worker remains bound by the Worker Scope Fence, cannot spawn another worker, cannot edit the
 ledger/run-control files, and must report then stop.
 
-**Story/task Process Judge questions:**
+**Story-close questions (deterministic in v3; Judge-assisted only when triggered):**
 1. What route, lane, and track was selected, and where is that recorded?
 2. Which skills were required for that route/lane/track, and what are their resolved paths?
 3. If BMAD was claimed, did the real BMAD skill/conductor run, or was this only a hand-rolled imitation?
 4. Were required phases executed in order?
-5. Were ATDD, dev-story, code-review, verify-patch, test-review, and Process Judge performed by separate valid worker
-   identities where required?
+5. Did the selected contract's required actors run under distinct valid identities (four for v3, six for legacy v2)?
 6. Does each worker identity map to an allowed persona, not to conductor/dispatcher/general-purpose?
 7. Is the code reviewer independent from the worker that authored the code?
-8. Do readiness, ATDD/test, review, verify-patch, test-review, and product-done artifacts exist when the lane requires them?
-9. If review required a patch or returned `REVISE`/`BLOCK`, did the conductor stop and use a separate verify-patch worker
-   rather than editing the files itself?
+8. Do readiness, ATDD/test, review, Patch Assurance, and product-done artifacts exist when required?
+9. If review required a patch, did the conductor return it to a scoped Developer and then request only affected delta
+   re-review, rather than patching files or starting another full review chain?
 10. If the story claims a user-visible, runtime-wired, admin/editor, API, CLI, queue, scheduler, or framework-integrated
    capability, did evidence exercise the real entrypoint/capability instead of only supporting artifacts or isolated helpers?
 11. Which surface class did the story touch (`ui`, `admin`, `mobile`, `api`, `cli`, `queue`, `scheduler`, `storage`,
@@ -607,9 +610,10 @@ For guarded work, add `## Guarded Test Floor` with `boundary`, `boundary_symbol`
 `test_author_actor`, and `status: PASS`. The evidence uses `test/path#boundary_symbol`; the file must contain that exact
 boundary symbol and an assertion. Run `--check guarded-test-floor`.
 
-For full BMAD, add `## Actor Separation` as a `Phase | Actor | Evidence` table. ATDD, Development, Code Review,
-Verify Patch, Test Review, and Process Judge actors must be distinct, non-conductor identities. Evidence uses
-`path#actor`, and the file must contain that actor identity. Run `--check actor-separation`.
+For full BMAD, add `## Actor Separation` as a `Phase | Actor | Evidence` table. New `four-actor-v3` stories require
+distinct, non-conductor ATDD, Development, Code Review, and Patch Assurance actors; a conditional Story Process Judge
+must also be distinct. Existing `six-actor-v2` stories retain distinct Verify Patch, Test Review, and Story Process
+Judge actors. Evidence uses `path#actor`, and the file must contain that actor identity. Run `--check actor-separation`.
 
 For full BMAD planning/import work, add `## Source Reconciliation` as a
 `Source | Path | Decision | Discrepancy | Resolution` table. Decisions are `USED`, `NOT USED`, or `CONFLICT`; source
@@ -618,11 +622,13 @@ paths must exist, and conflicts/non-use require a closed resolution. Run `--chec
 **Epic Process Judge questions:**
 1. Was the `Epic N Process Judge [PENDING]` gate row/artifact seeded during epics/stories generation, before
    implementation started?
-2. Did the final story-level Process Judge in the epic set `Next allowed step: Epic N Process Judge`?
+2. Did the final deterministic story-close gate (`four-actor-v3`) or final story-level Process Judge
+   (`six-actor-v2`) set `Next allowed step: Epic N Process Judge`?
 3. Did the next epic wait until this epic gate reached `PASS` before any next-epic story was created, started, or
    dispatched?
 4. Did the epic start with the required test-design / risk-weighted coverage plan?
-5. Did every story pass story-level Process Judge before epic close?
+5. Did every story pass its deterministic close gate (`four-actor-v3`) or story-level Process Judge
+   (`six-actor-v2`) before epic close?
 6. Did drift audit, FR-capability trace, real-runtime smoke, epic test-review, E2E/user-flow evidence, manual QA ledger,
    product-done audit, retrospective, and final status close run when required?
 7. Does every FR assigned to the epic map to at least one owning story marked done, plus a real-path capability test or

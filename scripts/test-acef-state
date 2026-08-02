@@ -25,6 +25,25 @@ function readJson(rel) {
   return JSON.parse(fs.readFileSync(path.join(tmp, rel), "utf8"));
 }
 
+function writeReviewReport(rel, { actorInstanceId, story, phase, verdict = "PASS", findings = [] }) {
+  const filePath = path.join(tmp, rel);
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  const activeRun = readJson("docs/ai/ACEF_ACTIVE_RUN.json");
+  fs.writeFileSync(filePath, `${JSON.stringify({
+    schema: "acef.review-report.v3",
+    runId: activeRun.runId,
+    fullFlowContract: activeRun.fullFlowContract,
+    actorInstanceId,
+    story,
+    phase,
+    inputCommit: run("git", ["rev-parse", "HEAD"]).trim(),
+    inputTree: run("git", ["rev-parse", "HEAD^{tree}"]).trim(),
+    verdict,
+    findings,
+  }, null, 2)}\n`);
+  return rel;
+}
+
 try {
   const directHelp = runState(["direct-run", "--help"]);
   if (!directHelp.includes("New direct-run admission is retired") || !directHelp.includes("Do not inspect ACEF schemas")) {
@@ -50,16 +69,23 @@ try {
     runState(["actor", "--repo", tmp, "--id", phase, "--story", "Story 1.1", "--phase", phase, "--role", phase, "--client", "codex", "--context-profile", phase]);
   }
 
-  runState(["active-run", "--repo", tmp, "--run-id", "RUN-1", "--lane", "full-bmad", "--status", "active", "--story", "Story 1.1", "--phase", "process-judge", "--ledger", "docs/ai/ACEF_demo_DELIVERY_AUDIT.md", "--worker-role", "process-judge", "--actor", "process-judge", "--worker-scope", "docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json", "--route", "B", "--route-confidence", "high", "--clarifying-question", "Is this large feature scope clear?", "--inferred-answer", "The fixture uses full BMAD state.", "--approval-required", "true", "--brief-approved", "true", "--execution-approved", "true", "--goal-description", "Staff can use the account workspace", "--goal-user-facing", "true", "--goal-completion-mode", "product-workspace", "--goal-status", "PASS", "--story-type", "ui-surface", "--required-surface", "ui", "--covered-surface", "ui", "--goal-evidence", "app/demo.js#module.exports"]);
+  runState(["active-run", "--repo", tmp, "--run-id", "RUN-1", "--lane", "full-bmad", "--full-flow-contract", "six-actor-v2", "--status", "active", "--story", "Story 1.1", "--phase", "process-judge", "--ledger", "docs/ai/ACEF_demo_DELIVERY_AUDIT.md", "--worker-role", "process-judge", "--actor", "process-judge", "--worker-scope", "docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json", "--route", "B", "--route-confidence", "high", "--clarifying-question", "Is this large feature scope clear?", "--inferred-answer", "The fixture uses full BMAD state.", "--approval-required", "true", "--brief-approved", "true", "--execution-approved", "true", "--goal-description", "Staff can use the account workspace", "--goal-user-facing", "true", "--goal-completion-mode", "product-workspace", "--goal-status", "PASS", "--story-type", "ui-surface", "--required-surface", "ui", "--covered-surface", "ui", "--goal-evidence", "app/demo.js#module.exports"]);
   runState(["worker-scope", "--repo", tmp, "--story", "Story 1.1", "--phase", "process-judge", "--worker-id", "process-judge", "--allow", "app/**", "--allow", "tests/**", "--surface", "ui", "--pattern-use", "new-reusable-pattern", "--requires-round-trip", "true", "--binding", "admin>ui:image:true"]);
   runState(["approval", "--repo", tmp, "--id", "APP-2", "--decision", "APPROVE", "--scope", "epic:2", "--target-epic", "2", "--quote", "Start Epic 2", "--source-channel", "test"]);
   runState(["evidence-run", "--repo", tmp, "--id", "EV-1", "--kind", "runtime-test", "--actor", "development", "--story", "Story 1.1", "--satisfies", "AC-1", "--", process.execPath, "-e", "console.log('real path ok')"]);
+  fs.writeFileSync(path.join(tmp, "docs", "ai", "product-deliverable.md"), "not machine state\n");
+  runState(["evidence-run", "--repo", tmp, "--id", "EV-docs-ai-dirty", "--kind", "static-check", "--actor", "development", "--story", "Story 1.1", "--satisfies", "docs-ai-allowlist", "--", process.execPath, "-e", "console.log('probe')"]);
+  if (!readJson("docs/ai/evidence/EV-docs-ai-dirty.json").dirtyApplicationPathsBefore.includes("docs/ai/product-deliverable.md")) {
+    throw new Error("arbitrary docs/ai deliverable was incorrectly exempted as machine control state");
+  }
+  fs.rmSync(path.join(tmp, "docs", "ai", "product-deliverable.md"));
   runState(["gate", "--repo", tmp, "--id", "GATE-1", "--scope", "Story 1.1", "--verdict", "PASS", "--decided-by", "process-judge", "--evidence", "EV-1", "--surface-evidence", "ui:EV-1:true:true", "--binding-evidence", "admin>ui:image:EV-1:true:true"]);
 
   const activeRun = readJson("docs/ai/ACEF_ACTIVE_RUN.json");
   if (activeRun.schema !== "acef.active-run.v2" || activeRun.workflowId !== "full-bmad" || activeRun.assuranceProfile !== "baseline") {
     throw new Error("active-run did not persist separate workflow and assurance state");
   }
+  if (activeRun.fullFlowContract !== "six-actor-v2") throw new Error("explicit legacy Full contract was not persisted");
   if (activeRun.lane !== undefined) throw new Error("active-run v2 persisted legacy lane state");
   if (activeRun.activeActorId !== "process-judge") throw new Error("active-run actor binding missing");
   if (activeRun.intakeDecision.route !== "B") throw new Error("active-run intake decision missing");
@@ -87,6 +113,147 @@ try {
   }
   if (gate.inputOutputEvidence[0].inputSurface !== "admin" || gate.inputOutputEvidence[0].outputSurface !== "ui" || gate.inputOutputEvidence[0].field !== "image" || gate.inputOutputEvidence[0].nonDefaultValue !== true || gate.inputOutputEvidence[0].defaultRejected !== true) {
     throw new Error("gate input-output evidence binding failed");
+  }
+
+  const installedLegacy = readJson("docs/ai/ACEF_ACTIVE_RUN.json");
+  delete installedLegacy.fullFlowContract;
+  fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_ACTIVE_RUN.json"), `${JSON.stringify(installedLegacy, null, 2)}\n`);
+  runState(["active-run", "--repo", tmp, "--run-id", "RUN-1", "--workflow-id", "full-bmad", "--status", "active", "--story", "Story 1.1", "--phase", "closeout", "--ledger", "docs/ai/ACEF_demo_DELIVERY_AUDIT.md"]);
+  if (readJson("docs/ai/ACEF_ACTIVE_RUN.json").fullFlowContract !== undefined) {
+    throw new Error("installed missing-contract run did not remain legacy six-actor-v2");
+  }
+  const installedContractMutation = cp.spawnSync(process.execPath, [state, "active-run", "--repo", tmp, "--run-id", "RUN-1", "--workflow-id", "full-bmad", "--full-flow-contract", "four-actor-v3", "--status", "active", "--story", "Story 1.1", "--phase", "closeout", "--ledger", "docs/ai/ACEF_demo_DELIVERY_AUDIT.md"], { encoding: "utf8" });
+  if (installedContractMutation.status === 0 || !`${installedContractMutation.stdout}${installedContractMutation.stderr}`.includes("immutable after actor/gate creation")) {
+    throw new Error("installed legacy run could change contract after actor/gate creation");
+  }
+
+  // The v3 Full contract uses four actors and a deterministic story-close gate.
+  const missingInitialInventory = cp.spawnSync(process.execPath, [state, "active-run", "--repo", tmp, "--run-id", "RUN-v3-missing", "--workflow-id", "full-bmad", "--status", "active", "--story", "Story 3.1", "--phase", "atdd", "--ledger", "docs/ai/ACEF_demo_DELIVERY_AUDIT.md"], { encoding: "utf8" });
+  if (missingInitialInventory.status === 0 || !`${missingInitialInventory.stdout}${missingInitialInventory.stderr}`.includes("requires at least one --expected-story")) {
+    throw new Error("new v3 story run accepted no frozen expectedStories inventory");
+  }
+  runState(["active-run", "--repo", tmp, "--run-id", "RUN-v3", "--workflow-id", "full-bmad", "--expected-story", "Story 3.1", "--status", "active", "--story", "Story 3.1", "--phase", "atdd", "--ledger", "docs/ai/ACEF_demo_DELIVERY_AUDIT.md"]);
+  if (readJson("docs/ai/ACEF_ACTIVE_RUN.json").fullFlowContract !== "four-actor-v3") {
+    throw new Error("new Full run did not default to four-actor-v3");
+  }
+  runState(["actor", "--repo", tmp, "--id", "atdd-v3", "--story", "Story 3.1", "--phase", "atdd", "--role", "test-author", "--client", "codex", "--context-profile", "atdd"]);
+  const inventoryChangeAfterActor = cp.spawnSync(process.execPath, [state, "active-run", "--repo", tmp, "--run-id", "RUN-v3", "--workflow-id", "full-bmad", "--expected-story", "Story 3.1", "--expected-story", "Story 3.2", "--status", "active", "--story", "Story 3.1", "--phase", "atdd", "--ledger", "docs/ai/ACEF_demo_DELIVERY_AUDIT.md"], { encoding: "utf8" });
+  if (inventoryChangeAfterActor.status === 0 || !`${inventoryChangeAfterActor.stdout}${inventoryChangeAfterActor.stderr}`.includes("expectedStories inventory is frozen")) {
+    throw new Error("v3 inventory could change after the first actor record");
+  }
+  fs.mkdirSync(path.join(tmp, "tests"), { recursive: true });
+  fs.writeFileSync(path.join(tmp, "tests", "story-3-1-red.test.js"), "const test = require('node:test'); const assert = require('node:assert'); const actual = require('../app/demo.js'); test('story-3-1-red', () => assert.strictEqual(actual, 'v3-green'));\n");
+  run("git", ["add", "tests/story-3-1-red.test.js"]);
+  run("git", ["commit", "-qm", "Story 3.1 ATDD red tests"]);
+  const redRun = cp.spawnSync(process.execPath, [state, "evidence-run", "--repo", tmp, "--id", "EV-v3-red", "--kind", "runtime-test", "--actor", "atdd-v3", "--story", "Story 3.1", "--satisfies", "AC-v3", "--", process.execPath, "--test", "tests/story-3-1-red.test.js"], { encoding: "utf8" });
+  if (redRun.status !== 1) throw new Error("v3 red evidence was not captured as failing");
+  runState(["actor", "--repo", tmp, "--id", "dev-v3", "--story", "Story 3.1", "--phase", "development", "--role", "developer", "--client", "codex", "--session-id", "dev-session-v3", "--context-profile", "development"]);
+  fs.writeFileSync(path.join(tmp, "app", "demo.js"), "module.exports = 'v3-green';\n");
+  run("git", ["add", "app/demo.js"]);
+  run("git", ["commit", "-qm", "v3 implementation"]);
+  const reviewPath = writeReviewReport("docs/ai/reports/review-v3.json", { actorInstanceId: "review-v3", story: "Story 3.1", phase: "code-review" });
+  runState(["actor", "--repo", tmp, "--id", "review-v3", "--story", "Story 3.1", "--phase", "code-review", "--role", "code-reviewer", "--client", "codex", "--context-profile", "review", "--artifact-path", reviewPath]);
+  fs.mkdirSync(path.join(tmp, "tests"), { recursive: true });
+  fs.writeFileSync(path.join(tmp, "tests", "v3.test.js"), "module.exports = 'test-only-after-code-review';\n");
+  run("git", ["add", "tests/v3.test.js"]);
+  run("git", ["commit", "-qm", "v3 test-only assurance change"]);
+  const assurancePath = writeReviewReport("docs/ai/reports/assurance-v3.json", { actorInstanceId: "assurance-v3", story: "Story 3.1", phase: "patch-assurance", findings: [{ id: "LOW-dismissed", severity: "LOW", status: "DISMISSED", reason: "Out of scope and not reproducible" }] });
+  runState(["actor", "--repo", tmp, "--id", "assurance-v3", "--story", "Story 3.1", "--phase", "patch-assurance", "--role", "patch-assurance", "--client", "codex", "--context-profile", "assurance", "--artifact-path", assurancePath]);
+  const reviewHash = readJson("docs/ai/actors/review-v3.json").producedArtifactHash;
+  const assuranceHash = readJson("docs/ai/actors/assurance-v3.json").producedArtifactHash;
+  runState(["evidence-run", "--repo", tmp, "--id", "EV-v3-green", "--kind", "runtime-test", "--actor", "dev-v3", "--story", "Story 3.1", "--satisfies", "AC-v3", "--", process.execPath, "--test", "tests/story-3-1-red.test.js"]);
+  runState(["gate", "--repo", tmp, "--id", "GATE-v3", "--scope", "Story 3.1", "--atdd-actor", "atdd-v3", "--development-actor", "dev-v3", "--code-review-actor", "review-v3", "--patch-assurance-actor", "assurance-v3", "--red-evidence", "EV-v3-red", "--green-evidence", "EV-v3-green", "--code-review-report-hash", reviewHash, "--patch-assurance-report-hash", assuranceHash]);
+  const v3Gate = readJson("docs/ai/gates/GATE-v3.json");
+  if (v3Gate.verdict !== "PASS" || v3Gate.decisionMode !== "deterministic" || v3Gate.decidedBy !== "acef-story-close-v3") {
+    throw new Error("v3 gate was not deterministically closed");
+  }
+  if (!v3Gate.evidenceIds.includes("EV-v3-red") || !v3Gate.evidenceIds.includes("EV-v3-green")) {
+    throw new Error("v3 close package did not retain the complete red-to-green evidence chain");
+  }
+  if (v3Gate.findingDispositions[0]?.status !== "DISMISSED" || v3Gate.unresolvedFindings.length) {
+    throw new Error("v3 close did not preserve a justified LOW dismissal without treating it as open");
+  }
+  if (!Object.values(v3Gate.executedChecks).every(Boolean)) throw new Error("v3 gate persisted a failed mechanical check as PASS");
+  const override = cp.spawnSync(process.execPath, [state, "gate", "--repo", tmp, "--id", "GATE-v3-override", "--scope", "Story 3.1", "--verdict", "FAIL", "--atdd-actor", "atdd-v3", "--development-actor", "dev-v3", "--code-review-actor", "review-v3", "--patch-assurance-actor", "assurance-v3", "--red-evidence", "EV-v3-red", "--green-evidence", "EV-v3-green", "--code-review-report-hash", reviewHash, "--patch-assurance-report-hash", assuranceHash], { encoding: "utf8" });
+  if (override.status === 0 || !/cannot override computed verdict PASS|PASS gate is terminal/.test(`${override.stdout}${override.stderr}`)) {
+    throw new Error("caller could override deterministic v3 verdict");
+  }
+  const terminalPass = cp.spawnSync(process.execPath, [state, "gate", "--repo", tmp, "--id", "GATE-v3-after-pass", "--scope", "Story 3.1", "--atdd-actor", "atdd-v3", "--development-actor", "dev-v3", "--code-review-actor", "review-v3", "--patch-assurance-actor", "assurance-v3", "--red-evidence", "EV-v3-red", "--green-evidence", "EV-v3-green"], { encoding: "utf8" });
+  if (terminalPass.status === 0 || !`${terminalPass.stdout}${terminalPass.stderr}`.includes("PASS gate is terminal")) throw new Error("PASS did not terminate the v3 story gate chain");
+  runState(["active-run", "--repo", tmp, "--run-id", "RUN-epic-name-story", "--workflow-id", "full-bmad", "--scope-unit", "story", "--expected-story", "Epic 99", "--status", "active", "--story", "Epic 99", "--phase", "process-judge", "--ledger", "docs/ai/ACEF_demo_DELIVERY_AUDIT.md"]);
+  runState(["actor", "--repo", tmp, "--id", "epic-name-judge", "--story", "Epic 99", "--phase", "process-judge", "--role", "process-judge", "--client", "codex", "--context-profile", "judge"]);
+  const namedEpicBypass = cp.spawnSync(process.execPath, [state, "gate", "--repo", tmp, "--id", "GATE-epic-name-bypass", "--scope", "Epic 99", "--verdict", "PASS", "--decided-by", "epic-name-judge", "--evidence", "EV-v3-green"], { encoding: "utf8" });
+  if (namedEpicBypass.status === 0 || !`${namedEpicBypass.stdout}${namedEpicBypass.stderr}`.includes("must use deterministic story-close inputs")) {
+    throw new Error("scopeUnit=story bypassed deterministic close because activeStory was named Epic");
+  }
+
+  // A separate story exercises the bounded REVISE -> Developer repair -> REVISE -> repair -> REPLAN chain.
+  runState(["active-run", "--repo", tmp, "--run-id", "RUN-v32", "--workflow-id", "full-bmad", "--expected-story", "Story 3.2", "--status", "active", "--story", "Story 3.2", "--phase", "atdd", "--ledger", "docs/ai/ACEF_demo_DELIVERY_AUDIT.md"]);
+  runState(["actor", "--repo", tmp, "--id", "atdd-v32", "--story", "Story 3.2", "--phase", "atdd", "--role", "test-author", "--client", "codex", "--context-profile", "atdd"]);
+  fs.writeFileSync(path.join(tmp, "tests", "story-3-2-red.test.js"), "const test = require('node:test'); const assert = require('node:assert'); const actual = require('../app/demo.js'); test('story-3-2-red', () => assert.strictEqual(actual, 'v32-initial'));\n");
+  run("git", ["add", "tests/story-3-2-red.test.js"]); run("git", ["commit", "-qm", "Story 3.2 ATDD red tests"]);
+  const red32 = cp.spawnSync(process.execPath, [state, "evidence-run", "--repo", tmp, "--id", "EV-v32-red", "--kind", "runtime-test", "--actor", "atdd-v32", "--story", "Story 3.2", "--satisfies", "AC-v32", "--", process.execPath, "--test", "tests/story-3-2-red.test.js"], { encoding: "utf8" });
+  if (red32.status !== 1) throw new Error("Story 3.2 red evidence was not captured");
+  runState(["actor", "--repo", tmp, "--id", "dev-v32", "--story", "Story 3.2", "--phase", "development", "--role", "developer", "--client", "codex", "--session-id", "dev-session-v32", "--context-profile", "development"]);
+  fs.writeFileSync(path.join(tmp, "app", "demo.js"), "module.exports = 'v32-initial';\n");
+  run("git", ["add", "app/demo.js"]); run("git", ["commit", "-qm", "Story 3.2 implementation"]);
+  const r320 = writeReviewReport("docs/ai/reports/review-v32-0.json", { actorInstanceId: "review-v32-0", story: "Story 3.2", phase: "code-review" });
+  const a320 = writeReviewReport("docs/ai/reports/assurance-v32-0.json", { actorInstanceId: "assurance-v32-0", story: "Story 3.2", phase: "patch-assurance", verdict: "REVISE", findings: [{ id: "F-320", severity: "HIGH", status: "OPEN" }] });
+  runState(["actor", "--repo", tmp, "--id", "review-v32-0", "--story", "Story 3.2", "--phase", "code-review", "--role", "code-reviewer", "--client", "codex", "--context-profile", "review", "--artifact-path", r320]);
+  runState(["actor", "--repo", tmp, "--id", "assurance-v32-0", "--story", "Story 3.2", "--phase", "patch-assurance", "--role", "patch-assurance", "--client", "codex", "--context-profile", "assurance", "--artifact-path", a320]);
+  runState(["actor", "--repo", tmp, "--id", "judge-v32", "--story", "Story 3.2", "--phase", "process-judge", "--role", "process-judge", "--client", "codex", "--context-profile", "judge"]);
+  runState(["evidence-run", "--repo", tmp, "--id", "EV-v32-green0", "--kind", "runtime-test", "--actor", "dev-v32", "--story", "Story 3.2", "--satisfies", "AC-v32", "--", process.execPath, "--test", "tests/story-3-2-red.test.js"]);
+  runState(["judge-decision", "--repo", tmp, "--id", "judge-v32", "--gate-id", "GATE-v32-0", "--actor", "judge-v32", "--trigger", "ambiguity", "--evidence", "EV-v32-red", "--evidence", "EV-v32-green0"]);
+  const judgeDecision = "docs/ai/judges/judge-v32.json";
+  runState(["gate", "--repo", tmp, "--id", "GATE-v32-0", "--scope", "Story 3.2", "--atdd-actor", "atdd-v32", "--development-actor", "dev-v32", "--code-review-actor", "review-v32-0", "--patch-assurance-actor", "assurance-v32-0", "--red-evidence", "EV-v32-red", "--green-evidence", "EV-v32-green0", "--process-judge-actor", "judge-v32", "--judge-trigger", "ambiguity", "--judge-decision", judgeDecision]);
+  const gate320 = readJson("docs/ai/gates/GATE-v32-0.json");
+  if (gate320.verdict !== "REVISE" || gate320.reviewCycle !== 0 || gate320.processJudge.verdict !== "ACKNOWLEDGE") throw new Error("initial v3 REVISE/Judge decision was not persisted");
+  const noChangeRepair = cp.spawnSync(process.execPath, [state, "developer-repair", "--repo", tmp, "--id", "repair-v32-no-change", "--prior-gate", "GATE-v32-0", "--developer-actor", "dev-v32"], { encoding: "utf8" });
+  if (noChangeRepair.status === 0 || !`${noChangeRepair.stdout}${noChangeRepair.stderr}`.includes("real post-REVISE application change")) {
+    throw new Error("Developer repair writer accepted a no-op repair receipt");
+  }
+
+  for (const cycle of [1, 2]) {
+    fs.writeFileSync(path.join(tmp, "app", `repair-${cycle}.js`), `module.exports = 'v32-repair-${cycle}';\n`);
+    run("git", ["add", `app/repair-${cycle}.js`]); run("git", ["commit", "-qm", `Story 3.2 repair ${cycle}`]);
+    const priorGate = readJson(`docs/ai/gates/GATE-v32-${cycle - 1}.json`);
+    runState(["developer-repair", "--repo", tmp, "--id", `repair-v32-${cycle}`, "--prior-gate", priorGate.gateId, "--developer-actor", "dev-v32"]);
+    const receipt = `docs/ai/repairs/repair-v32-${cycle}.json`;
+    const reviewActor = `review-v32-${cycle}`; const assuranceActor = `assurance-v32-${cycle}`;
+    const reviewReport = writeReviewReport(`docs/ai/reports/${reviewActor}.json`, { actorInstanceId: reviewActor, story: "Story 3.2", phase: "code-review" });
+    const assuranceReport = writeReviewReport(`docs/ai/reports/${assuranceActor}.json`, { actorInstanceId: assuranceActor, story: "Story 3.2", phase: "patch-assurance", verdict: "REVISE", findings: [{ id: `F-32${cycle}`, severity: "HIGH", status: "OPEN" }] });
+    runState(["actor", "--repo", tmp, "--id", reviewActor, "--story", "Story 3.2", "--phase", "code-review", "--role", "code-reviewer", "--client", "codex", "--context-profile", "review", "--artifact-path", reviewReport]);
+    runState(["actor", "--repo", tmp, "--id", assuranceActor, "--story", "Story 3.2", "--phase", "patch-assurance", "--role", "patch-assurance", "--client", "codex", "--context-profile", "assurance", "--artifact-path", assuranceReport]);
+    runState(["evidence-run", "--repo", tmp, "--id", `EV-v32-green${cycle}`, "--kind", "runtime-test", "--actor", "dev-v32", "--story", "Story 3.2", "--satisfies", "AC-v32", "--", process.execPath, "--test", "tests/story-3-2-red.test.js"]);
+    runState(["gate", "--repo", tmp, "--id", `GATE-v32-${cycle}`, "--scope", "Story 3.2", "--atdd-actor", "atdd-v32", "--development-actor", "dev-v32", "--code-review-actor", reviewActor, "--patch-assurance-actor", assuranceActor, "--red-evidence", "EV-v32-red", "--green-evidence", `EV-v32-green${cycle}`, "--repair-receipt", receipt]);
+  }
+  if (readJson("docs/ai/gates/GATE-v32-2.json").verdict !== "REPLAN") throw new Error("second repair did not deterministically produce REPLAN");
+  const terminalReplan = cp.spawnSync(process.execPath, [state, "gate", "--repo", tmp, "--id", "GATE-v32-reset", "--scope", "Story 3.2", "--atdd-actor", "atdd-v32", "--development-actor", "dev-v32", "--code-review-actor", "review-v32-2", "--patch-assurance-actor", "assurance-v32-2", "--red-evidence", "EV-v32-red", "--green-evidence", "EV-v32-green2"], { encoding: "utf8" });
+  if (terminalReplan.status === 0 || !`${terminalReplan.stdout}${terminalReplan.stderr}`.includes("exhausted two repair cycles")) throw new Error("REPLAN did not terminate the v3 story gate chain");
+  const missingEpicInventory = cp.spawnSync(process.execPath, [state, "active-run", "--repo", tmp, "--run-id", "RUN-v3", "--workflow-id", "full-bmad", "--scope-unit", "epic", "--status", "active", "--story", "Epic 3", "--phase", "epic-process-judge", "--ledger", "docs/ai/ACEF_demo_DELIVERY_AUDIT.md"], { encoding: "utf8" });
+  if (missingEpicInventory.status === 0 || !`${missingEpicInventory.stdout}${missingEpicInventory.stderr}`.includes("requires at least one --expected-story")) {
+    throw new Error("v3 Epic run accepted an unfrozen story inventory");
+  }
+  runState(["active-run", "--repo", tmp, "--run-id", "RUN-v3", "--workflow-id", "full-bmad", "--scope-unit", "epic", "--expected-story", "Story 3.1", "--status", "active", "--story", "Epic 3", "--phase", "epic-process-judge", "--ledger", "docs/ai/ACEF_demo_DELIVERY_AUDIT.md"]);
+  runState(["actor", "--repo", tmp, "--id", "epic-judge-v3", "--story", "Epic 3", "--phase", "epic-process-judge", "--role", "epic-process-judge", "--client", "codex", "--context-profile", "epic-judge"]);
+  runState(["evidence-run", "--repo", tmp, "--id", "EV-v3-epic", "--kind", "runtime-test", "--actor", "epic-judge-v3", "--story", "Epic 3", "--satisfies", "epic-integration", "--", process.execPath, "-e", "console.log('epic green')"]);
+  runState(["gate", "--repo", tmp, "--id", "GATE-v3-epic", "--scope", "Epic 3", "--verdict", "PASS", "--decided-by", "epic-judge-v3", "--evidence", "EV-v3-epic", "--evidence", "EV-v3-green"]);
+  const v3EpicGate = readJson("docs/ai/gates/GATE-v3-epic.json");
+  if (v3EpicGate.gateType !== "actor-decided-v1" || v3EpicGate.decidedBy !== "epic-judge-v3") {
+    throw new Error("v3 run did not preserve mandatory actor-decided Epic Process Judge gate");
+  }
+  if (!v3EpicGate.evidenceIds.includes("EV-v3-green")) throw new Error("Epic gate could not aggregate story evidence");
+  const inventoryMutation = cp.spawnSync(process.execPath, [state, "active-run", "--repo", tmp, "--run-id", "RUN-v3", "--workflow-id", "full-bmad", "--scope-unit", "epic", "--expected-story", "Story 3.1", "--expected-story", "Story 3.2", "--status", "active", "--story", "Epic 3", "--phase", "epic-process-judge", "--ledger", "docs/ai/ACEF_demo_DELIVERY_AUDIT.md"], { encoding: "utf8" });
+  if (inventoryMutation.status === 0 || !`${inventoryMutation.stdout}${inventoryMutation.stderr}`.includes("expectedStories inventory is frozen")) {
+    throw new Error("same v3 run could add a successful-subset story after lifecycle evidence");
+  }
+  runState(["active-run", "--repo", tmp, "--run-id", "RUN-v3", "--workflow-id", "full-bmad", "--status", "active", "--story", "Story 3.1", "--phase", "closeout", "--ledger", "docs/ai/ACEF_demo_DELIVERY_AUDIT.md"]);
+  if (readJson("docs/ai/ACEF_ACTIVE_RUN.json").fullFlowContract !== "four-actor-v3") {
+    throw new Error("v3 fullFlowContract was not preserved across phase updates");
+  }
+  const contractMutation = cp.spawnSync(process.execPath, [state, "active-run", "--repo", tmp, "--run-id", "RUN-v3", "--workflow-id", "full-bmad", "--full-flow-contract", "six-actor-v2", "--status", "active", "--story", "Story 3.1", "--phase", "closeout", "--ledger", "docs/ai/ACEF_demo_DELIVERY_AUDIT.md"], { encoding: "utf8" });
+  if (contractMutation.status === 0 || !`${contractMutation.stdout}${contractMutation.stderr}`.includes("fullFlowContract is immutable")) {
+    throw new Error("v3 fullFlowContract could mutate in place");
   }
 
   const unapprovedGuardedEpic = cp.spawnSync(process.execPath, [

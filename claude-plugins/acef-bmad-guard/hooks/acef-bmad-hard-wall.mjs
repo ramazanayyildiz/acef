@@ -648,6 +648,45 @@ function normalizedScopePhase(scope) {
   return String(scope?.phase || scope?.activePhase || "").toLowerCase().replace(/[^a-z0-9]+/g, "");
 }
 
+function canonicalV3WorkerPhase(scope) {
+  const phase = normalizedScopePhase(scope);
+  const aliases = {
+    atdd: "atdd", testauthor: "atdd", tester: "atdd",
+    dev: "development", developer: "development", development: "development", devstory: "development",
+    implementation: "development", implementing: "development", implement: "development", impl: "development",
+    codereview: "code-review", codereviewer: "code-review", review: "code-review", reviewer: "code-review",
+    patchassurance: "patch-assurance", patchassurancereviewer: "patch-assurance", assurance: "patch-assurance",
+    processjudge: "process-judge", storyprocessjudge: "process-judge", storyjudge: "process-judge", judge: "process-judge",
+    epicprocessjudge: "epic-process-judge",
+  };
+  return aliases[phase] || "unknown";
+}
+
+function testEnvelopePath(filePath, repoRoot) {
+  if (!filePath || !repoRoot || !under(filePath, repoRoot)) return false;
+  const rel = path.relative(repoRoot, filePath).replaceAll(path.sep, "/");
+  return /(^|\/)(?:__tests__|tests?|specs?)(\/|$)|(?:\.|-)(?:test|spec)\.[cm]?[jt]sx?$|Test\.(?:php|py|rb|cs)$/i.test(rel);
+}
+
+function v3ReportPath(filePath, repoRoot, phase) {
+  if (!filePath || !repoRoot || !under(filePath, repoRoot)) return false;
+  const rel = path.relative(repoRoot, filePath).replaceAll(path.sep, "/");
+  if (["code-review", "patch-assurance"].includes(phase)) return /^docs\/ai\/reports\//.test(rel);
+  if (["process-judge", "epic-process-judge"].includes(phase)) return /^docs\/ai\/(?:reports|judges)\//.test(rel);
+  return false;
+}
+
+function activeFullFlowContract(repoRoot) {
+  const filePath = path.join(repoRoot, "docs", "ai", "ACEF_ACTIVE_RUN.json");
+  if (!exists(filePath)) return "six-actor-v2";
+  try {
+    const activeRun = JSON.parse(fs.readFileSync(filePath, "utf8"));
+    return activeRun.fullFlowContract || "six-actor-v2";
+  } catch {
+    return "invalid";
+  }
+}
+
 function reviewPatchRestricted(repoRoot, payload) {
   const gate = readReviewPatchGate(repoRoot);
   if (!gate) return "";
@@ -660,16 +699,19 @@ function reviewPatchRestricted(repoRoot, payload) {
   const phase = normalizedScopePhase(scope);
   const gateStory = String(gate.activeStory || gate.story || "").trim();
   const scopeStory = String(scope?.activeStory || scope?.story || "").trim();
-  const verifyPatchWorker = isWorker(payload)
+  const fullFlowContract = activeFullFlowContract(repoRoot);
+  const repairPhase = fullFlowContract === "four-actor-v3" ? /^development$/ : /^verifypatch$/;
+  const repairWorker = isWorker(payload)
     && scope
     && !scope.invalid
-    && /^verifypatch$/.test(phase)
+    && repairPhase.test(phase)
     && (!gateStory || gateStory === scopeStory)
     && scopeAppliesToWorker(payload, scope);
 
-  if (verifyPatchWorker) return "";
+  if (repairWorker) return "";
 
-  return `ACEF review-patch gate: reviewer returned ${gate.reviewVerdict || status}; only a scoped verify-patch worker may edit implementation for ${gateStory || "the active story"}. Conductor must stop after summarizing findings.`;
+  const repairRole = fullFlowContract === "four-actor-v3" ? "reactivated development" : "verify-patch";
+  return `ACEF review-patch gate: reviewer returned ${gate.reviewVerdict || status}; only a scoped ${repairRole} worker may edit implementation for ${gateStory || "the active story"}. Conductor must stop after summarizing findings.`;
 }
 
 function payloadWorkerIdentity(payload) {
@@ -775,6 +817,38 @@ function workerScopeRestricted(payload, toolName, input, cwd, repoRoot, filePath
     return "ACEF worker scope fence: workers cannot edit ACEF run-control/ledger files. Conductor or ledger-worker only.";
   }
 
+  const v3Contract = activeFullFlowContract(repoRoot) === "four-actor-v3";
+  const commandWrites = isShellTool(toolName)
+    && (bashIsCommit(command) || bashIsRestricted(command, cwd, repoRoot)
+      || bashTouchesImplementation(command, cwd, repoRoot) || bashTouchesLedger(command, cwd, repoRoot));
+  const writeTargets = isWriteTool(toolName) && filePath
+    ? [filePath]
+    : /^apply_patch$/i.test(toolName) ? patchTouchedPaths(input, cwd) : [];
+  let v3Scope = null;
+  if (v3Contract && (writeTargets.length || commandWrites)) {
+    v3Scope = readActiveWorkerScope(repoRoot);
+    if (!v3Scope) return "ACEF v3 write authority: missing active worker scope.";
+    if (v3Scope.invalid) return "ACEF v3 write authority: active worker scope is invalid.";
+    if (!scopeAppliesToWorker(payload, v3Scope)) return "ACEF v3 write authority: active worker scope belongs to a different worker.";
+    const authority = canonicalV3WorkerPhase(v3Scope);
+    if (authority === "unknown") return `ACEF v3 write authority: unknown phase alias '${v3Scope.phase}' fails closed.`;
+    if (["code-review", "patch-assurance", "process-judge", "epic-process-judge"].includes(authority)) {
+      if (commandWrites || !writeTargets.length || writeTargets.some((target) => !v3ReportPath(target, repoRoot, authority))) {
+        return `ACEF v3 write authority: ${v3Scope.phase} is report-only; app/test, commit, shell mutation, and non-report writes are denied.`;
+      }
+      if (writeTargets.some((target) => !allowedByScopePath(target, repoRoot, v3Scope))) {
+        return `ACEF v3 write authority: report path is outside allowedPaths for ${v3Scope.phase}.`;
+      }
+      return "";
+    }
+    if (authority === "atdd" && writeTargets.some((target) => !testEnvelopePath(target, repoRoot))) {
+      return "ACEF v3 write authority: ATDD may write only the scoped test envelope.";
+    }
+    if (authority === "development" && writeTargets.some((target) => !implementationPath(target, repoRoot))) {
+      return "ACEF v3 write authority: Developer may write only scoped application/test paths.";
+    }
+  }
+
   const touchesImplementation = isWriteTool(toolName)
     ? implementationPath(filePath, repoRoot)
     : /^apply_patch$/i.test(toolName)
@@ -782,7 +856,7 @@ function workerScopeRestricted(payload, toolName, input, cwd, repoRoot, filePath
     : isShellTool(toolName) && (bashTouchesImplementation(command, cwd, repoRoot) || bashIsCommit(command));
   if (!touchesImplementation) return "";
 
-  const scope = readActiveWorkerScope(repoRoot);
+  const scope = v3Scope || readActiveWorkerScope(repoRoot);
   if (!scope) {
     return "ACEF worker scope fence: missing docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json before worker implementation write/commit.";
   }
@@ -791,6 +865,13 @@ function workerScopeRestricted(payload, toolName, input, cwd, repoRoot, filePath
   }
   if (!scopeAppliesToWorker(payload, scope)) {
     return `ACEF worker scope fence: active worker scope is assigned to a different worker identity. ${workerScopeRecoveryHint(scope, repoRoot, filePath ? [filePath] : [])}`;
+  }
+  const workerPhase = normalizedScopePhase(scope);
+  const reportOnlyPhase = v3Contract
+    ? ["code-review", "patch-assurance", "process-judge", "epic-process-judge"].includes(canonicalV3WorkerPhase(scope))
+    : /^(?:codereview|review|reviewer|testreview)$/.test(workerPhase);
+  if (reportOnlyPhase) {
+    return `ACEF worker scope fence: ${scope.phase} is report-only and cannot edit implementation/test paths even when allowedPaths includes them.`;
   }
 
   const targetEpic = parseEpicNumberFromStory(scope.activeStory || scope.story || scope.scope || "");
@@ -904,7 +985,21 @@ function scopeFallbackDecision(toolName, input, cwd, repoRoot, filePath, patchPa
   if (scope.invalid) {
     return { action: "deny", reason: denyReason("docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json is not valid worker-scope JSON.") };
   }
-  if (!phasePermitsImplementation(scope)) {
+  const v3Contract = activeFullFlowContract(repoRoot) === "four-actor-v3";
+  const v3Authority = v3Contract ? canonicalV3WorkerPhase(scope) : "";
+  if (v3Contract && v3Authority === "unknown") {
+    return { action: "deny", reason: denyReason(`Unknown v3 phase alias '${scope.phase}' fails closed.`) };
+  }
+  if (v3Contract && ["code-review", "patch-assurance", "process-judge", "epic-process-judge"].includes(v3Authority)) {
+    const reportOnly = !restrictedShell && targets.length > 0
+      && targets.every((target) => v3ReportPath(target, repoRoot, v3Authority) && allowedByScopePath(target, repoRoot, scope));
+    if (!reportOnly) return { action: "deny", reason: denyReason(`${scope.phase} is report-only and the requested target is not an allowed report artifact.`) };
+    return { action: "allow", note: `ACEF/BMAD hard wall (identity fallback): report-only ${scope.phase} artifact authorized by active scope.` };
+  }
+  const phaseAllowsTarget = v3Contract && v3Authority === "atdd"
+    ? targets.length > 0 && targets.every((target) => testEnvelopePath(target, repoRoot))
+    : phasePermitsImplementation(scope);
+  if (!phaseAllowsTarget) {
     return {
       action: "deny",
       reason: denyReason(`Active scope phase '${scope.phase}' does not permit implementation writes. ${workerScopeRecoveryHint(scope, repoRoot, targets)}`),

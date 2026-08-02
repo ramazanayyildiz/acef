@@ -35,6 +35,9 @@ The first typed-state slice defines these contracts:
 - `schemas/actor.schema.json`
 - `schemas/evidence.schema.json`
 - `schemas/gate.schema.json`
+- `schemas/review-report-v3.schema.json`
+- `schemas/developer-repair-v3.schema.json`
+- `schemas/process-judge-decision-v3.schema.json`
 - `schemas/approval.schema.json`
 - `schemas/worker-scope.schema.json`
 
@@ -47,17 +50,27 @@ Install the repo-local tools, then use `.acef/bin/acef-state` instead of hand-au
 ```bash
 scripts/install-acef-tools --repo /path/to/repo
 
-.acef/bin/acef-state actor --repo . --id dev-4-1 --story "Story 4.1" \
-  --phase development --role developer --client codex --context-profile developer
-
 .acef/bin/acef-state active-run --repo . --run-id RUN-4-1 \
-  --workflow-id lightweight --assurance guarded --scope-unit story \
+  --workflow-id full-bmad --full-flow-contract four-actor-v3 \
+  --assurance guarded --scope-unit story \
+  --expected-story "Story 4.1" \
   --assurance-rationale "provider integration" \
-  --status active --story "Story 4.1" --phase development \
+  --status active --story "Story 4.1" --phase atdd \
   --ledger docs/ai/ACEF_example_DELIVERY_AUDIT.md \
-  --context docs/ai/ACEF_CURRENT_CONTEXT.md \
-  --worker-role developer --actor dev-4-1 \
-  --worker-scope docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json
+  --context docs/ai/ACEF_CURRENT_CONTEXT.md
+
+.acef/bin/acef-state actor --repo . --id atdd-4-1 --story "Story 4.1" \
+  --phase atdd --role test-author --client codex --context-profile atdd
+
+# Advance the active phase before creating its actor. V3 Developer identity is
+# stable across bounded repair cycles, so its session ID is mandatory.
+.acef/bin/acef-state active-run --repo . --run-id RUN-4-1 \
+  --workflow-id full-bmad --status active --story "Story 4.1" --phase development \
+  --ledger docs/ai/ACEF_example_DELIVERY_AUDIT.md
+
+.acef/bin/acef-state actor --repo . --id dev-4-1 --story "Story 4.1" \
+  --phase development --role developer --client codex --session-id codex-session-4-1 \
+  --context-profile developer
 
 .acef/bin/acef-state worker-scope --repo . --story "Story 4.1" --phase development \
   --worker-id dev-4-1 --allow 'app/**' --allow 'tests/**'
@@ -65,8 +78,22 @@ scripts/install-acef-tools --repo /path/to/repo
 .acef/bin/acef-state evidence-run --repo . --id story-4-1-runtime --kind runtime-test \
   --actor dev-4-1 --story "Story 4.1" --satisfies FR-12 -- php artisan test --filter Story41
 
-.acef/bin/acef-state gate --repo . --id story-4-1-judge --scope "Story 4.1" \
-  --verdict PASS --decided-by judge-4-1 --evidence story-4-1-runtime
+.acef/bin/acef-state gate --repo . --id story-4-1-close --scope "Story 4.1" \
+  --atdd-actor atdd-4-1 --development-actor dev-4-1 \
+  --code-review-actor review-4-1 --patch-assurance-actor assurance-4-1 \
+  --red-evidence story-4-1-red --green-evidence story-4-1-runtime \
+  --code-review-report-hash <sha256> --patch-assurance-report-hash <sha256>
+
+# After a deterministic REVISE and an actual Developer repair commit, derive
+# the immutable receipt instead of hand-authoring it.
+.acef/bin/acef-state developer-repair --repo . --id story-4-1-repair-1 \
+  --prior-gate story-4-1-close --developer-actor dev-4-1
+
+# When a conditional Story Judge trigger exists, derive its run/story/actor
+# binding and verdict; pass this artifact to gate with --judge-decision.
+.acef/bin/acef-state judge-decision --repo . --id story-4-1-ambiguity \
+  --gate-id story-4-1-close-r1 --actor judge-4-1 --trigger ambiguity \
+  --evidence story-4-1-red --evidence story-4-1-runtime
 
 .acef/bin/acef-state approval --repo . --id epic-5-start --decision APPROVE \
   --scope epic:5 --target-epic 5 --quote "Start Epic 5"
@@ -84,6 +111,26 @@ enough information to infer planning depth, so authorization fails closed until 
 .acef/bin/acef-state migrate-active-run --repo . \
   --workflow-id lightweight --assurance guarded
 ```
+
+Full runs also select a versioned story contract. Existing records without `fullFlowContract` mean
+`six-actor-v2`; new Full runs default to `four-actor-v3`. Once a run has lifecycle actor/gate records, the contract is
+immutable. Every new v3 run must declare its complete `--expected-story` inventory before its first actor or gate; the
+inventory is preserved across story and Epic phases and cannot be added to or narrowed later. V3 story `PASS` is computed from typed actors, red→green evidence, final-tree review/assurance, findings,
+runner proof, and hashes; `--verdict PASS` cannot override a failed check. Actor-decided gates remain supported for
+legacy runs and mandatory Epic close. Conditional v3 Story Judge decisions are hashed inputs to the deterministic gate
+and cannot override a failed mechanical check.
+
+A v3 Epic close must freeze its story inventory when the Epic scope starts:
+
+```bash
+.acef/bin/acef-state active-run --repo . --run-id RUN-EPIC-4 \
+  --workflow-id full-bmad --scope-unit epic --story "Epic 4" --phase epic-process-judge \
+  --expected-story "Story 4.1" --expected-story "Story 4.2" \
+  --status active --ledger docs/ai/ACEF_example_DELIVERY_AUDIT.md
+```
+
+The actor-decided Epic gate persists that inventory and must aggregate exactly one terminal deterministic `PASS` and
+the green evidence for every listed story. Naming a story scope `Epic ...` does not change its gate type.
 
 `evidence-run` executes an argv command without a shell, stores stdout/stderr under
 `docs/ai/evidence/raw/`, hashes the raw artifact, records the Git commit/tree and actor, and preserves the command's

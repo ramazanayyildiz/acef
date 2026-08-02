@@ -7,10 +7,126 @@
   "additionalProperties": false,
   "properties": {
     "gateId": { "type": "string", "minLength": 1 },
+    "runId": { "type": "string", "minLength": 1 },
+    "fullFlowContract": { "type": "string", "enum": ["six-actor-v2", "four-actor-v3"] },
+    "gateType": {
+      "type": "string",
+      "enum": ["actor-decided-v1", "deterministic-story-close-v3"]
+    },
+    "decisionMode": { "type": "string", "enum": ["actor", "deterministic"] },
     "scope": { "type": "string", "minLength": 1 },
     "verdict": { "type": "string", "enum": ["PASS", "FAIL", "REVISE", "REPLAN", "BLOCKED"] },
     "decidedBy": { "type": "string", "minLength": 1 },
     "repositoryCommit": { "type": "string", "minLength": 1 },
+    "repositoryTree": { "type": "string", "minLength": 1 },
+    "applicationCommit": { "type": "string", "minLength": 1 },
+    "applicationTree": { "type": "string", "minLength": 1 },
+    "validatorVersion": { "type": "string", "minLength": 1 },
+    "actors": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["atdd", "development", "codeReview", "patchAssurance"],
+      "properties": {
+        "atdd": { "type": "string", "minLength": 1 },
+        "development": { "type": "string", "minLength": 1 },
+        "codeReview": { "type": "string", "minLength": 1 },
+        "patchAssurance": { "type": "string", "minLength": 1 }
+      }
+    },
+    "redEvidenceId": { "type": "string", "minLength": 1 },
+    "greenEvidenceId": { "type": "string", "minLength": 1 },
+    "storyInventory": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "executedChecks": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["actorSeparation", "atddTestOnlyRed", "redGreenChronology", "finalTreeReview", "patchAssurance", "findingsResolved", "runnerProof", "scopeBinding", "hashBinding"],
+      "properties": {
+        "actorSeparation": { "type": "boolean" },
+        "atddTestOnlyRed": { "type": "boolean" },
+        "redGreenChronology": { "type": "boolean" },
+        "finalTreeReview": { "type": "boolean" },
+        "patchAssurance": { "type": "boolean" },
+        "findingsResolved": { "type": "boolean" },
+        "runnerProof": { "type": "boolean" },
+        "scopeBinding": { "type": "boolean" },
+        "hashBinding": { "type": "boolean" }
+      }
+    },
+    "reviewCycle": { "type": "integer", "minimum": 0, "maximum": 2 },
+    "repair": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["cycle", "priorGateId", "developerActorId", "receiptPath", "receiptSha256"],
+      "properties": {
+        "cycle": { "type": "integer", "minimum": 1, "maximum": 2 },
+        "priorGateId": { "type": "string", "minLength": 1 },
+        "developerActorId": { "type": "string", "minLength": 1 },
+        "receiptPath": { "type": "string", "minLength": 1 },
+        "receiptSha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+      }
+    },
+    "unresolvedFindings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["severity", "id"],
+        "properties": {
+          "severity": { "type": "string", "enum": ["LOW", "MEDIUM", "HIGH", "CRITICAL"] },
+          "id": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "findingDispositions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "severity", "status"],
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "severity": { "type": "string", "enum": ["LOW", "MEDIUM", "HIGH", "CRITICAL"] },
+          "status": { "type": "string", "enum": ["OPEN", "RESOLVED", "DISMISSED", "DEFERRED"] },
+          "reason": { "type": "string" },
+          "approvalId": { "type": "string" }
+        }
+      }
+    },
+    "reportHashes": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["codeReview", "patchAssurance"],
+      "properties": {
+        "codeReview": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "patchAssurance": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+      }
+    },
+    "reportPaths": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["codeReview", "patchAssurance"],
+      "properties": {
+        "codeReview": { "type": "string", "minLength": 1 },
+        "patchAssurance": { "type": "string", "minLength": 1 }
+      }
+    },
+    "processJudge": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["trigger", "actorId", "decisionPath", "decisionSha256", "verdict"],
+      "properties": {
+        "trigger": { "type": "string", "enum": ["ambiguity", "waiver", "evidence-conflict", "gate-anomaly"] },
+        "actorId": { "type": "string", "minLength": 1 },
+        "decisionPath": { "type": "string", "minLength": 1 },
+        "decisionSha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "verdict": { "type": "string", "enum": ["ACKNOWLEDGE", "APPROVE_WAIVER"] }
+      }
+    },
     "evidenceIds": {
       "type": "array",
       "items": { "type": "string", "minLength": 1 }
@@ -65,6 +181,31 @@
         "required": ["evidenceIds"],
         "properties": { "evidenceIds": { "minItems": 1 } }
       }
+    },
+    {
+      "if": { "properties": { "gateType": { "const": "deterministic-story-close-v3" } }, "required": ["gateType"] },
+      "then": {
+        "required": ["runId", "fullFlowContract", "decisionMode", "repositoryTree", "applicationCommit", "applicationTree", "validatorVersion", "actors", "redEvidenceId", "greenEvidenceId", "executedChecks", "reviewCycle", "unresolvedFindings", "findingDispositions", "reportHashes", "reportPaths"],
+        "properties": {
+          "decisionMode": { "const": "deterministic" },
+          "decidedBy": { "const": "acef-story-close-v3" }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "gateType": { "const": "deterministic-story-close-v3" }, "reviewCycle": { "minimum": 1 } }, "required": ["gateType", "reviewCycle"] },
+      "then": { "required": ["repair"] }
+    },
+    {
+      "if": { "properties": { "fullFlowContract": { "const": "four-actor-v3" } }, "required": ["fullFlowContract"] },
+      "then": { "required": ["runId", "storyInventory"] }
+    },
+    {
+      "if": {
+        "properties": { "fullFlowContract": { "const": "four-actor-v3" }, "gateType": { "const": "actor-decided-v1" } },
+        "required": ["fullFlowContract", "gateType"]
+      },
+      "then": { "required": ["storyInventory"] }
     }
   ]
 }

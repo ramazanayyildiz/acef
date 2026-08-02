@@ -35,7 +35,7 @@
     ]
   },
   "limitations": [
-    "The breaker considers only valid typed gates for the active story decided by code-review, test-review, or Process Judge actors; gate integrity remains the responsibility of the gate-verdict validator.",
+    "The legacy breaker considers valid typed gates decided by code-review, test-review, or Process Judge actors. The v3 writer and validator enforce at most two monotonic repair cycles; the v3 experiment additionally enforces 21 total invocations. Gate integrity remains the responsibility of the gate-verdict validator.",
     "A PASS review resets the consecutive non-PASS sequence. The breaker does not infer severity labels or patch-growth heuristics.",
     "The breaker applies only to guarded and full-BMAD typed runs."
   ],

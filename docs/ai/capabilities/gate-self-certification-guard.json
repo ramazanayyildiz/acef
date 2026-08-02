@@ -33,7 +33,7 @@
   "limitations": [
     "This validates typed gate verdicts and actor records; it cannot prove that an unrecorded nested reviewer existed.",
     "The pre-commit path intentionally checks only gate decider integrity; full surface and persistence evidence remain closeout/CI responsibilities.",
-    "The Process Judge actor identity is still cooperative-local and depends on accurate actor records written to disk."
+    "Legacy and epic Process Judge identity remains cooperative-local. Four-actor-v3 story PASS is computed from distinct typed actors, red/green ancestry, final-tree review/assurance, report hashes, findings, and runner proof; it still depends on accurate local records."
   ],
   "evidence": [
     {
@@ -46,7 +46,8 @@
     },
     {
       "layer": "tests",
-      "ref": "scripts/test-acef-process-validator"
+      "ref": "scripts/test-acef-process-validator",
+      "note": "Covers both legacy independent-Process-Judge gates and mechanically decided four-actor-v3 story-close gates."
     }
   ],
   "createdAt": "2026-06-28"

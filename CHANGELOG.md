@@ -9,6 +9,37 @@ or evidence contract. Do not use it to claim implementation status; link to the 
 
 ## Unreleased
 
+### Full story lifecycle v3 removes duplicate assurance passes
+
+- Added the versioned `four-actor-v3` Full-flow contract for new runs while keeping missing/`six-actor-v2` active-run
+  state readable and closeable. Guarded remains an additive assurance profile, not another lifecycle.
+- Reduced each new Full story to four mandatory independent actors: ATDD, Development, Code Review, and report-only
+  Patch Assurance. Code Review and Patch Assurance inspect the same implementation tree in parallel; findings return
+  to a scoped Developer and only affected review areas rerun.
+- Replaced the mandatory per-story Process Judge with a deterministic story-close gate. A Story Process Judge is
+  dispatched only for a waiver, evidence conflict, non-mechanical ambiguity, or gate anomaly and cannot override a
+  failed mechanical check. Epic Process Judge remains mandatory.
+- The close gate computes actor separation, red-before-green ancestry, final-tree review/assurance, successful runner
+  proof, unresolved severity counts, and report/scope hashes. Historical red evidence remains integrity/ancestry-bound
+  after implementation; final-tree evidence must be fresh.
+- Bound every v3 actor, review report, repair receipt, conditional Judge decision, and gate to the active run and
+  contract. Developer repair and conditional adjudication now use typed, hash-checked artifacts; PASS/REPLAN are
+  terminal and stale records from another run cannot consume or satisfy the current lifecycle.
+- Strengthened ATDD red evidence to require a real test-runner failure over production behavior, the same command green
+  later, and preservation of the critical assertion while allowing additive regression coverage. Epic close persists
+  and verifies the frozen expected-story inventory rather than trusting whichever story happens to remain active.
+- Bounded v3 execution at two repair cycles per story, 17 base actor invocations for a four-story epic (21 maximum),
+  focused tests per story, one broad suite at epic close, and separate harness-wait accounting.
+- Hardened the v3 experiment oracle around aggregate conductor/child cost, exact-one broad suite, terminal zero-write
+  infrastructure retries, immutable regular-file close packages, reviewer completion blobs, and a harness-launched
+  fresh blind Judge that receives only the frozen product contract and product diff.
+- The completed v2 candidate rerun took 11,174.7 active seconds, used 56,626,888 input tokens and 437 tool calls, and
+  correctly failed process closeout despite a green integration command. Its mandatory 25-actor topology and repeated
+  review/closeout passes are measured recovery evidence, not a speed success.
+- Capability maturity is `enforced` in this source tree after deterministic tests; it remains uninstalled in target
+  repositories and unproven. The frozen v3 candidate manifest becomes preregistered only after its implementation
+  commit is bound, before Stage 0 and the real-world run.
+
 ### Full + Guarded candidate recovery policy hardened
 
 - Replaced the one-strike ATDD stop with a bounded exception path: one fresh report-only adjudication, followed only

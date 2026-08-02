@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://acef.local/schemas/review-report-v3.schema.json",
+  "title": "ACEF Review Report v3",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "runId", "fullFlowContract", "actorInstanceId", "story", "phase", "inputCommit", "inputTree", "verdict", "findings"],
+  "properties": {
+    "schema": { "const": "acef.review-report.v3" },
+    "runId": { "type": "string", "minLength": 1 },
+    "fullFlowContract": { "const": "four-actor-v3" },
+    "actorInstanceId": { "type": "string", "minLength": 1 },
+    "story": { "type": "string", "minLength": 1 },
+    "phase": { "type": "string", "enum": ["code-review", "patch-assurance"] },
+    "inputCommit": { "type": "string", "minLength": 1 },
+    "inputTree": { "type": "string", "minLength": 1 },
+    "verdict": { "type": "string", "enum": ["PASS", "REVISE", "REPLAN"] },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "severity", "status"],
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "severity": { "type": "string", "enum": ["LOW", "MEDIUM", "HIGH", "CRITICAL"] },
+          "status": { "type": "string", "enum": ["OPEN", "RESOLVED", "DISMISSED", "DEFERRED"] },
+          "reason": { "type": "string", "minLength": 1 },
+          "approvalId": { "type": "string", "pattern": "^[A-Za-z0-9._-]+$" }
+        },
+        "allOf": [
+          {
+            "if": { "properties": { "status": { "const": "DISMISSED" } }, "required": ["status"] },
+            "then": { "required": ["reason"] }
+          },
+          {
+            "if": { "properties": { "status": { "const": "DEFERRED" } }, "required": ["status"] },
+            "then": { "required": ["approvalId"] }
+          },
+          {
+            "not": {
+              "allOf": [
+                { "properties": { "severity": { "enum": ["HIGH", "CRITICAL"] } }, "required": ["severity"] },
+                { "properties": { "status": { "enum": ["DISMISSED", "DEFERRED"] } }, "required": ["status"] }
+              ]
+            }
+          }
+        ]
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "verdict": { "enum": ["REVISE", "REPLAN"] } }, "required": ["verdict"] },
+      "then": {
+        "properties": {
+          "findings": {
+            "contains": { "properties": { "status": { "const": "OPEN" } }, "required": ["status"] },
+            "minContains": 1
+          }
+        }
+      }
+    }
+  ]
+}

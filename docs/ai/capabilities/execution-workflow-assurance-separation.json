@@ -62,12 +62,12 @@
     "Direct compatibility remains readable during the installed-project upgrade bridge, but new Direct admission is still rejected.",
     "Legacy active runs with lane guarded are intentionally fail-closed until a human selects the missing execution workflow.",
     "The capability is enforced in this source tree; target repositories must update their installed ACEF tools and hooks before they receive it.",
-    "Deterministic Stage 0 passed 6/6. The first real-world P0 pair completed without an eligible successful pair: legacy was product-complete but process-invalid, while candidate stopped fail-closed during Story 2 and was product-incomplete. This capability remains enforced, not proven or installed.",
-    "The first-pair repair adds bounded ATDD adjudication/correction, dependency-aware quarantine, typed-dispatch lifecycle measurement, and a frozen closeout actor inventory. Those mechanisms have deterministic coverage but no successful rerun yet."
+    "Deterministic Stage 0 passed 6/6. Neither the first P0 pair nor the clean v2 candidate rerun produced an eligible process-and-product PASS. This capability remains enforced, not proven or installed.",
+    "The clean v2 candidate rerun completed in 11,174.7 active seconds with a green integration command but correctly failed closeout. Its 25 expected and 26 observed actor invocations are retained as recovery evidence; the versioned v3 treatment must pass before controlled-canary promotion."
   ],
   "evidence": [
     {
-      "layer": "tests",
+      "layer": "artifact",
       "ref": "scripts/test-acef-execution-policy",
       "note": "Exercises all three workflows under Baseline and Guarded and proves the overlay is monotonic."
     },
@@ -105,6 +105,16 @@
       "layer": "tests",
       "ref": "docs/experiments/execution-assurance-v2/p0-r2-preflight.json",
       "note": "Binds the repaired candidate commit, clean runner bytes, pinned Codex CLI, real collaboration canary, source task, fixtures, and dependencies before any timed P0-r2 run."
+    },
+    {
+      "layer": "tests",
+      "ref": "docs/experiments/execution-assurance-v2/P0_R2_RESULT.md",
+      "note": "Records the complete clean v2 rerun, its valid process/product failure, and measured ACEF versus harness/readiness costs."
+    },
+    {
+      "layer": "tests",
+      "ref": "docs/experiments/execution-assurance-v3/manifest.json",
+      "note": "Freezes the four-actor v3 candidate design, deterministic close, bounded repair, and hard cost/quality budgets without altering v2 evidence; preregistration completes only after the implementation commit is bound."
     },
     {
       "layer": "installer",

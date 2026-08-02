@@ -18,8 +18,10 @@ For admitted work, choose execution depth and assurance separately:
 - Baseline or Guarded assurance. Guarded is additive; it is not a fourth workflow and must not duplicate the selected
   workflow's lifecycle.
 
-Use typed active-run v2 fields `workflowId`, `assuranceProfile`, and `scopeUnit`. A legacy active `lane: guarded` is
-ambiguous and must be explicitly migrated before writes are authorized.
+Use typed active-run v2 fields `workflowId`, `assuranceProfile`, and `scopeUnit`. New Full runs also use
+`fullFlowContract: four-actor-v3`; an existing Full record without that field means compatibility
+`six-actor-v2`. A legacy active `lane: guarded` is ambiguous and must be explicitly migrated before writes are
+authorized.
 
 The `direct` lane is retired for new runs after failing its repeated cost/reliability measurement. Existing
 `ACEF_DIRECT_RUN.json` records remain readable and may be closed or promoted for compatibility.

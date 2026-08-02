@@ -13,8 +13,9 @@ The useful distinction is:
 The second group is not a semantic correctness oracle, but it is not theater. It protects the delivery process around
 the correctness controls.
 
-**Control freeze (v2 round):** bug fixes only on the enforcement surface — no new checks, gates, dosing rules, or
-lenses until the v2 matrix has run. See `docs/v2-validation-optimization-plan.md`.
+**Archived v2 control freeze:** the freeze in `docs/v2-validation-optimization-plan.md` governed the v2 measurement
+round. That evidence is immutable. Versioned v3 changes use a new contract/run and must not rewrite v2 results or
+silently alter existing active runs.
 
 ## Why Typed State Exists
 
@@ -47,10 +48,12 @@ wrong-commit, and chat-only evidence. They do not stop a malicious actor who can
 
 ## Why Gate Verdicts Exist
 
-Gate verdicts make `PASS` a file-backed decision. They prevent story close because artifacts merely exist, Process Judge
-passes without successful evidence, skipped evidence hidden in prose, and stale or unrelated commands satisfying gates.
-They prove gate evidence was used by the right decision role; they do not prove semantic correctness by themselves. For
-ACEF Full or Guarded work, the deciding actor must be a real Process Judge actor, not the implementation/developer actor.
+Gate verdicts make `PASS` a file-backed decision. They prevent story close because artifacts merely exist, a Judge
+passes without successful evidence, skipped evidence hides in prose, or stale/unrelated commands satisfy gates. Legacy
+Full contracts require a real Process Judge actor. New `four-actor-v3` stories use a deterministic close gate over four
+independent actors; a Story Process Judge is added only for a waiver, evidence conflict, ambiguity, or gate anomaly and
+cannot override a failed mechanical check. Epic close remains independently judged. Neither form proves semantic
+correctness by itself.
 
 ## Why Approval Receipts Exist
 

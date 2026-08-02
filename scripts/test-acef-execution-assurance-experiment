@@ -9,9 +9,11 @@ const cp = require("node:child_process");
 const {
   acquireFinalizationClaim,
   assessTaskShape,
+  actorContractVersionForAttempt,
   buildPilotPlan,
   captureGitDiff,
   dependencyAwareQuarantine,
+  derivePilotVerdict,
   environmentPreflight,
   isPilotHarnessPath,
   parseIndependentTrace,
@@ -23,31 +25,47 @@ const {
   sha256,
   spawnCaptured,
   validateManifest,
+  validatePilotJudgment,
 } = require("./lib/acef-execution-assurance-experiment");
 
 const root = path.resolve(__dirname, "..");
 const manifestPath = path.join(root, "docs", "experiments", "execution-assurance-v2", "manifest.json");
 const repairManifestPath = path.join(root, "docs", "experiments", "execution-assurance-v2", "manifest-p0-r2.json");
+const v3ManifestPath = path.join(root, "docs", "experiments", "execution-assurance-v3", "manifest.json");
 const cli = path.join(root, "scripts", "acef-execution-assurance-experiment");
 const actorCli = path.join(root, "scripts", "acef-execution-assurance-actor");
 const {
   catalogTaskBindings,
   correctionSessionWrites,
   ensureActorRequest,
+  evaluatePilotBudgets,
   evaluateTreatmentState,
   finalizePilotAttempt,
   forceTrackInstalledFramework,
+  ingestPilotJudgment,
   isBehavioralRed,
   lifecycleActorContract,
   parseCollaborationEvidence,
+  parseReviewerCompletion,
+  codexSessionMetrics,
+  aggregateTeamMetrics,
+  blindJudgePrompt,
+  committedUnchangedAtHead,
+  parseHarnessWaitMetrics,
+  parseLifecycleIntegrationEvidence,
   resolvePinnedClient,
   resolvedTaskSha256,
   runnerSourceSha256,
   validateDurableLifecycleEvidence,
+  validateFormalStoryClosePackage,
   validateCorrectionBinding,
 } = require("./acef-execution-assurance-experiment");
 const manifest = validateManifest(JSON.parse(fs.readFileSync(manifestPath, "utf8")));
 const repairManifest = validateManifest(JSON.parse(fs.readFileSync(repairManifestPath, "utf8")));
+const v3Manifest = validateManifest(JSON.parse(fs.readFileSync(v3ManifestPath, "utf8")));
+const invalidV3Budget = structuredClone(v3Manifest);
+invalidV3Budget.promotionGates.budget.maximumStoryActiveSeconds = 3001;
+assert.throws(() => validateManifest(invalidV3Budget), /freeze actor, repair, time, token, tool, and harness-wait budgets/);
 
 function waitUntil(predicate, timeoutMs = 3000) {
   const deadline = Date.now() + timeoutMs;
@@ -76,6 +94,11 @@ const repairPlan = buildPilotPlan(repairManifest);
 assert.equal(repairPlan.length, 2);
 assert.deepEqual(repairPlan.map((attempt) => attempt.treatment), ["legacy", "candidate"]);
 assert.equal(repairPlan[1].frameworkCommit, "3ab76cc113f6cb7c75b5cfac525fca7b2351b10a");
+const v3Plan = buildPilotPlan(v3Manifest);
+assert.equal(v3Plan.length, 1);
+assert.equal(v3Plan[0].actorContractVersion, "four-actor-v3");
+assert.equal(actorContractVersionForAttempt(repairManifest, repairPlan[1]), "six-actor-v2",
+  "missing actor contract version remains backward-compatible with frozen v2");
 assert.equal(resolveCatalogTask(manifest, manifestPath, "noise-fix").selector, "browser-rts-gather-modifier-bait");
 const resolvedEpic = resolveCatalogTask(manifest, manifestPath, "full-guarded-motivation");
 assert.equal(resolvedEpic.kind, "epic");
@@ -84,6 +107,12 @@ assert.deepEqual(resolvedEpic.setupFiles, [{ path: "/tmp/jako-bench-webhook/data
 const epicActorContract = lifecycleActorContract(resolvedEpic);
 assert.equal(epicActorContract.length, 25, "four stories need six actors each plus one epic Process Judge");
 assert.equal(epicActorContract.at(-1).retryable, false, "the exact-one epic Process Judge cannot retry");
+const v3ActorContract = lifecycleActorContract(resolvedEpic, "four-actor-v3");
+assert.equal(v3ActorContract.length, 17, "four v3 actors per story plus one epic Process Judge");
+assert.deepEqual(v3ActorContract.slice(0, 4).map((entry) => entry.control),
+  ["atdd", "development", "code-review", "patch-assurance"]);
+assert.deepEqual(v3ActorContract.filter((entry) => entry.control === "process-judge").map((entry) => entry.scope), ["epic"],
+  "story Process Judges are conditional and absent from the frozen base topology");
 assert.equal(catalogTaskBindings(repairManifest, repairManifestPath)[0].resolvedTaskSha256, resolvedTaskSha256(resolveCatalogTask(
   repairManifest, repairManifestPath, "full-guarded-motivation",
 )));
@@ -109,6 +138,230 @@ assert.equal(parseCollaborationEvidence(syntheticRaw, syntheticSession, epicActo
 assert.equal(parseCollaborationEvidence(syntheticRaw,
   syntheticSession.replace('\\"fork_turns\\":\\"none\\"', '\\"fork_turns\\":\\"all\\"'), epicActorContract).ok, false,
 "unbounded full-history actor context must fail lifecycle evidence");
+function eventTimestamp(second) {
+  return new Date(Date.parse("2026-08-01T00:00:00.000Z") + second * 1000).toISOString();
+}
+function lifecycleSession(contract, resultByTask = {}, extras = []) {
+  return [JSON.stringify({ timestamp: eventTimestamp(0), type: "session_meta", payload: {
+    session_id: "parent-thread", timestamp: "2026-08-01T00:00:00.000Z", cwd: root, cli_version: "0.146.0",
+  } }), ...contract.flatMap((entry, index) => {
+    const callId = `v3-call-${index}`;
+    const receiver = `v3-receiver-${index}`;
+    const storyIndex = Math.floor(index / 4);
+    const phaseIndex = index % 4;
+    const startedAt = entry.scope === "epic" ? 55
+      : (storyIndex * 12) + [1, 3, 5, 6][phaseIndex];
+    const finishedAt = entry.scope === "epic" ? 56
+      : (storyIndex * 12) + [2, 4, 8, 9][phaseIndex];
+    return [
+      JSON.stringify({ timestamp: eventTimestamp(startedAt), type: "response_item", payload: { type: "function_call", namespace: "collaboration", name: "spawn_agent", call_id: callId, arguments: JSON.stringify({ task_name: entry.taskName, fork_turns: "none" }) } }),
+      JSON.stringify({ timestamp: eventTimestamp(startedAt + 0.5), type: "event_msg", payload: { type: "sub_agent_activity", event_id: callId, agent_thread_id: receiver, kind: "started" } }),
+      JSON.stringify({ timestamp: eventTimestamp(finishedAt), type: "response_item", payload: {
+        type: "agent_message", author: `/root/${entry.taskName}`,
+        content: [{ type: "input_text", text: `Message Type: FINAL_ANSWER\nSender: /root/${entry.taskName}\nPayload:\nACTOR_RESULT=${resultByTask[entry.taskName] || "PASS"}` }],
+      } }),
+    ];
+  }), ...extras].join("\n");
+}
+const v3SyntheticSession = lifecycleSession(v3ActorContract);
+const v3SyntheticEvidence = parseCollaborationEvidence(syntheticRaw, v3SyntheticSession, v3ActorContract, {
+  actorContractVersion: "four-actor-v3", maximumActorInvocations: 21,
+});
+assert.equal(v3SyntheticEvidence.ok, true);
+assert.equal(v3SyntheticEvidence.expectedActorCount, 17);
+const missingStoryTimestampSession = v3SyntheticSession.replace(
+  /"timestamp":"[^"]+","type":"response_item","payload":\{"type":"function_call","namespace":"collaboration","name":"spawn_agent"/,
+  '"type":"response_item","payload":{"type":"function_call","namespace":"collaboration","name":"spawn_agent"',
+);
+const missingStoryTimestampEvidence = parseCollaborationEvidence(syntheticRaw, missingStoryTimestampSession, v3ActorContract, {
+  actorContractVersion: "four-actor-v3", maximumActorInvocations: 21,
+});
+assert.equal(missingStoryTimestampEvidence.ok, false, "v3 story timing fails closed when a lifecycle timestamp is missing");
+assert.equal(missingStoryTimestampEvidence.storyTimingComplete, false);
+const v3CodeReview = v3ActorContract.find((entry) => entry.control === "code-review");
+const v3PatchAssuranceBase = v3ActorContract.find((entry) => entry.scope === v3CodeReview.scope && entry.control === "patch-assurance");
+const sequentialInitialReviewSession = v3SyntheticSession.split("\n").map((line) => {
+  const event = JSON.parse(line);
+  const payload = event.payload || {};
+  let args = {};
+  try { args = JSON.parse(payload.arguments || "{}"); } catch {}
+  if (payload.type === "function_call" && args.task_name === v3PatchAssuranceBase.taskName) {
+    event.timestamp = eventTimestamp(8.5);
+  }
+  return JSON.stringify(event);
+}).join("\n");
+assert.equal(parseCollaborationEvidence(syntheticRaw, sequentialInitialReviewSession, v3ActorContract, {
+  actorContractVersion: "four-actor-v3", maximumActorInvocations: 21,
+}).ok, false, "initial Code Review and Patch Assurance must both spawn before either result arrives");
+
+const infrastructureRetryTask = `${v3CodeReview.taskName}_infra_retry1`;
+const infrastructureRetrySession = [
+  ...v3SyntheticSession.split("\n").filter((line) => {
+    const event = JSON.parse(line);
+    return !(event.payload?.type === "agent_message" && event.payload?.author === `/root/${v3CodeReview.taskName}`);
+  }),
+  JSON.stringify({ timestamp: eventTimestamp(5.7), type: "event_msg", payload: {
+    type: "sub_agent_activity", event_id: "v3-call-2", agent_thread_id: "v3-receiver-2", kind: "failed",
+    infrastructureFailure: {
+      schema: "acef.infrastructure-failure.v1", terminal: true, taskName: v3CodeReview.taskName,
+      receiverThreadId: "v3-receiver-2", preTree: "a".repeat(40), postTree: "a".repeat(40), writePaths: [],
+      reasonCode: "HARNESS_TRANSPORT_FAILURE", startedAt: eventTimestamp(5.5), finishedAt: eventTimestamp(5.6),
+    },
+  } }),
+  JSON.stringify({ timestamp: eventTimestamp(5.8), type: "response_item", payload: { type: "function_call", namespace: "collaboration",
+    name: "spawn_agent", call_id: "infra-review", arguments: JSON.stringify({ task_name: infrastructureRetryTask, fork_turns: "none" }) } }),
+  JSON.stringify({ timestamp: eventTimestamp(5.7), type: "event_msg", payload: { type: "sub_agent_activity", event_id: "infra-review",
+    agent_thread_id: "infra-review-receiver", kind: "started" } }),
+  JSON.stringify({ timestamp: eventTimestamp(7.5), type: "response_item", payload: { type: "agent_message", author: `/root/${infrastructureRetryTask}`,
+    content: [{ type: "input_text", text: `Message Type: FINAL_ANSWER\nSender: /root/${infrastructureRetryTask}\nPayload:\nACTOR_RESULT=PASS` }] } }),
+].join("\n");
+const infrastructureRetryEvidence = parseCollaborationEvidence(syntheticRaw, infrastructureRetrySession, v3ActorContract, {
+  actorContractVersion: "four-actor-v3", maximumActorInvocations: 21,
+});
+assert.equal(infrastructureRetryEvidence.ok, true, infrastructureRetryEvidence.failures.join("; "));
+assert.equal(infrastructureRetryEvidence.infrastructureRetryCount, 1);
+assert.equal(infrastructureRetryEvidence.infrastructureFailureReceipts.length, 1);
+assert.equal(infrastructureRetryEvidence.totalActorInvocations, 18);
+const infrastructureRetryTrace = parseLifecycleDispatchTrace(infrastructureRetryEvidence.actorContract, {
+  scopeIds: [...new Set(v3ActorContract.map((entry) => entry.scope).filter((entry) => entry !== "epic"))],
+  maximumRetryOrdinal: 2, globalRepairCycles: true,
+  requiredControlsPerScope: ["atdd", "development", "code-review", "patch-assurance"],
+});
+assert.equal(infrastructureRetryTrace.duplicateLifecycle, false, "one admitted infrastructure retry is one logical role, not lifecycle replay");
+assert.equal(evaluatePilotBudgets(v3Manifest, v3Plan[0], 100, { input_tokens: 1, tool_calls: 1 },
+  infrastructureRetryEvidence, { counts: { broadSuite: 1 } },
+  { seconds: 0, share: 0, incompleteWaitCalls: 0, measurementComplete: true }).ok, true);
+const illegalInfrastructureRetrySession = `${v3SyntheticSession}\n${infrastructureRetrySession.split("\n").slice(-3).join("\n")}`;
+assert.equal(parseCollaborationEvidence(syntheticRaw, illegalInfrastructureRetrySession, v3ActorContract, {
+  actorContractVersion: "four-actor-v3", maximumActorInvocations: 21,
+}).ok, false, "infrastructure retry after an original FINAL_ANSWER fails closed");
+const missingInfrastructureFailureReceipt = infrastructureRetrySession.split("\n").filter((line) => {
+  const event = JSON.parse(line);
+  return event.payload?.kind !== "failed";
+}).join("\n");
+const missingInfrastructureFailureEvidence = parseCollaborationEvidence(syntheticRaw,
+  missingInfrastructureFailureReceipt, v3ActorContract, {
+    actorContractVersion: "four-actor-v3", maximumActorInvocations: 21,
+  });
+assert.equal(missingInfrastructureFailureEvidence.ok, false,
+  "no-FINAL alone is insufficient to admit an infrastructure retry");
+assert.match(missingInfrastructureFailureEvidence.failures.join("; "), /typed terminal failure receipt/);
+const overlappingInfrastructureRetry = infrastructureRetrySession.split("\n").map((line) => {
+  const event = JSON.parse(line);
+  let args = {};
+  try { args = JSON.parse(event.payload?.arguments || "{}"); } catch {}
+  if (args.task_name === infrastructureRetryTask) event.timestamp = eventTimestamp(5.65);
+  return JSON.stringify(event);
+}).join("\n");
+assert.equal(parseCollaborationEvidence(syntheticRaw, overlappingInfrastructureRetry, v3ActorContract, {
+  actorContractVersion: "four-actor-v3", maximumActorInvocations: 21,
+}).ok, false, "retry dispatch may not overlap the failed original invocation");
+function retryEvents(entry, ordinal, result) {
+  const taskName = `${entry.taskName}_retry${ordinal}`;
+  const callId = `v3-${entry.control.replace(/-/g, "-")}-retry-${ordinal}`;
+  const startedAt = 65 + ((ordinal - 1) * 10);
+  return [
+    JSON.stringify({ timestamp: eventTimestamp(startedAt), type: "response_item", payload: { type: "function_call", namespace: "collaboration", name: "spawn_agent", call_id: callId, arguments: JSON.stringify({ task_name: taskName, fork_turns: "none" }) } }),
+    JSON.stringify({ timestamp: eventTimestamp(startedAt + 0.5), type: "event_msg", payload: { type: "sub_agent_activity", event_id: callId, agent_thread_id: `${callId}-receiver`, kind: "started" } }),
+    JSON.stringify({ timestamp: eventTimestamp(startedAt + 1), type: "response_item", payload: { type: "agent_message", author: `/root/${taskName}`, content: [{ type: "input_text", text: `Message Type: FINAL_ANSWER\nSender: /root/${taskName}\nPayload:\nREPAIR_CYCLE=${ordinal}\nACTOR_RESULT=${result}` }] } }),
+  ];
+}
+const v3Developer = v3ActorContract.find((entry) => entry.scope === v3CodeReview.scope && entry.control === "development");
+function developerRepairEvents(ordinal) {
+  const calledAt = 60 + ((ordinal - 1) * 10);
+  const repairReceiptPath = `docs/ai/repairs/${v3Developer.taskName}-cycle-${ordinal}.json`;
+  const repairReceiptSha256 = "c".repeat(64);
+  return [
+    JSON.stringify({ timestamp: eventTimestamp(calledAt), type: "response_item", payload: {
+      type: "function_call", namespace: "collaboration", name: "followup_task", call_id: `developer-repair-${ordinal}`,
+      arguments: JSON.stringify({ target: `/root/${v3Developer.taskName}`, message: `repair cycle ${ordinal}` }),
+    } }),
+    JSON.stringify({ timestamp: eventTimestamp(calledAt + 1), type: "response_item", payload: {
+      type: "agent_message", author: `/root/${v3Developer.taskName}`,
+      content: [{ type: "input_text", text: `Message Type: FINAL_ANSWER\nSender: /root/${v3Developer.taskName}\nPayload:\nREPAIR_CYCLE=${ordinal}\nREPAIR_RECEIPT_PATH=${repairReceiptPath}\nREPAIR_RECEIPT_SHA256=${repairReceiptSha256}\nACTOR_RESULT=PASS` }],
+    } }),
+  ];
+}
+function extraneousFollowupEvent(ordinal) {
+  return JSON.stringify({ timestamp: eventTimestamp(80 + ordinal), type: "response_item", payload: {
+    type: "function_call", namespace: "collaboration", name: "followup_task", call_id: `extraneous-followup-${ordinal}`,
+    arguments: JSON.stringify({ target: `/root/${v3Developer.taskName}`, message: "unbound extra work" }),
+  } });
+}
+const extraneousFollowupEvidence = parseCollaborationEvidence(syntheticRaw,
+  `${v3SyntheticSession}\n${extraneousFollowupEvent(1)}`, v3ActorContract, {
+    actorContractVersion: "four-actor-v3", maximumActorInvocations: 21,
+  });
+assert.equal(extraneousFollowupEvidence.ok, false, "an unbound followup_task must fail closed");
+assert.match(extraneousFollowupEvidence.failures.join("; "), /unexpected or unbound followup_task calls/);
+assert.equal(extraneousFollowupEvidence.followupInvocationCount, 1,
+  "even a rejected followup remains visible in the invocation accounting");
+const overCapExtraneousFollowups = parseCollaborationEvidence(syntheticRaw,
+  `${v3SyntheticSession}\n${[1, 2, 3, 4, 5].map(extraneousFollowupEvent).join("\n")}`, v3ActorContract, {
+    actorContractVersion: "four-actor-v3", maximumActorInvocations: 21,
+  });
+assert.equal(overCapExtraneousFollowups.ok, false);
+assert.equal(overCapExtraneousFollowups.totalActorInvocations, 22,
+  "unbound followups cannot evade the global actor cap");
+assert.match(overCapExtraneousFollowups.failures.join("; "), /actor invocation budget exceeded: 22\/21/);
+const twoRepairSession = lifecycleSession(v3ActorContract, { [v3CodeReview.taskName]: "REVISE" }, [
+  ...developerRepairEvents(1), ...retryEvents(v3CodeReview, 1, "REVISE"),
+  ...developerRepairEvents(2), ...retryEvents(v3CodeReview, 2, "PASS"),
+]);
+const twoRepairEvidence = parseCollaborationEvidence(syntheticRaw, twoRepairSession, v3ActorContract, {
+  actorContractVersion: "four-actor-v3", maximumActorInvocations: 21,
+});
+assert.equal(twoRepairEvidence.ok, true, "two bounded v3 repair cycles are accepted");
+assert.equal(twoRepairEvidence.repairCyclesByScope[v3CodeReview.scope], 2);
+assert.equal(twoRepairEvidence.followupInvocationCount, 2);
+assert.equal(twoRepairEvidence.totalActorInvocations, 21,
+  "every allowed Developer followup counts toward the 21-invocation cap");
+const v3PatchAssurance = v3ActorContract.find((entry) => entry.scope === v3CodeReview.scope && entry.control === "patch-assurance");
+const pairedCycleSession = lifecycleSession(v3ActorContract, {
+  [v3CodeReview.taskName]: "REVISE", [v3PatchAssurance.taskName]: "REVISE",
+}, [...developerRepairEvents(1), ...retryEvents(v3CodeReview, 1, "PASS"), ...retryEvents(v3PatchAssurance, 1, "PASS")]);
+const pairedCycleEvidence = parseCollaborationEvidence(syntheticRaw, pairedCycleSession, v3ActorContract, {
+  actorContractVersion: "four-actor-v3", maximumActorInvocations: 21,
+});
+assert.equal(pairedCycleEvidence.ok, true, "both affected reviewers in one global repair cycle count once");
+assert.equal(pairedCycleEvidence.repairCyclesByScope[v3CodeReview.scope], 1);
+const interleavedCycleSession = lifecycleSession(v3ActorContract, {
+  [v3CodeReview.taskName]: "REVISE", [v3PatchAssurance.taskName]: "REVISE",
+}, [
+  ...developerRepairEvents(1), ...retryEvents(v3CodeReview, 1, "REVISE"),
+  ...developerRepairEvents(2),
+  ...retryEvents(v3CodeReview, 2, "PASS"),
+  ...retryEvents(v3PatchAssurance, 2, "PASS"),
+]);
+const interleavedCycleEvidence = parseCollaborationEvidence(syntheticRaw, interleavedCycleSession, v3ActorContract, {
+  actorContractVersion: "four-actor-v3", maximumActorInvocations: 21,
+});
+assert.equal(interleavedCycleEvidence.ok, false,
+  "affected-only reviewer topology still fails when Developer followup turns push the epic beyond 21 invocations");
+assert.match(interleavedCycleEvidence.failures.join("; "), /actor invocation budget exceeded: 22\/21/);
+assert.equal(interleavedCycleEvidence.repairCyclesByScope[v3CodeReview.scope], 2);
+assert.deepEqual(interleavedCycleEvidence.developerReactivations.map((entry) => entry.repairCycle), [1, 2]);
+const missingDeveloperFollowup = lifecycleSession(v3ActorContract, { [v3CodeReview.taskName]: "REVISE" }, [
+  ...retryEvents(v3CodeReview, 1, "PASS"),
+]);
+assert.equal(parseCollaborationEvidence(syntheticRaw, missingDeveloperFollowup, v3ActorContract, {
+  actorContractVersion: "four-actor-v3", maximumActorInvocations: 21,
+}).ok, false, "reviewer retry without original Developer followup fails closed");
+const thirdRepairSession = `${twoRepairSession}\n${developerRepairEvents(3).join("\n")}\n${retryEvents(v3CodeReview, 3, "PASS").join("\n")}`;
+assert.equal(parseCollaborationEvidence(syntheticRaw, thirdRepairSession, v3ActorContract, {
+  actorContractVersion: "four-actor-v3", maximumActorInvocations: 21,
+}).ok, false, "a third v3 repair cycle fails closed");
+const conditionalJudgeName = `acef_${v3CodeReview.scope.replace(/[^a-z0-9]+/gi, "_").toLowerCase()}_process_judge`;
+const conditionalJudgeSession = lifecycleSession(v3ActorContract, {}, [
+  JSON.stringify({ timestamp: eventTimestamp(60), type: "response_item", payload: { type: "function_call", namespace: "collaboration", name: "spawn_agent", call_id: "conditional-judge", arguments: JSON.stringify({ task_name: conditionalJudgeName, fork_turns: "none" }) } }),
+  JSON.stringify({ timestamp: eventTimestamp(60.5), type: "event_msg", payload: { type: "sub_agent_activity", event_id: "conditional-judge", agent_thread_id: "conditional-judge-receiver", kind: "started" } }),
+  JSON.stringify({ timestamp: eventTimestamp(61), type: "response_item", payload: { type: "agent_message", author: `/root/${conditionalJudgeName}`, content: [{ type: "input_text", text: `Message Type: FINAL_ANSWER\nSender: /root/${conditionalJudgeName}\nPayload:\nJUDGE_TRIGGER=EVIDENCE_CONFLICT\nACTOR_RESULT=PASS` }] } }),
+]);
+const conditionalJudgeEvidence = parseCollaborationEvidence(syntheticRaw, conditionalJudgeSession, v3ActorContract, {
+  actorContractVersion: "four-actor-v3", maximumActorInvocations: 21,
+});
+assert.equal(conditionalJudgeEvidence.ok, true, "a single trigger-bound conditional story Judge is allowed");
+assert.equal(conditionalJudgeEvidence.conditionalJudges[0].trigger, "evidence-conflict");
 const firstAtdd = epicActorContract[0];
 const adjudicationName = `${firstAtdd.taskName}_adjudication1`;
 const revisedWithAdjudication = [
@@ -287,6 +540,353 @@ assert.equal(parseLifecycleDispatchTrace([
   { scope: "S1", control: "atdd", taskName: "s1_atdd", retryable: false },
   { scope: "S1", control: "atdd", taskName: "s1_atdd_again", retryable: false },
 ], { scopeIds: ["S1"] }).duplicateLifecycle, true);
+const globalCycleDispatchTrace = parseLifecycleDispatchTrace([
+  { scope: "S1", control: "code-review", taskName: "s1_code", retryable: true },
+  { scope: "S1", control: "code-review", taskName: "s1_code_retry1", retryable: true, retryOrdinal: 1 },
+  { scope: "S1", control: "patch-assurance", taskName: "s1_assurance", retryable: true },
+  { scope: "S1", control: "patch-assurance", taskName: "s1_assurance_retry2", retryable: true, retryOrdinal: 2 },
+], { scopeIds: ["S1"], maximumRetryOrdinal: 2, globalRepairCycles: true });
+assert.equal(globalCycleDispatchTrace.duplicateLifecycle, false,
+  "affected reviewers may skip a global story repair cycle without appearing as lifecycle replay");
+const harnessWait = parseHarnessWaitMetrics([
+  JSON.stringify({ timestamp: "2026-08-01T00:00:00.000Z", type: "response_item", payload: { type: "function_call", namespace: "collaboration", name: "wait_agent", call_id: "wait-1" } }),
+  JSON.stringify({ timestamp: "2026-08-01T00:00:05.000Z", type: "response_item", payload: { type: "function_call", namespace: "collaboration", name: "wait_agent", call_id: "wait-2" } }),
+  JSON.stringify({ timestamp: "2026-08-01T00:00:10.000Z", type: "response_item", payload: { type: "function_call_output", call_id: "wait-1" } }),
+  JSON.stringify({ timestamp: "2026-08-01T00:00:15.000Z", type: "response_item", payload: { type: "function_call_output", call_id: "wait-2" } }),
+].join("\n"), 60);
+assert.equal(harnessWait.seconds, 15, "overlapping waits are measured as wall-time union, not double-counted");
+assert.equal(harnessWait.share, 0.25);
+assert.equal(harnessWait.measurementComplete, true);
+const incompleteHarnessWait = parseHarnessWaitMetrics(JSON.stringify({
+  timestamp: "2026-08-01T00:00:00.000Z", type: "response_item",
+  payload: { type: "function_call", namespace: "collaboration", name: "wait_agent", call_id: "wait-incomplete" },
+}), 60);
+assert.equal(incompleteHarnessWait.incompleteWaitCalls, 1);
+assert.equal(incompleteHarnessWait.measurementComplete, false);
+const withinBudget = evaluatePilotBudgets(v3Manifest, v3Plan[0], 8999,
+  { input_tokens: 35000000, tool_calls: 299 },
+  { observedActorCount: 17, dispatches: [], repairCyclesByScope: { s1: 2 } },
+  { counts: { broadSuite: 1 } },
+  { seconds: 1000, share: 0.2 });
+assert.equal(withinBudget.ok, true);
+assert.equal(withinBudget.targetMet, true);
+const perInvocationInfrastructureRetryExceeded = evaluatePilotBudgets(v3Manifest, v3Plan[0], 100,
+  { input_tokens: 1, tool_calls: 1 },
+  { observedActorCount: 19, dispatches: [
+    { taskName: "acef_story_development_infra_retry1" },
+    { taskName: "acef_story_development_infra_retry2" },
+  ], repairCyclesByScope: {}, storyDeliverySeconds: { story: 90 }, storyTimingComplete: true },
+  { counts: { broadSuite: 1 } }, { seconds: 0, share: 0, incompleteWaitCalls: 0, measurementComplete: true });
+assert.equal(perInvocationInfrastructureRetryExceeded.ok, false,
+  "maximumInfrastructureRetriesPerInvocation is enforced independently of the total retry cap");
+assert.match(perInvocationInfrastructureRetryExceeded.failures.join("\n"), /development infrastructure retries 2\/1/);
+const totalInfrastructureRetryExceeded = evaluatePilotBudgets(v3Manifest, v3Plan[0], 100,
+  { input_tokens: 1, tool_calls: 1 },
+  { observedActorCount: 21, dispatches: ["a", "b", "c", "d"].map((taskName) => ({ taskName: `${taskName}_infra_retry1` })),
+    repairCyclesByScope: {}, storyDeliverySeconds: { story: 90 }, storyTimingComplete: true },
+  { counts: { broadSuite: 1 } }, { seconds: 0, share: 0, incompleteWaitCalls: 0, measurementComplete: true });
+assert.equal(totalInfrastructureRetryExceeded.ok, false, "the epic-wide infrastructure retry cap is enforced");
+assert.match(totalInfrastructureRetryExceeded.failures.join("\n"), /infrastructure retries 4\/3/);
+const incompleteWaitBudget = evaluatePilotBudgets(v3Manifest, v3Plan[0], 100,
+  { input_tokens: 1, tool_calls: 1 },
+  { observedActorCount: 17, dispatches: [], repairCyclesByScope: {}, storyDeliverySeconds: { story: 90 }, storyTimingComplete: true },
+  { counts: { broadSuite: 1 } }, incompleteHarnessWait);
+assert.equal(incompleteWaitBudget.ok, false, "an incomplete wait call fails the harness-wait budget");
+assert.match(incompleteWaitBudget.failures.join("\n"), /harness wait measurement is incomplete/);
+const lifecycleSuiteTrace = parseIndependentTrace("scope=S1 php artisan test\n", { scopeIds: ["S1"] });
+const harnessSuiteTrace = parseIndependentTrace("scope=epic php artisan test\n", { scopeIds: ["S1"] });
+assert.equal(lifecycleSuiteTrace.counts.broadSuite, 1);
+assert.equal(harnessSuiteTrace.counts.broadSuite, 1);
+assert.equal(evaluatePilotBudgets(v3Manifest, v3Plan[0], 8999,
+  { input_tokens: 1, tool_calls: 1 },
+  { observedActorCount: 17, dispatches: [], repairCyclesByScope: {} },
+  lifecycleSuiteTrace, { seconds: 0, share: 0 }).ok, true,
+"the harness oracle verification is recorded separately and cannot double-count the one conductor broad suite");
+const missingLifecycleBroadSuite = evaluatePilotBudgets(v3Manifest, v3Plan[0], 100,
+  { input_tokens: 1, tool_calls: 1 },
+  { observedActorCount: 17, dispatches: [], repairCyclesByScope: {} },
+  { counts: { broadSuite: 0 } }, { seconds: 0, share: 0, incompleteWaitCalls: 0, measurementComplete: true });
+assert.equal(missingLifecycleBroadSuite.ok, false, "zero lifecycle broad suites must fail closed");
+assert.match(missingLifecycleBroadSuite.failures.join("\n"), /broad suites 0\/1; v3 requires exactly one/);
+const exceededBudget = evaluatePilotBudgets(v3Manifest, v3Plan[0], 10801,
+  { input_tokens: 36000001, tool_calls: 301 },
+  { observedActorCount: 22, dispatches: [], repairCyclesByScope: { s1: 3 }, storyDeliverySeconds: { s1: 3001 } },
+  { counts: { broadSuite: 2 } },
+  { seconds: 1201, share: 0.26 });
+assert.equal(exceededBudget.ok, false);
+assert.match(exceededBudget.failures.join("\n"), /broad suites 2\/1; v3 requires exactly one/);
+assert.ok(exceededBudget.failures.length >= 8, "every independently frozen hard-budget dimension is evaluated");
+const frozenIntegrationArgv = ["sh", "-c", "php artisan test --filter=Frozen && vendor/bin/phpunit --filter=Frozen"];
+const integrationCall = JSON.stringify({ timestamp: eventTimestamp(11), type: "response_item", payload: {
+  type: "function_call", name: "exec_command", call_id: "integration-1",
+  arguments: JSON.stringify({ cmd: frozenIntegrationArgv[2] }),
+} });
+const integrationOutput = JSON.stringify({ timestamp: eventTimestamp(12), type: "response_item", payload: {
+  type: "function_call_output", call_id: "integration-1", output: JSON.stringify({ exit_code: 0, output: "PASS" }),
+} });
+assert.equal(parseLifecycleIntegrationEvidence(`${integrationCall}\n${integrationOutput}`, frozenIntegrationArgv,
+  eventTimestamp(10), eventTimestamp(20)).ok, true);
+assert.equal(parseLifecycleIntegrationEvidence("", frozenIntegrationArgv,
+  eventTimestamp(10), eventTimestamp(20)).ok, false, "missing frozen lifecycle integration command fails closed");
+assert.equal(parseLifecycleIntegrationEvidence(`${integrationCall}\n${integrationOutput}\n${integrationCall}\n${integrationOutput}`,
+  frozenIntegrationArgv, eventTimestamp(10), eventTimestamp(20)).ok, false,
+"duplicate exact lifecycle integration commands fail closed");
+assert.equal(parseLifecycleIntegrationEvidence(`${integrationCall}\n${integrationOutput}`, frozenIntegrationArgv,
+  eventTimestamp(11.5), eventTimestamp(20)).ok, false,
+"integration command must start only after all story PASS evidence is complete");
+const falseGreenWrapperOutput = JSON.stringify({ timestamp: eventTimestamp(12), type: "response_item", payload: {
+  type: "function_call_output", call_id: "integration-1", output: "Script completed\nexit_code: 1\nFAIL",
+} });
+assert.equal(parseLifecycleIntegrationEvidence(`${integrationCall}\n${falseGreenWrapperOutput}`,
+  frozenIntegrationArgv, eventTimestamp(10), eventTimestamp(20)).ok, false,
+"wrapper completion cannot conceal an explicit nonzero inner integration exit code");
+const wrapperOnlyOutput = JSON.stringify({ timestamp: eventTimestamp(12), type: "response_item", payload: {
+  type: "function_call_output", call_id: "integration-1", output: "Script completed",
+} });
+assert.equal(parseLifecycleIntegrationEvidence(`${integrationCall}\n${wrapperOnlyOutput}`,
+  frozenIntegrationArgv, eventTimestamp(10), eventTimestamp(20)).ok, false,
+"wrapper completion without a structured inner exit code is not success evidence");
+const contradictoryExitOutput = JSON.stringify({ timestamp: eventTimestamp(12), type: "response_item", payload: {
+  type: "function_call_output", call_id: "integration-1", output: '{"exit_code":0}\nProcess exited with code 1',
+} });
+assert.equal(parseLifecycleIntegrationEvidence(`${integrationCall}\n${contradictoryExitOutput}`,
+  frozenIntegrationArgv, eventTimestamp(10), eventTimestamp(20)).ok, false,
+"any explicit nonzero exit rejects even when another structured field says zero");
+const judgmentUnitDir = fs.mkdtempSync(path.join(os.tmpdir(), "acef-judgment-unit-"));
+process.on("exit", () => fs.rmSync(judgmentUnitDir, { recursive: true, force: true }));
+const judgmentDiffPath = path.join(judgmentUnitDir, "candidate.patch");
+fs.writeFileSync(judgmentDiffPath, "diff --git a/value b/value\n--- a/value\n+++ b/value\n@@ -1 +1 @@\n-before\n+after\n");
+const judgmentDiffSha256 = sha256(fs.readFileSync(judgmentDiffPath, "utf8"));
+const productDoneReceiptPath = path.join(judgmentUnitDir, "product-receipt.json");
+fs.writeFileSync(productDoneReceiptPath, `${JSON.stringify({ finishedAt: "2026-08-02T00:09:00.000Z", status: 0 })}\n`);
+const productDoneReceiptSha256 = sha256(fs.readFileSync(productDoneReceiptPath, "utf8"));
+const judgmentProductContract = {
+  schema: "acef.execution-assurance-product-contract.v1", taskId: "unit-task", kind: "task",
+  stories: [{ id: "unit-task", prompt: "Change value from before to after.", acceptanceCriteria: [], dependsOn: [], allowedPaths: ["value"] }],
+};
+const judgmentProductContractSha256 = sha256(JSON.stringify(judgmentProductContract));
+const judgmentWithheldOracleSha256 = "b".repeat(64);
+const judgmentVerificationStdoutSha256 = "c".repeat(64);
+const judgmentVerificationStderrSha256 = "d".repeat(64);
+const judgmentInputBundleSha256 = sha256(JSON.stringify({
+  productContractSha256: judgmentProductContractSha256,
+  withheldOracleSha256: judgmentWithheldOracleSha256,
+  productDiffSha256: judgmentDiffSha256,
+  productChangedPaths: ["value"],
+  verificationReceiptSha256: productDoneReceiptSha256,
+  verificationStdoutSha256: judgmentVerificationStdoutSha256,
+  verificationStderrSha256: judgmentVerificationStderrSha256,
+}));
+const judgePacketPath = path.join(judgmentUnitDir, "packet.json");
+fs.writeFileSync(judgePacketPath, `${JSON.stringify({
+  schema: "acef.execution-assurance-judge-packet.v1", experimentId: v3Manifest.experimentId,
+  attemptId: "P0-candidate-v3", attemptRunId: "P0-candidate-v3", attemptOrdinal: 1,
+  storyInventory: ["unit-task"],
+  productContract: judgmentProductContract, productContractSha256: judgmentProductContractSha256,
+  withheldOracleSha256: judgmentWithheldOracleSha256, inputBundleSha256: judgmentInputBundleSha256,
+  artifactOnly: true, treatmentDisclosed: false, transcriptIncluded: false,
+  diff: { path: judgmentDiffPath, sha256: judgmentDiffSha256 },
+  verification: { receiptSha256: productDoneReceiptSha256, stdoutSha256: judgmentVerificationStdoutSha256,
+    stderrSha256: judgmentVerificationStderrSha256 },
+  changedPaths: ["value"],
+})}\n`);
+const judgePacketSha256 = sha256(fs.readFileSync(judgePacketPath, "utf8"));
+const blindedPrompt = blindJudgePrompt({
+  ...JSON.parse(fs.readFileSync(judgePacketPath, "utf8")), _packetPath: judgePacketPath, _packetSha256: judgePacketSha256,
+});
+assert.doesNotMatch(blindedPrompt, /\b(?:full-bmad|guarded|four-actor|legacy|candidate)\b/i,
+  "the harness-launched Judge prompt must not disclose the treatment vocabulary");
+function judgeSessionBytes(sessionId, verdict, productOutcomeComplete, timestamp, findings = []) {
+  const finalAnswer = [
+    "Message Type: FINAL_ANSWER",
+    `JUDGE_PACKET_SHA256=${judgePacketSha256}`,
+    `JUDGE_INPUT_BUNDLE_SHA256=${judgmentInputBundleSha256}`,
+    `PRODUCT_CONTRACT_SHA256=${judgmentProductContractSha256}`,
+    `JUDGE_VERDICT=${verdict}`,
+    `PRODUCT_OUTCOME_COMPLETE=${productOutcomeComplete}`,
+    "SCOPE_VIOLATION=false",
+    "TEST_WEAKENING=false",
+    `FINDINGS_SHA256=${sha256(JSON.stringify(findings))}`,
+  ].join("\n");
+  return [
+    JSON.stringify({ type: "session_meta", payload: {
+      id: sessionId, parent_thread_id: null, cwd: judgmentUnitDir,
+      cli_version: v3Manifest.pilotRuntime.clientVersion.replace(/^codex-cli\s+/, ""),
+    } }),
+    JSON.stringify({ timestamp, type: "event_msg", payload: {
+      type: "agent_message", phase: "final_answer", message: finalAnswer,
+    } }),
+  ].join("\n") + "\n";
+}
+function createJudgeBinding(prefix, sessionId, verdict, productOutcomeComplete, finalAt, startedAt, finishedAt, findings = []) {
+  const sessionTranscriptPath = path.join(judgmentUnitDir, `${prefix}-session.jsonl`);
+  fs.writeFileSync(sessionTranscriptPath,
+    judgeSessionBytes(sessionId, verdict, productOutcomeComplete, finalAt, findings));
+  const receiptPath = path.join(judgmentUnitDir, `${prefix}-receipt.json`);
+  const prompt = `blind judge fixture ${prefix}`;
+  const requestPath = path.join(judgmentUnitDir, `${prefix}-request.json`);
+  const launchNonce = `fixture:${prefix}:v1`;
+  fs.writeFileSync(requestPath, `${JSON.stringify({
+    command: process.execPath,
+    args: ["exec", "--model", v3Manifest.pilotRuntime.model,
+      `model_reasoning_effort=${JSON.stringify(v3Manifest.pilotRuntime.reasoningEffort)}`, prompt],
+    cwd: judgmentUnitDir, launchNonce,
+  })}\n`);
+  const requestSha256 = sha256(fs.readFileSync(requestPath, "utf8"));
+  const actorReceiptPath = path.join(judgmentUnitDir, `${prefix}-actor-receipt.json`);
+  fs.writeFileSync(actorReceiptPath, `${JSON.stringify({
+    status: 0, requestSha256, launchNonce, startedAt, finishedAt,
+  })}\n`);
+  fs.writeFileSync(receiptPath, `${JSON.stringify({
+    schema: "acef.execution-assurance-judge-receipt.v1", experimentId: v3Manifest.experimentId,
+    attemptRunId: "P0-candidate-v3", judgePacketSha256, inputBundleSha256: judgmentInputBundleSha256,
+    productContractSha256: judgmentProductContractSha256, judgeSessionId: sessionId,
+    judgeModel: v3Manifest.pilotRuntime.model, reasoningEffort: v3Manifest.pilotRuntime.reasoningEffort,
+    clientPath: process.execPath, clientBinarySha256: sha256(fs.readFileSync(process.execPath)),
+    clientVersion: v3Manifest.pilotRuntime.clientVersion, requestPath, requestSha256,
+    actorReceiptPath, actorReceiptSha256: sha256(fs.readFileSync(actorReceiptPath, "utf8")), promptSha256: sha256(prompt),
+    sessionTranscriptPath, sessionTranscriptSha256: sha256(fs.readFileSync(sessionTranscriptPath, "utf8")),
+    freshSession: true, artifactOnly: true, treatmentBlinded: true, transcriptWithheld: true,
+    crossRunMemory: false, parentSessionId: null, startedAt, finishedAt,
+  })}\n`);
+  return { sessionTranscriptPath, receiptPath, receiptSha256: sha256(fs.readFileSync(receiptPath, "utf8")) };
+}
+const pendingJudgeBinding = createJudgeBinding("pending", "judge-session-1", "PENDING", false,
+  "2026-08-02T00:09:30.000Z", "2026-08-02T00:09:01.000Z", "2026-08-02T00:09:59.000Z");
+const judgeSessionPath = pendingJudgeBinding.sessionTranscriptPath;
+const judgeReceiptPath = pendingJudgeBinding.receiptPath;
+const judgmentAttempt = {
+  schema: "acef.execution-assurance-pilot-attempt.v1", experimentId: v3Manifest.experimentId,
+  attemptId: "P0-candidate-v3", attemptRunId: "P0-candidate-v3", attemptOrdinal: 1,
+  storyInventory: ["unit-task"],
+  diffPath: judgmentDiffPath, diffSha256: judgmentDiffSha256,
+  productContractSha256: judgmentProductContractSha256, withheldOracleSha256: judgmentWithheldOracleSha256,
+  judgeInputBundleSha256: judgmentInputBundleSha256,
+  startedAt: "2026-08-02T00:00:00.000Z", finishedAt: "2026-08-02T00:09:00.000Z",
+  judgePacketPath, judgePacketSha256, productDoneReceiptPath,
+  judgeLaunchRoot: judgmentUnitDir,
+  productDoneReceiptSha256,
+  harnessProductDoneAt: "2026-08-02T00:09:00.000Z", result: "PROVISIONAL_PASS",
+  automatedOraclePassed: true, processOraclePassed: true, pilotBudgets: { applicable: true, ok: true },
+};
+const pendingJudgment = {
+  schema: "acef.execution-assurance-pilot-judgment.v3", experimentId: v3Manifest.experimentId,
+  attemptId: judgmentAttempt.attemptId, attemptRunId: judgmentAttempt.attemptRunId, attemptOrdinal: 1,
+  diffSha256: judgmentAttempt.diffSha256, judgePacketId: "J-PENDING", judgePacketSha256,
+  judgeModel: "gpt-5.6-sol", judgeReceiptPath, judgeReceiptSha256: sha256(fs.readFileSync(judgeReceiptPath, "utf8")),
+  judgeSessionId: "judge-session-1", productDoneReceiptSha256: judgmentAttempt.productDoneReceiptSha256,
+  treatmentBlinded: true, transcriptWithheld: true, scopeViolation: false, testWeakening: false,
+  verdict: "PENDING", findings: [],
+  productOutcomeComplete: false, judgedAt: "2026-08-02T00:10:00.000Z",
+};
+assert.equal(derivePilotVerdict(v3Manifest, judgmentAttempt, pendingJudgment).result, "PENDING");
+assert.equal(derivePilotVerdict(v3Manifest, judgmentAttempt, pendingJudgment).productDone, false);
+assert.throws(() => validatePilotJudgment({ ...pendingJudgment, attemptOrdinal: 2 }, judgmentAttempt, v3Manifest), /attemptOrdinal does not match/);
+assert.throws(() => validatePilotJudgment({ ...pendingJudgment, diffSha256: "f".repeat(64) }, judgmentAttempt, v3Manifest), /diffSha256 does not match/);
+const originalJudgmentDiff = fs.readFileSync(judgmentDiffPath, "utf8");
+fs.appendFileSync(judgmentDiffPath, "tampered\n");
+assert.throws(() => validatePilotJudgment(pendingJudgment, judgmentAttempt, v3Manifest),
+  /referenced diff artifact is missing, changed, or does not match/,
+  "ingestion must rehash the patch referenced by the immutable judge packet");
+fs.writeFileSync(judgmentDiffPath, originalJudgmentDiff);
+const leakedControlDiffPath = path.join(judgmentUnitDir, "leaked-control.patch");
+fs.writeFileSync(leakedControlDiffPath,
+  "diff --git a/docs/ai/ACEF_ACTIVE_RUN.json b/docs/ai/ACEF_ACTIVE_RUN.json\n--- a/docs/ai/ACEF_ACTIVE_RUN.json\n+++ b/docs/ai/ACEF_ACTIVE_RUN.json\n");
+const leakedControlDiffSha256 = sha256(fs.readFileSync(leakedControlDiffPath, "utf8"));
+const leakedInputBundleSha256 = sha256(JSON.stringify({
+  productContractSha256: judgmentProductContractSha256, withheldOracleSha256: judgmentWithheldOracleSha256,
+  productDiffSha256: leakedControlDiffSha256, productChangedPaths: ["docs/ai/ACEF_ACTIVE_RUN.json"],
+  verificationReceiptSha256: productDoneReceiptSha256,
+  verificationStdoutSha256: judgmentVerificationStdoutSha256,
+  verificationStderrSha256: judgmentVerificationStderrSha256,
+}));
+const leakedPacketPath = path.join(judgmentUnitDir, "leaked-packet.json");
+fs.writeFileSync(leakedPacketPath, `${JSON.stringify({
+  ...JSON.parse(fs.readFileSync(judgePacketPath, "utf8")),
+  diff: { path: leakedControlDiffPath, sha256: leakedControlDiffSha256 },
+  changedPaths: ["docs/ai/ACEF_ACTIVE_RUN.json"], inputBundleSha256: leakedInputBundleSha256,
+})}\n`);
+const leakedPacketSha256 = sha256(fs.readFileSync(leakedPacketPath, "utf8"));
+assert.throws(() => validatePilotJudgment({
+  ...pendingJudgment, diffSha256: leakedControlDiffSha256, judgePacketSha256: leakedPacketSha256,
+}, {
+  ...judgmentAttempt, diffPath: leakedControlDiffPath, diffSha256: leakedControlDiffSha256,
+  judgePacketPath: leakedPacketPath, judgePacketSha256: leakedPacketSha256,
+  judgeInputBundleSha256: leakedInputBundleSha256,
+}, v3Manifest), /leaks treatment\/control artifacts/,
+"a Judge packet may not disclose ACEF treatment/control artifacts");
+const metaOnlySessionPath = path.join(judgmentUnitDir, "meta-only-session.jsonl");
+fs.writeFileSync(metaOnlySessionPath,
+  `${JSON.stringify({ type: "session_meta", payload: {
+    id: "judge-session-meta-only", parent_thread_id: null, cwd: judgmentUnitDir,
+    cli_version: v3Manifest.pilotRuntime.clientVersion.replace(/^codex-cli\s+/, ""),
+  } })}\n`);
+const metaOnlyReceiptPath = path.join(judgmentUnitDir, "meta-only-receipt.json");
+fs.writeFileSync(metaOnlyReceiptPath, `${JSON.stringify({
+  ...JSON.parse(fs.readFileSync(judgeReceiptPath, "utf8")), judgeSessionId: "judge-session-meta-only",
+  sessionTranscriptPath: metaOnlySessionPath,
+  sessionTranscriptSha256: sha256(fs.readFileSync(metaOnlySessionPath, "utf8")),
+})}\n`);
+assert.throws(() => validatePilotJudgment({
+  ...pendingJudgment, judgeSessionId: "judge-session-meta-only", judgeReceiptPath: metaOnlyReceiptPath,
+  judgeReceiptSha256: sha256(fs.readFileSync(metaOnlyReceiptPath, "utf8")),
+}, judgmentAttempt, v3Manifest), /lacks a bound final Judge answer/,
+"session_meta alone is not blind-judgment evidence");
+const wrongModelReceiptPath = path.join(judgmentUnitDir, "wrong-model-receipt.json");
+fs.writeFileSync(wrongModelReceiptPath, `${JSON.stringify({
+  ...JSON.parse(fs.readFileSync(judgeReceiptPath, "utf8")), judgeModel: "unbound-model",
+})}\n`);
+assert.throws(() => validatePilotJudgment({
+  ...pendingJudgment, judgeReceiptPath: wrongModelReceiptPath,
+  judgeReceiptSha256: sha256(fs.readFileSync(wrongModelReceiptPath, "utf8")),
+}, judgmentAttempt, v3Manifest), /provenance is not fresh, artifact-only, and blinded/,
+"the Judge model is pinned by manifest and launch receipt");
+assert.throws(() => validatePilotJudgment({
+  ...pendingJudgment, verdict: "FAIL",
+}, judgmentAttempt, v3Manifest), /final answer does not match the ingested verdict/,
+"an edited judgment verdict cannot disagree with the bound Judge final answer");
+const passJudgeBinding = createJudgeBinding("pass-unit", "judge-session-pass-unit", "PASS", true,
+  "2026-08-02T00:10:30.000Z", "2026-08-02T00:10:01.000Z", "2026-08-02T00:10:59.000Z");
+const passJudgment = {
+  ...pendingJudgment, judgePacketId: "J-PASS", verdict: "PASS", productOutcomeComplete: true,
+  judgeSessionId: "judge-session-pass-unit", judgeReceiptPath: passJudgeBinding.receiptPath,
+  judgeReceiptSha256: passJudgeBinding.receiptSha256,
+  judgedAt: "2026-08-02T00:11:00.000Z",
+};
+const passingDerivedVerdict = derivePilotVerdict(v3Manifest, judgmentAttempt, passJudgment);
+assert.equal(passingDerivedVerdict.result, "PASS");
+assert.equal(passingDerivedVerdict.promotionEligible, true);
+assert.equal(passingDerivedVerdict.wallTimeToProductDoneSeconds, 540);
+assert.throws(() => validatePilotJudgment({ ...passJudgment, productDoneAt: "2026-08-02T00:01:00.000Z" },
+  judgmentAttempt, v3Manifest), /must not self-attest productDoneAt/);
+const lateProductReceiptPath = path.join(judgmentUnitDir, "late-product-receipt.json");
+fs.writeFileSync(lateProductReceiptPath,
+  `${JSON.stringify({ finishedAt: "2026-08-02T00:09:01.000Z", status: 0 })}\n`);
+const lateProductReceiptSha256 = sha256(fs.readFileSync(lateProductReceiptPath, "utf8"));
+assert.throws(() => validatePilotJudgment({
+  ...pendingJudgment, productDoneReceiptSha256: lateProductReceiptSha256,
+}, {
+  ...judgmentAttempt,
+  productDoneReceiptPath: lateProductReceiptPath,
+  productDoneReceiptSha256: lateProductReceiptSha256,
+  harnessProductDoneAt: "2026-08-02T00:09:01.000Z",
+}, v3Manifest), /outside the immutable attempt interval/,
+"product completion must come from a harness receipt created within the measured attempt");
+const highFindings = [{ id: "H1", severity: "HIGH" }];
+const highJudgeBinding = createJudgeBinding("high-unit", "judge-session-high-unit", "PASS", true,
+  "2026-08-02T00:10:30.000Z", "2026-08-02T00:10:01.000Z", "2026-08-02T00:10:59.000Z", highFindings);
+assert.throws(() => validatePilotJudgment({
+  ...passJudgment, findings: highFindings, judgeSessionId: "judge-session-high-unit",
+  judgeReceiptPath: highJudgeBinding.receiptPath, judgeReceiptSha256: highJudgeBinding.receiptSha256,
+}, judgmentAttempt, v3Manifest), /exceeds the frozen Critical\/High/);
+assert.throws(() => validatePilotJudgment({
+  ...pendingJudgment, findings: [{ id: "X1", severity: "UNKNOWN" }],
+}, judgmentAttempt, v3Manifest), /severity is invalid/);
+assert.equal(derivePilotVerdict(v3Manifest, { ...judgmentAttempt, processOraclePassed: false }, passJudgment).result,
+  "PRODUCT_PASS_PROCESS_FAIL", "product success must remain distinct from process failure");
+assert.equal(derivePilotVerdict(v3Manifest, {
+  ...judgmentAttempt, pilotBudgets: { applicable: true, ok: false },
+}, passJudgment).result, "PRODUCT_PASS_BUDGET_FAIL", "product success must remain distinct from budget failure");
 const correctionWrites = correctionSessionWrites(JSON.stringify({
   type: "response_item",
   payload: { type: "function_call", name: "apply_patch", arguments: JSON.stringify({ input: "*** Begin Patch\n*** Update File: app/Unsafe.php\n*** End Patch" }) },
@@ -314,6 +914,8 @@ for (const command of [
   "git status; git apply /tmp/evil.patch",
   "git status; truncate -s 0 app/Unsafe.php",
   "git status; chmod 000 app/Unsafe.php",
+  "git show HEAD:README.md --output=src/x",
+  "git show -o src/x HEAD:README.md",
 ]) {
   assert.equal(correctionSessionWrites(JSON.stringify({
     type: "response_item",
@@ -324,6 +926,29 @@ assert.equal(correctionSessionWrites(JSON.stringify({
   type: "response_item",
   payload: { type: "custom_tool_call", name: "exec", input: "const r=await tools.exec_command({cmd:\"php artisan test --filter=FocusedTest\"}); text(r.output);" },
 }), root).unsafeShellMutations.length, 0, "one structurally allowed focused test command remains permitted");
+const committedFileRepo = fs.mkdtempSync(path.join(os.tmpdir(), "acef-committed-file-"));
+process.on("exit", () => fs.rmSync(committedFileRepo, { recursive: true, force: true }));
+cp.spawnSync("git", ["init", "-q"], { cwd: committedFileRepo });
+cp.spawnSync("git", ["config", "user.email", "acef-test@example.invalid"], { cwd: committedFileRepo });
+cp.spawnSync("git", ["config", "user.name", "ACEF Test"], { cwd: committedFileRepo });
+const committedRegularPath = path.join(committedFileRepo, "regular.json");
+fs.writeFileSync(committedRegularPath, "{}\n");
+cp.spawnSync("git", ["add", "regular.json"], { cwd: committedFileRepo });
+cp.spawnSync("git", ["commit", "-qm", "regular"], { cwd: committedFileRepo });
+assert.equal(committedUnchangedAtHead(committedFileRepo, committedRegularPath).ok, true);
+const externalSymlinkTarget = path.join(os.tmpdir(), `acef-external-${process.pid}.json`);
+fs.writeFileSync(externalSymlinkTarget, "{}\n");
+process.on("exit", () => fs.rmSync(externalSymlinkTarget, { force: true }));
+fs.unlinkSync(committedRegularPath);
+fs.symlinkSync(externalSymlinkTarget, committedRegularPath);
+assert.match(committedUnchangedAtHead(committedFileRepo, committedRegularPath).reason, /not a regular file/,
+  "a working-tree symlink cannot impersonate a committed regular evidence blob");
+const committedSymlinkPath = path.join(committedFileRepo, "committed-link.json");
+fs.symlinkSync(externalSymlinkTarget, committedSymlinkPath);
+cp.spawnSync("git", ["add", "committed-link.json"], { cwd: committedFileRepo });
+cp.spawnSync("git", ["commit", "-qm", "symlink"], { cwd: committedFileRepo });
+assert.match(committedUnchangedAtHead(committedFileRepo, committedSymlinkPath).reason, /not a regular file/,
+  "a committed symlink is never durable evidence, even when its target exists");
 assert.equal(correctionSessionWrites(JSON.stringify({
   type: "response_item",
   payload: { type: "custom_tool_call", name: "exec", input: "const decoy={cmd:\"git status\"}; const evil=\"php -r 'file_put_contents(\\\"app/Unsafe.php\\\", \\\"x\\\");'\"; await tools.exec_command({cmd:evil});" },
@@ -342,6 +967,39 @@ assert.equal(correctionSessionWrites(JSON.stringify({
   type: "response_item",
   payload: { type: "function_call", namespace: "collaboration", name: "spawn_agent", arguments: "{}" },
 }), root).unsafeDelegations.length, 1, "ATDD correction workers cannot delegate another correction chain");
+const reviewerReportBytes = `${JSON.stringify({ schema: "acef.review-report.v3", verdict: "PASS" })}\n`;
+const reviewerReportHash = sha256(reviewerReportBytes);
+const reviewerCompletion = parseReviewerCompletion([
+  "ACTOR_RESULT=PASS",
+  "REVIEW_REPORT_PATH=docs/ai/reports/reviewer.json",
+  `REVIEW_REPORT_SHA256=${reviewerReportHash}`,
+  `REVIEW_REPORT_BASE64=${Buffer.from(reviewerReportBytes).toString("base64")}`,
+  `REVIEW_INPUT_TREE=${"a".repeat(40)}`,
+].join("\n"), root);
+assert.equal(reviewerCompletion.reportSha256, reviewerReportHash);
+assert.throws(() => parseReviewerCompletion([
+  "REVIEW_REPORT_PATH=docs/ai/reports/reviewer.json",
+  `REVIEW_REPORT_SHA256=${"b".repeat(64)}`,
+  `REVIEW_REPORT_BASE64=${Buffer.from(reviewerReportBytes).toString("base64")}`,
+  `REVIEW_INPUT_TREE=${"a".repeat(40)}`,
+].join("\n"), root), /blob\/hash mismatch/);
+const childMetricFixture = codexSessionMetrics([
+  JSON.stringify({ type: "event_msg", payload: { type: "token_count", info: { total_token_usage: {
+    input_tokens: 10, cached_input_tokens: 4, output_tokens: 2,
+  } } } }),
+  JSON.stringify({ type: "response_item", payload: { type: "function_call", name: "exec_command", call_id: "tool-1",
+    arguments: JSON.stringify({ cmd: "php artisan test" }) } }),
+  JSON.stringify({ type: "event_msg", payload: { type: "token_count", info: { total_token_usage: {
+    input_tokens: 15, cached_input_tokens: 6, output_tokens: 3,
+  } } } }),
+].join("\n"));
+assert.deepEqual(childMetricFixture, { input_tokens: 15, cached_input_tokens: 6, output_tokens: 3,
+  tool_calls: 1, commandText: "php artisan test" }, "child metrics use final cumulative usage without double-counting token events");
+assert.deepEqual(aggregateTeamMetrics({ input_tokens: 5, cached_input_tokens: 1, output_tokens: 2, tool_calls: 3 }, childMetricFixture),
+  { input_tokens: 20, cached_input_tokens: 7, output_tokens: 5, tool_calls: 4 },
+  "team cost adds conductor and one final cumulative value per unique child session");
+assert.equal(parseIndependentTrace(childMetricFixture.commandText, { scopeIds: [], requiredControlsPerScope: [] }).counts.broadSuite, 1,
+  "broad suites executed in child sessions remain visible to the lifecycle budget");
 const invalidRepairManifest = structuredClone(repairManifest);
 invalidRepairManifest.promotionGates.costAfterProductPass.failFastCannotWin = false;
 assert.throws(() => validateManifest(invalidRepairManifest), /cost gates/);
@@ -462,6 +1120,197 @@ try {
     repositoryCommit: lifecycleBase, evidenceIds: ["epic-closeout"],
   })}\n`);
   assert.equal(validateDurableLifecycleEvidence(lifecycleRepo, lifecycleExpected).ok, false, "self-approved gate must fail durable lifecycle validation");
+  cp.spawnSync("git", ["add", "docs/ai"], { cwd: lifecycleRepo });
+  cp.spawnSync("git", ["commit", "-qm", "test: commit legacy lifecycle fixture"], { cwd: lifecycleRepo });
+
+  const v3Story = "s1-v3";
+  const v3RunId = "RUN-v3-fixture";
+  const v3StoryInventory = [v3Story, "s2-v3"];
+  const v3DurableExpected = [
+    ["atdd", "test-author"], ["development", "developer"], ["code-review", "code-reviewer"],
+    ["patch-assurance", "patch-assurance-reviewer"],
+  ].map(([control, persona]) => ({
+    scope: v3Story, control, persona, retryable: ["code-review", "patch-assurance"].includes(control),
+    taskName: `acef_s1_v3_${control.replace(/-/g, "_")}`,
+  }));
+  fs.mkdirSync(path.join(lifecycleRepo, "tests"), { recursive: true });
+  fs.writeFileSync(path.join(lifecycleRepo, "tests", "v3-red.test"), "expected red contract\n");
+  cp.spawnSync("git", ["add", "tests/v3-red.test"], { cwd: lifecycleRepo });
+  const redCommitResult = cp.spawnSync("git", ["commit", "-qm", "test: commit v3 red tree"], {
+    cwd: lifecycleRepo, encoding: "utf8",
+  });
+  assert.equal(redCommitResult.status, 0, redCommitResult.stderr);
+  const lifecycleRedCommit = cp.spawnSync("git", ["rev-parse", "HEAD"], { cwd: lifecycleRepo, encoding: "utf8" }).stdout.trim();
+  const lifecycleTree = cp.spawnSync("git", ["rev-parse", "HEAD^{tree}"], { cwd: lifecycleRepo, encoding: "utf8" }).stdout.trim();
+  fs.mkdirSync(path.join(lifecycleRepo, "docs", "ai", "reports"), { recursive: true });
+  const reportBindings = {};
+  for (const actor of v3DurableExpected.filter((entry) => ["code-review", "patch-assurance"].includes(entry.control))) {
+    const relativeReportPath = `docs/ai/reports/${actor.taskName}.json`;
+    const reportBytes = `${JSON.stringify({
+      schema: "acef.review-report.v3", runId: v3RunId, fullFlowContract: "four-actor-v3",
+      actorInstanceId: actor.taskName, story: v3Story, phase: actor.control,
+      inputCommit: lifecycleRedCommit, inputTree: lifecycleTree, verdict: "PASS", findings: [],
+    })}\n`;
+    fs.writeFileSync(path.join(lifecycleRepo, relativeReportPath), reportBytes);
+    reportBindings[actor.control] = { path: relativeReportPath, hash: lifecycleSha(reportBytes) };
+  }
+  const reviewHash = reportBindings["code-review"].hash;
+  const assuranceHash = reportBindings["patch-assurance"].hash;
+  for (const actor of v3DurableExpected) {
+    const inputCommit = actor.control === "atdd" ? lifecycleBase : lifecycleRedCommit;
+    fs.writeFileSync(path.join(lifecycleRepo, "docs", "ai", "actors", `${actor.taskName}.json`), `${JSON.stringify({
+      actorInstanceId: actor.taskName, runId: v3RunId, fullFlowContract: "four-actor-v3",
+      storyInventory: v3StoryInventory,
+      story: v3Story, phase: actor.control, role: actor.persona,
+      client: "codex", inputCommit, inputTree: lifecycleTree, allowedContextProfile: "artifact-only",
+      ...(actor.control === "code-review" ? {
+        producedArtifactHash: reviewHash, producedArtifactPath: reportBindings["code-review"].path,
+      } : {}),
+      ...(actor.control === "patch-assurance" ? {
+        producedArtifactHash: assuranceHash, producedArtifactPath: reportBindings["patch-assurance"].path,
+      } : {}),
+    })}\n`);
+  }
+  for (const [evidenceId, exitCode, actorInstanceId] of [
+    ["v3-red", 1, v3DurableExpected[0].taskName], ["v3-green", 0, v3DurableExpected[3].taskName],
+  ]) {
+    const logPath = path.join(lifecycleRepo, "docs", "ai", "evidence", `${evidenceId}.log`);
+    fs.writeFileSync(logPath, `${evidenceId}\n`);
+    fs.writeFileSync(path.join(lifecycleRepo, "docs", "ai", "evidence", `${evidenceId}.json`), `${JSON.stringify({
+      evidenceId, kind: "runtime-test", command: "fixture", exitCode, repositoryCommit: lifecycleRedCommit,
+      repositoryTree: lifecycleTree, dirtyApplicationPathsBefore: [], dirtyApplicationPathsAfter: [],
+      actorInstanceId, story: v3Story, rawArtifact: { path: `docs/ai/evidence/${evidenceId}.log`, sha256: lifecycleSha(`${evidenceId}\n`) },
+      runnerProof: { schema: "fixture.v1", runner: "fixture", sha256: "d".repeat(64) }, satisfies: [evidenceId],
+    })}\n`);
+  }
+  fs.writeFileSync(path.join(lifecycleRepo, "docs", "ai", "gates", "v3-story-close.json"), `${JSON.stringify({
+    gateId: "v3-story-close", gateType: "deterministic-story-close-v3", decisionMode: "deterministic",
+    runId: v3RunId, fullFlowContract: "four-actor-v3", storyInventory: v3StoryInventory,
+    scope: v3Story, verdict: "PASS", decidedBy: "acef-story-close-v3", repositoryCommit: lifecycleRedCommit,
+    repositoryTree: lifecycleTree, applicationCommit: lifecycleRedCommit, applicationTree: lifecycleTree,
+    validatorVersion: "v3-test", actors: {
+      atdd: v3DurableExpected[0].taskName, development: v3DurableExpected[1].taskName,
+      codeReview: v3DurableExpected[2].taskName, patchAssurance: v3DurableExpected[3].taskName,
+    }, redEvidenceId: "v3-red", greenEvidenceId: "v3-green", evidenceIds: ["v3-red", "v3-green"],
+    executedChecks: { actorSeparation: true, atddTestOnlyRed: true, redGreenChronology: true, finalTreeReview: true, patchAssurance: true,
+      findingsResolved: true, runnerProof: true, scopeBinding: true, hashBinding: true },
+    reviewCycle: 0, unresolvedFindings: [], findingDispositions: [], reportHashes: { codeReview: reviewHash, patchAssurance: assuranceHash },
+    reportPaths: { codeReview: reportBindings["code-review"].path, patchAssurance: reportBindings["patch-assurance"].path },
+  })}\n`);
+  const v3ReviewerCompletions = v3DurableExpected.filter((entry) => ["code-review", "patch-assurance"].includes(entry.control)).map((actor) => {
+    const binding = reportBindings[actor.control];
+    const reportBytes = fs.readFileSync(path.join(lifecycleRepo, binding.path), "utf8");
+    return { taskName: actor.taskName, reportPath: binding.path, reportSha256: binding.hash,
+      reportBase64: Buffer.from(reportBytes).toString("base64"), inputTree: lifecycleTree };
+  });
+  const v3DurableOptions = { actorContractVersion: "four-actor-v3", runId: v3RunId,
+    storyInventory: v3StoryInventory,
+    reviewerCompletions: v3ReviewerCompletions, developerReactivations: [] };
+  const untrackedV3Durable = validateDurableLifecycleEvidence(lifecycleRepo, v3DurableExpected, v3DurableExpected, {
+    ...v3DurableOptions,
+  });
+  assert.equal(untrackedV3Durable.ok, false, "untracked v3 close package must not count as durable");
+  assert.ok(untrackedV3Durable.failures.some((entry) => /not tracked/.test(entry)), untrackedV3Durable.failures.join("; "));
+  cp.spawnSync("git", ["add", "docs/ai"], { cwd: lifecycleRepo });
+  const packageCommit = cp.spawnSync("git", ["commit", "-qm", "chore: commit v3 story-close package"], {
+    cwd: lifecycleRepo, encoding: "utf8",
+  });
+  assert.equal(packageCommit.status, 0, packageCommit.stderr);
+  const committedV3Durable = validateDurableLifecycleEvidence(lifecycleRepo, v3DurableExpected, v3DurableExpected, {
+    ...v3DurableOptions,
+  });
+  assert.equal(committedV3Durable.ok, true, committedV3Durable.failures.join("; "));
+  const subsetActorPath = path.join(lifecycleRepo, "docs", "ai", "actors", `${v3DurableExpected[2].taskName}.json`);
+  const fullInventoryActorBytes = fs.readFileSync(subsetActorPath, "utf8");
+  fs.writeFileSync(subsetActorPath, `${JSON.stringify({
+    ...JSON.parse(fullInventoryActorBytes), storyInventory: [v3Story],
+  })}\n`);
+  const subsetInventoryDurable = validateDurableLifecycleEvidence(lifecycleRepo, v3DurableExpected, v3DurableExpected,
+    v3DurableOptions);
+  assert.ok(subsetInventoryDurable.failures.some((entry) => /actor storyInventory does not match/.test(entry)),
+    "an actor cannot bind a late/subset inventory after the v3 run begins");
+  fs.writeFileSync(subsetActorPath, fullInventoryActorBytes);
+  const replacedReviewerBlob = validateDurableLifecycleEvidence(lifecycleRepo, v3DurableExpected, v3DurableExpected, {
+    ...v3DurableOptions,
+    reviewerCompletions: v3ReviewerCompletions.map((entry, index) => index === 0
+      ? { ...entry, reportBase64: Buffer.from("{}\n").toString("base64") } : entry),
+  });
+  assert.ok(replacedReviewerBlob.failures.some((entry) => /reviewer child-completion blob/.test(entry)),
+    "a conductor replacement cannot substitute a different report blob after reviewer completion");
+  const committedGatePath = path.join(lifecycleRepo, "docs", "ai", "gates", "v3-story-close.json");
+  const cleanCommittedGateBytes = fs.readFileSync(committedGatePath, "utf8");
+  const missingGreenGate = JSON.parse(cleanCommittedGateBytes);
+  missingGreenGate.evidenceIds = [missingGreenGate.redEvidenceId];
+  fs.writeFileSync(committedGatePath, `${JSON.stringify(missingGreenGate)}\n`);
+  const missingDirectGreen = validateDurableLifecycleEvidence(lifecycleRepo, v3DurableExpected, v3DurableExpected, v3DurableOptions);
+  assert.ok(missingDirectGreen.failures.some((entry) => /directly include redEvidenceId and greenEvidenceId/.test(entry)),
+    "red and green identifiers must both be directly enumerated by the deterministic gate");
+  fs.writeFileSync(committedGatePath, cleanCommittedGateBytes);
+  const latePackagePath = path.join(lifecycleRepo, "docs", "ai", "actors", "late-package-member.json");
+  fs.writeFileSync(latePackagePath, "{}\n");
+  cp.spawnSync("git", ["add", "docs/ai/actors/late-package-member.json"], { cwd: lifecycleRepo });
+  cp.spawnSync("git", ["commit", "-qm", "test: introduce package member separately"], { cwd: lifecycleRepo });
+  const committedGate = JSON.parse(fs.readFileSync(path.join(lifecycleRepo, "docs", "ai", "gates", "v3-story-close.json"), "utf8"));
+  Object.defineProperty(committedGate, "_recordPath", { value: path.join(lifecycleRepo, "docs", "ai", "gates", "v3-story-close.json") });
+  const splitPackageFailures = validateFormalStoryClosePackage(v3Story, committedGate, lifecycleRepo,
+    [...v3DurableExpected.map((entry) => path.join(lifecycleRepo, "docs", "ai", "actors", `${entry.taskName}.json`)), latePackagePath],
+    Object.values(reportBindings).map((entry) => path.join(lifecycleRepo, entry.path)),
+    require(path.join(lifecycleRepo, ".acef", "bin", "lib", "acef-state-parser.js")));
+  assert.ok(splitPackageFailures.some((entry) => /not introduced in one commit/.test(entry)),
+    "story-close package members introduced across commits fail closed");
+  const v3GreenEvidencePath = path.join(lifecycleRepo, "docs", "ai", "evidence", "v3-green.json");
+  const cleanV3GreenEvidence = JSON.parse(fs.readFileSync(v3GreenEvidencePath, "utf8"));
+  fs.writeFileSync(v3GreenEvidencePath, `${JSON.stringify({
+    ...cleanV3GreenEvidence, dirtyApplicationPathsBefore: ["tests/transient-dirty.test"],
+  })}\n`);
+  const dirtyBeforeV3Durable = validateDurableLifecycleEvidence(lifecycleRepo, v3DurableExpected, v3DurableExpected, {
+    ...v3DurableOptions,
+  });
+  assert.equal(dirtyBeforeV3Durable.ok, false, "v3 closing green cannot rely on test-dirty-then-restore evidence");
+  assert.ok(dirtyBeforeV3Durable.failures.some((entry) => /no dirty application paths/.test(entry)));
+  fs.writeFileSync(v3GreenEvidencePath, `${JSON.stringify(cleanV3GreenEvidence)}\n`);
+  const v3GreenLog = path.join(lifecycleRepo, "docs", "ai", "evidence", "v3-green.log");
+  fs.appendFileSync(v3GreenLog, "tampered\n");
+  const tamperedV3Durable = validateDurableLifecycleEvidence(lifecycleRepo, v3DurableExpected, v3DurableExpected, {
+    ...v3DurableOptions,
+  });
+  assert.equal(tamperedV3Durable.ok, false, "post-commit raw-artifact tampering must fail v3 durability");
+  fs.writeFileSync(v3GreenLog, "v3-green\n");
+  const codeReviewReportPath = path.join(lifecycleRepo, reportBindings["code-review"].path);
+  const cleanCodeReviewReport = fs.readFileSync(codeReviewReportPath, "utf8");
+  fs.appendFileSync(codeReviewReportPath, " ");
+  const tamperedReportDurable = validateDurableLifecycleEvidence(lifecycleRepo, v3DurableExpected, v3DurableExpected, {
+    ...v3DurableOptions,
+  });
+  assert.equal(tamperedReportDurable.ok, false, "review report contents must be recomputed against actor and gate hashes");
+  fs.writeFileSync(codeReviewReportPath, cleanCodeReviewReport);
+  fs.writeFileSync(path.join(lifecycleRepo, "tests", "after-review-repair.test"), "test-only repair\n");
+  cp.spawnSync("git", ["add", "tests/after-review-repair.test"], { cwd: lifecycleRepo });
+  cp.spawnSync("git", ["commit", "-qm", "test: repair after review"], { cwd: lifecycleRepo });
+  const testRepairDurable = validateDurableLifecycleEvidence(lifecycleRepo, v3DurableExpected, v3DurableExpected, {
+    ...v3DurableOptions,
+  });
+  assert.ok(testRepairDurable.failures.some((entry) => /Patch Assurance does not bind/.test(entry)));
+  assert.ok(!testRepairDurable.failures.some((entry) => /Code Review predates/.test(entry)),
+    "test-only repair may retain prior Code Review but still requires final-tree Patch Assurance");
+  fs.mkdirSync(path.join(lifecycleRepo, "app"), { recursive: true });
+  fs.writeFileSync(path.join(lifecycleRepo, "app", "repair.php"), "<?php // repaired\n");
+  cp.spawnSync("git", ["add", "app/repair.php"], { cwd: lifecycleRepo });
+  cp.spawnSync("git", ["commit", "-qm", "fix: application repair after review"], { cwd: lifecycleRepo });
+  const appRepairDurable = validateDurableLifecycleEvidence(lifecycleRepo, v3DurableExpected, v3DurableExpected, {
+    ...v3DurableOptions,
+  });
+  assert.ok(appRepairDurable.failures.some((entry) => /Code Review predates/.test(entry)));
+  assert.ok(appRepairDurable.failures.some((entry) => /Patch Assurance does not bind/.test(entry)));
+  const originalV3Gate = JSON.parse(fs.readFileSync(path.join(lifecycleRepo, "docs", "ai", "gates", "v3-story-close.json"), "utf8"));
+  fs.writeFileSync(path.join(lifecycleRepo, "docs", "ai", "gates", "v3-story-close-duplicate.json"), `${JSON.stringify({
+    ...originalV3Gate, gateId: "v3-story-close-duplicate",
+  })}\n`);
+  const duplicateV3Durable = validateDurableLifecycleEvidence(lifecycleRepo, v3DurableExpected, v3DurableExpected, {
+    ...v3DurableOptions,
+  });
+  assert.equal(duplicateV3Durable.ok, false, "v3 requires exactly one deterministic PASS gate per story");
+  assert.ok(duplicateV3Durable.failures.some((entry) => /observed 2/.test(entry)));
 
   const pinnedNode = resolvePinnedClient({ client: process.execPath, clientVersion: process.version });
   assert.equal(pinnedNode.clientPath, fs.realpathSync(process.execPath));
@@ -608,11 +1457,27 @@ try {
       pidField: "actorPid",
     })});`,
   ].join("\n"));
-  const launchOne = cp.spawn(process.execPath, [concurrentHelperPath], { cwd: concurrentDir, stdio: "ignore" });
-  const launchTwo = cp.spawn(process.execPath, [concurrentHelperPath], { cwd: concurrentDir, stdio: "ignore" });
+  const launchOneLog = fs.openSync(path.join(concurrentDir, "launch-one.log"), "w");
+  const launchTwoLog = fs.openSync(path.join(concurrentDir, "launch-two.log"), "w");
+  const launchOne = cp.spawn(process.execPath, [concurrentHelperPath], {
+    cwd: concurrentDir, stdio: ["ignore", launchOneLog, launchOneLog],
+  });
+  const launchTwo = cp.spawn(process.execPath, [concurrentHelperPath], {
+    cwd: concurrentDir, stdio: ["ignore", launchTwoLog, launchTwoLog],
+  });
+  fs.closeSync(launchOneLog);
+  fs.closeSync(launchTwoLog);
   launchOne.unref();
   launchTwo.unref();
-  assert.equal(waitUntil(() => fs.existsSync(concurrentReceiptPath), 7000), true, "one concurrent launch caller must complete");
+  const concurrentCompleted = waitUntil(() => fs.existsSync(concurrentReceiptPath), 30000);
+  const concurrentDiagnostics = ["launch-one.log", "launch-two.log"].map((entry) => {
+    const logPath = path.join(concurrentDir, entry);
+    return fs.existsSync(logPath) ? fs.readFileSync(logPath, "utf8").trim() : "";
+  }).filter(Boolean).join(" | ");
+  assert.equal(concurrentCompleted, true,
+    `one concurrent launch caller must complete within the load-tolerant bound${concurrentDiagnostics ? `: ${concurrentDiagnostics}` : ""}`);
+  assert.equal(waitUntil(() => fs.existsSync(concurrentCounter), 2000), true,
+    "the completed receipt must correspond to the observable launch side effect");
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 300);
   assert.equal(fs.readFileSync(concurrentCounter, "utf8").trim().split(/\n/).length, 1,
     "concurrent recovery must launch the request exactly once");
@@ -691,6 +1556,26 @@ try {
     workflowId: "full-bmad",
     assuranceProfile: "guarded",
   }).ok, true);
+  fs.writeFileSync(path.join(treatmentRepo, "docs/ai/ACEF_ACTIVE_RUN.json"), `${JSON.stringify({
+    schema: "acef.active-run.v2", runId: "candidate-v3-test", repo: "fixture",
+    workflowId: "full-bmad", assuranceProfile: "guarded", assuranceRationale: "fixture risk",
+    fullFlowContract: "four-actor-v3", expectedStories: ["s1", "s2"], scopeUnit: "epic",
+    status: "complete", activeStory: "s2", activePhase: "closeout",
+    ledgerPath: "docs/ai/ACEF_DELIVERY_LEDGER.md",
+  })}\n`);
+  const matchingExpectedStories = evaluateTreatmentState(treatmentRepo, {
+    treatment: "candidate", workflowId: "full-bmad", assuranceProfile: "guarded",
+    actorContractVersion: "four-actor-v3",
+  }, ["s1", "s2"], "candidate-v3-test");
+  assert.equal(matchingExpectedStories.ok, true, matchingExpectedStories.failures.join("; "));
+  assert.match(evaluateTreatmentState(treatmentRepo, {
+    treatment: "candidate", workflowId: "full-bmad", assuranceProfile: "guarded",
+    actorContractVersion: "four-actor-v3",
+  }, ["s1", "s3"], "candidate-v3-test").failures.join("; "), /expectedStories inventory does not match frozen task catalog/);
+  assert.match(evaluateTreatmentState(treatmentRepo, {
+    treatment: "candidate", workflowId: "full-bmad", assuranceProfile: "guarded",
+    actorContractVersion: "four-actor-v3",
+  }, ["s1", "s2"], "different-run").failures.join("; "), /candidate runId is candidate-v3-test/);
 
   const lateWrite = path.join(tmp, "late-grandchild-write.txt");
   const timeoutRequestPath = path.join(tmp, "timeout-request.json");
@@ -844,6 +1729,23 @@ try {
   const finalizedRows = fs.readFileSync(finalizeResults, "utf8").trim().split(/\n/).map(JSON.parse);
   assert.equal(finalizedRows.length, 1, "repeated finalization must append exactly one immutable row");
   assert.equal(finalizedRows[0].result, "PROVISIONAL_PASS");
+  assert.equal(fs.existsSync(finalizedRows[0].judgePacketPath), true,
+    "finalization must create the immutable artifact-only judge packet");
+  assert.equal(sha(fs.readFileSync(finalizedRows[0].judgePacketPath, "utf8")), finalizedRows[0].judgePacketSha256);
+  const finalizedJudgePacket = JSON.parse(fs.readFileSync(finalizedRows[0].judgePacketPath, "utf8"));
+  assert.equal(finalizedJudgePacket.productContract.schema, "acef.execution-assurance-product-contract.v1");
+  assert.equal(finalizedJudgePacket.productContractSha256, finalizedRows[0].productContractSha256);
+  assert.equal(finalizedJudgePacket.inputBundleSha256, finalizedRows[0].judgeInputBundleSha256);
+  assert.equal(finalizedJudgePacket.changedPaths.some((entry) => /^docs\/ai\//.test(entry)), false);
+  assert.equal(fs.existsSync(finalizedRows[0].fullDiffPath), true,
+    "process audit retains the separate full diff while the blind packet receives only product paths");
+  assert.equal(sha(fs.readFileSync(finalizedRows[0].fullDiffPath, "utf8")), finalizedRows[0].fullDiffSha256);
+  assert.equal(finalizedRows[0].productDoneReceiptPath, finalizedRows[0].verificationReceiptPath);
+  assert.equal(sha(fs.readFileSync(finalizedRows[0].productDoneReceiptPath, "utf8")),
+    finalizedRows[0].productDoneReceiptSha256);
+  assert.equal(finalizedRows[0].harnessProductDoneAt,
+    JSON.parse(fs.readFileSync(finalizedRows[0].productDoneReceiptPath, "utf8")).finishedAt);
+  assert.ok(Date.parse(finalizedRows[0].harnessProductDoneAt) <= Date.parse(finalizedRows[0].finishedAt));
   assert.equal(JSON.parse(fs.readFileSync(finalizeCheckpointPath, "utf8")).status, "finalized");
 
   const invalidatedHistory = path.join(tmp, "invalidated-history");
@@ -860,6 +1762,68 @@ try {
   const plan = cp.spawnSync(process.execPath, [cli, "--manifest", manifestPath, "--plan"], { cwd: root, encoding: "utf8" });
   assert.equal(plan.status, 0, plan.stderr);
   assert.equal(JSON.parse(plan.stdout).count, 16);
+  const v3PlanResult = cp.spawnSync(process.execPath, [cli, "--manifest", v3ManifestPath, "--plan"], { cwd: root, encoding: "utf8" });
+  assert.equal(v3PlanResult.status, 0, v3PlanResult.stderr);
+  const parsedV3Plan = JSON.parse(v3PlanResult.stdout);
+  assert.equal(parsedV3Plan.count, 1);
+  assert.equal(parsedV3Plan.attempts[0].actorContractVersion, "four-actor-v3");
+
+  const judgmentFixture = path.join(tmp, "judgment-ingestion");
+  const judgmentResults = path.join(judgmentFixture, "pilot.jsonl");
+  const judgmentLog = path.join(judgmentFixture, "pilot-judgments.jsonl");
+  const verdictDirectory = path.join(judgmentFixture, "pilot-verdicts");
+  const judgmentWorkspace = path.join(judgmentFixture, "workspace");
+  const pendingJudgmentPath = path.join(judgmentFixture, "pending.json");
+  fs.mkdirSync(judgmentFixture, { recursive: true });
+  fs.writeFileSync(judgmentResults, `${JSON.stringify(judgmentAttempt)}\n`);
+  fs.writeFileSync(pendingJudgmentPath, `${JSON.stringify(pendingJudgment, null, 2)}\n`);
+  const ingestArgs = [
+    cli, "--manifest", v3ManifestPath, "--pilot-results", judgmentResults,
+    "--pilot-judgments", judgmentLog, "--pilot-verdict-directory", verdictDirectory,
+    "--pilot-workspace", judgmentWorkspace, "--pilot-ingest-judgment", pendingJudgmentPath,
+  ];
+  const pendingIngest = cp.spawnSync(process.execPath, ingestArgs, { cwd: root, encoding: "utf8" });
+  assert.equal(pendingIngest.status, 0, `${pendingIngest.stdout}\n${pendingIngest.stderr}`);
+  assert.match(pendingIngest.stdout, /INGESTED J-PENDING: PENDING/);
+  assert.equal(readPilotResultRow(judgmentResults, judgmentAttempt.attemptRunId).result, "PROVISIONAL_PASS",
+    "judgment ingestion must not mutate the immutable attempt JSONL");
+  const pendingVerdictPath = path.join(verdictDirectory, "P0-candidate-v3--J-PENDING.json");
+  assert.equal(JSON.parse(fs.readFileSync(pendingVerdictPath, "utf8")).result, "PENDING");
+  const duplicatePendingIngest = cp.spawnSync(process.execPath, ingestArgs, { cwd: root, encoding: "utf8" });
+  assert.equal(duplicatePendingIngest.status, 0, duplicatePendingIngest.stderr);
+  assert.match(duplicatePendingIngest.stdout, /ALREADY_INGESTED/);
+  assert.equal(fs.readFileSync(judgmentLog, "utf8").trim().split(/\n/).length, 1,
+    "idempotent recovery cannot duplicate append-only judgment rows");
+  const passIngestJudgment = passJudgment;
+  const passJudgmentPath = path.join(judgmentFixture, "pass.json");
+  fs.writeFileSync(passJudgmentPath, `${JSON.stringify(passIngestJudgment, null, 2)}\n`);
+  const passIngestArgs = [...ingestArgs.slice(0, -1), passJudgmentPath];
+  const passIngest = cp.spawnSync(process.execPath, passIngestArgs, { cwd: root, encoding: "utf8" });
+  assert.equal(passIngest.status, 0, `${passIngest.stdout}\n${passIngest.stderr}`);
+  assert.match(passIngest.stdout, /INGESTED J-PASS: PASS/);
+  assert.equal(JSON.parse(fs.readFileSync(path.join(verdictDirectory, "P0-candidate-v3--J-PASS.json"), "utf8")).promotionEligible, true);
+  assert.equal(fs.readFileSync(judgmentLog, "utf8").trim().split(/\n/).length, 2,
+    "a new packet may supersede PENDING without mutating prior judgment or verdict artifacts");
+  const terminalFailLog = path.join(judgmentFixture, "terminal-fail-judgments.jsonl");
+  const terminalFailVerdicts = path.join(judgmentFixture, "terminal-fail-verdicts");
+  const failJudgmentPath = path.join(judgmentFixture, "fail.json");
+  const failJudgeBinding = createJudgeBinding("fail-unit", "judge-session-fail-unit", "FAIL", false,
+    "2026-08-02T00:09:30.000Z", "2026-08-02T00:09:01.000Z", "2026-08-02T00:09:59.000Z");
+  fs.writeFileSync(failJudgmentPath, `${JSON.stringify({
+    ...pendingJudgment, judgePacketId: "J-FAIL", verdict: "FAIL", judgeSessionId: "judge-session-fail-unit",
+    judgeReceiptPath: failJudgeBinding.receiptPath, judgeReceiptSha256: failJudgeBinding.receiptSha256,
+    judgedAt: "2026-08-02T00:10:00.000Z",
+  }, null, 2)}\n`);
+  const terminalBaseArgs = [
+    cli, "--manifest", v3ManifestPath, "--pilot-results", judgmentResults,
+    "--pilot-judgments", terminalFailLog, "--pilot-verdict-directory", terminalFailVerdicts,
+    "--pilot-workspace", judgmentWorkspace, "--pilot-ingest-judgment",
+  ];
+  const failIngest = cp.spawnSync(process.execPath, [...terminalBaseArgs, failJudgmentPath], { cwd: root, encoding: "utf8" });
+  assert.equal(failIngest.status, 0, `${failIngest.stdout}\n${failIngest.stderr}`);
+  const afterFail = cp.spawnSync(process.execPath, [...terminalBaseArgs, passJudgmentPath], { cwd: root, encoding: "utf8" });
+  assert.notEqual(afterFail.status, 0, "a terminal FAIL cannot be cherry-picked into a later PASS");
+  assert.match(`${afterFail.stdout}\n${afterFail.stderr}`, /terminal FAIL judgment; only PENDING is supersedable/);
 
   const results = path.join(tmp, "stage0.jsonl");
   const workspace = path.join(tmp, "workspace");

@@ -12,9 +12,9 @@ The important distinction is:
 The second group is not a correctness oracle, but it is not theater. It protects the delivery process around the
 correctness controls.
 
-**Control freeze (v2 round):** until the v2 empirical matrix has run, the enforcement surface accepts bug fixes only —
-no new checks, gates, dosing rules, or lenses. See `method/STABILIZATION_ROADMAP.md` (Control Freeze) and
-`docs/v2-validation-optimization-plan.md`.
+**Archived v2 control freeze:** the freeze in `method/STABILIZATION_ROADMAP.md` and
+`docs/v2-validation-optimization-plan.md` governed the v2 measurement round. That evidence is immutable. Versioned v3
+changes use a new contract/run and must not rewrite v2 results or silently alter existing active runs.
 
 ## Correctness-Producing Controls
 
@@ -133,8 +133,10 @@ They exist to prevent:
 - inconsistent closeout checks across clients.
 
 A gate verdict still does not prove semantic correctness by itself. It proves that the required gate evidence exists and
-was used by the right decision role. For guarded/full-BMAD work, the deciding actor must be a real Process Judge actor;
-the implementation/developer actor cannot certify its own work.
+was used by the right independent roles. Legacy Full contracts require a real Process Judge actor. New
+`four-actor-v3` stories use a deterministic close gate over four independent actors; a Story Process Judge is added only
+for a waiver, evidence conflict, ambiguity, or gate anomaly and cannot override a failed mechanical check. Epic close
+remains independently judged. The implementation/developer actor cannot certify its own work.
 
 ## Why Approval Receipts Exist
 

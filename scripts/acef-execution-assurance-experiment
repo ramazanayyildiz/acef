@@ -12,6 +12,7 @@ const {
   assessTaskShape,
   buildPilotPlan,
   captureGitDiff,
+  derivePilotVerdict,
   environmentPreflight,
   isPilotHarnessPath,
   parseIndependentTrace,
@@ -31,24 +32,35 @@ const root = path.resolve(__dirname, "..");
 const defaultManifest = path.join(root, "docs", "experiments", "execution-assurance-v2", "manifest.json");
 const defaultResults = path.join(root, "docs", "experiments", "execution-assurance-v2", "runs", "stage0.jsonl");
 const defaultPilotResults = path.join(root, "docs", "experiments", "execution-assurance-v2", "runs", "pilot.jsonl");
+const defaultPilotJudgments = path.join(root, "docs", "experiments", "execution-assurance-v2", "runs", "pilot-judgments.jsonl");
+const defaultPilotVerdictDirectory = path.join(root, "docs", "experiments", "execution-assurance-v2", "runs", "pilot-verdicts");
 
 function usage() {
-  console.log(`Usage: acef-execution-assurance-experiment [--manifest <path>] [--results <path>] [--preflight-output <path>] [--pilot-results <path>] [--workspace <path>] [--pilot-workspace <path>] [--plan] [--stage0] [--pilot-preflight] [--pilot-run <attempt-id>] [--pilot-finalize <attempt-id>] [--force] [--keep]
+  console.log(`Usage: acef-execution-assurance-experiment [--manifest <path>] [--results <path>] [--preflight-output <path>] [--pilot-results <path>] [--pilot-judgments <path>] [--pilot-verdict-directory <path>] [--workspace <path>] [--pilot-workspace <path>] [--plan] [--stage0] [--pilot-preflight] [--pilot-run <attempt-id>] [--pilot-finalize <attempt-id>] [--pilot-judge <attempt-run-id>] [--pilot-ingest-judgment <json>] [--force] [--keep]
 
 --plan    Print the preregistered 16-attempt pilot without executing agents.
 --stage0  Execute the six deterministic mechanism/measurement traps in disposable repositories.
 --pilot-preflight  Resolve every task/fixture/commit/dependency before any timed agent run.
 --pilot-run <id>  Execute one preregistered single-task attempt and record a provisional, independently scored row.
 --pilot-finalize <id>  Finalize the latest durable actor checkpoint after an interrupted parent session.
+--pilot-judge <run-id>  Launch the pinned blind Judge from the immutable artifact-only packet and ingest its bound result.
+--pilot-ingest-judgment <json>  Append one bound blind judgment and derive a separate immutable verdict artifact.
 --force   Replace an existing Stage 0 result log. Without this flag results are immutable.`);
 }
 
 function parseArgs(argv) {
+  let preflightOutputExplicit = false;
+  let pilotResultsExplicit = false;
+  let pilotJudgmentsExplicit = false;
+  let pilotVerdictDirectoryExplicit = false;
+  let pilotWorkspaceExplicit = false;
   const opts = {
     manifest: defaultManifest,
     results: defaultResults,
     preflightOutput: path.join(root, "docs", "experiments", "execution-assurance-v2", "pilot-preflight.json"),
     pilotResults: defaultPilotResults,
+    pilotJudgments: defaultPilotJudgments,
+    pilotVerdictDirectory: defaultPilotVerdictDirectory,
     workspace: path.join(os.tmpdir(), "acef-execution-assurance-v2-stage0"),
     pilotWorkspace: path.join(os.tmpdir(), "acef-execution-assurance-v2-pilot"),
     plan: false,
@@ -56,6 +68,8 @@ function parseArgs(argv) {
     pilotPreflight: false,
     pilotRun: "",
     pilotFinalize: "",
+    pilotJudge: "",
+    pilotIngestJudgment: "",
     pilotRetryInvalidated: false,
     force: false,
     keep: false,
@@ -65,22 +79,38 @@ function parseArgs(argv) {
     if (arg === "--help" || arg === "-h") { usage(); process.exit(0); }
     else if (arg === "--manifest") opts.manifest = path.resolve(argv[++index]);
     else if (arg === "--results") opts.results = path.resolve(argv[++index]);
-    else if (arg === "--preflight-output") opts.preflightOutput = path.resolve(argv[++index]);
-    else if (arg === "--pilot-results") opts.pilotResults = path.resolve(argv[++index]);
+    else if (arg === "--preflight-output") { opts.preflightOutput = path.resolve(argv[++index]); preflightOutputExplicit = true; }
+    else if (arg === "--pilot-results") { opts.pilotResults = path.resolve(argv[++index]); pilotResultsExplicit = true; }
+    else if (arg === "--pilot-judgments") { opts.pilotJudgments = path.resolve(argv[++index]); pilotJudgmentsExplicit = true; }
+    else if (arg === "--pilot-verdict-directory") { opts.pilotVerdictDirectory = path.resolve(argv[++index]); pilotVerdictDirectoryExplicit = true; }
     else if (arg === "--workspace") opts.workspace = path.resolve(argv[++index]);
-    else if (arg === "--pilot-workspace") opts.pilotWorkspace = path.resolve(argv[++index]);
+    else if (arg === "--pilot-workspace") { opts.pilotWorkspace = path.resolve(argv[++index]); pilotWorkspaceExplicit = true; }
     else if (arg === "--plan") opts.plan = true;
     else if (arg === "--stage0") opts.stage0 = true;
     else if (arg === "--pilot-preflight") opts.pilotPreflight = true;
     else if (arg === "--pilot-run") opts.pilotRun = argv[++index] || "";
     else if (arg === "--pilot-finalize") opts.pilotFinalize = argv[++index] || "";
+    else if (arg === "--pilot-judge") opts.pilotJudge = argv[++index] || "";
+    else if (arg === "--pilot-ingest-judgment") {
+      const judgmentPath = argv[++index] || "";
+      opts.pilotIngestJudgment = judgmentPath ? path.resolve(judgmentPath) : "";
+    }
     else if (arg === "--pilot-retry-invalidated") opts.pilotRetryInvalidated = true;
     else if (arg === "--force") opts.force = true;
     else if (arg === "--keep") opts.keep = true;
     else throw new Error(`unknown argument: ${arg}`);
   }
-  if ([opts.plan, opts.stage0, opts.pilotPreflight, Boolean(opts.pilotRun), Boolean(opts.pilotFinalize)].filter(Boolean).length !== 1) {
-    throw new Error("select exactly one of --plan, --stage0, --pilot-preflight, --pilot-run, or --pilot-finalize");
+  if ([opts.plan, opts.stage0, opts.pilotPreflight, Boolean(opts.pilotRun), Boolean(opts.pilotFinalize), Boolean(opts.pilotJudge), Boolean(opts.pilotIngestJudgment)].filter(Boolean).length !== 1) {
+    throw new Error("select exactly one of --plan, --stage0, --pilot-preflight, --pilot-run, --pilot-finalize, --pilot-judge, or --pilot-ingest-judgment");
+  }
+  if (opts.manifest !== defaultManifest) {
+    const experimentDirectory = path.dirname(opts.manifest);
+    const workspaceToken = path.basename(experimentDirectory).replace(/[^A-Za-z0-9._-]/g, "-");
+    if (!preflightOutputExplicit) opts.preflightOutput = path.join(experimentDirectory, "pilot-preflight.json");
+    if (!pilotResultsExplicit) opts.pilotResults = path.join(experimentDirectory, "runs", "pilot.jsonl");
+    if (!pilotJudgmentsExplicit) opts.pilotJudgments = path.join(experimentDirectory, "runs", "pilot-judgments.jsonl");
+    if (!pilotVerdictDirectoryExplicit) opts.pilotVerdictDirectory = path.join(experimentDirectory, "runs", "pilot-verdicts");
+    if (!pilotWorkspaceExplicit) opts.pilotWorkspace = path.join(os.tmpdir(), `acef-${workspaceToken}-pilot`);
   }
   return opts;
 }
@@ -429,19 +459,36 @@ function pilotPrompt(attempt, resolved) {
 }
 
 function epicPilotPrompt(attempt, resolved) {
+  const actorContractVersion = attempt.actorContractVersion || "six-actor-v2";
+  const fourActorV3 = actorContractVersion === "four-actor-v3";
   const treatmentInstruction = attempt.treatment === "legacy"
     ? "Use the installed legacy ACEF full-bmad lane exactly as that version documents it. Apply the risk-specific safeguards its own full-BMAD contract requires for auth, billing, and webhook stories. Do not select or synthesize the separate legacy guarded lane, candidate execution/assurance axes, or a hybrid active state."
-    : "Use ACEF Full (BMAD v2) with Guarded assurance exactly as the installed candidate version documents it. Guarded is an assurance overlay, not a second lifecycle.";
+    : fourActorV3
+      ? "Use ACEF Full with Guarded assurance and fullFlowContract=four-actor-v3 exactly as installed. Guarded is an additive assurance overlay, not another lifecycle."
+      : "Use ACEF Full (BMAD v2) with Guarded assurance exactly as the installed candidate version documents it. Guarded is an assurance overlay, not a second lifecycle.";
   const stories = resolved.task.stories.map((story, index) => [
     `${index + 1}. ${story.id}: ${story.prompt}`,
     `   Depends on: ${(story.dependsOn || []).join(", ") || "none"}`,
     `   Allowed paths: ${story.allowedPaths.join(", ")}`,
     `   Focused verification: ${story.verify.join(" ")}`,
   ].join("\n")).join("\n");
-  const actorContract = lifecycleActorContract(resolved).map((entry) =>
+  const actorContract = lifecycleActorContract(resolved, actorContractVersion).map((entry) =>
     `- ${entry.taskName}: scope=${entry.scope} control=${entry.control} actor=${entry.taskName} persona=${entry.persona}`
   ).join("\n");
-  const recoveryInstruction = attempt.treatment === "candidate"
+  const recoveryInstruction = fourActorV3
+    ? [
+      "Initial ATDD maps every acceptance criterion but needs genuine red only on the critical vertical path. Freeze an explicit non-protected test envelope before ATDD so regression coverage can be completed before Patch Assurance.",
+      "After development, spawn Code Review and Patch Assurance without waiting for either result first, then wait for both. Code Review owns correctness, security, conformance, scope, and unresolved-finding severity. Patch Assurance is report-only and combines final-tree patch verification with test-quality and focused runner proof; it must not edit production or tests.",
+      "Every v3 actor, review report, repair receipt, Judge decision, and deterministic gate must bind the active runId and fullFlowContract=four-actor-v3. Each Code Review and Patch Assurance actor must write its own typed acef.review-report.v3 JSON under docs/ai/reports. Its FINAL_ANSWER must include REVIEW_REPORT_PATH=<relative path>, REVIEW_REPORT_SHA256=<sha256>, REVIEW_REPORT_BASE64=<canonical base64 of exact report bytes>, and REVIEW_INPUT_TREE=<git tree>. Only after that answer may the conductor create the typed actor record using acef-state actor --artifact-path <report>; the completion blob/hash/tree, report, actor, and gate must bind exactly.",
+      `The active runId must be exactly ${attempt.id}.`,
+      `The active run expectedStories inventory must equal this frozen ordered catalog exactly: ${JSON.stringify(resolved.task.stories.map((story) => story.id))}. Do not add, omit, rename, or reorder stories; the epic gate must close every listed story on the same runId.`,
+      "If either reviewer returns REVISE, reactivate the original developer with exactly one bounded followup_task for that global story repair cycle and the exact findings; do not let the conductor or reviewer patch. The original developer must create a typed acef.developer-repair.v3 receipt and return a fresh FINAL_ANSWER containing REPAIR_CYCLE=<n>, REPAIR_RECEIPT_PATH=<path>, REPAIR_RECEIPT_SHA256=<sha256>, and ACTOR_RESULT=PASS before any retry reviewer starts. Spawn only each affected independent delta reviewer as <base-task-name>_retry1 or _retry2, where the suffix is that same global story repair cycle, require its final answer to include the matching REPAIR_CYCLE=<n>, and give all reviewers in one cycle the receipt postTree. At most two repair cycles are allowed for a story; a third cycle is REPLAN/SPLIT and quarantine.",
+      "Close each story with exactly one deterministic PASS gate and one formal story-close evidence package. Use acef-state gate with the run, contract, ATDD, development, code-review, patch-assurance, red/green evidence, report hashes, review-cycle, repair receipt, and unresolved findings. The validator computes the verdict; no actor may self-declare it. Introduce the gate, its four accepted actor records, two exact reviewer reports, every cited evidence manifest/raw artifact, and any bound repair/Judge decision together in exactly one control-only commit; no other path may enter that commit and all package bytes must remain unchanged at HEAD.",
+      "Red evidence must come from a clean committed test-only tree. Green evidence must begin and end with no dirty application/test paths. After repairs, Patch Assurance always binds the final application/test tree. Earlier Code Review may remain only when every later non-control change is test-only; any production change requires affected-only delta Code Review.",
+      "A story Process Judge is conditional, not routine. Spawn acef_<story>_process_judge only for ambiguity, waiver, evidence-conflict, or gate-anomaly; it must write a typed acef.process-judge-decision.v3 artifact and the gate must bind its exact path/hash/verdict. Never use it to override a mechanical failure. The separate epic Process Judge remains mandatory.",
+      "The frozen budget is 17 base actors and 21 total invocations including every Developer followup and infrastructure retry, two repair cycles per story, one infrastructure retry per logical invocation and three total, 36M aggregate conductor-plus-child input tokens, 300 aggregate tool calls, 9,000s target and 10,800s hard active time, and 1,200s/25% harness-wait. An infrastructure retry is allowed only after the original invocation has no FINAL_ANSWER and a terminal acef.infrastructure-failure.v1 event binds its task/session, failure interval, identical pre/post tree, and empty writePaths; audit the failed child transcript for zero writes, wait for terminal failure, then name the non-overlapping retry <logical-task-name>_infra_retry1. Never retry an infrastructure retry. If a hard budget cannot be met, stop with REPLAN/SPLIT or FAIL rather than expanding the actor graph.",
+    ].join(" ")
+    : attempt.treatment === "candidate"
     ? [
       "Initial ATDD is sufficient when it maps every acceptance criterion and produces one genuine red test on the critical vertical path. Criteria that are regression-only need not all be red before development; expand them before test-review. Do not reject a valid critical-path red merely because protected or frozen-scope tests do not cover every regression case.",
       "If an ATDD actor still returns REVISE, do not stop or retry it. Spawn exactly one fresh report-only <atdd-task-name>_adjudication1 actor whose first tuple is scope=<story> control=atdd-adjudication actor=<task-name> persona=test-reviewer and give it only the frozen story contract, ATDD report, protected-path rules, and REVISE findings. Persist that exact typed actor phase/role. It must end ACTOR_RESULT=PASS plus ATDD_ADJUDICATION=OVERRULE or ATDD_ADJUDICATION=UPHOLD.",
@@ -449,19 +496,27 @@ function epicPilotPrompt(attempt, resolved) {
       "If a story becomes REPLAN/SPLIT, quarantine it and every transitive dependent story, but continue every pending story with no dependency edge to the quarantined set and no shared safety invariant. The epic product gate still fails while any story is quarantined.",
     ].join(" ")
     : "Follow the installed legacy treatment's own ATDD and retry rules. Do not synthesize candidate adjudication, correction, quarantine, or lifecycle-budget semantics.";
-  const closeoutInstruction = attempt.treatment === "candidate"
+  const closeoutInstruction = fourActorV3
+    ? "Run focused verification inside each story. The conductor runs the provided broad integration verification exactly once at epic close; the harness then runs its independent oracle verification separately, and measurement must not count that harness oracle as a second lifecycle suite. Then use exactly one independent epic Process Judge. Trace, statistics, coverage, documentation, and closeout views must reuse the story-close packages and must not create another evidence-writing chain."
+    : attempt.treatment === "candidate"
     ? "The mandatory closeout inventory is frozen to the listed contract rows before execution. Use focused verification during stories and run the provided integration verification once at final closeout unless that command itself fails once. Trace, statistics, coverage analysis, test quality, documentation, and closeout review are evidence views only: do not spawn actors, create mandatory work items, enlarge the denominator, or open another closeout chain for them."
     : "Use the installed legacy treatment's closeout workflow exactly. Additional legacy-required actors or evidence work are permitted and measured; do not apply the candidate's frozen-inventory/non-recursive policy to this arm.";
   return [
     "Complete one controlled multi-story epic in this disposable clone. The measured unit is the complete original user outcome, not an individual story.",
     treatmentInstruction,
-    "Load and follow the repo-local ACEF skill. Act as conductor and use fresh independent actors/sessions for every role the installed workflow requires. Preserve actor separation; do not self-approve.",
+    fourActorV3
+      ? "Load and follow the repo-local ACEF skill. This P0 starts from a frozen epic/story contract: run readiness and reuse checks as deterministic conductor gates, not extra persona workers. The actor rows listed below are the exhaustive base lifecycle inventory. Preserve actor separation; do not self-approve."
+      : "Load and follow the repo-local ACEF skill. Act as conductor and use fresh independent actors/sessions for every role the installed workflow requires. Preserve actor separation; do not self-approve.",
     "For each contract row below, call spawn_agent exactly once using the exact task_name and fork_turns=none before accepting that phase. Give the fresh actor a bounded artifact-only message: put the listed scope/control/actor/persona tuple first, then only the exact files/commit/question it needs. Require its final line to be ACTOR_RESULT=PASS or ACTOR_RESULT=REVISE, wait for that actor's FINAL_ANSWER, and persist a typed actor record whose actorInstanceId exactly equals task_name. Do not combine rows in one actor.",
     recoveryInstruction,
-    attempt.treatment === "candidate"
+    fourActorV3
+      ? "ATDD and development are single mandatory actor identities. Code Review and Patch Assurance may each use at most two fresh, affected-only delta retry actors after a developer repair; the 21-invocation epic cap still binds. Story Process Judge is optional only for the four named triggers. The epic Process Judge cannot retry. Never replay a complete lifecycle."
+      : attempt.treatment === "candidate"
       ? "Development and test-review cannot be retried. Code-review, verify-patch, and story process-judge may each use at most one retry only after ACTOR_RESULT=REVISE; its exact task_name must be <base>_retry1 and it must finish ACTOR_RESULT=PASS. The epic Process Judge cannot retry. Never replay a full lifecycle vector."
       : "The exact named rows below remain the minimum independently observable lifecycle contract; legacy-required auxiliary work remains allowed and measured.",
-    "Each story Process Judge must persist a typed PASS gate for that story. After the one final integration verification, the separate epic Process Judge must persist a typed PASS gate with scope=epic and must not be any story actor.",
+    fourActorV3
+      ? "Each story must have a deterministic typed PASS gate computed from its four actor records and final-tree evidence. After the one final integration verification, the separate epic Process Judge must persist a typed PASS gate with scope=epic and must not be any story actor."
+      : "Each story Process Judge must persist a typed PASS gate for that story. After the one final integration verification, the separate epic Process Judge must persist a typed PASS gate with scope=epic and must not be any story actor.",
     "Required independently observable actor contract:",
     actorContract,
     "If readiness requires splitting or replanning, record and perform it, but the outcome clock continues until the complete epic is product-done.",
@@ -483,8 +538,13 @@ function normalizedActorToken(value) {
   return String(value || "").toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
 }
 
-function lifecycleActorContract(resolved) {
-  const phases = [
+function lifecycleActorContract(resolved, version = "six-actor-v2") {
+  const phases = version === "four-actor-v3" ? [
+    ["atdd", "test-author", false],
+    ["development", "developer", false],
+    ["code-review", "code-reviewer", true],
+    ["patch-assurance", "patch-assurance-reviewer", true],
+  ] : [
     ["atdd", "test-author", false],
     ["development", "developer", false],
     ["code-review", "code-reviewer", true],
@@ -531,7 +591,9 @@ function parseCollaborationEvidence(rawText, sessionText, expectedContract, expe
     } catch {}
   }
   const calls = new Map();
+  const followups = [];
   const started = new Map();
+  const terminalInfrastructureFailures = new Map();
   const completedAuthors = new Map();
   let sessionMeta = null;
   for (const line of String(sessionText || "").split(/\r?\n/).filter(Boolean)) {
@@ -548,26 +610,50 @@ function parseCollaborationEvidence(rawText, sessionText, expectedContract, expe
         forkTurns: args.fork_turns,
         message: args.message || "",
         callId: payload.call_id,
+        spawnedAt: event.timestamp || null,
+      });
+    }
+    if (event.type === "response_item" && payload.type === "function_call"
+      && payload.namespace === "collaboration" && payload.name === "followup_task") {
+      let args = {};
+      try { args = JSON.parse(payload.arguments || "{}"); } catch {}
+      followups.push({
+        target: args.target || "",
+        callId: payload.call_id,
+        calledAt: event.timestamp || null,
       });
     }
     if (event.type === "event_msg" && payload.type === "sub_agent_activity" && payload.kind === "started") {
       started.set(payload.event_id, payload.agent_thread_id || "");
+    }
+    if (event.type === "event_msg" && payload.type === "sub_agent_activity"
+      && payload.kind === "failed" && payload.infrastructureFailure) {
+      terminalInfrastructureFailures.set(payload.event_id, {
+        eventTimestamp: event.timestamp || null,
+        receiverThreadId: payload.agent_thread_id || "",
+        receipt: payload.infrastructureFailure,
+      });
     }
     if (event.type === "response_item" && payload.type === "agent_message" && payload.author) {
       const content = Array.isArray(payload.content)
         ? payload.content.map((entry) => entry.text || entry.output_text || "").join("\n")
         : String(payload.text || "");
       const list = completedAuthors.get(payload.author) || [];
-      list.push(content);
+      list.push({ content, deliveredAt: event.timestamp || null });
       completedAuthors.set(payload.author, list);
     }
   }
-  const dispatches = [...calls.values()].map((call) => ({
-    ...call,
-    receiverThreadId: started.get(call.callId) || "",
-    parentFinalText: [...(completedAuthors.get(`/root/${call.taskName}`) || []), ...(completedAuthors.get(call.taskName) || [])]
-      .find((content) => /Message Type:\s*FINAL_ANSWER/i.test(content) && new RegExp(`Sender:\\s*\\/root\\/${call.taskName}(?:\\s|$)`).test(content)) || "",
-  }));
+  const dispatches = [...calls.values()].map((call) => {
+    const delivered = [...(completedAuthors.get(`/root/${call.taskName}`) || []), ...(completedAuthors.get(call.taskName) || [])]
+      .find((entry) => /Message Type:\s*FINAL_ANSWER/i.test(entry.content)
+        && new RegExp(`Sender:\\s*\\/root\\/${call.taskName}(?:\\s|$)`).test(entry.content));
+    return {
+      ...call,
+      receiverThreadId: started.get(call.callId) || "",
+      parentFinalText: delivered?.content || "",
+      finalDeliveredAt: delivered?.deliveredAt || null,
+    };
+  });
   const failures = [];
   if (!sessionMeta) failures.push("session metadata missing");
   else {
@@ -582,19 +668,72 @@ function parseCollaborationEvidence(rawText, sessionText, expectedContract, expe
   const observedContract = [];
   const correctionBindings = [];
   const knownTaskNames = new Set();
+  const infrastructureFailureReceipts = [];
+  const boundFollowupCallIds = new Set();
   const legacyPolicy = expectedSession.legacyPolicy === true;
+  const fourActorV3 = expectedSession.actorContractVersion === "four-actor-v3";
+  const maximumRetryOrdinal = fourActorV3 ? 2 : 1;
+  const selectPhysicalInvocation = (logicalTaskName) => {
+    const originals = dispatches.filter((entry) => entry.taskName === logicalTaskName);
+    if (!fourActorV3) return originals;
+    const infrastructure = dispatches.map((entry) => {
+      const match = entry.taskName.match(new RegExp(`^${logicalTaskName}_infra_retry([1-9]\\d*)$`));
+      return match ? { ...entry, infrastructureRetryOrdinal: Number(match[1]), logicalTaskName } : null;
+    }).filter(Boolean);
+    knownTaskNames.add(logicalTaskName);
+    for (const entry of infrastructure) knownTaskNames.add(entry.taskName);
+    if (originals.length !== 1) failures.push(`${logicalTaskName}: expected one original invocation, observed ${originals.length}`);
+    if (infrastructure.length > 1 || infrastructure.some((entry) => entry.infrastructureRetryOrdinal !== 1)) {
+      failures.push(`${logicalTaskName}: infrastructure retry allows only _infra_retry1`);
+    }
+    if (infrastructure.length && originals.some((entry) => entry.parentFinalText)) {
+      failures.push(`${logicalTaskName}: infrastructure retry requires original invocation without FINAL_ANSWER`);
+    }
+    if (infrastructure.length && originals.length === 1) {
+      const original = originals[0];
+      const retry = infrastructure[0];
+      const terminal = terminalInfrastructureFailures.get(original.callId);
+      const receipt = terminal?.receipt;
+      const originalStartedAt = Date.parse(original.spawnedAt || "");
+      const failureStartedAt = Date.parse(receipt?.startedAt || "");
+      const failureFinishedAt = Date.parse(receipt?.finishedAt || "");
+      const failureEventAt = Date.parse(terminal?.eventTimestamp || "");
+      const retryStartedAt = Date.parse(retry.spawnedAt || "");
+      const validReceipt = receipt?.schema === "acef.infrastructure-failure.v1"
+        && receipt.terminal === true && receipt.taskName === logicalTaskName
+        && receipt.receiverThreadId === original.receiverThreadId
+        && terminal?.receiverThreadId === original.receiverThreadId
+        && /^[a-f0-9]{40,64}$/.test(receipt.preTree || "") && receipt.postTree === receipt.preTree
+        && Array.isArray(receipt.writePaths) && receipt.writePaths.length === 0
+        && typeof receipt.reasonCode === "string" && receipt.reasonCode.length > 0
+        && [originalStartedAt, failureStartedAt, failureFinishedAt, failureEventAt, retryStartedAt].every(Number.isFinite)
+        && failureStartedAt >= originalStartedAt && failureFinishedAt >= failureStartedAt
+        && failureEventAt >= failureFinishedAt && retryStartedAt > failureEventAt;
+      if (!validReceipt) {
+        failures.push(`${logicalTaskName}: infrastructure retry requires a typed terminal failure receipt, zero-write tree, and non-overlapping retry ordering`);
+      } else {
+        infrastructureFailureReceipts.push({
+          logicalTaskName, originalTaskName: original.taskName, retryTaskName: retry.taskName,
+          originalCallId: original.callId, retryCallId: retry.callId, ...receipt,
+        });
+      }
+    }
+    return infrastructure.length ? infrastructure.slice(0, 1) : originals;
+  };
   for (const expected of expectedContract) {
-    const baseMatches = dispatches.filter((entry) => entry.taskName === expected.taskName);
-    const retryMatches = dispatches.map((entry) => {
-      const match = entry.taskName.match(new RegExp(`^${expected.taskName}_retry([1-9]\\d*)$`));
-      return match ? { ...entry, retryOrdinal: Number(match[1]) } : null;
-    }).filter(Boolean).sort((left, right) => left.retryOrdinal - right.retryOrdinal);
+    const baseMatches = selectPhysicalInvocation(expected.taskName);
+    const retryLogicalNames = [...new Set(dispatches.map((entry) => entry.taskName.replace(/_infra_retry[1-9]\d*$/, ""))
+      .filter((taskName) => new RegExp(`^${expected.taskName}_retry[1-9]\\d*$`).test(taskName)))];
+    const retryMatches = retryLogicalNames.flatMap((logicalTaskName) => {
+      const retryOrdinal = Number(logicalTaskName.match(/_retry([1-9]\d*)$/)?.[1] || 0);
+      return selectPhysicalInvocation(logicalTaskName).map((entry) => ({ ...entry, retryOrdinal, logicalTaskName }));
+    }).sort((left, right) => left.retryOrdinal - right.retryOrdinal);
     knownTaskNames.add(expected.taskName);
     for (const retry of retryMatches) knownTaskNames.add(retry.taskName);
-    if (baseMatches.length !== 1) failures.push(`${expected.taskName}: expected one base spawn, observed ${baseMatches.length}`);
+    if (baseMatches.length !== 1 && !fourActorV3) failures.push(`${expected.taskName}: expected one base spawn, observed ${baseMatches.length}`);
     if (!legacyPolicy && retryMatches.length && !expected.retryable) failures.push(`${expected.taskName}: retries are not allowed for ${expected.control}`);
-    if (!legacyPolicy && retryMatches.length > 1) failures.push(`${expected.taskName}: circuit breaker allows at most one retry`);
-    if (!legacyPolicy && retryMatches.some((entry, index) => entry.retryOrdinal !== index + 1)) failures.push(`${expected.taskName}: retry ordinals must be contiguous from 1`);
+    if (!legacyPolicy && retryMatches.length > maximumRetryOrdinal) failures.push(`${expected.taskName}: circuit breaker allows at most ${maximumRetryOrdinal} retries`);
+    if (!legacyPolicy && !fourActorV3 && retryMatches.some((entry, index) => entry.retryOrdinal !== index + 1)) failures.push(`${expected.taskName}: retry ordinals must be contiguous from 1`);
     const attempts = [...baseMatches, ...retryMatches];
     relevant.push(...attempts);
     observedContract.push(...attempts.map((entry) => ({ ...expected, taskName: entry.taskName, retryOrdinal: entry.retryOrdinal || 0 })));
@@ -602,6 +741,10 @@ function parseCollaborationEvidence(rawText, sessionText, expectedContract, expe
       if (!entry.receiverThreadId) failures.push(`${entry.taskName}: missing receiver thread id`);
       if (entry.forkTurns !== "none") failures.push(`${entry.taskName}: fork_turns must be none`);
       if (!entry.parentFinalText) failures.push(`${entry.taskName}: missing parent-delivered FINAL_ANSWER`);
+      if (fourActorV3 && entry.retryOrdinal
+        && !new RegExp(`\\bREPAIR_CYCLE=${entry.retryOrdinal}\\b`).test(entry.parentFinalText)) {
+        failures.push(`${entry.taskName}: v3 retry must bind REPAIR_CYCLE=${entry.retryOrdinal}`);
+      }
     }
     if (expected.control === "atdd" && baseMatches.length === 1 && legacyPolicy) {
       const accepted = attempts.at(-1);
@@ -609,7 +752,7 @@ function parseCollaborationEvidence(rawText, sessionText, expectedContract, expe
         failures.push(`${accepted.taskName}: legacy ATDD result is not PASS`);
       }
       acceptedActors.push({ ...expected, taskName: accepted.taskName, receiverThreadId: accepted.receiverThreadId });
-    } else if (expected.control === "atdd" && baseMatches.length === 1) {
+    } else if (expected.control === "atdd" && baseMatches.length === 1 && !fourActorV3) {
       const base = baseMatches[0];
       const basePassed = /\bACTOR_RESULT=PASS\b/.test(base.parentFinalText);
       const baseRevised = /\bACTOR_RESULT=REVISE\b/.test(base.parentFinalText);
@@ -680,6 +823,30 @@ function parseCollaborationEvidence(rawText, sessionText, expectedContract, expe
       acceptedActors.push({ ...expected, taskName: accepted.taskName, receiverThreadId: accepted.receiverThreadId });
     }
   }
+  const conditionalJudges = [];
+  if (fourActorV3) {
+    for (const scope of [...new Set(expectedContract.map((entry) => entry.scope).filter((entry) => entry !== "epic"))]) {
+      const taskName = `acef_${normalizedActorToken(scope)}_process_judge`;
+      const matches = dispatches.filter((entry) => entry.taskName === taskName);
+      knownTaskNames.add(taskName);
+      if (matches.length > 1) failures.push(`${taskName}: conditional story judge may spawn at most once`);
+      if (matches.length === 1) {
+        const entry = matches[0];
+        relevant.push(entry);
+        if (!entry.receiverThreadId) failures.push(`${taskName}: missing receiver thread id`);
+        if (entry.forkTurns !== "none") failures.push(`${taskName}: fork_turns must be none`);
+        if (!entry.parentFinalText) failures.push(`${taskName}: missing parent-delivered FINAL_ANSWER`);
+        const trigger = entry.parentFinalText.match(/\bJUDGE_TRIGGER=(AMBIGUITY|WAIVER|EVIDENCE[_-]CONFLICT|GATE[_-]ANOMALY)\b/i)?.[1] || "";
+        if (!/\bACTOR_RESULT=PASS\b/.test(entry.parentFinalText) || !trigger) {
+          failures.push(`${taskName}: conditional judge must PASS with an allowed JUDGE_TRIGGER`);
+        }
+        const actor = { scope, control: "process-judge", persona: "process-judge", retryable: false, taskName };
+        observedContract.push(actor);
+        acceptedActors.push({ ...actor, receiverThreadId: entry.receiverThreadId });
+        conditionalJudges.push({ taskName, scope, trigger: trigger.toLowerCase().replace(/_/g, "-") });
+      }
+    }
+  }
   const unexpected = dispatches.filter((entry) => !knownTaskNames.has(entry.taskName));
   if (unexpected.length && expectedSession.allowUnexpectedActors !== true) {
     failures.push(`unexpected lifecycle/closeout actors: ${unexpected.map((entry) => entry.taskName).join(", ")}`);
@@ -696,8 +863,151 @@ function parseCollaborationEvidence(rawText, sessionText, expectedContract, expe
     }
   }
   const allDispatches = [...relevant, ...(expectedSession.allowUnexpectedActors === true ? unexpected : [])];
+  const infrastructureRetryCount = dispatches.filter((entry) => /_infra_retry[1-9]\d*$/.test(entry.taskName)).length;
   const receiverIds = allDispatches.map((entry) => entry.receiverThreadId).filter(Boolean);
   if (new Set(receiverIds).size !== receiverIds.length) failures.push("lifecycle actors do not have distinct receiver thread ids");
+  const repairCyclesByScope = {};
+  const storyDeliverySeconds = {};
+  const developerReactivations = [];
+  const initialReviewPairs = [];
+  let lifecycleIntegration = null;
+  let storyTimingComplete = true;
+  if (fourActorV3) {
+    for (const scope of [...new Set(expectedContract.map((entry) => entry.scope).filter((entry) => entry !== "epic"))]) {
+      const repairEntries = observedContract.filter((entry) => entry.scope === scope
+        && ["code-review", "patch-assurance"].includes(entry.control) && Number(entry.retryOrdinal || 0) > 0);
+      const ordinals = [...new Set(repairEntries.map((entry) => Number(entry.retryOrdinal)))].sort((left, right) => left - right);
+      repairCyclesByScope[scope] = ordinals.length;
+      if (ordinals.some((ordinal, index) => ordinal !== index + 1)) failures.push(`${scope}: repair-cycle ordinals must be contiguous from 1`);
+      if (ordinals.length > 2) failures.push(`${scope}: third repair cycle requires REPLAN/SPLIT`);
+      const developerLogicalTaskName = expectedContract.find((entry) => entry.scope === scope && entry.control === "development")?.taskName;
+      const developerTaskName = relevant.find((entry) => entry.taskName === developerLogicalTaskName
+        || entry.logicalTaskName === developerLogicalTaskName)?.taskName;
+      for (const ordinal of ordinals) {
+        const cycleEntries = repairEntries.filter((entry) => entry.retryOrdinal === ordinal);
+        const retryDispatches = cycleEntries.map((entry) => relevant.find((dispatch) => dispatch.taskName === entry.taskName)).filter(Boolean);
+        const priorDispatches = cycleEntries.map((entry) => {
+          const candidates = observedContract.filter((candidate) => candidate.scope === scope
+            && candidate.control === entry.control && Number(candidate.retryOrdinal || 0) < ordinal);
+          const prior = candidates.sort((left, right) => Number(right.retryOrdinal || 0) - Number(left.retryOrdinal || 0))[0];
+          return prior ? relevant.find((dispatch) => dispatch.taskName === prior.taskName) : null;
+        }).filter(Boolean);
+        const priorFinishes = priorDispatches.map((entry) => Date.parse(entry.finalDeliveredAt || ""));
+        const retryStarts = retryDispatches.map((entry) => Date.parse(entry.spawnedAt || ""));
+        const orderedTimestamps = priorFinishes.length === cycleEntries.length && retryStarts.length === cycleEntries.length
+          && priorFinishes.every(Number.isFinite) && retryStarts.every(Number.isFinite);
+        if (priorDispatches.some((entry) => !/\bACTOR_RESULT=REVISE\b/.test(entry.parentFinalText))) {
+          failures.push(`${scope}: repair cycle ${ordinal} requires prior affected reviewer REVISE`);
+        }
+        if (!developerTaskName || !orderedTimestamps) {
+          failures.push(`${scope}: repair cycle ${ordinal} cannot prove developer reactivation ordering`);
+          continue;
+        }
+        const afterReviewerAt = Math.max(...priorFinishes);
+        const beforeRetryAt = Math.min(...retryStarts);
+        const matchingFollowups = followups.filter((entry) => {
+          const target = String(entry.target || "").split("/").filter(Boolean).at(-1) || "";
+          const calledAt = Date.parse(entry.calledAt || "");
+          return target === developerTaskName && Number.isFinite(calledAt)
+            && calledAt > afterReviewerAt && calledAt < beforeRetryAt;
+        });
+        if (matchingFollowups.length !== 1) {
+          failures.push(`${scope}: repair cycle ${ordinal} requires exactly one followup_task to original developer`);
+          continue;
+        }
+        boundFollowupCallIds.add(matchingFollowups[0].callId);
+        const followupAt = Date.parse(matchingFollowups[0].calledAt);
+        const repairedFinals = [...(completedAuthors.get(`/root/${developerTaskName}`) || []), ...(completedAuthors.get(developerTaskName) || [])]
+          .filter((entry) => {
+            const deliveredAt = Date.parse(entry.deliveredAt || "");
+            return Number.isFinite(deliveredAt) && deliveredAt > followupAt && deliveredAt < beforeRetryAt
+              && /Message Type:\s*FINAL_ANSWER/i.test(entry.content)
+              && new RegExp(`\\bREPAIR_CYCLE=${ordinal}\\b`).test(entry.content)
+              && /\bACTOR_RESULT=PASS\b/.test(entry.content);
+          });
+        if (repairedFinals.length !== 1) {
+          failures.push(`${scope}: repair cycle ${ordinal} requires one repaired Developer FINAL_ANSWER before reviewer retries`);
+          continue;
+        }
+        const repairReceiptPath = repairedFinals[0].content.match(/^REPAIR_RECEIPT_PATH=(.+)$/m)?.[1]?.trim() || "";
+        const repairReceiptSha256 = repairedFinals[0].content.match(/^REPAIR_RECEIPT_SHA256=([a-f0-9]{64})$/m)?.[1] || "";
+        if (!/^docs\/ai\/repairs\/[^/]+\.json$/.test(repairReceiptPath) || !repairReceiptSha256) {
+          failures.push(`${scope}: repair cycle ${ordinal} Developer FINAL_ANSWER lacks a typed repair receipt binding`);
+          continue;
+        }
+        developerReactivations.push({
+          scope,
+          repairCycle: ordinal,
+          developerTaskName,
+          developerSessionId: relevant.find((entry) => entry.taskName === developerTaskName)?.receiverThreadId || null,
+          followupCallId: matchingFollowups[0].callId,
+          calledAt: matchingFollowups[0].calledAt,
+          completedAt: repairedFinals[0].deliveredAt,
+          repairedFinalSha256: sha256(repairedFinals[0].content),
+          repairReceiptPath,
+          repairReceiptSha256,
+        });
+      }
+      for (let index = 1; index < ordinals.length; index += 1) {
+        const priorTasks = new Set(repairEntries.filter((entry) => entry.retryOrdinal === ordinals[index - 1]).map((entry) => entry.taskName));
+        const nextTasks = new Set(repairEntries.filter((entry) => entry.retryOrdinal === ordinals[index]).map((entry) => entry.taskName));
+        const priorFinishes = relevant.filter((entry) => priorTasks.has(entry.taskName))
+          .map((entry) => Date.parse(entry.finalDeliveredAt || "")).filter(Number.isFinite);
+        const nextStarts = relevant.filter((entry) => nextTasks.has(entry.taskName))
+          .map((entry) => Date.parse(entry.spawnedAt || "")).filter(Number.isFinite);
+        if (priorFinishes.length && nextStarts.length && Math.max(...priorFinishes) > Math.min(...nextStarts)) {
+          failures.push(`${scope}: repair cycles ${ordinals[index - 1]} and ${ordinals[index]} overlap`);
+        }
+      }
+      const initialReviewDispatches = ["code-review", "patch-assurance"].map((control) => {
+        const taskName = expectedContract.find((entry) => entry.scope === scope && entry.control === control)?.taskName;
+        return relevant.find((entry) => entry.taskName === taskName || entry.logicalTaskName === taskName);
+      });
+      const reviewStarts = initialReviewDispatches.map((entry) => Date.parse(entry?.spawnedAt || ""));
+      const reviewFinishes = initialReviewDispatches.map((entry) => Date.parse(entry?.finalDeliveredAt || ""));
+      const concurrent = initialReviewDispatches.every(Boolean) && reviewStarts.every(Number.isFinite)
+        && reviewFinishes.every(Number.isFinite) && Math.max(...reviewStarts) < Math.min(...reviewFinishes);
+      if (!concurrent) failures.push(`${scope}: initial Code Review and Patch Assurance were not dispatched concurrently before either result`);
+      initialReviewPairs.push({
+        scope,
+        concurrent,
+        taskNames: initialReviewDispatches.map((entry) => entry?.taskName || null),
+        spawnedAt: initialReviewDispatches.map((entry) => entry?.spawnedAt || null),
+        completedAt: initialReviewDispatches.map((entry) => entry?.finalDeliveredAt || null),
+      });
+    }
+    const unexpectedFollowups = followups.filter((entry) => !boundFollowupCallIds.has(entry.callId));
+    if (unexpectedFollowups.length) {
+      failures.push(`unexpected or unbound followup_task calls: ${unexpectedFollowups.map((entry) => entry.callId || entry.target).join(", ")}`);
+    }
+    const totalActorInvocations = relevant.length + infrastructureRetryCount + followups.length;
+    if (totalActorInvocations > Number(expectedSession.maximumActorInvocations || 21)) {
+      failures.push(`actor invocation budget exceeded: ${totalActorInvocations}/${expectedSession.maximumActorInvocations || 21}`);
+    }
+    for (const scope of [...new Set(expectedContract.map((entry) => entry.scope).filter((entry) => entry !== "epic"))]) {
+      const taskNames = new Set(observedContract.filter((entry) => entry.scope === scope).map((entry) => entry.taskName));
+      const storyDispatches = relevant.filter((entry) => taskNames.has(entry.taskName));
+      const starts = storyDispatches.map((entry) => Date.parse(entry.spawnedAt || "")).filter(Number.isFinite);
+      const finishes = storyDispatches.map((entry) => Date.parse(entry.finalDeliveredAt || "")).filter(Number.isFinite);
+      if (!storyDispatches.length || starts.length !== storyDispatches.length || finishes.length !== storyDispatches.length) {
+        storyTimingComplete = false;
+        failures.push(`${scope}: story delivery timestamps are incomplete`);
+      } else {
+        storyDeliverySeconds[scope] = Math.round((Math.max(...finishes) - Math.min(...starts)) / 100) / 10;
+      }
+    }
+    if (expectedSession.lifecycleIntegrationArgv) {
+      const storyFinishedAt = relevant.filter((entry) => expectedContract.some((expected) => expected.scope !== "epic"
+        && (entry.taskName === expected.taskName || entry.logicalTaskName === expected.taskName)))
+        .map((entry) => entry.finalDeliveredAt).filter(Boolean).sort().at(-1) || null;
+      const epicJudgeTaskName = expectedContract.find((entry) => entry.scope === "epic" && entry.control === "process-judge")?.taskName;
+      const epicJudgeStartedAt = relevant.find((entry) => entry.taskName === epicJudgeTaskName
+        || entry.logicalTaskName === epicJudgeTaskName)?.spawnedAt || null;
+      lifecycleIntegration = parseLifecycleIntegrationEvidence(sessionText, expectedSession.lifecycleIntegrationArgv,
+        storyFinishedAt, epicJudgeStartedAt);
+      failures.push(...lifecycleIntegration.failures);
+    }
+  }
   return {
     ok: failures.length === 0,
     threadId,
@@ -707,7 +1017,19 @@ function parseCollaborationEvidence(rawText, sessionText, expectedContract, expe
     unexpectedActorCount: unexpected.length,
     closeoutCreatedMandatoryChains: unexpected.filter((entry) => /closeout|coverage|trace|stat|quality/i.test(entry.taskName)).length,
     correctionBindings,
+    conditionalJudges,
+    repairCyclesByScope,
+    storyDeliverySeconds,
+    storyTimingComplete,
+    developerReactivations,
+    initialReviewPairs,
+    lifecycleIntegration,
+    followupInvocationCount: fourActorV3 ? followups.length : 0,
+    infrastructureRetryCount,
+    infrastructureFailureReceipts,
+    totalActorInvocations: relevant.length + infrastructureRetryCount + (fourActorV3 ? followups.length : 0),
     dispatches: allDispatches,
+    observedDispatches: dispatches,
     actorContract: observedContract,
     dispatchTraceContract: [...observedContract, ...unexpected.map((entry) => inferAuxiliaryDispatch(entry, expectedContract)).filter(Boolean)],
     acceptedActors,
@@ -722,6 +1044,7 @@ function parseCollaborationEvidence(rawText, sessionText, expectedContract, expe
 function inferAuxiliaryDispatch(dispatch, expectedContract) {
   const token = normalizedActorToken(dispatch.taskName);
   const controls = [
+    ["patch-assurance", /patch_assurance/],
     ["verify-patch", /verify_patch/],
     ["test-review", /test_review/],
     ["code-review", /code_review|reviewer/],
@@ -794,6 +1117,79 @@ function correctionSessionWrites(sessionText, repoRoot) {
   return { paths: [...new Set(paths)], unsafeShellMutations, unsafeDelegations };
 }
 
+function parseReviewerCompletion(lastAgentMessage, repoRoot) {
+  const text = String(lastAgentMessage || "");
+  const reportPathValue = text.match(/^REVIEW_REPORT_PATH=(.+)$/m)?.[1]?.trim() || "";
+  const reportSha256 = text.match(/^REVIEW_REPORT_SHA256=([a-f0-9]{64})$/m)?.[1] || "";
+  const reportBase64 = text.match(/^REVIEW_REPORT_BASE64=([A-Za-z0-9+/=]+)$/m)?.[1] || "";
+  const inputTree = text.match(/^REVIEW_INPUT_TREE=([a-f0-9]{40,64})$/m)?.[1] || "";
+  if (!reportPathValue || !reportSha256 || !reportBase64 || !inputTree) {
+    throw new Error("reviewer completion must include report path, sha256, base64 blob, and input tree");
+  }
+  if (path.isAbsolute(reportPathValue) || reportPathValue.split(/[\\/]/).includes("..")
+    || !/^docs\/ai\/reports\/[^/]+\.json$/.test(reportPathValue.replaceAll(path.sep, "/"))) {
+    throw new Error("reviewer completion report path is invalid");
+  }
+  const reportBytes = Buffer.from(reportBase64, "base64");
+  if (!reportBytes.length || reportBytes.toString("base64") !== reportBase64) {
+    throw new Error("reviewer completion report blob is not canonical base64");
+  }
+  if (sha256(reportBytes.toString("utf8")) !== reportSha256) {
+    throw new Error("reviewer completion report blob/hash mismatch");
+  }
+  let report;
+  try { report = JSON.parse(reportBytes.toString("utf8")); }
+  catch { throw new Error("reviewer completion report blob is invalid JSON"); }
+  return {
+    reportPath: reportPathValue.replaceAll(path.sep, "/"),
+    absoluteReportPath: path.resolve(repoRoot, reportPathValue),
+    reportSha256,
+    reportBase64,
+    inputTree,
+    report,
+  };
+}
+
+function codexSessionMetrics(sessionText) {
+  const rows = String(sessionText || "").split(/\r?\n/).filter(Boolean).flatMap((line) => {
+    try { return [JSON.parse(line)]; } catch { return []; }
+  });
+  const tokenRows = rows.filter((row) => row.type === "event_msg" && row.payload?.type === "token_count"
+    && row.payload?.info?.total_token_usage);
+  const total = tokenRows.at(-1)?.payload?.info?.total_token_usage || {};
+  const toolCallIds = new Set();
+  const commandTexts = [];
+  rows.forEach((row, index) => {
+    const payload = row.payload || {};
+    if (row.type !== "response_item" || !["function_call", "custom_tool_call"].includes(payload.type)) return;
+    toolCallIds.add(payload.call_id || payload.id || `${payload.name || "tool"}:${index}`);
+    const rawArguments = String(payload.arguments || payload.input || "");
+    let args = {};
+    try { args = JSON.parse(rawArguments || "{}"); } catch {}
+    if (/exec_command|shell|bash/i.test(String(payload.name || ""))) {
+      if (typeof args.cmd === "string") commandTexts.push(args.cmd);
+      else if (typeof args.command === "string") commandTexts.push(args.command);
+      else commandTexts.push(...extractCorrectionShellCommands(args, rawArguments));
+    }
+  });
+  return {
+    input_tokens: Number(total.input_tokens || 0),
+    cached_input_tokens: Number(total.cached_input_tokens || 0),
+    output_tokens: Number(total.output_tokens || 0),
+    tool_calls: toolCallIds.size,
+    commandText: commandTexts.join("\n"),
+  };
+}
+
+function aggregateTeamMetrics(conductorMetrics, childMetrics) {
+  return {
+    input_tokens: Number(conductorMetrics.input_tokens || 0) + Number(childMetrics.input_tokens || 0),
+    cached_input_tokens: Number(conductorMetrics.cached_input_tokens || 0) + Number(childMetrics.cached_input_tokens || 0),
+    output_tokens: Number(conductorMetrics.output_tokens || 0) + Number(childMetrics.output_tokens || 0),
+    tool_calls: Number(conductorMetrics.tool_calls || 0) + Number(childMetrics.tool_calls || 0),
+  };
+}
+
 function extractCorrectionShellCommands(args, rawArguments) {
   if (typeof args.cmd === "string") return [args.cmd];
   if (typeof args.command === "string") return [args.command];
@@ -809,11 +1205,13 @@ function extractCorrectionShellCommands(args, rawArguments) {
 function isAllowedCorrectionShellCommand(command) {
   const normalized = String(command || "").trim();
   if (!normalized || /[\r\n;|&<>`]/.test(normalized) || /\$\(/.test(normalized)) return false;
-  if (/\bgit\s+(?:diff|show)\b.*(?:--ext-diff|--textconv)\b/.test(normalized)) return false;
+  if (/\bgit\s+(?:diff|show)\b.*(?:--ext-diff|--textconv|--output(?:=|\s)|-o(?:\s|$))/.test(normalized)) return false;
   if (/\brg\b.*(?:--pre|--pre-glob)\b/.test(normalized)) return false;
   return [
     /^git\s+status(?:\s+(?:--short|--branch|--porcelain(?:=v[12])?))*$/,
-    /^git\s+(?:diff|show)(?:\s+[A-Za-z0-9_./:@=,+~-]+)*$/,
+    /^git\s+show\s+[A-Za-z0-9_./:@{}^,+~-]+$/,
+    /^git\s+diff(?:\s+(?:--stat|--name-only|--check|--cached|--staged|--|[A-Za-z0-9_./:@{}^,+~-]+))*$/,
+    /^git\s+(?:rev-parse|ls-files)(?:\s+[A-Za-z0-9_./:@={}^,+~-]+)*$/,
     /^rg(?:\s+--?[A-Za-z0-9][A-Za-z0-9-]*(?:=[A-Za-z0-9_./:@,+~-]+)?|\s+[^\s;|&<>`]+)+$/,
     /^sed\s+-n\s+['"]?\d+(?:,\d+)?p['"]?\s+[^\s;|&<>`]+$/,
     /^(?:cat|ls|wc|shasum|sha256sum)(?:\s+[^\s;|&<>`]+)+$/,
@@ -883,6 +1281,7 @@ function loadCollaborationEvidence(rawPath, expectedContract, expectedSession = 
         atdd: "atdd",
         development: "development",
         codereview: "code-review",
+        patchassurance: "patch-assurance",
         verifypatch: "verify-patch",
         testreview: "test-review",
         processjudge: "process-judge",
@@ -916,6 +1315,7 @@ function loadCollaborationEvidence(rawPath, expectedContract, expectedSession = 
   }
   for (const binding of evidence.correctionBindings || []) failures.push(...validateCorrectionBinding(expectedSession.cwd, binding));
   const childSessions = [];
+  const reviewerCompletions = [];
   for (const dispatch of evidence.dispatches || []) {
     const childPath = findCodexSessionTranscript(dispatch.receiverThreadId);
     if (!childPath) { failures.push(`${dispatch.taskName}: child session transcript missing`); continue; }
@@ -968,19 +1368,112 @@ function loadCollaborationEvidence(rawPath, expectedContract, expectedSession = 
       if (writes.unsafeShellMutations.length) failures.push(`${dispatch.taskName}: bounded ATDD actor used an unscoped shell mutation`);
       if (writes.unsafeDelegations.length) failures.push(`${dispatch.taskName}: bounded ATDD actor delegated work`);
     }
+    const lifecycleEntry = (evidence.dispatchTraceContract || evidence.actorContract || [])
+      .find((entry) => entry.taskName === dispatch.taskName);
+    if (expectedSession.actorContractVersion === "four-actor-v3"
+      && ["code-review", "patch-assurance"].includes(lifecycleEntry?.control)) {
+      const writes = correctionSessionWrites(childText, expectedSession.cwd);
+      let allowedReportPath = null;
+      let actor = null;
+      try {
+        const parser = installedStateParser(expectedSession.cwd);
+        actor = parser.parseActorRecord(path.join(expectedSession.cwd, "docs", "ai", "actors", `${dispatch.taskName}.json`));
+        if (actor.producedArtifactPath) allowedReportPath = path.resolve(expectedSession.cwd, actor.producedArtifactPath);
+      } catch {}
+      const forbidden = writes.paths.filter((entry) => !allowedReportPath || entry !== allowedReportPath);
+      if (forbidden.length) {
+        failures.push(`${dispatch.taskName}: report-only reviewer wrote outside its bound report: ${forbidden.map((entry) => path.relative(expectedSession.cwd, entry)).join(", ")}`);
+      }
+      if (!allowedReportPath || !writes.paths.includes(allowedReportPath)) {
+        failures.push(`${dispatch.taskName}: report-only reviewer did not create its bound typed report`);
+      }
+      if (writes.unsafeShellMutations.length) failures.push(`${dispatch.taskName}: report-only reviewer used an unsafe or unobservable shell mutation`);
+      if (writes.unsafeDelegations.length) failures.push(`${dispatch.taskName}: report-only reviewer delegated work`);
+      try {
+        const captured = parseReviewerCompletion(completion?.last_agent_message, expectedSession.cwd);
+        if (!actor || actor.producedArtifactPath !== captured.reportPath
+          || actor.producedArtifactHash !== captured.reportSha256 || actor.inputTree !== captured.inputTree) {
+          failures.push(`${dispatch.taskName}: actor record does not bind the reviewer completion report blob/hash/input tree`);
+        }
+        if (!fs.existsSync(captured.absoluteReportPath)
+          || sha256File(captured.absoluteReportPath) !== captured.reportSha256
+          || fs.readFileSync(captured.absoluteReportPath, "utf8") !== Buffer.from(captured.reportBase64, "base64").toString("utf8")) {
+          failures.push(`${dispatch.taskName}: reviewer completion report was replaced after child completion`);
+        }
+        reviewerCompletions.push({
+          taskName: dispatch.taskName,
+          scope: lifecycleEntry.scope,
+          control: lifecycleEntry.control,
+          reportPath: captured.reportPath,
+          reportSha256: captured.reportSha256,
+          reportBase64: captured.reportBase64,
+          inputTree: captured.inputTree,
+          childSessionId: dispatch.receiverThreadId,
+          childCompletedAt: completion?.completed_at || null,
+        });
+      } catch (error) {
+        failures.push(`${dispatch.taskName}: ${error.message}`);
+      }
+    }
+    const metrics = codexSessionMetrics(childText);
     childSessions.push({
       taskName: dispatch.taskName,
       threadId: dispatch.receiverThreadId,
       sessionSha256: sha256(childText),
       completedAt: completion?.completed_at || null,
+      metrics,
     });
   }
+  const selectedTaskNames = new Set((evidence.dispatches || []).map((entry) => entry.taskName));
+  for (const dispatch of evidence.observedDispatches || []) {
+    if (selectedTaskNames.has(dispatch.taskName) || !dispatch.receiverThreadId
+      || !(evidence.observedDispatches || []).some((entry) => entry.taskName === `${dispatch.taskName}_infra_retry1`)) continue;
+    const childPath = findCodexSessionTranscript(dispatch.receiverThreadId);
+    if (!childPath) { failures.push(`${dispatch.taskName}: failed infrastructure invocation child transcript missing`); continue; }
+    const childText = fs.readFileSync(childPath, "utf8");
+    let meta = null;
+    for (const line of childText.split(/\r?\n/).filter(Boolean)) {
+      try { const event = JSON.parse(line); if (event.type === "session_meta") meta = event.payload || null; } catch {}
+    }
+    if (!meta || meta.id !== dispatch.receiverThreadId || meta.parent_thread_id !== threadId) {
+      failures.push(`${dispatch.taskName}: failed infrastructure invocation provenance mismatch`);
+    }
+    const failedWrites = correctionSessionWrites(childText, expectedSession.cwd);
+    if (failedWrites.paths.length || failedWrites.unsafeShellMutations.length || failedWrites.unsafeDelegations.length) {
+      failures.push(`${dispatch.taskName}: failed infrastructure invocation is not proven zero-write`);
+    }
+    childSessions.push({
+      taskName: dispatch.taskName,
+      threadId: dispatch.receiverThreadId,
+      sessionSha256: sha256(childText),
+      completedAt: null,
+      infrastructureFailed: true,
+      metrics: codexSessionMetrics(childText),
+    });
+  }
+  if (expectedSession.actorContractVersion === "four-actor-v3") {
+    for (const pair of evidence.initialReviewPairs || []) {
+      const completions = pair.taskNames.map((taskName) => reviewerCompletions.find((entry) => entry.taskName === taskName)).filter(Boolean);
+      if (completions.length !== 2 || new Set(completions.map((entry) => entry.inputTree)).size !== 1) {
+        failures.push(`${pair.scope}: concurrent initial reviewers do not bind one shared input tree`);
+      }
+    }
+  }
+  const childMetrics = childSessions.reduce((total, entry) => ({
+    input_tokens: total.input_tokens + entry.metrics.input_tokens,
+    cached_input_tokens: total.cached_input_tokens + entry.metrics.cached_input_tokens,
+    output_tokens: total.output_tokens + entry.metrics.output_tokens,
+    tool_calls: total.tool_calls + entry.metrics.tool_calls,
+    commandText: [total.commandText, entry.metrics.commandText].filter(Boolean).join("\n"),
+  }), { input_tokens: 0, cached_input_tokens: 0, output_tokens: 0, tool_calls: 0, commandText: "" });
   return {
     ...evidence,
     ok: failures.length === 0,
     failures,
     sessionPath,
     childSessions,
+    childMetrics,
+    reviewerCompletions,
     dispatchTraceContract,
     closeoutCreatedMandatoryChains: Math.max(evidence.closeoutCreatedMandatoryChains || 0, typedAuxiliaryCloseoutChains),
   };
@@ -988,8 +1481,196 @@ function loadCollaborationEvidence(rawPath, expectedContract, expectedSession = 
 
 function canonicalLifecyclePhase(value) {
   const token = normalizedActorToken(value).replace(/_/g, "");
-  const aliases = { codereviewer: "codereview", reviewer: "codereview", patchverifier: "verifypatch", testreviewer: "testreview", judge: "processjudge", epicprocessjudge: "processjudge" };
+  const aliases = { codereviewer: "codereview", reviewer: "codereview", patchassurancereviewer: "patchassurance", patchverifier: "verifypatch", testreviewer: "testreview", judge: "processjudge", epicprocessjudge: "processjudge" };
   return aliases[token] || token;
+}
+
+function parseHarnessWaitMetrics(sessionText, activeDeliverySeconds = 0) {
+  const pending = new Map();
+  const intervals = [];
+  let waitCalls = 0;
+  let invalidTimestampEvents = 0;
+  for (const line of String(sessionText || "").split(/\r?\n/).filter(Boolean)) {
+    let event;
+    try { event = JSON.parse(line); } catch { continue; }
+    const timestamp = Date.parse(event.timestamp || "");
+    const payload = event.payload || {};
+    const waitCall = event.type === "response_item" && payload.type === "function_call"
+      && payload.namespace === "collaboration" && payload.name === "wait_agent";
+    const waitOutput = event.type === "response_item" && payload.type === "function_call_output" && pending.has(payload.call_id);
+    if (!Number.isFinite(timestamp)) {
+      if (waitCall || waitOutput) invalidTimestampEvents += 1;
+      continue;
+    }
+    if (waitCall) {
+      if (pending.has(payload.call_id)) invalidTimestampEvents += 1;
+      pending.set(payload.call_id, timestamp);
+      waitCalls += 1;
+    }
+    if (waitOutput) {
+      const startedAt = pending.get(payload.call_id);
+      if (timestamp >= startedAt) intervals.push([startedAt, timestamp]);
+      else invalidTimestampEvents += 1;
+      pending.delete(payload.call_id);
+    }
+  }
+  intervals.sort((left, right) => left[0] - right[0]);
+  const merged = [];
+  for (const interval of intervals) {
+    const previous = merged.at(-1);
+    if (!previous || interval[0] > previous[1]) merged.push([...interval]);
+    else previous[1] = Math.max(previous[1], interval[1]);
+  }
+  const seconds = Math.round(merged.reduce((total, [start, finish]) => total + finish - start, 0) / 100) / 10;
+  return {
+    waitCalls,
+    completedWaitCalls: intervals.length,
+    incompleteWaitCalls: pending.size,
+    invalidTimestampEvents,
+    measurementComplete: pending.size === 0 && invalidTimestampEvents === 0,
+    seconds,
+    share: activeDeliverySeconds > 0 ? Math.round((seconds / activeDeliverySeconds) * 10000) / 10000 : 0,
+  };
+}
+
+function lifecycleIntegrationCommand(argv) {
+  if (!Array.isArray(argv) || !argv.length) return "";
+  return argv[0] === "sh" && argv[1] === "-c" && argv.length === 3
+    ? argv[2] : argv.join(" ");
+}
+
+function parseLifecycleIntegrationEvidence(sessionText, expectedArgv, afterStoryAt, beforeJudgeAt) {
+  const expectedCommand = lifecycleIntegrationCommand(expectedArgv);
+  const calls = [];
+  const outputs = new Map();
+  for (const line of String(sessionText || "").split(/\r?\n/).filter(Boolean)) {
+    let row;
+    try { row = JSON.parse(line); } catch { continue; }
+    const payload = row.payload || {};
+    if (row.type === "response_item" && ["function_call", "custom_tool_call"].includes(payload.type)) {
+      const commands = extractCorrectionShellCommands({}, String(payload.arguments || payload.input || ""));
+      let args = {};
+      try { args = JSON.parse(payload.arguments || "{}"); } catch {}
+      if (typeof args.cmd === "string") commands.push(args.cmd);
+      if (typeof args.command === "string") commands.push(args.command);
+      for (const command of new Set(commands)) if (command === expectedCommand) {
+        calls.push({ callId: payload.call_id || payload.id || "", startedAt: row.timestamp || null, command });
+      }
+    }
+    if (row.type === "response_item" && ["function_call_output", "custom_tool_call_output"].includes(payload.type)) {
+      outputs.set(payload.call_id || payload.id || "", {
+        finishedAt: row.timestamp || null,
+        text: typeof payload.output === "string" ? payload.output : JSON.stringify(payload.output || ""),
+      });
+    }
+  }
+  const failures = [];
+  if (calls.length !== 1) failures.push(`exact frozen lifecycle integration command invocations ${calls.length}/1`);
+  const call = calls[0];
+  const output = call ? outputs.get(call.callId) : null;
+  const explicitExitCodes = output ? [...output.text.matchAll(/["']?exit_code["']?\s*:\s*(-?\d+)/gi)]
+    .map((match) => Number(match[1])) : [];
+  const otherExplicitExitCodes = output ? [...output.text.matchAll(/(?:Process exited with code|exit code)\s+(-?\d+)/gi)]
+    .map((match) => Number(match[1])) : [];
+  const successfulInnerExit = explicitExitCodes.length > 0 && explicitExitCodes.every((code) => code === 0)
+    && otherExplicitExitCodes.every((code) => code === 0);
+  const startedAt = Date.parse(call?.startedAt || "");
+  const finishedAt = Date.parse(output?.finishedAt || "");
+  const afterAt = Date.parse(afterStoryAt || "");
+  const judgeAt = Date.parse(beforeJudgeAt || "");
+  if (calls.length === 1 && (!output || !successfulInnerExit
+    || ![startedAt, finishedAt, afterAt, judgeAt].every(Number.isFinite)
+    || startedAt <= afterAt || finishedAt < startedAt || finishedAt >= judgeAt)) {
+    failures.push("lifecycle integration command lacks a successful exit receipt after all story results and before Epic Judge dispatch");
+  }
+  return {
+    ok: failures.length === 0,
+    count: calls.length,
+    expectedArgv,
+    expectedCommand,
+    commandSha256: sha256(JSON.stringify(expectedArgv)),
+    callId: call?.callId || null,
+    startedAt: call?.startedAt || null,
+    finishedAt: output?.finishedAt || null,
+    outputSha256: output ? sha256(output.text) : null,
+    failures,
+  };
+}
+
+function evaluatePilotBudgets(manifest, attempt, activeDeliverySeconds, actor, collaborationEvidence, commandTrace, harnessWait) {
+  if (attempt.actorContractVersion !== "four-actor-v3") return { applicable: false, ok: true, failures: [] };
+  const budget = manifest.promotionGates.budget;
+  const failures = [];
+  const actorInvocations = Number(collaborationEvidence.totalActorInvocations
+    ?? collaborationEvidence.observedActorCount ?? 0);
+  const infrastructureRetries = (collaborationEvidence.observedDispatches || collaborationEvidence.dispatches || [])
+    .filter((entry) => /_infra_retry[1-9]\d*$/.test(entry.taskName));
+  const infrastructureRetriesByInvocation = {};
+  let invalidInfrastructureRetryOrdinal = false;
+  for (const entry of infrastructureRetries) {
+    const match = entry.taskName.match(/^(.*)_infra_retry([1-9]\d*)$/);
+    if (!match || /_infra_retry[1-9]\d*$/.test(match[1])) {
+      invalidInfrastructureRetryOrdinal = true;
+      continue;
+    }
+    const invocation = match[1];
+    const ordinal = Number(match[2]);
+    const current = infrastructureRetriesByInvocation[invocation] || { count: 0, ordinals: [] };
+    current.count += 1;
+    current.ordinals.push(ordinal);
+    infrastructureRetriesByInvocation[invocation] = current;
+  }
+  const maximumStoryRepairCycles = Math.max(0, ...Object.values(collaborationEvidence.repairCyclesByScope || {}).map(Number));
+  const storyDeliverySeconds = collaborationEvidence.storyDeliverySeconds || {};
+  if (actorInvocations > budget.maximumActorInvocations) failures.push(`actor invocations ${actorInvocations}/${budget.maximumActorInvocations}`);
+  if (maximumStoryRepairCycles > budget.maximumRepairCyclesPerStory) failures.push(`repair cycles ${maximumStoryRepairCycles}/${budget.maximumRepairCyclesPerStory}`);
+  if (infrastructureRetries.length > budget.maximumInfrastructureRetriesTotal) failures.push(`infrastructure retries ${infrastructureRetries.length}/${budget.maximumInfrastructureRetriesTotal}`);
+  if (invalidInfrastructureRetryOrdinal) failures.push("infrastructure retry naming is invalid or nested");
+  for (const [invocation, retries] of Object.entries(infrastructureRetriesByInvocation)) {
+    const uniqueOrdinals = new Set(retries.ordinals);
+    if (retries.count > budget.maximumInfrastructureRetriesPerInvocation
+      || uniqueOrdinals.size !== retries.count
+      || retries.ordinals.some((ordinal) => ordinal > budget.maximumInfrastructureRetriesPerInvocation)) {
+      failures.push(`${invocation} infrastructure retries ${retries.count}/${budget.maximumInfrastructureRetriesPerInvocation}`);
+    }
+  }
+  if (collaborationEvidence.storyTimingComplete === false) failures.push("story delivery timestamps are incomplete");
+  for (const [scope, seconds] of Object.entries(storyDeliverySeconds)) {
+    if (seconds > budget.maximumStoryActiveSeconds) failures.push(`${scope} active delivery ${seconds}s/${budget.maximumStoryActiveSeconds}s`);
+  }
+  if (activeDeliverySeconds > budget.maximumActiveDeliverySeconds) failures.push(`active delivery ${activeDeliverySeconds}s/${budget.maximumActiveDeliverySeconds}s`);
+  if (actor.input_tokens > budget.maximumInputTokens) failures.push(`input tokens ${actor.input_tokens}/${budget.maximumInputTokens}`);
+  if (actor.tool_calls > budget.maximumToolCalls) failures.push(`tool calls ${actor.tool_calls}/${budget.maximumToolCalls}`);
+  if (harnessWait.seconds > budget.maximumHarnessWaitSeconds) failures.push(`harness wait ${harnessWait.seconds}s/${budget.maximumHarnessWaitSeconds}s`);
+  if (harnessWait.share > budget.maximumHarnessWaitShare) failures.push(`harness wait share ${harnessWait.share}/${budget.maximumHarnessWaitShare}`);
+  if (harnessWait.measurementComplete === false || Number(harnessWait.incompleteWaitCalls || 0) > 0) {
+    failures.push("harness wait measurement is incomplete");
+  }
+  const broadSuiteInvocations = collaborationEvidence.lifecycleIntegration
+    ? Number(collaborationEvidence.lifecycleIntegration.count || 0)
+    : Number(commandTrace.counts?.broadSuite || 0);
+  const requiredBroadSuiteInvocations = Number(manifest.promotionGates.process.maximumBroadSuiteInvocations);
+  if (broadSuiteInvocations !== requiredBroadSuiteInvocations) {
+    failures.push(`broad suites ${broadSuiteInvocations}/${requiredBroadSuiteInvocations}; v3 requires exactly one lifecycle broad suite at epic close`);
+  }
+  return {
+    applicable: true,
+    ok: failures.length === 0,
+    targetMet: activeDeliverySeconds <= budget.targetActiveDeliverySeconds,
+    storyTargetsMet: Object.values(storyDeliverySeconds).every((seconds) => seconds <= budget.targetStoryActiveSeconds),
+    actorInvocations,
+    baseActorCount: budget.baseActorCount,
+    infrastructureRetries: infrastructureRetries.length,
+    infrastructureRetriesByInvocation,
+    maximumStoryRepairCycles,
+    storyDeliverySeconds,
+    activeDeliverySeconds,
+    inputTokens: actor.input_tokens,
+    toolCalls: actor.tool_calls,
+    broadSuiteInvocations,
+    harnessWait,
+    failures,
+  };
 }
 
 function installedStateParser(clone) {
@@ -998,8 +1679,111 @@ function installedStateParser(clone) {
   return require(parserPath);
 }
 
-function validateDurableLifecycleEvidence(clone, expectedContract, acceptedActors = expectedContract) {
+function committedUnchangedAtHead(clone, filePath) {
+  const absolute = path.resolve(filePath);
+  const cloneReal = fs.realpathSync(clone);
+  const lexicalRelative = path.relative(path.resolve(clone), absolute);
+  if (!lexicalRelative || lexicalRelative.startsWith("..") || path.isAbsolute(lexicalRelative)) {
+    return { ok: false, reason: "path escapes clone" };
+  }
+  if (!fs.existsSync(absolute)) return { ok: false, reason: "file is missing" };
+  const stat = fs.lstatSync(absolute);
+  if (stat.isSymbolicLink() || !stat.isFile()) return { ok: false, reason: "path is not a regular file" };
+  const absoluteReal = fs.realpathSync(absolute);
+  const realRelative = path.relative(cloneReal, absoluteReal);
+  if (!realRelative || realRelative.startsWith("..") || path.isAbsolute(realRelative)) {
+    return { ok: false, reason: "real path escapes clone" };
+  }
+  const relative = realRelative.replaceAll(path.sep, "/");
+  if (execute("git", ["ls-files", "--error-unmatch", "--", relative], clone).status !== 0) {
+    return { ok: false, reason: "file is not tracked" };
+  }
+  const staged = execute("git", ["ls-files", "--stage", "--", relative], clone);
+  if (staged.status !== 0 || !/^100(?:644|755)\s+[a-f0-9]{40,64}\s+0\t/.test(staged.stdout)) {
+    return { ok: false, reason: "HEAD path is not a regular tracked blob" };
+  }
+  if (execute("git", ["diff", "--quiet", "HEAD", "--", relative], clone).status !== 0) {
+    return { ok: false, reason: "file differs from HEAD" };
+  }
+  const committed = cp.spawnSync("git", ["show", `HEAD:${relative}`], {
+    cwd: clone, encoding: null, stdio: ["ignore", "pipe", "pipe"],
+  });
+  if (committed.status !== 0) {
+    return { ok: false, reason: "file is not committed at HEAD" };
+  }
+  if (!Buffer.from(committed.stdout || []).equals(fs.readFileSync(absolute))) {
+    return { ok: false, reason: "filesystem bytes do not match the committed blob" };
+  }
+  return { ok: true, relative };
+}
+
+function requireCommittedUnchanged(failures, scope, label, clone, filePath) {
+  const result = committedUnchangedAtHead(clone, filePath);
+  if (!result.ok) failures.push(`${scope}: ${label} ${result.reason}`);
+}
+
+function committedRedIsTestOnly(clone, commit) {
+  const parent = execute("git", ["rev-parse", `${commit}^`], clone);
+  if (parent.status !== 0) return false;
+  const changed = execute("git", ["diff", "--name-only", parent.stdout.trim(), commit, "--"], clone);
+  if (changed.status !== 0) return false;
+  const paths = changed.stdout.split(/\r?\n/).filter(Boolean);
+  const testPaths = paths.filter((entry) => /^(?:tests?|spec)(?:\/|$)/i.test(entry));
+  return testPaths.length > 0 && paths.every((entry) => /^(?:tests?|spec)(?:\/|$)/i.test(entry)
+    || isPilotHarnessPath(entry));
+}
+
+function changedPathsFromCommit(clone, commit) {
+  const changed = execute("git", ["diff", "--name-only", commit, "HEAD", "--"], clone);
+  if (changed.status !== 0) return null;
+  return changed.stdout.split(/\r?\n/).filter(Boolean);
+}
+
+function validateFormalStoryClosePackage(scope, gate, clone, actorPaths, reportPaths, parser) {
   const failures = [];
+  const packagePaths = [gate._recordPath, ...actorPaths, ...reportPaths];
+  for (const evidenceId of gate.evidenceIds || []) {
+    const manifestPath = path.join(clone, "docs", "ai", "evidence", `${evidenceId}.json`);
+    packagePaths.push(manifestPath);
+    try {
+      const evidence = parser.parseEvidenceManifest(manifestPath);
+      packagePaths.push(path.resolve(clone, evidence.rawArtifact.path));
+    } catch {}
+  }
+  if (gate.repair?.receiptPath) packagePaths.push(path.resolve(clone, gate.repair.receiptPath));
+  if (gate.processJudge?.decisionPath) packagePaths.push(path.resolve(clone, gate.processJudge.decisionPath));
+  const relativePaths = [...new Set(packagePaths.map((entry) => path.relative(clone, entry).replaceAll(path.sep, "/")))];
+  if (relativePaths.some((entry) => !entry || entry.startsWith("../") || !/^docs\/ai\//.test(entry))) {
+    failures.push(`${scope}: formal story-close package contains a non-control path`);
+    return failures;
+  }
+  const introductionCommits = new Set();
+  for (const relativePath of relativePaths) {
+    const added = execute("git", ["log", "--format=%H", "--diff-filter=A", "--", relativePath], clone);
+    const commits = added.status === 0 ? added.stdout.split(/\r?\n/).filter(Boolean) : [];
+    if (commits.length !== 1) failures.push(`${scope}: ${relativePath} was not introduced exactly once`);
+    else introductionCommits.add(commits[0]);
+  }
+  if (introductionCommits.size !== 1) {
+    failures.push(`${scope}: formal story-close package files were not introduced in one commit`);
+    return failures;
+  }
+  const [packageCommit] = [...introductionCommits];
+  const changed = execute("git", ["diff-tree", "--root", "--no-commit-id", "--name-only", "-r", packageCommit, "--"], clone);
+  const changedPaths = changed.status === 0 ? changed.stdout.split(/\r?\n/).filter(Boolean).sort() : [];
+  if (JSON.stringify(changedPaths) !== JSON.stringify([...relativePaths].sort())) {
+    failures.push(`${scope}: formal story-close introduction commit is not exactly the bound control package`);
+  }
+  return failures;
+}
+
+function validateDurableLifecycleEvidence(clone, expectedContract, acceptedActors = expectedContract, options = {}) {
+  const failures = [];
+  const v3Contract = options.actorContractVersion === "four-actor-v3";
+  const expectedRunId = options.runId || "";
+  const expectedStoryInventory = options.storyInventory || [];
+  if (v3Contract && !expectedRunId) failures.push("four-actor-v3 durable validation requires runId");
+  if (v3Contract && !expectedStoryInventory.length) failures.push("four-actor-v3 durable validation requires frozen storyInventory");
   let parser;
   try { parser = installedStateParser(clone); }
   catch (error) { return { ok: false, actorCount: 0, gateCount: 0, failures: [error.message] }; }
@@ -1009,6 +1793,7 @@ function validateDurableLifecycleEvidence(clone, expectedContract, acceptedActor
   if (fs.existsSync(actorDir)) for (const entry of fs.readdirSync(actorDir).filter((name) => name.endsWith(".json"))) {
     try {
       const actor = parser.parseActorRecord(path.join(actorDir, entry));
+      Object.defineProperty(actor, "_recordPath", { value: path.join(actorDir, entry), enumerable: false });
       if (actors.has(actor.actorInstanceId)) failures.push(`${entry}: duplicate actorInstanceId ${actor.actorInstanceId}`);
       actors.set(actor.actorInstanceId, actor);
     }
@@ -1016,7 +1801,11 @@ function validateDurableLifecycleEvidence(clone, expectedContract, acceptedActor
   }
   const gates = [];
   if (fs.existsSync(gateDir)) for (const entry of fs.readdirSync(gateDir).filter((name) => name.endsWith(".json"))) {
-    try { gates.push(parser.parseGateVerdict(path.join(gateDir, entry))); }
+    try {
+      const gate = parser.parseGateVerdict(path.join(gateDir, entry));
+      Object.defineProperty(gate, "_recordPath", { value: path.join(gateDir, entry), enumerable: false });
+      gates.push(gate);
+    }
     catch (error) { failures.push(`${entry}: ${error.message}`); }
   }
   for (const expected of expectedContract) {
@@ -1025,39 +1814,259 @@ function validateDurableLifecycleEvidence(clone, expectedContract, acceptedActor
     if (normalizedActorToken(actor.story) !== normalizedActorToken(expected.scope)) failures.push(`${expected.taskName}: actor scope mismatch`);
     if (canonicalLifecyclePhase(actor.phase) !== canonicalLifecyclePhase(expected.control)) failures.push(`${expected.taskName}: actor phase mismatch`);
     if (canonicalLifecyclePhase(actor.role) !== canonicalLifecyclePhase(expected.persona)) failures.push(`${expected.taskName}: actor persona mismatch`);
+    if (v3Contract && (actor.runId !== expectedRunId || actor.fullFlowContract !== "four-actor-v3")) {
+      failures.push(`${expected.taskName}: actor run/contract binding mismatch`);
+    }
+    if (v3Contract && JSON.stringify(actor.storyInventory || []) !== JSON.stringify(expectedStoryInventory)) {
+      failures.push(`${expected.taskName}: actor storyInventory does not match the frozen run inventory`);
+    }
     const ancestor = execute("git", ["merge-base", "--is-ancestor", actor.inputCommit, "HEAD"], clone);
     if (ancestor.status !== 0) failures.push(`${expected.taskName}: inputCommit is not an ancestor of HEAD`);
   }
-  const scopes = [...new Set(expectedContract.map((entry) => entry.scope))];
-  for (const scope of scopes) {
-    const judge = acceptedActors.find((entry) => entry.scope === scope && entry.control === "process-judge");
-    const gate = gates.find((entry) => entry.verdict === "PASS"
-      && normalizedActorToken(entry.scope) === normalizedActorToken(scope)
-      && entry.decidedBy === judge?.taskName);
-    if (!gate) { failures.push(`${scope}: typed PASS gate from required Process Judge missing`); continue; }
-    if (!Array.isArray(gate.evidenceIds) || !gate.evidenceIds.length) failures.push(`${scope}: PASS gate has no evidenceIds`);
-    if (execute("git", ["merge-base", "--is-ancestor", gate.repositoryCommit, "HEAD"], clone).status !== 0) {
-      failures.push(`${scope}: gate repositoryCommit is not an ancestor of HEAD`);
-    }
-    for (const evidenceId of gate.evidenceIds || []) {
-      const evidencePath = path.join(clone, "docs", "ai", "evidence", `${evidenceId}.json`);
-      try {
-        const evidence = parser.parseEvidenceManifest(evidencePath);
-        if (evidence.evidenceId !== evidenceId) failures.push(`${scope}: evidence filename/id mismatch for ${evidenceId}`);
-        if (evidence.exitCode !== 0) failures.push(`${scope}: evidence ${evidenceId} failed`);
-        if (normalizedActorToken(evidence.story) !== normalizedActorToken(scope)) failures.push(`${scope}: evidence ${evidenceId} scope mismatch`);
-        if (!actors.has(evidence.actorInstanceId)) failures.push(`${scope}: evidence ${evidenceId} actor is missing`);
-        else if (normalizedActorToken(actors.get(evidence.actorInstanceId).story) !== normalizedActorToken(scope)) failures.push(`${scope}: evidence ${evidenceId} actor scope mismatch`);
-        if (execute("git", ["merge-base", "--is-ancestor", evidence.repositoryCommit, "HEAD"], clone).status !== 0) failures.push(`${scope}: evidence ${evidenceId} repositoryCommit is not an ancestor of HEAD`);
-        const rawArtifact = path.resolve(clone, evidence.rawArtifact.path);
-        const relative = path.relative(clone, rawArtifact);
-        if (!relative || relative.startsWith("..") || path.isAbsolute(relative)) failures.push(`${scope}: evidence ${evidenceId} artifact escapes clone`);
-        else if (!fs.existsSync(rawArtifact)) failures.push(`${scope}: evidence ${evidenceId} artifact missing`);
-        else if (path.relative(fs.realpathSync(clone), fs.realpathSync(rawArtifact)).startsWith("..") || sha256File(rawArtifact) !== evidence.rawArtifact.sha256) failures.push(`${scope}: evidence ${evidenceId} artifact/hash mismatch`);
-      } catch (error) { failures.push(`${scope}: evidence ${evidenceId}: ${error.message}`); }
+  if (v3Contract) {
+    for (const scope of [...new Set(expectedContract.map((entry) => entry.scope).filter((entry) => entry !== "epic"))]) {
+      const repairEntries = expectedContract.filter((entry) => entry.scope === scope
+        && ["code-review", "patch-assurance"].includes(entry.control) && Number(entry.retryOrdinal || 0) > 0);
+      for (const ordinal of [...new Set(repairEntries.map((entry) => Number(entry.retryOrdinal)))]) {
+        const cycleActors = repairEntries.filter((entry) => entry.retryOrdinal === ordinal).map((entry) => actors.get(entry.taskName)).filter(Boolean);
+        const inputTrees = new Set(cycleActors.map((actor) => actor.inputTree).filter(Boolean));
+        if (cycleActors.some((actor) => !actor.inputTree) || inputTrees.size !== 1) {
+          failures.push(`${scope}: repair cycle ${ordinal} reviewers do not bind one shared repaired input tree`);
+        }
+      }
     }
   }
+  const scopes = [...new Set(expectedContract.map((entry) => entry.scope))];
+  for (const scope of scopes) {
+    if (v3Contract && scope !== "epic") {
+      const storyPassGates = gates.filter((entry) => entry.verdict === "PASS"
+        && normalizedActorToken(entry.scope) === normalizedActorToken(scope)
+        && entry.runId === expectedRunId && entry.fullFlowContract === "four-actor-v3"
+        && JSON.stringify(entry.storyInventory || []) === JSON.stringify(expectedStoryInventory)
+        && entry.gateType === "deterministic-story-close-v3" && entry.decisionMode === "deterministic");
+      if (storyPassGates.length !== 1) {
+        failures.push(`${scope}: expected exactly one deterministic story-close PASS gate, observed ${storyPassGates.length}`);
+        continue;
+      }
+      const [gate] = storyPassGates;
+      if (options.lifecycleIntegration && (!options.lifecycleIntegration.ok
+        || !Number.isFinite(Date.parse(gate.createdAt || ""))
+        || Date.parse(gate.createdAt) >= Date.parse(options.lifecycleIntegration.startedAt || ""))) {
+        failures.push(`${scope}: story PASS gate was not durably complete before the frozen lifecycle integration command`);
+      }
+      requireCommittedUnchanged(failures, scope, "deterministic story-close gate", clone, gate._recordPath);
+      const packageActorPaths = [];
+      const requiredActorIds = ["atdd", "development", "code-review", "patch-assurance"].map((control) =>
+        acceptedActors.find((entry) => entry.scope === scope && entry.control === control)?.taskName
+      ).filter(Boolean);
+      if (requiredActorIds.length !== 4) failures.push(`${scope}: deterministic close does not have four accepted required actors`);
+      const recordedActorIds = new Set([
+        ...(gate.actorInstanceIds || []),
+        ...(gate.actors ? Object.values(gate.actors) : []),
+        gate.atddActorId,
+        gate.developmentActorId,
+        gate.codeReviewActorId,
+        gate.patchAssuranceActorId,
+      ].filter(Boolean));
+      for (const actorId of requiredActorIds) {
+        if (!recordedActorIds.has(actorId)) failures.push(`${scope}: deterministic gate does not bind ${actorId}`);
+        const actor = actors.get(actorId);
+        if (actor) {
+          requireCommittedUnchanged(failures, scope, `actor record ${actorId}`, clone, actor._recordPath);
+          packageActorPaths.push(actor._recordPath);
+        }
+      }
+      const acceptedCodeReviewId = acceptedActors.find((entry) => entry.scope === scope && entry.control === "code-review")?.taskName;
+      const acceptedPatchAssuranceId = acceptedActors.find((entry) => entry.scope === scope && entry.control === "patch-assurance")?.taskName;
+      const codeReviewActor = actors.get(acceptedCodeReviewId);
+      const patchAssuranceActor = actors.get(acceptedPatchAssuranceId);
+      if (codeReviewActor) {
+        const changed = changedPathsFromCommit(clone, codeReviewActor.inputCommit);
+        if (!changed || changed.some((entry) => !isPilotHarnessPath(entry) && !/^(?:tests?|spec)(?:\/|$)/i.test(entry))) {
+          failures.push(`${scope}: Code Review predates a non-test application repair and requires delta review`);
+        }
+      }
+      if (patchAssuranceActor) {
+        const changed = changedPathsFromCommit(clone, patchAssuranceActor.inputCommit);
+        if (!changed || changed.some((entry) => !isPilotHarnessPath(entry))) {
+          failures.push(`${scope}: Patch Assurance does not bind the final application/test tree`);
+        }
+      }
+      const boundReports = {};
+      const packageReportPaths = [];
+      for (const [role, actorId, expectedPhase] of [
+        ["codeReview", acceptedCodeReviewId, "codereview"],
+        ["patchAssurance", acceptedPatchAssuranceId, "patchassurance"],
+      ]) {
+        const actor = actors.get(actorId);
+        const reportPathValue = gate.reportPaths?.[role];
+        const reportHash = gate.reportHashes?.[role];
+        if (!actor || !reportPathValue) continue;
+        const reportPath = path.resolve(clone, reportPathValue);
+        packageReportPaths.push(reportPath);
+        requireCommittedUnchanged(failures, scope, `${role} report`, clone, reportPath);
+        try {
+          const report = parser.parseReviewReport(reportPath);
+          boundReports[role] = report;
+          if (actor.producedArtifactPath !== reportPathValue || actor.producedArtifactHash !== reportHash
+            || sha256File(reportPath) !== reportHash) {
+            failures.push(`${scope}: ${role} report path/hash does not bind its actor and gate`);
+          }
+          if (report.actorInstanceId !== actorId || normalizedActorToken(report.story) !== normalizedActorToken(scope)
+            || canonicalLifecyclePhase(report.phase) !== expectedPhase
+            || report.inputCommit !== actor.inputCommit || report.inputTree !== actor.inputTree
+            || report.runId !== expectedRunId || report.fullFlowContract !== "four-actor-v3") {
+            failures.push(`${scope}: ${role} report identity/scope/input binding mismatch`);
+          }
+          const captured = (options.reviewerCompletions || []).find((entry) => entry.taskName === actorId);
+          if (!captured || captured.reportPath !== reportPathValue || captured.reportSha256 !== reportHash
+            || captured.inputTree !== actor.inputTree || Buffer.from(captured.reportBase64 || "", "base64").toString("utf8") !== fs.readFileSync(reportPath, "utf8")) {
+            failures.push(`${scope}: ${role} gate/report does not bind the reviewer child-completion blob and input tree`);
+          }
+          if (report.verdict !== "PASS" || report.findings.some((finding) => finding.status === "OPEN")) {
+            failures.push(`${scope}: ${role} report has unresolved findings or non-PASS verdict`);
+          }
+        } catch (error) {
+          failures.push(`${scope}: ${role} report: ${error.message}`);
+        }
+      }
+      if (boundReports.codeReview && boundReports.patchAssurance) {
+        const findings = new Map();
+        for (const report of [boundReports.codeReview, boundReports.patchAssurance]) {
+          for (const finding of report.findings) findings.set(finding.id, finding);
+        }
+        const dispositions = [...findings.values()].map((finding) => {
+          const disposition = { id: finding.id, severity: finding.severity, status: finding.status };
+          if (finding.reason) disposition.reason = finding.reason;
+          if (finding.approvalId) disposition.approvalId = finding.approvalId;
+          return disposition;
+        }).sort((left, right) => left.id.localeCompare(right.id));
+        const unresolved = dispositions.filter((finding) => finding.status === "OPEN")
+          .map(({ severity, id }) => ({ severity, id }));
+        if (JSON.stringify(dispositions) !== JSON.stringify(gate.findingDispositions || [])) {
+          failures.push(`${scope}: gate finding dispositions do not match bound review reports`);
+        }
+        if (JSON.stringify(unresolved) !== JSON.stringify(gate.unresolvedFindings || [])) {
+          failures.push(`${scope}: gate unresolved findings do not match bound review reports`);
+        }
+      }
+      const conditionalJudge = acceptedActors.find((entry) => entry.scope === scope && entry.control === "process-judge");
+      if (conditionalJudge) {
+        const boundJudge = gate.processJudge?.actorId;
+        const trigger = gate.processJudge?.trigger;
+        if (boundJudge !== conditionalJudge.taskName || !["ambiguity", "waiver", "evidence-conflict", "gate-anomaly"].includes(trigger)) {
+          failures.push(`${scope}: conditional Process Judge is not bound to an allowed deterministic-gate trigger`);
+        }
+        try {
+          const decisionPath = path.resolve(clone, gate.processJudge?.decisionPath || "");
+          const decision = parser.parseProcessJudgeDecision(decisionPath);
+          requireCommittedUnchanged(failures, scope, "Process Judge decision", clone, decisionPath);
+          if (sha256File(decisionPath) !== gate.processJudge.decisionSha256
+            || decision.runId !== expectedRunId || decision.fullFlowContract !== "four-actor-v3"
+            || normalizedActorToken(decision.story) !== normalizedActorToken(scope)
+            || decision.actorId !== conditionalJudge.taskName || decision.trigger !== trigger
+            || decision.gateId !== gate.gateId || decision.verdict !== gate.processJudge.verdict
+            || JSON.stringify([...decision.evidenceIds].sort()) !== JSON.stringify([...(gate.evidenceIds || [])].sort())) {
+            failures.push(`${scope}: conditional Process Judge decision binding mismatch`);
+          }
+        } catch (error) {
+          failures.push(`${scope}: conditional Process Judge decision: ${error.message}`);
+        }
+      }
+      if (gate.reviewCycle > 0) {
+        try {
+          const receiptPath = path.resolve(clone, gate.repair?.receiptPath || "");
+          const receipt = parser.parseDeveloperRepair(receiptPath);
+          requireCommittedUnchanged(failures, scope, "Developer repair receipt", clone, receiptPath);
+          const reactivation = (options.developerReactivations || []).find((entry) => entry.scope === scope
+            && entry.repairCycle === gate.reviewCycle);
+          const priorGate = gates.find((entry) => entry.gateId === gate.repair.priorGateId);
+          if (sha256File(receiptPath) !== gate.repair.receiptSha256
+            || receipt.runId !== expectedRunId || receipt.fullFlowContract !== "four-actor-v3"
+            || normalizedActorToken(receipt.story) !== normalizedActorToken(scope)
+            || receipt.cycle !== gate.reviewCycle || receipt.priorGateId !== gate.repair.priorGateId
+            || receipt.developerActorId !== gate.actors.development || receipt.developerActorId !== gate.repair.developerActorId
+            || receipt.developerSessionId !== reactivation?.developerSessionId
+            || gate.repair.receiptPath !== reactivation?.repairReceiptPath
+            || gate.repair.receiptSha256 !== reactivation?.repairReceiptSha256
+            || receipt.postTree !== gate.applicationTree
+            || !priorGate || priorGate.runId !== expectedRunId || priorGate.verdict !== "REVISE") {
+            failures.push(`${scope}: Developer repair receipt binding mismatch`);
+          }
+        } catch (error) {
+          failures.push(`${scope}: Developer repair receipt: ${error.message}`);
+        }
+      }
+      failures.push(...validateGateEvidence(scope, gate, clone, parser, actors));
+      failures.push(...validateFormalStoryClosePackage(scope, gate, clone, packageActorPaths, packageReportPaths, parser));
+      continue;
+    }
+    const judge = acceptedActors.find((entry) => entry.scope === scope && entry.control === "process-judge");
+    const matchingEpicGates = gates.filter((entry) => entry.verdict === "PASS"
+      && normalizedActorToken(entry.scope) === normalizedActorToken(scope)
+      && entry.decidedBy === judge?.taskName
+      && (!v3Contract || (entry.runId === expectedRunId && entry.fullFlowContract === "four-actor-v3"
+        && JSON.stringify(entry.storyInventory || []) === JSON.stringify(expectedStoryInventory))));
+    if (v3Contract && scope === "epic" && matchingEpicGates.length !== 1) {
+      failures.push(`epic: expected exactly one run-bound PASS gate, observed ${matchingEpicGates.length}`);
+      continue;
+    }
+    const gate = matchingEpicGates[0];
+    if (!gate) { failures.push(`${scope}: typed PASS gate from required Process Judge missing`); continue; }
+    failures.push(...validateGateEvidence(scope, gate, clone, parser, actors));
+  }
   return { ok: failures.length === 0, actorCount: actors.size, gateCount: gates.length, failures };
+}
+
+function validateGateEvidence(scope, gate, clone, parser, actors) {
+  const failures = [];
+  if (!Array.isArray(gate.evidenceIds) || !gate.evidenceIds.length) failures.push(`${scope}: PASS gate has no evidenceIds`);
+  if (gate.gateType === "deterministic-story-close-v3"
+    && (!gate.evidenceIds?.includes(gate.redEvidenceId) || !gate.evidenceIds?.includes(gate.greenEvidenceId))) {
+    failures.push(`${scope}: deterministic gate evidenceIds must directly include redEvidenceId and greenEvidenceId`);
+  }
+  if (execute("git", ["merge-base", "--is-ancestor", gate.repositoryCommit, "HEAD"], clone).status !== 0) {
+    failures.push(`${scope}: gate repositoryCommit is not an ancestor of HEAD`);
+  }
+  for (const evidenceId of gate.evidenceIds || []) {
+    const evidencePath = path.join(clone, "docs", "ai", "evidence", `${evidenceId}.json`);
+    try {
+      const evidence = parser.parseEvidenceManifest(evidencePath);
+      if (gate.gateType === "deterministic-story-close-v3") {
+        requireCommittedUnchanged(failures, scope, `evidence manifest ${evidenceId}`, clone, evidencePath);
+        if (!Array.isArray(evidence.dirtyApplicationPathsBefore) || evidence.dirtyApplicationPathsBefore.length
+          || !Array.isArray(evidence.dirtyApplicationPathsAfter) || evidence.dirtyApplicationPathsAfter.length) {
+          failures.push(`${scope}: evidence ${evidenceId} must start and finish with no dirty application paths`);
+        }
+        const recordedTree = execute("git", ["rev-parse", `${evidence.repositoryCommit}^{tree}`], clone);
+        if (!evidence.repositoryTree || recordedTree.status !== 0 || recordedTree.stdout.trim() !== evidence.repositoryTree) {
+          failures.push(`${scope}: evidence ${evidenceId} repository tree binding is invalid`);
+        }
+      }
+      if (evidence.evidenceId !== evidenceId) failures.push(`${scope}: evidence filename/id mismatch for ${evidenceId}`);
+      const expectedRed = gate.redEvidenceId === evidenceId;
+      if (expectedRed ? evidence.exitCode === 0 : evidence.exitCode !== 0) {
+        failures.push(`${scope}: evidence ${evidenceId} has the wrong ${expectedRed ? "red" : "green"} exit status`);
+      }
+      if (gate.gateType === "deterministic-story-close-v3" && expectedRed
+        && !committedRedIsTestOnly(clone, evidence.repositoryCommit)) {
+        failures.push(`${scope}: red evidence ${evidenceId} is not bound to a committed test-only tree`);
+      }
+      if (normalizedActorToken(evidence.story) !== normalizedActorToken(scope)) failures.push(`${scope}: evidence ${evidenceId} scope mismatch`);
+      if (!actors.has(evidence.actorInstanceId)) failures.push(`${scope}: evidence ${evidenceId} actor is missing`);
+      else if (normalizedActorToken(actors.get(evidence.actorInstanceId).story) !== normalizedActorToken(scope)) failures.push(`${scope}: evidence ${evidenceId} actor scope mismatch`);
+      if (execute("git", ["merge-base", "--is-ancestor", evidence.repositoryCommit, "HEAD"], clone).status !== 0) failures.push(`${scope}: evidence ${evidenceId} repositoryCommit is not an ancestor of HEAD`);
+      const rawArtifact = path.resolve(clone, evidence.rawArtifact.path);
+      const relative = path.relative(clone, rawArtifact);
+      if (!relative || relative.startsWith("..") || path.isAbsolute(relative)) failures.push(`${scope}: evidence ${evidenceId} artifact escapes clone`);
+      else if (!fs.existsSync(rawArtifact)) failures.push(`${scope}: evidence ${evidenceId} artifact missing`);
+      else if (path.relative(fs.realpathSync(clone), fs.realpathSync(rawArtifact)).startsWith("..") || sha256File(rawArtifact) !== evidence.rawArtifact.sha256) failures.push(`${scope}: evidence ${evidenceId} artifact/hash mismatch`);
+      else if (gate.gateType === "deterministic-story-close-v3") {
+        requireCommittedUnchanged(failures, scope, `raw artifact ${evidenceId}`, clone, rawArtifact);
+      }
+    } catch (error) { failures.push(`${scope}: evidence ${evidenceId}: ${error.message}`); }
+  }
+  return failures;
 }
 
 function runnerSourceSha256() {
@@ -1312,6 +2321,31 @@ function resolvedTaskSha256(resolved) {
   }));
 }
 
+function frozenProductContract(resolved) {
+  const stories = resolved.kind === "epic" ? resolved.task.stories : [resolved.task];
+  const contract = {
+    schema: "acef.execution-assurance-product-contract.v1",
+    taskId: resolved.taskId,
+    kind: resolved.kind,
+    stories: stories.map((story) => ({
+      id: story.id || resolved.taskId,
+      prompt: story.prompt,
+      acceptanceCriteria: story.acceptanceCriteria || story.ac || [],
+      dependsOn: story.dependsOn || [],
+      allowedPaths: story.allowedPaths || [],
+    })),
+  };
+  return { contract, sha256: sha256(JSON.stringify(contract)) };
+}
+
+function withheldOracleSha256(resolved) {
+  const stories = resolved.kind === "epic" ? resolved.task.stories : [resolved.task];
+  return sha256(JSON.stringify({
+    stories: stories.map((story) => ({ id: story.id || resolved.taskId, setup: story.setup || [], verify: story.verify || [], expected: story.expected || [] })),
+    integration: resolved.kind === "epic" ? resolved.task.integration : null,
+  }));
+}
+
 function catalogTaskBindings(manifest, manifestPath) {
   return Object.keys(manifest.taskCatalog || {}).sort().map((taskId) => {
     const resolved = resolveCatalogTask(manifest, manifestPath, taskId);
@@ -1350,7 +2384,7 @@ function validateCheckpointInputs(opts, checkpoint, resolved, receipt, manifest)
   if (failed.length) throw new Error(`${checkpoint.attemptRunId} checkpoint input validation failed: ${failed.join("; ")}`);
 }
 
-function evaluateTreatmentState(clone, attempt) {
+function evaluateTreatmentState(clone, attempt, frozenExpectedStories = [], expectedRunId = "") {
   if (attempt.treatment === "repo-native") return { ok: true, expected: "repo-native", observed: null, failures: [] };
   const activeRunPath = path.join(clone, "docs", "ai", "ACEF_ACTIVE_RUN.json");
   if (!fs.existsSync(activeRunPath)) {
@@ -1370,6 +2404,16 @@ function evaluateTreatmentState(clone, attempt) {
   } else {
     if (observed.workflowId !== attempt.workflowId) failures.push(`candidate workflowId is ${observed.workflowId || "missing"}`);
     if (observed.assuranceProfile !== attempt.assuranceProfile) failures.push(`candidate assuranceProfile is ${observed.assuranceProfile || "missing"}`);
+    if (attempt.actorContractVersion === "four-actor-v3" && observed.fullFlowContract !== "four-actor-v3") {
+      failures.push(`candidate fullFlowContract is ${observed.fullFlowContract || "missing"}`);
+    }
+    if (attempt.actorContractVersion === "four-actor-v3"
+      && JSON.stringify(observed.expectedStories || []) !== JSON.stringify(frozenExpectedStories)) {
+      failures.push(`candidate expectedStories inventory does not match frozen task catalog`);
+    }
+    if (attempt.actorContractVersion === "four-actor-v3" && expectedRunId && observed.runId !== expectedRunId) {
+      failures.push(`candidate runId is ${observed.runId || "missing"}, expected ${expectedRunId}`);
+    }
   }
   if (observed.status !== "complete") failures.push(`active run status is ${observed.status || "missing"}, expected complete`);
   return {
@@ -1453,6 +2497,45 @@ function ensureVerification(checkpoint, verificationContract) {
   return ensureVerification(verifyingCheckpoint, verificationContract);
 }
 
+function writeArtifactOnlyJudgePacket(opts, payload) {
+  const packetPath = path.join(opts.pilotWorkspace, "judge-packets", `${payload.attemptRunId}.json`);
+  const packet = {
+    schema: "acef.execution-assurance-judge-packet.v1",
+    experimentId: payload.experimentId,
+    attemptId: payload.attemptId,
+    attemptRunId: payload.attemptRunId,
+    attemptOrdinal: payload.attemptOrdinal,
+    taskId: payload.taskId,
+    storyInventory: payload.storyInventory,
+    project: payload.project,
+    projectCommit: payload.projectCommit,
+    productContract: payload.productContract,
+    productContractSha256: payload.productContractSha256,
+    withheldOracleSha256: payload.withheldOracleSha256,
+    inputBundleSha256: payload.inputBundleSha256,
+    artifactOnly: true,
+    treatmentDisclosed: false,
+    transcriptIncluded: false,
+    diff: { path: payload.diffPath, sha256: payload.diffSha256 },
+    verification: {
+      receiptPath: payload.verificationReceiptPath,
+      receiptSha256: payload.productDoneReceiptSha256,
+      stdoutPath: payload.verificationStdoutPath,
+      stdoutSha256: payload.verificationStdoutSha256,
+      stderrPath: payload.verificationStderrPath,
+      stderrSha256: payload.verificationStderrSha256,
+    },
+    changedPaths: payload.changedPaths,
+    createdAt: payload.createdAt,
+  };
+  const bytes = `${JSON.stringify(packet, null, 2)}\n`;
+  if (fs.existsSync(packetPath) && fs.readFileSync(packetPath, "utf8") !== bytes) {
+    throw new Error(`immutable judge packet already differs: ${packetPath}`);
+  }
+  if (!fs.existsSync(packetPath)) writeJsonAtomic(packetPath, packet);
+  return { path: packetPath, sha256: sha256(fs.readFileSync(packetPath, "utf8")), packet };
+}
+
 function finalizePilotAttempt(manifest, opts, checkpoint) {
   const existing = readPilotResultRow(opts.pilotResults, checkpoint.attemptRunId);
   if (existing) {
@@ -1508,24 +2591,76 @@ function finalizePilotAttempt(manifest, opts, checkpoint) {
     stdoutSha256: sha256(fs.readFileSync(verificationRequest.stdoutPath, "utf8")),
     stderrSha256: sha256(fs.readFileSync(verificationRequest.stderrPath, "utf8")),
   };
+  const productDoneReceipt = JSON.parse(fs.readFileSync(checkpoint.verificationReceiptPath, "utf8"));
   const paths = changedPaths(checkpoint.clone, checkpoint.scoredBase);
   const allowedPaths = resolved.kind === "epic"
     ? [...new Set(resolved.task.stories.flatMap((story) => story.allowedPaths || []))]
     : (resolved.task.allowedPaths || []);
   const scopeViolations = paths.filter((entry) => !isPilotHarnessPath(entry) && !isAllowedPath(entry, allowedPaths));
   const expectationFailures = evaluateExpectations(checkpoint.clone, verificationContract.expected || [], resolved.fixtureRoot);
-  const diff = captureGitDiff(checkpoint.clone, checkpoint.scoredBase);
+  const fullDiff = captureGitDiff(checkpoint.clone, checkpoint.scoredBase);
+  const diff = captureGitDiff(checkpoint.clone, checkpoint.scoredBase, allowedPaths);
   const diffPath = path.join(opts.pilotWorkspace, "artifacts", `${checkpoint.attemptRunId}.patch`);
+  const fullDiffPath = path.join(opts.pilotWorkspace, "artifacts", `${checkpoint.attemptRunId}.full.patch`);
   fs.mkdirSync(path.dirname(diffPath), { recursive: true });
   fs.writeFileSync(diffPath, diff);
-  const commandTrace = parseIndependentTrace(`${actor.stdout}\nscope=epic ${verificationContract.verify.join(" ")}\n`, {
-    scopeIds: resolved.kind === "epic" ? resolved.task.stories.map((story) => story.id) : [resolved.taskId],
-    retryableControls: ["codeReview", "verifyPatch"],
-    requiredControlsPerScope: attempt.treatment === "repo-native" ? []
-      : ["readiness", "atdd", "development", "codeReview", "testReview", "processJudge"],
+  fs.writeFileSync(fullDiffPath, fullDiff);
+  const attemptFinishedAt = new Date().toISOString();
+  const productDoneReceiptSha256 = sha256(fs.readFileSync(checkpoint.verificationReceiptPath, "utf8"));
+  const productContract = frozenProductContract(resolved);
+  const oracleSha256 = withheldOracleSha256(resolved);
+  const inputBundleSha256 = sha256(JSON.stringify({
+    productContractSha256: productContract.sha256,
+    withheldOracleSha256: oracleSha256,
+    productDiffSha256: sha256(diff),
+    productChangedPaths: paths.filter((entry) => allowedPaths.some((allowed) => isAllowedPath(entry, [allowed]))),
+    verificationReceiptSha256: productDoneReceiptSha256,
+    verificationStdoutSha256: verification.stdoutSha256,
+    verificationStderrSha256: verification.stderrSha256,
+  }));
+  const judgePacket = writeArtifactOnlyJudgePacket(opts, {
+    experimentId: manifest.experimentId,
+    attemptId: attempt.id,
+    attemptRunId: checkpoint.attemptRunId,
+    attemptOrdinal: checkpoint.attemptOrdinal,
+    taskId: attempt.taskId,
+    storyInventory: resolved.kind === "epic" ? resolved.task.stories.map((story) => story.id) : [resolved.taskId],
+    project: resolved.repo,
+    projectCommit: resolved.commit,
+    productContract: productContract.contract,
+    productContractSha256: productContract.sha256,
+    withheldOracleSha256: oracleSha256,
+    inputBundleSha256,
+    diffPath,
+    diffSha256: sha256(diff),
+    verificationReceiptPath: checkpoint.verificationReceiptPath,
+    productDoneReceiptSha256,
+    verificationStdoutPath: verificationRequest.stdoutPath,
+    verificationStdoutSha256: verification.stdoutSha256,
+    verificationStderrPath: verificationRequest.stderrPath,
+    verificationStderrSha256: verification.stderrSha256,
+    changedPaths: paths.filter((entry) => isAllowedPath(entry, allowedPaths)),
+    createdAt: attemptFinishedAt,
   });
+  const traceOptions = {
+    scopeIds: resolved.kind === "epic" ? resolved.task.stories.map((story) => story.id) : [resolved.taskId],
+    retryableControls: attempt.actorContractVersion === "four-actor-v3"
+      ? ["codeReview", "patchAssurance"] : ["codeReview", "verifyPatch"],
+    requiredControlsPerScope: attempt.treatment === "repo-native" ? []
+      : attempt.actorContractVersion === "four-actor-v3"
+        ? ["readiness", "atdd", "development", "codeReview", "patchAssurance"]
+        : ["readiness", "atdd", "development", "codeReview", "testReview", "processJudge"],
+  };
+  const lifecycleCommandTrace = parseIndependentTrace(actor.stdout, traceOptions);
+  const harnessOracleTrace = parseIndependentTrace(`scope=epic ${verificationContract.verify.join(" ")}\n`, {
+    scopeIds: traceOptions.scopeIds, requiredControlsPerScope: [],
+  });
+  const commandTrace = parseIndependentTrace(`${actor.stdout}\nscope=epic ${verificationContract.verify.join(" ")}\n`, traceOptions);
   const actorContract = resolved.kind === "epic" && attempt.treatment !== "repo-native"
-    ? lifecycleActorContract(resolved) : [];
+    ? lifecycleActorContract(resolved, attempt.actorContractVersion) : [];
+  const treatmentState = evaluateTreatmentState(checkpoint.clone, attempt,
+    resolved.kind === "epic" ? resolved.task.stories.map((story) => story.id) : [resolved.taskId],
+    checkpoint.attemptRunId);
   const collaborationEvidence = actorContract.length
     ? loadCollaborationEvidence(checkpoint.rawPath, actorContract, {
       cwd: checkpoint.clone,
@@ -1534,19 +2669,42 @@ function finalizePilotAttempt(manifest, opts, checkpoint) {
       finishedAt: receipt.finishedAt,
       allowUnexpectedActors: attempt.treatment === "legacy",
       legacyPolicy: attempt.treatment === "legacy",
+      actorContractVersion: attempt.actorContractVersion,
+      maximumActorInvocations: manifest.promotionGates?.budget?.maximumActorInvocations,
+      lifecycleIntegrationArgv: attempt.actorContractVersion === "four-actor-v3"
+        ? verificationContract.verify : null,
     })
     : { ok: true, expectedActorCount: 0, observedActorCount: 0, dispatches: [], failures: [] };
+  const childMetrics = collaborationEvidence.childMetrics
+    || { input_tokens: 0, cached_input_tokens: 0, output_tokens: 0, tool_calls: 0, commandText: "" };
+  const teamMetrics = aggregateTeamMetrics(actor, childMetrics);
+  const teamLifecycleCommandTrace = parseIndependentTrace(
+    `${actor.stdout}\n${childMetrics.commandText || ""}`,
+    traceOptions,
+  );
   const durableLifecycleEvidence = actorContract.length
     ? validateDurableLifecycleEvidence(
       checkpoint.clone,
       collaborationEvidence.actorContract || actorContract,
       collaborationEvidence.acceptedActors || actorContract,
+      {
+        actorContractVersion: attempt.actorContractVersion,
+        runId: treatmentState.observed?.runId,
+        storyInventory: resolved.kind === "epic" ? resolved.task.stories.map((story) => story.id) : [resolved.taskId],
+        developerReactivations: collaborationEvidence.developerReactivations || [],
+        reviewerCompletions: collaborationEvidence.reviewerCompletions || [],
+        lifecycleIntegration: collaborationEvidence.lifecycleIntegration || null,
+      },
     )
     : { ok: true, actorCount: 0, gateCount: 0, failures: [] };
   const trace = actorContract.length
     ? parseLifecycleDispatchTrace(collaborationEvidence.dispatchTraceContract || collaborationEvidence.actorContract || [], {
       scopeIds: resolved.task.stories.map((story) => story.id),
-      requiredControlsPerScope: ["atdd", "development", "code-review", "verify-patch", "test-review", "process-judge"],
+      maximumRetryOrdinal: attempt.actorContractVersion === "four-actor-v3" ? 2 : 1,
+      globalRepairCycles: attempt.actorContractVersion === "four-actor-v3",
+      requiredControlsPerScope: attempt.actorContractVersion === "four-actor-v3"
+        ? ["atdd", "development", "code-review", "patch-assurance"]
+        : ["atdd", "development", "code-review", "verify-patch", "test-review", "process-judge"],
     })
     : commandTrace;
   if (actorContract.length) {
@@ -1558,13 +2716,21 @@ function finalizePilotAttempt(manifest, opts, checkpoint) {
     };
     writeJsonAtomic(checkpoint.checkpointPath, checkpoint);
   }
-  const treatmentState = evaluateTreatmentState(checkpoint.clone, attempt);
-  const automatedOraclePassed = actor.status === 0 && verification.status === 0
+  const harnessWait = collaborationEvidence.sessionPath && fs.existsSync(collaborationEvidence.sessionPath)
+    ? parseHarnessWaitMetrics(fs.readFileSync(collaborationEvidence.sessionPath, "utf8"), activeDeliverySeconds)
+    : parseHarnessWaitMetrics("", activeDeliverySeconds);
+  const pilotBudgets = evaluatePilotBudgets(
+    manifest, attempt, activeDeliverySeconds, teamMetrics, collaborationEvidence,
+    attempt.actorContractVersion === "four-actor-v3" ? teamLifecycleCommandTrace : commandTrace,
+    harnessWait,
+  );
+  const processOraclePassed = actor.status === 0 && verification.status === 0
     && scopeViolations.length === 0 && expectationFailures.length === 0
     && collaborationEvidence.ok && durableLifecycleEvidence.ok
     && (!actorContract.length || collaborationEvidence.closeoutCreatedMandatoryChains === 0)
     && trace.scopeAttributionComplete && trace.lifecycleComplete && !trace.duplicateLifecycle
     && treatmentState.ok;
+  const automatedOraclePassed = processOraclePassed && pilotBudgets.ok;
   const row = {
     schema: "acef.execution-assurance-pilot-attempt.v1",
     experimentId: manifest.experimentId,
@@ -1573,9 +2739,11 @@ function finalizePilotAttempt(manifest, opts, checkpoint) {
     attemptRunId: checkpoint.attemptRunId,
     order: attempt.order,
     taskId: attempt.taskId,
+    storyInventory: resolved.kind === "epic" ? resolved.task.stories.map((story) => story.id) : [resolved.taskId],
     treatment: attempt.treatment,
     workflowId: attempt.workflowId,
     assuranceProfile: attempt.assuranceProfile,
+    actorContractVersion: attempt.actorContractVersion,
     frameworkCommit: attempt.frameworkCommit,
     project: resolved.repo,
     projectCommit: resolved.commit,
@@ -1586,7 +2754,7 @@ function finalizePilotAttempt(manifest, opts, checkpoint) {
     model: manifest.pilotRuntime.model,
     reasoningEffort: manifest.pilotRuntime.reasoningEffort,
     startedAt: receipt.startedAt,
-    finishedAt: new Date().toISOString(),
+    finishedAt: attemptFinishedAt,
     activeDeliverySeconds,
     wallTimeToProductDoneSeconds: null,
     timeToFirstValidGreenSeconds: null,
@@ -1599,23 +2767,46 @@ function finalizePilotAttempt(manifest, opts, checkpoint) {
     verificationReceiptPath: checkpoint.verificationReceiptPath,
     verificationStdoutSha256: verification.stdoutSha256,
     verificationStderrSha256: verification.stderrSha256,
-    inputTokens: actor.input_tokens,
-    cachedInputTokens: actor.cached_input_tokens,
-    outputTokens: actor.output_tokens,
-    toolCalls: actor.tool_calls,
+    productDoneReceiptPath: checkpoint.verificationReceiptPath,
+    productDoneReceiptSha256,
+    harnessProductDoneAt: verification.status === 0 ? productDoneReceipt.finishedAt : null,
+    judgePacketPath: judgePacket.path,
+    judgePacketSha256: judgePacket.sha256,
+    judgeLaunchRoot: path.join(opts.pilotWorkspace, "blind-judge", checkpoint.attemptRunId),
+    inputTokens: teamMetrics.input_tokens,
+    cachedInputTokens: teamMetrics.cached_input_tokens,
+    outputTokens: teamMetrics.output_tokens,
+    toolCalls: teamMetrics.tool_calls,
+    conductorMetrics: {
+      inputTokens: actor.input_tokens,
+      cachedInputTokens: actor.cached_input_tokens,
+      outputTokens: actor.output_tokens,
+      toolCalls: actor.tool_calls,
+    },
+    teamMetrics,
     changedPaths: paths,
     scopeViolations,
     expectationFailures,
     independentTrace: trace,
     commandTrace,
+    lifecycleCommandTrace: attempt.actorContractVersion === "four-actor-v3" ? teamLifecycleCommandTrace : lifecycleCommandTrace,
+    harnessOracleTrace,
     collaborationEvidence,
     durableLifecycleEvidence,
     treatmentState,
+    processOraclePassed,
+    harnessWait,
+    pilotBudgets,
     transcriptPath: checkpoint.rawPath,
     transcriptSha256: sha256(actor.stdout),
     stderrSha256: sha256(actor.stderr),
     diffPath,
     diffSha256: sha256(diff),
+    fullDiffPath,
+    fullDiffSha256: sha256(fullDiff),
+    productContractSha256: productContract.sha256,
+    withheldOracleSha256: oracleSha256,
+    judgeInputBundleSha256: inputBundleSha256,
     automatedOraclePassed,
     blindJudgeStatus: "pending",
     productDone: false,
@@ -1626,6 +2817,205 @@ function finalizePilotAttempt(manifest, opts, checkpoint) {
   writeJsonAtomic(checkpoint.checkpointPath, { ...checkpoint, status: "finalized", finalizedAt: row.finishedAt, result: row.result });
   console.log(`${row.result} ${attempt.id}: automated=${automatedOraclePassed ? "PASS" : "FAIL"}; blind-judge=pending; product-done=false; active=${activeDeliverySeconds}s`);
   console.log(`ARTIFACT ${diffPath}`);
+  } finally {
+    claim.release();
+  }
+}
+
+function readJsonlRows(filePath) {
+  if (!fs.existsSync(filePath)) return [];
+  return fs.readFileSync(filePath, "utf8").split(/\r?\n/).filter(Boolean).map((line, index) => {
+    try { return JSON.parse(line); }
+    catch { throw new Error(`${filePath}:${index + 1} is invalid JSON`); }
+  });
+}
+
+function blindJudgePrompt(packet) {
+  return [
+    "You are the independent blind product Judge for one controlled experiment attempt.",
+    "Use only the immutable artifact-only packet and the product/test artifacts it names. Do not inspect process-control state or docs, implementation transcripts, workflow labels, or other runs.",
+    `Packet path: ${packet._packetPath}`,
+    `Frozen product contract SHA256: ${packet.productContractSha256}`,
+    `Judge input bundle SHA256: ${packet.inputBundleSha256}`,
+    "Judge whether the product contract is complete and correct. Return one final answer with these exact lines:",
+    `JUDGE_PACKET_SHA256=${packet._packetSha256}`,
+    `JUDGE_INPUT_BUNDLE_SHA256=${packet.inputBundleSha256}`,
+    `PRODUCT_CONTRACT_SHA256=${packet.productContractSha256}`,
+    "JUDGE_VERDICT=<PASS|FAIL|PENDING>",
+    "PRODUCT_OUTCOME_COMPLETE=<true|false>",
+    "SCOPE_VIOLATION=<true|false>",
+    "TEST_WEAKENING=<true|false>",
+    "FINDINGS_SHA256=<sha256 of canonical JSON findings array>",
+    "JUDGMENT_JSON_BASE64=<canonical base64 of a JSON object with verdict, productOutcomeComplete, scopeViolation, testWeakening, and findings>",
+    "Each finding must have a unique id and severity CRITICAL, HIGH, MEDIUM, or LOW. PASS requires an empty unresolved Critical/High set.",
+  ].join("\n");
+}
+
+function judgeFinalAnswerFromTranscript(sessionText) {
+  const answers = String(sessionText || "").split(/\r?\n/).filter(Boolean).flatMap((line) => {
+    let row;
+    try { row = JSON.parse(line); } catch { return []; }
+    const payload = row.payload || {};
+    if (row.type === "event_msg" && payload.type === "agent_message" && payload.phase === "final_answer") {
+      return [String(payload.message || "")];
+    }
+    if (row.type === "response_item" && payload.type === "agent_message") {
+      return [Array.isArray(payload.content) ? payload.content.map((entry) => entry.text || entry.output_text || "").join("\n") : String(payload.text || "")];
+    }
+    return [];
+  }).filter((text) => /JUDGMENT_JSON_BASE64=/.test(text));
+  if (!answers.length) throw new Error("pinned blind Judge did not return a machine-bound final answer");
+  return answers.at(-1);
+}
+
+function runPilotJudge(manifest, opts) {
+  const attempt = readPilotResultRow(opts.pilotResults, opts.pilotJudge);
+  if (!attempt) throw new Error(`immutable pilot attempt not found: ${opts.pilotJudge}`);
+  if (!fs.existsSync(attempt.judgePacketPath)
+    || sha256(fs.readFileSync(attempt.judgePacketPath, "utf8")) !== attempt.judgePacketSha256) {
+    throw new Error("immutable Judge packet is missing or changed");
+  }
+  const packet = JSON.parse(fs.readFileSync(attempt.judgePacketPath, "utf8"));
+  packet._packetPath = attempt.judgePacketPath;
+  packet._packetSha256 = attempt.judgePacketSha256;
+  const runtime = resolvePinnedClient(manifest.pilotRuntime);
+  const priorJudgments = readJsonlRows(opts.pilotJudgments).filter((entry) => entry.attemptRunId === attempt.attemptRunId);
+  if (priorJudgments.some((entry) => entry.verdict !== "PENDING")) {
+    throw new Error(`${attempt.attemptRunId} already has a terminal blind judgment`);
+  }
+  const ordinal = priorJudgments.length + 1;
+  const launchRoot = path.join(attempt.judgeLaunchRoot, `judge-${ordinal}`);
+  fs.mkdirSync(launchRoot, { recursive: true });
+  const prompt = blindJudgePrompt(packet);
+  const rawPath = path.join(launchRoot, "session-output.jsonl");
+  const actorReceiptPath = path.join(launchRoot, "actor-receipt.json");
+  const requestPath = path.join(launchRoot, "request.json");
+  const checkpointPath = path.join(launchRoot, "checkpoint.json");
+  const request = {
+    command: runtime.clientPath,
+    args: [
+      "exec", "--json", "--ignore-user-config", "--ignore-rules",
+      "--dangerously-bypass-approvals-and-sandbox", "--dangerously-bypass-hook-trust",
+      "--model", manifest.pilotRuntime.model,
+      "--config", `model_reasoning_effort=${JSON.stringify(manifest.pilotRuntime.reasoningEffort)}`,
+      "-C", launchRoot, prompt,
+    ],
+    cwd: launchRoot,
+    stdoutPath: rawPath,
+    stderrPath: `${rawPath}.stderr`,
+    receiptPath: actorReceiptPath,
+    startPath: `${rawPath}.started.json`,
+    launchNonce: `${attempt.attemptRunId}:blind-judge:${ordinal}:v1`,
+    timeoutMs: 1800000,
+  };
+  writeJsonAtomic(requestPath, request);
+  const checkpoint = {
+    schema: "acef.execution-assurance-judge-checkpoint.v1", experimentId: manifest.experimentId,
+    attemptRunId: attempt.attemptRunId, checkpointPath, clone: launchRoot, status: "prepared",
+  };
+  writeJsonAtomic(checkpointPath, checkpoint);
+  ensureActorRequest(checkpoint, {
+    label: "blind-judge", requestPath, receiptPath: actorReceiptPath, startPath: request.startPath,
+    requestSha256: sha256(fs.readFileSync(requestPath, "utf8")), launchNonce: request.launchNonce,
+    timeoutMs: request.timeoutMs, status: "judging", pidField: "judgePid",
+  });
+  const actorReceipt = JSON.parse(fs.readFileSync(actorReceiptPath, "utf8"));
+  if (actorReceipt.status !== 0) throw new Error(`pinned blind Judge exited ${actorReceipt.status}`);
+  let threadId = null;
+  for (const line of fs.readFileSync(rawPath, "utf8").split(/\r?\n/).filter(Boolean)) {
+    try { const row = JSON.parse(line); if (row.type === "thread.started") threadId = row.thread_id; } catch {}
+  }
+  const sessionTranscriptPath = findCodexSessionTranscript(threadId);
+  if (!sessionTranscriptPath) throw new Error("pinned blind Judge session transcript is missing");
+  const sessionText = fs.readFileSync(sessionTranscriptPath, "utf8");
+  const finalAnswer = judgeFinalAnswerFromTranscript(sessionText);
+  const base64 = finalAnswer.match(/^JUDGMENT_JSON_BASE64=([A-Za-z0-9+/=]+)$/m)?.[1] || "";
+  const judgmentPayloadBytes = Buffer.from(base64, "base64");
+  if (!base64 || judgmentPayloadBytes.toString("base64") !== base64) throw new Error("blind Judge judgment payload is not canonical base64");
+  const payload = JSON.parse(judgmentPayloadBytes.toString("utf8"));
+  const meta = sessionText.split(/\r?\n/).filter(Boolean).flatMap((line) => {
+    try { const row = JSON.parse(line); return row.type === "session_meta" ? [row.payload || {}] : []; } catch { return []; }
+  })[0];
+  const judgeSessionId = meta?.id || meta?.session_id || "";
+  const judgeReceiptPath = path.join(launchRoot, "judge-receipt.json");
+  const judgeReceipt = {
+    schema: "acef.execution-assurance-judge-receipt.v1", experimentId: manifest.experimentId,
+    attemptRunId: attempt.attemptRunId, judgePacketSha256: attempt.judgePacketSha256,
+    inputBundleSha256: attempt.judgeInputBundleSha256, productContractSha256: attempt.productContractSha256,
+    judgeSessionId, sessionTranscriptPath, sessionTranscriptSha256: sha256(sessionText),
+    freshSession: true, artifactOnly: true, treatmentBlinded: true, transcriptWithheld: true,
+    crossRunMemory: false, parentSessionId: null, judgeModel: manifest.pilotRuntime.model,
+    reasoningEffort: manifest.pilotRuntime.reasoningEffort, clientPath: runtime.clientPath,
+    clientBinarySha256: runtime.clientBinarySha256, clientVersion: runtime.observedClientVersion,
+    requestPath, requestSha256: sha256(fs.readFileSync(requestPath, "utf8")),
+    actorReceiptPath, actorReceiptSha256: sha256(fs.readFileSync(actorReceiptPath, "utf8")),
+    promptSha256: sha256(prompt), startedAt: actorReceipt.startedAt, finishedAt: actorReceipt.finishedAt,
+  };
+  writeJsonAtomic(judgeReceiptPath, judgeReceipt);
+  const judgment = {
+    schema: "acef.execution-assurance-pilot-judgment.v3", experimentId: manifest.experimentId,
+    attemptId: attempt.attemptId, attemptRunId: attempt.attemptRunId, attemptOrdinal: attempt.attemptOrdinal,
+    diffSha256: attempt.diffSha256, judgePacketId: `J-${ordinal}-${sha256(sessionText).slice(0, 12)}`,
+    judgePacketSha256: attempt.judgePacketSha256, judgeModel: manifest.pilotRuntime.model,
+    judgeReceiptPath, judgeReceiptSha256: sha256(fs.readFileSync(judgeReceiptPath, "utf8")), judgeSessionId,
+    productDoneReceiptSha256: attempt.productDoneReceiptSha256, treatmentBlinded: true, transcriptWithheld: true,
+    scopeViolation: payload.scopeViolation, testWeakening: payload.testWeakening,
+    verdict: payload.verdict, findings: payload.findings, productOutcomeComplete: payload.productOutcomeComplete,
+    judgedAt: new Date().toISOString(),
+  };
+  const judgmentPath = path.join(launchRoot, "judgment.json");
+  writeJsonAtomic(judgmentPath, judgment);
+  return ingestPilotJudgment(manifest, { ...opts, pilotIngestJudgment: judgmentPath });
+}
+
+function ingestPilotJudgment(manifest, opts) {
+  if (!fs.existsSync(opts.pilotIngestJudgment) || !fs.statSync(opts.pilotIngestJudgment).isFile()) {
+    throw new Error("judgment input must be an existing JSON file");
+  }
+  const judgment = JSON.parse(fs.readFileSync(opts.pilotIngestJudgment, "utf8"));
+  const attempt = readPilotResultRow(opts.pilotResults, judgment.attemptRunId);
+  if (!attempt) throw new Error(`immutable pilot attempt not found: ${judgment.attemptRunId || "missing attemptRunId"}`);
+  const verdict = derivePilotVerdict(manifest, attempt, judgment);
+  const safeRun = String(judgment.attemptRunId).replace(/[^A-Za-z0-9._-]/g, "_");
+  const safePacket = String(judgment.judgePacketId).replace(/[^A-Za-z0-9._-]/g, "_");
+  const verdictPath = path.join(opts.pilotVerdictDirectory, `${safeRun}--${safePacket}.json`);
+  const claim = acquireFinalizationClaim(
+    opts.pilotJudgments,
+    `judgment-${safeRun}-${safePacket}`,
+    path.join(opts.pilotWorkspace, "judgment-locks"),
+  );
+  try {
+    const judgments = readJsonlRows(opts.pilotJudgments);
+    const existingJudgment = judgments.find((entry) => entry.judgePacketId === judgment.judgePacketId);
+    if (existingJudgment && sha256(JSON.stringify(existingJudgment)) !== sha256(JSON.stringify(judgment))) {
+      throw new Error(`judgePacketId ${judgment.judgePacketId} already exists with different immutable content`);
+    }
+    const terminalJudgment = judgments.find((entry) => entry.experimentId === judgment.experimentId
+      && entry.attemptRunId === judgment.attemptRunId && entry.verdict !== "PENDING");
+    if (!existingJudgment && terminalJudgment) {
+      throw new Error(`attempt ${judgment.attemptRunId} already has terminal ${terminalJudgment.verdict} judgment; only PENDING is supersedable`);
+    }
+    const reusedJudgeSession = judgments.find((entry) => entry.experimentId === judgment.experimentId
+      && entry.attemptRunId === judgment.attemptRunId && entry.judgeSessionId === judgment.judgeSessionId
+      && entry.judgePacketId !== judgment.judgePacketId);
+    if (!existingJudgment && reusedJudgeSession) {
+      throw new Error(`judge session ${judgment.judgeSessionId} is not fresh for packet ${judgment.judgePacketId}`);
+    }
+    if (fs.existsSync(verdictPath)) {
+      const existingVerdict = JSON.parse(fs.readFileSync(verdictPath, "utf8"));
+      if (sha256(JSON.stringify(existingVerdict)) !== sha256(JSON.stringify(verdict))) {
+        throw new Error(`immutable verdict artifact already differs: ${verdictPath}`);
+      }
+    } else {
+      writeJsonAtomic(verdictPath, verdict);
+    }
+    if (!existingJudgment) {
+      fs.mkdirSync(path.dirname(opts.pilotJudgments), { recursive: true });
+      fs.appendFileSync(opts.pilotJudgments, `${JSON.stringify(judgment)}\n`);
+    }
+    console.log(`${existingJudgment ? "ALREADY_INGESTED" : "INGESTED"} ${judgment.judgePacketId}: ${verdict.result}`);
+    console.log(`VERDICT ${verdictPath}`);
+    return { judgment, verdict, verdictPath, alreadyIngested: Boolean(existingJudgment) };
   } finally {
     claim.release();
   }
@@ -1691,7 +3081,7 @@ function runPilotAttempt(manifest, opts) {
   const rawPath = path.join(opts.pilotWorkspace, "raw", `${executionAttempt.id}.jsonl`);
   const receiptPath = path.join(opts.pilotWorkspace, "receipts", `${executionAttempt.id}.json`);
   const requestPath = path.join(opts.pilotWorkspace, "requests", `${executionAttempt.id}.json`);
-  const request = pilotAgentRequest(attempt, resolved, prepared.clone, manifest, rawPath, receiptPath, clientRuntime);
+  const request = pilotAgentRequest(executionAttempt, resolved, prepared.clone, manifest, rawPath, receiptPath, clientRuntime);
   request.startPath = `${rawPath}.started.json`;
   request.launchNonce = `${executionAttempt.id}:actor:v1`;
   writeJsonAtomic(requestPath, request);
@@ -1785,6 +3175,14 @@ function main() {
     finalizePilotAttempt(manifest, opts, latestPilotCheckpoint(opts, opts.pilotFinalize));
     return;
   }
+  if (opts.pilotJudge) {
+    runPilotJudge(manifest, opts);
+    return;
+  }
+  if (opts.pilotIngestJudgment) {
+    ingestPilotJudgment(manifest, opts);
+    return;
+  }
   runStage0(manifest, opts);
 }
 
@@ -1801,16 +3199,30 @@ module.exports = {
   catalogTaskBindings,
   correctionSessionWrites,
   ensureActorRequest,
+  evaluatePilotBudgets,
   evaluateTreatmentState,
   finalizePilotAttempt,
   forceTrackInstalledFramework,
+  ingestPilotJudgment,
+  runPilotJudge,
+  blindJudgePrompt,
   isBehavioralRed,
   lifecycleActorContract,
   parseCollaborationEvidence,
+  parseReviewerCompletion,
+  codexSessionMetrics,
+  aggregateTeamMetrics,
+  committedUnchangedAtHead,
+  parseHarnessWaitMetrics,
+  parseLifecycleIntegrationEvidence,
   reconcileFinalizedCheckpoint,
   resolvePinnedClient,
   runnerSourceSha256,
+  writeArtifactOnlyJudgePacket,
   validateDurableLifecycleEvidence,
+  validateFormalStoryClosePackage,
   validateCorrectionBinding,
   resolvedTaskSha256,
+  frozenProductContract,
+  withheldOracleSha256,
 };

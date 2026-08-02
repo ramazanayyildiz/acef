@@ -227,6 +227,9 @@ function buildNext(repo, roleOverride) {
   base.active_state = {
     lane: activeRun.record.lane,
     workflow: activeRun.record.workflowId,
+    full_flow_contract: activeRun.record.workflowId === "full-bmad"
+      ? (activeRun.record.fullFlowContract || "six-actor-v2")
+      : null,
     assurance: activeRun.record.assuranceProfile,
     scope_unit: activeRun.record.scopeUnit,
     execution_path: displayName(activeRun.record),

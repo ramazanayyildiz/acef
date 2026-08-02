@@ -9,8 +9,18 @@
     "schema": { "type": "string", "const": "acef.active-run.v2" },
     "runId": { "type": "string", "minLength": 1 },
     "workflowId": { "type": "string", "enum": ["quick-fix", "lightweight", "full-bmad"] },
+    "fullFlowContract": {
+      "type": "string",
+      "enum": ["six-actor-v2", "four-actor-v3"]
+    },
     "assuranceProfile": { "type": "string", "enum": ["baseline", "guarded"] },
     "scopeUnit": { "type": "string", "enum": ["work-item", "story", "epic"] },
+    "expectedStories": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "type": "string", "minLength": 1 }
+    },
     "assuranceRationale": { "type": ["string", "null"] },
     "assuranceApprovalId": {
       "type": ["string", "null"],
@@ -115,6 +125,12 @@
     "contextPath": { "type": ["string", "null"] },
     "updatedAt": { "type": ["string", "null"] }
   },
+  "allOf": [
+    {
+      "if": { "properties": { "fullFlowContract": { "const": "four-actor-v3" } }, "required": ["fullFlowContract"] },
+      "then": { "required": ["expectedStories"] }
+    }
+  ],
   "$defs": {
     "surface": {
       "type": "string",

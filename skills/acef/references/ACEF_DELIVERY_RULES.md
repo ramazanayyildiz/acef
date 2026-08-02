@@ -120,18 +120,21 @@ A lightweight task promotes to full BMAD when any of:
 - authz / tenant isolation / entitlement behavior is underspecified,
 - review needs repeated rounds just to discover basic requirements.
 
-Two consecutive typed non-`PASS` review verdicts on the same guarded/full-BMAD scope → stop the patch loop and
-`REPLAN/SPLIT`. The breaker consumes gate records decided by code-review, test-review, or Process Judge actors; it does
-not grep prose or require reviewers to choose the literal word `REPLAN`.
+Two consecutive typed non-`PASS` review verdicts or a third repair cycle on the same guarded/full-BMAD story → stop and
+`REPLAN/SPLIT`. V3 additionally treats a new HIGH in consecutive rounds or growing patch scope as an earlier reviewer
+signal, but its mechanical hard stop is the bounded repair counter. Legacy contracts retain their
+code-review/test-review/Judge inputs. The breaker does not grep prose or require literal `REPLAN` wording.
 
 ## Discipline that travels with admitted ACEF lanes (borrowed IN)
 - **Plan integrity** — no skip / reorder / shrink / expand scope without human approval.
 - **2× typed non-PASS review → REPLAN/SPLIT** — the circuit breaker runs in guarded/full-BMAD closeout and
   pre-commit. A later `PASS` resets the consecutive count.
-- **Fresh Judge review** (no self-approval) and **verify-patch on REVISE**.
+- **Fresh independent review** (no self-approval) and contract-specific bounded repair on `REVISE`.
 - **Review-patch hard stop** — if an independent reviewer returns `REVISE`, `BLOCK`, or `MERGE WITH REQUIRED PATCH`, the
-  conductor records `docs/ai/ACEF_REVIEW_PATCH_REQUIRED.json` and stops. Only a separate `verify-patch` worker scoped in
-  `docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json` may edit implementation files until the marker is cleared.
+  conductor records `docs/ai/ACEF_REVIEW_PATCH_REQUIRED.json` and stops. Under `four-actor-v3`, only the original
+  Developer may edit implementation/tests during a bounded repair while Patch Assurance remains report-only. Existing
+  `six-actor-v2` runs retain their separate `verify-patch` repair worker. The active worker scope must authorize the
+  selected contract's repair actor before the marker is cleared.
 - **Reuse-before-create gate** — before implementation in every admitted ACEF lane, the worker records the work shape, registry
   entry used, golden neighbor checked, existing symbols searched, what was reused, and why any new pattern is needed.
   This gate is short in ACEF Standard and story-scoped in ACEF Full, but it is never skipped.
@@ -210,15 +213,17 @@ not grep prose or require reviewers to choose the literal word `REPLAN`.
   persona can reach and use the visible product surface. Run `--check goal-coverage`; backend/query seams do not satisfy
   workspace, staff flow, CRM, finance, capture, manage, or tracking goals unless the human explicitly scoped the goal as
   backend-only.
-- **Full BMAD actor separation** — the conductor coordinates the story lifecycle; it is not the ATDD author,
-  implementing actor, code reviewer, verifier, test reviewer, or Process Judge. The actor that authored code must never
-  review, accept, or mark done that code. Guarded payment/auth/entitlement/data stories require independent review by
-  default. If one worker collapses ATDD + dev-story + code-review, the story is process-tainted until restarted or
-  backfilled by separate independent review and Process Judge approval.
-- **Full BMAD persona mapping** — every BMAD worker must bind to an explicit persona identity: PM/Planner, UX Designer,
-  Architect, Test Author/Tester, Developer, Code Reviewer/Judge, Verify-Patch Reviewer, Test Reviewer, Process Judge,
-  or Documentation Maintainer. Generic workers are invalid unless their prompt and artifact record one of these
-  identities. The conductor is not a persona worker.
+- **Full BMAD actor separation** — the conductor coordinates the story lifecycle; it is not a lifecycle actor. New
+  `four-actor-v3` stories require distinct ATDD, Developer, Code Reviewer, and Patch Assurance identities plus a
+  distinct Story Process Judge only when triggered. Existing `six-actor-v2` stories retain their frozen verifier,
+  test-review, and Story Process Judge identities. The actor that authored code must never review, accept, or mark done
+  that code. Guarded payment/auth/entitlement/data stories require independent review by default. If one worker
+  collapses ATDD + development + review, the story is process-tainted until restarted or independently recovered.
+- **Full BMAD persona mapping** — every dispatched BMAD worker must bind to an explicit persona identity from the
+  selected versioned contract: PM/Planner, UX Designer, Architect, Test Author/Tester, Developer, Code Reviewer/Judge,
+  Patch Assurance Reviewer, legacy Verify-Patch Reviewer, legacy Test Reviewer, conditional Process Judge, Product
+  Outcome Verifier, or Documentation Maintainer. Generic workers are invalid unless their prompt and artifact record
+  one of these identities. The conductor is not a persona worker.
 - **Worker Scope Fence** — implementation workers must be bound to one active story/phase before they write code or
   commit. The conductor records the bound scope in `docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json` with `activeStory`,
   `phase`, `workerId`, `allowedPaths`, `maxCommits`, `canEditLedger:false`, and `canSpawnAgents:false`. The guard hook
