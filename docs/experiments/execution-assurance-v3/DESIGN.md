@@ -58,9 +58,9 @@ The experiment runner measures harness wait separately from delivery work and tr
 failure. Token and tool-call budgets aggregate the conductor and every accepted child session without double-counting
 cumulative usage records; broad-suite detection also includes child commands. Missing story dispatch/completion
 timestamps and incomplete harness wait calls fail closed instead of being counted as zero. Infrastructure retries are
-checked both per logical invocation and across the epic. The candidate manifest remains intentionally unbound until
-the implementation commit exists; replace the candidate commit placeholder once, commit that binding, then generate
-`pilot-preflight.json` before launching P0.
+checked both per logical invocation and across the epic. The candidate manifest is bound to implementation commit
+`23b58de`; this binding commit must exist before Stage 0, and `pilot-preflight.json` must be generated before launching
+P0.
 
 ## Product judgment and final result
 

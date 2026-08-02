@@ -37,8 +37,8 @@ or evidence contract. Do not use it to claim implementation status; link to the 
   correctly failed process closeout despite a green integration command. Its mandatory 25-actor topology and repeated
   review/closeout passes are measured recovery evidence, not a speed success.
 - Capability maturity is `enforced` in this source tree after deterministic tests; it remains uninstalled in target
-  repositories and unproven. The frozen v3 candidate manifest becomes preregistered only after its implementation
-  commit is bound, before Stage 0 and the real-world run.
+  repositories and unproven. The frozen v3 candidate manifest is preregistered against implementation commit
+  `23b58de`, before Stage 0 and the real-world run.
 
 ### Full + Guarded candidate recovery policy hardened
 
