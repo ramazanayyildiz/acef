@@ -123,6 +123,9 @@ A worker launched before this bootstrap is drift. Stop, record it, patch the amb
   whole run only for a declared dependency or shared safety invariant; quarantined work still fails product closeout.
 - After any bounded Developer repair, rerun Patch Assurance on the repaired final application/test tree. Rerun Code
   Review when its prior verdict was non-PASS or production changed; preserve Code Review PASS only for test-only repair.
+- Dispatch v3 Code Review and Patch Assurance from one committed shared input tree. Do not pre-create their actor
+  records: each reviewer's final `acef-state review-completion` validates its report and atomically creates the
+  report-bound immutable actor record.
 - Freeze the mandatory closeout inventory before execution. Closeout analysis may not create actors, mandatory work,
   a larger denominator, or another closeout chain.
 - Full BMAD delegation is approved once per run for ACEF-required persona workers only; generic delegation remains forbidden.

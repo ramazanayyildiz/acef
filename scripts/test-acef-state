@@ -171,12 +171,27 @@ try {
   if (wrongReviewCompletion.status === 0 || !`${wrongReviewCompletion.stdout}${wrongReviewCompletion.stderr}`.includes("actor/run/story/phase/input commit/tree binding mismatch")) {
     throw new Error("review-completion accepted a report for a different reviewer identity");
   }
+  if (fs.existsSync(path.join(tmp, "docs", "ai", "actors", "wrong-reviewer.json"))) {
+    throw new Error("failed review-completion left a partial actor record");
+  }
   const reviewCompletion = runState(["review-completion", "--repo", tmp, "--artifact-path", reviewPath, "--actor", "review-v3"]);
   if (!reviewCompletion.includes(`REVIEW_REPORT_PATH=${reviewPath}`)
     || !reviewCompletion.includes("REVIEW_REPORT_SHA256=")
     || !reviewCompletion.includes("REVIEW_REPORT_BASE64=")
     || !reviewCompletion.includes("REVIEW_INPUT_TREE=")) {
     throw new Error("review-completion did not emit the exact validated payload");
+  }
+  const atomicReviewActor = readJson("docs/ai/actors/review-v3.json");
+  if (atomicReviewActor.producedArtifactPath !== reviewPath
+    || atomicReviewActor.role !== "code-reviewer"
+    || atomicReviewActor.sessionId !== "/root/review-v3") {
+    throw new Error("review-completion did not atomically create the report-bound reviewer actor");
+  }
+  const repeatedReviewCompletion = cp.spawnSync(process.execPath, [state, "review-completion", "--repo", tmp, "--artifact-path", reviewPath, "--actor", "review-v3"], { encoding: "utf8" });
+  if (repeatedReviewCompletion.status === 0
+    || !`${repeatedReviewCompletion.stdout}${repeatedReviewCompletion.stderr}`.includes("Refusing to overwrite immutable record")
+    || JSON.stringify(readJson("docs/ai/actors/review-v3.json")) !== JSON.stringify(atomicReviewActor)) {
+    throw new Error("review-completion could repeat or rewrite an immutable reviewer handoff");
   }
   const aliasReviewPath = "docs/ai/reports/review-v3-alias.json";
   const canonicalReview = JSON.parse(fs.readFileSync(path.join(tmp, reviewPath), "utf8"));
@@ -190,13 +205,12 @@ try {
   if (!aliasCompletion.includes(`REVIEW_REPORT_PATH=${aliasReviewPath}`) || !aliasCompletion.includes("REVIEW_REPORT_SHA256=")) {
     throw new Error("review-completion rejected canonicalizable reviewer enum aliases");
   }
-  runState(["actor", "--repo", tmp, "--id", "review-v3", "--story", "Story 3.1", "--phase", "code-review", "--role", "code-reviewer", "--client", "codex", "--context-profile", "review", "--artifact-path", reviewPath]);
   fs.mkdirSync(path.join(tmp, "tests"), { recursive: true });
   fs.writeFileSync(path.join(tmp, "tests", "v3.test.js"), "module.exports = 'test-only-after-code-review';\n");
   run("git", ["add", "tests/v3.test.js"]);
   run("git", ["commit", "-qm", "v3 test-only assurance change"]);
   const assurancePath = writeReviewReport("docs/ai/reports/assurance-v3.json", { actorInstanceId: "assurance-v3", story: "Story 3.1", phase: "patch-assurance", findings: [{ id: "LOW-dismissed", severity: "LOW", status: "DISMISSED", reason: "Out of scope and not reproducible" }] });
-  runState(["actor", "--repo", tmp, "--id", "assurance-v3", "--story", "Story 3.1", "--phase", "patch-assurance", "--role", "patch-assurance", "--client", "codex", "--context-profile", "assurance", "--artifact-path", assurancePath]);
+  runState(["review-completion", "--repo", tmp, "--artifact-path", assurancePath, "--actor", "assurance-v3"]);
   const reviewHash = readJson("docs/ai/actors/review-v3.json").producedArtifactHash;
   const assuranceHash = readJson("docs/ai/actors/assurance-v3.json").producedArtifactHash;
   runState(["evidence-run", "--repo", tmp, "--id", "EV-v3-green", "--kind", "runtime-test", "--actor", "dev-v3", "--story", "Story 3.1", "--satisfies", "AC-v3", "--", process.execPath, "--test", "tests/frozen-verification.test.js"]);

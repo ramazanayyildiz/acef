@@ -9,6 +9,20 @@ or evidence contract. Do not use it to claim implementation status; link to the 
 
 ## Unreleased
 
+### Full story lifecycle v3.10 atomic reviewer handoff
+
+- Changed the final `review-completion` command from report-only validation into one atomic handoff: it validates the
+  typed report and creates the report-bound immutable reviewer actor record before emitting the machine completion
+  payload.
+- Removed the contradictory conductor-owned reviewer actor step. The conductor now commits transition state first,
+  freezes one shared input commit/tree for concurrent Code Review and Patch Assurance, and never pre-creates or
+  rewrites either reviewer actor record.
+- Extended transcript write auditing to observe and permit exactly the reviewer's typed report plus its own actor
+  record. Cross-repository, extra-option, unobservable, delegated, and other writes remain fail-closed.
+- Added state-writer and execution-assurance regressions for failed-handoff atomicity, generated actor identity/role,
+  exact shell allowlisting, and transcript-visible actor creation. The complete repository suite passed 30/30 in 265
+  seconds. Capability maturity remains `enforced` pending a separately frozen rehearsal.
+
 ### Full story lifecycle v3.9 canonical Developer session binding
 
 - Replaced the unobservable internal receiver-UUID requirement with the exact canonical `/root/<task_name>` identity

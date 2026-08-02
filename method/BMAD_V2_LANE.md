@@ -98,6 +98,10 @@ risk acceptance for the unresolved items.
 8. **Patch Assurance** — independently assess the implementation commit for patch correctness, regression coverage,
    brittleness, false-positive risk, fixtures, and adjacent invariants. Code Review and Patch Assurance should run in
    parallel from the same implementation tree. Patch Assurance is report-only and cannot edit implementation.
+   Before dispatch, the conductor commits transition state and freezes one shared input commit/tree for both reviewers.
+   Each reviewer writes only its typed report; its final `acef-state review-completion` validates that report and creates
+   the report-bound immutable reviewer actor record atomically. The conductor never pre-creates or rewrites those actor
+   records.
 9. **Bounded repair** — a finding returns to the original Developer (or one explicitly scoped repair Developer).
    Every repair reruns Patch Assurance against the repaired final application/test tree. Code Review reruns when its
    prior verdict was non-PASS or the repair changed production code; an earlier Code Review PASS may remain only after

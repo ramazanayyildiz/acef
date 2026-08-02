@@ -166,6 +166,12 @@ const v31Prompt = epicPilotPrompt({ ...v3Manifest.pilot.attempts[0], id: "P0-can
 assert.match(v31Prompt, /Frozen test paths:/);
 assert.match(v31Prompt, /acef-state review-completion/);
 assert.match(v31Prompt, /missing, repeated, or invalid review-completion command is a mechanical REPLAN\/SPLIT stop/);
+assert.match(v31Prompt, /shared reviewInputCommit=HEAD and reviewInputTree=HEAD\^\{tree\}/,
+  "concurrent reviewers must receive one committed shared input tree");
+assert.match(v31Prompt, /must not pre-create reviewer actor records/,
+  "the conductor cannot recreate the v3.9 immutable handoff contradiction");
+assert.match(v31Prompt, /atomically creates the report-bound immutable reviewer actor record/,
+  "the reviewer completion command owns the durable report/actor handoff");
 assert.match(v31Prompt, /50000000 aggregate conductor-plus-child input tokens/);
 const epicActorContract = lifecycleActorContract(resolvedEpic);
 assert.equal(epicActorContract.length, 25, "four stories need six actors each plus one epic Process Judge");
@@ -1135,7 +1141,10 @@ const machineCompletionSession = [
 assert.equal(reviewerCompletionFromSession(machineCompletionSession, root, "reviewer").reportPath,
   "docs/ai/reports/reviewer.json", "review completion must come from machine-observed command stdout, not copied prose");
 assert.equal(correctionSessionWrites(machineCompletionSession, root).unsafeShellMutations.length, 0,
-  "the exact review-completion command is a safe report-only validation call under functions.exec");
+  "the exact review-completion command is a safe atomic reviewer handoff under functions.exec");
+assert.deepEqual(correctionSessionWrites(machineCompletionSession, root).paths.map((entry) => path.relative(root, entry)),
+  ["docs/ai/actors/reviewer.json"],
+  "the transcript audit observes the immutable actor written by review-completion");
 assert.equal(isAllowedReviewerShellCommand(`git show --no-ext-diff --stat ${"a".repeat(40)}`), true);
 assert.equal(isAllowedReviewerShellCommand(`git show --output=/tmp/leak ${"a".repeat(40)}`), false);
 assert.equal(isAllowedReviewerShellCommand("git status --short && git reset --hard"), false);
@@ -1145,6 +1154,12 @@ assert.equal(isAllowedReviewerShellCommand("jq -e '.findings | length == 0' docs
   "a quoted jq filter may contain its own pipe operator");
 assert.equal(isAllowedReviewerShellCommand("git status --short | git reset --hard"), false,
   "an unquoted shell pipeline remains forbidden");
+assert.equal(isAllowedReviewerShellCommand(machineCompletionCommand), true,
+  "the exact atomic review-completion handoff remains allowlisted");
+assert.equal(isAllowedReviewerShellCommand(".acef/bin/acef-state review-completion --repo /tmp/other --artifact-path docs/ai/reports/reviewer.json --actor reviewer"), false,
+  "review-completion cannot target another repository");
+assert.equal(isAllowedReviewerShellCommand(`${machineCompletionCommand} --force true`), false,
+  "review-completion cannot smuggle unregistered options");
 assert.match(codexSessionMetrics(machineCompletionSession).commandText, /acef-state review-completion/,
   "functions.exec-wrapped exec_command calls remain visible to command-trace validation");
 assert.equal(correctionSessionWrites(JSON.stringify({ type: "response_item", payload: {

@@ -1260,6 +1260,20 @@ function writeReviewCompletion(opts) {
     || report.inputCommit !== gitCommit(opts.repo) || report.inputTree !== gitTree(opts.repo)) {
     throw new Error("review-completion report actor/run/story/phase/input commit/tree binding mismatch");
   }
+  const role = report.phase === "code-review" ? "code-reviewer" : "patch-assurance-reviewer";
+  writeActor({
+    repo: opts.repo,
+    id: opts.actor,
+    story: report.story,
+    phase: report.phase,
+    role,
+    client: "codex",
+    sessionId: `/root/${opts.actor}`,
+    contextProfile: report.phase,
+    inputCommit: report.inputCommit,
+    inputTree: report.inputTree,
+    artifactPath: relativePath,
+  });
   console.log(`REVIEW_REPORT_PATH=${relativePath}`);
   console.log(`REVIEW_REPORT_SHA256=${sha256(bytes)}`);
   console.log(`REVIEW_REPORT_BASE64=${bytes.toString("base64")}`);
