@@ -16,3 +16,7 @@ The scored manifest may be frozen only after all of these checks pass:
 
 `dry-run-manifest.json` is deliberately non-scored and rejects `--pilot-run`. Passing its preflight or a Story 4 dry-run
 does not promote the capability beyond `enforced`.
+
+After those preparation gates passed, `manifest.json` separately froze the scored P0 against framework implementation
+commit `d339a61908ec091762318f7e63d5d953e09b240d`. The scored attempt is `P0-candidate-v33`; its artifacts and result must
+remain separate from the preparation preflight and Story 4 dry-run.

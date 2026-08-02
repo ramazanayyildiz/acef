@@ -26,6 +26,9 @@ or evidence contract. Do not use it to claim implementation status; link to the 
   story-specific ATDD constraints, and trigger a typed bottleneck return after ten active minutes without progress.
 - V3.3 artifacts remain draft and non-scored. `pilotRunAllowed: false` is enforced, and capability maturity remains
   `enforced` until a separately bound scored candidate passes every product, process, and budget gate.
+- After all preparation gates passed, separately froze scored attempt `P0-candidate-v33` against framework commit
+  `d339a61`. This preregistration authorizes one measured run but does not change capability maturity before its
+  automated and blind results are recorded.
 
 ### Full story lifecycle v3.2 recovery candidate
 
