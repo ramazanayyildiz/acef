@@ -22,7 +22,10 @@ or evidence contract. Do not use it to claim implementation status; link to the 
   and requires prior typed REVISE before a reviewer retry.
 - Added a separate v3.5 withheld compatibility fixture that freezes the generic MySQL `Duplicate entry` signature for
   both webhook classifiers without modifying immutable v3.3/v3.4 artifacts.
-- This is preparation-only. V3.4 remains an immutable automated/blind FAIL and maturity remains `enforced`.
+- The complete repository suite passed 30/30 and the clean draft preflight passed task binding, collaboration canary,
+  environment probe, and all four baseline-red/reference-green validations, including the new hidden MySQL oracle.
+- This remains preparation-only. V3.4 is an immutable automated/blind FAIL and maturity remains `enforced`; a scored
+  successor must be frozen separately.
 
 ### Full story lifecycle v3.4 typed-handoff recovery preparation
 
