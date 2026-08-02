@@ -39,6 +39,12 @@ or evidence contract. Do not use it to claim implementation status; link to the 
 - Capability maturity is `enforced` in this source tree after deterministic tests; it remains uninstalled in target
   repositories and unproven. The frozen v3 candidate manifest is preregistered against implementation commit
   `23b58de`, before Stage 0 and the real-world run.
+- The first preregistered v3 P0 run finished in 5,270.2 active seconds, 52.8% faster than the v2 rerun, but failed
+  automated closeout, blind product judgment, and token/tool/harness-wait budgets. It therefore remains an enforced
+  controlled canary rather than a proven or installable default. The run also exposed missing real-environment
+  preflight and repository-wide story-tree freshness problems for a separately preregistered successor.
+- Hardened experiment recovery after the run exposed two harness defects: full diff capture now tolerates patches
+  above Node's default synchronous buffer, and pinned-client provenance hashes preserve raw binary bytes.
 
 ### Full + Guarded candidate recovery policy hardened
 

@@ -11,7 +11,8 @@ const ASSURANCE_PROFILES = Object.freeze(["baseline", "guarded", "not-applicable
 const ACTOR_CONTRACT_VERSIONS = Object.freeze(["six-actor-v2", "four-actor-v3"]);
 
 function sha256(value) {
-  return crypto.createHash("sha256").update(String(value || "")).digest("hex");
+  const bytes = Buffer.isBuffer(value) ? value : String(value || "");
+  return crypto.createHash("sha256").update(bytes).digest("hex");
 }
 
 function requireString(value, label) {
@@ -729,6 +730,7 @@ function captureGitDiff(repoRoot, baseRef, pathspecs = []) {
     cwd: repoRoot,
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"],
+    maxBuffer: 64 * 1024 * 1024,
   });
   if (result.status !== 0) throw new Error(`git diff failed: ${result.stderr || result.error?.message || "unknown error"}`);
   return result.stdout || "";

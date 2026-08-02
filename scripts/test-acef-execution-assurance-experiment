@@ -2,6 +2,7 @@
 "use strict";
 
 const assert = require("node:assert/strict");
+const crypto = require("node:crypto");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
@@ -1034,6 +1035,9 @@ for (const staticFrameworkPath of ["AGENTS.md", ".acef/bin/acef-state", ".codex/
 assert.equal(isBehavioralRed({ status: 1, stdout: "FAILURES! Failed asserting that false is true", stderr: "" }), true);
 assert.equal(isBehavioralRed({ status: 2, stdout: "Tests: 1 failed (1 assertions)", stderr: "InvalidCountException" }), true);
 assert.equal(isBehavioralRed({ status: 1, stdout: "", stderr: "Could not open input file: artisan" }), false);
+const binaryHashFixture = Buffer.from([0xff, 0x00, 0x80, 0x41]);
+assert.equal(sha256(binaryHashFixture), crypto.createHash("sha256").update(binaryHashFixture).digest("hex"),
+  "binary provenance hashes must cover the original bytes without UTF-8 coercion");
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "acef-execution-assurance-test-"));
 try {
@@ -1054,6 +1058,15 @@ try {
   const capturedDiff = captureGitDiff(diffRepo, base);
   assert.match(capturedDiff, /\+after/);
   assert.equal(capturedDiff.endsWith("\n"), true, "captured patch must preserve its final newline");
+  fs.writeFileSync(path.join(diffRepo, "large.txt"), `${"a".repeat(2 * 1024 * 1024)}\n`);
+  cp.spawnSync("git", ["add", "."], { cwd: diffRepo });
+  cp.spawnSync("git", ["commit", "-qm", "large baseline"], { cwd: diffRepo });
+  const largeBase = cp.spawnSync("git", ["rev-parse", "HEAD"], { cwd: diffRepo, encoding: "utf8" }).stdout.trim();
+  fs.writeFileSync(path.join(diffRepo, "large.txt"), `${"b".repeat(2 * 1024 * 1024)}\n`);
+  const largeDiff = captureGitDiff(diffRepo, largeBase);
+  assert.ok(Buffer.byteLength(largeDiff) > 4 * 1024 * 1024,
+    "diff capture must not fail at Node's default one-megabyte synchronous buffer");
+  assert.equal(largeDiff.endsWith("\n"), true, "large captured patch must preserve its final newline");
 
   const ignoredFrameworkRepo = path.join(tmp, "ignored-framework-repo");
   fs.mkdirSync(path.join(ignoredFrameworkRepo, ".codex", "skills", "acef"), { recursive: true });
