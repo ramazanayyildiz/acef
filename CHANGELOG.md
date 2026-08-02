@@ -21,7 +21,9 @@ or evidence contract. Do not use it to claim implementation status; link to the 
   retry buffer; token, tool, active-time, and harness-wait ceilings remain unchanged.
 - Product acceptance criteria are now rendered explicitly into every story actor contract. Story-close instructions
   explicitly exclude readiness/reuse working notes and require staging only the gate-bound package paths.
-- Capability maturity remains `enforced`; v3.2 requires a fresh P0 plus blind product judgment before any stronger claim.
+- Recorded the immutable v3.2 P0 automated/process/blind FAIL. The run admitted the blinded Judge and stayed within
+  actor, token, tool, and active-time ceilings, but failed deterministic story close, product completion, exact broad
+  closeout, and the 38% harness-wait ceiling. Capability maturity remains `enforced`, not `proven`.
 
 ### Full story lifecycle v3.1 recovery candidate
 

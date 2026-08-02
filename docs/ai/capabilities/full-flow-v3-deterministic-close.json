@@ -16,7 +16,7 @@
     "docs": [
       "AGENTS.md#ACEF Admission",
       "README.md#Dependency: BMAD (large-feature flow only)",
-      "CHANGELOG.md#Full story lifecycle v3.1 recovery candidate",
+      "CHANGELOG.md#Full story lifecycle v3.2 recovery candidate",
       "method/BMAD_V2_LANE.md#Full flow contract versions",
       "method/CONTROL_RATIONALE.md#Why Gate Verdicts Exist",
       "method/OPERATING_MODEL.md#Current Context Hot Slice",
@@ -28,7 +28,8 @@
       "skills/acef/references/ACEF_RULE_ENFORCEMENT_MAP.md",
       "docs/experiments/execution-assurance-v2/P0_R2_RESULT.md",
       "docs/experiments/execution-assurance-v3/DESIGN.md",
-      "docs/experiments/execution-assurance-v31/DESIGN.md"
+      "docs/experiments/execution-assurance-v31/DESIGN.md",
+      "docs/experiments/execution-assurance-v32/DESIGN.md"
     ],
     "schema": [
       "schemas/active-run-v2.schema.json",
@@ -82,7 +83,8 @@
     "The capability is enforced in this source tree but is not installed in target repositories until their ACEF tools, skills, schemas, and hooks are refreshed.",
     "The v3 P0 manifest is bound to implementation commit 23b58de. Its first preregistered candidate failed automated closeout, the blind product judgment, and cost budgets, so the capability remains enforced rather than proven or authorized beyond controlled canaries.",
     "The failed v3 P0 artifacts remain immutable. V3.1 repaired real-environment preflight, story-tree scope, reviewer completion, and measurement ceilings, but its P0 still failed process closeout after exhausting 21 actor invocations; its blind Judge was mechanically blocked because packet validation omitted frozen testPaths.",
-    "V3.2 accepts frozen testPaths as blinded product artifacts, raises only the actor hard cap to the observed 25-invocation recovery envelope, renders acceptance criteria explicitly, and excludes readiness notes from bound close packages. It remains unproven until a fresh P0 and blind judgment pass."
+    "V3.2 accepts frozen testPaths as blinded product artifacts, raises only the actor hard cap to the observed 25-invocation recovery envelope, renders acceptance criteria explicitly, and excludes readiness notes from bound close packages.",
+    "The v3.2 P0 admitted and completed blind judgment but failed automated, process, product, broad-closeout, and harness-wait gates. It exposed a namespaced-call ATDD authenticity false negative and a contradictory frozen Story 2 ATDD contract, so the capability remains enforced rather than proven."
   ],
   "evidence": [
     {
@@ -119,6 +121,16 @@
       "layer": "artifact",
       "ref": "docs/experiments/execution-assurance-v31/P0_RESULT.md",
       "note": "Records the immutable v3.1 automated FAIL, 21/21 actor exhaustion, missing closeout work, and mechanically blocked blind judgment."
+    },
+    {
+      "layer": "artifact",
+      "ref": "docs/experiments/execution-assurance-v32/DESIGN.md",
+      "note": "Defines the separately preregistered v3.2 recovery mechanics, empirical actor cap, explicit acceptance criteria, and corrected blinded-product allowlist."
+    },
+    {
+      "layer": "artifact",
+      "ref": "docs/experiments/execution-assurance-v32/P0_RESULT.md",
+      "note": "Records the immutable v3.2 automated/process/blind FAIL, 15 actor invocations, 57.56% harness-wait share, namespaced ATDD authenticity false negative, contradictory Story 2 ATDD artifact, and independent HIGH product findings."
     }
   ],
   "createdAt": "2026-08-02"
