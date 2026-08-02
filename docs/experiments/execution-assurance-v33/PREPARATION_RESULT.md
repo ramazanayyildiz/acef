@@ -2,10 +2,12 @@
 
 Status: **GO for a separately frozen scored candidate; not yet scored or proven.**
 
-The draft preflight passed all task, collaboration-canary, environment-probe, and reference-validation checks. Each of
-the four frozen stories was behavioral red at the pinned source commit, accepted its scoped canonical patch, and then
-turned green without changing a frozen fixture. That diagnostic preflight ran from a dirty framework worktree and is
-therefore not itself freeze evidence; a clean-tree copy must be captured after the preparation commits are bound.
+The bound draft preflight passed all task, collaboration-canary, environment-probe, and reference-validation checks.
+It ran with `runnerDirtyBefore: false`, candidate `d339a61908ec091762318f7e63d5d953e09b240d`, and runner
+`10218fc41c9556330024a4d5111ae51a005c590c`. Each of the four frozen stories was behavioral red at the pinned source
+commit, accepted its scoped canonical patch, and then turned green without changing a frozen fixture. The immutable
+preparation artifact is `preparation-preflight.json` (SHA-256
+`92aae4dee5e2e74fcb737fce323e7a1ecfaa3317391c3bc247d6eeafc3348e21`).
 
 The six preparation gates from `DESIGN.md` now have evidence:
 
