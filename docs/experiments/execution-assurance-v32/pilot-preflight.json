@@ -1,0 +1,79 @@
+{
+  "schema": "acef.execution-assurance-pilot-preflight.v1",
+  "experimentId": "acef-execution-assurance-v32-p0",
+  "candidateCommit": "9a7001429c65cee895e44e03a0acad3eb12706c5",
+  "manifestSha256": "1931d63b39a14487220c0eeff0452cd58610b76ea94853c5ccc0ed50de87ae3e",
+  "runnerCommit": "18c2dcde957c6a63cdde99eeb4f97de3e0724f3c",
+  "runnerDirtyBefore": false,
+  "runnerSourceSha256": "3eb50826d45e37f273a9863f71b74ae6130f30c327f4e87615c6e627fdf0d5d3",
+  "taskBindings": [
+    {
+      "taskId": "full-guarded-motivation-v32",
+      "resolvedTaskSha256": "0594cb9c33d2725de4164961f0ce7c2fbcf2c5e98524bc2f0bb27fcfd9d817bc"
+    }
+  ],
+  "checkedAt": "2026-08-02T13:15:01.671Z",
+  "ok": true,
+  "checks": [
+    {
+      "taskId": "full-guarded-motivation-v32",
+      "selector": "authz-fail-closed-hardening-v32",
+      "kind": "epic",
+      "repo": "jakomeet",
+      "stack": "php-laravel",
+      "sourceCommit": "a12ac50441114943efd099f9e601bbee4a9d8a12",
+      "setupDirs": [
+        "tests/Integration",
+        "tests/Performance"
+      ],
+      "setupFiles": [
+        {
+          "path": "/tmp/jako-bench-webhook/database/testing.sqlite",
+          "mode": "truncate"
+        }
+      ],
+      "ok": true,
+      "blockers": []
+    }
+  ],
+  "collaborationCanary": {
+    "ok": true,
+    "checkedAt": "2026-08-02T13:14:19.649Z",
+    "clientPath": "/opt/homebrew/Caskroom/codex/0.146.0/bin/codex",
+    "clientBinarySha256": "ae1d3ffe6d48aec6a4dc3f50e7eb8e0d11962485a6a9406c5a7012139383da02",
+    "clientVersion": "codex-cli 0.146.0",
+    "model": "gpt-5.6-sol",
+    "reasoningEffort": "high",
+    "threadId": "019fc29c-37d1-7650-bffc-a9895a1a7e7d",
+    "exitCode": 0,
+    "expectedActorCount": 1,
+    "observedActorCount": 1,
+    "receiverThreadIds": [
+      "019fc29c-541e-75c3-9620-a73cdfa9ca54"
+    ],
+    "sessionSha256": "9d3ea4aa3012713b499e8eb05f982ffcd6f349da5cdeab8ac93a8d793c31b904",
+    "failures": []
+  },
+  "environmentProbes": [
+    {
+      "taskId": "full-guarded-motivation-v32",
+      "ok": true,
+      "commands": [
+        {
+          "argv": [
+            "vendor/bin/phpunit",
+            "--configuration=phpunit.sqlite.xml",
+            "--filter=BenchmarkWebhookIngressCorrectnessTest"
+          ],
+          "expect": "behavioral-red",
+          "exitCode": 2,
+          "matchedExpectation": true,
+          "stdoutPath": "/var/folders/5k/n7tq40m14jn_p8rbb4k9rfx80000gn/T/acef-execution-assurance-v32-pilot/environment-probes/preflight-full-guarded-motivation-v32/1.stdout.log",
+          "stderrPath": "/var/folders/5k/n7tq40m14jn_p8rbb4k9rfx80000gn/T/acef-execution-assurance-v32-pilot/environment-probes/preflight-full-guarded-motivation-v32/1.stderr.log",
+          "stdoutSha256": "31f7c561ed20bca7d4152bd0e62099267e4af73f881109afd8bcdeba037b934d",
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ]
+    }
+  ]
+}
