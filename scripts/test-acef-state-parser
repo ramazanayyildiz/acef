@@ -197,6 +197,25 @@ try {
   if (atddTestSourceAuthenticityFailure([{ filePath: changedRedTests[0], source: meaningfulRedSource }])) {
     throw new Error("real test declaration/assertion was rejected");
   }
+  const platformAuthzRedSource = fs.readFileSync(
+    path.join(__dirname, "fixtures/execution-assurance/s1-route-requirement-resolver-red.php"),
+    "utf8",
+  );
+  if (atddTestSourceAuthenticityFailure([{
+    filePath: "tests/Unit/Platform/Authz/RouteRequirementResolverTest.php",
+    source: platformAuthzRedSource,
+  }])) throw new Error("real Platform\\Authz PHP red source was rejected");
+  const testFrameworkOnlyPhpSource = `<?php
+namespace Tests\\Unit;
+use Tests\\TestCase;
+use PHPUnit\\Framework\\Attributes\\Test;
+class CircularTest extends TestCase {
+  #[Test]
+  public function test_literal(): void { $this->assertSame('red', 'green'); }
+}`;
+  if (!atddTestSourceAuthenticityFailure([{ filePath: "tests/Unit/CircularTest.php", source: testFrameworkOnlyPhpSource }])) {
+    throw new Error("PHP test-framework imports and assertions were accepted as production behavior proof");
+  }
   if (!atddTestSourceAuthenticityFailure([{ filePath: changedRedTests[0], source: "test('red', () => assert.strictEqual('red', 'green'));" }])) {
     throw new Error("literal-vs-literal assertion was accepted as production behavior proof");
   }

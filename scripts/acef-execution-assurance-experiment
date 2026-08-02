@@ -19,9 +19,11 @@ const {
   parseLifecycleDispatchTrace,
   pilotAttemptHistory,
   preflightCatalog,
+  referencePatchChangedPaths,
   readPilotResultRow,
   resolveCatalogTask,
   sha256,
+  storyReferencePatchPath,
   validateManifest,
 } = require("./lib/acef-execution-assurance-experiment");
 const { riskRequiresGuarded } = require("./lib/acef-execution-policy");
@@ -450,6 +452,68 @@ function runTaskEnvironmentProbe(resolved, opts, probeId, existingClone = "") {
   return { taskId: resolved.taskId, ok: results.length === commands.length && results.every((entry) => entry.matchedExpectation), commands: results };
 }
 
+function runTaskReferenceValidation(resolved, opts, probeId) {
+  if (resolved.kind !== "epic" || resolved.task.requireReferenceValidation !== true) {
+    return { taskId: resolved.taskId, ok: true, required: false, stories: [] };
+  }
+  const stories = [];
+  for (const [index, story] of resolved.task.stories.entries()) {
+    const patchPath = storyReferencePatchPath(resolved, story);
+    const patchText = fs.readFileSync(patchPath, "utf8");
+    const patchPaths = referencePatchChangedPaths(patchText);
+    const attempt = { id: `reference-validation-${String(probeId).replace(/[^A-Za-z0-9._-]/g, "_")}-${index + 1}` };
+    const { clone } = prepareEpicClone(resolved, attempt, opts);
+    const artifactDirectory = path.join(opts.pilotWorkspace, "reference-validation", String(probeId).replace(/[^A-Za-z0-9._-]/g, "_"), story.id);
+    fs.mkdirSync(artifactDirectory, { recursive: true });
+
+    const baseline = execute(story.verify[0], story.verify.slice(1), clone, { timeout: 600000 });
+    fs.writeFileSync(path.join(artifactDirectory, "baseline.stdout.log"), baseline.stdout);
+    fs.writeFileSync(path.join(artifactDirectory, "baseline.stderr.log"), baseline.stderr);
+    const baselineRed = isBehavioralRed(baseline);
+
+    const patchCheck = execute("git", ["apply", "--check", patchPath], clone);
+    const patchApply = patchCheck.status === 0 ? execute("git", ["apply", patchPath], clone) : patchCheck;
+    const expectedPaths = new Set([...(story.allowedPaths || []), ...(story.testPaths || [])]);
+    const scopeViolations = patchPaths.filter((entry) => !expectedPaths.has(entry));
+    let reference = { status: null, stdout: "", stderr: "reference patch was not applied" };
+    let expectationFailures = [];
+    if (patchApply.status === 0 && !scopeViolations.length) {
+      reference = execute(story.verify[0], story.verify.slice(1), clone, { timeout: 600000 });
+      expectationFailures = evaluateExpectations(clone, story.expected || [], resolved.fixtureRoot);
+    }
+    fs.writeFileSync(path.join(artifactDirectory, "reference.stdout.log"), reference.stdout || "");
+    fs.writeFileSync(path.join(artifactDirectory, "reference.stderr.log"), reference.stderr || "");
+    const referenceGreen = reference.status === 0 && expectationFailures.length === 0;
+    stories.push({
+      storyId: story.id,
+      patchPath,
+      patchSha256: sha256(patchText),
+      patchPaths,
+      scopeViolations,
+      baselineExitCode: baseline.status,
+      baselineRed,
+      baselineStdoutSha256: sha256(baseline.stdout),
+      baselineStderrSha256: sha256(baseline.stderr),
+      patchCheckExitCode: patchCheck.status,
+      patchApplyExitCode: patchApply.status,
+      referenceExitCode: reference.status,
+      referenceGreen,
+      referenceStdoutSha256: sha256(reference.stdout),
+      referenceStderrSha256: sha256(reference.stderr),
+      expectationFailures,
+    });
+    resetDeclaredSetupFiles(resolved);
+  }
+  return {
+    taskId: resolved.taskId,
+    required: true,
+    ok: stories.length === resolved.task.stories.length
+      && stories.every((story) => story.baselineRed && story.patchCheckExitCode === 0
+        && story.patchApplyExitCode === 0 && story.referenceGreen && !story.scopeViolations.length),
+    stories,
+  };
+}
+
 function frameworkCheckout(frameworkCommit, opts) {
   const checkout = path.join(opts.pilotWorkspace, "frameworks", frameworkCommit);
   if (fs.existsSync(path.join(checkout, ".git"))) {
@@ -518,6 +582,7 @@ function epicPilotPrompt(attempt, resolved, manifest) {
   const stories = resolved.task.stories.map((story, index) => [
     `${index + 1}. ${story.id}: ${story.prompt}`,
     `   Acceptance criteria: ${(story.acceptanceCriteria || []).join(" | ") || "the frozen story prompt"}`,
+    `   ATDD constraints: ${(story.atddConstraints || []).join(" | ") || "derive directly from the acceptance criteria"}`,
     `   Depends on: ${(story.dependsOn || []).join(", ") || "none"}`,
     `   Allowed production paths: ${story.allowedPaths.join(", ")}`,
     `   Frozen test paths: ${(story.testPaths || []).join(", ") || "none"}`,
@@ -537,7 +602,7 @@ function epicPilotPrompt(attempt, resolved, manifest) {
       "Close each story with exactly one deterministic PASS gate and one formal story-close evidence package. Use acef-state gate with the run, contract, ATDD, development, code-review, patch-assurance, red/green evidence, report hashes, review-cycle, repair receipt, and unresolved findings. The validator computes the verdict; no actor may self-declare it. Introduce the gate, its four accepted actor records, two exact reviewer reports, every cited evidence manifest/raw artifact, and any bound repair/Judge decision together in exactly one control-only commit; no other path may enter that commit and all package bytes must remain unchanged at HEAD. Readiness/reuse notes are conductor-only working state, are not part of this bound package, and must never be staged in the story-close commit; stage the exact bound package paths explicitly rather than using a broad docs/ai add.",
       "Red evidence must come from a clean committed test-only tree. Green evidence must begin and end with no dirty application/test paths. After repairs, Patch Assurance always binds the final application/test tree. Earlier Code Review may remain only when every later non-control change is test-only; any production change requires affected-only delta Code Review.",
       "A story Process Judge is conditional, not routine. Spawn acef_<story>_process_judge only for ambiguity, waiver, evidence-conflict, or gate-anomaly; it must write a typed acef.process-judge-decision.v3 artifact and the gate must bind its exact path/hash/verdict. Never use it to override a mechanical failure. The separate epic Process Judge remains mandatory.",
-      `The frozen budget profile is ${manifest.promotionGates.budget.profileId || "v3-preregistered"}: ${manifest.promotionGates.budget.baseActorCount} base actors and ${manifest.promotionGates.budget.maximumActorInvocations} total invocations including every Developer followup and infrastructure retry, ${manifest.promotionGates.budget.maximumRepairCyclesPerStory} repair cycles per story, one infrastructure retry per logical invocation and ${manifest.promotionGates.budget.maximumInfrastructureRetriesTotal} total, ${manifest.promotionGates.budget.maximumInputTokens} aggregate conductor-plus-child input tokens, ${manifest.promotionGates.budget.maximumToolCalls} aggregate tool calls, ${manifest.promotionGates.budget.targetActiveDeliverySeconds}s target and ${manifest.promotionGates.budget.maximumActiveDeliverySeconds}s hard active time, and ${manifest.promotionGates.budget.maximumHarnessWaitSeconds}s/${Math.round(manifest.promotionGates.budget.maximumHarnessWaitShare * 100)}% harness-wait. An infrastructure retry is allowed only after the original invocation has no FINAL_ANSWER and a terminal acef.infrastructure-failure.v1 event binds its task/session, failure interval, identical pre/post tree, and empty writePaths; audit the failed child transcript for zero writes, wait for terminal failure, then name the non-overlapping retry <logical-task-name>_infra_retry1. Never retry an infrastructure retry. If a hard budget cannot be met, stop with REPLAN/SPLIT or FAIL rather than expanding the actor graph.`,
+      `The frozen budget profile is ${manifest.promotionGates.budget.profileId || "v3-preregistered"}: ${manifest.promotionGates.budget.baseActorCount} base actors and ${manifest.promotionGates.budget.maximumActorInvocations} total invocations including every Developer followup and infrastructure retry, ${manifest.promotionGates.budget.maximumRepairCyclesPerStory} repair cycles per story, one infrastructure retry per logical invocation and ${manifest.promotionGates.budget.maximumInfrastructureRetriesTotal} total, ${manifest.promotionGates.budget.maximumInputTokens} aggregate conductor-plus-child input tokens, ${manifest.promotionGates.budget.maximumToolCalls} aggregate tool calls, ${manifest.promotionGates.budget.targetActiveDeliverySeconds}s target and ${manifest.promotionGates.budget.maximumActiveDeliverySeconds}s hard active time, and ${manifest.promotionGates.budget.maximumHarnessWaitSeconds}s/${Math.round(manifest.promotionGates.budget.maximumHarnessWaitShare * 100)}% ${manifest.promotionGates.budget.profileId === "v33-measured" ? "coordination-idle wait (productive child execution is reported separately)" : "harness-wait"}. An infrastructure retry is allowed only after the original invocation has no FINAL_ANSWER and a terminal acef.infrastructure-failure.v1 event binds its task/session, failure interval, identical pre/post tree, and empty writePaths; audit the failed child transcript for zero writes, wait for terminal failure, then name the non-overlapping retry <logical-task-name>_infra_retry1. Never retry an infrastructure retry. If a hard budget cannot be met, stop with REPLAN/SPLIT or FAIL rather than expanding the actor graph.`,
     ].join(" ")
     : attempt.treatment === "candidate"
     ? [
@@ -556,12 +621,12 @@ function epicPilotPrompt(attempt, resolved, manifest) {
     "Complete one controlled multi-story epic in this disposable clone. The measured unit is the complete original user outcome, not an individual story.",
     treatmentInstruction,
     fourActorV3
-      ? "Load and follow the repo-local ACEF skill. This P0 starts from a frozen epic/story contract: run readiness and reuse checks as deterministic conductor gates, not extra persona workers. The actor rows listed below are the exhaustive base lifecycle inventory. Preserve actor separation; do not self-approve."
+      ? "This prompt is the complete compiled ACEF contract for the scored run. Do not reread ACEF/BMAD method documents or ask child actors to load linked workflow files; the installed skill entry may be consulted only when host policy requires it, without following links outside the active artifact allowlist. Run readiness and reuse checks as deterministic conductor gates, not extra persona workers. The actor rows listed below are the exhaustive base lifecycle inventory. Preserve actor separation; do not self-approve."
       : "Load and follow the repo-local ACEF skill. Act as conductor and use fresh independent actors/sessions for every role the installed workflow requires. Preserve actor separation; do not self-approve.",
-    "For each contract row below, call spawn_agent exactly once using the exact task_name and fork_turns=none before accepting that phase. Give the fresh actor a bounded artifact-only message: put the listed scope/control/actor/persona tuple first, then only the exact files/commit/question it needs. Require its final line to be ACTOR_RESULT=PASS or ACTOR_RESULT=REVISE, wait for that actor's FINAL_ANSWER, and persist a typed actor record whose actorInstanceId exactly equals task_name. Do not combine rows in one actor.",
+    "For each contract row below, call spawn_agent exactly once using the exact task_name and fork_turns=none before accepting that phase. Give the fresh actor a bounded artifact-only message: put the listed scope/control/actor/persona tuple first, then only the exact files/commit/question it needs. Do not ask the actor to reread ACEF/BMAD workflow documents. Limit its initial read envelope to the current context plus at most six exact task files and 300 lines per read; targeted follow-up reads are allowed only when a named unresolved question requires them. If it cannot identify progress within ten active minutes, it must return ACTOR_RESULT=REVISE with the exact bottleneck instead of broadening inspection. Require its final line to be ACTOR_RESULT=PASS or ACTOR_RESULT=REVISE, wait for that actor's FINAL_ANSWER, and persist a typed actor record whose actorInstanceId exactly equals task_name. Do not combine rows in one actor.",
     recoveryInstruction,
     fourActorV3
-      ? "ATDD and development are single mandatory actor identities. Code Review and Patch Assurance may each use at most two fresh, affected-only delta retry actors after a developer repair; the 21-invocation epic cap still binds. Story Process Judge is optional only for the four named triggers. The epic Process Judge cannot retry. Never replay a complete lifecycle."
+      ? `ATDD and development are single mandatory actor identities. Code Review and Patch Assurance may each use at most two fresh, affected-only delta retry actors after a developer repair; the ${manifest.promotionGates.budget.maximumActorInvocations}-invocation epic cap still binds. Story Process Judge is optional only for the four named triggers. The epic Process Judge cannot retry. Never replay a complete lifecycle.`
       : attempt.treatment === "candidate"
       ? "Development and test-review cannot be retried. Code-review, verify-patch, and story process-judge may each use at most one retry only after ACTOR_RESULT=REVISE; its exact task_name must be <base>_retry1 and it must finish ACTOR_RESULT=PASS. The epic Process Judge cannot retry. Never replay a full lifecycle vector."
       : "The exact named rows below remain the minimum independently observable lifecycle contract; legacy-required auxiliary work remains allowed and measured.",
@@ -1541,7 +1606,7 @@ function canonicalLifecyclePhase(value) {
   return aliases[token] || token;
 }
 
-function parseHarnessWaitMetrics(sessionText, activeDeliverySeconds = 0) {
+function parseHarnessWaitMetrics(sessionText, activeDeliverySeconds = 0, collaborationEvidence = {}) {
   const pending = new Map();
   const intervals = [];
   let waitCalls = 0;
@@ -1578,6 +1643,30 @@ function parseHarnessWaitMetrics(sessionText, activeDeliverySeconds = 0) {
     else previous[1] = Math.max(previous[1], interval[1]);
   }
   const seconds = Math.round(merged.reduce((total, [start, finish]) => total + finish - start, 0) / 100) / 10;
+  const completions = new Map((collaborationEvidence.childSessions || []).map((entry) => [
+    entry.taskName,
+    Number(entry.completedAt) * 1000,
+  ]));
+  const actorIntervals = (collaborationEvidence.observedDispatches || collaborationEvidence.dispatches || [])
+    .map((entry) => [Date.parse(entry.spawnedAt || ""), completions.get(entry.taskName)])
+    .filter(([start, finish]) => Number.isFinite(start) && Number.isFinite(finish) && finish >= start)
+    .sort((left, right) => left[0] - right[0]);
+  let delegatedExecutionMs = 0;
+  for (const [waitStart, waitFinish] of merged) {
+    const overlaps = actorIntervals
+      .map(([actorStart, actorFinish]) => [Math.max(waitStart, actorStart), Math.min(waitFinish, actorFinish)])
+      .filter(([start, finish]) => finish > start)
+      .sort((left, right) => left[0] - right[0]);
+    const mergedOverlaps = [];
+    for (const overlap of overlaps) {
+      const previous = mergedOverlaps.at(-1);
+      if (!previous || overlap[0] > previous[1]) mergedOverlaps.push([...overlap]);
+      else previous[1] = Math.max(previous[1], overlap[1]);
+    }
+    delegatedExecutionMs += mergedOverlaps.reduce((total, [start, finish]) => total + finish - start, 0);
+  }
+  const delegatedExecutionSeconds = Math.round(delegatedExecutionMs / 100) / 10;
+  const coordinationIdleSeconds = Math.round(Math.max(0, seconds - delegatedExecutionSeconds) * 10) / 10;
   return {
     waitCalls,
     completedWaitCalls: intervals.length,
@@ -1586,6 +1675,12 @@ function parseHarnessWaitMetrics(sessionText, activeDeliverySeconds = 0) {
     measurementComplete: pending.size === 0 && invalidTimestampEvents === 0,
     seconds,
     share: activeDeliverySeconds > 0 ? Math.round((seconds / activeDeliverySeconds) * 10000) / 10000 : 0,
+    delegatedExecutionSeconds,
+    delegatedExecutionShare: activeDeliverySeconds > 0
+      ? Math.round((delegatedExecutionSeconds / activeDeliverySeconds) * 10000) / 10000 : 0,
+    coordinationIdleSeconds,
+    coordinationIdleShare: activeDeliverySeconds > 0
+      ? Math.round((coordinationIdleSeconds / activeDeliverySeconds) * 10000) / 10000 : 0,
   };
 }
 
@@ -1697,8 +1792,13 @@ function evaluatePilotBudgets(manifest, attempt, activeDeliverySeconds, actor, c
   if (activeDeliverySeconds > budget.maximumActiveDeliverySeconds) failures.push(`active delivery ${activeDeliverySeconds}s/${budget.maximumActiveDeliverySeconds}s`);
   if (actor.input_tokens > budget.maximumInputTokens) failures.push(`input tokens ${actor.input_tokens}/${budget.maximumInputTokens}`);
   if (actor.tool_calls > budget.maximumToolCalls) failures.push(`tool calls ${actor.tool_calls}/${budget.maximumToolCalls}`);
-  if (harnessWait.seconds > budget.maximumHarnessWaitSeconds) failures.push(`harness wait ${harnessWait.seconds}s/${budget.maximumHarnessWaitSeconds}s`);
-  if (harnessWait.share > budget.maximumHarnessWaitShare) failures.push(`harness wait share ${harnessWait.share}/${budget.maximumHarnessWaitShare}`);
+  const measuredWaitSeconds = budget.profileId === "v33-measured"
+    ? Number(harnessWait.coordinationIdleSeconds || 0) : harnessWait.seconds;
+  const measuredWaitShare = budget.profileId === "v33-measured"
+    ? Number(harnessWait.coordinationIdleShare || 0) : harnessWait.share;
+  const waitLabel = budget.profileId === "v33-measured" ? "coordination idle wait" : "harness wait";
+  if (measuredWaitSeconds > budget.maximumHarnessWaitSeconds) failures.push(`${waitLabel} ${measuredWaitSeconds}s/${budget.maximumHarnessWaitSeconds}s`);
+  if (measuredWaitShare > budget.maximumHarnessWaitShare) failures.push(`${waitLabel} share ${measuredWaitShare}/${budget.maximumHarnessWaitShare}`);
   if (harnessWait.measurementComplete === false || Number(harnessWait.incompleteWaitCalls || 0) > 0) {
     failures.push("harness wait measurement is incomplete");
   }
@@ -2367,6 +2467,13 @@ function resolvedTaskSha256(resolved) {
     fixture: operation.fixture,
     sha256: sha256(fs.readFileSync(path.join(resolved.fixtureRoot, operation.fixture))),
   }));
+  const referencePatchHashes = (resolved.kind === "epic" ? resolved.task.stories : [resolved.task])
+    .filter((story) => story.referencePatch)
+    .map((story) => ({
+      storyId: story.id || resolved.taskId,
+      referencePatch: story.referencePatch,
+      sha256: sha256(fs.readFileSync(storyReferencePatchPath(resolved, story))),
+    }));
   return sha256(JSON.stringify({
     taskId: resolved.taskId,
     selector: resolved.selector,
@@ -2381,6 +2488,7 @@ function resolvedTaskSha256(resolved) {
     setupFiles: resolved.setupFiles,
     sourceManifestSha256: sha256(fs.readFileSync(resolved.sourceManifestPath)),
     fixtureHashes,
+    referencePatchHashes,
     task: resolved.task,
   }));
 }
@@ -2398,6 +2506,7 @@ function frozenProductContract(resolved) {
       dependsOn: story.dependsOn || [],
       allowedPaths: story.allowedPaths || [],
       testPaths: story.testPaths || [],
+      atddConstraints: story.atddConstraints || [],
     })),
   };
   return { contract, sha256: sha256(JSON.stringify(contract)) };
@@ -2783,8 +2892,8 @@ function finalizePilotAttempt(manifest, opts, checkpoint) {
     writeJsonAtomic(checkpoint.checkpointPath, checkpoint);
   }
   const harnessWait = collaborationEvidence.sessionPath && fs.existsSync(collaborationEvidence.sessionPath)
-    ? parseHarnessWaitMetrics(fs.readFileSync(collaborationEvidence.sessionPath, "utf8"), activeDeliverySeconds)
-    : parseHarnessWaitMetrics("", activeDeliverySeconds);
+    ? parseHarnessWaitMetrics(fs.readFileSync(collaborationEvidence.sessionPath, "utf8"), activeDeliverySeconds, collaborationEvidence)
+    : parseHarnessWaitMetrics("", activeDeliverySeconds, collaborationEvidence);
   const pilotBudgets = evaluatePilotBudgets(
     manifest, attempt, activeDeliverySeconds, teamMetrics, collaborationEvidence,
     attempt.actorContractVersion === "four-actor-v3" ? teamLifecycleCommandTrace : commandTrace,
@@ -3223,6 +3332,13 @@ function main() {
         return { taskId, ok: false, commands: [], error: error.message };
       }
     });
+    const referenceValidations = Object.keys(manifest.taskCatalog || {}).sort().map((taskId) => {
+      try {
+        return runTaskReferenceValidation(resolveCatalogTask(manifest, opts.manifest, taskId), opts, `preflight-${taskId}`);
+      } catch (error) {
+        return { taskId, ok: false, required: true, stories: [], error: error.message };
+      }
+    });
     const row = {
       schema: "acef.execution-assurance-pilot-preflight.v1",
       experimentId: manifest.experimentId,
@@ -3236,17 +3352,21 @@ function main() {
       ...preflight,
       collaborationCanary,
       environmentProbes,
-      ok: preflight.ok && collaborationCanary.ok && environmentProbes.every((entry) => entry.ok),
+      referenceValidations,
+      ok: preflight.ok && collaborationCanary.ok && environmentProbes.every((entry) => entry.ok)
+        && referenceValidations.every((entry) => entry.ok),
     };
     writeJson(opts.preflightOutput, row);
     for (const check of row.checks) console.log(`${check.ok ? "PASS" : "FAIL"} ${check.taskId}${check.blockers.length ? `: ${check.blockers.join("; ")}` : ""}`);
     console.log(`${collaborationCanary.ok ? "PASS" : "FAIL"} collaboration-canary${collaborationCanary.failures.length ? `: ${collaborationCanary.failures.join("; ")}` : ""}`);
     for (const probe of environmentProbes) console.log(`${probe.ok ? "PASS" : "FAIL"} environment-probe ${probe.taskId}${probe.error ? `: ${probe.error}` : ""}`);
+    for (const validation of referenceValidations) console.log(`${validation.ok ? "PASS" : "FAIL"} reference-validation ${validation.taskId}${validation.error ? `: ${validation.error}` : ""}`);
     console.log(`PILOT_PREFLIGHT ${row.ok ? "PASS" : "FAIL"}: ${row.checks.filter((check) => check.ok).length}/${row.checks.length} tasks ready`);
     if (!row.ok) process.exitCode = 1;
     return;
   }
   if (opts.pilotRun) {
+    if (manifest.pilotRunAllowed === false) throw new Error("pilot run is disabled for this non-scored preparation manifest");
     runPilotAttempt(manifest, opts);
     return;
   }

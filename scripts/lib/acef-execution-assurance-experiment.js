@@ -130,9 +130,12 @@ function validateManifest(manifest) {
         : budgetProfile === "v32-empirical"
           ? { maximumActorInvocations: 25, maximumInputTokens: 50000000, maximumToolCalls: 520,
             maximumHarnessWaitSeconds: 2700, maximumHarnessWaitShare: 0.38 }
+          : budgetProfile === "v33-measured"
+            ? { maximumActorInvocations: 25, maximumInputTokens: 50000000, maximumToolCalls: 520,
+              maximumHarnessWaitSeconds: 2700, maximumHarnessWaitShare: 0.38 }
           : null;
     if (!expectedBudget) {
-      throw new Error("v3 P0 candidate budget.profileId must be v3-preregistered, v31-empirical, or v32-empirical");
+      throw new Error("v3 P0 candidate budget.profileId must be v3-preregistered, v31-empirical, v32-empirical, or v33-measured");
     }
     if (budget.baseActorCount !== 17 || budget.maximumActorInvocations !== expectedBudget.maximumActorInvocations
       || budget.maximumRepairCyclesPerStory !== 2 || budget.thirdRepairDisposition !== "REPLAN_SPLIT"
@@ -841,6 +844,15 @@ function setupOperations(resolved) {
   return resolved.task.setup || [];
 }
 
+function storyReferencePatchPath(resolved, story) {
+  if (!story?.referencePatch) return "";
+  return path.resolve(path.dirname(resolved.sourceManifestPath), story.referencePatch);
+}
+
+function referencePatchChangedPaths(patchText) {
+  return unique([...String(patchText || "").matchAll(/^diff --git a\/(.+?) b\/(.+)$/gm)].map((match) => match[2]));
+}
+
 function preflightCatalog(manifest, manifestPath) {
   const checks = [];
   for (const taskId of Object.keys(manifest.taskCatalog || {})) {
@@ -875,6 +887,21 @@ function preflightCatalog(manifest, manifestPath) {
         for (const story of resolved.task.stories || []) dependencyAwareQuarantine(resolved.task.stories, story.id);
       } catch (error) {
         blockers.push(error.message);
+      }
+      if (resolved.task.requireReferenceValidation === true) {
+        for (const story of resolved.task.stories || []) {
+          const patchPath = storyReferencePatchPath(resolved, story);
+          if (!patchPath || !fs.existsSync(patchPath)) {
+            blockers.push(`${story.id}: missing reference patch ${story.referencePatch || "(unset)"}`);
+            continue;
+          }
+          const patchPaths = referencePatchChangedPaths(fs.readFileSync(patchPath, "utf8"));
+          if (!patchPaths.length) blockers.push(`${story.id}: reference patch has no changed paths`);
+          const allowed = new Set([...(story.allowedPaths || []), ...(story.testPaths || [])]);
+          const outsideScope = patchPaths.filter((entry) => !allowed.has(entry));
+          if (outsideScope.length) blockers.push(`${story.id}: reference patch escapes frozen scope: ${outsideScope.join(", ")}`);
+          if (!Array.isArray(story.verify) || !story.verify.length) blockers.push(`${story.id}: reference validation requires focused verification`);
+        }
       }
     }
     checks.push({
@@ -912,10 +939,12 @@ module.exports = {
   parseLifecycleDispatchTrace,
   pilotAttemptHistory,
   preflightCatalog,
+  referencePatchChangedPaths,
   resolveCatalogTask,
   readPilotResultRow,
   sha256,
   spawnCaptured,
+  storyReferencePatchPath,
   validateManifest,
   validatePilotJudgment,
 };

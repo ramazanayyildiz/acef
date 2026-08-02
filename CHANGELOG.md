@@ -9,6 +9,24 @@ or evidence contract. Do not use it to claim implementation status; link to the 
 
 ## Unreleased
 
+### Full story lifecycle v3.3 preparation hardening
+
+- Extended offline ATDD authenticity checks to recognize PHPUnit exception contracts and namespaced PHP production
+  references. The archived Story 1 red test is now a permanent golden regression, while test-framework-only PHP still
+  fails authenticity.
+- Added a required baseline-red/reference-green preflight for frozen task catalogs. Every story must provide a canonical
+  patch whose changed paths stay inside the story envelope, applies cleanly to the pinned source, turns the exact focused
+  oracle green, and leaves frozen fixtures unchanged.
+- Corrected the frozen Story 2 ATDD constraint to require one resolver call and one Gate evaluation. Corrected Story 4
+  scope to include the ingress dedup service; a bounded, non-scored dry-run then closed it in one actor invocation.
+- Split harness waiting into total wait, productive delegated execution, and coordination-idle wait. Existing budget
+  profiles retain their historical total-wait semantics; only the new `v33-measured` preparation profile budgets idle
+  coordination without raising the 2,700-second/38% ceiling.
+- Compiled four-actor prompts now prohibit recursive ACEF/BMAD workflow-document loading, cap initial task reads, state
+  story-specific ATDD constraints, and trigger a typed bottleneck return after ten active minutes without progress.
+- V3.3 artifacts remain draft and non-scored. `pilotRunAllowed: false` is enforced, and capability maturity remains
+  `enforced` until a separately bound scored candidate passes every product, process, and budget gate.
+
 ### Full story lifecycle v3.2 recovery candidate
 
 - Preserved the v3.1 P0 as an immutable FAIL: product oracle verification passed, but the run exhausted its 21 actor

@@ -116,8 +116,12 @@ function atddTestSourceAuthenticityFailure(testSources) {
     const text = String(source || "");
     if (/\bprocess\s*\.\s*exit\s*\(|\bos\s*\.\s*_exit\s*\(|\bsys\s*\.\s*exit\s*\(/i.test(text)) return false;
     const declaration = /\b(?:test|it|describe)\s*\(|\b(?:public\s+)?function\s+test[A-Za-z0-9_]*\s*\(|#\[\s*Test\s*\]|\bdef\s+test_[A-Za-z0-9_]*\s*\(|\bfunc\s+Test[A-Za-z0-9_]*\s*\(|#\[test\]|\[(?:Test|Fact|Theory)\]/i.test(text);
-    const assertion = /\bassert[A-Za-z0-9_]*\s*\(|\bexpect\s*\(|\b(?:assert|require)\s*\.|->assert[A-Za-z0-9_]*\s*\(|\bshould\b|\bpanic!\s*\(/i.test(text);
-    const productionReference = /(?:require\s*\(\s*["']\.{1,2}\/|from\s+["']\.{1,2}\/|from\s+(?:app|src|modules|lib)\b|\buse\s+(?:App|Domain|Modules)\\|\b(?:got|actual|result|response)\s*(?::=|=)\s*[A-Za-z_$][\w$]*(?:\.|\()|\b[A-Z][A-Za-z0-9_]*(?:::|\.)[A-Za-z0-9_]+\s*\()/i.test(text);
+    const assertion = /\bassert[A-Za-z0-9_]*\s*\(|\bexpect\s*\(|\b(?:assert|require)\s*\.|->(?:assert[A-Za-z0-9_]*|expectException(?:Message|MessageMatches|Object)?)\s*\(|\bshould\b|\bpanic!\s*\(/i.test(text);
+    const javascriptProductionReference = /(?:require\s*\(\s*["']\.{1,2}\/|from\s+["']\.{1,2}\/|from\s+(?:app|src|modules|lib)\b|\b(?:got|actual|result|response)\s*(?::=|=)\s*[A-Za-z_$][\w$]*(?:\.|\()|\b[A-Z][A-Za-z0-9_]*(?:::|\.)[A-Za-z0-9_]+\s*\()/i.test(text);
+    const phpProductionImport = /\buse\s+(?!(?:PHPUnit|Mockery|Tests)(?:\\|;))[A-Z][A-Za-z0-9_]*(?:\\[A-Za-z_][A-Za-z0-9_]*)+\s*;/i.test(text);
+    const phpProductionConstruction = /\bnew\s+[A-Z][A-Za-z0-9_]*(?:\\[A-Za-z_][A-Za-z0-9_]*)*\s*\(/i.test(text);
+    const phpProductionCall = /\$[A-Za-z_][A-Za-z0-9_]*(?:->[A-Za-z_][A-Za-z0-9_]*)*->(?!assert|expect|should|mock|partialMock|spy|fail)[A-Za-z_][A-Za-z0-9_]*\s*\(/i.test(text);
+    const productionReference = javascriptProductionReference || phpProductionImport || phpProductionConstruction || phpProductionCall;
     const literalVsLiteral = /(?:assert(?:\.[A-Za-z0-9_]+)?|expect)\s*\(\s*(["'`][^"'`]*["'`]|-?\d+(?:\.\d+)?|true|false|null)\s*,\s*(["'`][^"'`]*["'`]|-?\d+(?:\.\d+)?|true|false|null)\s*\)/i.test(text);
     const selfComparison = /(?:assert(?:\.[A-Za-z0-9_]+)?)\s*\(\s*([A-Za-z_$][\w$]*)\s*,\s*\1\s*\)/i.test(text);
     const expectSelfComparison = /expect\s*\(\s*([A-Za-z_$][\w$]*)\s*\)\s*\.\s*(?:toBe|toEqual|toStrictEqual)\s*\(\s*\1\s*\)/i.test(text);

@@ -1,0 +1,137 @@
+{
+  "schemaVersion": 1,
+  "experimentId": "acef-execution-assurance-v33-task",
+  "repo": "jakomeet",
+  "stack": "php-laravel",
+  "source": "/Users/ramazanayyildiz/CODE/OPA/jakomeet",
+  "commit": "a12ac50441114943efd099f9e601bbee4a9d8a12",
+  "fixtureRoot": "../epic-benchmark/fixtures",
+  "epic": {
+    "id": "authz-fail-closed-hardening-v33",
+    "requireReferenceValidation": true,
+    "environmentProbe": [
+      {
+        "argv": ["vendor/bin/phpunit", "--configuration=phpunit.sqlite.xml", "--filter=BenchmarkWebhookIngressCorrectnessTest"],
+        "expect": "behavioral-red"
+      }
+    ],
+    "stories": [
+      {
+        "id": "s1-resolver-fail-closed",
+        "dependsOn": [],
+        "prompt": "Fix the route-permission resolver so malformed permission expressions fail closed. Empty or operator-only expressions must throw InvalidArgumentException while valid behavior remains unchanged. Do not touch the benchmark test file.",
+        "allowedPaths": ["packages/platform/authz/src/Http/RouteRequirementResolver.php"],
+        "testPaths": ["tests/Unit/Platform/Authz/RouteRequirementResolverTest.php"],
+        "referencePatch": "../epic-benchmark/canonical/canonical-s1.patch",
+        "setup": [
+          {"type": "copy-fixture", "fixture": "BenchmarkAuthzResolverFailClosedTest.php", "path": "tests/Feature/BenchmarkAuthzResolverFailClosedTest.php"}
+        ],
+        "verify": ["php", "artisan", "test", "--filter=BenchmarkAuthzResolverFailClosedTest"],
+        "expected": [
+          {"path": "tests/Feature/BenchmarkAuthzResolverFailClosedTest.php", "fixtureUnchanged": "BenchmarkAuthzResolverFailClosedTest.php"}
+        ],
+        "acceptanceCriteria": [
+          "Malformed empty or operator-only expressions throw InvalidArgumentException with message: Route permission expression must contain at least one capability.",
+          "Valid single, OR, AND, special, public, and null-permission behavior remains unchanged.",
+          "Only the frozen resolver production file and unit-test path may change."
+        ],
+        "atddConstraints": [
+          "Exception assertions using PHPUnit expectException and expectExceptionMessage are authentic production-behavior assertions.",
+          "The red source must call the Platform Authz resolver directly and remain byte-preserved through green except for additive tests."
+        ]
+      },
+      {
+        "id": "s2-middleware-idempotency",
+        "dependsOn": [],
+        "prompt": "Add a request-scoped run-once guard to RouteCapabilityMiddleware so the same request traversing the middleware twice evaluates the resolver and authorization exactly once. Single execution remains unchanged. Do not touch the benchmark test file.",
+        "allowedPaths": ["packages/platform/authz/src/Http/RouteCapabilityMiddleware.php"],
+        "testPaths": ["tests/Unit/Platform/Authz/RouteCapabilityMiddlewareTest.php"],
+        "referencePatch": "../epic-benchmark/canonical/canonical-s2.patch",
+        "setup": [
+          {"type": "copy-fixture", "fixture": "BenchmarkAuthzMiddlewareIdempotencyTest.php", "path": "tests/Feature/BenchmarkAuthzMiddlewareIdempotencyTest.php"}
+        ],
+        "verify": ["php", "artisan", "test", "--filter=BenchmarkAuthzMiddlewareIdempotencyTest"],
+        "expected": [
+          {"path": "tests/Feature/BenchmarkAuthzMiddlewareIdempotencyTest.php", "fixtureUnchanged": "BenchmarkAuthzMiddlewareIdempotencyTest.php"}
+        ],
+        "acceptanceCriteria": [
+          "The same request traversing RouteCapabilityMiddleware twice invokes RouteRequirementResolver exactly once and evaluates Gate authorization exactly once.",
+          "Single execution behavior remains unchanged.",
+          "Only the frozen middleware production file and unit-test path may change."
+        ],
+        "atddConstraints": [
+          "The nested double-traversal test must declare shouldReceive('resolve')->once(); a twice() resolver expectation contradicts the frozen product contract.",
+          "Both resolver calls and Gate evaluations are observable authorization work and must each equal one."
+        ]
+      },
+      {
+        "id": "s3-legacy-alias-cleanup",
+        "dependsOn": ["s2-middleware-idempotency"],
+        "prompt": "Remove every route.permission alias from the five frozen route-registration files because the middleware is globally appended to the web group. Preserve every other route attribute and do not touch the benchmark test file.",
+        "allowedPaths": [
+          "routes/web.php",
+          "app/Modules/Billing/routes.php",
+          "app/Modules/Events/routes.php",
+          "app/Modules/SuperAdmin/Routes/web.php",
+          "app/Modules/Streaming/routes.php"
+        ],
+        "testPaths": ["tests/Feature/Authz/LegacyAliasCleanupRegressionTest.php"],
+        "referencePatch": "../epic-benchmark/canonical/canonical-s3.patch",
+        "setup": [
+          {"type": "copy-fixture", "fixture": "BenchmarkAuthzLegacyAliasCleanupTest.php", "path": "tests/Feature/BenchmarkAuthzLegacyAliasCleanupTest.php"}
+        ],
+        "verify": ["php", "artisan", "test", "--filter=BenchmarkAuthzLegacyAliasCleanupTest"],
+        "expected": [
+          {"path": "tests/Feature/BenchmarkAuthzLegacyAliasCleanupTest.php", "fixtureUnchanged": "BenchmarkAuthzLegacyAliasCleanupTest.php"}
+        ],
+        "acceptanceCriteria": [
+          "All route.permission alias registrations are removed from the five frozen route files.",
+          "Other route URIs, names, handlers, groups, and middleware remain unchanged.",
+          "The frozen regression test and benchmark-focused verification pass."
+        ]
+      },
+      {
+        "id": "s4-webhook-ingress-correctness",
+        "dependsOn": [],
+        "prompt": "Fix webhook ingress retry and dedup correctness across the controller, processing job, and ingress dedup service. Unhandled controller infrastructure errors return 500. Both duplicate classifiers accept the exact SQLite provider/env_name/event_id tuple signature and retain existing cross-engine signatures while rethrowing unrelated SQLite unique violations. Do not touch the benchmark test or phpunit.sqlite.xml.",
+        "allowedPaths": [
+          "app/Modules/Billing/Http/Controllers/RevolutWebhookController.php",
+          "app/Modules/Billing/Jobs/ProcessRevolutWebhookJob.php",
+          "app/Modules/Billing/Services/WebhookIngressDedupService.php"
+        ],
+        "testPaths": ["tests/Feature/Billing/Webhook/ACEFWebhookIngressRegressionTest.php"],
+        "referencePatch": "canonical/canonical-s4.patch",
+        "setup": [
+          {"type": "copy-fixture", "fixture": "../../execution-assurance-v33/fixtures/BenchmarkWebhookIngressCorrectnessTest.php", "path": "tests/Feature/BenchmarkWebhookIngressCorrectnessTest.php"},
+          {"type": "copy-fixture", "fixture": "phpunit.sqlite.xml", "path": "phpunit.sqlite.xml"}
+        ],
+        "verify": ["vendor/bin/phpunit", "--configuration=phpunit.sqlite.xml", "--filter=BenchmarkWebhookIngressCorrectnessTest"],
+        "expected": [
+          {"path": "tests/Feature/BenchmarkWebhookIngressCorrectnessTest.php", "fixtureUnchanged": "../../execution-assurance-v33/fixtures/BenchmarkWebhookIngressCorrectnessTest.php"},
+          {"path": "phpunit.sqlite.xml", "fixtureUnchanged": "phpunit.sqlite.xml"}
+        ],
+        "acceptanceCriteria": [
+          "Unhandled Revolut webhook infrastructure errors return HTTP 500 while explicit dispatch-error handling remains unchanged.",
+          "The job and ingress service match only SQLite's provider, env_name, and event_id dedup signature; unrelated SQLite unique violations rethrow.",
+          "Existing MySQL, legacy-name, and named cross-engine duplicate signatures remain supported."
+        ],
+        "atddConstraints": [
+          "Regression coverage may exercise all three allowed production files but must not require any fourth production path.",
+          "Unrelated SQLite uniqueness must be induced on event_type and must rethrow from both the service and job."
+        ]
+      }
+    ],
+    "integration": {
+      "verify": ["sh", "-c", "php artisan test --filter='BenchmarkAuthzResolverFailClosedTest|BenchmarkAuthzMiddlewareIdempotencyTest|BenchmarkAuthzLegacyAliasCleanupTest' && vendor/bin/phpunit --configuration=phpunit.sqlite.xml --filter=BenchmarkWebhookIngressCorrectnessTest && php artisan test packages/platform/authz/tests"],
+      "expected": [
+        {"path": "tests/Feature/BenchmarkAuthzResolverFailClosedTest.php", "fixtureUnchanged": "BenchmarkAuthzResolverFailClosedTest.php"},
+        {"path": "tests/Feature/BenchmarkAuthzMiddlewareIdempotencyTest.php", "fixtureUnchanged": "BenchmarkAuthzMiddlewareIdempotencyTest.php"},
+        {"path": "tests/Feature/BenchmarkAuthzLegacyAliasCleanupTest.php", "fixtureUnchanged": "BenchmarkAuthzLegacyAliasCleanupTest.php"},
+        {"path": "tests/Feature/BenchmarkWebhookIngressCorrectnessTest.php", "fixtureUnchanged": "../../execution-assurance-v33/fixtures/BenchmarkWebhookIngressCorrectnessTest.php"}
+      ]
+    },
+    "note": "Draft v3.3 task contract. It is not scored or preregistered until reference validation, S4 dry-run, and latency/context GO gates pass."
+  },
+  "setupDirs": ["tests/Integration", "tests/Performance"],
+  "setupFiles": [{"path": "/tmp/jako-bench-webhook/database/testing.sqlite", "mode": "truncate"}]
+}

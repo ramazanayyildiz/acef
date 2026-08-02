@@ -29,7 +29,9 @@
       "docs/experiments/execution-assurance-v2/P0_R2_RESULT.md",
       "docs/experiments/execution-assurance-v3/DESIGN.md",
       "docs/experiments/execution-assurance-v31/DESIGN.md",
-      "docs/experiments/execution-assurance-v32/DESIGN.md"
+      "docs/experiments/execution-assurance-v32/DESIGN.md",
+      "docs/experiments/execution-assurance-v33/DESIGN.md",
+      "docs/experiments/execution-assurance-v33/PREPARATION_RESULT.md"
     ],
     "schema": [
       "schemas/active-run-v2.schema.json",
@@ -61,6 +63,7 @@
       "scripts/acef-execution-assurance-experiment",
       "scripts/lib/acef-execution-assurance-experiment.js",
       "docs/experiments/execution-assurance-v31/task-manifest.json",
+      "docs/experiments/execution-assurance-v33/task-manifest.json",
       "docs/experiments/execution-assurance-v3/manifest.json#judgmentContract",
       "docs/experiments/execution-assurance-v3/DESIGN.md#Product judgment and final result"
     ],
@@ -84,7 +87,8 @@
     "The v3 P0 manifest is bound to implementation commit 23b58de. Its first preregistered candidate failed automated closeout, the blind product judgment, and cost budgets, so the capability remains enforced rather than proven or authorized beyond controlled canaries.",
     "The failed v3 P0 artifacts remain immutable. V3.1 repaired real-environment preflight, story-tree scope, reviewer completion, and measurement ceilings, but its P0 still failed process closeout after exhausting 21 actor invocations; its blind Judge was mechanically blocked because packet validation omitted frozen testPaths.",
     "V3.2 accepts frozen testPaths as blinded product artifacts, raises only the actor hard cap to the observed 25-invocation recovery envelope, renders acceptance criteria explicitly, and excludes readiness notes from bound close packages.",
-    "The v3.2 P0 admitted and completed blind judgment but failed automated, process, product, broad-closeout, and harness-wait gates. It exposed a namespaced-call ATDD authenticity false negative and a contradictory frozen Story 2 ATDD contract, so the capability remains enforced rather than proven."
+    "The v3.2 P0 admitted and completed blind judgment but failed automated, process, product, broad-closeout, and harness-wait gates. It exposed a namespaced-call ATDD authenticity false negative and a contradictory frozen Story 2 ATDD contract, so the capability remains enforced rather than proven.",
+    "V3.3 is preparation-only: PHP authenticity, scoped reference validation, corrected Story 2 and Story 4 contracts, bounded compiled prompts, and coordination-idle measurement are enforced, but no v3.3 scored manifest or passing real-world candidate exists yet."
   ],
   "evidence": [
     {
@@ -100,7 +104,7 @@
     {
       "layer": "tests",
       "ref": "scripts/test-acef-execution-assurance-experiment",
-      "note": "Covers four-actor topology parsing, story-scoped later-change behavior, explicit test envelopes, conditional Judges, bounded Developer repair, exact-one regular-file close packages, reviewer completion command/payload binding, v3.1 empirical budgets, aggregate conductor/child cost, terminal zero-write infrastructure retries, product-only harness-launched blind judgment, and separate harness-wait accounting."
+      "note": "Covers four-actor topology parsing, story-scoped later-change behavior, explicit test envelopes, conditional Judges, bounded Developer repair, exact-one regular-file close packages, reviewer completion command/payload binding, v3.1 empirical budgets, aggregate conductor/child cost, terminal zero-write infrastructure retries, product-only harness-launched blind judgment, reference-patch scope, and separate total/delegated/coordination-idle wait accounting."
     },
     {
       "layer": "artifact",
@@ -131,6 +135,16 @@
       "layer": "artifact",
       "ref": "docs/experiments/execution-assurance-v32/P0_RESULT.md",
       "note": "Records the immutable v3.2 automated/process/blind FAIL, 15 actor invocations, 57.56% harness-wait share, namespaced ATDD authenticity false negative, contradictory Story 2 ATDD artifact, and independent HIGH product findings."
+    },
+    {
+      "layer": "artifact",
+      "ref": "docs/experiments/execution-assurance-v33/PREPARATION_RESULT.md",
+      "note": "Records the non-scored four-story reference-validation result, corrected v3.2 wait decomposition, and bounded Story 4 dry-run while preserving enforced maturity."
+    },
+    {
+      "layer": "artifact",
+      "ref": "docs/experiments/execution-assurance-v33/S4_DRY_RUN.md",
+      "note": "Records a fresh one-invocation Story 4 close over exactly the corrected three-path scope: baseline behavioral red, final 4-test/5-assertion green, and measured token use."
     }
   ],
   "createdAt": "2026-08-02"
