@@ -28,6 +28,11 @@ or evidence contract. Do not use it to claim implementation status; link to the 
   successor must be frozen separately.
 - After preparation GO, separately froze `P0-candidate-v35` against framework commit `82b5f73`. Freezing does not start
   the attempt and does not change capability maturity before automated and blind results exist.
+- Recorded the immutable v3.5 automated and blind FAIL. The attempt reached the first valid implementation and two
+  concurrent typed reviewer PASS results without retries or repair, then stopped after 1,160.1 active seconds when
+  deterministic close rejected the genuine test-only-red/production-only-green ancestry with a red-evidence path
+  continuity anomaly. Stories 2–4, the broad lifecycle suite, and the Epic Process Judge therefore did not run; the
+  blind Judge independently reported three HIGH missing-story findings. Capability maturity remains `enforced`.
 
 ### Full story lifecycle v3.4 typed-handoff recovery preparation
 
