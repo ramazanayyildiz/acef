@@ -27,6 +27,9 @@ or evidence contract. Do not use it to claim implementation status; link to the 
 - The clean v3.4 draft preflight passed task binding, collaboration canary, environment probe, and baseline-red/
   reference-green validation for all four unchanged frozen stories. This authorizes a separately frozen scored
   candidate but does not change maturity or the v3.3 result.
+- Separately froze scored attempt `P0-candidate-v34` against framework commit `1deadd4`, with the unchanged task,
+  quality gates, stop rules, and measured budget. Freezing the attempt does not change capability maturity before its
+  automated and blind results are recorded.
 
 ### Full story lifecycle v3.3 preparation hardening
 
