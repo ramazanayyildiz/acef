@@ -121,21 +121,28 @@ function validateManifest(manifest) {
     }
     const budget = manifest.promotionGates?.budget || {};
     const budgetProfile = budget.profileId || "v3-preregistered";
-    const expectedVariableBudget = budgetProfile === "v31-empirical"
-      ? { maximumInputTokens: 50000000, maximumToolCalls: 520, maximumHarnessWaitSeconds: 2700, maximumHarnessWaitShare: 0.38 }
-      : { maximumInputTokens: 36000000, maximumToolCalls: 300, maximumHarnessWaitSeconds: 1200, maximumHarnessWaitShare: 0.25 };
-    if (!["v3-preregistered", "v31-empirical"].includes(budgetProfile)) {
-      throw new Error("v3 P0 candidate budget.profileId must be v3-preregistered or v31-empirical");
+    const expectedBudget = budgetProfile === "v3-preregistered"
+      ? { maximumActorInvocations: 21, maximumInputTokens: 36000000, maximumToolCalls: 300,
+        maximumHarnessWaitSeconds: 1200, maximumHarnessWaitShare: 0.25 }
+      : budgetProfile === "v31-empirical"
+        ? { maximumActorInvocations: 21, maximumInputTokens: 50000000, maximumToolCalls: 520,
+          maximumHarnessWaitSeconds: 2700, maximumHarnessWaitShare: 0.38 }
+        : budgetProfile === "v32-empirical"
+          ? { maximumActorInvocations: 25, maximumInputTokens: 50000000, maximumToolCalls: 520,
+            maximumHarnessWaitSeconds: 2700, maximumHarnessWaitShare: 0.38 }
+          : null;
+    if (!expectedBudget) {
+      throw new Error("v3 P0 candidate budget.profileId must be v3-preregistered, v31-empirical, or v32-empirical");
     }
-    if (budget.baseActorCount !== 17 || budget.maximumActorInvocations !== 21
+    if (budget.baseActorCount !== 17 || budget.maximumActorInvocations !== expectedBudget.maximumActorInvocations
       || budget.maximumRepairCyclesPerStory !== 2 || budget.thirdRepairDisposition !== "REPLAN_SPLIT"
       || budget.maximumInfrastructureRetriesPerInvocation !== 1 || budget.maximumInfrastructureRetriesTotal !== 3
-      || budget.maximumInputTokens !== expectedVariableBudget.maximumInputTokens
-      || budget.maximumToolCalls !== expectedVariableBudget.maximumToolCalls
+      || budget.maximumInputTokens !== expectedBudget.maximumInputTokens
+      || budget.maximumToolCalls !== expectedBudget.maximumToolCalls
       || budget.targetStoryActiveSeconds !== 2100 || budget.maximumStoryActiveSeconds !== 3000
       || budget.targetActiveDeliverySeconds !== 9000 || budget.maximumActiveDeliverySeconds !== 10800
-      || budget.maximumHarnessWaitSeconds !== expectedVariableBudget.maximumHarnessWaitSeconds
-      || budget.maximumHarnessWaitShare !== expectedVariableBudget.maximumHarnessWaitShare) {
+      || budget.maximumHarnessWaitSeconds !== expectedBudget.maximumHarnessWaitSeconds
+      || budget.maximumHarnessWaitShare !== expectedBudget.maximumHarnessWaitShare) {
       throw new Error("v3 P0 candidate must freeze actor, repair, time, token, tool, and harness-wait budgets");
     }
     if (attempt.activeTimeCapMinutes * 60 !== budget.maximumActiveDeliverySeconds) {
@@ -457,7 +464,10 @@ function validatePilotJudgment(judgment, attempt, manifest) {
     || !fs.existsSync(judgePacket.diff.path) || sha256(fs.readFileSync(judgePacket.diff.path, "utf8")) !== attempt.diffSha256) {
     throw new Error("judge packet referenced diff artifact is missing, changed, or does not match the immutable attempt");
   }
-  const allowedProductPaths = new Set((judgePacket.productContract.stories || []).flatMap((story) => story.allowedPaths || []));
+  const allowedProductPaths = new Set((judgePacket.productContract.stories || []).flatMap((story) => [
+    ...(story.allowedPaths || []),
+    ...(story.testPaths || []),
+  ]));
   const diffPaths = fs.readFileSync(judgePacket.diff.path, "utf8").split(/\r?\n/).flatMap((line) => {
     const match = line.match(/^diff --git a\/(.+) b\/(.+)$/);
     return match ? [match[1], match[2]] : [];

@@ -77,6 +77,12 @@ Object.assign(validV31Budget.promotionGates.budget, {
   maximumHarnessWaitShare: 0.38,
 });
 assert.doesNotThrow(() => validateManifest(validV31Budget));
+const validV32Budget = structuredClone(validV31Budget);
+Object.assign(validV32Budget.promotionGates.budget, {
+  profileId: "v32-empirical",
+  maximumActorInvocations: 25,
+});
+assert.doesNotThrow(() => validateManifest(validV32Budget));
 const invalidV31Budget = structuredClone(validV31Budget);
 invalidV31Budget.promotionGates.budget.maximumToolCalls = 521;
 assert.throws(() => validateManifest(invalidV31Budget), /freeze actor, repair, time, token, tool, and harness-wait budgets/);
@@ -683,14 +689,18 @@ assert.equal(parseLifecycleIntegrationEvidence(`${integrationCall}\n${contradict
 const judgmentUnitDir = fs.mkdtempSync(path.join(os.tmpdir(), "acef-judgment-unit-"));
 process.on("exit", () => fs.rmSync(judgmentUnitDir, { recursive: true, force: true }));
 const judgmentDiffPath = path.join(judgmentUnitDir, "candidate.patch");
-fs.writeFileSync(judgmentDiffPath, "diff --git a/value b/value\n--- a/value\n+++ b/value\n@@ -1 +1 @@\n-before\n+after\n");
+fs.writeFileSync(judgmentDiffPath, [
+  "diff --git a/value b/value\n--- a/value\n+++ b/value\n@@ -1 +1 @@\n-before\n+after\n",
+  "diff --git a/value.test b/value.test\n--- a/value.test\n+++ b/value.test\n@@ -1 +1 @@\n-old test\n+new test\n",
+].join(""));
 const judgmentDiffSha256 = sha256(fs.readFileSync(judgmentDiffPath, "utf8"));
 const productDoneReceiptPath = path.join(judgmentUnitDir, "product-receipt.json");
 fs.writeFileSync(productDoneReceiptPath, `${JSON.stringify({ finishedAt: "2026-08-02T00:09:00.000Z", status: 0 })}\n`);
 const productDoneReceiptSha256 = sha256(fs.readFileSync(productDoneReceiptPath, "utf8"));
 const judgmentProductContract = {
   schema: "acef.execution-assurance-product-contract.v1", taskId: "unit-task", kind: "task",
-  stories: [{ id: "unit-task", prompt: "Change value from before to after.", acceptanceCriteria: [], dependsOn: [], allowedPaths: ["value"] }],
+  stories: [{ id: "unit-task", prompt: "Change value from before to after.", acceptanceCriteria: [], dependsOn: [],
+    allowedPaths: ["value"], testPaths: ["value.test"] }],
 };
 const judgmentProductContractSha256 = sha256(JSON.stringify(judgmentProductContract));
 const judgmentWithheldOracleSha256 = "b".repeat(64);
@@ -700,7 +710,7 @@ const judgmentInputBundleSha256 = sha256(JSON.stringify({
   productContractSha256: judgmentProductContractSha256,
   withheldOracleSha256: judgmentWithheldOracleSha256,
   productDiffSha256: judgmentDiffSha256,
-  productChangedPaths: ["value"],
+  productChangedPaths: ["value", "value.test"],
   verificationReceiptSha256: productDoneReceiptSha256,
   verificationStdoutSha256: judgmentVerificationStdoutSha256,
   verificationStderrSha256: judgmentVerificationStderrSha256,
@@ -716,7 +726,7 @@ fs.writeFileSync(judgePacketPath, `${JSON.stringify({
   diff: { path: judgmentDiffPath, sha256: judgmentDiffSha256 },
   verification: { receiptSha256: productDoneReceiptSha256, stdoutSha256: judgmentVerificationStdoutSha256,
     stderrSha256: judgmentVerificationStderrSha256 },
-  changedPaths: ["value"],
+  changedPaths: ["value", "value.test"],
 })}\n`);
 const judgePacketSha256 = sha256(fs.readFileSync(judgePacketPath, "utf8"));
 const blindedPrompt = blindJudgePrompt({

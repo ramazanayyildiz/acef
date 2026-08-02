@@ -9,6 +9,20 @@ or evidence contract. Do not use it to claim implementation status; link to the 
 
 ## Unreleased
 
+### Full story lifecycle v3.2 recovery candidate
+
+- Preserved the v3.1 P0 as an immutable FAIL: product oracle verification passed, but the run exhausted its 21 actor
+  invocations before delta re-review and Epic Judge closeout, skipped the one required lifecycle integration command,
+  and exposed auxiliary readiness reports in otherwise control-only story-close commits.
+- Fixed blind-judge packet validation so frozen `testPaths` are product artifacts alongside production `allowedPaths`;
+  protected harness/control paths remain rejected.
+- Added the separately preregisterable `v32-empirical` budget profile. Its 25-invocation hard cap is derived from the
+  observed 21-invocation partial run plus the two required delta reviewers, mandatory Epic Judge, and one infrastructure
+  retry buffer; token, tool, active-time, and harness-wait ceilings remain unchanged.
+- Product acceptance criteria are now rendered explicitly into every story actor contract. Story-close instructions
+  explicitly exclude readiness/reuse working notes and require staging only the gate-bound package paths.
+- Capability maturity remains `enforced`; v3.2 requires a fresh P0 plus blind product judgment before any stronger claim.
+
 ### Full story lifecycle v3.1 recovery candidate
 
 - Added story-scoped final-tree binding: deterministic gates freeze the story's explicit production/test paths, so
