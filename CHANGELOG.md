@@ -24,6 +24,9 @@ or evidence contract. Do not use it to claim implementation status; link to the 
   still fails closed.
 - This is preparation-only. V3.3 remains an immutable FAIL and capability maturity remains `enforced` until a separately
   frozen successor passes automated closeout and blind judgment.
+- The clean v3.4 draft preflight passed task binding, collaboration canary, environment probe, and baseline-red/
+  reference-green validation for all four unchanged frozen stories. This authorizes a separately frozen scored
+  candidate but does not change maturity or the v3.3 result.
 
 ### Full story lifecycle v3.3 preparation hardening
 
