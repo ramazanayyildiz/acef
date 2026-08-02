@@ -31,7 +31,8 @@
       "docs/experiments/execution-assurance-v31/DESIGN.md",
       "docs/experiments/execution-assurance-v32/DESIGN.md",
       "docs/experiments/execution-assurance-v33/DESIGN.md",
-      "docs/experiments/execution-assurance-v33/PREPARATION_RESULT.md"
+      "docs/experiments/execution-assurance-v33/PREPARATION_RESULT.md",
+      "docs/experiments/execution-assurance-v33/P0_RESULT.md"
     ],
     "schema": [
       "schemas/active-run-v2.schema.json",
@@ -89,7 +90,7 @@
     "The failed v3 P0 artifacts remain immutable. V3.1 repaired real-environment preflight, story-tree scope, reviewer completion, and measurement ceilings, but its P0 still failed process closeout after exhausting 21 actor invocations; its blind Judge was mechanically blocked because packet validation omitted frozen testPaths.",
     "V3.2 accepts frozen testPaths as blinded product artifacts, raises only the actor hard cap to the observed 25-invocation recovery envelope, renders acceptance criteria explicitly, and excludes readiness notes from bound close packages.",
     "The v3.2 P0 admitted and completed blind judgment but failed automated, process, product, broad-closeout, and harness-wait gates. It exposed a namespaced-call ATDD authenticity false negative and a contradictory frozen Story 2 ATDD contract, so the capability remains enforced rather than proven.",
-    "The v3.3 scored manifest is frozen against framework commit d339a61 after preparation passed. No passing v3.3 real-world candidate exists yet, so maturity remains enforced rather than proven."
+    "The v3.3 P0 is an immutable automated and blind FAIL. Three typed-handoff defects prevented valid story close despite green product patches in Stories 1, 2, and 4: stale red-evidence commit binding, punctuation-sensitive actor result parsing, and reviewer completion path copying. Story 3 was dependency-quarantined. Maturity remains enforced rather than proven."
   ],
   "evidence": [
     {
@@ -151,6 +152,11 @@
       "layer": "artifact",
       "ref": "docs/experiments/execution-assurance-v33/manifest.json",
       "note": "Separately freezes the single scored P0-candidate-v33 attempt, corrected task contract, v33-measured budget, and product/process promotion gates against framework implementation d339a61."
+    },
+    {
+      "layer": "artifact",
+      "ref": "docs/experiments/execution-assurance-v33/P0_RESULT.md",
+      "note": "Records the immutable v3.3 automated/blind FAIL, typed-handoff root causes, 4.8-second coordination-idle measurement, cost comparison, and required successor repairs."
     },
     {
       "layer": "artifact",

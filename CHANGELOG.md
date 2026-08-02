@@ -29,6 +29,11 @@ or evidence contract. Do not use it to claim implementation status; link to the 
 - After all preparation gates passed, separately froze scored attempt `P0-candidate-v33` against framework commit
   `d339a61`. This preregistration authorizes one measured run but does not change capability maturity before its
   automated and blind results are recorded.
+- Recorded the immutable v3.3 automated and blind FAIL. The run reduced active time, aggregate input tokens, tool calls,
+  and invocations relative to the also-incomplete v3.2 P0, while measuring only 4.8 seconds of true coordination-idle
+  wait. It still failed product and process closeout because typed handoffs were not atomic or machine-carried: stale
+  red-evidence binding, punctuation-sensitive actor result parsing, and copied reviewer report paths quarantined the
+  stories before Epic close. Capability maturity remains `enforced`.
 
 ### Full story lifecycle v3.2 recovery candidate
 
