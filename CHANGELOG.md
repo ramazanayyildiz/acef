@@ -22,6 +22,10 @@ or evidence contract. Do not use it to claim implementation status; link to the 
 - Added state-writer and execution-assurance regressions for failed-handoff atomicity, generated actor identity/role,
   exact shell allowlisting, and transcript-visible actor creation. The complete repository suite passed 30/30 in 265
   seconds. Capability maturity remains `enforced` pending a separately frozen rehearsal.
+- Separately froze non-scored `REHEARSAL-v310`; preflight and Stage 0 passed. The real run was intentionally stopped
+  after 413.1 seconds when the same ATDD actor received two forbidden follow-ups after inventing unsupported evidence
+  kind `atdd-red`. Development had started without a receipt, so finalize correctly classified the attempt as consumed,
+  indeterminate, and non-replayable. Reviewer atomic handoff was not reached and maturity remains `enforced`.
 
 ### Full story lifecycle v3.9 canonical Developer session binding
 
