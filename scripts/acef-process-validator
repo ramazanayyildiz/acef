@@ -294,7 +294,7 @@ function normalizedScope(value) {
 
 function stateControlPath(filePath) {
   const normalized = String(filePath || "").replaceAll(path.sep, "/");
-  return /^docs\/ai\/(?:ACEF_(?:ACTIVE_RUN\.json|ACTIVE_WORKER_SCOPE\.json|DIRECT_RUN\.json|CURRENT_CONTEXT\.md|[^/]+_DELIVERY_AUDIT\.md)|actors\/|gates\/|evidence\/|reports\/|approvals\/|repairs\/|judges\/)/.test(normalized);
+  return /^docs\/ai\/(?:ACEF_(?:ACTIVE_RUN\.json|ACTIVE_WORKER_SCOPE\.json|ACTIVE_LEDGER|DIRECT_RUN\.json|CURRENT_CONTEXT\.md|DELIVERY_LEDGER(?:_[^/]+)?\.md|[^/]+_DELIVERY_AUDIT\.md)|actors\/|gates\/|evidence\/|reports\/|approvals\/|repairs\/|judges\/)/.test(normalized);
 }
 
 function normalizedScopePaths(paths) {
@@ -461,15 +461,19 @@ function inferredRiskTriggers(paths) {
   return [...triggers];
 }
 
-function stateChangingRisk(repoRoot, activeRun, activeScope = null) {
+function stateChangingRiskSignals(activeRun, activeScope = null, paths = []) {
   const text = [
     activeRun?.activeStory,
     activeRun?.laneRationale,
     ...(activeRun?.riskTriggers || []),
     ...(activeScope?.surfaces || []),
-    ...pathHints(repoRoot, activeScope),
+    ...paths,
   ].filter(Boolean).join(" ");
-  return /\b(create|capture|record|save|store|persist|write|update|delete|notes?|lead|crm|follow[-_ ]?up|conversion|history|tracking|payment|billing|invoice|finance|financial|payout|receipt|balance|migration|database|schema|app[-_ ]?store|memory|singleton|demo[-_ ]?data|fixture[-_ ]?store)\b/i.test(text);
+  return /\b(create|capture|record|save|store|persist(?:ence|ent|ed|ing)?|write|update|delete|notes?|lead|crm|follow[-_ ]?up|conversion|history|tracking|stateful[-_ ]product[-_ ]data|migration|database|schema|app[-_ ]?store|memory|singleton|demo[-_ ]?data|fixture[-_ ]?store)\b/i.test(text);
+}
+
+function stateChangingRisk(repoRoot, activeRun, activeScope = null) {
+  return stateChangingRiskSignals(activeRun, activeScope, pathHints(repoRoot, activeScope));
 }
 
 function durablePersistenceEvidenceText(text) {
@@ -3537,9 +3541,13 @@ function main() {
   if (results.some((item) => !item.ok)) process.exitCode = 1;
 }
 
-try {
-  main();
-} catch (error) {
-  console.error(`FAIL validator: ${error.message}`);
-  process.exitCode = 1;
+if (require.main === module) {
+  try {
+    main();
+  } catch (error) {
+    console.error(`FAIL validator: ${error.message}`);
+    process.exitCode = 1;
+  }
 }
+
+module.exports = { stateChangingRiskSignals, stateControlPath };

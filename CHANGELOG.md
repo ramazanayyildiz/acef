@@ -9,6 +9,21 @@ or evidence contract. Do not use it to claim implementation status; link to the 
 
 ## Unreleased
 
+### Full story lifecycle v3.5 measured-failure recovery preparation
+
+- Classified unsuffixed and suffixed delivery ledgers plus the active-ledger pointer consistently as control state, so
+  legacy ledger normalization cannot invalidate application evidence mid-story.
+- Restricted durable write/read proof to explicit mutation semantics or persistence/stateful risk triggers. High-risk
+  names such as `Billing` still route assurance but no longer make a static route edit look like database mutation.
+- Replaced whole-file ATDD substring continuity with original semantic-line preservation: original assertions remain
+  mandatory while repair-added tests may be corrected or isolated.
+- Made the validated typed review-report verdict the single reviewer result channel. The compiled contract now embeds
+  the minimum report schema, permits only one final completion call, prohibits dynamic/batched reviewer shell calls,
+  and requires prior typed REVISE before a reviewer retry.
+- Added a separate v3.5 withheld compatibility fixture that freezes the generic MySQL `Duplicate entry` signature for
+  both webhook classifiers without modifying immutable v3.3/v3.4 artifacts.
+- This is preparation-only. V3.4 remains an immutable automated/blind FAIL and maturity remains `enforced`.
+
 ### Full story lifecycle v3.4 typed-handoff recovery preparation
 
 - Added an ATDD evidence hard wall: four-actor-v3 red evidence now refuses to run or persist until the test-only red tree

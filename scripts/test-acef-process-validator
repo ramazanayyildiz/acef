@@ -10,6 +10,24 @@ const validator = path.join(repoRoot, "scripts", "acef-process-validator");
 const codexGuard = path.join(repoRoot, "scripts", "acef-codex-guard");
 const bmadHook = path.join(repoRoot, "claude-plugins", "acef-bmad-guard", "hooks", "acef-bmad-hard-wall.mjs");
 const bmadDispatcher = path.join(repoRoot, "claude-plugins", "acef-bmad-guard", "hooks", "acef-bmad-dispatcher.mjs");
+const { stateChangingRiskSignals, stateControlPath } = require("./acef-process-validator");
+
+if (!stateControlPath("docs/ai/ACEF_DELIVERY_LEDGER.md")
+  || !stateControlPath("docs/ai/ACEF_DELIVERY_LEDGER_P0.md")
+  || !stateControlPath("docs/ai/ACEF_ACTIVE_LEDGER")) {
+  throw new Error("legacy and suffixed delivery ledger pointers are not consistently classified as control state");
+}
+if (stateChangingRiskSignals(
+  { activeStory: "legacy alias cleanup", riskTriggers: ["permissions", "provider-integration"] },
+  { surfaces: ["api"] },
+  ["app/Modules/Billing/routes.php"],
+)) throw new Error("a static Billing route edit was incorrectly classified as durable state mutation");
+if (!stateChangingRiskSignals({ activeStory: "persist webhook ledger record", riskTriggers: ["webhook"] }, null, [])) {
+  throw new Error("explicit persistence semantics did not require durable write/read evidence");
+}
+if (!stateChangingRiskSignals({ activeStory: "webhook classifier", riskTriggers: ["persistence"] }, null, [])) {
+  throw new Error("an explicit persistence risk trigger did not require durable write/read evidence");
+}
 
 function run(command, args, options = {}) {
   return cp.execFileSync(command, args, {

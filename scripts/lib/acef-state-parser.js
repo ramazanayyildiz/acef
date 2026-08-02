@@ -133,11 +133,23 @@ function atddTestSourceAuthenticityFailure(testSources) {
 
 function atddGreenTestContinuityFailure(redSources, greenSources) {
   const greenByPath = new Map((greenSources || []).map((entry) => [entry.filePath, String(entry.source || "")]));
-  const normalized = (value) => String(value || "").replace(/\/\*[\s\S]*?\*\/|\/\/[^\n]*|#[^\[\n][^\n]*/g, "").replace(/\s+/g, "");
+  const semanticLines = (value) => String(value || "")
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .split(/\r?\n/)
+    .map((line) => line.replace(/\/\/.*$|#[^\[].*$/g, "").replace(/\s+/g, ""))
+    .filter((line) => line && !/^[{}()[\],;]+$/.test(line));
   const weakened = (redSources || []).filter((entry) => {
-    const redFingerprint = normalized(entry.source);
-    const greenContent = normalized(greenByPath.get(entry.filePath));
-    return !redFingerprint || !greenContent.includes(redFingerprint);
+    const required = semanticLines(entry.source);
+    const available = semanticLines(greenByPath.get(entry.filePath));
+    const counts = new Map();
+    for (const line of available) counts.set(line, (counts.get(line) || 0) + 1);
+    if (!required.length) return true;
+    for (const line of required) {
+      const remaining = counts.get(line) || 0;
+      if (!remaining) return true;
+      counts.set(line, remaining - 1);
+    }
+    return false;
   });
   return weakened.length ? `green evidence removed or weakened critical ATDD test content: ${weakened.map((entry) => entry.filePath).join(", ")}` : "";
 }

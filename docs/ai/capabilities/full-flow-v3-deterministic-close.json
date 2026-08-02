@@ -36,7 +36,8 @@
       "docs/experiments/execution-assurance-v34/DESIGN.md",
       "docs/experiments/execution-assurance-v34/PREPARATION_RESULT.md",
       "docs/experiments/execution-assurance-v34/manifest.json",
-      "docs/experiments/execution-assurance-v34/P0_RESULT.md"
+      "docs/experiments/execution-assurance-v34/P0_RESULT.md",
+      "docs/experiments/execution-assurance-v35/DESIGN.md"
     ],
     "schema": [
       "schemas/active-run-v2.schema.json",
@@ -69,6 +70,7 @@
       "scripts/lib/acef-execution-assurance-experiment.js",
       "docs/experiments/execution-assurance-v31/task-manifest.json",
       "docs/experiments/execution-assurance-v33/task-manifest.json",
+      "docs/experiments/execution-assurance-v35/task-manifest.json",
       "docs/experiments/execution-assurance-v33/manifest.json",
       "docs/experiments/execution-assurance-v3/manifest.json#judgmentContract",
       "docs/experiments/execution-assurance-v3/DESIGN.md#Product judgment and final result"
@@ -77,7 +79,8 @@
       "scripts/test-acef-state",
       "scripts/test-acef-typed-state-validator",
       "scripts/test-acef-process-validator",
-      "scripts/test-acef-execution-assurance-experiment"
+      "scripts/test-acef-execution-assurance-experiment",
+      "docs/experiments/execution-assurance-v35/fixtures/BenchmarkWebhookGenericMysqlCompatibilityTest.php"
     ],
     "installer": [
       "scripts/install-acef-tools",
@@ -94,7 +97,7 @@
     "The failed v3 P0 artifacts remain immutable. V3.1 repaired real-environment preflight, story-tree scope, reviewer completion, and measurement ceilings, but its P0 still failed process closeout after exhausting 21 actor invocations; its blind Judge was mechanically blocked because packet validation omitted frozen testPaths.",
     "V3.2 accepts frozen testPaths as blinded product artifacts, raises only the actor hard cap to the observed 25-invocation recovery envelope, renders acceptance criteria explicitly, and excludes readiness notes from bound close packages.",
     "The v3.2 P0 admitted and completed blind judgment but failed automated, process, product, broad-closeout, and harness-wait gates. It exposed a namespaced-call ATDD authenticity false negative and a contradictory frozen Story 2 ATDD contract, so the capability remains enforced rather than proven.",
-    "The v3.3 P0 is an immutable automated and blind FAIL. V3.4 enforced commit-before-red-evidence, delimiter-normalized actor results, machine-observed reviewer completion, deterministic report paths, and functions.exec command tracing, but its scored P0 also failed automated and blind judgment. S4 exhausted two repair cycles, process/retry topology remained invalid, tool calls exceeded budget, and the blind Judge found one HIGH MySQL compatibility regression. Maturity remains enforced rather than proven."
+    "The v3.3 and v3.4 P0 attempts are immutable automated and blind failures. V3.5 preparation addresses the measured legacy-ledger, durability-dosing, repair-test continuity, reviewer-result, retry-topology, and generic MySQL oracle gaps, but no separately frozen v3.5 scored result exists. Maturity remains enforced rather than proven."
   ],
   "evidence": [
     {
@@ -186,6 +189,11 @@
       "layer": "artifact",
       "ref": "docs/experiments/execution-assurance-v34/P0_RESULT.md",
       "note": "Records the immutable v3.4 automated/blind FAIL, 6.6-second coordination-idle measurement, two-cycle S4 REPLAN, tool-call budget failure, remaining reviewer-process violations, and one HIGH blind MySQL compatibility finding."
+    },
+    {
+      "layer": "artifact",
+      "ref": "docs/experiments/execution-assurance-v35/DESIGN.md",
+      "note": "Defines the non-scored measured-failure recovery gates for control-state classification, durability dosing, original-assertion continuity, typed reviewer results, affected-only retries, and generic MySQL compatibility."
     },
     {
       "layer": "artifact",

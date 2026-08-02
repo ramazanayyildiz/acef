@@ -73,12 +73,17 @@ try {
   runState(["worker-scope", "--repo", tmp, "--story", "Story 1.1", "--phase", "process-judge", "--worker-id", "process-judge", "--allow", "app/**", "--allow", "tests/**", "--surface", "ui", "--pattern-use", "new-reusable-pattern", "--requires-round-trip", "true", "--binding", "admin>ui:image:true"]);
   runState(["approval", "--repo", tmp, "--id", "APP-2", "--decision", "APPROVE", "--scope", "epic:2", "--target-epic", "2", "--quote", "Start Epic 2", "--source-channel", "test"]);
   runState(["evidence-run", "--repo", tmp, "--id", "EV-1", "--kind", "runtime-test", "--actor", "development", "--story", "Story 1.1", "--satisfies", "AC-1", "--", process.execPath, "-e", "console.log('real path ok')"]);
+  fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_DELIVERY_LEDGER.md"), "# Legacy active delivery ledger\n");
   fs.writeFileSync(path.join(tmp, "docs", "ai", "product-deliverable.md"), "not machine state\n");
   runState(["evidence-run", "--repo", tmp, "--id", "EV-docs-ai-dirty", "--kind", "static-check", "--actor", "development", "--story", "Story 1.1", "--satisfies", "docs-ai-allowlist", "--", process.execPath, "-e", "console.log('probe')"]);
+  if (readJson("docs/ai/evidence/EV-docs-ai-dirty.json").dirtyApplicationPathsBefore.includes("docs/ai/ACEF_DELIVERY_LEDGER.md")) {
+    throw new Error("legacy unsuffixed delivery ledger was incorrectly classified as application dirt");
+  }
   if (!readJson("docs/ai/evidence/EV-docs-ai-dirty.json").dirtyApplicationPathsBefore.includes("docs/ai/product-deliverable.md")) {
     throw new Error("arbitrary docs/ai deliverable was incorrectly exempted as machine control state");
   }
   fs.rmSync(path.join(tmp, "docs", "ai", "product-deliverable.md"));
+  fs.rmSync(path.join(tmp, "docs", "ai", "ACEF_DELIVERY_LEDGER.md"));
   runState(["gate", "--repo", tmp, "--id", "GATE-1", "--scope", "Story 1.1", "--verdict", "PASS", "--decided-by", "process-judge", "--evidence", "EV-1", "--surface-evidence", "ui:EV-1:true:true", "--binding-evidence", "admin>ui:image:EV-1:true:true"]);
 
   const activeRun = readJson("docs/ai/ACEF_ACTIVE_RUN.json");

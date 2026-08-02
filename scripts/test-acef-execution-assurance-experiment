@@ -53,6 +53,7 @@ const {
   lifecycleActorContract,
   parseCollaborationEvidence,
   parseReviewerCompletion,
+  reviewerResultFromReport,
   reviewerCompletionFromSession,
   codexSessionMetrics,
   aggregateTeamMetrics,
@@ -162,7 +163,7 @@ assert.deepEqual(resolvedV31Epic.task.stories[3].testPaths, [
 const v31Prompt = epicPilotPrompt({ ...v3Manifest.pilot.attempts[0], id: "P0-candidate-v31" }, resolvedV31Epic, validV31Budget);
 assert.match(v31Prompt, /Frozen test paths:/);
 assert.match(v31Prompt, /acef-state review-completion/);
-assert.match(v31Prompt, /missing or invalid review-completion command is a mechanical REPLAN\/SPLIT stop/);
+assert.match(v31Prompt, /missing, repeated, or invalid review-completion command is a mechanical REPLAN\/SPLIT stop/);
 assert.match(v31Prompt, /50000000 aggregate conductor-plus-child input tokens/);
 const epicActorContract = lifecycleActorContract(resolvedEpic);
 assert.equal(epicActorContract.length, 25, "four stories need six actors each plus one epic Process Judge");
@@ -196,6 +197,19 @@ const syntheticSession = [JSON.stringify({ type: "session_meta", payload: {
 })].join("\n");
 assert.equal(parseCollaborationEvidence(syntheticRaw, syntheticSession, epicActorContract).ok, true);
 assert.equal(actorResultFromText("ACTOR_RESULT: PASS"), "PASS");
+const reviewerResultFixture = fs.mkdtempSync(path.join(os.tmpdir(), "acef-reviewer-result-"));
+fs.mkdirSync(path.join(reviewerResultFixture, "docs", "ai", "reports"), { recursive: true });
+fs.writeFileSync(path.join(reviewerResultFixture, "docs", "ai", "reports", "typed-reviewer.json"), JSON.stringify({
+  schema: "acef.review-report.v3", actorInstanceId: "typed-reviewer", verdict: "PASS",
+}));
+assert.equal(reviewerResultFromReport(reviewerResultFixture, "typed-reviewer"), "PASS",
+  "a v3 reviewer result is carried by its deterministic typed report rather than prose punctuation");
+fs.writeFileSync(path.join(reviewerResultFixture, "docs", "ai", "reports", "wrong-reviewer.json"), JSON.stringify({
+  schema: "acef.review-report.v3", actorInstanceId: "someone-else", verdict: "PASS",
+}));
+assert.equal(reviewerResultFromReport(reviewerResultFixture, "wrong-reviewer"), "",
+  "a reviewer report cannot carry another actor's result");
+fs.rmSync(reviewerResultFixture, { recursive: true, force: true });
 assert.equal(parseCollaborationEvidence(syntheticRaw,
   syntheticSession.replaceAll("ACTOR_RESULT=PASS", "ACTOR_RESULT: PASS"), epicActorContract).ok, true,
 "semantically identical colon-delimited actor results must not quarantine completed work");

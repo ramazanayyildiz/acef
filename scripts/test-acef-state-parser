@@ -229,6 +229,16 @@ class CircularTest extends TestCase {
     [{ filePath: changedRedTests[0], source: meaningfulRedSource }],
     [{ filePath: changedRedTests[0], source: `${meaningfulRedSource}\ntest('extra', () => assert.ok(actual()));` }],
   )) throw new Error("additive green coverage incorrectly weakened the red test fingerprint");
+  const classRedSource = `class DurableTest {\n  testOriginal() { assertSame('expected', actual()); }\n}\n`;
+  const classGreenWithInsertedRepairTest = `class DurableTest {\n  testOriginal() { assertSame('expected', actual()); }\n  testRepairCoverage() { assertTrue(roundTrip()); }\n}\n`;
+  if (atddGreenTestContinuityFailure(
+    [{ filePath: changedRedTests[0], source: classRedSource }],
+    [{ filePath: changedRedTests[0], source: classGreenWithInsertedRepairTest }],
+  )) throw new Error("a repair-added test inserted before the class close incorrectly weakened original ATDD assertions");
+  if (!atddGreenTestContinuityFailure(
+    [{ filePath: changedRedTests[0], source: classRedSource }],
+    [{ filePath: changedRedTests[0], source: classGreenWithInsertedRepairTest.replace("'expected'", "'weakened'") }],
+  )) throw new Error("changing an original critical ATDD assertion was accepted as additive coverage");
   if (!atddGreenTestContinuityFailure(
     [{ filePath: changedRedTests[0], source: meaningfulRedSource }],
     [{ filePath: changedRedTests[0], source: "const actual = require('../app/service'); test('red', () => assert.strictEqual(actual(), actual()));" }],
