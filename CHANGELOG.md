@@ -20,6 +20,9 @@ or evidence contract. Do not use it to claim implementation status; link to the 
   frozen rehearsal.
 - The complete repository suite passed 30/30, the interrupted v3.8 real actor record passed the new canonical binding
   check, and non-scored `REHEARSAL-v39` was separately frozen against clean commit `28fa3e4`.
+- Recorded immutable non-scored V3.9 FAIL after 908.7 seconds. Canonical Developer session binding passed in the real
+  run, but reviewer completion exposed an immutable actor/report handoff contradiction and mismatched shared review
+  input tree. No blind Judge or maturity change is implied.
 
 ### Full story lifecycle v3.8 final-tree recovery
 
