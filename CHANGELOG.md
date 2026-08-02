@@ -26,6 +26,8 @@ or evidence contract. Do not use it to claim implementation status; link to the 
   environment probe, and all four baseline-red/reference-green validations, including the new hidden MySQL oracle.
 - This remains preparation-only. V3.4 is an immutable automated/blind FAIL and maturity remains `enforced`; a scored
   successor must be frozen separately.
+- After preparation GO, separately froze `P0-candidate-v35` against framework commit `82b5f73`. Freezing does not start
+  the attempt and does not change capability maturity before automated and blind results exist.
 
 ### Full story lifecycle v3.4 typed-handoff recovery preparation
 
