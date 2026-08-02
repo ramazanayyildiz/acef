@@ -98,10 +98,12 @@ risk acceptance for the unresolved items.
 8. **Patch Assurance** — independently assess the implementation commit for patch correctness, regression coverage,
    brittleness, false-positive risk, fixtures, and adjacent invariants. Code Review and Patch Assurance should run in
    parallel from the same implementation tree. Patch Assurance is report-only and cannot edit implementation.
-9. **Bounded repair** — a finding returns to the original Developer (or one explicitly scoped repair Developer), then
-   only the affected reviewer rechecks the delta. Two repair cycles are the maximum; a third cycle mechanically returns
-   `REPLAN/SPLIT`. A new HIGH in consecutive rounds or growing patch scope is an earlier reviewer signal to choose the
-   same disposition. The conductor and reviewers never patch production code.
+9. **Bounded repair** — a finding returns to the original Developer (or one explicitly scoped repair Developer).
+   Every repair reruns Patch Assurance against the repaired final application/test tree. Code Review reruns when its
+   prior verdict was non-PASS or the repair changed production code; an earlier Code Review PASS may remain only after
+   a test-only repair. Two repair cycles are the maximum; a third cycle mechanically returns `REPLAN/SPLIT`. A new HIGH
+   in consecutive rounds or growing patch scope is an earlier reviewer signal to choose the same disposition. The
+   conductor and reviewers never patch production code.
 10. **Deterministic story close** — compute, rather than narrate, that four distinct actors ran, ATDD red preceded
     implementation green, review and patch assurance bind the final tree, successful runner proof exists, findings are
     resolved, and scope/commit hashes match. Write one formal close package after the story is green.

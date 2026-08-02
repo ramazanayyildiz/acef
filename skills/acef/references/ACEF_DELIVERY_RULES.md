@@ -132,7 +132,9 @@ code-review/test-review/Judge inputs. The breaker does not grep prose or require
 - **Fresh independent review** (no self-approval) and contract-specific bounded repair on `REVISE`.
 - **Review-patch hard stop** — if an independent reviewer returns `REVISE`, `BLOCK`, or `MERGE WITH REQUIRED PATCH`, the
   conductor records `docs/ai/ACEF_REVIEW_PATCH_REQUIRED.json` and stops. Under `four-actor-v3`, only the original
-  Developer may edit implementation/tests during a bounded repair while Patch Assurance remains report-only. Existing
+  Developer may edit implementation/tests during a bounded repair while Patch Assurance remains report-only. Every
+  repair makes Patch Assurance stale and therefore requires a fresh final-tree Patch Assurance report. Production
+  repairs also require fresh Code Review; test-only repairs may preserve an earlier Code Review PASS. Existing
   `six-actor-v2` runs retain their separate `verify-patch` repair worker. The active worker scope must authorize the
   selected contract's repair actor before the marker is cleared.
 - **Reuse-before-create gate** — before implementation in every admitted ACEF lane, the worker records the work shape, registry

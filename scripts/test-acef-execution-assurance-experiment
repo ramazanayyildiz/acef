@@ -40,6 +40,8 @@ const cli = path.join(root, "scripts", "acef-execution-assurance-experiment");
 const actorCli = path.join(root, "scripts", "acef-execution-assurance-actor");
 const {
   actorResultFromText,
+  conditionalJudgeTrigger,
+  developerActorSessionBound,
   catalogTaskBindings,
   correctionSessionWrites,
   ensureActorRequest,
@@ -356,7 +358,7 @@ function developerRepairEvents(ordinal) {
     } }),
     JSON.stringify({ timestamp: eventTimestamp(calledAt + 1), type: "response_item", payload: {
       type: "agent_message", author: `/root/${v3Developer.taskName}`,
-      content: [{ type: "input_text", text: `Message Type: FINAL_ANSWER\nSender: /root/${v3Developer.taskName}\nPayload:\nREPAIR_CYCLE=${ordinal}\nREPAIR_RECEIPT_PATH=${repairReceiptPath}\nREPAIR_RECEIPT_SHA256=${repairReceiptSha256}\nACTOR_RESULT=PASS` }],
+      content: [{ type: "input_text", text: `Message Type: FINAL_ANSWER\nSender: /root/${v3Developer.taskName}\nPayload:\nREPAIR_CYCLE=${ordinal}  \nREPAIR_RECEIPT_PATH=${repairReceiptPath}  \nREPAIR_RECEIPT_SHA256=${repairReceiptSha256}  \nACTOR_RESULT=PASS` }],
     } }),
   ];
 }
@@ -382,19 +384,19 @@ assert.equal(overCapExtraneousFollowups.ok, false);
 assert.equal(overCapExtraneousFollowups.totalActorInvocations, 22,
   "unbound followups cannot evade the global actor cap");
 assert.match(overCapExtraneousFollowups.failures.join("; "), /actor invocation budget exceeded: 22\/21/);
+const v3PatchAssurance = v3ActorContract.find((entry) => entry.scope === v3CodeReview.scope && entry.control === "patch-assurance");
 const twoRepairSession = lifecycleSession(v3ActorContract, { [v3CodeReview.taskName]: "REVISE" }, [
-  ...developerRepairEvents(1), ...retryEvents(v3CodeReview, 1, "REVISE"),
-  ...developerRepairEvents(2), ...retryEvents(v3CodeReview, 2, "PASS"),
+  ...developerRepairEvents(1), ...retryEvents(v3CodeReview, 1, "REVISE"), ...retryEvents(v3PatchAssurance, 1, "PASS"),
+  ...developerRepairEvents(2), ...retryEvents(v3CodeReview, 2, "PASS"), ...retryEvents(v3PatchAssurance, 2, "PASS"),
 ]);
 const twoRepairEvidence = parseCollaborationEvidence(syntheticRaw, twoRepairSession, v3ActorContract, {
-  actorContractVersion: "four-actor-v3", maximumActorInvocations: 21,
+  actorContractVersion: "four-actor-v3", maximumActorInvocations: 25,
 });
-assert.equal(twoRepairEvidence.ok, true, "two bounded v3 repair cycles are accepted");
+assert.equal(twoRepairEvidence.ok, true, `two bounded v3 repair cycles are accepted: ${twoRepairEvidence.failures.join("; ")}`);
 assert.equal(twoRepairEvidence.repairCyclesByScope[v3CodeReview.scope], 2);
 assert.equal(twoRepairEvidence.followupInvocationCount, 2);
-assert.equal(twoRepairEvidence.totalActorInvocations, 21,
-  "every allowed Developer followup counts toward the 21-invocation cap");
-const v3PatchAssurance = v3ActorContract.find((entry) => entry.scope === v3CodeReview.scope && entry.control === "patch-assurance");
+assert.equal(twoRepairEvidence.totalActorInvocations, 23,
+  "every repair reruns final-tree Patch Assurance and counts the Developer followup");
 const pairedCycleSession = lifecycleSession(v3ActorContract, {
   [v3CodeReview.taskName]: "REVISE", [v3PatchAssurance.taskName]: "REVISE",
 }, [...developerRepairEvents(1), ...retryEvents(v3CodeReview, 1, "PASS"), ...retryEvents(v3PatchAssurance, 1, "PASS")]);
@@ -412,22 +414,22 @@ const interleavedCycleSession = lifecycleSession(v3ActorContract, {
   ...retryEvents(v3PatchAssurance, 2, "PASS"),
 ]);
 const interleavedCycleEvidence = parseCollaborationEvidence(syntheticRaw, interleavedCycleSession, v3ActorContract, {
-  actorContractVersion: "four-actor-v3", maximumActorInvocations: 21,
+  actorContractVersion: "four-actor-v3", maximumActorInvocations: 25,
 });
 assert.equal(interleavedCycleEvidence.ok, false,
-  "affected-only reviewer topology still fails when Developer followup turns push the epic beyond 21 invocations");
-assert.match(interleavedCycleEvidence.failures.join("; "), /actor invocation budget exceeded: 22\/21/);
+  "a repair cycle cannot preserve a stale prior PASS Patch Assurance");
+assert.match(interleavedCycleEvidence.failures.join("; "), /must rerun Patch Assurance/);
 assert.equal(interleavedCycleEvidence.repairCyclesByScope[v3CodeReview.scope], 2);
 assert.deepEqual(interleavedCycleEvidence.developerReactivations.map((entry) => entry.repairCycle), [1, 2]);
 const missingDeveloperFollowup = lifecycleSession(v3ActorContract, { [v3CodeReview.taskName]: "REVISE" }, [
-  ...retryEvents(v3CodeReview, 1, "PASS"),
+  ...retryEvents(v3CodeReview, 1, "PASS"), ...retryEvents(v3PatchAssurance, 1, "PASS"),
 ]);
 assert.equal(parseCollaborationEvidence(syntheticRaw, missingDeveloperFollowup, v3ActorContract, {
   actorContractVersion: "four-actor-v3", maximumActorInvocations: 21,
 }).ok, false, "reviewer retry without original Developer followup fails closed");
-const thirdRepairSession = `${twoRepairSession}\n${developerRepairEvents(3).join("\n")}\n${retryEvents(v3CodeReview, 3, "PASS").join("\n")}`;
+const thirdRepairSession = `${twoRepairSession}\n${developerRepairEvents(3).join("\n")}\n${retryEvents(v3CodeReview, 3, "PASS").join("\n")}\n${retryEvents(v3PatchAssurance, 3, "PASS").join("\n")}`;
 assert.equal(parseCollaborationEvidence(syntheticRaw, thirdRepairSession, v3ActorContract, {
-  actorContractVersion: "four-actor-v3", maximumActorInvocations: 21,
+  actorContractVersion: "four-actor-v3", maximumActorInvocations: 25,
 }).ok, false, "a third v3 repair cycle fails closed");
 const conditionalJudgeName = `acef_${v3CodeReview.scope.replace(/[^a-z0-9]+/gi, "_").toLowerCase()}_process_judge`;
 const conditionalJudgeSession = lifecycleSession(v3ActorContract, {}, [
@@ -440,6 +442,39 @@ const conditionalJudgeEvidence = parseCollaborationEvidence(syntheticRaw, condit
 });
 assert.equal(conditionalJudgeEvidence.ok, true, "a single trigger-bound conditional story Judge is allowed");
 assert.equal(conditionalJudgeEvidence.conditionalJudges[0].trigger, "evidence-conflict");
+const typedJudgeRepo = fs.mkdtempSync(path.join(os.tmpdir(), "acef-typed-judge-"));
+process.on("exit", () => fs.rmSync(typedJudgeRepo, { recursive: true, force: true }));
+fs.mkdirSync(path.join(typedJudgeRepo, ".acef", "bin", "lib"), { recursive: true });
+fs.copyFileSync(path.join(root, "scripts", "lib", "acef-state-parser.js"),
+  path.join(typedJudgeRepo, ".acef", "bin", "lib", "acef-state-parser.js"));
+fs.copyFileSync(path.join(root, "scripts", "lib", "acef-execution-policy.js"),
+  path.join(typedJudgeRepo, ".acef", "bin", "lib", "acef-execution-policy.js"));
+fs.mkdirSync(path.join(typedJudgeRepo, "docs", "ai", "actors"), { recursive: true });
+fs.mkdirSync(path.join(typedJudgeRepo, "docs", "ai", "judges"), { recursive: true });
+const typedJudgeDecisionPath = `docs/ai/judges/${conditionalJudgeName}.json`;
+fs.writeFileSync(path.join(typedJudgeRepo, typedJudgeDecisionPath), `${JSON.stringify({
+  schema: "acef.process-judge-decision.v3", runId: "typed-judge-run", fullFlowContract: "four-actor-v3",
+  story: v3CodeReview.scope, trigger: "gate-anomaly", actorId: conditionalJudgeName, gateId: "typed-gate",
+  evidenceIds: ["typed-evidence"], verdict: "ACKNOWLEDGE", createdAt: "2026-08-02T00:00:00.000Z",
+})}\n`);
+fs.writeFileSync(path.join(typedJudgeRepo, "docs", "ai", "actors", `${conditionalJudgeName}.json`), `${JSON.stringify({
+  actorInstanceId: conditionalJudgeName, runId: "typed-judge-run", fullFlowContract: "four-actor-v3",
+  storyInventory: [v3CodeReview.scope], story: v3CodeReview.scope, phase: "process-judge", role: "process-judge",
+  client: "codex", inputCommit: "a".repeat(40), allowedContextProfile: "bounded-artifact-only",
+  producedArtifactPath: typedJudgeDecisionPath,
+})}\n`);
+assert.equal(conditionalJudgeTrigger("ACTOR_RESULT=PASS", typedJudgeRepo, conditionalJudgeName), "gate-anomaly",
+  "the typed Judge decision is the trigger source of truth when final prose omits it");
+const typedDeveloperName = "acef_typed_story_development";
+fs.writeFileSync(path.join(typedJudgeRepo, "docs", "ai", "actors", `${typedDeveloperName}.json`), `${JSON.stringify({
+  actorInstanceId: typedDeveloperName, runId: "typed-judge-run", fullFlowContract: "four-actor-v3",
+  storyInventory: ["typed-story"], story: "typed-story", phase: "development", role: "developer",
+  client: "codex", sessionId: "receiver-thread-1", inputCommit: "a".repeat(40),
+  allowedContextProfile: "bounded-artifact-only",
+})}\n`);
+assert.equal(developerActorSessionBound(typedJudgeRepo, typedDeveloperName, "receiver-thread-1"), true);
+assert.equal(developerActorSessionBound(typedJudgeRepo, typedDeveloperName, typedDeveloperName), false,
+  "task_name cannot impersonate the Developer's spawn receiver thread id");
 const firstAtdd = epicActorContract[0];
 const adjudicationName = `${firstAtdd.taskName}_adjudication1`;
 const revisedWithAdjudication = [
@@ -1102,6 +1137,12 @@ assert.equal(correctionSessionWrites(machineCompletionSession, root).unsafeShell
 assert.equal(isAllowedReviewerShellCommand(`git show --no-ext-diff --stat ${"a".repeat(40)}`), true);
 assert.equal(isAllowedReviewerShellCommand(`git show --output=/tmp/leak ${"a".repeat(40)}`), false);
 assert.equal(isAllowedReviewerShellCommand("git status --short && git reset --hard"), false);
+assert.equal(isAllowedReviewerShellCommand("vendor/bin/phpunit --filter='FocusedOne|FocusedTwo'"), true,
+  "a quoted PHPUnit alternation is an argument, not a shell pipeline");
+assert.equal(isAllowedReviewerShellCommand("jq -e '.findings | length == 0' docs/ai/reports/reviewer.json"), true,
+  "a quoted jq filter may contain its own pipe operator");
+assert.equal(isAllowedReviewerShellCommand("git status --short | git reset --hard"), false,
+  "an unquoted shell pipeline remains forbidden");
 assert.match(codexSessionMetrics(machineCompletionSession).commandText, /acef-state review-completion/,
   "functions.exec-wrapped exec_command calls remain visible to command-trace validation");
 assert.equal(correctionSessionWrites(JSON.stringify({ type: "response_item", payload: {
@@ -1364,6 +1405,32 @@ try {
     ...v3DurableOptions,
   });
   assert.equal(committedV3Durable.ok, true, committedV3Durable.failures.join("; "));
+  const layeredParser = require(path.join(lifecycleRepo, ".acef", "bin", "lib", "acef-state-parser.js"));
+  const baseLayerGatePath = path.join(lifecycleRepo, "docs", "ai", "gates", "v3-story-close.json");
+  const baseLayerGate = layeredParser.parseGateVerdict(baseLayerGatePath);
+  Object.defineProperty(baseLayerGate, "_recordPath", { value: baseLayerGatePath });
+  const repairLayerReceiptPath = path.join(lifecycleRepo, "docs", "ai", "repairs", "v3-cycle1.json");
+  fs.mkdirSync(path.dirname(repairLayerReceiptPath), { recursive: true });
+  fs.writeFileSync(repairLayerReceiptPath, "{}\n");
+  const repairLayerGatePath = path.join(lifecycleRepo, "docs", "ai", "gates", "v3-story-close-cycle1.json");
+  fs.writeFileSync(repairLayerGatePath, `${JSON.stringify({
+    ...baseLayerGate, gateId: "v3-story-close-cycle1", verdict: "REVISE", reviewCycle: 1,
+    repair: { priorGateId: "v3-story-close", receiptPath: "docs/ai/repairs/v3-cycle1.json" },
+  })}\n`);
+  cp.spawnSync("git", ["add", "docs/ai/gates/v3-story-close-cycle1.json", "docs/ai/repairs/v3-cycle1.json"], { cwd: lifecycleRepo });
+  cp.spawnSync("git", ["commit", "-qm", "chore: bind v3 repair delta package"], { cwd: lifecycleRepo });
+  const repairLayerGate = { ...JSON.parse(fs.readFileSync(repairLayerGatePath, "utf8")) };
+  Object.defineProperty(repairLayerGate, "_recordPath", { value: repairLayerGatePath });
+  const layeredPackageFailures = validateFormalStoryClosePackage(v3Story, repairLayerGate, lifecycleRepo,
+    v3DurableExpected.map((entry) => path.join(lifecycleRepo, "docs", "ai", "actors", `${entry.taskName}.json`)),
+    Object.values(reportBindings).map((entry) => path.join(lifecycleRepo, entry.path)), layeredParser,
+    [baseLayerGate, repairLayerGate]);
+  assert.deepEqual(layeredPackageFailures, [],
+    "an immutable initial close package plus one exact repair-delta package is durable");
+  fs.rmSync(repairLayerGatePath);
+  fs.rmSync(repairLayerReceiptPath);
+  cp.spawnSync("git", ["add", "-u", "docs/ai/gates/v3-story-close-cycle1.json", "docs/ai/repairs/v3-cycle1.json"], { cwd: lifecycleRepo });
+  cp.spawnSync("git", ["commit", "-qm", "test: remove synthetic repair delta package"], { cwd: lifecycleRepo });
   const subsetActorPath = path.join(lifecycleRepo, "docs", "ai", "actors", `${v3DurableExpected[2].taskName}.json`);
   const fullInventoryActorBytes = fs.readFileSync(subsetActorPath, "utf8");
   fs.writeFileSync(subsetActorPath, `${JSON.stringify({

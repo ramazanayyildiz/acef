@@ -121,6 +121,8 @@ A worker launched before this bootstrap is drift. Stop, record it, patch the amb
   paths. Never replay the ATDD lifecycle; a second incomplete result is `REPLAN/SPLIT`.
 - Quarantine a failed story and its transitive dependants while continuing dependency-independent stories. Halt the
   whole run only for a declared dependency or shared safety invariant; quarantined work still fails product closeout.
+- After any bounded Developer repair, rerun Patch Assurance on the repaired final application/test tree. Rerun Code
+  Review when its prior verdict was non-PASS or production changed; preserve Code Review PASS only for test-only repair.
 - Freeze the mandatory closeout inventory before execution. Closeout analysis may not create actors, mandatory work,
   a larger denominator, or another closeout chain.
 - Full BMAD delegation is approved once per run for ACEF-required persona workers only; generic delegation remains forbidden.

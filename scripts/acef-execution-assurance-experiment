@@ -595,13 +595,13 @@ function epicPilotPrompt(attempt, resolved, manifest) {
     ? [
       "Initial ATDD maps every acceptance criterion but needs genuine red only on the critical vertical path. The manifest's Frozen test paths are the complete non-protected test envelope; do not discover, invent, or expand that envelope during execution. Run only the story's focused verification and files inside that envelope; do not substitute broad pre-existing suites outside it.",
       "After development, spawn Code Review and Patch Assurance without waiting for either result first, then wait for both. Code Review owns correctness, security, conformance, scope, and unresolved-finding severity. Patch Assurance is report-only and combines final-tree patch verification with test-quality and focused runner proof; it must not edit production or tests.",
-      "Every v3 actor, review report, repair receipt, Judge decision, and deterministic gate must bind the active runId and fullFlowContract=four-actor-v3. Each Code Review and Patch Assurance actor must write its own typed acef.review-report.v3 JSON at the deterministic path docs/ai/reports/<exact-task-name>.json. The report must use actorInstanceId (never actor) and include schema, runId, fullFlowContract, actorInstanceId, story, phase, inputCommit, inputTree, verdict, and findings; every finding uses id, severity, status, and reason. The report verdict is the single machine-carried reviewer result, so reviewer prose does not need to repeat ACTOR_RESULT. Validate the report shape before completion, then run `.acef/bin/acef-state review-completion --repo . --artifact-path docs/ai/reports/<exact-task-name>.json --actor <exact-task-name>` exactly once as the final command. Never use review-completion as a schema probe. Inside each reviewer functions.exec call, invoke tools.exec_command exactly once with one literal cmd string; never use command variables, template strings, arrays, loops, Promise.all, generated commands, shell separators, pipelines, redirections, or command substitution. Use separate calls for separate reads/checks. The harness consumes the completion command's stdout directly from the child transcript; do not hand-copy its path/hash/blob/tree fields into prose. After the child returns, the conductor must create the typed actor record with `--artifact-path docs/ai/reports/<exact-task-name>.json`, derived from task_name rather than final prose. Before every retry spawn, read the immediately prior typed report: spawn only controls whose prior verdict is REVISE, and never rerun a control whose prior verdict is PASS. The completion blob/hash/tree, report, actor, and gate must bind exactly. A missing, repeated, or invalid review-completion command is a mechanical REPLAN/SPLIT stop: never follow up or retry that reviewer.",
+      "Every v3 actor, review report, repair receipt, Judge decision, and deterministic gate must bind the active runId and fullFlowContract=four-actor-v3. Each Code Review and Patch Assurance actor must write its own typed acef.review-report.v3 JSON at the deterministic path docs/ai/reports/<exact-task-name>.json. The report must use actorInstanceId (never actor) and include schema, runId, fullFlowContract, actorInstanceId, story, phase, inputCommit, inputTree, verdict, and findings; every finding uses id, severity, status, and reason. The report verdict is the single machine-carried reviewer result, so reviewer prose does not need to repeat ACTOR_RESULT. The final `.acef/bin/acef-state review-completion --repo . --artifact-path docs/ai/reports/<exact-task-name>.json --actor <exact-task-name>` command is the sole report-shape validator; run it exactly once and do not probe schemas, validator availability, or acef-state help beforehand. Inside each reviewer functions.exec call, invoke tools.exec_command exactly once with one literal cmd string; never use command variables, template strings, arrays, loops, Promise.all, generated commands, shell separators, pipelines, redirections, or command substitution. Use separate calls for separate reads/checks. The harness consumes the completion command's stdout directly from the child transcript; do not hand-copy its path/hash/blob/tree fields into prose. After the child returns, the conductor must create the typed actor record with `--artifact-path docs/ai/reports/<exact-task-name>.json`, derived from task_name rather than final prose. Before every retry spawn, read the immediately prior typed reports. After every Developer repair, rerun Patch Assurance on the repaired final application/test tree even when its prior verdict was PASS. Rerun Code Review when its prior verdict was REVISE or the repair changed production code; preserve an earlier Code Review PASS only for a test-only repair. The completion blob/hash/tree, report, actor, and gate must bind exactly. A missing, repeated, or invalid review-completion command is a mechanical REPLAN/SPLIT stop: never follow up or retry that reviewer.",
       `The active runId must be exactly ${attempt.id}.`,
       `The active run expectedStories inventory must equal this frozen ordered catalog exactly: ${JSON.stringify(resolved.task.stories.map((story) => story.id))}. Do not add, omit, rename, or reorder stories; the epic gate must close every listed story on the same runId.`,
-      "If either reviewer returns REVISE, reactivate the original developer with exactly one bounded followup_task for that global story repair cycle and the exact findings; do not let the conductor or reviewer patch. The original developer must create a typed acef.developer-repair.v3 receipt and return a fresh FINAL_ANSWER containing REPAIR_CYCLE=<n>, REPAIR_RECEIPT_PATH=<path>, REPAIR_RECEIPT_SHA256=<sha256>, and ACTOR_RESULT=PASS before any retry reviewer starts. Spawn only each affected independent delta reviewer as <base-task-name>_retry1 or _retry2, where the suffix is that same global story repair cycle, require its final answer to include the matching REPAIR_CYCLE=<n>, and give all reviewers in one cycle the receipt postTree. At most two repair cycles are allowed for a story; a third cycle is REPLAN/SPLIT and quarantine.",
-      "Close each story with exactly one deterministic PASS gate and one formal story-close evidence package. Use acef-state gate with the run, contract, ATDD, development, code-review, patch-assurance, red/green evidence, report hashes, review-cycle, repair receipt, and unresolved findings. The validator computes the verdict; no actor may self-declare it. Introduce the gate, its four accepted actor records, two exact reviewer reports, every cited evidence manifest/raw artifact, and any bound repair/Judge decision together in exactly one control-only commit; no other path may enter that commit and all package bytes must remain unchanged at HEAD. Readiness/reuse notes are conductor-only working state, are not part of this bound package, and must never be staged in the story-close commit; stage the exact bound package paths explicitly rather than using a broad docs/ai add.",
+      "If either reviewer returns REVISE, reactivate the original developer with exactly one bounded followup_task for that global story repair cycle and the exact findings; do not let the conductor or reviewer patch. The followup must include the original Developer agent_id/receiver thread id. The original developer must set developerSessionId to that exact id, never to task_name, in its typed acef.developer-repair.v3 receipt and return a fresh FINAL_ANSWER containing REPAIR_CYCLE=<n>, REPAIR_RECEIPT_PATH=<path>, REPAIR_RECEIPT_SHA256=<sha256>, and ACTOR_RESULT=PASS before any retry reviewer starts. Spawn the required independent delta reviewers as <base-task-name>_retry1 or _retry2, where the suffix is that same global story repair cycle, require final answers to include the matching REPAIR_CYCLE=<n>, and give every reviewer in one cycle the receipt postTree. Patch Assurance is mandatory in every repair cycle; Code Review is mandatory after a production repair and otherwise reruns only when its prior report was REVISE. At most two repair cycles are allowed for a story; a third cycle is REPLAN/SPLIT and quarantine.",
+      "Close each story with exactly one deterministic PASS gate and an immutable layered story-close package. Use acef-state gate with the run, contract, ATDD, development, code-review, patch-assurance, red/green evidence, report hashes, review-cycle, repair receipt, and unresolved findings. The validator computes the verdict; no actor may self-declare it. Introduce cycle 0's gate, four actor records, two exact reviewer reports, cited evidence manifests/raw artifacts, and any bound Judge decision together in one exact control-only commit. After a REVISE, preserve that layer unchanged and introduce only the repair cycle's new gate, retry actor/report records, fresh green evidence, repair receipt, and any new bound decision together in one exact control-only delta commit. No other path may enter either commit and all layer bytes must remain unchanged at HEAD. Readiness/reuse notes are conductor-only working state, are not part of the bound package, and must never be staged in a story-close commit; stage exact paths explicitly rather than using a broad docs/ai add.",
       "Red evidence must come from a clean committed test-only tree. Green evidence must begin and end with no dirty application/test paths. After repairs, Patch Assurance always binds the final application/test tree. Earlier Code Review may remain only when every later non-control change is test-only; any production change requires affected-only delta Code Review.",
-      "A story Process Judge is conditional, not routine. Spawn acef_<story>_process_judge only for ambiguity, waiver, evidence-conflict, or gate-anomaly; it must write a typed acef.process-judge-decision.v3 artifact and the gate must bind its exact path/hash/verdict. Never use it to override a mechanical failure. The separate epic Process Judge remains mandatory.",
+      "A story Process Judge is conditional, not routine. Spawn acef_<story>_process_judge at most once, only for ambiguity, waiver, evidence-conflict, or gate-anomaly; it must write one typed acef.process-judge-decision.v3 artifact and the gate must bind its exact path/hash/verdict. Never follow up or reactivate that Judge for a later gate, and never use it to override a mechanical failure; a later mechanical anomaly stops or replans directly. The separate epic Process Judge remains mandatory.",
       `The frozen budget profile is ${manifest.promotionGates.budget.profileId || "v3-preregistered"}: ${manifest.promotionGates.budget.baseActorCount} base actors and ${manifest.promotionGates.budget.maximumActorInvocations} total invocations including every Developer followup and infrastructure retry, ${manifest.promotionGates.budget.maximumRepairCyclesPerStory} repair cycles per story, one infrastructure retry per logical invocation and ${manifest.promotionGates.budget.maximumInfrastructureRetriesTotal} total, ${manifest.promotionGates.budget.maximumInputTokens} aggregate conductor-plus-child input tokens, ${manifest.promotionGates.budget.maximumToolCalls} aggregate tool calls, ${manifest.promotionGates.budget.targetActiveDeliverySeconds}s target and ${manifest.promotionGates.budget.maximumActiveDeliverySeconds}s hard active time, and ${manifest.promotionGates.budget.maximumHarnessWaitSeconds}s/${Math.round(manifest.promotionGates.budget.maximumHarnessWaitShare * 100)}% ${manifest.promotionGates.budget.profileId === "v33-measured" ? "coordination-idle wait (productive child execution is reported separately)" : "harness-wait"}. An infrastructure retry is allowed only after the original invocation has no FINAL_ANSWER and a terminal acef.infrastructure-failure.v1 event binds its task/session, failure interval, identical pre/post tree, and empty writePaths; audit the failed child transcript for zero writes, wait for terminal failure, then name the non-overlapping retry <logical-task-name>_infra_retry1. Never retry an infrastructure retry. If a hard budget cannot be met, stop with REPLAN/SPLIT or FAIL rather than expanding the actor graph.`,
     ].join(" ")
     : attempt.treatment === "candidate"
@@ -623,7 +623,7 @@ function epicPilotPrompt(attempt, resolved, manifest) {
     fourActorV3
       ? "This prompt is the complete compiled ACEF contract for the scored run. Do not reread ACEF/BMAD method documents or ask child actors to load linked workflow files; the installed skill entry may be consulted only when host policy requires it, without following links outside the active artifact allowlist. Run readiness and reuse checks as deterministic conductor gates, not extra persona workers. The actor rows listed below are the exhaustive base lifecycle inventory. Preserve actor separation; do not self-approve."
       : "Load and follow the repo-local ACEF skill. Act as conductor and use fresh independent actors/sessions for every role the installed workflow requires. Preserve actor separation; do not self-approve.",
-    "For each contract row below, call spawn_agent exactly once using the exact task_name and fork_turns=none before accepting that phase. Give the fresh actor a bounded artifact-only message: put the listed scope/control/actor/persona tuple first, then only the exact files/commit/question it needs. Do not ask the actor to reread ACEF/BMAD workflow documents. Limit its initial read envelope to the current context plus at most six exact task files and 300 lines per read; targeted follow-up reads are allowed only when a named unresolved question requires them. If it cannot identify progress within ten active minutes, it must return ACTOR_RESULT=REVISE with the exact bottleneck instead of broadening inspection. Accept `ACTOR_RESULT=PASS` and the semantically identical `ACTOR_RESULT: PASS` spelling; likewise for REVISE. Wait for that actor's FINAL_ANSWER and persist a typed actor record whose actorInstanceId exactly equals task_name. Do not combine rows in one actor. For ATDD, commit the clean test-only red tree before invoking evidence-run; never bind red evidence while a production or test path is dirty.",
+    "For each contract row below, call spawn_agent exactly once using the exact task_name and fork_turns=none before accepting that phase. Give the fresh actor a bounded artifact-only message: put the listed scope/control/actor/persona tuple first, then only the exact files/commit/question it needs. Do not ask the actor to reread ACEF/BMAD workflow documents. Limit its initial read envelope to the current context plus at most six exact task files and 300 lines per read; targeted follow-up reads are allowed only when a named unresolved question requires them. If it cannot identify progress within ten active minutes, it must return ACTOR_RESULT=REVISE with the exact bottleneck instead of broadening inspection. Accept `ACTOR_RESULT=PASS` and the semantically identical `ACTOR_RESULT: PASS` spelling; likewise for REVISE. Wait for that actor's FINAL_ANSWER and persist a typed actor record whose actorInstanceId exactly equals task_name. For Development, set actor sessionId to the exact agent_id/receiver thread id returned by spawn_agent, never to task_name. Do not combine rows in one actor. For ATDD, commit the clean test-only red tree before invoking evidence-run; never bind red evidence while a production or test path is dirty.",
     recoveryInstruction,
     fourActorV3
       ? `ATDD and development are single mandatory actor identities. Code Review and Patch Assurance may each use at most two fresh, affected-only delta retry actors after a developer repair; the ${manifest.promotionGates.budget.maximumActorInvocations}-invocation epic cap still binds. Story Process Judge is optional only for the four named triggers. The epic Process Judge cannot retry. Never replay a complete lifecycle.`
@@ -704,6 +704,32 @@ function actorResultFromText(value) {
 
 function actorResultIs(value, expected) {
   return actorResultFromText(value) === expected;
+}
+
+function conditionalJudgeTrigger(parentFinalText, cwd, taskName) {
+  let trigger = String(parentFinalText || "")
+    .match(/\bJUDGE_TRIGGER=(AMBIGUITY|WAIVER|EVIDENCE[_-]CONFLICT|GATE[_-]ANOMALY)\b/i)?.[1] || "";
+  if (!trigger && cwd) {
+    try {
+      const parser = installedStateParser(cwd);
+      const actor = parser.parseActorRecord(path.join(cwd, "docs", "ai", "actors", `${taskName}.json`));
+      const decision = parser.parseProcessJudgeDecision(path.resolve(cwd, actor.producedArtifactPath));
+      trigger = decision.trigger || "";
+    } catch {}
+  }
+  const normalized = String(trigger).toLowerCase().replace(/_/g, "-");
+  return ["ambiguity", "waiver", "evidence-conflict", "gate-anomaly"].includes(normalized) ? normalized : "";
+}
+
+function developerActorSessionBound(cwd, taskName, receiverThreadId) {
+  if (!cwd || !taskName || !receiverThreadId) return false;
+  try {
+    const actor = installedStateParser(cwd)
+      .parseActorRecord(path.join(cwd, "docs", "ai", "actors", `${taskName}.json`));
+    return actor.actorInstanceId === taskName && actor.sessionId === receiverThreadId;
+  } catch {
+    return false;
+  }
 }
 
 function reviewerResultFromReport(repoRoot, taskName) {
@@ -957,7 +983,12 @@ function parseCollaborationEvidence(rawText, sessionText, expectedContract, expe
       if (!legacyPolicy && dispatchResult(accepted, expected.control) !== "PASS") failures.push(`${accepted.taskName}: final actor result is not PASS`);
       if (legacyPolicy && !actorResultIs(accepted.parentFinalText, "PASS")) failures.push(`${accepted.taskName}: legacy actor result is not PASS`);
       for (const superseded of legacyPolicy ? [] : attempts.slice(0, -1)) {
-        if (dispatchResult(superseded, expected.control) !== "REVISE") failures.push(`${superseded.taskName}: retry requires prior typed reviewer REVISE`);
+        const supersededResult = dispatchResult(superseded, expected.control);
+        if (fourActorV3 && ["code-review", "patch-assurance"].includes(expected.control)) {
+          if (!["PASS", "REVISE"].includes(supersededResult)) failures.push(`${superseded.taskName}: retry requires a valid prior typed reviewer result`);
+        } else if (supersededResult !== "REVISE") {
+          failures.push(`${superseded.taskName}: retry requires prior typed reviewer REVISE`);
+        }
       }
       acceptedActors.push({ ...expected, taskName: accepted.taskName, receiverThreadId: accepted.receiverThreadId });
     }
@@ -975,14 +1006,15 @@ function parseCollaborationEvidence(rawText, sessionText, expectedContract, expe
         if (!entry.receiverThreadId) failures.push(`${taskName}: missing receiver thread id`);
         if (entry.forkTurns !== "none") failures.push(`${taskName}: fork_turns must be none`);
         if (!entry.parentFinalText) failures.push(`${taskName}: missing parent-delivered FINAL_ANSWER`);
-        const trigger = entry.parentFinalText.match(/\bJUDGE_TRIGGER=(AMBIGUITY|WAIVER|EVIDENCE[_-]CONFLICT|GATE[_-]ANOMALY)\b/i)?.[1] || "";
-        if (!actorResultIs(entry.parentFinalText, "PASS") || !trigger) {
+        const normalizedTrigger = conditionalJudgeTrigger(entry.parentFinalText, expectedSession.cwd, taskName);
+        if (!actorResultIs(entry.parentFinalText, "PASS")
+          || !["ambiguity", "waiver", "evidence-conflict", "gate-anomaly"].includes(normalizedTrigger)) {
           failures.push(`${taskName}: conditional judge must PASS with an allowed JUDGE_TRIGGER`);
         }
         const actor = { scope, control: "process-judge", persona: "process-judge", retryable: false, taskName };
         observedContract.push(actor);
         acceptedActors.push({ ...actor, receiverThreadId: entry.receiverThreadId });
-        conditionalJudges.push({ taskName, scope, trigger: trigger.toLowerCase().replace(/_/g, "-") });
+        conditionalJudges.push({ taskName, scope, trigger: normalizedTrigger });
       }
     }
   }
@@ -1024,22 +1056,21 @@ function parseCollaborationEvidence(rawText, sessionText, expectedContract, expe
         || entry.logicalTaskName === developerLogicalTaskName)?.taskName;
       for (const ordinal of ordinals) {
         const cycleEntries = repairEntries.filter((entry) => entry.retryOrdinal === ordinal);
+        if (!cycleEntries.some((entry) => entry.control === "patch-assurance")) {
+          failures.push(`${scope}: repair cycle ${ordinal} must rerun Patch Assurance on the repaired final tree`);
+        }
         const retryDispatches = cycleEntries.map((entry) => relevant.find((dispatch) => dispatch.taskName === entry.taskName)).filter(Boolean);
-        const priorDispatches = cycleEntries.map((entry) => {
+        const priorPairs = cycleEntries.map((entry) => {
           const candidates = observedContract.filter((candidate) => candidate.scope === scope
             && candidate.control === entry.control && Number(candidate.retryOrdinal || 0) < ordinal);
           const prior = candidates.sort((left, right) => Number(right.retryOrdinal || 0) - Number(left.retryOrdinal || 0))[0];
-          return prior ? relevant.find((dispatch) => dispatch.taskName === prior.taskName) : null;
-        }).filter(Boolean);
+          return { entry, dispatch: prior ? relevant.find((dispatch) => dispatch.taskName === prior.taskName) : null };
+        });
+        const priorDispatches = priorPairs.map((entry) => entry.dispatch).filter(Boolean);
         const priorFinishes = priorDispatches.map((entry) => Date.parse(entry.finalDeliveredAt || ""));
         const retryStarts = retryDispatches.map((entry) => Date.parse(entry.spawnedAt || ""));
         const orderedTimestamps = priorFinishes.length === cycleEntries.length && retryStarts.length === cycleEntries.length
           && priorFinishes.every(Number.isFinite) && retryStarts.every(Number.isFinite);
-        if (priorDispatches.some((entry) => (expectedSession.cwd
-          ? reviewerResultFromReport(expectedSession.cwd, entry.taskName)
-          : actorResultFromText(entry.parentFinalText)) !== "REVISE")) {
-          failures.push(`${scope}: repair cycle ${ordinal} requires prior affected reviewer REVISE`);
-        }
         if (!developerTaskName || !orderedTimestamps) {
           failures.push(`${scope}: repair cycle ${ordinal} cannot prove developer reactivation ordering`);
           continue;
@@ -1070,11 +1101,29 @@ function parseCollaborationEvidence(rawText, sessionText, expectedContract, expe
           failures.push(`${scope}: repair cycle ${ordinal} requires one repaired Developer FINAL_ANSWER before reviewer retries`);
           continue;
         }
-        const repairReceiptPath = repairedFinals[0].content.match(/^REPAIR_RECEIPT_PATH=(.+)$/m)?.[1]?.trim() || "";
-        const repairReceiptSha256 = repairedFinals[0].content.match(/^REPAIR_RECEIPT_SHA256=([a-f0-9]{64})$/m)?.[1] || "";
+        const repairReceiptPath = repairedFinals[0].content.match(/^REPAIR_RECEIPT_PATH=(.+?)\s*$/m)?.[1]?.trim() || "";
+        const repairReceiptSha256 = repairedFinals[0].content.match(/^REPAIR_RECEIPT_SHA256=([a-f0-9]{64})\s*$/m)?.[1] || "";
         if (!/^docs\/ai\/repairs\/[^/]+\.json$/.test(repairReceiptPath) || !repairReceiptSha256) {
           failures.push(`${scope}: repair cycle ${ordinal} Developer FINAL_ANSWER lacks a typed repair receipt binding`);
           continue;
+        }
+        let productionRepair = false;
+        if (expectedSession.cwd) {
+          try {
+            const receipt = installedStateParser(expectedSession.cwd)
+              .parseDeveloperRepair(path.resolve(expectedSession.cwd, repairReceiptPath));
+            const changed = execute("git", ["diff", "--name-only", receipt.preCommit, receipt.postCommit, "--"], expectedSession.cwd);
+            productionRepair = changed.status === 0 && changed.stdout.split(/\r?\n/).filter(Boolean)
+              .some((filePath) => !/^(?:tests?|spec)(?:\/|$)/i.test(filePath) && !isPilotHarnessPath(filePath));
+          } catch {}
+        }
+        for (const pair of priorPairs.filter((entry) => entry.entry.control === "code-review")) {
+          const priorResult = pair.dispatch ? (expectedSession.cwd
+            ? reviewerResultFromReport(expectedSession.cwd, pair.dispatch.taskName)
+            : actorResultFromText(pair.dispatch.parentFinalText)) : "";
+          if (priorResult !== "REVISE" && !productionRepair) {
+            failures.push(`${scope}: repair cycle ${ordinal} Code Review retry requires prior REVISE or a production repair`);
+          }
         }
         developerReactivations.push({
           scope,
@@ -1386,9 +1435,38 @@ function extractCorrectionShellCommands(args, rawArguments) {
   return commands.length === callCount ? commands : [];
 }
 
+function hasUnsafeShellMetacharacter(command) {
+  const source = String(command || "");
+  let singleQuoted = false;
+  let doubleQuoted = false;
+  for (let index = 0; index < source.length; index += 1) {
+    const character = source[index];
+    if (character === "\n" || character === "\r") return true;
+    if (singleQuoted) {
+      if (character === "'") singleQuoted = false;
+      continue;
+    }
+    if (character === "\\") {
+      index += 1;
+      continue;
+    }
+    if (character === "'" && !doubleQuoted) {
+      singleQuoted = true;
+      continue;
+    }
+    if (character === '"') {
+      doubleQuoted = !doubleQuoted;
+      continue;
+    }
+    if (character === "`" || (character === "$" && source[index + 1] === "(")) return true;
+    if (!doubleQuoted && ";|&<>".includes(character)) return true;
+  }
+  return singleQuoted || doubleQuoted;
+}
+
 function isAllowedCorrectionShellCommand(command) {
   const normalized = String(command || "").trim();
-  if (!normalized || /[\r\n;|&<>`]/.test(normalized) || /\$\(/.test(normalized)) return false;
+  if (!normalized || hasUnsafeShellMetacharacter(normalized)) return false;
   if (/\bgit\s+(?:diff|show)\b.*(?:--ext-diff|--textconv|--output(?:=|\s)|-o(?:\s|$))/.test(normalized)) return false;
   if (/\brg\b.*(?:--pre|--pre-glob)\b/.test(normalized)) return false;
   return [
@@ -1410,7 +1488,7 @@ function isAllowedCorrectionShellCommand(command) {
 
 function isAllowedReviewerShellCommand(command) {
   const normalized = String(command || "").trim();
-  if (!normalized || /[\r\n;|&<>`]/.test(normalized) || /\$\(/.test(normalized)) return false;
+  if (!normalized || hasUnsafeShellMetacharacter(normalized)) return false;
   if (/\bgit\s+(?:add|am|apply|checkout|clean|commit|mv|rebase|reset|restore|rm|switch)\b/.test(normalized)) return false;
   if (/\bgit\s+(?:diff|show)\b.*(?:--ext-diff|--textconv|--output(?:=|\s)|-o(?:\s|$))/.test(normalized)) return false;
   if (/\brg\b.*(?:--pre|--pre-glob)\b/.test(normalized) || /\bsed\b.*(?:^|\s)-i(?:\s|$)/.test(normalized)) return false;
@@ -1541,6 +1619,10 @@ function loadCollaborationEvidence(rawPath, expectedContract, expectedSession = 
     }
     const lifecycleEntry = (evidence.dispatchTraceContract || evidence.actorContract || [])
       .find((entry) => entry.taskName === dispatch.taskName);
+    if (expectedSession.actorContractVersion === "four-actor-v3" && lifecycleEntry?.control === "development"
+      && !developerActorSessionBound(expectedSession.cwd, dispatch.taskName, dispatch.receiverThreadId)) {
+      failures.push(`${dispatch.taskName}: Developer actor sessionId does not bind the spawn receiver thread id`);
+    }
     const machineCarriedReviewer = expectedSession.actorContractVersion === "four-actor-v3"
       && ["code-review", "patch-assurance"].includes(lifecycleEntry?.control);
     if (!completion) failures.push(`${dispatch.taskName}: child task_complete missing`);
@@ -1983,40 +2065,80 @@ function changedPathsFromCommit(clone, commit) {
   return changed.stdout.split(/\r?\n/).filter(Boolean);
 }
 
-function validateFormalStoryClosePackage(scope, gate, clone, actorPaths, reportPaths, parser) {
+function validateFormalStoryClosePackage(scope, gate, clone, actorPaths, reportPaths, parser, allGates = []) {
   const failures = [];
-  const packagePaths = [gate._recordPath, ...actorPaths, ...reportPaths];
-  for (const evidenceId of gate.evidenceIds || []) {
-    const manifestPath = path.join(clone, "docs", "ai", "evidence", `${evidenceId}.json`);
-    packagePaths.push(manifestPath);
-    try {
-      const evidence = parser.parseEvidenceManifest(manifestPath);
-      packagePaths.push(path.resolve(clone, evidence.rawArtifact.path));
-    } catch {}
+  const gateById = new Map(allGates.map((entry) => [entry.gateId, entry]));
+  gateById.set(gate.gateId, gate);
+  const layers = [];
+  const visited = new Set();
+  for (let cursor = gate; cursor; ) {
+    if (visited.has(cursor.gateId)) {
+      failures.push(`${scope}: formal story-close repair chain contains a cycle`);
+      return failures;
+    }
+    visited.add(cursor.gateId);
+    layers.unshift(cursor);
+    const priorGateId = cursor.repair?.priorGateId;
+    if (!priorGateId) break;
+    cursor = gateById.get(priorGateId);
+    if (!cursor) {
+      failures.push(`${scope}: formal story-close prior gate ${priorGateId} is missing`);
+      return failures;
+    }
   }
-  if (gate.repair?.receiptPath) packagePaths.push(path.resolve(clone, gate.repair.receiptPath));
-  if (gate.processJudge?.decisionPath) packagePaths.push(path.resolve(clone, gate.processJudge.decisionPath));
-  const relativePaths = [...new Set(packagePaths.map((entry) => path.relative(clone, entry).replaceAll(path.sep, "/")))];
-  if (relativePaths.some((entry) => !entry || entry.startsWith("../") || !/^docs\/ai\//.test(entry))) {
-    failures.push(`${scope}: formal story-close package contains a non-control path`);
-    return failures;
-  }
-  const introductionCommits = new Set();
-  for (const relativePath of relativePaths) {
-    const added = execute("git", ["log", "--format=%H", "--diff-filter=A", "--", relativePath], clone);
-    const commits = added.status === 0 ? added.stdout.split(/\r?\n/).filter(Boolean) : [];
-    if (commits.length !== 1) failures.push(`${scope}: ${relativePath} was not introduced exactly once`);
-    else introductionCommits.add(commits[0]);
-  }
-  if (introductionCommits.size !== 1) {
-    failures.push(`${scope}: formal story-close package files were not introduced in one commit`);
-    return failures;
-  }
-  const [packageCommit] = [...introductionCommits];
-  const changed = execute("git", ["diff-tree", "--root", "--no-commit-id", "--name-only", "-r", packageCommit, "--"], clone);
-  const changedPaths = changed.status === 0 ? changed.stdout.split(/\r?\n/).filter(Boolean).sort() : [];
-  if (JSON.stringify(changedPaths) !== JSON.stringify([...relativePaths].sort())) {
-    failures.push(`${scope}: formal story-close introduction commit is not exactly the bound control package`);
+  const seenPaths = new Set();
+  for (const layer of layers) {
+    const packagePaths = [layer._recordPath];
+    for (const actorId of Object.values(layer.actors || {})) {
+      packagePaths.push(path.join(clone, "docs", "ai", "actors", `${actorId}.json`));
+    }
+    packagePaths.push(...Object.values(layer.reportPaths || {}).map((entry) => path.resolve(clone, entry)));
+    if (layer === gate) packagePaths.push(...actorPaths, ...reportPaths);
+    for (const evidenceId of layer.evidenceIds || []) {
+      const manifestPath = path.join(clone, "docs", "ai", "evidence", `${evidenceId}.json`);
+      packagePaths.push(manifestPath);
+      try {
+        const evidence = parser.parseEvidenceManifest(manifestPath);
+        packagePaths.push(path.resolve(clone, evidence.rawArtifact.path));
+      } catch {}
+    }
+    if (layer.repair?.receiptPath) packagePaths.push(path.resolve(clone, layer.repair.receiptPath));
+    if (layer.processJudge?.decisionPath) packagePaths.push(path.resolve(clone, layer.processJudge.decisionPath));
+    const relativePaths = [...new Set(packagePaths.map((entry) => path.relative(clone, entry).replaceAll(path.sep, "/")))];
+    if (relativePaths.some((entry) => !entry || entry.startsWith("../") || !/^docs\/ai\//.test(entry))) {
+      failures.push(`${scope}: formal story-close package contains a non-control path`);
+      return failures;
+    }
+    for (const relativePath of relativePaths) {
+      const committed = committedUnchangedAtHead(clone, path.join(clone, relativePath));
+      if (!committed.ok) failures.push(`${scope}: ${relativePath} ${committed.reason}`);
+      const history = execute("git", ["log", "--format=%H", "--", relativePath], clone);
+      const historyCommits = history.status === 0 ? history.stdout.split(/\r?\n/).filter(Boolean) : [];
+      if (historyCommits.length !== 1) failures.push(`${scope}: ${relativePath} changed after its immutable introduction`);
+    }
+    const deltaPaths = relativePaths.filter((entry) => !seenPaths.has(entry));
+    if (!deltaPaths.length) {
+      failures.push(`${scope}: formal story-close layer ${layer.gateId} introduces no new control evidence`);
+      continue;
+    }
+    const introductionCommits = new Set();
+    for (const relativePath of deltaPaths) {
+      const added = execute("git", ["log", "--format=%H", "--diff-filter=A", "--", relativePath], clone);
+      const commits = added.status === 0 ? added.stdout.split(/\r?\n/).filter(Boolean) : [];
+      if (commits.length !== 1) failures.push(`${scope}: ${relativePath} was not introduced exactly once`);
+      else introductionCommits.add(commits[0]);
+    }
+    if (introductionCommits.size !== 1) {
+      failures.push(`${scope}: formal story-close layer ${layer.gateId} files were not introduced in one commit`);
+    } else {
+      const [packageCommit] = [...introductionCommits];
+      const changed = execute("git", ["diff-tree", "--root", "--no-commit-id", "--name-only", "-r", packageCommit, "--"], clone);
+      const changedPaths = changed.status === 0 ? changed.stdout.split(/\r?\n/).filter(Boolean).sort() : [];
+      if (JSON.stringify(changedPaths) !== JSON.stringify([...deltaPaths].sort())) {
+        failures.push(`${scope}: formal story-close layer ${layer.gateId} introduction commit is not exactly the bound control delta`);
+      }
+    }
+    relativePaths.forEach((entry) => seenPaths.add(entry));
   }
   return failures;
 }
@@ -2250,7 +2372,7 @@ function validateDurableLifecycleEvidence(clone, expectedContract, acceptedActor
         }
       }
       failures.push(...validateGateEvidence(scope, gate, clone, parser, actors));
-      failures.push(...validateFormalStoryClosePackage(scope, gate, clone, packageActorPaths, packageReportPaths, parser));
+      failures.push(...validateFormalStoryClosePackage(scope, gate, clone, packageActorPaths, packageReportPaths, parser, gates));
       continue;
     }
     const judge = acceptedActors.find((entry) => entry.scope === scope && entry.control === "process-judge");
@@ -3484,6 +3606,8 @@ if (require.main === module) {
 
 module.exports = {
   actorResultFromText,
+  conditionalJudgeTrigger,
+  developerActorSessionBound,
   reviewerResultFromReport,
   catalogTaskBindings,
   correctionSessionWrites,

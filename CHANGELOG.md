@@ -9,6 +9,20 @@ or evidence contract. Do not use it to claim implementation status; link to the 
 
 ## Unreleased
 
+### Full story lifecycle v3.8 final-tree recovery
+
+- Corrected bounded repair routing: Patch Assurance now reruns after every application/test-tree repair; Code Review
+  reruns after its own REVISE or a production repair, while test-only repair may preserve a prior Code Review PASS.
+- Bound Developer actor/repair identity to the actual spawn receiver id instead of task name, accepted harmless trailing
+  whitespace in repair handoffs, and made the typed Judge decision the trigger source of truth.
+- Replaced raw shell-metacharacter scanning with quote-aware detection. Quoted PHPUnit/jq operators are accepted as
+  arguments; unquoted pipelines, redirections, substitutions, dynamic commands, and mutations remain rejected.
+- Made `review-completion` the sole report-shape validation command and prohibited schema/help probing in reviewer work.
+- Reworked formal story-close durability into one exact immutable cycle-0 package plus exact immutable repair-delta
+  layers. Historical REVISE evidence is preserved rather than reintroduced or rewritten.
+- Added regressions for all observed v3.7 failure modes. The complete repository suite passed 30/30; capability maturity
+  remains `enforced` pending a separately frozen non-scored rehearsal and later scored evidence.
+
 ### Full story lifecycle v3.7 reviewer normalization rehearsal
 
 - Canonicalized trusted review-report vocabulary at the parser boundary: verdict, severity, and status casing is
