@@ -21,6 +21,12 @@
     "repositoryTree": { "type": "string", "minLength": 1 },
     "applicationCommit": { "type": "string", "minLength": 1 },
     "applicationTree": { "type": "string", "minLength": 1 },
+    "scopePaths": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "type": "string", "minLength": 1 }
+    },
     "validatorVersion": { "type": "string", "minLength": 1 },
     "actors": {
       "type": "object",
@@ -185,7 +191,7 @@
     {
       "if": { "properties": { "gateType": { "const": "deterministic-story-close-v3" } }, "required": ["gateType"] },
       "then": {
-        "required": ["runId", "fullFlowContract", "decisionMode", "repositoryTree", "applicationCommit", "applicationTree", "validatorVersion", "actors", "redEvidenceId", "greenEvidenceId", "executedChecks", "reviewCycle", "unresolvedFindings", "findingDispositions", "reportHashes", "reportPaths"],
+        "required": ["runId", "fullFlowContract", "decisionMode", "repositoryTree", "applicationCommit", "applicationTree", "scopePaths", "validatorVersion", "actors", "redEvidenceId", "greenEvidenceId", "executedChecks", "reviewCycle", "unresolvedFindings", "findingDispositions", "reportHashes", "reportPaths"],
         "properties": {
           "decisionMode": { "const": "deterministic" },
           "decidedBy": { "const": "acef-story-close-v3" }

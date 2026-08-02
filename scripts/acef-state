@@ -54,6 +54,7 @@ Usage:
   acef-state approval --repo <path> --id <id> --decision APPROVE|REJECT|ACCEPT_RISK --scope <scope> --quote <exact human words> [options]
   acef-state evidence-run --repo <path> --id <id> --kind <kind> --actor <id> --story <scope> --satisfies <id>... -- <command> [args...]
   acef-state developer-repair --repo <path> --id <id> --prior-gate <gate-id> --developer-actor <actor-id>
+  acef-state review-completion --repo <path> --artifact-path <docs/ai/reports/report.json> --actor <exact-reviewer-id>
   acef-state judge-decision --repo <path> --id <id> --gate-id <future-gate-id> --actor <judge-id> --trigger ambiguity|waiver|evidence-conflict|gate-anomaly --evidence <id>...
   acef-state gate --repo <path> --id <id> --scope <scope> --verdict <verdict> --decided-by <actor-id> [--evidence <id>...] [options]
   acef-state gate --repo <path> --id <id> --scope <scope> --atdd-actor <id> --development-actor <id> --code-review-actor <id> --patch-assurance-actor <id> --red-evidence <id> --green-evidence <id> --code-review-report-hash <sha256> --patch-assurance-report-hash <sha256> [--review-cycle 0|1|2] [--unresolved-finding SEVERITY:id] [--process-judge-actor <id> --judge-trigger ambiguity|waiver|evidence-conflict|gate-anomaly] [--verdict <computed-verdict>] [options]
@@ -725,7 +726,23 @@ function testPath(filePath) {
   return /(^|\/)(__tests__|tests?|specs?)(\/|$)|(\.|-)(test|spec)\.[cm]?[jt]sx?$|Test\.(php|py|rb|cs)$/i.test(String(filePath || ""));
 }
 
-function applicationTreeDigest(repo, commit = "HEAD") {
+function normalizedScopePaths(paths) {
+  return [...new Set((paths || []).map((entry) => String(entry || "").replaceAll("\\", "/")))].sort().map((entry) => {
+    if (!entry || path.isAbsolute(entry) || entry.split("/").includes("..") || isControlPath(entry)) {
+      throw new Error(`invalid story scope path ${entry || "(empty)"}`);
+    }
+    return entry;
+  });
+}
+
+function applicationTreeDigest(repo, commit = "HEAD", scopePaths = null) {
+  if (scopePaths) {
+    const normalized = normalizedScopePaths(scopePaths);
+    return sha256(normalized.map((filePath) => {
+      const entry = runGit(repo, ["ls-tree", "--full-tree", commit, "--", filePath]);
+      return `${filePath}\0${entry || "<missing>"}`;
+    }).join("\n"));
+  }
   const output = runGit(repo, ["ls-tree", "-r", "--full-tree", commit]);
   const applicationEntries = output.split(/\r?\n/).filter(Boolean).filter((line) => {
     const filePath = line.slice(line.indexOf("\t") + 1);
@@ -869,7 +886,28 @@ function writeDeterministicStoryCloseGate(opts, activeRun) {
   const green = gateEvidence(opts.repo, opts.greenEvidence, opts.scope);
   const head = gitCommit(opts.repo);
   const tree = gitTree(opts.repo);
-  const applicationTree = applicationTreeDigest(opts.repo);
+  const priorGates = priorDeterministicStoryGates(opts.repo, opts.scope, activeRun);
+  const priorGate = priorGates.length ? priorGates.at(-1).gate : null;
+  const previousCycle = priorGate ? priorGate.reviewCycle : -1;
+  if (previousCycle >= 2) {
+    throw new Error("deterministic story close exhausted two repair cycles; REPLAN/SPLIT is required before another gate attempt");
+  }
+  if (priorGate && priorGate.verdict !== "REVISE") {
+    throw new Error(`deterministic ${priorGate.verdict} gate is terminal; a repair gate may follow only REVISE`);
+  }
+  const reviewCycle = previousCycle + 1;
+  if (opts.reviewCycle !== undefined && Number(opts.reviewCycle) !== reviewCycle) {
+    throw new Error(`--review-cycle is mechanically derived as ${reviewCycle}; caller supplied ${opts.reviewCycle}`);
+  }
+  const redParent = runGit(opts.repo, ["rev-parse", `${red.repositoryCommit}^`]);
+  const derivedScopePaths = normalizedScopePaths(applicationChangedSince(opts.repo, redParent, head));
+  const scopePaths = reviewCycle > 0 ? normalizedScopePaths(priorGate.scopePaths) : derivedScopePaths;
+  const scopeExpanded = reviewCycle > 0 && derivedScopePaths.some((filePath) => !scopePaths.includes(filePath));
+  if (!scopePaths.length) failures.push("story scope has no application/test paths");
+  if (scopeExpanded) {
+    failures.push("repair expanded the frozen story scope");
+  }
+  const applicationTree = applicationTreeDigest(opts.repo, head, scopePaths);
   const redGreenChronology = red.exitCode !== 0
     && green.exitCode === 0
     && red.actorInstanceId === actorIds.atdd
@@ -880,7 +918,6 @@ function writeDeterministicStoryCloseGate(opts, activeRun) {
   if (!redGreenChronology) failures.push("red-to-green evidence chronology or actor binding failed");
   let atddTestOnlyRed = false;
   try {
-    const redParent = runGit(opts.repo, ["rev-parse", `${red.repositoryCommit}^`]);
     const redPaths = applicationChangedSince(opts.repo, redParent, red.repositoryCommit);
     const redRaw = fs.readFileSync(path.resolve(opts.repo, red.rawArtifact.path), "utf8");
     const redSources = redPaths.map((filePath) => ({ filePath, source: runGit(opts.repo, ["show", `${red.repositoryCommit}:${filePath}`]) }));
@@ -907,7 +944,7 @@ function writeDeterministicStoryCloseGate(opts, activeRun) {
     const expectedRed = evidenceId === opts.redEvidence;
     if ((!expectedRed && evidence.exitCode !== 0)
       || (expectedRed && evidence.exitCode === 0)
-      || (!expectedRed && applicationChangedSince(opts.repo, evidence.repositoryCommit).length)
+      || (!expectedRed && applicationChangedSince(opts.repo, evidence.repositoryCommit, head).some((filePath) => scopePaths.includes(filePath)))
       || (evidence.dirtyApplicationPathsBefore || []).length
       || (evidence.dirtyApplicationPathsAfter || []).length) {
       runnerProof = false;
@@ -916,11 +953,13 @@ function writeDeterministicStoryCloseGate(opts, activeRun) {
   }
 
   const finalTreeReview = gitIsAncestor(opts.repo, actors.codeReview.inputCommit, head)
-    && applicationChangedSince(opts.repo, actors.codeReview.inputCommit, head).filter((filePath) => !testPath(filePath)).length === 0;
+    && applicationChangedSince(opts.repo, actors.codeReview.inputCommit, head)
+      .filter((filePath) => scopePaths.includes(filePath) && !testPath(filePath)).length === 0;
   const patchAssurance = gitIsAncestor(opts.repo, actors.patchAssurance.inputCommit, head)
     && actors.patchAssurance.inputTree === gitTreeAt(opts.repo, actors.patchAssurance.inputCommit)
-    && applicationTreeDigest(opts.repo, actors.patchAssurance.inputCommit) === applicationTree
-    && applicationChangedSince(opts.repo, actors.patchAssurance.inputCommit, head).length === 0;
+    && applicationTreeDigest(opts.repo, actors.patchAssurance.inputCommit, scopePaths) === applicationTree
+    && applicationChangedSince(opts.repo, actors.patchAssurance.inputCommit, head)
+      .filter((filePath) => scopePaths.includes(filePath)).length === 0;
   if (!finalTreeReview) failures.push("code-review actor did not inspect the final application tree");
   if (!patchAssurance) failures.push("patch-assurance actor did not inspect the final application tree");
 
@@ -1001,19 +1040,6 @@ function writeDeterministicStoryCloseGate(opts, activeRun) {
     hashBinding,
   };
   const mechanicalPass = Object.values(executedChecks).every(Boolean);
-  const priorGates = priorDeterministicStoryGates(opts.repo, opts.scope, activeRun);
-  const priorGate = priorGates.length ? priorGates.at(-1).gate : null;
-  const previousCycle = priorGate ? priorGate.reviewCycle : -1;
-  if (previousCycle >= 2) {
-    throw new Error("deterministic story close exhausted two repair cycles; REPLAN/SPLIT is required before another gate attempt");
-  }
-  if (priorGate && priorGate.verdict !== "REVISE") {
-    throw new Error(`deterministic ${priorGate.verdict} gate is terminal; a repair gate may follow only REVISE`);
-  }
-  const reviewCycle = previousCycle + 1;
-  if (opts.reviewCycle !== undefined && Number(opts.reviewCycle) !== reviewCycle) {
-    throw new Error(`--review-cycle is mechanically derived as ${reviewCycle}; caller supplied ${opts.reviewCycle}`);
-  }
   let repair;
   if (reviewCycle > 0) {
     if (priorGate.actors?.development !== actorIds.development) {
@@ -1033,12 +1059,13 @@ function writeDeterministicStoryCloseGate(opts, activeRun) {
       || receipt.preCommit !== priorGate.applicationCommit || receipt.preTree !== priorGate.applicationTree
       || receipt.postCommit !== head || receipt.postTree !== applicationTree
       || !gitIsAncestor(opts.repo, receipt.preCommit, receipt.postCommit)
-      || applicationChangedSince(opts.repo, receipt.preCommit, receipt.postCommit).length === 0) {
+      || applicationChangedSince(opts.repo, receipt.preCommit, receipt.postCommit)
+        .filter((filePath) => scopePaths.includes(filePath)).length === 0) {
       throw new Error("Developer repair receipt run/findings/session/commit/tree binding mismatch");
     }
     repair = { cycle: reviewCycle, priorGateId: priorGate.gateId, developerActorId: actorIds.development, receiptPath: relativeReceiptPath, receiptSha256 };
   }
-  const verdict = mechanicalPass ? "PASS" : (reviewCycle >= 2 ? "REPLAN" : "REVISE");
+  const verdict = mechanicalPass ? "PASS" : (scopeExpanded || reviewCycle >= 2 ? "REPLAN" : "REVISE");
   if (opts.verdict && opts.verdict !== verdict) {
     throw new Error(`requested verdict ${opts.verdict} cannot override computed verdict ${verdict}: ${failures.join("; ")}`);
   }
@@ -1056,6 +1083,7 @@ function writeDeterministicStoryCloseGate(opts, activeRun) {
     repositoryTree: tree,
     applicationCommit: head,
     applicationTree,
+    scopePaths,
     validatorVersion: "acef-story-close-v3.0.0",
     actors: actorIds,
     redEvidenceId: opts.redEvidence,
@@ -1173,7 +1201,8 @@ function writeDeveloperRepair(opts) {
   const developer = parseActorRecord(actorPath(opts.repo, opts.developerActor));
   const cycle = priorGate.reviewCycle + 1;
   const postCommit = gitCommit(opts.repo);
-  const postTree = applicationTreeDigest(opts.repo);
+  const scopePaths = normalizedScopePaths(priorGate.scopePaths);
+  const postTree = applicationTreeDigest(opts.repo, postCommit, scopePaths);
   if (priorGate.gateType !== "deterministic-story-close-v3" || priorGate.verdict !== "REVISE"
     || priorGate.runId !== activeRun.runId || priorGate.fullFlowContract !== activeRun.fullFlowContract
     || normalizedScope(priorGate.scope) !== normalizedScope(activeRun.activeStory)
@@ -1181,7 +1210,8 @@ function writeDeveloperRepair(opts) {
     || developer.runId !== activeRun.runId || developer.fullFlowContract !== activeRun.fullFlowContract
     || !developer.sessionId || cycle < 1 || cycle > 2
     || !gitIsAncestor(opts.repo, priorGate.applicationCommit, postCommit)
-    || applicationChangedSince(opts.repo, priorGate.applicationCommit, postCommit).length === 0) {
+    || applicationChangedSince(opts.repo, priorGate.applicationCommit, postCommit)
+      .filter((filePath) => scopePaths.includes(filePath)).length === 0) {
     throw new Error("Developer repair can only bind the original Developer/session and a real post-REVISE application change");
   }
   const record = {
@@ -1195,6 +1225,29 @@ function writeDeveloperRepair(opts) {
   const target = path.join(opts.repo, "docs", "ai", "repairs", `${safeId(opts.id, "repair id")}.json`);
   atomicJson(target, record, { validate: parseDeveloperRepair });
   console.log(`WROTE Developer repair ${relative(opts.repo, target)} cycle=${cycle}`);
+}
+
+function writeReviewCompletion(opts) {
+  required(opts, ["artifactPath", "actor"]);
+  const activeRun = activeV3Run(opts.repo);
+  const artifactPath = path.resolve(opts.repo, opts.artifactPath);
+  const relativePath = relative(opts.repo, artifactPath).replaceAll(path.sep, "/");
+  if (!/^docs\/ai\/reports\/[^/]+\.json$/.test(relativePath) || !fs.existsSync(artifactPath)) {
+    throw new Error("review-completion artifact must be an existing docs/ai/reports/*.json file");
+  }
+  const bytes = fs.readFileSync(artifactPath);
+  const report = parseReviewReport(artifactPath);
+  if (report.runId !== activeRun.runId || report.fullFlowContract !== activeRun.fullFlowContract
+    || report.actorInstanceId !== opts.actor
+    || normalizedScope(report.story) !== normalizedScope(activeRun.activeStory)
+    || !["codereview", "patchassurance"].includes(canonicalGatePhase(report.phase))
+    || report.inputCommit !== gitCommit(opts.repo) || report.inputTree !== gitTree(opts.repo)) {
+    throw new Error("review-completion report actor/run/story/phase/input commit/tree binding mismatch");
+  }
+  console.log(`REVIEW_REPORT_PATH=${relativePath}`);
+  console.log(`REVIEW_REPORT_SHA256=${sha256(bytes)}`);
+  console.log(`REVIEW_REPORT_BASE64=${bytes.toString("base64")}`);
+  console.log(`REVIEW_INPUT_TREE=${report.inputTree}`);
 }
 
 function writeJudgeDecision(opts) {
@@ -1254,6 +1307,7 @@ function main() {
   if (opts.command === "approval") return writeApproval(opts);
   if (opts.command === "evidence-run") return writeEvidence(opts);
   if (opts.command === "developer-repair") return writeDeveloperRepair(opts);
+  if (opts.command === "review-completion") return writeReviewCompletion(opts);
   if (opts.command === "judge-decision") return writeJudgeDecision(opts);
   if (opts.command === "gate") return writeGate(opts);
   throw new Error(`Unknown command: ${opts.command}`);

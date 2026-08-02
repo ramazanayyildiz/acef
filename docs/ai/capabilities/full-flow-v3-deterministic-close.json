@@ -16,7 +16,7 @@
     "docs": [
       "AGENTS.md#ACEF Admission",
       "README.md#Dependency: BMAD (large-feature flow only)",
-      "CHANGELOG.md#Full story lifecycle v3 removes duplicate assurance passes",
+      "CHANGELOG.md#Full story lifecycle v3.1 recovery candidate",
       "method/BMAD_V2_LANE.md#Full flow contract versions",
       "method/CONTROL_RATIONALE.md#Why Gate Verdicts Exist",
       "method/OPERATING_MODEL.md#Current Context Hot Slice",
@@ -27,7 +27,8 @@
       "skills/acef/references/ACEF_OPERATING_MODEL.md",
       "skills/acef/references/ACEF_RULE_ENFORCEMENT_MAP.md",
       "docs/experiments/execution-assurance-v2/P0_R2_RESULT.md",
-      "docs/experiments/execution-assurance-v3/DESIGN.md"
+      "docs/experiments/execution-assurance-v3/DESIGN.md",
+      "docs/experiments/execution-assurance-v31/DESIGN.md"
     ],
     "schema": [
       "schemas/active-run-v2.schema.json",
@@ -41,6 +42,7 @@
       "scripts/acef-state#writeActiveRun",
       "scripts/acef-state#writeDeterministicStoryCloseGate",
       "scripts/acef-state#writeDeveloperRepair",
+      "scripts/acef-state#writeReviewCompletion",
       "scripts/acef-state#writeJudgeDecision",
       "scripts/acef-status",
       "scripts/acef-next"
@@ -57,6 +59,7 @@
     "workflow": [
       "scripts/acef-execution-assurance-experiment",
       "scripts/lib/acef-execution-assurance-experiment.js",
+      "docs/experiments/execution-assurance-v31/task-manifest.json",
       "docs/experiments/execution-assurance-v3/manifest.json#judgmentContract",
       "docs/experiments/execution-assurance-v3/DESIGN.md#Product judgment and final result"
     ],
@@ -78,13 +81,13 @@
     "A Product Outcome Verifier remains conditional for user/runtime surfaces; the backend P0 candidate uses the frozen withheld behavioral oracle plus the mandatory Epic Process Judge.",
     "The capability is enforced in this source tree but is not installed in target repositories until their ACEF tools, skills, schemas, and hooks are refreshed.",
     "The v3 P0 manifest is bound to implementation commit 23b58de. Its first preregistered candidate failed automated closeout, the blind product judgment, and cost budgets, so the capability remains enforced rather than proven or authorized beyond controlled canaries.",
-    "The P0 run exposed two follow-on design gaps: preflight did not execute the real SQLite story environment, and repository-wide final-tree freshness invalidates earlier story packages after unrelated later-story changes. These require a separately preregistered successor rather than retroactive amendment of the scored candidate."
+    "The failed v3 P0 artifacts remain immutable. V3.1 repairs its real-environment preflight, story-tree scope, reviewer completion, and empirically unrealistic measurement ceilings as a separate candidate; it remains unproven until a fresh P0 and blind judgment pass."
   ],
   "evidence": [
     {
       "layer": "tests",
       "ref": "scripts/test-acef-state",
-      "note": "Covers v3 defaulting, run-contract immutability, scopeUnit-derived gate routing, run-creation-frozen story inventory carried into actors and story/Epic gates, computed close verdicts, actor separation, authentic test-runner red evidence, and non-weakening red-to-green test binding."
+      "note": "Covers v3 defaulting, run-contract immutability, scopeUnit-derived gate routing, frozen story inventory and scope paths, validated reviewer completion payloads, computed close verdicts, actor separation, authentic test-runner red evidence, and non-weakening red-to-green test binding."
     },
     {
       "layer": "tests",
@@ -94,7 +97,7 @@
     {
       "layer": "tests",
       "ref": "scripts/test-acef-execution-assurance-experiment",
-      "note": "Covers four-actor topology parsing, conditional Judges, bounded Developer repair, exact-one regular-file close packages, aggregate conductor/child cost, terminal zero-write infrastructure retries, product-only harness-launched blind judgment, actor budgets, and separate harness-wait accounting."
+      "note": "Covers four-actor topology parsing, story-scoped later-change behavior, explicit test envelopes, conditional Judges, bounded Developer repair, exact-one regular-file close packages, reviewer completion command/payload binding, v3.1 empirical budgets, aggregate conductor/child cost, terminal zero-write infrastructure retries, product-only harness-launched blind judgment, and separate harness-wait accounting."
     },
     {
       "layer": "artifact",
@@ -105,6 +108,11 @@
       "layer": "artifact",
       "ref": "docs/experiments/execution-assurance-v3/P0_RESULT.md",
       "note": "Records the scored automated FAIL, independent blind FAIL, measured speed/cost comparison, harness recoveries, and the decision to keep maturity at enforced."
+    },
+    {
+      "layer": "artifact",
+      "ref": "docs/experiments/execution-assurance-v31/DESIGN.md",
+      "note": "Defines the separately preregistered v3.1 recovery mechanics and preserves enforced maturity until the new P0 completes."
     }
   ],
   "createdAt": "2026-08-02"

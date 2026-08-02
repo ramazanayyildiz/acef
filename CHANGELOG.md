@@ -9,6 +9,22 @@ or evidence contract. Do not use it to claim implementation status; link to the 
 
 ## Unreleased
 
+### Full story lifecycle v3.1 recovery candidate
+
+- Added story-scoped final-tree binding: deterministic gates freeze the story's explicit production/test paths, so
+  later independent stories no longer invalidate earlier PASS packages while same-scope changes still do.
+- Added the read-only `acef-state review-completion` command and transcript enforcement. Reviewer completion payloads
+  now bind the active run, exact reviewer, story, phase, commit, tree, report bytes, and SHA-256 before acceptance;
+  missing or invalid payloads stop rather than opening an unbounded reviewer follow-up.
+- Added explicit per-story test envelopes to the P0 task contract and included them in scope/oracle enforcement.
+- Added the exact scored SQLite story oracle to catalog preflight and timed-launch prechecks. It must produce a genuine
+  behavioral red; migration/bootstrap/dependency failures are rejected. Broad tests that require the project's
+  unsupported full SQLite migration chain are excluded from the frozen story test envelope.
+- Added the separately preregisterable `v31-empirical` budget profile. It preserves the 17/21 actor and 180-minute hard
+  topology/time bounds while freezing 50M input-token, 520 tool-call, and 2,700-second/38% harness-wait ceilings from
+  the prior incomplete observation.
+- Capability maturity remains `enforced`; the v3.1 P0 and blind judgment must pass before any `proven` claim.
+
 ### Full story lifecycle v3 removes duplicate assurance passes
 
 - Added the versioned `four-actor-v3` Full-flow contract for new runs while keeping missing/`six-actor-v2` active-run

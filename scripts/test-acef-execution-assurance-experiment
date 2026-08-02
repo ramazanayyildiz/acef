@@ -51,6 +51,7 @@ const {
   codexSessionMetrics,
   aggregateTeamMetrics,
   blindJudgePrompt,
+  epicPilotPrompt,
   committedUnchangedAtHead,
   parseHarnessWaitMetrics,
   parseLifecycleIntegrationEvidence,
@@ -67,6 +68,18 @@ const v3Manifest = validateManifest(JSON.parse(fs.readFileSync(v3ManifestPath, "
 const invalidV3Budget = structuredClone(v3Manifest);
 invalidV3Budget.promotionGates.budget.maximumStoryActiveSeconds = 3001;
 assert.throws(() => validateManifest(invalidV3Budget), /freeze actor, repair, time, token, tool, and harness-wait budgets/);
+const validV31Budget = structuredClone(v3Manifest);
+Object.assign(validV31Budget.promotionGates.budget, {
+  profileId: "v31-empirical",
+  maximumInputTokens: 50000000,
+  maximumToolCalls: 520,
+  maximumHarnessWaitSeconds: 2700,
+  maximumHarnessWaitShare: 0.38,
+});
+assert.doesNotThrow(() => validateManifest(validV31Budget));
+const invalidV31Budget = structuredClone(validV31Budget);
+invalidV31Budget.promotionGates.budget.maximumToolCalls = 521;
+assert.throws(() => validateManifest(invalidV31Budget), /freeze actor, repair, time, token, tool, and harness-wait budgets/);
 
 function waitUntil(predicate, timeoutMs = 3000) {
   const deadline = Date.now() + timeoutMs;
@@ -105,6 +118,20 @@ const resolvedEpic = resolveCatalogTask(manifest, manifestPath, "full-guarded-mo
 assert.equal(resolvedEpic.kind, "epic");
 assert.deepEqual(resolvedEpic.setupDirs, ["tests/Integration", "tests/Performance"]);
 assert.deepEqual(resolvedEpic.setupFiles, [{ path: "/tmp/jako-bench-webhook/database/testing.sqlite", mode: "truncate" }]);
+const v31TaskManifestPath = path.join(root, "docs", "experiments", "execution-assurance-v31", "task-manifest.json");
+const resolvedV31Epic = resolveCatalogTask({ taskCatalog: { v31: {
+  sourceManifest: "task-manifest.json", selector: "authz-fail-closed-hardening-v31",
+} } }, v31TaskManifestPath, "v31");
+assert.equal(resolvedV31Epic.fixtureRoot, path.join(root, "docs", "experiments", "epic-benchmark", "fixtures"));
+assert.ok(resolvedV31Epic.task.environmentProbe.length === 1, "v3.1 must freeze a real environment probe");
+assert.deepEqual(resolvedV31Epic.task.stories[3].testPaths, [
+  "tests/Feature/Billing/Webhook/ACEFWebhookIngressRegressionTest.php",
+]);
+const v31Prompt = epicPilotPrompt({ ...v3Manifest.pilot.attempts[0], id: "P0-candidate-v31" }, resolvedV31Epic, validV31Budget);
+assert.match(v31Prompt, /Frozen test paths:/);
+assert.match(v31Prompt, /acef-state review-completion/);
+assert.match(v31Prompt, /missing or invalid review-completion payload is a mechanical REPLAN\/SPLIT stop/);
+assert.match(v31Prompt, /50000000 aggregate conductor-plus-child input tokens/);
 const epicActorContract = lifecycleActorContract(resolvedEpic);
 assert.equal(epicActorContract.length, 25, "four stories need six actors each plus one epic Process Judge");
 assert.equal(epicActorContract.at(-1).retryable, false, "the exact-one epic Process Judge cannot retry");
@@ -1201,6 +1228,7 @@ try {
     runId: v3RunId, fullFlowContract: "four-actor-v3", storyInventory: v3StoryInventory,
     scope: v3Story, verdict: "PASS", decidedBy: "acef-story-close-v3", repositoryCommit: lifecycleRedCommit,
     repositoryTree: lifecycleTree, applicationCommit: lifecycleRedCommit, applicationTree: lifecycleTree,
+    scopePaths: ["README.md", "tests/v3-red.test"],
     validatorVersion: "v3-test", actors: {
       atdd: v3DurableExpected[0].taskName, development: v3DurableExpected[1].taskName,
       codeReview: v3DurableExpected[2].taskName, patchAssurance: v3DurableExpected[3].taskName,
@@ -1218,6 +1246,7 @@ try {
   });
   const v3DurableOptions = { actorContractVersion: "four-actor-v3", runId: v3RunId,
     storyInventory: v3StoryInventory,
+    stories: [{ id: v3Story, allowedPaths: ["README.md"], testPaths: ["tests/v3-red.test"] }],
     reviewerCompletions: v3ReviewerCompletions, developerReactivations: [] };
   const untrackedV3Durable = validateDurableLifecycleEvidence(lifecycleRepo, v3DurableExpected, v3DurableExpected, {
     ...v3DurableOptions,
@@ -1303,13 +1332,22 @@ try {
   const testRepairDurable = validateDurableLifecycleEvidence(lifecycleRepo, v3DurableExpected, v3DurableExpected, {
     ...v3DurableOptions,
   });
-  assert.ok(testRepairDurable.failures.some((entry) => /Patch Assurance does not bind/.test(entry)));
+  assert.ok(!testRepairDurable.failures.some((entry) => /Patch Assurance does not bind/.test(entry)),
+    "a later story or unrelated test path must not invalidate the frozen story tree");
   assert.ok(!testRepairDurable.failures.some((entry) => /Code Review predates/.test(entry)),
-    "test-only repair may retain prior Code Review but still requires final-tree Patch Assurance");
-  fs.mkdirSync(path.join(lifecycleRepo, "app"), { recursive: true });
-  fs.writeFileSync(path.join(lifecycleRepo, "app", "repair.php"), "<?php // repaired\n");
-  cp.spawnSync("git", ["add", "app/repair.php"], { cwd: lifecycleRepo });
-  cp.spawnSync("git", ["commit", "-qm", "fix: application repair after review"], { cwd: lifecycleRepo });
+    "unrelated later work must not invalidate Code Review");
+  fs.appendFileSync(path.join(lifecycleRepo, "tests", "v3-red.test"), "scoped test repair\n");
+  cp.spawnSync("git", ["add", "tests/v3-red.test"], { cwd: lifecycleRepo });
+  cp.spawnSync("git", ["commit", "-qm", "test: scoped repair after review"], { cwd: lifecycleRepo });
+  const scopedTestRepairDurable = validateDurableLifecycleEvidence(lifecycleRepo, v3DurableExpected, v3DurableExpected, {
+    ...v3DurableOptions,
+  });
+  assert.ok(scopedTestRepairDurable.failures.some((entry) => /Patch Assurance does not bind/.test(entry)));
+  assert.ok(!scopedTestRepairDurable.failures.some((entry) => /Code Review predates/.test(entry)),
+    "scoped test-only repair may retain prior Code Review but requires Patch Assurance");
+  fs.appendFileSync(path.join(lifecycleRepo, "README.md"), "scoped production repair\n");
+  cp.spawnSync("git", ["add", "README.md"], { cwd: lifecycleRepo });
+  cp.spawnSync("git", ["commit", "-qm", "fix: scoped application repair after review"], { cwd: lifecycleRepo });
   const appRepairDurable = validateDurableLifecycleEvidence(lifecycleRepo, v3DurableExpected, v3DurableExpected, {
     ...v3DurableOptions,
   });

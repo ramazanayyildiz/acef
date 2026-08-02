@@ -388,12 +388,18 @@ function parseGateVerdict(filePath) {
   if (record.decisionMode !== undefined) requireEnum(record, "decisionMode", ["actor", "deterministic"], "gate verdict");
   if (record.gateType === "deterministic-story-close-v3") {
     requireFields(record, [
-      "runId", "fullFlowContract", "repositoryTree", "applicationCommit", "applicationTree", "validatorVersion", "actors",
+      "runId", "fullFlowContract", "repositoryTree", "applicationCommit", "applicationTree", "scopePaths", "validatorVersion", "actors",
       "redEvidenceId", "greenEvidenceId", "executedChecks", "reviewCycle", "unresolvedFindings", "findingDispositions", "reportHashes", "reportPaths",
     ], "deterministic story-close gate");
     if (record.fullFlowContract !== "four-actor-v3") throw new Error("deterministic story-close gate fullFlowContract must be four-actor-v3");
     if (record.decisionMode !== "deterministic" || record.decidedBy !== "acef-story-close-v3") {
       throw new Error("deterministic story-close gate must be decided mechanically by acef-story-close-v3");
+    }
+    requireStringArray(record, "scopePaths", "deterministic story-close gate", { nonEmpty: true });
+    const controlPath = (entry) => /^docs\/ai\/(?:ACEF_(?:ACTIVE_RUN\.json|ACTIVE_WORKER_SCOPE\.json|DIRECT_RUN\.json|CURRENT_CONTEXT\.md|[^/]+_DELIVERY_AUDIT\.md)|actors\/|gates\/|evidence\/|reports\/|approvals\/|repairs\/|judges\/)/.test(entry);
+    if (new Set(record.scopePaths).size !== record.scopePaths.length
+      || record.scopePaths.some((entry) => path.isAbsolute(entry) || entry.split(/[\\/]/).includes("..") || controlPath(entry))) {
+      throw new Error("deterministic story-close gate scopePaths must be unique repository-relative non-control paths");
     }
     const roles = ["atdd", "development", "codeReview", "patchAssurance"];
     requireObject(record, "actors", "deterministic story-close gate");

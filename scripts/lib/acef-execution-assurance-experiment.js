@@ -120,13 +120,22 @@ function validateManifest(manifest) {
       throw new Error("v3 P0 candidate must freeze append-only judgment and immutable verdict binding");
     }
     const budget = manifest.promotionGates?.budget || {};
+    const budgetProfile = budget.profileId || "v3-preregistered";
+    const expectedVariableBudget = budgetProfile === "v31-empirical"
+      ? { maximumInputTokens: 50000000, maximumToolCalls: 520, maximumHarnessWaitSeconds: 2700, maximumHarnessWaitShare: 0.38 }
+      : { maximumInputTokens: 36000000, maximumToolCalls: 300, maximumHarnessWaitSeconds: 1200, maximumHarnessWaitShare: 0.25 };
+    if (!["v3-preregistered", "v31-empirical"].includes(budgetProfile)) {
+      throw new Error("v3 P0 candidate budget.profileId must be v3-preregistered or v31-empirical");
+    }
     if (budget.baseActorCount !== 17 || budget.maximumActorInvocations !== 21
       || budget.maximumRepairCyclesPerStory !== 2 || budget.thirdRepairDisposition !== "REPLAN_SPLIT"
       || budget.maximumInfrastructureRetriesPerInvocation !== 1 || budget.maximumInfrastructureRetriesTotal !== 3
-      || budget.maximumInputTokens !== 36000000 || budget.maximumToolCalls !== 300
+      || budget.maximumInputTokens !== expectedVariableBudget.maximumInputTokens
+      || budget.maximumToolCalls !== expectedVariableBudget.maximumToolCalls
       || budget.targetStoryActiveSeconds !== 2100 || budget.maximumStoryActiveSeconds !== 3000
       || budget.targetActiveDeliverySeconds !== 9000 || budget.maximumActiveDeliverySeconds !== 10800
-      || budget.maximumHarnessWaitSeconds !== 1200 || budget.maximumHarnessWaitShare !== 0.25) {
+      || budget.maximumHarnessWaitSeconds !== expectedVariableBudget.maximumHarnessWaitSeconds
+      || budget.maximumHarnessWaitShare !== expectedVariableBudget.maximumHarnessWaitShare) {
       throw new Error("v3 P0 candidate must freeze actor, repair, time, token, tool, and harness-wait budgets");
     }
     if (attempt.activeTimeCapMinutes * 60 !== budget.maximumActiveDeliverySeconds) {
@@ -804,7 +813,9 @@ function resolveCatalogTask(manifest, manifestPath, taskId) {
     selector: ref.selector,
     kind,
     sourceManifestPath,
-    fixtureRoot: path.join(path.dirname(sourceManifestPath), "fixtures"),
+    fixtureRoot: sourceManifest.fixtureRoot
+      ? path.resolve(path.dirname(sourceManifestPath), sourceManifest.fixtureRoot)
+      : path.join(path.dirname(sourceManifestPath), "fixtures"),
     repo: sourceManifest.repo || task.repo,
     stack: sourceManifest.stack || task.stack,
     source: sourceManifest.source || task.source,

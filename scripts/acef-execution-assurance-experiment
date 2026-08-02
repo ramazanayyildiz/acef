@@ -401,6 +401,55 @@ function prepareEpicClone(resolved, attempt, opts) {
   });
 }
 
+function resetDeclaredSetupFiles(resolved) {
+  for (const file of resolved.setupFiles || []) {
+    if (file.mode === "truncate" && path.isAbsolute(file.path)) fs.writeFileSync(file.path, "");
+  }
+}
+
+function runTaskEnvironmentProbe(resolved, opts, probeId, existingClone = "") {
+  const commands = resolved.task.environmentProbe || [];
+  if (!commands.length) return { taskId: resolved.taskId, ok: true, commands: [] };
+  const attempt = { id: `environment-probe-${String(probeId).replace(/[^A-Za-z0-9._-]/g, "_")}` };
+  const prepared = existingClone
+    ? { clone: existingClone }
+    : resolved.kind === "epic"
+      ? prepareEpicClone(resolved, attempt, opts)
+      : prepareSingleTaskClone(resolved, attempt, opts);
+  const results = [];
+  for (const [index, declaration] of commands.entries()) {
+    const argv = Array.isArray(declaration) ? declaration : declaration?.argv;
+    const expect = Array.isArray(declaration) ? "pass" : declaration?.expect;
+    if (!Array.isArray(argv) || !argv.length || argv.some((entry) => typeof entry !== "string" || !entry)) {
+      throw new Error(`${resolved.taskId}: environmentProbe commands must be non-empty argv arrays`);
+    }
+    if (!["pass", "behavioral-red"].includes(expect)) {
+      throw new Error(`${resolved.taskId}: environmentProbe expect must be pass or behavioral-red`);
+    }
+    const result = execute(argv[0], argv.slice(1), prepared.clone, { timeout: 600000 });
+    const matchedExpectation = expect === "pass" ? result.status === 0 : isBehavioralRed(result);
+    const artifactDirectory = path.join(opts.pilotWorkspace, "environment-probes", String(probeId).replace(/[^A-Za-z0-9._-]/g, "_"));
+    fs.mkdirSync(artifactDirectory, { recursive: true });
+    const stdoutPath = path.join(artifactDirectory, `${index + 1}.stdout.log`);
+    const stderrPath = path.join(artifactDirectory, `${index + 1}.stderr.log`);
+    fs.writeFileSync(stdoutPath, result.stdout);
+    fs.writeFileSync(stderrPath, result.stderr);
+    results.push({
+      argv,
+      expect,
+      exitCode: result.status,
+      matchedExpectation,
+      stdoutPath,
+      stderrPath,
+      stdoutSha256: sha256(result.stdout),
+      stderrSha256: sha256(result.stderr),
+    });
+    if (!matchedExpectation) break;
+  }
+  resetDeclaredSetupFiles(resolved);
+  return { taskId: resolved.taskId, ok: results.length === commands.length && results.every((entry) => entry.matchedExpectation), commands: results };
+}
+
 function frameworkCheckout(frameworkCommit, opts) {
   const checkout = path.join(opts.pilotWorkspace, "frameworks", frameworkCommit);
   if (fs.existsSync(path.join(checkout, ".git"))) {
@@ -458,7 +507,7 @@ function pilotPrompt(attempt, resolved) {
   ].join("\n");
 }
 
-function epicPilotPrompt(attempt, resolved) {
+function epicPilotPrompt(attempt, resolved, manifest) {
   const actorContractVersion = attempt.actorContractVersion || "six-actor-v2";
   const fourActorV3 = actorContractVersion === "four-actor-v3";
   const treatmentInstruction = attempt.treatment === "legacy"
@@ -469,7 +518,8 @@ function epicPilotPrompt(attempt, resolved) {
   const stories = resolved.task.stories.map((story, index) => [
     `${index + 1}. ${story.id}: ${story.prompt}`,
     `   Depends on: ${(story.dependsOn || []).join(", ") || "none"}`,
-    `   Allowed paths: ${story.allowedPaths.join(", ")}`,
+    `   Allowed production paths: ${story.allowedPaths.join(", ")}`,
+    `   Frozen test paths: ${(story.testPaths || []).join(", ") || "none"}`,
     `   Focused verification: ${story.verify.join(" ")}`,
   ].join("\n")).join("\n");
   const actorContract = lifecycleActorContract(resolved, actorContractVersion).map((entry) =>
@@ -477,16 +527,16 @@ function epicPilotPrompt(attempt, resolved) {
   ).join("\n");
   const recoveryInstruction = fourActorV3
     ? [
-      "Initial ATDD maps every acceptance criterion but needs genuine red only on the critical vertical path. Freeze an explicit non-protected test envelope before ATDD so regression coverage can be completed before Patch Assurance.",
+      "Initial ATDD maps every acceptance criterion but needs genuine red only on the critical vertical path. The manifest's Frozen test paths are the complete non-protected test envelope; do not discover, invent, or expand that envelope during execution. Run only the story's focused verification and files inside that envelope; do not substitute broad pre-existing suites outside it.",
       "After development, spawn Code Review and Patch Assurance without waiting for either result first, then wait for both. Code Review owns correctness, security, conformance, scope, and unresolved-finding severity. Patch Assurance is report-only and combines final-tree patch verification with test-quality and focused runner proof; it must not edit production or tests.",
-      "Every v3 actor, review report, repair receipt, Judge decision, and deterministic gate must bind the active runId and fullFlowContract=four-actor-v3. Each Code Review and Patch Assurance actor must write its own typed acef.review-report.v3 JSON under docs/ai/reports. Its FINAL_ANSWER must include REVIEW_REPORT_PATH=<relative path>, REVIEW_REPORT_SHA256=<sha256>, REVIEW_REPORT_BASE64=<canonical base64 of exact report bytes>, and REVIEW_INPUT_TREE=<git tree>. Only after that answer may the conductor create the typed actor record using acef-state actor --artifact-path <report>; the completion blob/hash/tree, report, actor, and gate must bind exactly.",
+      "Every v3 actor, review report, repair receipt, Judge decision, and deterministic gate must bind the active runId and fullFlowContract=four-actor-v3. Each Code Review and Patch Assurance actor must write its own typed acef.review-report.v3 JSON under docs/ai/reports, then run `.acef/bin/acef-state review-completion --repo . --artifact-path <report> --actor <exact-task-name>` as its final command and paste that command's four stdout lines unchanged immediately before ACTOR_RESULT. Only after that answer may the conductor create the typed actor record using acef-state actor --artifact-path <report>; the completion blob/hash/tree, report, actor, and gate must bind exactly. A missing or invalid review-completion payload is a mechanical REPLAN/SPLIT stop: never follow up or retry that reviewer.",
       `The active runId must be exactly ${attempt.id}.`,
       `The active run expectedStories inventory must equal this frozen ordered catalog exactly: ${JSON.stringify(resolved.task.stories.map((story) => story.id))}. Do not add, omit, rename, or reorder stories; the epic gate must close every listed story on the same runId.`,
       "If either reviewer returns REVISE, reactivate the original developer with exactly one bounded followup_task for that global story repair cycle and the exact findings; do not let the conductor or reviewer patch. The original developer must create a typed acef.developer-repair.v3 receipt and return a fresh FINAL_ANSWER containing REPAIR_CYCLE=<n>, REPAIR_RECEIPT_PATH=<path>, REPAIR_RECEIPT_SHA256=<sha256>, and ACTOR_RESULT=PASS before any retry reviewer starts. Spawn only each affected independent delta reviewer as <base-task-name>_retry1 or _retry2, where the suffix is that same global story repair cycle, require its final answer to include the matching REPAIR_CYCLE=<n>, and give all reviewers in one cycle the receipt postTree. At most two repair cycles are allowed for a story; a third cycle is REPLAN/SPLIT and quarantine.",
       "Close each story with exactly one deterministic PASS gate and one formal story-close evidence package. Use acef-state gate with the run, contract, ATDD, development, code-review, patch-assurance, red/green evidence, report hashes, review-cycle, repair receipt, and unresolved findings. The validator computes the verdict; no actor may self-declare it. Introduce the gate, its four accepted actor records, two exact reviewer reports, every cited evidence manifest/raw artifact, and any bound repair/Judge decision together in exactly one control-only commit; no other path may enter that commit and all package bytes must remain unchanged at HEAD.",
       "Red evidence must come from a clean committed test-only tree. Green evidence must begin and end with no dirty application/test paths. After repairs, Patch Assurance always binds the final application/test tree. Earlier Code Review may remain only when every later non-control change is test-only; any production change requires affected-only delta Code Review.",
       "A story Process Judge is conditional, not routine. Spawn acef_<story>_process_judge only for ambiguity, waiver, evidence-conflict, or gate-anomaly; it must write a typed acef.process-judge-decision.v3 artifact and the gate must bind its exact path/hash/verdict. Never use it to override a mechanical failure. The separate epic Process Judge remains mandatory.",
-      "The frozen budget is 17 base actors and 21 total invocations including every Developer followup and infrastructure retry, two repair cycles per story, one infrastructure retry per logical invocation and three total, 36M aggregate conductor-plus-child input tokens, 300 aggregate tool calls, 9,000s target and 10,800s hard active time, and 1,200s/25% harness-wait. An infrastructure retry is allowed only after the original invocation has no FINAL_ANSWER and a terminal acef.infrastructure-failure.v1 event binds its task/session, failure interval, identical pre/post tree, and empty writePaths; audit the failed child transcript for zero writes, wait for terminal failure, then name the non-overlapping retry <logical-task-name>_infra_retry1. Never retry an infrastructure retry. If a hard budget cannot be met, stop with REPLAN/SPLIT or FAIL rather than expanding the actor graph.",
+      `The frozen budget profile is ${manifest.promotionGates.budget.profileId || "v3-preregistered"}: ${manifest.promotionGates.budget.baseActorCount} base actors and ${manifest.promotionGates.budget.maximumActorInvocations} total invocations including every Developer followup and infrastructure retry, ${manifest.promotionGates.budget.maximumRepairCyclesPerStory} repair cycles per story, one infrastructure retry per logical invocation and ${manifest.promotionGates.budget.maximumInfrastructureRetriesTotal} total, ${manifest.promotionGates.budget.maximumInputTokens} aggregate conductor-plus-child input tokens, ${manifest.promotionGates.budget.maximumToolCalls} aggregate tool calls, ${manifest.promotionGates.budget.targetActiveDeliverySeconds}s target and ${manifest.promotionGates.budget.maximumActiveDeliverySeconds}s hard active time, and ${manifest.promotionGates.budget.maximumHarnessWaitSeconds}s/${Math.round(manifest.promotionGates.budget.maximumHarnessWaitShare * 100)}% harness-wait. An infrastructure retry is allowed only after the original invocation has no FINAL_ANSWER and a terminal acef.infrastructure-failure.v1 event binds its task/session, failure interval, identical pre/post tree, and empty writePaths; audit the failed child transcript for zero writes, wait for terminal failure, then name the non-overlapping retry <logical-task-name>_infra_retry1. Never retry an infrastructure retry. If a hard budget cannot be met, stop with REPLAN/SPLIT or FAIL rather than expanding the actor graph.`,
     ].join(" ")
     : attempt.treatment === "candidate"
     ? [
@@ -1390,6 +1440,11 @@ function loadCollaborationEvidence(rawPath, expectedContract, expectedSession = 
       if (writes.unsafeShellMutations.length) failures.push(`${dispatch.taskName}: report-only reviewer used an unsafe or unobservable shell mutation`);
       if (writes.unsafeDelegations.length) failures.push(`${dispatch.taskName}: report-only reviewer delegated work`);
       try {
+        const completionCommandTrace = codexSessionMetrics(childText).commandText;
+        if (!/(?:^|\s)(?:\.acef\/bin\/)?acef-state\s+review-completion\b/.test(completionCommandTrace)
+          || !completionCommandTrace.includes(`--actor ${dispatch.taskName}`)) {
+          failures.push(`${dispatch.taskName}: reviewer did not run the validated review-completion command as itself`);
+        }
         const captured = parseReviewerCompletion(completion?.last_agent_message, expectedSession.cwd);
         if (!actor || actor.producedArtifactPath !== captured.reportPath
           || actor.producedArtifactHash !== captured.reportSha256 || actor.inputTree !== captured.inputTree) {
@@ -1849,6 +1904,12 @@ function validateDurableLifecycleEvidence(clone, expectedContract, acceptedActor
         continue;
       }
       const [gate] = storyPassGates;
+      const storyContract = (options.stories || []).find((entry) => normalizedActorToken(entry.id) === normalizedActorToken(scope));
+      const frozenScopePaths = new Set([...(storyContract?.allowedPaths || []), ...(storyContract?.testPaths || [])]);
+      if (!Array.isArray(gate.scopePaths) || !gate.scopePaths.length
+        || gate.scopePaths.some((entry) => !frozenScopePaths.has(entry))) {
+        failures.push(`${scope}: deterministic gate scopePaths escape the frozen production/test envelope`);
+      }
       if (options.lifecycleIntegration && (!options.lifecycleIntegration.ok
         || !Number.isFinite(Date.parse(gate.createdAt || ""))
         || Date.parse(gate.createdAt) >= Date.parse(options.lifecycleIntegration.startedAt || ""))) {
@@ -1881,14 +1942,16 @@ function validateDurableLifecycleEvidence(clone, expectedContract, acceptedActor
       const codeReviewActor = actors.get(acceptedCodeReviewId);
       const patchAssuranceActor = actors.get(acceptedPatchAssuranceId);
       if (codeReviewActor) {
+        const scopePaths = new Set(gate.scopePaths || []);
         const changed = changedPathsFromCommit(clone, codeReviewActor.inputCommit);
-        if (!changed || changed.some((entry) => !isPilotHarnessPath(entry) && !/^(?:tests?|spec)(?:\/|$)/i.test(entry))) {
+        if (!changed || changed.some((entry) => scopePaths.has(entry) && !/^(?:tests?|spec)(?:\/|$)/i.test(entry))) {
           failures.push(`${scope}: Code Review predates a non-test application repair and requires delta review`);
         }
       }
       if (patchAssuranceActor) {
+        const scopePaths = new Set(gate.scopePaths || []);
         const changed = changedPathsFromCommit(clone, patchAssuranceActor.inputCommit);
-        if (!changed || changed.some((entry) => !isPilotHarnessPath(entry))) {
+        if (!changed || changed.some((entry) => scopePaths.has(entry))) {
           failures.push(`${scope}: Patch Assurance does not bind the final application/test tree`);
         }
       }
@@ -2163,7 +2226,7 @@ function pilotAgentRequest(attempt, resolved, clone, manifest, rawPath, receiptP
     "-C", clone,
   ];
   if (attempt.treatment === "repo-native") args.push("--ignore-rules");
-  args.push(resolved.kind === "epic" ? epicPilotPrompt(attempt, resolved) : pilotPrompt(attempt, resolved));
+  args.push(resolved.kind === "epic" ? epicPilotPrompt(attempt, resolved, manifest) : pilotPrompt(attempt, resolved));
   return {
     command: clientRuntime.clientPath,
     args,
@@ -2333,6 +2396,7 @@ function frozenProductContract(resolved) {
       acceptanceCriteria: story.acceptanceCriteria || story.ac || [],
       dependsOn: story.dependsOn || [],
       allowedPaths: story.allowedPaths || [],
+      testPaths: story.testPaths || [],
     })),
   };
   return { contract, sha256: sha256(JSON.stringify(contract)) };
@@ -2594,8 +2658,8 @@ function finalizePilotAttempt(manifest, opts, checkpoint) {
   const productDoneReceipt = JSON.parse(fs.readFileSync(checkpoint.verificationReceiptPath, "utf8"));
   const paths = changedPaths(checkpoint.clone, checkpoint.scoredBase);
   const allowedPaths = resolved.kind === "epic"
-    ? [...new Set(resolved.task.stories.flatMap((story) => story.allowedPaths || []))]
-    : (resolved.task.allowedPaths || []);
+    ? [...new Set(resolved.task.stories.flatMap((story) => [...(story.allowedPaths || []), ...(story.testPaths || [])]))]
+    : [...(resolved.task.allowedPaths || []), ...(resolved.task.testPaths || [])];
   const scopeViolations = paths.filter((entry) => !isPilotHarnessPath(entry) && !isAllowedPath(entry, allowedPaths));
   const expectationFailures = evaluateExpectations(checkpoint.clone, verificationContract.expected || [], resolved.fixtureRoot);
   const fullDiff = captureGitDiff(checkpoint.clone, checkpoint.scoredBase);
@@ -2691,6 +2755,7 @@ function finalizePilotAttempt(manifest, opts, checkpoint) {
         actorContractVersion: attempt.actorContractVersion,
         runId: treatmentState.observed?.runId,
         storyInventory: resolved.kind === "epic" ? resolved.task.stories.map((story) => story.id) : [resolved.taskId],
+        stories: resolved.kind === "epic" ? resolved.task.stories : [resolved.task],
         developerReactivations: collaborationEvidence.developerReactivations || [],
         reviewerCompletions: collaborationEvidence.reviewerCompletions || [],
         lifecycleIntegration: collaborationEvidence.lifecycleIntegration || null,
@@ -3049,6 +3114,8 @@ function runPilotAttempt(manifest, opts) {
   if (!preflightTaskBinding || preflightTaskBinding.resolvedTaskSha256 !== resolvedTaskSha256(resolved)) {
     preflightFailures.push("preflight resolved task/fixture binding drift");
   }
+  const preflightEnvironmentProbe = (pilotPreflight.environmentProbes || []).find((entry) => entry.taskId === attempt.taskId);
+  if (!preflightEnvironmentProbe?.ok) preflightFailures.push("preflight real environment probe is not PASS");
   if (pilotPreflight.collaborationCanary?.clientBinarySha256 !== clientRuntime.clientBinarySha256) preflightFailures.push("preflight client binary drift");
   if (pilotPreflight.collaborationCanary?.clientVersion !== clientRuntime.observedClientVersion) preflightFailures.push("preflight client version drift");
   if (preflightFailures.length) throw new Error(`${attempt.id}: ${preflightFailures.join("; ")}`);
@@ -3068,6 +3135,8 @@ function runPilotAttempt(manifest, opts) {
     ? prepareEpicClone(resolved, executionAttempt, opts)
     : prepareSingleTaskClone(resolved, executionAttempt, opts);
   installExactFramework(prepared.clone, attempt, manifest, opts);
+  const launchEnvironmentProbe = runTaskEnvironmentProbe(resolved, opts, `${executionAttempt.id}-launch`, prepared.clone);
+  if (!launchEnvironmentProbe.ok) throw new Error(`${attempt.id}: launch environment probe failed before timed execution`);
   const verificationContract = resolved.kind === "epic" ? resolved.task.integration : resolved.task;
   const preconditions = resolved.kind === "epic" ? resolved.task.stories : [resolved.task];
   for (const contract of preconditions) {
@@ -3146,6 +3215,13 @@ function main() {
     const runnerDirtyBefore = must("git", ["status", "--porcelain"], root) !== "";
     const preflight = preflightCatalog(manifest, opts.manifest);
     const collaborationCanary = runCollaborationCanary(manifest);
+    const environmentProbes = Object.keys(manifest.taskCatalog || {}).sort().map((taskId) => {
+      try {
+        return runTaskEnvironmentProbe(resolveCatalogTask(manifest, opts.manifest, taskId), opts, `preflight-${taskId}`);
+      } catch (error) {
+        return { taskId, ok: false, commands: [], error: error.message };
+      }
+    });
     const row = {
       schema: "acef.execution-assurance-pilot-preflight.v1",
       experimentId: manifest.experimentId,
@@ -3158,11 +3234,13 @@ function main() {
       checkedAt: new Date().toISOString(),
       ...preflight,
       collaborationCanary,
-      ok: preflight.ok && collaborationCanary.ok,
+      environmentProbes,
+      ok: preflight.ok && collaborationCanary.ok && environmentProbes.every((entry) => entry.ok),
     };
     writeJson(opts.preflightOutput, row);
     for (const check of row.checks) console.log(`${check.ok ? "PASS" : "FAIL"} ${check.taskId}${check.blockers.length ? `: ${check.blockers.join("; ")}` : ""}`);
     console.log(`${collaborationCanary.ok ? "PASS" : "FAIL"} collaboration-canary${collaborationCanary.failures.length ? `: ${collaborationCanary.failures.join("; ")}` : ""}`);
+    for (const probe of environmentProbes) console.log(`${probe.ok ? "PASS" : "FAIL"} environment-probe ${probe.taskId}${probe.error ? `: ${probe.error}` : ""}`);
     console.log(`PILOT_PREFLIGHT ${row.ok ? "PASS" : "FAIL"}: ${row.checks.filter((check) => check.ok).length}/${row.checks.length} tasks ready`);
     if (!row.ok) process.exitCode = 1;
     return;
@@ -3206,6 +3284,7 @@ module.exports = {
   ingestPilotJudgment,
   runPilotJudge,
   blindJudgePrompt,
+  epicPilotPrompt,
   isBehavioralRed,
   lifecycleActorContract,
   parseCollaborationEvidence,
@@ -3217,6 +3296,7 @@ module.exports = {
   parseLifecycleIntegrationEvidence,
   reconcileFinalizedCheckpoint,
   resolvePinnedClient,
+  runTaskEnvironmentProbe,
   runnerSourceSha256,
   writeArtifactOnlyJudgePacket,
   validateDurableLifecycleEvidence,

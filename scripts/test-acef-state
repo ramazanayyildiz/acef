@@ -152,6 +152,17 @@ try {
   run("git", ["add", "app/demo.js"]);
   run("git", ["commit", "-qm", "v3 implementation"]);
   const reviewPath = writeReviewReport("docs/ai/reports/review-v3.json", { actorInstanceId: "review-v3", story: "Story 3.1", phase: "code-review" });
+  const wrongReviewCompletion = cp.spawnSync(process.execPath, [state, "review-completion", "--repo", tmp, "--artifact-path", reviewPath, "--actor", "wrong-reviewer"], { encoding: "utf8" });
+  if (wrongReviewCompletion.status === 0 || !`${wrongReviewCompletion.stdout}${wrongReviewCompletion.stderr}`.includes("actor/run/story/phase/input commit/tree binding mismatch")) {
+    throw new Error("review-completion accepted a report for a different reviewer identity");
+  }
+  const reviewCompletion = runState(["review-completion", "--repo", tmp, "--artifact-path", reviewPath, "--actor", "review-v3"]);
+  if (!reviewCompletion.includes(`REVIEW_REPORT_PATH=${reviewPath}`)
+    || !reviewCompletion.includes("REVIEW_REPORT_SHA256=")
+    || !reviewCompletion.includes("REVIEW_REPORT_BASE64=")
+    || !reviewCompletion.includes("REVIEW_INPUT_TREE=")) {
+    throw new Error("review-completion did not emit the exact validated payload");
+  }
   runState(["actor", "--repo", tmp, "--id", "review-v3", "--story", "Story 3.1", "--phase", "code-review", "--role", "code-reviewer", "--client", "codex", "--context-profile", "review", "--artifact-path", reviewPath]);
   fs.mkdirSync(path.join(tmp, "tests"), { recursive: true });
   fs.writeFileSync(path.join(tmp, "tests", "v3.test.js"), "module.exports = 'test-only-after-code-review';\n");
@@ -174,6 +185,10 @@ try {
     throw new Error("v3 close did not preserve a justified LOW dismissal without treating it as open");
   }
   if (!Object.values(v3Gate.executedChecks).every(Boolean)) throw new Error("v3 gate persisted a failed mechanical check as PASS");
+  if (!v3Gate.scopePaths.includes("app/demo.js") || !v3Gate.scopePaths.includes("tests/story-3-1-red.test.js")
+    || !v3Gate.scopePaths.includes("tests/v3.test.js")) {
+    throw new Error("v3 gate did not freeze the complete story-scoped application/test tree");
+  }
   const override = cp.spawnSync(process.execPath, [state, "gate", "--repo", tmp, "--id", "GATE-v3-override", "--scope", "Story 3.1", "--verdict", "FAIL", "--atdd-actor", "atdd-v3", "--development-actor", "dev-v3", "--code-review-actor", "review-v3", "--patch-assurance-actor", "assurance-v3", "--red-evidence", "EV-v3-red", "--green-evidence", "EV-v3-green", "--code-review-report-hash", reviewHash, "--patch-assurance-report-hash", assuranceHash], { encoding: "utf8" });
   if (override.status === 0 || !/cannot override computed verdict PASS|PASS gate is terminal/.test(`${override.stdout}${override.stderr}`)) {
     throw new Error("caller could override deterministic v3 verdict");
@@ -214,8 +229,8 @@ try {
   }
 
   for (const cycle of [1, 2]) {
-    fs.writeFileSync(path.join(tmp, "app", `repair-${cycle}.js`), `module.exports = 'v32-repair-${cycle}';\n`);
-    run("git", ["add", `app/repair-${cycle}.js`]); run("git", ["commit", "-qm", `Story 3.2 repair ${cycle}`]);
+    fs.writeFileSync(path.join(tmp, "app", "demo.js"), `module.exports = 'v32-initial'; // repair ${cycle}\n`);
+    run("git", ["add", "app/demo.js"]); run("git", ["commit", "-qm", `Story 3.2 repair ${cycle}`]);
     const priorGate = readJson(`docs/ai/gates/GATE-v32-${cycle - 1}.json`);
     runState(["developer-repair", "--repo", tmp, "--id", `repair-v32-${cycle}`, "--prior-gate", priorGate.gateId, "--developer-actor", "dev-v32"]);
     const receipt = `docs/ai/repairs/repair-v32-${cycle}.json`;

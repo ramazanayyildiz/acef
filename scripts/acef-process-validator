@@ -297,8 +297,29 @@ function stateControlPath(filePath) {
   return /^docs\/ai\/(?:ACEF_(?:ACTIVE_RUN\.json|ACTIVE_WORKER_SCOPE\.json|DIRECT_RUN\.json|CURRENT_CONTEXT\.md|[^/]+_DELIVERY_AUDIT\.md)|actors\/|gates\/|evidence\/|reports\/|approvals\/|repairs\/|judges\/)/.test(normalized);
 }
 
-function applicationTreeDigest(repoRoot, commit = "HEAD") {
+function normalizedScopePaths(paths) {
+  return [...new Set((paths || []).map((entry) => String(entry || "").replaceAll("\\", "/")))].sort().map((entry) => {
+    if (!entry || path.isAbsolute(entry) || entry.split("/").includes("..") || stateControlPath(entry)) {
+      throw new Error(`invalid story scope path ${entry || "(empty)"}`);
+    }
+    return entry;
+  });
+}
+
+function applicationTreeDigest(repoRoot, commit = "HEAD", scopePaths = null) {
   try {
+    if (scopePaths) {
+      const normalized = normalizedScopePaths(scopePaths);
+      const entries = normalized.map((filePath) => {
+        const entry = cp.execFileSync("git", ["ls-tree", "--full-tree", commit, "--", filePath], {
+          cwd: repoRoot,
+          encoding: "utf8",
+          stdio: ["ignore", "pipe", "ignore"],
+        }).trim();
+        return `${filePath}\0${entry || "<missing>"}`;
+      });
+      return sha256(entries.join("\n"));
+    }
     const output = cp.execFileSync("git", ["ls-tree", "-r", "--full-tree", commit], {
       cwd: repoRoot,
       encoding: "utf8",
@@ -326,6 +347,15 @@ function recordCommitError(repoRoot, commit, label) {
   const head = gitHead(repoRoot);
   const changed = gitChangedFiles(repoRoot, commit, head).filter((filePath) => !stateControlPath(filePath));
   if (changed.length) return `${label} is stale; application paths changed since ${commit}: ${changed.slice(0, 8).join(", ")}`;
+  return "";
+}
+
+function scopedCommitError(repoRoot, commit, label, scopePaths) {
+  const ancestorError = ancestorCommitError(repoRoot, commit, label);
+  if (ancestorError) return ancestorError;
+  const frozen = new Set(normalizedScopePaths(scopePaths));
+  const changed = gitChangedFiles(repoRoot, commit, gitHead(repoRoot)).filter((filePath) => frozen.has(filePath));
+  if (changed.length) return `${label} is stale; frozen story paths changed since ${commit}: ${changed.slice(0, 8).join(", ")}`;
   return "";
 }
 
@@ -551,14 +581,16 @@ function evidenceRecordById(repoRoot, evidenceId) {
   return evidence;
 }
 
-function validateEvidenceRecord(repoRoot, evidence, { requireFresh = false } = {}) {
+function validateEvidenceRecord(repoRoot, evidence, { requireFresh = false, scopePaths = null } = {}) {
   const failures = [];
   // Historical evidence (especially the required ATDD-red record) remains valid after
   // later application commits. Its commit must stay in HEAD ancestry and its artifact /
   // runner proof must remain intact. Only evidence cited by the current closing gate is
   // required to describe the final application tree.
   const commitError = requireFresh
-    ? recordCommitError(repoRoot, evidence.repositoryCommit, `evidence ${evidence.evidenceId}`)
+    ? (scopePaths
+      ? scopedCommitError(repoRoot, evidence.repositoryCommit, `evidence ${evidence.evidenceId}`, scopePaths)
+      : recordCommitError(repoRoot, evidence.repositoryCommit, `evidence ${evidence.evidenceId}`))
     : ancestorCommitError(repoRoot, evidence.repositoryCommit, `evidence ${evidence.evidenceId}`);
   if (commitError) failures.push(commitError);
   if (evidence.repositoryTree && evidence.repositoryTree !== gitTreeAt(repoRoot, evidence.repositoryCommit)) {
@@ -1868,9 +1900,16 @@ function deterministicGateRecordIntegrityFailures(repoRoot, activeRun, gate) {
   const expectedPhases = { atdd: "atdd", development: "development", codeReview: "codereview", patchAssurance: "patchassurance" };
   const actorIds = gate.actors || {};
   const actorRecords = {};
+  let priorGate = null;
+  let scopePaths = [];
+  try {
+    scopePaths = normalizedScopePaths(gate.scopePaths);
+    if (!scopePaths.length) failures.push("deterministic gate requires a non-empty frozen story scope");
+  } catch (error) {
+    failures.push(error.message);
+  }
   if (new Set(Object.values(actorIds)).size !== 4) failures.push("deterministic gate requires four distinct actors");
   if (gate.reviewCycle > 0) {
-    let priorGate = null;
     for (const filePath of jsonRecords(path.join(repoRoot, "docs", "ai", "gates"))) {
       try {
         const candidate = parseGateVerdict(filePath);
@@ -1901,10 +1940,11 @@ function deterministicGateRecordIntegrityFailures(repoRoot, activeRun, gate) {
         || receipt.developerActorId !== actorIds.development || receipt.developerSessionId !== developer.sessionId
         || receipt.preCommit !== priorGate.applicationCommit || receipt.preTree !== priorGate.applicationTree
         || receipt.postCommit !== gate.applicationCommit || receipt.postTree !== gate.applicationTree
-        || receipt.preTree !== applicationTreeDigest(repoRoot, receipt.preCommit)
-        || receipt.postTree !== applicationTreeDigest(repoRoot, receipt.postCommit)
+        || receipt.preTree !== applicationTreeDigest(repoRoot, receipt.preCommit, scopePaths)
+        || receipt.postTree !== applicationTreeDigest(repoRoot, receipt.postCommit, scopePaths)
         || !gitIsAncestor(repoRoot, receipt.preCommit, receipt.postCommit)
-        || gitChangedFiles(repoRoot, receipt.preCommit, receipt.postCommit).filter((filePath) => !stateControlPath(filePath)).length === 0) {
+        || gitChangedFiles(repoRoot, receipt.preCommit, receipt.postCommit).filter((filePath) => scopePaths.includes(filePath)).length === 0
+        || gitChangedFiles(repoRoot, receipt.preCommit, receipt.postCommit).some((filePath) => !stateControlPath(filePath) && !scopePaths.includes(filePath))) {
         throw new Error("Developer repair receipt run/findings/session/commit/tree binding mismatch");
       }
     } catch (error) {
@@ -1964,6 +2004,15 @@ function deterministicGateRecordIntegrityFailures(repoRoot, activeRun, gate) {
     try {
       const redParent = cp.execFileSync("git", ["rev-parse", `${red.repositoryCommit}^`], { cwd: repoRoot, encoding: "utf8" }).trim();
       const redPaths = gitChangedFiles(repoRoot, redParent, red.repositoryCommit).filter((filePath) => !stateControlPath(filePath));
+      const derivedScopePaths = normalizedScopePaths(gitChangedFiles(repoRoot, redParent, gate.applicationCommit)
+        .filter((filePath) => !stateControlPath(filePath)));
+      if (gate.reviewCycle === 0 && JSON.stringify(derivedScopePaths) !== JSON.stringify(scopePaths)) {
+        failures.push("initial deterministic gate scopePaths do not equal the story change set");
+      }
+      if (gate.reviewCycle > 0 && (JSON.stringify(scopePaths) !== JSON.stringify(normalizedScopePaths(priorGate?.scopePaths))
+        || derivedScopePaths.some((filePath) => !scopePaths.includes(filePath)))) {
+        failures.push("deterministic repair expanded or replaced the frozen story scope");
+      }
       const redRaw = read(resolvePath(red.rawArtifact.path, repoRoot));
       const redSources = redPaths.map((filePath) => ({
         filePath,
@@ -2006,26 +2055,32 @@ function deterministicGateIntegrityFailures(repoRoot, activeRun, gate) {
       failures.push(error.message);
     }
   }
-  const applicationTree = applicationTreeDigest(repoRoot);
+  let scopePaths = [];
+  try {
+    scopePaths = normalizedScopePaths(gate.scopePaths);
+  } catch (error) {
+    failures.push(error.message);
+  }
+  const applicationTree = applicationTreeDigest(repoRoot, "HEAD", scopePaths);
   if (gate.applicationTree !== applicationTree
-    || gate.applicationTree !== applicationTreeDigest(repoRoot, gate.applicationCommit)
-    || recordCommitError(repoRoot, gate.applicationCommit, "deterministic gate application commit")) {
+    || gate.applicationTree !== applicationTreeDigest(repoRoot, gate.applicationCommit, scopePaths)
+    || ancestorCommitError(repoRoot, gate.applicationCommit, "deterministic gate application commit")) {
     failures.push("deterministic gate application commit/tree is stale or mismatched");
   }
   if (gate.repositoryTree !== gitTreeAt(repoRoot, gate.repositoryCommit)) failures.push("deterministic gate repository tree does not match its recorded commit");
   if (actorRecords.codeReview) {
     const ancestorError = ancestorCommitError(repoRoot, actorRecords.codeReview.inputCommit, "code-review actor");
     const nonTestChanges = ancestorError ? [] : gitChangedFiles(repoRoot, actorRecords.codeReview.inputCommit, gitHead(repoRoot))
-      .filter((filePath) => !stateControlPath(filePath) && !isTestPath(filePath));
+      .filter((filePath) => scopePaths.includes(filePath) && !isTestPath(filePath));
     if (ancestorError || nonTestChanges.length) failures.push("code-review actor did not inspect final non-test application tree");
   }
   if (actorRecords.patchAssurance) {
     const ancestorError = ancestorCommitError(repoRoot, actorRecords.patchAssurance.inputCommit, "patch-assurance actor");
     const changedSinceAssurance = ancestorError ? ["<invalid-ancestor>"]
       : gitChangedFiles(repoRoot, actorRecords.patchAssurance.inputCommit, gitHead(repoRoot))
-        .filter((filePath) => !stateControlPath(filePath));
+        .filter((filePath) => scopePaths.includes(filePath));
     const assuranceInputTree = !ancestorError && actorRecords.patchAssurance.inputTree === gitTreeAt(repoRoot, actorRecords.patchAssurance.inputCommit);
-    const assuranceApplicationTree = !ancestorError && applicationTreeDigest(repoRoot, actorRecords.patchAssurance.inputCommit) === applicationTree;
+    const assuranceApplicationTree = !ancestorError && applicationTreeDigest(repoRoot, actorRecords.patchAssurance.inputCommit, scopePaths) === applicationTree;
     if (ancestorError || changedSinceAssurance.length || !assuranceInputTree || !assuranceApplicationTree) {
       failures.push("patch-assurance actor did not inspect the final application/test tree");
     }
@@ -2039,7 +2094,7 @@ function deterministicGateIntegrityFailures(repoRoot, activeRun, gate) {
     const red = evidenceRecordById(repoRoot, gate.redEvidenceId);
     const green = evidenceRecordById(repoRoot, gate.greenEvidenceId);
     failures.push(...validateEvidenceRecord(repoRoot, red));
-    failures.push(...validateEvidenceRecord(repoRoot, green, { requireFresh: true }));
+    failures.push(...validateEvidenceRecord(repoRoot, green, { requireFresh: true, scopePaths }));
     if (red.exitCode === 0 || red.actorInstanceId !== actorIds.atdd) failures.push("ATDD red evidence is not an authentic failing ATDD run");
     if (green.exitCode !== 0 || ![actorIds.development, actorIds.patchAssurance].includes(green.actorInstanceId)) failures.push("green evidence actor/result mismatch");
     if (!gitIsAncestor(repoRoot, red.repositoryCommit, green.repositoryCommit)) failures.push("red evidence does not precede green evidence");
@@ -2087,7 +2142,9 @@ function checkGateVerdict(repoRoot) {
   if (gate) {
     failures.push(...gateDeciderIntegrityFailures(repoRoot, activeRun, gate));
     failures.push(...deterministicGateIntegrityFailures(repoRoot, activeRun, gate));
-    const commitError = recordCommitError(repoRoot, gate.repositoryCommit, `gate ${gate.gateId}`);
+    const commitError = gate.gateType === "deterministic-story-close-v3"
+      ? scopedCommitError(repoRoot, gate.repositoryCommit, `gate ${gate.gateId}`, gate.scopePaths)
+      : recordCommitError(repoRoot, gate.repositoryCommit, `gate ${gate.gateId}`);
     if (commitError) failures.push(commitError);
     for (const evidenceId of gate.evidenceIds || []) {
       try {
@@ -2100,7 +2157,10 @@ function checkGateVerdict(repoRoot) {
           && normalizedScope(evidence.story) !== normalizedScope(activeRun.activeStory)) {
           failures.push(`PASS gate cites evidence ${evidenceId} from another story`);
         }
-        failures.push(...validateEvidenceRecord(repoRoot, evidence, { requireFresh: !expectedRed }));
+        failures.push(...validateEvidenceRecord(repoRoot, evidence, {
+          requireFresh: !expectedRed,
+          scopePaths: gate.gateType === "deterministic-story-close-v3" ? gate.scopePaths : null,
+        }));
       } catch (error) {
         failures.push(error.message);
       }
