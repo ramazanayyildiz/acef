@@ -1,0 +1,57 @@
+{
+  "schema": "acef.execution-assurance-pilot-preflight.v1",
+  "experimentId": "acef-execution-assurance-v3-p0",
+  "candidateCommit": "23b58de",
+  "manifestSha256": "6fbfe5472dbaceb1d7fb975e1d62a0d9d9b019cc80cb83547395442cf7ae4678",
+  "runnerCommit": "dc51fe3c1b820c7258e5502b34faa2d4a6ea3664",
+  "runnerDirtyBefore": false,
+  "runnerSourceSha256": "aaf7ef1f145c905781217ea652c95f83a6cb939a98f560146c5fde987047019a",
+  "taskBindings": [
+    {
+      "taskId": "full-guarded-motivation",
+      "resolvedTaskSha256": "7daef0a3bc393c702a856f03f6e009d5dcd2c76b0f09d7d75cba761e16036d54"
+    }
+  ],
+  "checkedAt": "2026-08-02T03:51:29.922Z",
+  "ok": true,
+  "checks": [
+    {
+      "taskId": "full-guarded-motivation",
+      "selector": "authz-fail-closed-hardening",
+      "kind": "epic",
+      "repo": "jakomeet",
+      "stack": "php-laravel",
+      "sourceCommit": "a12ac50441114943efd099f9e601bbee4a9d8a12",
+      "setupDirs": [
+        "tests/Integration",
+        "tests/Performance"
+      ],
+      "setupFiles": [
+        {
+          "path": "/tmp/jako-bench-webhook/database/testing.sqlite",
+          "mode": "truncate"
+        }
+      ],
+      "ok": true,
+      "blockers": []
+    }
+  ],
+  "collaborationCanary": {
+    "ok": true,
+    "checkedAt": "2026-08-02T03:51:29.886Z",
+    "clientPath": "/opt/homebrew/Caskroom/codex/0.146.0/bin/codex",
+    "clientBinarySha256": "ae1d3ffe6d48aec6a4dc3f50e7eb8e0d11962485a6a9406c5a7012139383da02",
+    "clientVersion": "codex-cli 0.146.0",
+    "model": "gpt-5.6-sol",
+    "reasoningEffort": "high",
+    "threadId": "019fc098-f0f2-76e3-86f7-fe6190ca2af0",
+    "exitCode": 0,
+    "expectedActorCount": 1,
+    "observedActorCount": 1,
+    "receiverThreadIds": [
+      "019fc099-099e-7ed0-9424-ee7e54538e94"
+    ],
+    "sessionSha256": "21ce011477f26ea37ef37790866798bd18905072c22f1cb9c13c05a7f39476ef",
+    "failures": []
+  }
+}
