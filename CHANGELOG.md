@@ -30,6 +30,10 @@ or evidence contract. Do not use it to claim implementation status; link to the 
 - Separately froze scored attempt `P0-candidate-v34` against framework commit `1deadd4`, with the unchanged task,
   quality gates, stop rules, and measured budget. Freezing the attempt does not change capability maturity before its
   automated and blind results are recorded.
+- Recorded the immutable v3.4 automated and blind FAIL. The targeted typed-handoff repairs allowed all four stories to
+  execute and reduced true coordination idle to 6.6 seconds, but S4 exhausted two repair cycles and reached REPLAN,
+  tool calls exceeded budget, reviewer completion/retry topology still had process violations, and the blind Judge
+  found one HIGH MySQL compatibility regression. Capability maturity remains `enforced`.
 
 ### Full story lifecycle v3.3 preparation hardening
 

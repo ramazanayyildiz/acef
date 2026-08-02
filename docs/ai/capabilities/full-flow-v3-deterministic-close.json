@@ -35,7 +35,8 @@
       "docs/experiments/execution-assurance-v33/P0_RESULT.md",
       "docs/experiments/execution-assurance-v34/DESIGN.md",
       "docs/experiments/execution-assurance-v34/PREPARATION_RESULT.md",
-      "docs/experiments/execution-assurance-v34/manifest.json"
+      "docs/experiments/execution-assurance-v34/manifest.json",
+      "docs/experiments/execution-assurance-v34/P0_RESULT.md"
     ],
     "schema": [
       "schemas/active-run-v2.schema.json",
@@ -93,7 +94,7 @@
     "The failed v3 P0 artifacts remain immutable. V3.1 repaired real-environment preflight, story-tree scope, reviewer completion, and measurement ceilings, but its P0 still failed process closeout after exhausting 21 actor invocations; its blind Judge was mechanically blocked because packet validation omitted frozen testPaths.",
     "V3.2 accepts frozen testPaths as blinded product artifacts, raises only the actor hard cap to the observed 25-invocation recovery envelope, renders acceptance criteria explicitly, and excludes readiness notes from bound close packages.",
     "The v3.2 P0 admitted and completed blind judgment but failed automated, process, product, broad-closeout, and harness-wait gates. It exposed a namespaced-call ATDD authenticity false negative and a contradictory frozen Story 2 ATDD contract, so the capability remains enforced rather than proven.",
-    "The v3.3 P0 is an immutable automated and blind FAIL. V3.4 preparation enforces commit-before-red-evidence, delimiter-normalized actor results, machine-observed reviewer completion, deterministic report paths, and functions.exec command tracing, but no separately frozen v3.4 scored result exists yet. Maturity remains enforced rather than proven."
+    "The v3.3 P0 is an immutable automated and blind FAIL. V3.4 enforced commit-before-red-evidence, delimiter-normalized actor results, machine-observed reviewer completion, deterministic report paths, and functions.exec command tracing, but its scored P0 also failed automated and blind judgment. S4 exhausted two repair cycles, process/retry topology remained invalid, tool calls exceeded budget, and the blind Judge found one HIGH MySQL compatibility regression. Maturity remains enforced rather than proven."
   ],
   "evidence": [
     {
@@ -180,6 +181,11 @@
       "layer": "artifact",
       "ref": "docs/experiments/execution-assurance-v34/manifest.json",
       "note": "Separately freezes the single scored P0-candidate-v34 attempt against framework commit 1deadd4 without changing the unchanged task, quality gates, stop rules, or measured budget."
+    },
+    {
+      "layer": "artifact",
+      "ref": "docs/experiments/execution-assurance-v34/P0_RESULT.md",
+      "note": "Records the immutable v3.4 automated/blind FAIL, 6.6-second coordination-idle measurement, two-cycle S4 REPLAN, tool-call budget failure, remaining reviewer-process violations, and one HIGH blind MySQL compatibility finding."
     },
     {
       "layer": "artifact",
