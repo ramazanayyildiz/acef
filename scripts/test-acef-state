@@ -178,6 +178,18 @@ try {
     || !reviewCompletion.includes("REVIEW_INPUT_TREE=")) {
     throw new Error("review-completion did not emit the exact validated payload");
   }
+  const aliasReviewPath = "docs/ai/reports/review-v3-alias.json";
+  const canonicalReview = JSON.parse(fs.readFileSync(path.join(tmp, reviewPath), "utf8"));
+  fs.writeFileSync(path.join(tmp, aliasReviewPath), `${JSON.stringify({
+    ...canonicalReview,
+    actorInstanceId: "review-v3-alias",
+    verdict: "revise",
+    findings: [{ id: "HIGH-alias", severity: "high", status: "open", reason: "Bound repair finding" }],
+  }, null, 2)}\n`);
+  const aliasCompletion = runState(["review-completion", "--repo", tmp, "--artifact-path", aliasReviewPath, "--actor", "review-v3-alias"]);
+  if (!aliasCompletion.includes(`REVIEW_REPORT_PATH=${aliasReviewPath}`) || !aliasCompletion.includes("REVIEW_REPORT_SHA256=")) {
+    throw new Error("review-completion rejected canonicalizable reviewer enum aliases");
+  }
   runState(["actor", "--repo", tmp, "--id", "review-v3", "--story", "Story 3.1", "--phase", "code-review", "--role", "code-reviewer", "--client", "codex", "--context-profile", "review", "--artifact-path", reviewPath]);
   fs.mkdirSync(path.join(tmp, "tests"), { recursive: true });
   fs.writeFileSync(path.join(tmp, "tests", "v3.test.js"), "module.exports = 'test-only-after-code-review';\n");

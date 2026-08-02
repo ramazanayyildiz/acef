@@ -14,7 +14,7 @@
     "phase": { "type": "string", "enum": ["code-review", "patch-assurance"] },
     "inputCommit": { "type": "string", "minLength": 1 },
     "inputTree": { "type": "string", "minLength": 1 },
-    "verdict": { "type": "string", "enum": ["PASS", "REVISE", "REPLAN"] },
+    "verdict": { "type": "string", "enum": ["PASS", "REVISE", "REPLAN", "pass", "revise", "replan"] },
     "findings": {
       "type": "array",
       "items": {
@@ -23,25 +23,25 @@
         "required": ["id", "severity", "status"],
         "properties": {
           "id": { "type": "string", "minLength": 1 },
-          "severity": { "type": "string", "enum": ["LOW", "MEDIUM", "HIGH", "CRITICAL"] },
-          "status": { "type": "string", "enum": ["OPEN", "RESOLVED", "DISMISSED", "DEFERRED"] },
+          "severity": { "type": "string", "enum": ["LOW", "MEDIUM", "HIGH", "CRITICAL", "low", "medium", "high", "critical", "INFO", "info"] },
+          "status": { "type": "string", "enum": ["OPEN", "RESOLVED", "DISMISSED", "DEFERRED", "CLOSED", "open", "resolved", "dismissed", "deferred", "closed"] },
           "reason": { "type": "string", "minLength": 1 },
           "approvalId": { "type": "string", "pattern": "^[A-Za-z0-9._-]+$" }
         },
         "allOf": [
           {
-            "if": { "properties": { "status": { "const": "DISMISSED" } }, "required": ["status"] },
+            "if": { "properties": { "status": { "enum": ["DISMISSED", "dismissed"] } }, "required": ["status"] },
             "then": { "required": ["reason"] }
           },
           {
-            "if": { "properties": { "status": { "const": "DEFERRED" } }, "required": ["status"] },
+            "if": { "properties": { "status": { "enum": ["DEFERRED", "deferred"] } }, "required": ["status"] },
             "then": { "required": ["approvalId"] }
           },
           {
             "not": {
               "allOf": [
-                { "properties": { "severity": { "enum": ["HIGH", "CRITICAL"] } }, "required": ["severity"] },
-                { "properties": { "status": { "enum": ["DISMISSED", "DEFERRED"] } }, "required": ["status"] }
+                { "properties": { "severity": { "enum": ["HIGH", "CRITICAL", "high", "critical"] } }, "required": ["severity"] },
+                { "properties": { "status": { "enum": ["DISMISSED", "DEFERRED", "dismissed", "deferred"] } }, "required": ["status"] }
               ]
             }
           }
@@ -51,11 +51,11 @@
   },
   "allOf": [
     {
-      "if": { "properties": { "verdict": { "enum": ["REVISE", "REPLAN"] } }, "required": ["verdict"] },
+      "if": { "properties": { "verdict": { "enum": ["REVISE", "REPLAN", "revise", "replan"] } }, "required": ["verdict"] },
       "then": {
         "properties": {
           "findings": {
-            "contains": { "properties": { "status": { "const": "OPEN" } }, "required": ["status"] },
+            "contains": { "properties": { "status": { "enum": ["OPEN", "open"] } }, "required": ["status"] },
             "minContains": 1
           }
         }

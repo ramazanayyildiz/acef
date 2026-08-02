@@ -295,12 +295,21 @@ function parseReviewReport(filePath) {
   if (typeof record.runId !== "string" || !record.runId.trim()) throw new Error("review report runId must be non-empty");
   if (record.fullFlowContract !== "four-actor-v3") throw new Error("review report fullFlowContract must be four-actor-v3");
   requireEnum(record, "phase", ["code-review", "patch-assurance"], "review report");
+  if (typeof record.verdict === "string") record.verdict = record.verdict.toUpperCase();
   requireEnum(record, "verdict", ["PASS", "REVISE", "REPLAN"], "review report");
   if (!Array.isArray(record.findings)) throw new Error("review report findings must be an array");
   for (const [index, finding] of record.findings.entries()) {
     if (!finding || typeof finding !== "object" || Array.isArray(finding)) throw new Error(`review report findings[${index}] must be an object`);
     requireFields(finding, ["id", "severity", "status"], `review report findings[${index}]`);
     rejectUnknownFields(finding, ["id", "severity", "status", "reason", "approvalId"], `review report findings[${index}]`);
+    if (typeof finding.severity === "string") {
+      finding.severity = finding.severity.toUpperCase();
+      if (finding.severity === "INFO") finding.severity = "LOW";
+    }
+    if (typeof finding.status === "string") {
+      finding.status = finding.status.toUpperCase();
+      if (finding.status === "CLOSED") finding.status = "RESOLVED";
+    }
     requireEnum(finding, "severity", ["LOW", "MEDIUM", "HIGH", "CRITICAL"], `review report findings[${index}]`);
     requireEnum(finding, "status", ["OPEN", "RESOLVED", "DISMISSED", "DEFERRED"], `review report findings[${index}]`);
     if (finding.status === "DISMISSED" && (typeof finding.reason !== "string" || !finding.reason.trim())) {

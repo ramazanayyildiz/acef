@@ -157,8 +157,30 @@ try {
     findings: [{ id: "LOW-1", severity: "LOW", status: "DISMISSED", reason: "Not reproducible at the boundary" }],
   });
   if (parseReviewReport(reviewReport).findings[0].status !== "DISMISSED") throw new Error("review report v3 parse failed");
+  const lowercaseRevise = { ...JSON.parse(fs.readFileSync(reviewReport, "utf8")), verdict: "revise", findings: [
+    { id: "HIGH-lower", severity: "high", status: "open", reason: "Real security finding" },
+  ] };
+  write("lowercase-revise.json", lowercaseRevise);
+  const normalizedRevise = parseReviewReport(path.join(tmp, "lowercase-revise.json"));
+  if (normalizedRevise.verdict !== "REVISE" || normalizedRevise.findings[0].severity !== "HIGH"
+    || normalizedRevise.findings[0].status !== "OPEN") {
+    throw new Error("review report did not canonicalize case-only verdict/severity/status aliases");
+  }
+  const informationalPass = { ...JSON.parse(fs.readFileSync(reviewReport, "utf8")), findings: [
+    { id: "INFO-closed", severity: "info", status: "closed", reason: "Verification completed" },
+  ] };
+  write("informational-pass.json", informationalPass);
+  const normalizedInfo = parseReviewReport(path.join(tmp, "informational-pass.json"));
+  if (normalizedInfo.findings[0].severity !== "LOW" || normalizedInfo.findings[0].status !== "RESOLVED") {
+    throw new Error("review report did not canonicalize informational completion vocabulary");
+  }
+  const unknownVocabulary = { ...informationalPass, findings: [
+    { id: "NOTICE-done", severity: "notice", status: "done", reason: "Unknown vocabulary" },
+  ] };
+  write("unknown-review-vocabulary.json", unknownVocabulary);
+  assertThrows(() => parseReviewReport(path.join(tmp, "unknown-review-vocabulary.json")), /severity must be one of/, "unknown review vocabulary");
   const invalidHighDismissal = JSON.parse(fs.readFileSync(reviewReport, "utf8"));
-  invalidHighDismissal.findings = [{ id: "HIGH-1", severity: "HIGH", status: "DISMISSED", reason: "ignore" }];
+  invalidHighDismissal.findings = [{ id: "HIGH-1", severity: "high", status: "dismissed", reason: "ignore" }];
   write("invalid-high-dismissal.json", invalidHighDismissal);
   assertThrows(() => parseReviewReport(path.join(tmp, "invalid-high-dismissal.json")), /cannot dismissed high|cannot dismiss high/i, "high dismissal policy");
   const invalidDeferral = { ...invalidHighDismissal, findings: [{ id: "LOW-2", severity: "LOW", status: "DEFERRED" }] };
