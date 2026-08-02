@@ -595,7 +595,7 @@ function epicPilotPrompt(attempt, resolved, manifest) {
     ? [
       "Initial ATDD maps every acceptance criterion but needs genuine red only on the critical vertical path. The manifest's Frozen test paths are the complete non-protected test envelope; do not discover, invent, or expand that envelope during execution. Run only the story's focused verification and files inside that envelope; do not substitute broad pre-existing suites outside it.",
       "After development, spawn Code Review and Patch Assurance without waiting for either result first, then wait for both. Code Review owns correctness, security, conformance, scope, and unresolved-finding severity. Patch Assurance is report-only and combines final-tree patch verification with test-quality and focused runner proof; it must not edit production or tests.",
-      "Every v3 actor, review report, repair receipt, Judge decision, and deterministic gate must bind the active runId and fullFlowContract=four-actor-v3. Each Code Review and Patch Assurance actor must write its own typed acef.review-report.v3 JSON under docs/ai/reports, then run `.acef/bin/acef-state review-completion --repo . --artifact-path <report> --actor <exact-task-name>` as its final command and paste that command's four stdout lines unchanged immediately before ACTOR_RESULT. Only after that answer may the conductor create the typed actor record using acef-state actor --artifact-path <report>; the completion blob/hash/tree, report, actor, and gate must bind exactly. A missing or invalid review-completion payload is a mechanical REPLAN/SPLIT stop: never follow up or retry that reviewer.",
+      "Every v3 actor, review report, repair receipt, Judge decision, and deterministic gate must bind the active runId and fullFlowContract=four-actor-v3. Each Code Review and Patch Assurance actor must write its own typed acef.review-report.v3 JSON at the deterministic path docs/ai/reports/<exact-task-name>.json, then run `.acef/bin/acef-state review-completion --repo . --artifact-path docs/ai/reports/<exact-task-name>.json --actor <exact-task-name>` as its final command. Reviewer exec_command calls must each contain one literal read-only command: no dynamic command variables, arrays, loops, shell separators, pipelines, redirections, or command substitution. Use separate calls for separate reads/checks. The harness consumes the completion command's stdout directly from the child transcript; do not hand-copy its path/hash/blob/tree fields into prose. After the child returns, the conductor must create the typed actor record with `--artifact-path docs/ai/reports/<exact-task-name>.json`, derived from task_name rather than final prose. The completion blob/hash/tree, report, actor, and gate must bind exactly. A missing or invalid review-completion command is a mechanical REPLAN/SPLIT stop: never follow up or retry that reviewer.",
       `The active runId must be exactly ${attempt.id}.`,
       `The active run expectedStories inventory must equal this frozen ordered catalog exactly: ${JSON.stringify(resolved.task.stories.map((story) => story.id))}. Do not add, omit, rename, or reorder stories; the epic gate must close every listed story on the same runId.`,
       "If either reviewer returns REVISE, reactivate the original developer with exactly one bounded followup_task for that global story repair cycle and the exact findings; do not let the conductor or reviewer patch. The original developer must create a typed acef.developer-repair.v3 receipt and return a fresh FINAL_ANSWER containing REPAIR_CYCLE=<n>, REPAIR_RECEIPT_PATH=<path>, REPAIR_RECEIPT_SHA256=<sha256>, and ACTOR_RESULT=PASS before any retry reviewer starts. Spawn only each affected independent delta reviewer as <base-task-name>_retry1 or _retry2, where the suffix is that same global story repair cycle, require its final answer to include the matching REPAIR_CYCLE=<n>, and give all reviewers in one cycle the receipt postTree. At most two repair cycles are allowed for a story; a third cycle is REPLAN/SPLIT and quarantine.",
@@ -623,7 +623,7 @@ function epicPilotPrompt(attempt, resolved, manifest) {
     fourActorV3
       ? "This prompt is the complete compiled ACEF contract for the scored run. Do not reread ACEF/BMAD method documents or ask child actors to load linked workflow files; the installed skill entry may be consulted only when host policy requires it, without following links outside the active artifact allowlist. Run readiness and reuse checks as deterministic conductor gates, not extra persona workers. The actor rows listed below are the exhaustive base lifecycle inventory. Preserve actor separation; do not self-approve."
       : "Load and follow the repo-local ACEF skill. Act as conductor and use fresh independent actors/sessions for every role the installed workflow requires. Preserve actor separation; do not self-approve.",
-    "For each contract row below, call spawn_agent exactly once using the exact task_name and fork_turns=none before accepting that phase. Give the fresh actor a bounded artifact-only message: put the listed scope/control/actor/persona tuple first, then only the exact files/commit/question it needs. Do not ask the actor to reread ACEF/BMAD workflow documents. Limit its initial read envelope to the current context plus at most six exact task files and 300 lines per read; targeted follow-up reads are allowed only when a named unresolved question requires them. If it cannot identify progress within ten active minutes, it must return ACTOR_RESULT=REVISE with the exact bottleneck instead of broadening inspection. Require its final line to be ACTOR_RESULT=PASS or ACTOR_RESULT=REVISE, wait for that actor's FINAL_ANSWER, and persist a typed actor record whose actorInstanceId exactly equals task_name. Do not combine rows in one actor.",
+    "For each contract row below, call spawn_agent exactly once using the exact task_name and fork_turns=none before accepting that phase. Give the fresh actor a bounded artifact-only message: put the listed scope/control/actor/persona tuple first, then only the exact files/commit/question it needs. Do not ask the actor to reread ACEF/BMAD workflow documents. Limit its initial read envelope to the current context plus at most six exact task files and 300 lines per read; targeted follow-up reads are allowed only when a named unresolved question requires them. If it cannot identify progress within ten active minutes, it must return ACTOR_RESULT=REVISE with the exact bottleneck instead of broadening inspection. Accept `ACTOR_RESULT=PASS` and the semantically identical `ACTOR_RESULT: PASS` spelling; likewise for REVISE. Wait for that actor's FINAL_ANSWER and persist a typed actor record whose actorInstanceId exactly equals task_name. Do not combine rows in one actor. For ATDD, commit the clean test-only red tree before invoking evidence-run; never bind red evidence while a production or test path is dirty.",
     recoveryInstruction,
     fourActorV3
       ? `ATDD and development are single mandatory actor identities. Code Review and Patch Assurance may each use at most two fresh, affected-only delta retry actors after a developer repair; the ${manifest.promotionGates.budget.maximumActorInvocations}-invocation epic cap still binds. Story Process Judge is optional only for the four named triggers. The epic Process Judge cannot retry. Never replay a complete lifecycle.`
@@ -696,6 +696,14 @@ function findCodexSessionTranscript(threadId, sessionRoot = path.join(process.en
     }
   }
   return null;
+}
+
+function actorResultFromText(value) {
+  return String(value || "").match(/\bACTOR_RESULT\s*(?:=|:)\s*(PASS|REVISE|FAIL|BLOCKED|REPLAN)\b/i)?.[1]?.toUpperCase() || "";
+}
+
+function actorResultIs(value, expected) {
+  return actorResultFromText(value) === expected;
 }
 
 function parseCollaborationEvidence(rawText, sessionText, expectedContract, expectedSession = {}) {
@@ -864,14 +872,14 @@ function parseCollaborationEvidence(rawText, sessionText, expectedContract, expe
     }
     if (expected.control === "atdd" && baseMatches.length === 1 && legacyPolicy) {
       const accepted = attempts.at(-1);
-      if (!/\bACTOR_RESULT=PASS\b/.test(accepted.parentFinalText)) {
+      if (!actorResultIs(accepted.parentFinalText, "PASS")) {
         failures.push(`${accepted.taskName}: legacy ATDD result is not PASS`);
       }
       acceptedActors.push({ ...expected, taskName: accepted.taskName, receiverThreadId: accepted.receiverThreadId });
     } else if (expected.control === "atdd" && baseMatches.length === 1 && !fourActorV3) {
       const base = baseMatches[0];
-      const basePassed = /\bACTOR_RESULT=PASS\b/.test(base.parentFinalText);
-      const baseRevised = /\bACTOR_RESULT=REVISE\b/.test(base.parentFinalText);
+      const basePassed = actorResultIs(base.parentFinalText, "PASS");
+      const baseRevised = actorResultIs(base.parentFinalText, "REVISE");
       const adjudicationTaskName = `${expected.taskName}_adjudication1`;
       const correctionTaskName = `${expected.taskName}_correction1`;
       const adjudications = dispatches.filter((entry) => entry.taskName === adjudicationTaskName);
@@ -891,7 +899,7 @@ function parseCollaborationEvidence(rawText, sessionText, expectedContract, expe
         if (adjudications.length === 1) {
           const adjudication = adjudications[0];
           const disposition = adjudication.parentFinalText.match(/\bATDD_ADJUDICATION=(OVERRULE|UPHOLD)\b/)?.[1] || "";
-          if (!/\bACTOR_RESULT=PASS\b/.test(adjudication.parentFinalText) || !disposition) {
+          if (!actorResultIs(adjudication.parentFinalText, "PASS") || !disposition) {
             failures.push(`${adjudicationTaskName}: adjudication must PASS with ATDD_ADJUDICATION=OVERRULE or UPHOLD`);
           }
           observedContract.push({
@@ -909,7 +917,7 @@ function parseCollaborationEvidence(rawText, sessionText, expectedContract, expe
             if (corrections.length !== 1) failures.push(`${expected.taskName}: upheld REVISE requires exactly one correction actor`);
             if (corrections.length === 1) {
               const correction = corrections[0];
-              if (!/\bACTOR_RESULT=PASS\b/.test(correction.parentFinalText)) failures.push(`${correctionTaskName}: correction result is not PASS`);
+              if (!actorResultIs(correction.parentFinalText, "PASS")) failures.push(`${correctionTaskName}: correction result is not PASS`);
               correctionBindings.push({
                 taskName: correctionTaskName,
                 sourceTaskName: expected.taskName,
@@ -931,10 +939,10 @@ function parseCollaborationEvidence(rawText, sessionText, expectedContract, expe
       }
     } else if (attempts.length) {
       const accepted = attempts[attempts.length - 1];
-      if (!legacyPolicy && !/\bACTOR_RESULT=PASS\b/.test(accepted.parentFinalText)) failures.push(`${accepted.taskName}: final actor result is not PASS`);
-      if (legacyPolicy && !/\bACTOR_RESULT=PASS\b/.test(accepted.parentFinalText)) failures.push(`${accepted.taskName}: legacy actor result is not PASS`);
+      if (!legacyPolicy && !actorResultIs(accepted.parentFinalText, "PASS")) failures.push(`${accepted.taskName}: final actor result is not PASS`);
+      if (legacyPolicy && !actorResultIs(accepted.parentFinalText, "PASS")) failures.push(`${accepted.taskName}: legacy actor result is not PASS`);
       for (const superseded of legacyPolicy ? [] : attempts.slice(0, -1)) {
-        if (!/\bACTOR_RESULT=REVISE\b/.test(superseded.parentFinalText)) failures.push(`${superseded.taskName}: retry requires prior ACTOR_RESULT=REVISE`);
+        if (!actorResultIs(superseded.parentFinalText, "REVISE")) failures.push(`${superseded.taskName}: retry requires prior ACTOR_RESULT=REVISE`);
       }
       acceptedActors.push({ ...expected, taskName: accepted.taskName, receiverThreadId: accepted.receiverThreadId });
     }
@@ -953,7 +961,7 @@ function parseCollaborationEvidence(rawText, sessionText, expectedContract, expe
         if (entry.forkTurns !== "none") failures.push(`${taskName}: fork_turns must be none`);
         if (!entry.parentFinalText) failures.push(`${taskName}: missing parent-delivered FINAL_ANSWER`);
         const trigger = entry.parentFinalText.match(/\bJUDGE_TRIGGER=(AMBIGUITY|WAIVER|EVIDENCE[_-]CONFLICT|GATE[_-]ANOMALY)\b/i)?.[1] || "";
-        if (!/\bACTOR_RESULT=PASS\b/.test(entry.parentFinalText) || !trigger) {
+        if (!actorResultIs(entry.parentFinalText, "PASS") || !trigger) {
           failures.push(`${taskName}: conditional judge must PASS with an allowed JUDGE_TRIGGER`);
         }
         const actor = { scope, control: "process-judge", persona: "process-judge", retryable: false, taskName };
@@ -973,7 +981,7 @@ function parseCollaborationEvidence(rawText, sessionText, expectedContract, expe
       if (!entry.receiverThreadId) failures.push(`${entry.taskName}: auxiliary actor receiver thread id missing`);
       if (entry.forkTurns !== "none") failures.push(`${entry.taskName}: auxiliary actor fork_turns must be none`);
       if (!entry.parentFinalText) failures.push(`${entry.taskName}: auxiliary actor parent-delivered FINAL_ANSWER missing`);
-      if (/\bACTOR_RESULT=(?:REVISE|FAIL|BLOCKED|REPLAN)\b/.test(entry.parentFinalText)) {
+      if (["REVISE", "FAIL", "BLOCKED", "REPLAN"].includes(actorResultFromText(entry.parentFinalText))) {
         failures.push(`${entry.taskName}: auxiliary actor returned a terminal non-success result`);
       }
     }
@@ -1012,7 +1020,7 @@ function parseCollaborationEvidence(rawText, sessionText, expectedContract, expe
         const retryStarts = retryDispatches.map((entry) => Date.parse(entry.spawnedAt || ""));
         const orderedTimestamps = priorFinishes.length === cycleEntries.length && retryStarts.length === cycleEntries.length
           && priorFinishes.every(Number.isFinite) && retryStarts.every(Number.isFinite);
-        if (priorDispatches.some((entry) => !/\bACTOR_RESULT=REVISE\b/.test(entry.parentFinalText))) {
+        if (priorDispatches.some((entry) => !actorResultIs(entry.parentFinalText, "REVISE"))) {
           failures.push(`${scope}: repair cycle ${ordinal} requires prior affected reviewer REVISE`);
         }
         if (!developerTaskName || !orderedTimestamps) {
@@ -1039,7 +1047,7 @@ function parseCollaborationEvidence(rawText, sessionText, expectedContract, expe
             return Number.isFinite(deliveredAt) && deliveredAt > followupAt && deliveredAt < beforeRetryAt
               && /Message Type:\s*FINAL_ANSWER/i.test(entry.content)
               && new RegExp(`\\bREPAIR_CYCLE=${ordinal}\\b`).test(entry.content)
-              && /\bACTOR_RESULT=PASS\b/.test(entry.content);
+              && actorResultIs(entry.content, "PASS");
           });
         if (repairedFinals.length !== 1) {
           failures.push(`${scope}: repair cycle ${ordinal} requires one repaired Developer FINAL_ANSWER before reviewer retries`);
@@ -1200,9 +1208,10 @@ function correctionSessionWrites(sessionText, repoRoot) {
     try { args = JSON.parse(rawArguments || "{}"); } catch {}
     const name = String(payload.name || "");
     if (payload.type === "custom_tool_call" && name === "exec") {
-      const toolReferences = [...rawArguments.matchAll(/\btools\b/g)].length;
-      const canonicalToolCalls = [...rawArguments.matchAll(/\btools\.(?:apply_patch|exec_command)\s*\(/g)].length;
-      if (toolReferences !== canonicalToolCalls) {
+      const allowedNestedTools = new Set(["apply_patch", "exec_command", "update_plan"]);
+      const nestedTools = [...rawArguments.matchAll(/\btools\.([A-Za-z0-9_]+)\s*\(/g)].map((match) => match[1]);
+      const bareToolReferences = [...rawArguments.matchAll(/\btools\b/g)].length - nestedTools.length;
+      if (bareToolReferences > 0 || nestedTools.some((tool) => !allowedNestedTools.has(tool))) {
         unsafeShellMutations.push(`unrecognized custom tool access: ${rawArguments}`);
       }
     }
@@ -1266,6 +1275,48 @@ function parseReviewerCompletion(lastAgentMessage, repoRoot) {
   };
 }
 
+function toolOutputText(payload) {
+  const blocks = Array.isArray(payload?.output) ? payload.output : [payload?.output];
+  const texts = blocks.flatMap((entry) => {
+    if (typeof entry === "string") return [entry];
+    if (entry && typeof entry === "object") return [entry.text, entry.output_text].filter((value) => typeof value === "string");
+    return [];
+  });
+  const expanded = [...texts];
+  for (const value of texts) {
+    try {
+      const parsed = JSON.parse(value);
+      if (typeof parsed?.output === "string") expanded.push(parsed.output);
+    } catch {}
+  }
+  return expanded.join("\n");
+}
+
+function reviewerCompletionFromSession(sessionText, repoRoot, actorName) {
+  const rows = String(sessionText || "").split(/\r?\n/).filter(Boolean).flatMap((line) => {
+    try { return [JSON.parse(line)]; } catch { return []; }
+  });
+  const matches = [];
+  for (const row of rows) {
+    const payload = row.payload || {};
+    if (row.type !== "response_item" || !["function_call", "custom_tool_call"].includes(payload.type)) continue;
+    const rawArguments = String(payload.arguments || payload.input || "");
+    let args = {};
+    try { args = JSON.parse(rawArguments || "{}"); } catch {}
+    for (const command of extractCorrectionShellCommands(args, rawArguments)) {
+      if (!/(?:^|\s)(?:\.acef\/bin\/)?acef-state\s+review-completion\b/.test(command)
+        || !new RegExp(`(?:^|\\s)--actor\\s+${actorName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?:\\s|$)`).test(command)) continue;
+      const outputRow = rows.find((candidate) => candidate.type === "response_item"
+        && candidate.payload?.type === `${payload.type}_output`
+        && candidate.payload?.call_id === payload.call_id);
+      if (!outputRow) throw new Error("review-completion command output is missing from child transcript");
+      matches.push(parseReviewerCompletion(toolOutputText(outputRow.payload), repoRoot));
+    }
+  }
+  if (matches.length !== 1) throw new Error(`reviewer must run exactly one machine-observed review-completion command; observed ${matches.length}`);
+  return matches[0];
+}
+
 function codexSessionMetrics(sessionText) {
   const rows = String(sessionText || "").split(/\r?\n/).filter(Boolean).flatMap((line) => {
     try { return [JSON.parse(line)]; } catch { return []; }
@@ -1282,7 +1333,7 @@ function codexSessionMetrics(sessionText) {
     const rawArguments = String(payload.arguments || payload.input || "");
     let args = {};
     try { args = JSON.parse(rawArguments || "{}"); } catch {}
-    if (/exec_command|shell|bash/i.test(String(payload.name || ""))) {
+    if (/exec_command|shell|bash/i.test(String(payload.name || "")) || /tools\.exec_command\s*\(/.test(rawArguments)) {
       if (typeof args.cmd === "string") commandTexts.push(args.cmd);
       else if (typeof args.command === "string") commandTexts.push(args.command);
       else commandTexts.push(...extractCorrectionShellCommands(args, rawArguments));
@@ -1312,7 +1363,7 @@ function extractCorrectionShellCommands(args, rawArguments) {
   const source = String(rawArguments || "");
   const callCount = [...source.matchAll(/tools\.exec_command\s*\(/g)].length;
   const commands = [];
-  for (const match of source.matchAll(/tools\.exec_command\s*\(\s*\{\s*(?:cmd|command)\s*:\s*("(?:\\.|[^"\\])*")/g)) {
+  for (const match of source.matchAll(/tools\.exec_command\s*\(\s*\{\s*(?:"(?:cmd|command)"|(?:cmd|command))\s*:\s*("(?:\\.|[^"\\])*")/g)) {
     try { commands.push(JSON.parse(match[1])); } catch { return []; }
   }
   return commands.length === callCount ? commands : [];
@@ -1336,6 +1387,27 @@ function isAllowedCorrectionShellCommand(command) {
     /^(?:npm|pnpm|yarn)\s+test(?:\s+[^\s;|&<>`]+)*$/,
     /^npx\s+(?:vitest|playwright)\s+test(?:\s+[^\s;|&<>`]+)*$/,
     /^composer\s+test(?:\s+[^\s;|&<>`]+)*$/,
+    /^(?:\.acef\/bin\/)?acef-state\s+review-completion\s+--repo\s+\.\s+--artifact-path\s+docs\/ai\/reports\/[A-Za-z0-9._-]+\.json\s+--actor\s+[A-Za-z0-9._-]+$/,
+  ].some((pattern) => pattern.test(normalized));
+}
+
+function isAllowedReviewerShellCommand(command) {
+  const normalized = String(command || "").trim();
+  if (!normalized || /[\r\n;|&<>`]/.test(normalized) || /\$\(/.test(normalized)) return false;
+  if (/\bgit\s+(?:add|am|apply|checkout|clean|commit|mv|rebase|reset|restore|rm|switch)\b/.test(normalized)) return false;
+  if (/\bgit\s+(?:diff|show)\b.*(?:--ext-diff|--textconv|--output(?:=|\s)|-o(?:\s|$))/.test(normalized)) return false;
+  if (/\brg\b.*(?:--pre|--pre-glob)\b/.test(normalized) || /\bsed\b.*(?:^|\s)-i(?:\s|$)/.test(normalized)) return false;
+  return [
+    /^git\s+(?:status|show|diff|diff-tree|rev-parse|ls-files|ls-tree|log|cat-file|merge-base)\b/,
+    /^(?:rg|cat|ls|wc|head|tail|shasum|sha256sum|jq)\b/,
+    /^sed\s+-n\b/,
+    /^php\s+artisan\s+test\b/,
+    /^vendor\/bin\/phpunit\b/,
+    /^(?:npm|pnpm|yarn)\s+test\b/,
+    /^npx\s+(?:vitest|playwright)\s+test\b/,
+    /^composer\s+test\b/,
+    /^node\s+--check\b/,
+    /^(?:\.acef\/bin\/)?acef-state\s+review-completion\b/,
   ].some((pattern) => pattern.test(normalized));
 }
 
@@ -1452,8 +1524,8 @@ function loadCollaborationEvidence(rawPath, expectedContract, expectedSession = 
     }
     if (!completion) failures.push(`${dispatch.taskName}: child task_complete missing`);
     else {
-      const parentResult = dispatch.parentFinalText.match(/\bACTOR_RESULT=(PASS|REVISE|FAIL|BLOCKED|REPLAN)\b/)?.[1] || "";
-      const childResult = String(completion.last_agent_message || "").match(/\bACTOR_RESULT=(PASS|REVISE|FAIL|BLOCKED|REPLAN)\b/)?.[1] || "";
+      const parentResult = actorResultFromText(dispatch.parentFinalText);
+      const childResult = actorResultFromText(completion.last_agent_message);
       if (dispatch.auxiliary && !parentResult && !childResult) {
         if (!dispatch.parentFinalText.includes(String(completion.last_agent_message || ""))) failures.push(`${dispatch.taskName}: auxiliary child/parent final answer mismatch`);
       } else if (!childResult || childResult !== parentResult) failures.push(`${dispatch.taskName}: child/parent actor result mismatch`);
@@ -1489,12 +1561,14 @@ function loadCollaborationEvidence(rawPath, expectedContract, expectedSession = 
     if (expectedSession.actorContractVersion === "four-actor-v3"
       && ["code-review", "patch-assurance"].includes(lifecycleEntry?.control)) {
       const writes = correctionSessionWrites(childText, expectedSession.cwd);
-      let allowedReportPath = null;
+      let captured = null;
+      try { captured = reviewerCompletionFromSession(childText, expectedSession.cwd, dispatch.taskName); }
+      catch (error) { failures.push(`${dispatch.taskName}: ${error.message}`); }
+      const allowedReportPath = captured?.absoluteReportPath || null;
       let actor = null;
       try {
         const parser = installedStateParser(expectedSession.cwd);
         actor = parser.parseActorRecord(path.join(expectedSession.cwd, "docs", "ai", "actors", `${dispatch.taskName}.json`));
-        if (actor.producedArtifactPath) allowedReportPath = path.resolve(expectedSession.cwd, actor.producedArtifactPath);
       } catch {}
       const forbidden = writes.paths.filter((entry) => !allowedReportPath || entry !== allowedReportPath);
       if (forbidden.length) {
@@ -1503,15 +1577,10 @@ function loadCollaborationEvidence(rawPath, expectedContract, expectedSession = 
       if (!allowedReportPath || !writes.paths.includes(allowedReportPath)) {
         failures.push(`${dispatch.taskName}: report-only reviewer did not create its bound typed report`);
       }
-      if (writes.unsafeShellMutations.length) failures.push(`${dispatch.taskName}: report-only reviewer used an unsafe or unobservable shell mutation`);
+      const unsafeReviewerCommands = writes.unsafeShellMutations.filter((command) => !isAllowedReviewerShellCommand(command));
+      if (unsafeReviewerCommands.length) failures.push(`${dispatch.taskName}: report-only reviewer used an unsafe or unobservable shell mutation`);
       if (writes.unsafeDelegations.length) failures.push(`${dispatch.taskName}: report-only reviewer delegated work`);
-      try {
-        const completionCommandTrace = codexSessionMetrics(childText).commandText;
-        if (!/(?:^|\s)(?:\.acef\/bin\/)?acef-state\s+review-completion\b/.test(completionCommandTrace)
-          || !completionCommandTrace.includes(`--actor ${dispatch.taskName}`)) {
-          failures.push(`${dispatch.taskName}: reviewer did not run the validated review-completion command as itself`);
-        }
-        const captured = parseReviewerCompletion(completion?.last_agent_message, expectedSession.cwd);
+      if (captured) {
         if (!actor || actor.producedArtifactPath !== captured.reportPath
           || actor.producedArtifactHash !== captured.reportSha256 || actor.inputTree !== captured.inputTree) {
           failures.push(`${dispatch.taskName}: actor record does not bind the reviewer completion report blob/hash/input tree`);
@@ -1532,8 +1601,6 @@ function loadCollaborationEvidence(rawPath, expectedContract, expectedSession = 
           childSessionId: dispatch.receiverThreadId,
           childCompletedAt: completion?.completed_at || null,
         });
-      } catch (error) {
-        failures.push(`${dispatch.taskName}: ${error.message}`);
       }
     }
     const metrics = codexSessionMetrics(childText);
@@ -3395,6 +3462,7 @@ if (require.main === module) {
 }
 
 module.exports = {
+  actorResultFromText,
   catalogTaskBindings,
   correctionSessionWrites,
   ensureActorRequest,
@@ -3407,9 +3475,11 @@ module.exports = {
   blindJudgePrompt,
   epicPilotPrompt,
   isBehavioralRed,
+  isAllowedReviewerShellCommand,
   lifecycleActorContract,
   parseCollaborationEvidence,
   parseReviewerCompletion,
+  reviewerCompletionFromSession,
   codexSessionMetrics,
   aggregateTeamMetrics,
   committedUnchangedAtHead,

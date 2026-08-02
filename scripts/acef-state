@@ -247,7 +247,7 @@ function dirtyDigest(repo) {
 
 function isControlPath(filePath) {
   const normalized = filePath.replaceAll(path.sep, "/");
-  return /^docs\/ai\/(?:ACEF_(?:ACTIVE_RUN\.json|ACTIVE_WORKER_SCOPE\.json|DIRECT_RUN\.json|CURRENT_CONTEXT\.md|[^/]+_DELIVERY_AUDIT\.md)|actors\/|gates\/|evidence\/|reports\/|approvals\/|repairs\/|judges\/)/.test(normalized);
+  return /^docs\/ai\/(?:ACEF_(?:ACTIVE_RUN\.json|ACTIVE_WORKER_SCOPE\.json|ACTIVE_LEDGER|DIRECT_RUN\.json|CURRENT_CONTEXT\.md|DELIVERY_LEDGER_[^/]+\.md|[^/]+_DELIVERY_AUDIT\.md)|actors\/|gates\/|evidence\/|reports\/|approvals\/|repairs\/|judges\/)/.test(normalized);
 }
 
 function dirtyApplicationPaths(repo) {
@@ -619,6 +619,22 @@ function writeEvidence(opts) {
   const actor = parseActorRecord(actorPath(opts.repo, opts.actor));
   if (actor.story !== opts.story) throw new Error(`actor story ${actor.story} does not match evidence story ${opts.story}`);
   const beforeDirty = dirtyApplicationPaths(opts.repo);
+  const activeRunPath = path.join(opts.repo, "docs", "ai", "ACEF_ACTIVE_RUN.json");
+  const activeRun = fs.existsSync(activeRunPath) ? parseActiveRun(activeRunPath) : null;
+  const v3Atdd = activeRun?.fullFlowContract === "four-actor-v3" && canonicalGatePhase(actor.phase) === "atdd";
+  if (v3Atdd) {
+    if (beforeDirty.length) {
+      throw new Error(`four-actor-v3 ATDD evidence requires a clean committed test-only red tree before execution; dirty paths: ${beforeDirty.join(", ")}`);
+    }
+    const redCommit = gitCommit(opts.repo);
+    let redParent = "";
+    try { redParent = runGit(opts.repo, ["rev-parse", `${redCommit}^`]); } catch {}
+    const redPaths = redParent ? applicationChangedSince(opts.repo, redParent, redCommit) : [];
+    if (!redParent || !redPaths.length || !redPaths.every(testPath)
+      || actor.inputCommit === redCommit || !gitIsAncestor(opts.repo, actor.inputCommit, redCommit)) {
+      throw new Error("four-actor-v3 ATDD evidence requires HEAD to be a new test-only commit descended from the ATDD actor input commit");
+    }
+  }
 
   const commandText = opts.commandArgv.map(quoteArg).join(" ");
   const startedAt = new Date().toISOString();

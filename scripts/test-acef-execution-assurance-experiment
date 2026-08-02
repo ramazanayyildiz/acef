@@ -39,6 +39,7 @@ const v33ManifestPath = path.join(root, "docs", "experiments", "execution-assura
 const cli = path.join(root, "scripts", "acef-execution-assurance-experiment");
 const actorCli = path.join(root, "scripts", "acef-execution-assurance-actor");
 const {
+  actorResultFromText,
   catalogTaskBindings,
   correctionSessionWrites,
   ensureActorRequest,
@@ -48,9 +49,11 @@ const {
   forceTrackInstalledFramework,
   ingestPilotJudgment,
   isBehavioralRed,
+  isAllowedReviewerShellCommand,
   lifecycleActorContract,
   parseCollaborationEvidence,
   parseReviewerCompletion,
+  reviewerCompletionFromSession,
   codexSessionMetrics,
   aggregateTeamMetrics,
   blindJudgePrompt,
@@ -159,7 +162,7 @@ assert.deepEqual(resolvedV31Epic.task.stories[3].testPaths, [
 const v31Prompt = epicPilotPrompt({ ...v3Manifest.pilot.attempts[0], id: "P0-candidate-v31" }, resolvedV31Epic, validV31Budget);
 assert.match(v31Prompt, /Frozen test paths:/);
 assert.match(v31Prompt, /acef-state review-completion/);
-assert.match(v31Prompt, /missing or invalid review-completion payload is a mechanical REPLAN\/SPLIT stop/);
+assert.match(v31Prompt, /missing or invalid review-completion command is a mechanical REPLAN\/SPLIT stop/);
 assert.match(v31Prompt, /50000000 aggregate conductor-plus-child input tokens/);
 const epicActorContract = lifecycleActorContract(resolvedEpic);
 assert.equal(epicActorContract.length, 25, "four stories need six actors each plus one epic Process Judge");
@@ -192,6 +195,10 @@ const syntheticSession = [JSON.stringify({ type: "session_meta", payload: {
   ];
 })].join("\n");
 assert.equal(parseCollaborationEvidence(syntheticRaw, syntheticSession, epicActorContract).ok, true);
+assert.equal(actorResultFromText("ACTOR_RESULT: PASS"), "PASS");
+assert.equal(parseCollaborationEvidence(syntheticRaw,
+  syntheticSession.replaceAll("ACTOR_RESULT=PASS", "ACTOR_RESULT: PASS"), epicActorContract).ok, true,
+"semantically identical colon-delimited actor results must not quarantine completed work");
 assert.equal(parseCollaborationEvidence(syntheticRaw,
   syntheticSession.replace('\\"fork_turns\\":\\"none\\"', '\\"fork_turns\\":\\"all\\"'), epicActorContract).ok, false,
 "unbounded full-history actor context must fail lifecycle evidence");
@@ -1059,6 +1066,33 @@ const reviewerCompletion = parseReviewerCompletion([
   `REVIEW_INPUT_TREE=${"a".repeat(40)}`,
 ].join("\n"), root);
 assert.equal(reviewerCompletion.reportSha256, reviewerReportHash);
+const machineCompletionOutput = [
+  "REVIEW_REPORT_PATH=docs/ai/reports/reviewer.json",
+  `REVIEW_REPORT_SHA256=${reviewerReportHash}`,
+  `REVIEW_REPORT_BASE64=${Buffer.from(reviewerReportBytes).toString("base64")}`,
+  `REVIEW_INPUT_TREE=${"a".repeat(40)}`,
+].join("\n");
+const machineCompletionCommand = ".acef/bin/acef-state review-completion --repo . --artifact-path docs/ai/reports/reviewer.json --actor reviewer";
+const machineCompletionSession = [
+  JSON.stringify({ type: "response_item", payload: { type: "custom_tool_call", name: "exec", call_id: "machine-review",
+    input: `const r = await tools.exec_command({\"cmd\":${JSON.stringify(machineCompletionCommand)}}); text(JSON.stringify({output:r.output,exit_code:r.exit_code}));` } }),
+  JSON.stringify({ type: "response_item", payload: { type: "custom_tool_call_output", call_id: "machine-review", output: [
+    { type: "input_text", text: "Script completed\nOutput:\n" },
+    { type: "input_text", text: JSON.stringify({ output: `${machineCompletionOutput}\n`, exit_code: 0 }) },
+  ] } }),
+].join("\n");
+assert.equal(reviewerCompletionFromSession(machineCompletionSession, root, "reviewer").reportPath,
+  "docs/ai/reports/reviewer.json", "review completion must come from machine-observed command stdout, not copied prose");
+assert.equal(correctionSessionWrites(machineCompletionSession, root).unsafeShellMutations.length, 0,
+  "the exact review-completion command is a safe report-only validation call under functions.exec");
+assert.equal(isAllowedReviewerShellCommand(`git show --no-ext-diff --stat ${"a".repeat(40)}`), true);
+assert.equal(isAllowedReviewerShellCommand(`git show --output=/tmp/leak ${"a".repeat(40)}`), false);
+assert.equal(isAllowedReviewerShellCommand("git status --short && git reset --hard"), false);
+assert.match(codexSessionMetrics(machineCompletionSession).commandText, /acef-state review-completion/,
+  "functions.exec-wrapped exec_command calls remain visible to command-trace validation");
+assert.equal(correctionSessionWrites(JSON.stringify({ type: "response_item", payload: {
+  type: "custom_tool_call", name: "exec", input: "const p = await tools.update_plan({plan:[]}); text(p);",
+} }), root).unsafeShellMutations.length, 0, "update_plan inside functions.exec is non-mutating repository coordination");
 assert.throws(() => parseReviewerCompletion([
   "REVIEW_REPORT_PATH=docs/ai/reports/reviewer.json",
   `REVIEW_REPORT_SHA256=${"b".repeat(64)}`,

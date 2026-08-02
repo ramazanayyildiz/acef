@@ -9,6 +9,22 @@ or evidence contract. Do not use it to claim implementation status; link to the 
 
 ## Unreleased
 
+### Full story lifecycle v3.4 typed-handoff recovery preparation
+
+- Added an ATDD evidence hard wall: four-actor-v3 red evidence now refuses to run or persist until the test-only red tree
+  is committed, clean, and descended from the ATDD actor input commit. ACEF active-ledger pointers are classified as
+  control state rather than application dirt.
+- Normalized the typed actor-result delimiter so `ACTOR_RESULT=PASS` and `ACTOR_RESULT: PASS` have identical semantics;
+  punctuation can no longer quarantine an otherwise completed actor while non-success values remain fail-closed.
+- Reviewer completion is now derived from the actual `acef-state review-completion` stdout in the child transcript,
+  not copied final prose. The command path is deterministic from exact task name, and actor/report binding remains
+  hash/tree checked.
+- Added trace support for `functions.exec`-wrapped `exec_command`, including quoted command keys and safe coordination
+  calls. Reviewers are constrained to one literal read-only command per call; dynamic or mutation-capable shell access
+  still fails closed.
+- This is preparation-only. V3.3 remains an immutable FAIL and capability maturity remains `enforced` until a separately
+  frozen successor passes automated closeout and blind judgment.
+
 ### Full story lifecycle v3.3 preparation hardening
 
 - Extended offline ATDD authenticity checks to recognize PHPUnit exception contracts and namespaced PHP production

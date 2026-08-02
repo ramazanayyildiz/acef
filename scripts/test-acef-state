@@ -143,6 +143,11 @@ try {
   }
   fs.mkdirSync(path.join(tmp, "tests"), { recursive: true });
   fs.writeFileSync(path.join(tmp, "tests", "story-3-1-red.test.js"), "const test = require('node:test'); const assert = require('node:assert'); const actual = require('../app/demo.js'); test('story-3-1-red', () => assert.strictEqual(actual, 'v3-green'));\n");
+  const dirtyRedRun = cp.spawnSync(process.execPath, [state, "evidence-run", "--repo", tmp, "--id", "EV-v3-dirty-red", "--kind", "runtime-test", "--actor", "atdd-v3", "--story", "Story 3.1", "--satisfies", "AC-v3", "--", process.execPath, "--test", "tests/story-3-1-red.test.js"], { encoding: "utf8" });
+  if (dirtyRedRun.status === 0 || !`${dirtyRedRun.stdout}${dirtyRedRun.stderr}`.includes("requires a clean committed test-only red tree before execution")
+    || fs.existsSync(path.join(tmp, "docs", "ai", "evidence", "EV-v3-dirty-red.json"))) {
+    throw new Error("v3 ATDD evidence accepted or persisted an uncommitted red test tree");
+  }
   run("git", ["add", "tests/story-3-1-red.test.js"]);
   run("git", ["commit", "-qm", "Story 3.1 ATDD red tests"]);
   const redRun = cp.spawnSync(process.execPath, [state, "evidence-run", "--repo", tmp, "--id", "EV-v3-red", "--kind", "runtime-test", "--actor", "atdd-v3", "--story", "Story 3.1", "--satisfies", "AC-v3", "--", process.execPath, "--test", "tests/story-3-1-red.test.js"], { encoding: "utf8" });
