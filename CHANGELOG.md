@@ -9,6 +9,18 @@ or evidence contract. Do not use it to claim implementation status; link to the 
 
 ## Unreleased
 
+### Full story lifecycle v3.7 reviewer normalization rehearsal
+
+- Canonicalized trusted review-report vocabulary at the parser boundary: verdict, severity, and status casing is
+  normalized; `INFO` maps to `LOW` and `CLOSED` maps to `RESOLVED`. Unknown values, empty REVISE reports, PASS reports
+  with open findings, and unsafe HIGH/CRITICAL dispositions remain rejected.
+- Added parser and machine-observed `review-completion` regressions and passed the complete 30/30 repository suite.
+- Recorded the immutable non-scored v3.7 rehearsal FAIL after 4,209.6 active seconds. All four stories reached review;
+  S1–S3 closed; S4's real HIGH finding was repaired and Code Review passed, but the prior PASS Patch Assurance was
+  stale for the repaired final tree. Deterministic close correctly refused to pass and the broad closeout did not run.
+- The rehearsal also exposed trailing-whitespace repair binding, quoted-shell-metacharacter, duplicate Judge-trigger,
+  and multi-layer close-package oracle defects. No promotion or maturity change is implied.
+
 ### Full story lifecycle v3.6 deterministic-close rehearsal
 
 - Removed the contradictory requirement that a genuine test-runner failure must name the editable ATDD path. Guarded
