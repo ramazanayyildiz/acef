@@ -64,7 +64,8 @@ scripts/install-acef-tools --repo /path/to/repo
 
 # Advance the active phase before creating its actor. V3 Developer identity is
 # stable across bounded repair cycles, so record the spawn result's exact
-# agent_id/receiver thread id as its session ID; task_name is not a session ID.
+# canonical /root/<task_name> identity as its session ID. The harness binds
+# that visible identity to its internal receiver UUID through session provenance.
 .acef/bin/acef-state active-run --repo . --run-id RUN-4-1 \
   --workflow-id full-bmad --status active --story "Story 4.1" --phase development \
   --ledger docs/ai/ACEF_example_DELIVERY_AUDIT.md

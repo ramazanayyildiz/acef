@@ -9,6 +9,16 @@ or evidence contract. Do not use it to claim implementation status; link to the 
 
 ## Unreleased
 
+### Full story lifecycle v3.9 canonical Developer session binding
+
+- Replaced the unobservable internal receiver-UUID requirement with the exact canonical `/root/<task_name>` identity
+  actually returned to the conductor by Codex CLI 0.146.0.
+- The harness still proves the hidden receiver UUID independently through child-session `id`, `agent_path`, parent, and
+  spawn provenance; actor and repair receipts bind the visible canonical identity.
+- Added regressions rejecting bare task names and arbitrary receiver strings while accepting the canonical spawn path.
+  Focused execution-assurance, state, and process-validator tests pass; maturity remains `enforced` pending a separately
+  frozen rehearsal.
+
 ### Full story lifecycle v3.8 final-tree recovery
 
 - Corrected bounded repair routing: Patch Assurance now reruns after every application/test-tree repair; Code Review

@@ -469,12 +469,14 @@ const typedDeveloperName = "acef_typed_story_development";
 fs.writeFileSync(path.join(typedJudgeRepo, "docs", "ai", "actors", `${typedDeveloperName}.json`), `${JSON.stringify({
   actorInstanceId: typedDeveloperName, runId: "typed-judge-run", fullFlowContract: "four-actor-v3",
   storyInventory: ["typed-story"], story: "typed-story", phase: "development", role: "developer",
-  client: "codex", sessionId: "receiver-thread-1", inputCommit: "a".repeat(40),
+  client: "codex", sessionId: `/root/${typedDeveloperName}`, inputCommit: "a".repeat(40),
   allowedContextProfile: "bounded-artifact-only",
 })}\n`);
-assert.equal(developerActorSessionBound(typedJudgeRepo, typedDeveloperName, "receiver-thread-1"), true);
+assert.equal(developerActorSessionBound(typedJudgeRepo, typedDeveloperName, `/root/${typedDeveloperName}`), true);
 assert.equal(developerActorSessionBound(typedJudgeRepo, typedDeveloperName, typedDeveloperName), false,
-  "task_name cannot impersonate the Developer's spawn receiver thread id");
+  "bare task_name cannot impersonate the canonical Developer spawn identity");
+assert.equal(developerActorSessionBound(typedJudgeRepo, typedDeveloperName, "receiver-thread-1"), false,
+  "the hidden receiver UUID is not conductor-authored session state");
 const firstAtdd = epicActorContract[0];
 const adjudicationName = `${firstAtdd.taskName}_adjudication1`;
 const revisedWithAdjudication = [
