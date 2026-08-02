@@ -24,6 +24,9 @@ or evidence contract. Do not use it to claim implementation status; link to the 
   remains `enforced` pending a separately frozen non-scored rehearsal and later scored evidence.
 - Separately froze non-scored `REHEARSAL-v38` against clean implementation commit `fe5f8b8`; freezing does not start the
   attempt and cannot change maturity or authorize promotion.
+- `REHEARSAL-v38` was intentionally interrupted after live evidence showed that Codex CLI 0.146.0 returns only canonical
+  `/root/<task>` identity to the conductor, not the harness-internal receiver UUID required by the candidate. Finalize
+  correctly refused to invent a receipt/result, so the attempt is non-replayable and maturity remains `enforced`.
 
 ### Full story lifecycle v3.7 reviewer normalization rehearsal
 
