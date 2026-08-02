@@ -22,6 +22,8 @@ or evidence contract. Do not use it to claim implementation status; link to the 
   layers. Historical REVISE evidence is preserved rather than reintroduced or rewritten.
 - Added regressions for all observed v3.7 failure modes. The complete repository suite passed 30/30; capability maturity
   remains `enforced` pending a separately frozen non-scored rehearsal and later scored evidence.
+- Separately froze non-scored `REHEARSAL-v38` against clean implementation commit `fe5f8b8`; freezing does not start the
+  attempt and cannot change maturity or authorize promotion.
 
 ### Full story lifecycle v3.7 reviewer normalization rehearsal
 
