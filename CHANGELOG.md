@@ -21,6 +21,11 @@ or evidence contract. Do not use it to claim implementation status; link to the 
 - Required each exact story-close package to commit before any next-story active-run, Current Context, or ledger
   transition. Focused state, experiment, process-validator, skill, installer, and capability tests pass; the complete
   repository suite passed 30/30 in 264 seconds. Maturity remains `enforced` pending a separately frozen rehearsal.
+- Separately froze and ran non-scored `REHEARSAL-v314`. Story scope was correct on all four stories, Stories 2–3 closed
+  at cycle 0, and close packages preceded next-story state. The immutable attempt still failed after 4,068.3 seconds:
+  reviewer findings lacked a reliable one-command typed handoff, S1 repair receipts conflicted with the later
+  control-only review transition, the successful integration wrapper omitted an explicit exit receipt, and both S4
+  reviewers found a genuine undiscovered-ATDD HIGH issue. Maturity remains `enforced`.
 
 ### Full story lifecycle v3.13 canonical reviewer and terminal closeout
 
