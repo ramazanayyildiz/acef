@@ -1,0 +1,175 @@
+{
+  "schema": "acef.execution-assurance-pilot-preflight.v1",
+  "experimentId": "acef-execution-assurance-v311-rehearsal",
+  "candidateCommit": "4aca554df1e8977d0d03638784e139187a526c54",
+  "manifestSha256": "8ad40541f76e839d5f25f1be19323103916bd1ac153d5418a111842bb44c292d",
+  "runnerCommit": "fc4ea2eaae1aa82ce8c375e7756161b8ca293e58",
+  "runnerDirtyBefore": false,
+  "runnerSourceSha256": "73e02f5dab191b98dcaa64c4d5c4f165a4bb73e7e0d7b6eaec1c598ed8944b3e",
+  "taskBindings": [
+    {
+      "taskId": "full-guarded-motivation-v311",
+      "resolvedTaskSha256": "d4d22f52ea0c0703e7ba1a502059ed4bf4c1d90814dddc75ee9250c1bc819eaf"
+    }
+  ],
+  "checkedAt": "2026-08-03T00:11:39.399Z",
+  "ok": true,
+  "checks": [
+    {
+      "taskId": "full-guarded-motivation-v311",
+      "selector": "authz-fail-closed-hardening-v35",
+      "kind": "epic",
+      "repo": "jakomeet",
+      "stack": "php-laravel",
+      "sourceCommit": "a12ac50441114943efd099f9e601bbee4a9d8a12",
+      "setupDirs": [
+        "tests/Integration",
+        "tests/Performance"
+      ],
+      "setupFiles": [
+        {
+          "path": "/tmp/jako-bench-webhook/database/testing.sqlite",
+          "mode": "truncate"
+        }
+      ],
+      "ok": true,
+      "blockers": []
+    }
+  ],
+  "collaborationCanary": {
+    "ok": true,
+    "checkedAt": "2026-08-03T00:09:15.582Z",
+    "clientPath": "/opt/homebrew/Caskroom/codex/0.146.0/bin/codex",
+    "clientBinarySha256": "ae1d3ffe6d48aec6a4dc3f50e7eb8e0d11962485a6a9406c5a7012139383da02",
+    "clientVersion": "codex-cli 0.146.0",
+    "model": "gpt-5.6-sol",
+    "reasoningEffort": "high",
+    "threadId": "019fc4f3-cece-7923-81db-cbd55bc29d32",
+    "exitCode": 0,
+    "expectedActorCount": 1,
+    "observedActorCount": 1,
+    "receiverThreadIds": [
+      "019fc4f3-e87c-7263-b44d-497497749752"
+    ],
+    "sessionSha256": "932b507bed8a20c5857206c250fc9c8674d9e5db1f8e5ec83ff4f9402cec2ad9",
+    "failures": []
+  },
+  "environmentProbes": [
+    {
+      "taskId": "full-guarded-motivation-v311",
+      "ok": true,
+      "commands": [
+        {
+          "argv": [
+            "vendor/bin/phpunit",
+            "--configuration=phpunit.sqlite.xml",
+            "--filter=BenchmarkWebhookIngressCorrectnessTest|BenchmarkWebhookGenericMysqlCompatibilityTest"
+          ],
+          "expect": "behavioral-red",
+          "exitCode": 2,
+          "matchedExpectation": true,
+          "stdoutPath": "/tmp/acef-v311-rehearsal/environment-probes/preflight-full-guarded-motivation-v311/1.stdout.log",
+          "stderrPath": "/tmp/acef-v311-rehearsal/environment-probes/preflight-full-guarded-motivation-v311/1.stderr.log",
+          "stdoutSha256": "3ce646d3c13a3141ee1f3b63a1a04596489e3b4418330ec84305e6f13800533a",
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ]
+    }
+  ],
+  "referenceValidations": [
+    {
+      "taskId": "full-guarded-motivation-v311",
+      "required": true,
+      "ok": true,
+      "stories": [
+        {
+          "storyId": "s1-resolver-fail-closed",
+          "patchPath": "/Users/ramazanayyildiz/CODE/acef/docs/experiments/epic-benchmark/canonical/canonical-s1.patch",
+          "patchSha256": "a44fad50b023eca1e7a9f15067d0ec9659382c1611c54a99f6786f08e7324ed1",
+          "patchPaths": [
+            "packages/platform/authz/src/Http/RouteRequirementResolver.php",
+            "tests/Unit/Platform/Authz/RouteRequirementResolverTest.php"
+          ],
+          "scopeViolations": [],
+          "baselineExitCode": 1,
+          "baselineRed": true,
+          "baselineStdoutSha256": "5f1d13910af544559152f2e1abeee3e77833ef852b6dec2510a6c014fe921fd4",
+          "baselineStderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "patchCheckExitCode": 0,
+          "patchApplyExitCode": 0,
+          "referenceExitCode": 0,
+          "referenceGreen": true,
+          "referenceStdoutSha256": "623346726d126140781282bc0615e96950294a354e2be32be64b316c06e170ea",
+          "referenceStderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "expectationFailures": []
+        },
+        {
+          "storyId": "s2-middleware-idempotency",
+          "patchPath": "/Users/ramazanayyildiz/CODE/acef/docs/experiments/epic-benchmark/canonical/canonical-s2.patch",
+          "patchSha256": "2a02d0e5f8c73548786e25261f0a53f648bac6126d4eb762c5c6c56de7c25a53",
+          "patchPaths": [
+            "packages/platform/authz/src/Http/RouteCapabilityMiddleware.php"
+          ],
+          "scopeViolations": [],
+          "baselineExitCode": 2,
+          "baselineRed": true,
+          "baselineStdoutSha256": "6e6b04170a37a656a8a81f3a3fa311974676ac38ff1122d9bb7c416897e2dcc7",
+          "baselineStderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "patchCheckExitCode": 0,
+          "patchApplyExitCode": 0,
+          "referenceExitCode": 0,
+          "referenceGreen": true,
+          "referenceStdoutSha256": "89bacb0ce388610a5e03519ed4005ab77725c2c3b941dff3299f51a6f82073b8",
+          "referenceStderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "expectationFailures": []
+        },
+        {
+          "storyId": "s3-legacy-alias-cleanup",
+          "patchPath": "/Users/ramazanayyildiz/CODE/acef/docs/experiments/epic-benchmark/canonical/canonical-s3.patch",
+          "patchSha256": "4d5c89bce8226cb0715a7ec29ac96a800a9bb7d8871a76fe757d7940b16232f7",
+          "patchPaths": [
+            "app/Modules/Billing/routes.php",
+            "app/Modules/Events/routes.php",
+            "app/Modules/Streaming/routes.php",
+            "app/Modules/SuperAdmin/Routes/web.php",
+            "routes/web.php"
+          ],
+          "scopeViolations": [],
+          "baselineExitCode": 1,
+          "baselineRed": true,
+          "baselineStdoutSha256": "e03ec3cc626cec65386f546485c48993e5b4c369d9afca4fa543bb7848bf173c",
+          "baselineStderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "patchCheckExitCode": 0,
+          "patchApplyExitCode": 0,
+          "referenceExitCode": 0,
+          "referenceGreen": true,
+          "referenceStdoutSha256": "6737e9149dc25a692c4ed8f8b3a53609230b33e4b9c47954b543b56aa8c08587",
+          "referenceStderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "expectationFailures": []
+        },
+        {
+          "storyId": "s4-webhook-ingress-correctness",
+          "patchPath": "/Users/ramazanayyildiz/CODE/acef/docs/experiments/execution-assurance-v33/canonical/canonical-s4.patch",
+          "patchSha256": "0d1f9de0be270a6e5c2eea7fa01ea48b51ed0efb5b0d555356bf83a17656a479",
+          "patchPaths": [
+            "app/Modules/Billing/Http/Controllers/RevolutWebhookController.php",
+            "app/Modules/Billing/Jobs/ProcessRevolutWebhookJob.php",
+            "app/Modules/Billing/Services/WebhookIngressDedupService.php"
+          ],
+          "scopeViolations": [],
+          "baselineExitCode": 2,
+          "baselineRed": true,
+          "baselineStdoutSha256": "92b5c8e938c9ccf55195336bed16c740685f4ee392bdaac44d791e2627b1e900",
+          "baselineStderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "patchCheckExitCode": 0,
+          "patchApplyExitCode": 0,
+          "referenceExitCode": 0,
+          "referenceGreen": true,
+          "referenceStdoutSha256": "dcf5102b0f4dd761ae1d1558c79ead312d1c1bd761fce5e2d518460b12ee2187",
+          "referenceStderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "expectationFailures": []
+        }
+      ]
+    }
+  ]
+}
