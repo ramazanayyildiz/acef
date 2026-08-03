@@ -47,6 +47,7 @@ const {
   ensureActorRequest,
   evaluatePilotBudgets,
   evaluateTreatmentState,
+  validateFrozenDiscoveryContracts,
   finalizePilotAttempt,
   forceTrackInstalledFramework,
   ingestPilotJudgment,
@@ -98,6 +99,30 @@ assert.doesNotThrow(() => validateManifest(validV32Budget));
 const invalidV31Budget = structuredClone(validV31Budget);
 invalidV31Budget.promotionGates.budget.maximumToolCalls = 521;
 assert.throws(() => validateManifest(invalidV31Budget), /freeze actor, repair, time, token, tool, and harness-wait budgets/);
+const capsuleSupervisorManifest = structuredClone(validV32Budget);
+Object.assign(capsuleSupervisorManifest.promotionGates.budget, {
+  profileId: "capsule-supervisor-v1",
+  maximumInputTokens: 18000000,
+  maximumModelCycles: 220,
+  maximumToolCalls: 240,
+  maximumHarnessWaitSeconds: 300,
+  maximumHarnessWaitShare: 0.05,
+  targetStoryActiveSeconds: 900,
+  maximumStoryActiveSeconds: 1200,
+  targetActiveDeliverySeconds: 3600,
+  maximumActiveDeliverySeconds: 4500,
+});
+capsuleSupervisorManifest.runtimeContract = "capsule-supervisor-v1";
+capsuleSupervisorManifest.pilot.attempts[0].runtimeContract = "capsule-supervisor-v1";
+capsuleSupervisorManifest.pilot.attempts[0].activeTimeCapMinutes = 75;
+capsuleSupervisorManifest.actorRuntimeProfiles = Object.fromEntries([
+  "atdd", "development", "code-review", "patch-assurance", "process-judge", "epic-process-judge",
+].map((role) => [role, { model: "gpt-5.6-sol", reasoningEffort: "high" }]));
+assert.doesNotThrow(() => validateManifest(capsuleSupervisorManifest));
+const underpoweredCapsuleManifest = structuredClone(capsuleSupervisorManifest);
+underpoweredCapsuleManifest.actorRuntimeProfiles["code-review"].model = "gpt-5.6-terra";
+underpoweredCapsuleManifest.actorRuntimeProfiles["code-review"].reasoningEffort = "medium";
+assert.throws(() => validateManifest(underpoweredCapsuleManifest), /code-review=gpt-5\.6-sol\/high/);
 
 function waitUntil(predicate, timeoutMs = 3000) {
   const deadline = Date.now() + timeoutMs;
@@ -492,15 +517,21 @@ assert.equal(parseCollaborationEvidence(syntheticRaw, thirdRepairSession, v3Acto
 }).ok, false, "a third v3 repair cycle fails closed");
 const conditionalJudgeName = `acef_${v3CodeReview.scope.replace(/[^a-z0-9]+/gi, "_").toLowerCase()}_process_judge`;
 const conditionalJudgeSession = lifecycleSession(v3ActorContract, {}, [
-  JSON.stringify({ timestamp: eventTimestamp(60), type: "response_item", payload: { type: "function_call", namespace: "collaboration", name: "spawn_agent", call_id: "conditional-judge", arguments: JSON.stringify({ task_name: conditionalJudgeName, fork_turns: "none" }) } }),
+  JSON.stringify({ timestamp: eventTimestamp(60), type: "response_item", payload: { type: "function_call", namespace: "collaboration", name: "spawn_agent", call_id: "conditional-judge", arguments: JSON.stringify({ task_name: conditionalJudgeName, fork_turns: "none", model: "gpt-5.6-sol", reasoning_effort: "high" }) } }),
   JSON.stringify({ timestamp: eventTimestamp(60.5), type: "event_msg", payload: { type: "sub_agent_activity", event_id: "conditional-judge", agent_thread_id: "conditional-judge-receiver", kind: "started" } }),
   JSON.stringify({ timestamp: eventTimestamp(61), type: "response_item", payload: { type: "agent_message", author: `/root/${conditionalJudgeName}`, content: [{ type: "input_text", text: `Message Type: FINAL_ANSWER\nSender: /root/${conditionalJudgeName}\nPayload:\nJUDGE_TRIGGER=EVIDENCE_CONFLICT\nACTOR_RESULT=PASS` }] } }),
 ]);
 const conditionalJudgeEvidence = parseCollaborationEvidence(syntheticRaw, conditionalJudgeSession, v3ActorContract, {
   actorContractVersion: "four-actor-v3", maximumActorInvocations: 21,
+  actorRuntimeProfiles: { "process-judge": { model: "gpt-5.6-sol", reasoningEffort: "high" } },
 });
 assert.equal(conditionalJudgeEvidence.ok, true, "a single trigger-bound conditional story Judge is allowed");
 assert.equal(conditionalJudgeEvidence.conditionalJudges[0].trigger, "evidence-conflict");
+const underpoweredConditionalJudge = conditionalJudgeSession.replace("gpt-5.6-sol", "gpt-5.6-terra");
+assert.equal(parseCollaborationEvidence(syntheticRaw, underpoweredConditionalJudge, v3ActorContract, {
+  actorContractVersion: "four-actor-v3", maximumActorInvocations: 21,
+  actorRuntimeProfiles: { "process-judge": { model: "gpt-5.6-sol", reasoningEffort: "high" } },
+}).ok, false, "conditional semantic Judge cannot silently downgrade model or effort");
 const typedJudgeRepo = fs.mkdtempSync(path.join(os.tmpdir(), "acef-typed-judge-"));
 process.on("exit", () => fs.rmSync(typedJudgeRepo, { recursive: true, force: true }));
 fs.mkdirSync(path.join(typedJudgeRepo, ".acef", "bin", "lib"), { recursive: true });
@@ -1223,6 +1254,11 @@ const atddEvidenceSession = JSON.stringify({ type: "response_item", payload: {
 } });
 assert.equal(v3AtddEvidenceCommandObserved(atddEvidenceSession, "acef_story_atdd", "story"), true,
   "one exact runtime-test evidence command is attributed to the ATDD child transcript");
+const capsuleAtddEvidenceSession = atddEvidenceSession.replace("--story story --satisfies", "--story story --model gpt-5.6-sol --effort high --satisfies");
+assert.equal(v3AtddEvidenceCommandObserved(capsuleAtddEvidenceSession, "acef_story_atdd", "story"), true,
+  "the capsule runtime model and effort receipt remains compatible with exact-one ATDD transcript binding");
+assert.equal(v3AtddEvidenceCommandObserved(capsuleAtddEvidenceSession.replace("--effort high", "--effort medium"), "acef_story_atdd", "story"), false,
+  "an underpowered capsule ATDD receipt cannot satisfy transcript binding");
 assert.equal(v3AtddEvidenceCommandObserved(atddEvidenceSession.replace("runtime-test", "atdd-red"), "acef_story_atdd", "story"), false,
   "an invented evidence kind cannot satisfy ATDD transcript binding");
 assert.equal(v3AtddEvidenceCommandObserved(`${atddEvidenceSession}\n${atddEvidenceSession}`, "acef_story_atdd", "story"), false,
@@ -1239,6 +1275,10 @@ assert.equal(isAllowedReviewerShellCommand(`git show --output=/tmp/leak ${"a".re
 assert.equal(isAllowedReviewerShellCommand("git status --short && git reset --hard"), false);
 assert.equal(isAllowedReviewerShellCommand("vendor/bin/phpunit --filter='FocusedOne|FocusedTwo'"), true,
   "a quoted PHPUnit alternation is an argument, not a shell pipeline");
+assert.equal(isAllowedReviewerShellCommand(".acef/bin/acef-state capsule-show --repo . --id story-s1-code-review"), true,
+  "the exact reviewer capsule-show command is allowlisted");
+assert.equal(isAllowedReviewerShellCommand(".acef/bin/acef-state capsule-show --repo /tmp/other --id story-s1-code-review"), false,
+  "capsule-show cannot escape the active repository");
 assert.equal(isAllowedReviewerShellCommand("jq -e '.findings | length == 0' docs/ai/reports/reviewer.json"), true,
   "a quoted jq filter may contain its own pipe operator");
 assert.equal(isAllowedReviewerShellCommand("git status --short | git reset --hard"), false,
@@ -1291,9 +1331,10 @@ const childMetricFixture = codexSessionMetrics([
   } } } }),
 ].join("\n"));
 assert.deepEqual(childMetricFixture, { input_tokens: 15, cached_input_tokens: 6, output_tokens: 3,
-  tool_calls: 1, commandText: "php artisan test" }, "child metrics use final cumulative usage without double-counting token events");
+  model_cycles: 2, tool_calls: 1, commandText: "php artisan test" },
+"child metrics use final cumulative usage without double-counting token events and retain the cycle count");
 assert.deepEqual(aggregateTeamMetrics({ input_tokens: 5, cached_input_tokens: 1, output_tokens: 2, tool_calls: 3 }, childMetricFixture),
-  { input_tokens: 20, cached_input_tokens: 7, output_tokens: 5, tool_calls: 4 },
+  { input_tokens: 20, cached_input_tokens: 7, output_tokens: 5, model_cycles: 2, tool_calls: 4 },
   "team cost adds conductor and one final cumulative value per unique child session");
 assert.equal(parseIndependentTrace(childMetricFixture.commandText, { scopeIds: [], requiredControlsPerScope: [] }).counts.broadSuite, 1,
   "broad suites executed in child sessions remain visible to the lifecycle budget");
@@ -1922,6 +1963,42 @@ try {
     treatment: "candidate", workflowId: "full-bmad", assuranceProfile: "guarded",
     actorContractVersion: "four-actor-v3",
   }, ["s1", "s2"], "different-run").failures.join("; "), /candidate runId is candidate-v3-test/);
+
+  const discoveryRepo = path.join(tmp, "frozen-discovery");
+  fs.mkdirSync(path.join(discoveryRepo, "docs/ai/gates"), { recursive: true });
+  fs.mkdirSync(path.join(discoveryRepo, "docs/ai/evidence"), { recursive: true });
+  const frozenDiscoveryTask = {
+    kind: "epic",
+    task: { stories: [{
+      id: "s1",
+      verify: ["php", "artisan", "test", "--filter=FrozenTest"],
+      discovery: {
+        argv: ["vendor/bin/phpunit", "--list-tests", "--filter=FrozenTest"],
+        expectedTests: ["Tests\\Feature\\FrozenTest::contract"],
+      },
+    }] },
+  };
+  fs.writeFileSync(path.join(discoveryRepo, "docs/ai/gates/s1.json"), `${JSON.stringify({
+    gateId: "s1-pass", gateType: "deterministic-story-close-v3", verdict: "PASS", scope: "s1",
+    reviewCycle: 0, greenEvidenceId: "s1-green",
+  })}\n`);
+  const frozenGreenPath = path.join(discoveryRepo, "docs/ai/evidence/s1-green.json");
+  const frozenGreen = {
+    command: "php artisan test --filter=FrozenTest",
+    discovery: {
+      command: "vendor/bin/phpunit --list-tests --filter=FrozenTest",
+      expectedTests: ["Tests\\Feature\\FrozenTest::contract"],
+      discoveredTests: ["Tests\\Feature\\FrozenTest::contract"],
+    },
+  };
+  fs.writeFileSync(frozenGreenPath, `${JSON.stringify(frozenGreen)}\n`);
+  assert.equal(validateFrozenDiscoveryContracts(discoveryRepo, frozenDiscoveryTask, {
+    runtimeContract: "capsule-supervisor-v1",
+  }).ok, true);
+  fs.writeFileSync(frozenGreenPath, `${JSON.stringify({ ...frozenGreen, command: "php artisan test --filter=UnrelatedTest" })}\n`);
+  assert.match(validateFrozenDiscoveryContracts(discoveryRepo, frozenDiscoveryTask, {
+    runtimeContract: "capsule-supervisor-v1",
+  }).failures.join("; "), /green runner command differs from the frozen focused argv/);
 
   const lateWrite = path.join(tmp, "late-grandchild-write.txt");
   const timeoutRequestPath = path.join(tmp, "timeout-request.json");

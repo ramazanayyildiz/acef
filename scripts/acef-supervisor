@@ -1,0 +1,287 @@
+#!/usr/bin/env node
+const fs = require("node:fs");
+const path = require("node:path");
+const crypto = require("node:crypto");
+const cp = require("node:child_process");
+const {
+  parseActiveRun,
+  parseActorRecord,
+  parseEvidenceManifest,
+  parseGateVerdict,
+  parseReviewReport,
+  parseDeveloperRepair,
+  parseAssuranceCapsule,
+  parseWorkerScope,
+} = require("./lib/acef-state-parser");
+
+function sha256(value) {
+  return crypto.createHash("sha256").update(value).digest("hex");
+}
+
+function parseArgs(argv) {
+  const opts = { repo: process.cwd() };
+  for (let index = 0; index < argv.length; index += 1) {
+    const arg = argv[index];
+    if (arg === "--repo") opts.repo = argv[++index] || "";
+    else if (arg === "--help" || arg === "-h") opts.help = true;
+    else throw new Error(`Unknown argument: ${arg}`);
+  }
+  opts.repo = path.resolve(opts.repo);
+  return opts;
+}
+
+function files(dir) {
+  if (!fs.existsSync(dir)) return [];
+  return fs.readdirSync(dir).filter((name) => name.endsWith(".json")).sort().map((name) => path.join(dir, name));
+}
+
+function readRecord(parser, filePath) {
+  try { return parser(filePath); }
+  catch (error) { throw new Error(`${filePath}: ${error.message}`); }
+}
+
+function readCapsule(filePath) {
+  const record = readRecord(parseAssuranceCapsule, filePath);
+  const { integrity, ...payload } = record;
+  if (integrity.payloadSha256 !== sha256(JSON.stringify(payload))) {
+    throw new Error(`${filePath}: assurance capsule payload hash mismatch`);
+  }
+  for (const blob of [record.currentContext, record.diff, ...record.sourceBlobs]) {
+    if (blob.sha256 !== sha256(Buffer.from(blob.content)) || blob.bytes !== Buffer.byteLength(blob.content)) {
+      throw new Error(`${filePath}: assurance capsule blob mismatch ${blob.path}`);
+    }
+  }
+  return record;
+}
+
+function git(repo, args) {
+  const result = cp.spawnSync("git", args, { cwd: repo, encoding: "utf8" });
+  if (result.status !== 0) throw new Error(`git ${args.join(" ")} failed: ${(result.stderr || result.stdout).trim()}`);
+  return result.stdout.trim();
+}
+
+function changedPaths(repo, from, to) {
+  return git(repo, ["diff", "--name-only", `${from}..${to}`]).split(/\r?\n/).filter(Boolean);
+}
+
+function isControlPath(filePath) {
+  return /^docs\/ai\//.test(filePath);
+}
+
+function isTestPath(filePath) {
+  return /(^|\/)(__tests__|tests?|specs?)(\/|$)|(\.|-)(test|spec)\.[cm]?[jt]sx?$|Test\.(php|py|rb|cs)$/i.test(filePath);
+}
+
+function token(value) {
+  return String(value || "").toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+}
+
+function quote(value) {
+  return `'${String(value).replaceAll("'", `'\\''`)}'`;
+}
+
+function phase(value) {
+  const normalized = token(value).replaceAll("_", "");
+  const aliases = {
+    dev: "development", developer: "development", review: "codereview", reviewer: "codereview",
+    codereviewer: "codereview", processjudge: "processjudge", epicprocessjudge: "processjudge",
+  };
+  return aliases[normalized] || normalized;
+}
+
+const RUNTIME = {
+  atdd: { model: "gpt-5.6-sol", reasoningEffort: "high", sessionPolicy: "fresh-per-story" },
+  development: { model: "gpt-5.6-sol", reasoningEffort: "high", sessionPolicy: "single-resumable-per-story" },
+  "code-review": { model: "gpt-5.6-sol", reasoningEffort: "high", sessionPolicy: "fresh-per-reviewed-tree" },
+  "patch-assurance": { model: "gpt-5.6-sol", reasoningEffort: "high", sessionPolicy: "fresh-per-reviewed-tree" },
+  "story-judge": { model: "gpt-5.6-sol", reasoningEffort: "high", sessionPolicy: "fresh-conditional" },
+  "epic-judge": { model: "gpt-5.6-sol", reasoningEffort: "high", sessionPolicy: "fresh-isolated" },
+  "thin-proxy-shadow": { model: "gpt-5.6-terra", reasoningEffort: "medium", sessionPolicy: "shadow-only" },
+};
+
+function build(repo) {
+  const activeRunPath = path.join(repo, "docs", "ai", "ACEF_ACTIVE_RUN.json");
+  if (!fs.existsSync(activeRunPath)) throw new Error("missing docs/ai/ACEF_ACTIVE_RUN.json");
+  const run = parseActiveRun(activeRunPath);
+  if (run.status !== "active" || run.workflowId !== "full-bmad"
+    || run.fullFlowContract !== "four-actor-v3" || run.runtimeContract !== "capsule-supervisor-v1") {
+    throw new Error("supervisor requires an active full-bmad/four-actor-v3/capsule-supervisor-v1 run");
+  }
+  const story = run.activeStory;
+  const storyKey = token(story);
+  const headCommit = git(repo, ["rev-parse", "HEAD"]);
+  const headTree = git(repo, ["rev-parse", "HEAD^{tree}"]);
+  const actors = files(path.join(repo, "docs", "ai", "actors"))
+    .map((filePath) => readRecord(parseActorRecord, filePath))
+    .filter((record) => token(record.story) === storyKey && record.runId === run.runId);
+  const evidence = files(path.join(repo, "docs", "ai", "evidence"))
+    .map((filePath) => readRecord(parseEvidenceManifest, filePath))
+    .filter((record) => token(record.story) === storyKey)
+    .sort((left, right) => String(left.finishedAt || left.startedAt || "").localeCompare(String(right.finishedAt || right.startedAt || ""))
+      || left.evidenceId.localeCompare(right.evidenceId));
+  const gates = files(path.join(repo, "docs", "ai", "gates"))
+    .map((filePath) => readRecord(parseGateVerdict, filePath))
+    .filter((record) => token(record.scope) === storyKey && record.runId === run.runId)
+    .sort((left, right) => Number(left.reviewCycle || 0) - Number(right.reviewCycle || 0));
+  const reports = files(path.join(repo, "docs", "ai", "reports"))
+    .map((filePath) => readRecord(parseReviewReport, filePath))
+    .filter((record) => token(record.story) === storyKey && record.runId === run.runId);
+  const repairs = files(path.join(repo, "docs", "ai", "repairs"))
+    .map((filePath) => readRecord(parseDeveloperRepair, filePath))
+    .filter((record) => token(record.story) === storyKey && record.runId === run.runId);
+  const capsules = files(path.join(repo, "docs", "ai", "capsules"))
+    .map((filePath) => readCapsule(filePath))
+    .filter((record) => token(record.story) === storyKey && record.runId === run.runId);
+  const currentPhase = phase(run.activePhase);
+  const workerScopePath = run.workerScopePath
+    ? path.resolve(repo, run.workerScopePath)
+    : path.join(repo, "docs", "ai", "ACEF_ACTIVE_WORKER_SCOPE.json");
+  const workerScope = fs.existsSync(workerScopePath) ? readRecord(parseWorkerScope, workerScopePath) : null;
+  const latestGate = gates.at(-1) || null;
+  const reviewCycle = latestGate?.verdict === "REVISE" ? Number(latestGate.reviewCycle) + 1 : Number(latestGate?.reviewCycle || 0);
+  const actorId = (role, cycle = 0) => `acef_${storyKey}_${role}${cycle ? `_retry${cycle}` : ""}`;
+  const hasActor = (id) => actors.some((record) => record.actorInstanceId === id);
+  const developerEvidence = evidence.filter((record) => record.actorInstanceId === actorId("development"));
+  const latestDeveloperEvidence = developerEvidence.at(-1) || null;
+  let action;
+  if (run.scopeUnit === "epic") {
+    const terminal = latestGate && ["PASS", "FAIL", "REPLAN", "BLOCKED"].includes(latestGate.verdict);
+    action = terminal
+      ? { type: "stop", disposition: latestGate.verdict, reason: "terminal epic gate exists" }
+      : { type: "dispatch", role: "epic-judge", actorInstanceId: "acef_epic_process_judge", runtime: RUNTIME["epic-judge"] };
+  } else if (currentPhase === "atdd") {
+    const red = evidence.find((record) => record.actorInstanceId === actorId("atdd") && record.exitCode !== 0);
+    action = red
+      ? { type: "transition", nextPhase: "development", command: ".acef/bin/acef-state phase-transition --repo . --phase development", reason: "typed red evidence exists" }
+      : { type: "dispatch", role: "atdd", actorInstanceId: actorId("atdd"), runtime: RUNTIME.atdd };
+  } else if (currentPhase === "development") {
+    if (!hasActor(actorId("development"))) {
+      action = { type: "dispatch", role: "development", actorInstanceId: actorId("development"), runtime: RUNTIME.development };
+    } else if (latestDeveloperEvidence?.exitCode === 0 && latestDeveloperEvidence.discovery) {
+      action = { type: "transition", nextPhase: "code-review", command: ".acef/bin/acef-state phase-transition --repo . --phase code-review", reason: "green evidence and discovery contract exist" };
+    } else {
+      action = { type: "replan", reason: "Developer returned without accepted green evidence; attempts belong inside the one Developer turn" };
+    }
+  } else if (currentPhase === "codereview") {
+    if (latestGate?.verdict === "PASS") {
+      action = { type: "transition", nextPhase: "next-story-or-epic-close", reason: "deterministic story PASS exists" };
+    } else if (latestGate?.verdict === "REVISE" && !repairs.some((record) => record.cycle === reviewCycle)) {
+      const postGateEvidence = developerEvidence.filter((record) => String(record.finishedAt || record.startedAt || "") > String(latestGate.createdAt || ""));
+      const latestRepairEvidence = postGateEvidence.at(-1) || null;
+      if (!latestRepairEvidence) {
+        action = { type: "resume", role: "development", actorInstanceId: actorId("development"), runtime: RUNTIME.development, repairCycle: reviewCycle, reason: "review findings require original Developer" };
+      } else if (latestRepairEvidence.exitCode === 0 && latestRepairEvidence.discovery) {
+        action = {
+          type: "write-developer-repair", runtime: null, repairCycle: reviewCycle,
+          command: `.acef/bin/acef-state developer-repair --repo . --id ${storyKey}-repair${reviewCycle} --prior-gate ${latestGate.gateId} --developer-actor ${actorId("development")}`,
+        };
+      } else {
+        action = { type: "replan", reason: "Developer repair follow-up returned without accepted green evidence" };
+      }
+    } else {
+      const repair = reviewCycle > 0 ? repairs.find((record) => record.cycle === reviewCycle) : null;
+      const priorCodeReport = latestGate?.reportPaths?.codeReview
+        ? readRecord(parseReviewReport, path.resolve(repo, latestGate.reportPaths.codeReview)) : null;
+      const productionRepair = repair
+        ? changedPaths(repo, repair.preCommit, repair.postCommit).some((filePath) => !isControlPath(filePath) && !isTestPath(filePath))
+        : false;
+      const retainCodeReview = reviewCycle > 0 && priorCodeReport?.verdict === "PASS" && !productionRepair;
+      const codeId = retainCodeReview ? priorCodeReport.actorInstanceId : actorId("code_review", reviewCycle);
+      const assuranceId = actorId("patch_assurance", reviewCycle);
+      const codeReport = reports.find((record) => record.actorInstanceId === codeId);
+      const assuranceReport = reports.find((record) => record.actorInstanceId === assuranceId);
+      const currentCapsule = (id) => capsules.find((record) => record.actorInstanceId === id
+        && record.inputCommit === headCommit && record.inputTree === headTree && record.reviewCycle === reviewCycle);
+      const requiredReviewerIds = retainCodeReview ? [assuranceId] : [codeId, assuranceId];
+      const missingCapsuleIds = requiredReviewerIds.filter((id) => !currentCapsule(id));
+      if (missingCapsuleIds.length) {
+        const red = evidence.find((record) => record.actorInstanceId === actorId("atdd") && record.exitCode !== 0);
+        const green = [...developerEvidence].reverse().find((record) => record.exitCode === 0 && record.discovery);
+        const baseCommit = reviewCycle > 0 ? latestGate?.applicationCommit : workerScope?.baseRef;
+        const repairReceipt = reviewCycle > 0 ? `docs/ai/repairs/${storyKey}-repair${reviewCycle}.json` : null;
+        if (!red || !green || !baseCommit || (reviewCycle > 0 && !repairs.some((record) => record.cycle === reviewCycle))) {
+          action = { type: "blocked", reason: "review capsule inputs are incomplete" };
+        } else {
+          const capsuleCommand = (role, actor) => {
+            const id = `${storyKey}-${role}${reviewCycle ? `-retry${reviewCycle}` : ""}`;
+            return `.acef/bin/acef-state review-capsule --repo . --id ${id} --role ${role} --actor ${actor} --base-commit ${baseCommit} --red-evidence ${red.evidenceId} --green-evidence ${green.evidenceId} --review-cycle ${reviewCycle}${repairReceipt ? ` --repair-receipt ${repairReceipt}` : ""}`;
+          };
+          action = {
+            type: "prepare-review-capsules", reviewCycle,
+            roles: retainCodeReview ? ["patch-assurance"] : ["code-review", "patch-assurance"], runtime: null,
+            scopeCommand: ".acef/bin/acef-state review-scope --repo .",
+            scopeCommitPolicy: reviewCycle === 0 ? "commit-if-changed-before-capsules" : "revalidate-only-no-repair-layer-commit",
+            capsuleCommands: retainCodeReview
+              ? [capsuleCommand("patch-assurance", assuranceId)]
+              : [capsuleCommand("code-review", codeId), capsuleCommand("patch-assurance", assuranceId)],
+            reason: retainCodeReview
+              ? "test-only repair retains prior Code Review PASS; create only Patch Assurance capsule"
+              : "derive current committed surfaces, then create exact role capsules",
+          };
+        }
+      } else if (!codeReport || !assuranceReport) {
+        const pending = [];
+        if (!codeReport) pending.push({ role: "code-review", actorInstanceId: codeId, runtime: RUNTIME["code-review"] });
+        if (!assuranceReport) pending.push({ role: "patch-assurance", actorInstanceId: assuranceId, runtime: RUNTIME["patch-assurance"] });
+        action = {
+          type: pending.length > 1 ? "dispatch-parallel" : "dispatch",
+          reviewCycle,
+          ...(pending.length > 1 ? { actors: pending } : pending[0]),
+        };
+      } else {
+        const red = evidence.find((record) => record.actorInstanceId === actorId("atdd") && record.exitCode !== 0);
+        const green = [...developerEvidence].reverse().find((record) => record.exitCode === 0 && record.discovery);
+        const codeActor = actors.find((record) => record.actorInstanceId === codeId);
+        const assuranceActor = actors.find((record) => record.actorInstanceId === assuranceId);
+        if (!red || !green || !codeActor?.producedArtifactHash || !assuranceActor?.producedArtifactHash) {
+          action = { type: "blocked", reason: "typed story-gate inputs are incomplete" };
+        } else {
+          const gateId = `${storyKey}-review-cycle${reviewCycle}`;
+          const repairArg = reviewCycle > 0 ? ` --repair-receipt docs/ai/repairs/${storyKey}-repair${reviewCycle}.json` : "";
+          const command = `.acef/bin/acef-state gate --repo . --id ${gateId} --scope ${quote(story)}`
+            + ` --atdd-actor ${actorId("atdd")} --development-actor ${actorId("development")}`
+            + ` --code-review-actor ${codeId} --patch-assurance-actor ${assuranceId}`
+            + ` --red-evidence ${red.evidenceId} --green-evidence ${green.evidenceId}`
+            + ` --code-review-report-hash ${codeActor.producedArtifactHash} --patch-assurance-report-hash ${assuranceActor.producedArtifactHash}`
+            + ` --review-cycle ${reviewCycle}${repairArg}`;
+          action = { type: "write-story-gate", reviewCycle, command, runtime: null,
+            expectedDisposition: [codeReport.verdict, assuranceReport.verdict].every((verdict) => verdict === "PASS") ? "PASS" : "REVISE_OR_REPLAN",
+            reason: "both independent typed review results are present; deterministic gate computes disposition" };
+        }
+      }
+    }
+  } else if (currentPhase === "processjudge") {
+    action = { type: "dispatch", role: run.scopeUnit === "epic" ? "epic-judge" : "story-judge", actorInstanceId: run.scopeUnit === "epic" ? "acef_epic_process_judge" : actorId("process_judge"), runtime: RUNTIME[run.scopeUnit === "epic" ? "epic-judge" : "story-judge"] };
+  } else {
+    action = { type: "blocked", reason: `unsupported active phase ${run.activePhase}` };
+  }
+  const state = {
+    runId: run.runId, story, phase: run.activePhase, scopeUnit: run.scopeUnit,
+    counts: { actors: actors.length, evidence: evidence.length, gates: gates.length, reports: reports.length, repairs: repairs.length, capsules: capsules.length },
+  };
+  return {
+    schema: "acef.supervisor-action.v1",
+    runtimeContract: run.runtimeContract,
+    stateSha256: sha256(JSON.stringify(state)),
+    state,
+    action,
+    modelPolicy: {
+      active: "semantic-job-granularity",
+      mechanicalOperations: "no-model",
+      thinProxyShadow: RUNTIME["thin-proxy-shadow"],
+      note: "Shadow profile is not authorized for promotion until the deterministic reducer is proven.",
+    },
+  };
+}
+
+try {
+  const opts = parseArgs(process.argv.slice(2));
+  if (opts.help) {
+    console.log("Usage: acef-supervisor --repo <path>");
+  } else {
+    console.log(JSON.stringify(build(opts.repo), null, 2));
+  }
+} catch (error) {
+  console.error(`ACEF_SUPERVISOR_ERROR: ${error.message}`);
+  process.exitCode = 1;
+}

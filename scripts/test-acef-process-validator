@@ -1601,6 +1601,29 @@ try {
     activeStory: "Epic 1", activePhase: "closeout", ledgerPath: "docs/ai/ACEF_demo_DELIVERY_AUDIT.md",
   }, null, 2));
   expectPass("epic-process-judge", ["--repo", tmp, "--check", "epic-process-judge"]);
+
+  const epicGatePath = path.join(tmp, "docs", "ai", "gates", "epic-1.json");
+  const passingEpicGate = JSON.parse(fs.readFileSync(epicGatePath, "utf8"));
+  fs.writeFileSync(epicGatePath, JSON.stringify({ ...passingEpicGate, verdict: "REPLAN" }, null, 2));
+  fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_ACTIVE_RUN.json"), JSON.stringify({
+    schema: "acef.active-run.v2", runId: "RUN-epic-close", repo: "fixture", workflowId: "full-bmad",
+    fullFlowContract: "four-actor-v3", assuranceProfile: "baseline", scopeUnit: "epic", expectedStories: ["Story 1.1"], status: "active",
+    activeStory: "Epic 1", activePhase: "epic-process-judge", ledgerPath: "docs/ai/ACEF_demo_DELIVERY_AUDIT.md",
+  }, null, 2));
+  run("git", ["add", "docs/ai/gates/epic-1.json"], { cwd: tmp });
+  expectPass("precommit-gate", ["--repo", tmp, "--check", "precommit-gate"]);
+  run("git", ["reset", "-q", "--", "docs/ai/gates/epic-1.json"], { cwd: tmp });
+  fs.writeFileSync(epicGatePath, JSON.stringify(passingEpicGate, null, 2));
+
+  const noStoryJudgeLedger = path.join(tmp, "docs", "ai", "ACEF_no_story_judge_DELIVERY_AUDIT.md");
+  fs.writeFileSync(noStoryJudgeLedger, fs.readFileSync(path.join(tmp, "docs", "ai", "ACEF_demo_DELIVERY_AUDIT.md"), "utf8")
+    .replace(/^process_judge_report:.*\n/m, ""));
+  fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_ACTIVE_RUN.json"), JSON.stringify({
+    schema: "acef.active-run.v2", runId: "RUN-epic-close", repo: "fixture", workflowId: "full-bmad",
+    fullFlowContract: "four-actor-v3", assuranceProfile: "baseline", scopeUnit: "story", expectedStories: ["Story 1.1"], status: "active",
+    activeStory: "Story 1.1", activePhase: "closeout", ledgerPath: "docs/ai/ACEF_no_story_judge_DELIVERY_AUDIT.md",
+  }, null, 2));
+  expectPass("lean-evidence", ["--repo", tmp, "--check", "lean-evidence", "--ledger", "docs/ai/ACEF_no_story_judge_DELIVERY_AUDIT.md"]);
   fs.rmSync(path.join(tmp, "docs", "ai", "ACEF_ACTIVE_RUN.json"));
 
   expectPass("session-handoff", ["--repo", tmp, "--check", "session-handoff", "--ledger", "docs/ai/ACEF_demo_DELIVERY_AUDIT.md"]);

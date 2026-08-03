@@ -22,6 +22,30 @@ first lifecycle actor or gate is recorded; changing it requires a new run. New r
 In v3, every catalog story phase uses `scopeUnit: story`; `scopeUnit: epic` is reserved for epic-level state and the
 terminal Epic Process Judge. The state writer rejects a frozen catalog story opened under epic scope.
 
+### Optional capsule supervisor runtime
+
+`capsule-supervisor-v1` is an execution runtime for a new `full-bmad` / `four-actor-v3` run, not another workflow or
+assurance layer. It preserves the four semantic roles while removing model work from lifecycle bookkeeping:
+
+- `acef-supervisor` reduces the typed repository state to one next action before each transition. Scope derivation,
+  evidence/capsule assembly, transition selection, and gate preparation are deterministic and use no model.
+- ATDD is fresh per story. The original Developer is one session for that story: bounded failed-to-green attempts stay
+  inside its original turn, and each REVISE cycle permits one repair follow-up. Code Review and Patch Assurance remain
+  independent. After a test-only repair, a prior Code Review PASS is retained and only Patch Assurance is fresh;
+  production repair reruns both. Conditional Story Judges and the Epic Judge remain fresh and isolated.
+- Reviewers receive separate, immutable, additive capsules containing the frozen context, scoped source/diff, raw
+  runner evidence, hashes, and prior open findings on a retry. A capsule is a bounded transport, not a conductor-authored
+  conclusion. Reviewers consume its hash-bound focused-run proof and use targeted reads for a named uncertainty; they
+  rerun the focused command only to adjudicate a named evidence conflict.
+- Successful green evidence must first pass the frozen test-discovery command and exact expected-test identities.
+  Review scope surfaces are derived from committed production paths at the review transition instead of being guessed
+  during bootstrap.
+- The first measured candidate pins every semantic actor to `gpt-5.6-sol/high`. Mechanical work has no model.
+  `gpt-5.6-terra/medium` may observe the reducer in shadow mode but cannot produce promotable evidence yet.
+
+This runtime is `enforced` in the framework but remains unproven until its frozen rehearsal passes product, process,
+and cost gates. Existing runs cannot opt in after lifecycle evidence exists.
+
 ## Dependency
 This lane is driven by **BMAD-METHOD** (https://github.com/bmad-code-org/BMAD-METHOD, MIT) — an installable agent
 framework. ACEF does not bundle it; install it where you want the heavy lane. ACEF orchestrates it and normalizes its

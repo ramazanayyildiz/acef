@@ -14,6 +14,7 @@ const {
   parseGateVerdict,
   parseReviewReport,
   parseDeveloperRepair,
+  parseAssuranceCapsule,
   parseProcessJudgeDecision,
   parseWorkerScope,
   atddRedExecutionFailure,
@@ -46,14 +47,18 @@ The existing direct record is the compact compatibility context. Do not inspect 
   console.log(`ACEF typed-state writer
 
 Usage:
-  acef-state active-run --repo <path> --run-id <id> --workflow-id quick-fix|lightweight|full-bmad [--full-flow-contract six-actor-v2|four-actor-v3] --assurance baseline|guarded --scope-unit work-item|story|epic [--expected-story <story>...] --status <status> --story <scope> --phase <phase> --ledger <path> [--route <route> --route-confidence low|medium|high] [--goal-description <text> --goal-user-facing true|false --goal-completion-mode backend-capability|product-workspace|internal] [options]
+  acef-state active-run --repo <path> --run-id <id> --workflow-id quick-fix|lightweight|full-bmad [--full-flow-contract six-actor-v2|four-actor-v3] [--runtime-contract capsule-supervisor-v1] --assurance baseline|guarded --scope-unit work-item|story|epic [--expected-story <story>...] --status <status> --story <scope> --phase <phase> --ledger <path> [--route <route> --route-confidence low|medium|high] [--goal-description <text> --goal-user-facing true|false --goal-completion-mode backend-capability|product-workspace|internal] [options]
   acef-state migrate-active-run --repo <path> --workflow-id quick-fix|lightweight|full-bmad [--assurance baseline|guarded] [--assurance-rationale <text>] [--assurance-approval <approval-id>]
   acef-state direct-run --repo <path> --run-id <id> --status active|complete|promoted --scope <scope> --acceptance <criterion>... --technical-boundary <kind> --reversible true [--changed-path <path>...] [--verification-command <command> --verification-exit-code <code>]... [options]
   acef-state actor --repo <path> --id <id> --story <scope> --phase <phase> --role <role> --client <client> --context-profile <profile> [options]
   acef-state worker-scope --repo <path> --story <scope> --phase <phase> --worker-id <id> --allow <glob>... [--surface <name>...] [--pattern-use <kind>] [--requires-round-trip true|false] [--binding <input>><output>:<field>[:defaultMaskingRisk]] [options]
+  acef-state phase-transition --repo <path> --phase development|code-review
+  acef-state review-scope --repo <path>
   acef-state approval --repo <path> --id <id> --decision APPROVE|REJECT|ACCEPT_RISK --scope <scope> --quote <exact human words> [options]
-  acef-state evidence-run --repo <path> --id <id> --kind <kind> --actor <id> --story <scope> --satisfies <id>... -- <command> [args...]
+  acef-state evidence-run --repo <path> --id <id> --kind <kind> --actor <id> --story <scope> --satisfies <id>... [--discovery-command-json <json-argv> --expected-test <identity>...] -- <command> [args...]
   acef-state developer-repair --repo <path> --id <id> --prior-gate <gate-id> --developer-actor <actor-id>
+  acef-state review-capsule --repo <path> --id <id> --role code-review|patch-assurance --actor <id> --base-commit <sha> --red-evidence <id> --green-evidence <id> [--review-cycle 0|1|2 --repair-receipt <path>]
+  acef-state capsule-show --repo <path> --id <id>
   acef-state review-result --repo <path> --actor <exact-reviewer-id> --verdict PASS|REVISE|REPLAN [--finding-id <id> --finding-severity LOW|MEDIUM|HIGH|CRITICAL --finding-reason <plain-text>]...
   acef-state review-completion --repo <path> --artifact-path <docs/ai/reports/report.json> --actor <exact-reviewer-id>  # compatibility
   acef-state judge-decision --repo <path> --id <id> --gate-id <future-gate-id> --actor <judge-id> --trigger ambiguity|waiver|evidence-conflict|gate-anomaly --evidence <id>...
@@ -65,7 +70,7 @@ Record files are written under docs/ai. Immutable records refuse overwrite; acti
 
 function parseArgs(argv) {
   const [command, ...rest] = argv;
-  const opts = { command, repo: process.cwd(), allow: [], satisfies: [], evidence: [], surface: [], surfaceEvidence: [], binding: [], bindingEvidence: [], riskTrigger: [], clarifyingQuestion: [], inferredAnswer: [], unresolvedQuestion: [], requiredSurface: [], coveredSurface: [], goalEvidence: [], goalMissing: [], acceptance: [], changedPath: [], verificationCommand: [], verificationExitCode: [], unresolvedRisk: [], unresolvedFinding: [], finding: [], findingId: [], findingSeverity: [], findingReason: [], promotionReason: [], expectedStory: [], commandArgv: [] };
+  const opts = { command, repo: process.cwd(), allow: [], satisfies: [], evidence: [], surface: [], surfaceEvidence: [], binding: [], bindingEvidence: [], riskTrigger: [], clarifyingQuestion: [], inferredAnswer: [], unresolvedQuestion: [], requiredSurface: [], coveredSurface: [], goalEvidence: [], goalMissing: [], acceptance: [], changedPath: [], verificationCommand: [], verificationExitCode: [], unresolvedRisk: [], unresolvedFinding: [], finding: [], findingId: [], findingSeverity: [], findingReason: [], promotionReason: [], expectedStory: [], expectedTest: [], commandArgv: [] };
   for (let index = 0; index < rest.length; index += 1) {
     const arg = rest[index];
     if (arg === "--help" || arg === "-h") {
@@ -85,7 +90,7 @@ function parseArgs(argv) {
     const value = rest[index + 1];
     if (value === undefined || value.startsWith("--")) throw new Error(`Missing value for ${arg}`);
     index += 1;
-    if (["allow", "satisfies", "evidence", "surface", "surfaceEvidence", "binding", "bindingEvidence", "riskTrigger", "clarifyingQuestion", "inferredAnswer", "unresolvedQuestion", "requiredSurface", "coveredSurface", "goalEvidence", "goalMissing", "acceptance", "changedPath", "verificationCommand", "verificationExitCode", "unresolvedRisk", "unresolvedFinding", "finding", "findingId", "findingSeverity", "findingReason", "promotionReason", "expectedStory"].includes(key)) opts[key].push(value);
+    if (["allow", "satisfies", "evidence", "surface", "surfaceEvidence", "binding", "bindingEvidence", "riskTrigger", "clarifyingQuestion", "inferredAnswer", "unresolvedQuestion", "requiredSurface", "coveredSurface", "goalEvidence", "goalMissing", "acceptance", "changedPath", "verificationCommand", "verificationExitCode", "unresolvedRisk", "unresolvedFinding", "finding", "findingId", "findingSeverity", "findingReason", "promotionReason", "expectedStory", "expectedTest"].includes(key)) opts[key].push(value);
     else opts[key] = value;
   }
   opts.repo = path.resolve(opts.repo);
@@ -233,6 +238,7 @@ function evidenceRunnerProof(record) {
     actorInstanceId: record.actorInstanceId,
     story: record.story,
     rawArtifact: record.rawArtifact,
+    ...(Object.prototype.hasOwnProperty.call(record, "discovery") ? { discovery: record.discovery } : {}),
     satisfies: record.satisfies,
   }));
 }
@@ -248,7 +254,7 @@ function dirtyDigest(repo) {
 
 function isControlPath(filePath) {
   const normalized = filePath.replaceAll(path.sep, "/");
-  return /^docs\/ai\/(?:ACEF_(?:ACTIVE_RUN\.json|ACTIVE_WORKER_SCOPE\.json|ACTIVE_LEDGER|DIRECT_RUN\.json|CURRENT_CONTEXT\.md|DELIVERY_LEDGER(?:_[^/]+)?\.md|[^/]+_DELIVERY_AUDIT\.md)|actors\/|gates\/|evidence\/|reports\/|approvals\/|repairs\/|judges\/)/.test(normalized);
+  return /^docs\/ai\/(?:ACEF_(?:ACTIVE_RUN\.json|ACTIVE_WORKER_SCOPE\.json|ACTIVE_LEDGER|DIRECT_RUN\.json|CURRENT_CONTEXT\.md|DELIVERY_LEDGER(?:_[^/]+)?\.md|[^/]+_DELIVERY_AUDIT\.md)|actors\/|gates\/|evidence\/|reports\/|approvals\/|repairs\/|capsules\/|judges\/)/.test(normalized);
 }
 
 function dirtyApplicationPaths(repo) {
@@ -316,10 +322,15 @@ function writeActiveRun(opts) {
   const previous = fs.existsSync(target) ? parseActiveRun(target) : null;
   const sameRun = previous?.schema === "acef.active-run.v2" && previous.runId === opts.runId;
   const previousContract = sameRun ? previous.fullFlowContract : undefined;
+  const previousRuntimeContract = sameRun ? previous.runtimeContract : undefined;
   const previousSemanticContract = sameRun ? (previousContract || "six-actor-v2") : undefined;
   if (sameRun && opts.fullFlowContract && previousSemanticContract !== opts.fullFlowContract
     && lifecycleRecordsExist(opts.repo)) {
     throw new Error(`fullFlowContract is immutable after actor/gate creation within run ${opts.runId}: ${previousSemanticContract} -> ${opts.fullFlowContract}`);
+  }
+  if (sameRun && opts.runtimeContract && previousRuntimeContract !== opts.runtimeContract
+    && lifecycleRecordsExist(opts.repo)) {
+    throw new Error(`runtimeContract is immutable after actor/gate creation within run ${opts.runId}`);
   }
   // Compatibility rule: an already-existing missing contract remains legacy v2.
   // A genuinely new Full run defaults to v3.
@@ -328,6 +339,10 @@ function writeActiveRun(opts) {
     : (workflowId === "full-bmad" ? (opts.fullFlowContract || "four-actor-v3") : opts.fullFlowContract);
   if (fullFlowContract && workflowId !== "full-bmad") {
     throw new Error("--full-flow-contract is only valid with --workflow-id full-bmad");
+  }
+  const runtimeContract = sameRun ? (opts.runtimeContract || previousRuntimeContract) : opts.runtimeContract;
+  if (runtimeContract && (workflowId !== "full-bmad" || fullFlowContract !== "four-actor-v3")) {
+    throw new Error("--runtime-contract requires --workflow-id full-bmad --full-flow-contract four-actor-v3");
   }
   const riskTriggers = opts.riskTrigger.length ? opts.riskTrigger : [];
   const assuranceProfile = opts.assurance || (riskRequiresGuarded(riskTriggers) ? "guarded" : "baseline");
@@ -359,6 +374,7 @@ function writeActiveRun(opts) {
     repo: path.basename(opts.repo),
     workflowId,
     ...(fullFlowContract ? { fullFlowContract } : {}),
+    ...(runtimeContract ? { runtimeContract } : {}),
     assuranceProfile,
     scopeUnit,
     ...(expectedStories ? { expectedStories } : {}),
@@ -543,6 +559,11 @@ function writeActor(opts) {
   if (v3 && canonicalGatePhase(opts.phase) === "development" && !opts.sessionId) {
     throw new Error("four-actor-v3 Developer actor requires --session-id for repair continuity");
   }
+  if (activeRun?.runtimeContract === "capsule-supervisor-v1") {
+    if (opts.model !== "gpt-5.6-sol" || opts.effort !== "high") {
+      throw new Error("capsule-supervisor-v1 semantic actor must bind manifest floor gpt-5.6-sol/high");
+    }
+  }
   const record = {
     actorInstanceId: opts.id,
     ...(v3 ? { runId: activeRun.runId, fullFlowContract: activeRun.fullFlowContract, storyInventory: activeRun.expectedStories } : {}),
@@ -551,6 +572,7 @@ function writeActor(opts) {
     role: opts.role,
     client: opts.client,
     model: opts.model || null,
+    reasoningEffort: opts.effort || null,
     sessionId: opts.sessionId || null,
     parentSessionId: opts.parentSessionId || null,
     promptArtifactHash: opts.promptHash || null,
@@ -621,6 +643,12 @@ function writeEvidence(opts) {
   required(opts, ["id", "kind", "actor", "story"]);
   if (!opts.satisfies.length) throw new Error("evidence-run requires at least one --satisfies value");
   if (!opts.commandArgv.length) throw new Error("evidence-run requires a command after --");
+  if (opts.expectedTest.length && !opts.discoveryCommandJson) {
+    throw new Error("evidence-run --expected-test requires --discovery-command-json");
+  }
+  if (opts.discoveryCommandJson && !opts.expectedTest.length) {
+    throw new Error("evidence-run --discovery-command-json requires at least one --expected-test");
+  }
   if (!["runtime-test", "static-check", "manual-smoke", "build", "lint", "typecheck", "other"].includes(opts.kind)) {
     throw new Error("evidence manifest kind must be one of: runtime-test, static-check, manual-smoke, build, lint, typecheck, other");
   }
@@ -661,6 +689,8 @@ function writeEvidence(opts) {
       contextProfile: "atdd",
       inputCommit: redParent,
       inputTree: gitTreeAt(opts.repo, redParent),
+      model: opts.model,
+      effort: opts.effort,
     });
   }
   const actor = parseActorRecord(actorFile);
@@ -678,6 +708,36 @@ function writeEvidence(opts) {
       || actor.inputCommit === redCommit || !gitIsAncestor(opts.repo, actor.inputCommit, redCommit)) {
       throw new Error("four-actor-v3 ATDD evidence requires HEAD to be a new test-only commit descended from the ATDD actor input commit");
     }
+  }
+
+  let discovery = null;
+  if (opts.discoveryCommandJson) {
+    let discoveryArgv;
+    try { discoveryArgv = JSON.parse(opts.discoveryCommandJson); }
+    catch { throw new Error("--discovery-command-json must be a JSON argv array"); }
+    if (!Array.isArray(discoveryArgv) || !discoveryArgv.length
+      || discoveryArgv.some((entry) => typeof entry !== "string" || !entry)) {
+      throw new Error("--discovery-command-json must be a non-empty JSON argv array of strings");
+    }
+    const discoveryExecution = cp.spawnSync(discoveryArgv[0], discoveryArgv.slice(1), {
+      cwd: opts.repo, encoding: "utf8", env: process.env, maxBuffer: 100 * 1024 * 1024,
+    });
+    const discoveryExit = Number.isInteger(discoveryExecution.status) ? discoveryExecution.status : 1;
+    const discoveryOutput = discoveryExecution.stdout || "";
+    const discoveredTests = [...new Set(discoveryOutput.split(/\r?\n/)
+      .map((line) => line.trim().replace(/^-\s+/, ""))
+      .filter(Boolean))];
+    const missingTests = [...new Set(opts.expectedTest)].filter((test) => !discoveredTests.includes(test));
+    if (discoveryExit !== 0 || missingTests.length) {
+      throw new Error(`test discovery contract failed; exit=${discoveryExit}; missing=${missingTests.join(", ") || "none"}`);
+    }
+    discovery = {
+      command: discoveryArgv.map(quoteArg).join(" "),
+      exitCode: 0,
+      expectedTests: [...new Set(opts.expectedTest)],
+      discoveredTests,
+      stdoutSha256: sha256(discoveryOutput),
+    };
   }
 
   const commandText = opts.commandArgv.map(quoteArg).join(" ");
@@ -722,6 +782,7 @@ function writeEvidence(opts) {
     actorInstanceId: opts.actor,
     story: opts.story,
     rawArtifact: { path: relative(opts.repo, rawPath), sha256: sha256(fs.readFileSync(rawPath)) },
+    ...(discovery ? { discovery } : {}),
     satisfies: opts.satisfies,
   };
   record.runnerProof = {
@@ -779,6 +840,67 @@ function applicationChangedSince(repo, fromCommit, toCommit = "HEAD") {
 
 function testPath(filePath) {
   return /(^|\/)(__tests__|tests?|specs?)(\/|$)|(\.|-)(test|spec)\.[cm]?[jt]sx?$|Test\.(php|py|rb|cs)$/i.test(String(filePath || ""));
+}
+
+function inferredSurfaces(paths) {
+  const surfaces = new Set();
+  for (const filePath of paths) {
+    if (/(^|\/)(components|pages|screens|views|ui|frontend)(\/|$)|\.(tsx|jsx|vue|svelte)$/i.test(filePath)) surfaces.add("ui");
+    if (/(^|\/)(mobile|ios|android)(\/|$)|\.(swift|kt)$/i.test(filePath)) surfaces.add("mobile");
+    if (/(^|\/)(routes|controllers|api|http|server)(\/|$)|route|controller/i.test(filePath)) surfaces.add("api");
+    if (/webhook/i.test(filePath)) surfaces.add("webhook");
+    if (/(^|\/)(jobs|workers)(\/|$)|job/i.test(filePath)) surfaces.add("job");
+    if (/(^|\/)(queues|queue)(\/|$)/i.test(filePath)) surfaces.add("queue");
+    if (/(^|\/)(scheduler|cron)(\/|$)|schedule/i.test(filePath)) surfaces.add("scheduler");
+    if (/(^|\/)(migrations|database|schema)(\/|$)/i.test(filePath)) surfaces.add("database");
+    if (/(^|\/)(config|configs)(\/|$)|\.ya?ml$|\.toml$|\.env/i.test(filePath)) surfaces.add("config");
+    if (/(^|\/)(cli|bin|commands?)(\/|$)|command/i.test(filePath)) surfaces.add("cli");
+    if (/(^|\/)(lib|src|packages|modules)(\/|$)/i.test(filePath) && !surfaces.size) surfaces.add("library");
+  }
+  return [...surfaces];
+}
+
+function scopePatternMatches(pattern, filePath) {
+  const escaped = String(pattern).replace(/[.+^$()|\\]/g, "\\$&")
+    .replaceAll("**", "\u0000").replaceAll("*", "[^/]*").replaceAll("?", "[^/]")
+    .replaceAll("\u0000", ".*");
+  return new RegExp(`^${escaped}$`).test(filePath);
+}
+
+function scopeAllows(allowedPaths, filePath) {
+  return allowedPaths.some((pattern) => pattern === filePath || scopePatternMatches(pattern, filePath));
+}
+
+function writeReviewScope(opts) {
+  const activeRun = activeV3Run(opts.repo);
+  if (activeRun.runtimeContract !== "capsule-supervisor-v1" || activeRun.scopeUnit !== "story"
+    || canonicalGatePhase(activeRun.activePhase) !== "codereview") {
+    throw new Error("review-scope requires an active story code review under capsule-supervisor-v1");
+  }
+  const target = activeRun.workerScopePath
+    ? path.resolve(opts.repo, activeRun.workerScopePath)
+    : path.join(opts.repo, "docs", "ai", "ACEF_ACTIVE_WORKER_SCOPE.json");
+  if (!fs.existsSync(target)) throw new Error("review-scope requires the active worker scope");
+  const scope = parseWorkerScope(target);
+  if (scope.runId !== activeRun.runId
+    || normalizedScope(scope.activeStory) !== normalizedScope(activeRun.activeStory)) {
+    throw new Error("review-scope active run and worker scope do not match");
+  }
+  const productionPaths = applicationChangedSince(opts.repo, scope.baseRef, "HEAD").filter((filePath) => !testPath(filePath));
+  const outsideScope = productionPaths.filter((filePath) => !scopeAllows(scope.allowedPaths, filePath));
+  if (!productionPaths.length || outsideScope.length) {
+    throw new Error(`review-scope requires non-test changes inside the frozen scope; outside=${outsideScope.join(", ") || "none"}`);
+  }
+  const surfaces = inferredSurfaces(productionPaths);
+  if (!surfaces.length) surfaces.push("internal");
+  const record = { ...scope, phase: activeRun.activePhase, surfaces };
+  const serialized = `${JSON.stringify(record, null, 2)}\n`;
+  if (fs.readFileSync(target, "utf8") === serialized) {
+    console.log(`UNCHANGED review-scope ${relative(opts.repo, target)} surfaces=${surfaces.join(",")}`);
+    return;
+  }
+  atomicJson(target, record, { overwrite: true, validate: parseWorkerScope });
+  console.log(`WROTE review-scope ${relative(opts.repo, target)} surfaces=${surfaces.join(",")}`);
 }
 
 function normalizedScopePaths(paths) {
@@ -878,6 +1000,21 @@ function boundReviewReport(repo, actor, expectedPhase, scope, activeRun) {
     || report.inputCommit !== actor.inputCommit
     || report.inputTree !== actor.inputTree) {
     throw new Error(`${expectedPhase} review report identity/scope/input binding mismatch`);
+  }
+  if (activeRun.runtimeContract === "capsule-supervisor-v1") {
+    if (!report.capsulePath || !report.capsuleSha256) throw new Error(`${expectedPhase} review report is missing capsule binding`);
+    const capsulePath = path.resolve(repo, report.capsulePath);
+    const capsuleRelative = relative(repo, capsulePath).replaceAll(path.sep, "/");
+    if (!/^docs\/ai\/capsules\/[^/]+\.json$/.test(capsuleRelative) || !fs.existsSync(capsulePath)
+      || sha256(fs.readFileSync(capsulePath)) !== report.capsuleSha256) {
+      throw new Error(`${expectedPhase} review report capsule path/hash binding mismatch`);
+    }
+    const capsule = parseAssuranceCapsule(capsulePath);
+    validateCapsuleIntegrity(repo, capsule);
+    if (capsule.actorInstanceId !== actor.actorInstanceId || capsule.inputCommit !== report.inputCommit
+      || capsule.inputTree !== report.inputTree) {
+      throw new Error(`${expectedPhase} review report capsule actor/input binding mismatch`);
+    }
   }
   return { report, path: relativePath, hash: reportHash };
 }
@@ -1005,6 +1142,12 @@ function writeDeterministicStoryCloseGate(opts, activeRun) {
       runnerProof = false;
       failures.push(`closing evidence ${evidenceId} is failed, dirty, or stale for application tree ${applicationTree}`);
     }
+  }
+  if (activeRun.runtimeContract === "capsule-supervisor-v1"
+    && (!green.discovery || !green.discovery.expectedTests?.length
+      || green.discovery.expectedTests.some((test) => !green.discovery.discoveredTests?.includes(test)))) {
+    runnerProof = false;
+    failures.push("green evidence is missing the frozen test-discovery contract required by capsule-supervisor-v1");
   }
 
   const finalTreeReview = gitIsAncestor(opts.repo, actors.codeReview.inputCommit, head)
@@ -1258,6 +1401,24 @@ function activeV3Run(repo) {
   return activeRun;
 }
 
+function writePhaseTransition(opts) {
+  required(opts, ["phase"]);
+  const activeRun = activeV3Run(opts.repo);
+  if (activeRun.runtimeContract !== "capsule-supervisor-v1" || activeRun.scopeUnit !== "story") {
+    throw new Error("phase-transition requires an active capsule-supervisor story run");
+  }
+  const current = canonicalGatePhase(activeRun.activePhase);
+  const requested = canonicalGatePhase(opts.phase);
+  const allowed = (current === "atdd" && requested === "development")
+    || (current === "development" && requested === "codereview");
+  if (!allowed) throw new Error(`invalid capsule-supervisor phase transition ${activeRun.activePhase} -> ${opts.phase}`);
+  const target = path.join(opts.repo, "docs", "ai", "ACEF_ACTIVE_RUN.json");
+  const { lane: _compatibilityLane, ...storedRun } = activeRun;
+  const record = { ...storedRun, activePhase: opts.phase, updatedAt: new Date().toISOString() };
+  atomicJson(target, record, { overwrite: true, validate: parseActiveRun });
+  console.log(`WROTE phase-transition ${activeRun.activePhase} -> ${opts.phase}`);
+}
+
 function writeDeveloperRepair(opts) {
   required(opts, ["id", "priorGate", "developerActor"]);
   const activeRun = activeV3Run(opts.repo);
@@ -1292,6 +1453,158 @@ function writeDeveloperRepair(opts) {
   console.log(`WROTE Developer repair ${relative(opts.repo, target)} cycle=${cycle}`);
 }
 
+function capsuleBlob(filePath, content) {
+  const bytes = Buffer.from(String(content));
+  return { path: filePath, sha256: sha256(bytes), bytes: bytes.length, content: String(content) };
+}
+
+function writeReviewCapsule(opts) {
+  required(opts, ["id", "role", "actor", "baseCommit", "redEvidence", "greenEvidence"]);
+  const activeRun = activeV3Run(opts.repo);
+  if (activeRun.runtimeContract !== "capsule-supervisor-v1"
+    || activeRun.scopeUnit !== "story" || canonicalGatePhase(activeRun.activePhase) !== "codereview") {
+    throw new Error("review-capsule requires an active story review under capsule-supervisor-v1");
+  }
+  if (!["code-review", "patch-assurance"].includes(opts.role)) throw new Error("--role must be code-review or patch-assurance");
+  const storyToken = String(activeRun.activeStory).toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+  const cycle = opts.reviewCycle === undefined ? 0 : Number(opts.reviewCycle);
+  const expectedActor = `acef_${storyToken}_${opts.role.replaceAll("-", "_")}${cycle ? `_retry${cycle}` : ""}`;
+  if (opts.actor !== expectedActor || !Number.isInteger(cycle) || cycle < 0 || cycle > 2) {
+    throw new Error("review-capsule actor/review-cycle does not match the canonical active-story identity");
+  }
+  const inputCommit = gitCommit(opts.repo);
+  const inputTree = gitTree(opts.repo);
+  if (!gitIsAncestor(opts.repo, opts.baseCommit, inputCommit)) throw new Error("review-capsule base commit is not an input ancestor");
+  const red = gateEvidence(opts.repo, opts.redEvidence, activeRun.activeStory);
+  const green = gateEvidence(opts.repo, opts.greenEvidence, activeRun.activeStory);
+  if (red.exitCode === 0 || green.exitCode !== 0 || red.command !== green.command
+    || !green.discovery || !green.discovery.expectedTests.length
+    || !gitIsAncestor(opts.repo, red.repositoryCommit, green.repositoryCommit)
+    || !gitIsAncestor(opts.repo, green.repositoryCommit, inputCommit)) {
+    throw new Error("review-capsule requires bound red/green evidence and a passing frozen test-discovery contract");
+  }
+  let scopePaths = normalizedScopePaths(applicationChangedSince(opts.repo, opts.baseCommit, inputCommit));
+  let repairReceipt = null;
+  let previousFindings = [];
+  if (cycle > 0) {
+    required(opts, ["repairReceipt"]);
+    const repairPath = path.resolve(opts.repo, opts.repairReceipt);
+    const repair = parseDeveloperRepair(repairPath);
+    const priorGatePath = path.join(opts.repo, "docs", "ai", "gates", `${safeId(repair.priorGateId, "prior gate id")}.json`);
+    const priorGate = parseGateVerdict(priorGatePath);
+    if (repair.runId !== activeRun.runId || repair.cycle !== cycle || priorGate.reviewCycle !== cycle - 1
+      || priorGate.verdict !== "REVISE") throw new Error("review-capsule repair receipt/cycle mismatch");
+    scopePaths = normalizedScopePaths(priorGate.scopePaths);
+    repairReceipt = { path: relative(opts.repo, repairPath), sha256: sha256(fs.readFileSync(repairPath)), record: repair };
+    for (const reportPath of Object.values(priorGate.reportPaths || {})) {
+      const report = parseReviewReport(path.resolve(opts.repo, reportPath));
+      previousFindings.push(...report.findings.filter((finding) => finding.status === "OPEN"));
+    }
+    previousFindings.sort((left, right) => left.id.localeCompare(right.id));
+  }
+  if (!scopePaths.length) throw new Error("review-capsule scope is empty");
+  const contextPath = path.resolve(opts.repo, activeRun.contextPath || "docs/ai/ACEF_CURRENT_CONTEXT.md");
+  if (!fs.existsSync(contextPath)) throw new Error("review-capsule current context is missing");
+  const contextContent = fs.readFileSync(contextPath, "utf8");
+  const diffContent = runGit(opts.repo, ["diff", "--no-ext-diff", "--unified=40", `${opts.baseCommit}..${inputCommit}`, "--", ...scopePaths]);
+  const sourceBlobs = scopePaths.map((filePath) => {
+    let content = "";
+    try { content = runGit(opts.repo, ["show", `${inputCommit}:${filePath}`]); } catch {}
+    return capsuleBlob(filePath, content);
+  });
+  const totalBytes = Buffer.byteLength(contextContent) + Buffer.byteLength(diffContent)
+    + sourceBlobs.reduce((sum, blob) => sum + blob.bytes, 0);
+  if (totalBytes > 400000) throw new Error(`review-capsule exceeds 400000-byte bounded context limit (${totalBytes})`);
+  const reviewPolicy = opts.role === "code-review"
+    ? ["Judge correctness, security, acceptance conformance, and scope.", "Consume the hash-bound runner proof; do not rerun it unless reporting a named evidence conflict.", "Do not edit files or consume the other reviewer conclusion.", "Use targeted follow-up reads only for a named uncertainty."]
+    : ["Judge final-tree patch integrity, test quality, discovery proof, and runner evidence.", "Consume the hash-bound runner proof; rerun only when a named evidence conflict requires adjudication.", "Do not edit files or consume the Code Review conclusion.", "Use targeted follow-up reads only for a named uncertainty."];
+  const payload = {
+    schema: "acef.assurance-capsule.v1",
+    runId: activeRun.runId,
+    fullFlowContract: activeRun.fullFlowContract,
+    runtimeContract: activeRun.runtimeContract,
+    story: activeRun.activeStory,
+    role: opts.role,
+    actorInstanceId: opts.actor,
+    reviewCycle: cycle,
+    baseCommit: opts.baseCommit,
+    inputCommit,
+    inputTree,
+    scopePaths,
+    acceptanceIds: [...new Set([...red.satisfies, ...green.satisfies])],
+    currentContext: capsuleBlob(relative(opts.repo, contextPath), contextContent),
+    diff: capsuleBlob(`git-diff:${opts.baseCommit}..${inputCommit}`, diffContent),
+    sourceBlobs,
+    redEvidence: red,
+    greenEvidence: green,
+    previousFindings,
+    repairReceipt,
+    reviewPolicy,
+    allowedCommands: [
+      `.acef/bin/acef-state capsule-show --repo . --id ${opts.id}`,
+      `.acef/bin/acef-state review-result --repo . --actor ${opts.actor} --model gpt-5.6-sol --effort high --verdict <PASS|REVISE|REPLAN>`,
+    ],
+  };
+  const record = { ...payload, integrity: { algorithm: "sha256", payloadSha256: sha256(JSON.stringify(payload)) } };
+  const target = path.join(opts.repo, "docs", "ai", "capsules", `${safeId(opts.id, "capsule id")}.json`);
+  const serialized = `${JSON.stringify(record, null, 2)}\n`;
+  if (fs.existsSync(target)) {
+    if (fs.readFileSync(target, "utf8") !== serialized) throw new Error(`Refusing to replace non-identical capsule ${opts.id}`);
+  } else {
+    atomicJson(target, record, { validate: parseAssuranceCapsule });
+  }
+  console.log(`WROTE review capsule ${relative(opts.repo, target)} sha256=${sha256(serialized)}`);
+}
+
+function validateCapsuleIntegrity(repo, record) {
+  const { integrity, ...payload } = record;
+  if (integrity.payloadSha256 !== sha256(JSON.stringify(payload))) throw new Error("assurance capsule payload hash mismatch");
+  if (record.inputTree !== gitTreeAt(repo, record.inputCommit)) throw new Error("assurance capsule input tree is stale or invalid");
+  for (const blob of [record.currentContext, record.diff, ...record.sourceBlobs]) {
+    if (sha256(Buffer.from(blob.content)) !== blob.sha256 || Buffer.byteLength(blob.content) !== blob.bytes) {
+      throw new Error(`assurance capsule blob mismatch: ${blob.path}`);
+    }
+  }
+}
+
+function boundCurrentCapsule(repo, activeRun, actor) {
+  const capsuleDir = path.join(repo, "docs", "ai", "capsules");
+  if (!fs.existsSync(capsuleDir)) throw new Error(`review actor ${actor} has no assurance capsule`);
+  const matches = fs.readdirSync(capsuleDir).filter((name) => name.endsWith(".json")).sort().map((name) => {
+    const target = path.join(capsuleDir, name);
+    const record = parseAssuranceCapsule(target);
+    return { target, record };
+  }).filter(({ record }) => record.actorInstanceId === actor && record.runId === activeRun.runId
+    && normalizedScope(record.story) === normalizedScope(activeRun.activeStory));
+  if (matches.length !== 1) throw new Error(`review actor ${actor} requires exactly one assurance capsule, found ${matches.length}`);
+  const match = matches[0];
+  validateCapsuleIntegrity(repo, match.record);
+  const expectedRole = actor.includes("_code_review") ? "code-review" : "patch-assurance";
+  if (match.record.role !== expectedRole || match.record.inputCommit !== gitCommit(repo)
+    || match.record.inputTree !== gitTree(repo)) {
+    throw new Error(`review actor ${actor} assurance capsule is wrong-role or not bound to current HEAD`);
+  }
+  const bytes = fs.readFileSync(match.target);
+  return { ...match, relativePath: relative(repo, match.target).replaceAll(path.sep, "/"), sha256: sha256(bytes) };
+}
+
+function showCapsule(opts) {
+  required(opts, ["id"]);
+  const activeRun = activeV3Run(opts.repo);
+  if (activeRun.runtimeContract !== "capsule-supervisor-v1" || activeRun.scopeUnit !== "story"
+    || canonicalGatePhase(activeRun.activePhase) !== "codereview") {
+    throw new Error("capsule-show requires the active capsule-supervisor story review phase");
+  }
+  const target = path.join(opts.repo, "docs", "ai", "capsules", `${safeId(opts.id, "capsule id")}.json`);
+  const record = parseAssuranceCapsule(target);
+  validateCapsuleIntegrity(opts.repo, record);
+  if (record.runId !== activeRun.runId || normalizedScope(record.story) !== normalizedScope(activeRun.activeStory)
+    || record.inputCommit !== gitCommit(opts.repo) || record.inputTree !== gitTree(opts.repo)) {
+    throw new Error("assurance capsule is not bound to the active run/story/current HEAD");
+  }
+  console.log(JSON.stringify(record));
+}
+
 function writeReviewCompletion(opts) {
   required(opts, ["artifactPath", "actor"]);
   const activeRun = activeV3Run(opts.repo);
@@ -1302,11 +1615,14 @@ function writeReviewCompletion(opts) {
   }
   const bytes = fs.readFileSync(artifactPath);
   const report = parseReviewReport(artifactPath);
+  const capsule = activeRun.runtimeContract === "capsule-supervisor-v1"
+    ? boundCurrentCapsule(opts.repo, activeRun, opts.actor) : null;
   if (report.runId !== activeRun.runId || report.fullFlowContract !== activeRun.fullFlowContract
     || report.actorInstanceId !== opts.actor
     || normalizedScope(report.story) !== normalizedScope(activeRun.activeStory)
     || !["codereview", "patchassurance"].includes(canonicalGatePhase(report.phase))
-    || report.inputCommit !== gitCommit(opts.repo) || report.inputTree !== gitTree(opts.repo)) {
+    || report.inputCommit !== gitCommit(opts.repo) || report.inputTree !== gitTree(opts.repo)
+    || (capsule && (report.capsulePath !== capsule.relativePath || report.capsuleSha256 !== capsule.sha256))) {
     throw new Error("review-completion report actor/run/story/phase/input commit/tree binding mismatch");
   }
   const role = report.phase === "code-review" ? "code-reviewer" : "patch-assurance-reviewer";
@@ -1317,6 +1633,8 @@ function writeReviewCompletion(opts) {
     phase: report.phase,
     role,
     client: "codex",
+    model: opts.model,
+    effort: opts.effort,
     sessionId: `/root/${opts.actor}`,
     contextProfile: report.phase,
     inputCommit: report.inputCommit,
@@ -1383,6 +1701,8 @@ function writeReviewResult(opts) {
   if (fs.existsSync(reportPath) || fs.existsSync(reviewerPath)) {
     throw new Error(`Refusing to overwrite immutable review result ${opts.actor}`);
   }
+  const capsule = activeRun.runtimeContract === "capsule-supervisor-v1"
+    ? boundCurrentCapsule(opts.repo, activeRun, opts.actor) : null;
   const report = {
     schema: "acef.review-report.v3",
     runId: activeRun.runId,
@@ -1392,12 +1712,13 @@ function writeReviewResult(opts) {
     phase,
     inputCommit: gitCommit(opts.repo),
     inputTree: gitTree(opts.repo),
+    ...(capsule ? { capsulePath: capsule.relativePath, capsuleSha256: capsule.sha256 } : {}),
     verdict,
     findings,
   };
   try {
     atomicJson(reportPath, report, { validate: parseReviewReport });
-    writeReviewCompletion({ repo: opts.repo, artifactPath: relative(opts.repo, reportPath), actor: opts.actor });
+    writeReviewCompletion({ repo: opts.repo, artifactPath: relative(opts.repo, reportPath), actor: opts.actor, model: opts.model, effort: opts.effort });
   } catch (error) {
     if (!fs.existsSync(reviewerPath)) fs.rmSync(reportPath, { force: true });
     throw error;
@@ -1458,9 +1779,13 @@ function main() {
   if (opts.command === "direct-run") return writeDirectRun(opts);
   if (opts.command === "actor") return writeActor(opts);
   if (opts.command === "worker-scope") return writeWorkerScope(opts);
+  if (opts.command === "phase-transition") return writePhaseTransition(opts);
+  if (opts.command === "review-scope") return writeReviewScope(opts);
   if (opts.command === "approval") return writeApproval(opts);
   if (opts.command === "evidence-run") return writeEvidence(opts);
   if (opts.command === "developer-repair") return writeDeveloperRepair(opts);
+  if (opts.command === "review-capsule") return writeReviewCapsule(opts);
+  if (opts.command === "capsule-show") return showCapsule(opts);
   if (opts.command === "review-result") return writeReviewResult(opts);
   if (opts.command === "review-completion") return writeReviewCompletion(opts);
   if (opts.command === "judge-decision") return writeJudgeDecision(opts);

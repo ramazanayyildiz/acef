@@ -577,7 +577,7 @@ function epicPilotPrompt(attempt, resolved, manifest) {
   const treatmentInstruction = attempt.treatment === "legacy"
     ? "Use the installed legacy ACEF full-bmad lane exactly as that version documents it. Apply the risk-specific safeguards its own full-BMAD contract requires for auth, billing, and webhook stories. Do not select or synthesize the separate legacy guarded lane, candidate execution/assurance axes, or a hybrid active state."
     : fourActorV3
-      ? "Use ACEF Full with Guarded assurance and fullFlowContract=four-actor-v3 exactly as installed. Guarded is an additive assurance overlay, not another lifecycle."
+      ? `Use ACEF Full with Guarded assurance and fullFlowContract=four-actor-v3${manifest.runtimeContract ? ` and runtimeContract=${manifest.runtimeContract}` : ""} exactly as installed. Guarded is an additive assurance overlay, not another lifecycle.`
       : "Use ACEF Full (BMAD v2) with Guarded assurance exactly as the installed candidate version documents it. Guarded is an assurance overlay, not a second lifecycle.";
   const shellLiteral = (value) => /^[A-Za-z0-9_./:=+,-]+$/.test(String(value))
     ? String(value)
@@ -586,6 +586,8 @@ function epicPilotPrompt(attempt, resolved, manifest) {
     const satisfies = (story.acceptanceCriteria || []).length
       ? story.acceptanceCriteria.map((_, criterionIndex) => `--satisfies ${story.id}-ac${criterionIndex + 1}`).join(" ")
       : `--satisfies ${story.id}-contract`;
+    const atddRuntime = manifest.actorRuntimeProfiles?.atdd;
+    const atddRuntimeArgs = atddRuntime ? ` --model ${atddRuntime.model} --effort ${atddRuntime.reasoningEffort}` : "";
     return [
       `${index + 1}. ${story.id}: ${story.prompt}`,
       `   Acceptance criteria: ${(story.acceptanceCriteria || []).join(" | ") || "the frozen story prompt"}`,
@@ -594,17 +596,24 @@ function epicPilotPrompt(attempt, resolved, manifest) {
       `   Allowed production paths: ${story.allowedPaths.join(", ")}`,
       `   Frozen test paths: ${(story.testPaths || []).join(", ") || "none"}`,
       `   Focused verification: ${story.verify.join(" ")}`,
-      `   Exact ATDD red evidence command: .acef/bin/acef-state evidence-run --repo . --id ${story.id}-red --kind runtime-test --actor acef_${normalizedActorToken(story.id)}_atdd --story ${story.id} ${satisfies} -- ${story.verify.map(shellLiteral).join(" ")}`,
+      ...(story.discovery ? [
+        `   Frozen discovery command JSON: ${JSON.stringify(story.discovery.argv)}`,
+        `   Expected discovered tests: ${(story.discovery.expectedTests || []).join(" | ")}`,
+      ] : []),
+      `   Exact ATDD red evidence command: .acef/bin/acef-state evidence-run --repo . --id ${story.id}-red --kind runtime-test --actor acef_${normalizedActorToken(story.id)}_atdd --story ${story.id}${atddRuntimeArgs} ${satisfies} -- ${story.verify.map(shellLiteral).join(" ")}`,
     ].join("\n");
   }).join("\n");
   const actorContract = lifecycleActorContract(resolved, actorContractVersion).map((entry) =>
     `- ${entry.taskName}: scope=${entry.scope} control=${entry.control} actor=${entry.taskName} persona=${entry.persona}`
+      + (manifest.actorRuntimeProfiles?.[entry.scope === "epic" ? "epic-process-judge" : entry.control]
+        ? ` model=${manifest.actorRuntimeProfiles[entry.scope === "epic" ? "epic-process-judge" : entry.control].model} effort=${manifest.actorRuntimeProfiles[entry.scope === "epic" ? "epic-process-judge" : entry.control].reasoningEffort}`
+        : "")
   ).join("\n");
   const recoveryInstruction = fourActorV3
     ? [
       "Initial ATDD maps every acceptance criterion but needs genuine red only on the critical vertical path. The manifest's Frozen test paths are the complete non-protected test envelope; do not discover, invent, or expand that envelope during execution. Run only the story's focused verification and files inside that envelope; do not substitute broad pre-existing suites outside it. Give the ATDD actor the story's literal Exact ATDD red evidence command and require it to run that command once after the clean test-only commit. For four-actor-v3 that command validates the red tree and atomically creates the missing canonical ATDD actor record before executing the test; neither the child nor conductor runs a separate actor command. `runtime-test` is the only allowed kind for this evidence; never invent semantic kinds such as `atdd-red`, add a trailing path operand, reuse a failed evidence ID, pre-create the ATDD actor, or reactivate the ATDD actor after any terminal result.",
       "After development, spawn Code Review and Patch Assurance without waiting for either result first, then wait for both. Code Review owns correctness, security, conformance, scope, and unresolved-finding severity. Patch Assurance is report-only and combines final-tree patch verification with test-quality and focused runner proof; it must not edit production or tests.",
-      "Every v3 actor, review report, repair receipt, Judge decision, and deterministic gate must bind the active runId and fullFlowContract=four-actor-v3. A catalog story may be active only with scopeUnit=story; use scopeUnit=epic only for the terminal Epic Process Judge. Before initial or retry reviewers spawn, the conductor must commit all review-transition control state, set a recognized shared review phase (`code-review` is canonical), capture the resulting shared reviewInputCommit=HEAD and reviewInputTree=HEAD^{tree}, and give both reviewers those exact values; it must not pre-create reviewer actor records or reports. Reviewers never construct report paths, identity/input binding fields, report JSON, base64, or helper commands. Their final state mutation is exactly one `.acef/bin/acef-state review-result --repo . --actor <exact-task-name> --verdict <PASS|REVISE|REPLAN>` command. The state writer derives the canonical report path, run, contract, story, phase, HEAD commit/tree, writes the typed acef.review-report.v3 report, validates it, and atomically creates the report-bound reviewer actor. PASS uses no finding options. REVISE or REPLAN appends one ordered `--finding-id <safe-id> --finding-severity <LOW|MEDIUM|HIGH|CRITICAL> --finding-reason '<plain ASCII reason without quotes, backslashes, newlines, or shell metacharacters>'` triple per finding; the state writer injects status=OPEN. Do not use compatibility `--finding`, obsolete `--findings-base64`, Python, `php -r`, `node -e`, `ALL_TOOLS`, or any encoding/schema helper. The report verdict is the single machine-carried reviewer result, so reviewer prose does not repeat ACTOR_RESULT. Run review-result exactly once and do not probe schemas, validator availability, paths, or acef-state help beforehand. REVIEWER TOOL RULE: every reviewer functions.exec call may invoke tools.exec_command exactly once, and that exec_command must contain exactly one literal allowlisted read-only command, repository focused-test command, or the final review-result command. This applies to inspection and completion alike. Never batch calls; never use command variables, template strings, arrays, loops, Promise.all, generated commands, ad-hoc interpreter snippets, shell separators such as `&&`, pipelines, redirections, or command substitution. Prefer `sed -n`, bounded `awk`, `rg`, safe `git` reads, and the story's repository test runner; use a new tool call for every read/check. The harness consumes the completion command's stdout directly from the child transcript; do not hand-copy its path/hash/blob/tree fields into prose. The conductor must not create or rewrite reviewer report/actor records after the child returns. Before every retry spawn, read the immediately prior typed reports. After every Developer repair, rerun Patch Assurance on the repaired final application/test tree even when its prior verdict was PASS. Rerun Code Review when its prior verdict was REVISE or the repair changed production code; preserve an earlier Code Review PASS only for a test-only repair. The completion blob/hash/tree, report, actor, and gate must bind exactly. A missing, repeated, or invalid review-result command is a mechanical REPLAN/SPLIT stop: never follow up or retry that reviewer.",
+      "Every v3 actor, review report, repair receipt, Judge decision, and deterministic gate must bind the active runId and fullFlowContract=four-actor-v3. A catalog story may be active only with scopeUnit=story; use scopeUnit=epic only for the terminal Epic Process Judge. Before initial or retry reviewers spawn, the conductor must commit all review-transition control state, set a recognized shared review phase (`code-review` is canonical), capture the resulting shared reviewInputCommit=HEAD and reviewInputTree=HEAD^{tree}, and give both reviewers those exact values; it must not pre-create reviewer actor records or reports. Reviewers never construct report paths, identity/input binding fields, report JSON, base64, or helper commands. Their final state mutation is exactly one `.acef/bin/acef-state review-result --repo . --actor <exact-task-name> --model <manifest-model> --effort <manifest-effort> --verdict <PASS|REVISE|REPLAN>` command. The state writer derives the canonical report path, run, contract, story, phase, HEAD commit/tree, writes the typed acef.review-report.v3 report, validates it, and atomically creates the report-bound reviewer actor. PASS uses no finding options. REVISE or REPLAN appends one ordered `--finding-id <safe-id> --finding-severity <LOW|MEDIUM|HIGH|CRITICAL> --finding-reason '<plain ASCII reason without quotes, backslashes, newlines, or shell metacharacters>'` triple per finding; the state writer injects status=OPEN. Do not use compatibility `--finding`, obsolete `--findings-base64`, Python, `php -r`, `node -e`, `ALL_TOOLS`, or any encoding/schema helper. The report verdict is the single machine-carried reviewer result, so reviewer prose does not repeat ACTOR_RESULT. Run review-result exactly once and do not probe schemas, validator availability, paths, or acef-state help beforehand. REVIEWER TOOL RULE: every reviewer functions.exec call may invoke tools.exec_command exactly once, and that exec_command must contain exactly one literal allowlisted read-only command, repository focused-test command, or the final review-result command. This applies to inspection and completion alike. Never batch calls; never use command variables, template strings, arrays, loops, Promise.all, generated commands, ad-hoc interpreter snippets, shell separators such as `&&`, pipelines, redirections, or command substitution. Prefer `sed -n`, bounded `awk`, `rg`, safe `git` reads, and the story's repository test runner; use a new tool call for every read/check. The harness consumes the completion command's stdout directly from the child transcript; do not hand-copy its path/hash/blob/tree fields into prose. The conductor must not create or rewrite reviewer report/actor records after the child returns. Before every retry spawn, read the immediately prior typed reports. After every Developer repair, rerun Patch Assurance on the repaired final application/test tree even when its prior verdict was PASS. Rerun Code Review when its prior verdict was REVISE or the repair changed production code; preserve an earlier Code Review PASS only for a test-only repair. The completion blob/hash/tree, report, actor, and gate must bind exactly. A missing, repeated, or invalid review-result command is a mechanical REPLAN/SPLIT stop: never follow up or retry that reviewer.",
       `The active runId must be exactly ${attempt.id}.`,
       `The active run expectedStories inventory must equal this frozen ordered catalog exactly: ${JSON.stringify(resolved.task.stories.map((story) => story.id))}. Do not add, omit, rename, or reorder stories; the epic gate must close every listed story on the same runId.`,
       "If either reviewer returns REVISE, reactivate the original developer with exactly one bounded followup_task for that global story repair cycle and the exact findings; do not let the conductor or reviewer patch. The followup must include the original canonical Developer identity returned by spawn_agent, exactly /root/<task_name>. The original developer must set developerSessionId to that exact canonical identity, never to the bare task_name or an unobservable internal UUID, in its typed acef.developer-repair.v3 receipt and return a fresh FINAL_ANSWER containing REPAIR_CYCLE=<n>, REPAIR_RECEIPT_PATH=<path>, REPAIR_RECEIPT_SHA256=<sha256>, and ACTOR_RESULT=PASS before any retry reviewer starts. That one receipt binds the Developer's repair commit and final application tree; the later conductor-owned control-only review-transition commit must not trigger another Developer followup or replacement receipt. Spawn the required independent delta reviewers as <base-task-name>_retry1 or _retry2, where the suffix is that same global story repair cycle, require final answers to include the matching REPAIR_CYCLE=<n>, and give every reviewer in one cycle the receipt postTree. Patch Assurance is mandatory in every repair cycle; Code Review is mandatory after a production repair and otherwise reruns only when its prior report was REVISE. At most two repair cycles are allowed for a story; a third cycle is REPLAN/SPLIT and quarantine.",
@@ -616,8 +625,8 @@ function epicPilotPrompt(attempt, resolved, manifest) {
     : attempt.treatment === "candidate"
     ? [
       "Initial ATDD is sufficient when it maps every acceptance criterion and produces one genuine red test on the critical vertical path. Criteria that are regression-only need not all be red before development; expand them before test-review. Do not reject a valid critical-path red merely because protected or frozen-scope tests do not cover every regression case.",
-      "If an ATDD actor still returns REVISE, do not stop or retry it. Spawn exactly one fresh report-only <atdd-task-name>_adjudication1 actor whose first tuple is scope=<story> control=atdd-adjudication actor=<task-name> persona=test-reviewer and give it only the frozen story contract, ATDD report, protected-path rules, and REVISE findings. Persist that exact typed actor phase/role. It must end ACTOR_RESULT=PASS plus ATDD_ADJUDICATION=OVERRULE or ATDD_ADJUDICATION=UPHOLD.",
-      "OVERRULE means the critical-path red is sufficient and development continues. UPHOLD permits exactly one fresh <atdd-task-name>_correction1 actor whose first tuple is scope=<story> control=atdd-correction actor=<task-name> persona=test-author. Before spawning it, persist and commit docs/ai/corrections/<correction-task-name>.json with schema=acef.atdd-correction.v1, sourceActorId=<atdd-task-name>, correctionActorId=<correction-task-name>, scope=test-artifacts-only, findingsSha256=<sha256 of the exact parent-delivered ATDD REVISE final answer>, and explicit allowedPaths limited to non-protected tests/test reports. Persist the exact typed actor phase/role. The correction may change only those paths, never production. Every exec_command must contain exactly one literal allowlisted read or focused-test command; use separate calls, with no shell separators, pipelines, substitutions, dynamic command variables, or dynamic apply_patch construction. A second incomplete ATDD result is REPLAN/SPLIT.",
+      "If an ATDD actor still returns REVISE, do not stop or retry it. Spawn exactly one fresh report-only <atdd-task-name>_adjudication1 actor with fork_turns=none and the manifest process-judge model/effort; its first tuple is scope=<story> control=atdd-adjudication actor=<task-name> persona=test-reviewer. Give it only the frozen story contract, ATDD report, protected-path rules, and REVISE findings. Persist that exact typed actor phase/role. It must end ACTOR_RESULT=PASS plus ATDD_ADJUDICATION=OVERRULE or ATDD_ADJUDICATION=UPHOLD.",
+      "OVERRULE means the critical-path red is sufficient and development continues. UPHOLD permits exactly one fresh <atdd-task-name>_correction1 actor with fork_turns=none and the manifest ATDD model/effort; its first tuple is scope=<story> control=atdd-correction actor=<task-name> persona=test-author. Before spawning it, persist and commit docs/ai/corrections/<correction-task-name>.json with schema=acef.atdd-correction.v1, sourceActorId=<atdd-task-name>, correctionActorId=<correction-task-name>, scope=test-artifacts-only, findingsSha256=<sha256 of the exact parent-delivered ATDD REVISE final answer>, and explicit allowedPaths limited to non-protected tests/test reports. Persist the exact typed actor phase/role. The correction may change only those paths, never production. Every exec_command must contain exactly one literal allowlisted read or focused-test command; use separate calls, with no shell separators, pipelines, substitutions, dynamic command variables, or dynamic apply_patch construction. A second incomplete ATDD result is REPLAN/SPLIT.",
       "If a story becomes REPLAN/SPLIT, quarantine it and every transitive dependent story, but continue every pending story with no dependency edge to the quarantined set and no shared safety invariant. The epic product gate still fails while any story is quarantined.",
     ].join(" ")
     : "Follow the installed legacy treatment's own ATDD and retry rules. Do not synthesize candidate adjudication, correction, quarantine, or lifecycle-budget semantics.";
@@ -626,14 +635,25 @@ function epicPilotPrompt(attempt, resolved, manifest) {
     : attempt.treatment === "candidate"
     ? "The mandatory closeout inventory is frozen to the listed contract rows before execution. Use focused verification during stories and run the provided integration verification once at final closeout unless that command itself fails once. Trace, statistics, coverage analysis, test quality, documentation, and closeout review are evidence views only: do not spawn actors, create mandatory work items, enlarge the denominator, or open another closeout chain for them."
     : "Use the installed legacy treatment's closeout workflow exactly. Additional legacy-required actors or evidence work are permitted and measured; do not apply the candidate's frozen-inventory/non-recursive policy to this arm.";
+  const runtimeInstruction = fourActorV3 && manifest.runtimeContract === "capsule-supervisor-v1"
+    ? [
+      "The conductor is a thin executor of typed supervisor actions, not a lifecycle judge. Before every actor dispatch, phase transition, review retry, story close, or epic close, run exactly one `.acef/bin/acef-supervisor --repo .` call and perform only its typed action. If the action is blocked/replan or disagrees with repository state, stop fail-closed instead of interpreting the workflow in prose.",
+      "When the supervisor returns prepare-review-capsules, run its exact model-free scopeCommand. On cycle 0, commit the control-only review transition only when review-scope reports WROTE; on retry cycles revalidate only and do not create an early repair-layer commit. Then generate exactly the role capsules listed by the action from the resulting shared HEAD. This re-derives surfaces from the committed production delta and frozen worker scope without inventing bootstrap labels or placeholder Judge artifacts.",
+      "Create the supervisor-listed role-specific hash-bound review capsules before dispatching reviewers. A reviewer begins with exactly one capsule-show call, consumes the bound focused-runner proof, may make a targeted hash-bound read only for a named uncertainty, then emits exactly one review-result command. Do not rerun the focused command unless a named evidence conflict requires adjudication. The capsules share raw evidence but never another reviewer's conclusion; after a test-only repair, a prior Code Review PASS may be retained while Patch Assurance alone reruns.",
+      "Every successful green evidence command must add the story's exact `--discovery-command-json` and all `--expected-test` identities before `--`. A green run that did not discover the frozen tests is invalid even when its test command exits zero.",
+      "The original Developer remains one session for the story. It may perform bounded focused-test attempts inside its original turn and one repair follow-up per review cycle, but it must not return on the first failed attempt. It returns only with accepted discovered green evidence and, for a repair, one final repair receipt; a terminal non-green return is REPLAN/SPLIT, never another continuation or replacement Developer.",
+      "Mechanical state transitions, evidence collection, capsule generation, report generation, and gate construction use deterministic tools. Do not delegate them or ask a model to restate their JSON. The manifest-pinned Sol/high semantic actors remain unchanged in this first candidate; the Terra/medium thin-proxy profile is shadow-only and cannot certify the run.",
+    ].join("\n")
+    : "";
   return [
     "Complete one controlled multi-story epic in this disposable clone. The measured unit is the complete original user outcome, not an individual story.",
     treatmentInstruction,
     fourActorV3
       ? "This prompt is the complete compiled ACEF contract for the scored run. Do not reread ACEF/BMAD method documents or ask child actors to load linked workflow files; the installed skill entry may be consulted only when host policy requires it, without following links outside the active artifact allowlist. Run readiness and reuse checks as deterministic conductor gates, not extra persona workers. The actor rows listed below are the exhaustive base lifecycle inventory. Preserve actor separation; do not self-approve."
       : "Load and follow the repo-local ACEF skill. Act as conductor and use fresh independent actors/sessions for every role the installed workflow requires. Preserve actor separation; do not self-approve.",
-    "For each contract row below, call spawn_agent exactly once using the exact task_name and fork_turns=none before accepting that phase. Give the fresh actor a bounded artifact-only message: put the listed scope/control/actor/persona tuple first, then only the exact files/commit/question it needs. Do not ask the actor to reread ACEF/BMAD workflow documents. Limit its initial read envelope to the current context plus at most six exact task files and 300 lines per read; targeted follow-up reads are allowed only when a named unresolved question requires them. If it cannot identify progress within ten active minutes, it must return ACTOR_RESULT=REVISE with the exact bottleneck instead of broadening inspection. Accept `ACTOR_RESULT=PASS` and the semantically identical `ACTOR_RESULT: PASS` spelling; likewise for REVISE. Wait for that actor's FINAL_ANSWER and persist a typed actor record whose actorInstanceId exactly equals task_name, except that v3 ATDD evidence-run and each v3 reviewer completion atomically own their respective actor records. For Development, set actor sessionId to the exact canonical /root/<task_name> identity returned by spawn_agent, never to the bare task_name or an unobservable internal receiver UUID; the harness independently binds that path to the child session UUID. Do not combine rows in one actor. For ATDD, commit the clean test-only red tree before invoking evidence-run; never bind red evidence while a production or test path is dirty.",
+    "For each contract row below, call spawn_agent exactly once using the exact task_name, fork_turns=none, model, and reasoning_effort printed on that row before accepting that phase. Model/effort routing is imposed by the manifest; no actor may select or downgrade its own runtime. Give the fresh actor a bounded artifact-only message: put the listed scope/control/actor/persona tuple first, then only the exact files/commit/question it needs. Do not ask the actor to reread ACEF/BMAD workflow documents. Limit its initial read envelope to the current context plus at most six exact task files and 300 lines per read; targeted follow-up reads are allowed only when a named unresolved question requires them. If it cannot identify progress within ten active minutes, it must return ACTOR_RESULT=REVISE with the exact bottleneck instead of broadening inspection. Accept `ACTOR_RESULT=PASS` and the semantically identical `ACTOR_RESULT: PASS` spelling; likewise for REVISE. Wait for that actor's FINAL_ANSWER and persist a typed actor record whose actorInstanceId exactly equals task_name, except that v3 ATDD evidence-run and each v3 reviewer completion atomically own their respective actor records. For Development, set actor sessionId to the exact canonical /root/<task_name> identity returned by spawn_agent, never to the bare task_name or an unobservable internal receiver UUID; the harness independently binds that path to the child session UUID. Do not combine rows in one actor. For ATDD, commit the clean test-only red tree before invoking evidence-run; never bind red evidence while a production or test path is dirty.",
     recoveryInstruction,
+    runtimeInstruction,
     fourActorV3
       ? `ATDD and development are single mandatory actor identities. Code Review and Patch Assurance may each use at most two fresh, affected-only delta retry actors after a developer repair; the ${manifest.promotionGates.budget.maximumActorInvocations}-invocation epic cap still binds. Story Process Judge is optional only for the four named triggers. The epic Process Judge cannot retry. Never replay a complete lifecycle.`
       : attempt.treatment === "candidate"
@@ -779,6 +799,8 @@ function parseCollaborationEvidence(rawText, sessionText, expectedContract, expe
       calls.set(payload.call_id, {
         taskName: args.task_name || "",
         forkTurns: args.fork_turns,
+        model: args.model || null,
+        reasoningEffort: args.reasoning_effort || null,
         message: args.message || "",
         callId: payload.call_id,
         spawnedAt: event.timestamp || null,
@@ -915,6 +937,12 @@ function parseCollaborationEvidence(rawText, sessionText, expectedContract, expe
     for (const entry of attempts) {
       if (!entry.receiverThreadId) failures.push(`${entry.taskName}: missing receiver thread id`);
       if (entry.forkTurns !== "none") failures.push(`${entry.taskName}: fork_turns must be none`);
+      const runtimeKey = expected.scope === "epic" ? "epic-process-judge" : expected.control;
+      const runtimeProfile = expectedSession.actorRuntimeProfiles?.[runtimeKey];
+      if (runtimeProfile && (entry.model !== runtimeProfile.model
+        || entry.reasoningEffort !== runtimeProfile.reasoningEffort)) {
+        failures.push(`${entry.taskName}: runtime profile must be ${runtimeProfile.model}/${runtimeProfile.reasoningEffort}`);
+      }
       if (!entry.parentFinalText) failures.push(`${entry.taskName}: missing parent-delivered FINAL_ANSWER`);
       if (fourActorV3 && entry.retryOrdinal
         && !new RegExp(`\\bREPAIR_CYCLE=${entry.retryOrdinal}\\b`).test(entry.parentFinalText)) {
@@ -941,6 +969,11 @@ function parseCollaborationEvidence(rawText, sessionText, expectedContract, expe
         if (!entry.receiverThreadId) failures.push(`${entry.taskName}: missing receiver thread id`);
         if (entry.forkTurns !== "none") failures.push(`${entry.taskName}: fork_turns must be none`);
         if (!entry.parentFinalText) failures.push(`${entry.taskName}: missing parent-delivered FINAL_ANSWER`);
+        const profileKey = entry.taskName === adjudicationTaskName ? "process-judge" : "atdd";
+        const profile = expectedSession.actorRuntimeProfiles?.[profileKey];
+        if (profile && (entry.model !== profile.model || entry.reasoningEffort !== profile.reasoningEffort)) {
+          failures.push(`${entry.taskName}: runtime profile must be ${profile.model}/${profile.reasoningEffort}`);
+        }
       }
       if (basePassed) {
         if (adjudications.length || corrections.length) failures.push(`${expected.taskName}: PASS must not create ATDD correction work`);
@@ -1016,6 +1049,10 @@ function parseCollaborationEvidence(rawText, sessionText, expectedContract, expe
         if (!entry.receiverThreadId) failures.push(`${taskName}: missing receiver thread id`);
         if (entry.forkTurns !== "none") failures.push(`${taskName}: fork_turns must be none`);
         if (!entry.parentFinalText) failures.push(`${taskName}: missing parent-delivered FINAL_ANSWER`);
+        const judgeProfile = expectedSession.actorRuntimeProfiles?.["process-judge"];
+        if (judgeProfile && (entry.model !== judgeProfile.model || entry.reasoningEffort !== judgeProfile.reasoningEffort)) {
+          failures.push(`${taskName}: runtime profile must be ${judgeProfile.model}/${judgeProfile.reasoningEffort}`);
+        }
         const normalizedTrigger = conditionalJudgeTrigger(entry.parentFinalText, expectedSession.cwd, taskName);
         if (!actorResultIs(entry.parentFinalText, "PASS")
           || !["ambiguity", "waiver", "evidence-conflict", "gate-anomaly"].includes(normalizedTrigger)) {
@@ -1327,7 +1364,7 @@ function correctionSessionWrites(sessionText, repoRoot) {
 
 function canonicalReviewResultActor(command) {
   const normalized = String(command || "").trim();
-  const prefix = /^(?:\.acef\/bin\/)?acef-state\s+review-result\s+--repo\s+\.\s+--actor\s+([A-Za-z0-9._-]+)\s+--verdict\s+(?:PASS|REVISE|REPLAN)/;
+  const prefix = /^(?:\.acef\/bin\/)?acef-state\s+review-result\s+--repo\s+\.\s+--actor\s+([A-Za-z0-9._-]+)(?:\s+--model\s+[A-Za-z0-9._-]+\s+--effort\s+(?:low|medium|high|xhigh|max))?\s+--verdict\s+(?:PASS|REVISE|REPLAN)/;
   const actor = normalized.match(prefix)?.[1] || "";
   if (!actor) return "";
   const suffix = normalized.replace(prefix, "");
@@ -1453,6 +1490,7 @@ function codexSessionMetrics(sessionText) {
     input_tokens: Number(total.input_tokens || 0),
     cached_input_tokens: Number(total.cached_input_tokens || 0),
     output_tokens: Number(total.output_tokens || 0),
+    model_cycles: tokenRows.length,
     tool_calls: toolCallIds.size,
     commandText: commandTexts.join("\n"),
   };
@@ -1463,7 +1501,7 @@ function v3AtddEvidenceCommandObserved(sessionText, taskName, story) {
   const actorPattern = taskName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const storyPattern = story.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const matches = commands.filter((command) => new RegExp(
-    `^(?:\\.acef/bin/)?acef-state\\s+evidence-run\\s+--repo\\s+\\.\\s+--id\\s+[A-Za-z0-9._-]+\\s+--kind\\s+runtime-test\\s+--actor\\s+${actorPattern}\\s+--story\\s+${storyPattern}(?:\\s+--satisfies\\s+[A-Za-z0-9._-]+)+\\s+--\\s+.+$`,
+    `^(?:\\.acef/bin/)?acef-state\\s+evidence-run\\s+--repo\\s+\\.\\s+--id\\s+[A-Za-z0-9._-]+\\s+--kind\\s+runtime-test\\s+--actor\\s+${actorPattern}\\s+--story\\s+${storyPattern}(?:\\s+--model\\s+gpt-5\\.6-sol\\s+--effort\\s+high)?(?:\\s+--satisfies\\s+[A-Za-z0-9._-]+)+\\s+--\\s+.+$`,
   ).test(command));
   return matches.length === 1;
 }
@@ -1473,6 +1511,7 @@ function aggregateTeamMetrics(conductorMetrics, childMetrics) {
     input_tokens: Number(conductorMetrics.input_tokens || 0) + Number(childMetrics.input_tokens || 0),
     cached_input_tokens: Number(conductorMetrics.cached_input_tokens || 0) + Number(childMetrics.cached_input_tokens || 0),
     output_tokens: Number(conductorMetrics.output_tokens || 0) + Number(childMetrics.output_tokens || 0),
+    model_cycles: Number(conductorMetrics.model_cycles || 0) + Number(childMetrics.model_cycles || 0),
     tool_calls: Number(conductorMetrics.tool_calls || 0) + Number(childMetrics.tool_calls || 0),
   };
 }
@@ -1552,6 +1591,7 @@ function isAllowedReviewerShellCommand(command) {
   if (/\brg\b.*(?:--pre|--pre-glob)\b/.test(normalized) || /\bsed\b.*(?:^|\s)-i(?:\s|$)/.test(normalized)) return false;
   if (canonicalReviewResultActor(normalized)) return true;
   return [
+    /^(?:\.acef\/bin\/)?acef-state\s+capsule-show\s+--repo\s+\.\s+--id\s+[A-Za-z0-9._-]+$/,
     /^git\s+(?:status|show|diff|diff-tree|rev-parse|ls-files|ls-tree|log|cat-file|merge-base|grep)\b/,
     /^(?:rg|cat|ls|wc|head|tail|shasum|sha256sum|jq)\b/,
     /^sed\s+-n\b/,
@@ -1740,6 +1780,11 @@ function loadCollaborationEvidence(rawPath, expectedContract, expectedSession = 
     if (expectedSession.actorContractVersion === "four-actor-v3"
       && ["code-review", "patch-assurance"].includes(lifecycleEntry?.control)) {
       const writes = correctionSessionWrites(childText, expectedSession.cwd);
+      const childCommands = codexSessionMetrics(childText).commandText.split(/\r?\n/).map((entry) => entry.trim()).filter(Boolean);
+      const capsuleShowCommands = childCommands.filter((command) => /^(?:\.acef\/bin\/)?acef-state\s+capsule-show\s+--repo\s+\.\s+--id\s+[A-Za-z0-9._-]+$/.test(command));
+      if (expectedSession.runtimeContract === "capsule-supervisor-v1" && capsuleShowCommands.length !== 1) {
+        failures.push(`${dispatch.taskName}: reviewer must execute exactly one capsule-show command`);
+      }
       let captured = null;
       try { captured = reviewerCompletionFromSession(childText, expectedSession.cwd, dispatch.taskName); }
       catch (error) { failures.push(`${dispatch.taskName}: ${error.message}`); }
@@ -1773,6 +1818,22 @@ function loadCollaborationEvidence(rawPath, expectedContract, expectedSession = 
           || sha256File(captured.absoluteReportPath) !== captured.reportSha256
           || fs.readFileSync(captured.absoluteReportPath, "utf8") !== Buffer.from(captured.reportBase64, "base64").toString("utf8")) {
           failures.push(`${dispatch.taskName}: reviewer completion report was replaced after child completion`);
+        }
+        if (expectedSession.runtimeContract === "capsule-supervisor-v1" && capsuleShowCommands.length === 1) {
+          try {
+            const capsuleId = capsuleShowCommands[0].match(/--id\s+([A-Za-z0-9._-]+)$/)[1];
+            const capsulePath = path.join(expectedSession.cwd, "docs", "ai", "capsules", `${capsuleId}.json`);
+            const capsule = installedStateParser(expectedSession.cwd).parseAssuranceCapsule(capsulePath);
+            const report = installedStateParser(expectedSession.cwd).parseReviewReport(captured.absoluteReportPath);
+            const expectedRole = lifecycleEntry.control;
+            if (capsule.actorInstanceId !== dispatch.taskName || capsule.role !== expectedRole
+              || capsule.inputTree !== captured.inputTree || report.capsulePath !== path.relative(expectedSession.cwd, capsulePath).replaceAll(path.sep, "/")
+              || report.capsuleSha256 !== sha256File(capsulePath)) {
+              failures.push(`${dispatch.taskName}: capsule-show/report actor, role, tree, or hash binding mismatch`);
+            }
+          } catch (error) {
+            failures.push(`${dispatch.taskName}: invalid capsule-show binding: ${error.message}`);
+          }
         }
         reviewerCompletions.push({
           taskName: dispatch.taskName,
@@ -1835,9 +1896,10 @@ function loadCollaborationEvidence(rawPath, expectedContract, expectedSession = 
     input_tokens: total.input_tokens + entry.metrics.input_tokens,
     cached_input_tokens: total.cached_input_tokens + entry.metrics.cached_input_tokens,
     output_tokens: total.output_tokens + entry.metrics.output_tokens,
+    model_cycles: total.model_cycles + entry.metrics.model_cycles,
     tool_calls: total.tool_calls + entry.metrics.tool_calls,
     commandText: [total.commandText, entry.metrics.commandText].filter(Boolean).join("\n"),
-  }), { input_tokens: 0, cached_input_tokens: 0, output_tokens: 0, tool_calls: 0, commandText: "" });
+  }), { input_tokens: 0, cached_input_tokens: 0, output_tokens: 0, model_cycles: 0, tool_calls: 0, commandText: "" });
   return {
     ...evidence,
     ok: failures.length === 0,
@@ -2044,12 +2106,16 @@ function evaluatePilotBudgets(manifest, attempt, activeDeliverySeconds, actor, c
   }
   if (activeDeliverySeconds > budget.maximumActiveDeliverySeconds) failures.push(`active delivery ${activeDeliverySeconds}s/${budget.maximumActiveDeliverySeconds}s`);
   if (actor.input_tokens > budget.maximumInputTokens) failures.push(`input tokens ${actor.input_tokens}/${budget.maximumInputTokens}`);
+  if (Number.isInteger(budget.maximumModelCycles) && actor.model_cycles > budget.maximumModelCycles) {
+    failures.push(`model cycles ${actor.model_cycles}/${budget.maximumModelCycles}`);
+  }
   if (actor.tool_calls > budget.maximumToolCalls) failures.push(`tool calls ${actor.tool_calls}/${budget.maximumToolCalls}`);
-  const measuredWaitSeconds = budget.profileId === "v33-measured"
+  const coordinationIdleBudget = ["v33-measured", "capsule-supervisor-v1"].includes(budget.profileId);
+  const measuredWaitSeconds = coordinationIdleBudget
     ? Number(harnessWait.coordinationIdleSeconds || 0) : harnessWait.seconds;
-  const measuredWaitShare = budget.profileId === "v33-measured"
+  const measuredWaitShare = coordinationIdleBudget
     ? Number(harnessWait.coordinationIdleShare || 0) : harnessWait.share;
-  const waitLabel = budget.profileId === "v33-measured" ? "coordination idle wait" : "harness wait";
+  const waitLabel = coordinationIdleBudget ? "coordination idle wait" : "harness wait";
   if (measuredWaitSeconds > budget.maximumHarnessWaitSeconds) failures.push(`${waitLabel} ${measuredWaitSeconds}s/${budget.maximumHarnessWaitSeconds}s`);
   if (measuredWaitShare > budget.maximumHarnessWaitShare) failures.push(`${waitLabel} share ${measuredWaitShare}/${budget.maximumHarnessWaitShare}`);
   if (harnessWait.measurementComplete === false || Number(harnessWait.incompleteWaitCalls || 0) > 0) {
@@ -2075,6 +2141,7 @@ function evaluatePilotBudgets(manifest, attempt, activeDeliverySeconds, actor, c
     storyDeliverySeconds,
     activeDeliverySeconds,
     inputTokens: actor.input_tokens,
+    modelCycles: actor.model_cycles,
     toolCalls: actor.tool_calls,
     broadSuiteInvocations,
     harnessWait,
@@ -2881,6 +2948,9 @@ function evaluateTreatmentState(clone, attempt, frozenExpectedStories = [], expe
     if (attempt.actorContractVersion === "four-actor-v3" && observed.fullFlowContract !== "four-actor-v3") {
       failures.push(`candidate fullFlowContract is ${observed.fullFlowContract || "missing"}`);
     }
+    if (attempt.runtimeContract && observed.runtimeContract !== attempt.runtimeContract) {
+      failures.push(`candidate runtimeContract is ${observed.runtimeContract || "missing"}`);
+    }
     if (attempt.actorContractVersion === "four-actor-v3"
       && JSON.stringify(observed.expectedStories || []) !== JSON.stringify(frozenExpectedStories)) {
       failures.push(`candidate expectedStories inventory does not match frozen task catalog`);
@@ -2893,11 +2963,65 @@ function evaluateTreatmentState(clone, attempt, frozenExpectedStories = [], expe
   return {
     ok: failures.length === 0,
     expected: attempt.treatment === "legacy" ? { lane: "full-bmad" }
-      : { workflowId: attempt.workflowId, assuranceProfile: attempt.assuranceProfile },
+      : { workflowId: attempt.workflowId, assuranceProfile: attempt.assuranceProfile, runtimeContract: attempt.runtimeContract || null },
     observed,
     observedSha256: sha256(JSON.stringify(observed)),
     failures,
   };
+}
+
+function frozenCommandText(argv) {
+  return argv.map((value) => /^[A-Za-z0-9_./:@%+=,-]+$/.test(value)
+    ? value : `'${value.replaceAll("'", `'\\''`)}'`).join(" ");
+}
+
+function validateFrozenDiscoveryContracts(clone, resolved, attempt) {
+  if (attempt.runtimeContract !== "capsule-supervisor-v1") {
+    return { ok: true, applicable: false, stories: [], failures: [] };
+  }
+  const failures = [];
+  const results = [];
+  const stories = resolved.kind === "epic" ? resolved.task.stories : [resolved.task];
+  const gateDir = path.join(clone, "docs", "ai", "gates");
+  const gates = fs.existsSync(gateDir) ? fs.readdirSync(gateDir).filter((name) => name.endsWith(".json")).map((name) => {
+    try { return JSON.parse(fs.readFileSync(path.join(gateDir, name), "utf8")); } catch { return null; }
+  }).filter(Boolean) : [];
+  for (const story of stories) {
+    const discovery = story.discovery;
+    const storyFailures = [];
+    if (!discovery || !Array.isArray(discovery.argv) || !discovery.argv.length
+      || !Array.isArray(discovery.expectedTests) || !discovery.expectedTests.length) {
+      storyFailures.push("frozen discovery contract is missing");
+    }
+    const passGates = gates.filter((gate) => gate.gateType === "deterministic-story-close-v3"
+      && gate.verdict === "PASS" && normalizedActorToken(gate.scope) === normalizedActorToken(story.id))
+      .sort((left, right) => Number(right.reviewCycle || 0) - Number(left.reviewCycle || 0));
+    const gate = passGates[0] || null;
+    let evidence = null;
+    if (!gate?.greenEvidenceId) {
+      storyFailures.push("terminal PASS gate or greenEvidenceId is missing");
+    } else {
+      const evidencePath = path.join(clone, "docs", "ai", "evidence", `${gate.greenEvidenceId}.json`);
+      try { evidence = JSON.parse(fs.readFileSync(evidencePath, "utf8")); }
+      catch { storyFailures.push(`green evidence ${gate.greenEvidenceId} is missing or invalid`); }
+    }
+    if (evidence && discovery) {
+      const expectedRunner = frozenCommandText(story.verify || []);
+      const expectedDiscovery = frozenCommandText(discovery.argv);
+      if (evidence.command !== expectedRunner) storyFailures.push("green runner command differs from the frozen focused argv");
+      if (evidence.discovery?.command !== expectedDiscovery) storyFailures.push("discovery command differs from the frozen argv");
+      if (JSON.stringify(evidence.discovery?.expectedTests || []) !== JSON.stringify(discovery.expectedTests)) {
+        storyFailures.push("expected discovery identities differ from the frozen ordered list");
+      }
+      const discovered = new Set(evidence.discovery?.discoveredTests || []);
+      if (discovery.expectedTests.some((identity) => !discovered.has(identity))) {
+        storyFailures.push("one or more frozen test identities were not discovered");
+      }
+    }
+    failures.push(...storyFailures.map((message) => `${story.id}: ${message}`));
+    results.push({ story: story.id, gateId: gate?.gateId || null, evidenceId: gate?.greenEvidenceId || null, ok: storyFailures.length === 0, failures: storyFailures });
+  }
+  return { ok: failures.length === 0, applicable: true, stories: results, failures };
 }
 
 function latestPilotCheckpoint(opts, attemptId) {
@@ -3135,6 +3259,7 @@ function finalizePilotAttempt(manifest, opts, checkpoint) {
   const treatmentState = evaluateTreatmentState(checkpoint.clone, attempt,
     resolved.kind === "epic" ? resolved.task.stories.map((story) => story.id) : [resolved.taskId],
     checkpoint.attemptRunId);
+  const discoveryContracts = validateFrozenDiscoveryContracts(checkpoint.clone, resolved, attempt);
   const collaborationEvidence = actorContract.length
     ? loadCollaborationEvidence(checkpoint.rawPath, actorContract, {
       cwd: checkpoint.clone,
@@ -3144,13 +3269,15 @@ function finalizePilotAttempt(manifest, opts, checkpoint) {
       allowUnexpectedActors: attempt.treatment === "legacy",
       legacyPolicy: attempt.treatment === "legacy",
       actorContractVersion: attempt.actorContractVersion,
+      actorRuntimeProfiles: manifest.actorRuntimeProfiles || null,
+      runtimeContract: attempt.runtimeContract || null,
       maximumActorInvocations: manifest.promotionGates?.budget?.maximumActorInvocations,
       lifecycleIntegrationArgv: attempt.actorContractVersion === "four-actor-v3"
         ? verificationContract.verify : null,
     })
     : { ok: true, expectedActorCount: 0, observedActorCount: 0, dispatches: [], failures: [] };
   const childMetrics = collaborationEvidence.childMetrics
-    || { input_tokens: 0, cached_input_tokens: 0, output_tokens: 0, tool_calls: 0, commandText: "" };
+    || { input_tokens: 0, cached_input_tokens: 0, output_tokens: 0, model_cycles: 0, tool_calls: 0, commandText: "" };
   const teamMetrics = aggregateTeamMetrics(actor, childMetrics);
   const teamLifecycleCommandTrace = parseIndependentTrace(
     `${actor.stdout}\n${childMetrics.commandText || ""}`,
@@ -3204,7 +3331,7 @@ function finalizePilotAttempt(manifest, opts, checkpoint) {
     && collaborationEvidence.ok && durableLifecycleEvidence.ok
     && (!actorContract.length || collaborationEvidence.closeoutCreatedMandatoryChains === 0)
     && trace.scopeAttributionComplete && trace.lifecycleComplete && !trace.duplicateLifecycle
-    && treatmentState.ok;
+    && treatmentState.ok && discoveryContracts.ok;
   const automatedOraclePassed = processOraclePassed && pilotBudgets.ok;
   const row = {
     schema: "acef.execution-assurance-pilot-attempt.v1",
@@ -3251,11 +3378,13 @@ function finalizePilotAttempt(manifest, opts, checkpoint) {
     inputTokens: teamMetrics.input_tokens,
     cachedInputTokens: teamMetrics.cached_input_tokens,
     outputTokens: teamMetrics.output_tokens,
+    modelCycles: teamMetrics.model_cycles,
     toolCalls: teamMetrics.tool_calls,
     conductorMetrics: {
       inputTokens: actor.input_tokens,
       cachedInputTokens: actor.cached_input_tokens,
       outputTokens: actor.output_tokens,
+      modelCycles: actor.model_cycles,
       toolCalls: actor.tool_calls,
     },
     teamMetrics,
@@ -3269,6 +3398,7 @@ function finalizePilotAttempt(manifest, opts, checkpoint) {
     collaborationEvidence,
     durableLifecycleEvidence,
     treatmentState,
+    discoveryContracts,
     processOraclePassed,
     harnessWait,
     pilotBudgets,
@@ -3704,6 +3834,7 @@ module.exports = {
   ensureActorRequest,
   evaluatePilotBudgets,
   evaluateTreatmentState,
+  validateFrozenDiscoveryContracts,
   finalizePilotAttempt,
   forceTrackInstalledFramework,
   ingestPilotJudgment,

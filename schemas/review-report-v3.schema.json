@@ -14,6 +14,8 @@
     "phase": { "type": "string", "enum": ["code-review", "patch-assurance"] },
     "inputCommit": { "type": "string", "minLength": 1 },
     "inputTree": { "type": "string", "minLength": 1 },
+    "capsulePath": { "type": "string", "pattern": "^docs/ai/capsules/[^/]+\\.json$" },
+    "capsuleSha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
     "verdict": { "type": "string", "enum": ["PASS", "REVISE", "REPLAN", "pass", "revise", "replan"] },
     "findings": {
       "type": "array",

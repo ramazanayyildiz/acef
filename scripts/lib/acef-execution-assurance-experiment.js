@@ -133,20 +133,43 @@ function validateManifest(manifest) {
           : budgetProfile === "v33-measured"
             ? { maximumActorInvocations: 25, maximumInputTokens: 50000000, maximumToolCalls: 520,
               maximumHarnessWaitSeconds: 2700, maximumHarnessWaitShare: 0.38 }
+            : budgetProfile === "capsule-supervisor-v1"
+              ? { maximumActorInvocations: 25, maximumInputTokens: 18000000, maximumModelCycles: 220,
+                maximumToolCalls: 240, maximumHarnessWaitSeconds: 300, maximumHarnessWaitShare: 0.05,
+                targetStoryActiveSeconds: 900, maximumStoryActiveSeconds: 1200,
+                targetActiveDeliverySeconds: 3600, maximumActiveDeliverySeconds: 4500 }
           : null;
     if (!expectedBudget) {
-      throw new Error("v3 P0 candidate budget.profileId must be v3-preregistered, v31-empirical, v32-empirical, or v33-measured");
+      throw new Error("v3 P0 candidate budget.profileId is not recognized");
     }
     if (budget.baseActorCount !== 17 || budget.maximumActorInvocations !== expectedBudget.maximumActorInvocations
       || budget.maximumRepairCyclesPerStory !== 2 || budget.thirdRepairDisposition !== "REPLAN_SPLIT"
       || budget.maximumInfrastructureRetriesPerInvocation !== 1 || budget.maximumInfrastructureRetriesTotal !== 3
       || budget.maximumInputTokens !== expectedBudget.maximumInputTokens
+      || (expectedBudget.maximumModelCycles !== undefined && budget.maximumModelCycles !== expectedBudget.maximumModelCycles)
       || budget.maximumToolCalls !== expectedBudget.maximumToolCalls
-      || budget.targetStoryActiveSeconds !== 2100 || budget.maximumStoryActiveSeconds !== 3000
-      || budget.targetActiveDeliverySeconds !== 9000 || budget.maximumActiveDeliverySeconds !== 10800
+      || budget.targetStoryActiveSeconds !== (expectedBudget.targetStoryActiveSeconds || 2100)
+      || budget.maximumStoryActiveSeconds !== (expectedBudget.maximumStoryActiveSeconds || 3000)
+      || budget.targetActiveDeliverySeconds !== (expectedBudget.targetActiveDeliverySeconds || 9000)
+      || budget.maximumActiveDeliverySeconds !== (expectedBudget.maximumActiveDeliverySeconds || 10800)
       || budget.maximumHarnessWaitSeconds !== expectedBudget.maximumHarnessWaitSeconds
       || budget.maximumHarnessWaitShare !== expectedBudget.maximumHarnessWaitShare) {
       throw new Error("v3 P0 candidate must freeze actor, repair, time, token, tool, and harness-wait budgets");
+    }
+    if (budgetProfile === "capsule-supervisor-v1") {
+      if (manifest.runtimeContract !== "capsule-supervisor-v1") {
+        throw new Error("capsule supervisor budget requires runtimeContract=capsule-supervisor-v1");
+      }
+      if (attempt.runtimeContract !== "capsule-supervisor-v1") {
+        throw new Error("capsule supervisor attempt must bind runtimeContract=capsule-supervisor-v1");
+      }
+      const requiredProfiles = ["atdd", "development", "code-review", "patch-assurance", "process-judge", "epic-process-judge"];
+      for (const role of requiredProfiles) {
+        const profile = manifest.actorRuntimeProfiles?.[role];
+        if (!profile || profile.model !== "gpt-5.6-sol" || profile.reasoningEffort !== "high") {
+          throw new Error(`capsule supervisor requires actorRuntimeProfiles.${role}=gpt-5.6-sol/high`);
+        }
+      }
     }
     if (attempt.activeTimeCapMinutes * 60 !== budget.maximumActiveDeliverySeconds) {
       throw new Error("v3 P0 candidate active cap must equal its hard active-delivery budget");

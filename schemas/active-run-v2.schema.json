@@ -13,6 +13,10 @@
       "type": "string",
       "enum": ["six-actor-v2", "four-actor-v3"]
     },
+    "runtimeContract": {
+      "type": "string",
+      "enum": ["capsule-supervisor-v1"]
+    },
     "assuranceProfile": { "type": "string", "enum": ["baseline", "guarded"] },
     "scopeUnit": { "type": "string", "enum": ["work-item", "story", "epic"] },
     "expectedStories": {
@@ -129,6 +133,16 @@
     {
       "if": { "properties": { "fullFlowContract": { "const": "four-actor-v3" } }, "required": ["fullFlowContract"] },
       "then": { "required": ["expectedStories"] }
+    },
+    {
+      "if": { "required": ["runtimeContract"] },
+      "then": {
+        "properties": {
+          "workflowId": { "const": "full-bmad" },
+          "fullFlowContract": { "const": "four-actor-v3" }
+        },
+        "required": ["fullFlowContract"]
+      }
     }
   ],
   "$defs": {

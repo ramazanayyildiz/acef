@@ -1,0 +1,78 @@
+{
+  "capabilityId": "capsule-supervisor-runtime",
+  "requestedIntent": "Reduce Full BMAD execution time without removing independent semantic controls by eliminating model-driven bookkeeping, reusing only the story Developer session, and bounding reviewer context with raw hash-bound capsules.",
+  "status": "enforced",
+  "requiredLayers": [
+    "docs",
+    "schema",
+    "cli",
+    "validator",
+    "workflow",
+    "tests",
+    "installer"
+  ],
+  "implementedLayers": {
+    "docs": [
+      "CHANGELOG.md#Capsule supervisor runtime candidate",
+      "method/BMAD_V2_LANE.md#Optional capsule supervisor runtime",
+      "skills/acef/references/ACEF_BMAD_V2_LANE.md#Optional capsule supervisor runtime"
+    ],
+    "schema": [
+      "schemas/active-run-v2.schema.json",
+      "schemas/actor.schema.json",
+      "schemas/evidence.schema.json",
+      "schemas/review-report-v3.schema.json",
+      "schemas/assurance-capsule-v1.schema.json"
+    ],
+    "cli": [
+      "scripts/acef-supervisor",
+      "scripts/acef-state#writeReviewScope",
+      "scripts/acef-state#writeReviewCapsule",
+      "scripts/acef-state#showCapsule"
+    ],
+    "validator": [
+      "scripts/acef-process-validator#checkGateTransition",
+      "scripts/acef-process-validator#checkLeanEvidence",
+      "scripts/acef-process-validator#checkPrecommitGate"
+    ],
+    "workflow": [
+      "scripts/acef-execution-assurance-experiment",
+      "scripts/lib/acef-execution-assurance-experiment.js"
+    ],
+    "tests": [
+      "scripts/test-acef-capsule-supervisor",
+      "scripts/test-acef-state",
+      "scripts/test-acef-process-validator",
+      "scripts/test-acef-execution-assurance-experiment",
+      "scripts/test-install-acef-tools",
+      "docs/experiments/execution-assurance-v316/fixtures/BenchmarkWebhookGenericMysqlCompatibilityTest.php"
+    ],
+    "installer": [
+      "scripts/install-acef-tools"
+    ]
+  },
+  "limitations": [
+    "The first candidate keeps every semantic actor on gpt-5.6-sol/high; lower-cost semantic routing is shadow-only until separately measured.",
+    "A review capsule is additive transport and cannot replace independent reviewer judgment or targeted reads needed to resolve a named uncertainty; a reviewer may rerun the focused command only for a named evidence conflict.",
+    "The runtime is enforced by schemas, writers, validators, tests, and installer wiring but has not yet passed the frozen end-to-end rehearsal, so it is not proven or installed in target repositories.",
+    "Existing Full runs with lifecycle evidence cannot adopt this runtime contract in place."
+  ],
+  "evidence": [
+    {
+      "layer": "tests",
+      "ref": "scripts/test-acef-capsule-supervisor",
+      "note": "Covers deterministic next-action selection, model-free scope/capsule preparation, exact discovery, one Developer turn/follow-up policy, independent capsule generation, current-HEAD/report binding, and tamper failure."
+    },
+    {
+      "layer": "tests",
+      "ref": "scripts/test-acef-process-validator",
+      "note": "Covers state-aware precommit and conditional deterministic story close compatibility."
+    },
+    {
+      "layer": "tests",
+      "ref": "scripts/test-acef-execution-assurance-experiment",
+      "note": "Covers model-cycle accounting, aggregate cost, runtime profile enforcement, and capsule-supervisor budgets."
+    }
+  ],
+  "createdAt": "2026-08-04"
+}

@@ -1,0 +1,199 @@
+#!/usr/bin/env node
+const fs = require("node:fs");
+const os = require("node:os");
+const path = require("node:path");
+const cp = require("node:child_process");
+
+const root = path.resolve(__dirname, "..");
+const state = path.join(root, "scripts", "acef-state");
+const supervisor = path.join(root, "scripts", "acef-supervisor");
+const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "acef-capsule-supervisor-"));
+
+function run(command, args, options = {}) {
+  return cp.execFileSync(command, args, { cwd: tmp, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], ...options });
+}
+
+function stateRun(args, options = {}) {
+  return run(process.execPath, [state, ...args], options);
+}
+
+function git(args) {
+  return run("git", args).trim();
+}
+
+function readJson(relativePath) {
+  return JSON.parse(fs.readFileSync(path.join(tmp, relativePath), "utf8"));
+}
+
+try {
+  git(["init", "-q"]);
+  git(["config", "user.email", "acef@example.invalid"]);
+  git(["config", "user.name", "ACEF Test"]);
+  fs.mkdirSync(path.join(tmp, "app"), { recursive: true });
+  fs.mkdirSync(path.join(tmp, "tests"), { recursive: true });
+  fs.mkdirSync(path.join(tmp, "docs", "ai"), { recursive: true });
+  fs.writeFileSync(path.join(tmp, "app", "demo.js"), "module.exports = false;\n");
+  fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_CURRENT_CONTEXT.md"), "# Current Context\n- AC: demo becomes true\n- focused: node --test tests/demo.test.js\n");
+  fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_capsule_DELIVERY_AUDIT.md"), "# Capsule audit\n");
+  git(["add", "."]); git(["commit", "-qm", "fixture"]);
+  const baseCommit = git(["rev-parse", "HEAD"]);
+
+  stateRun(["active-run", "--repo", tmp, "--run-id", "RUN-capsule", "--workflow-id", "full-bmad",
+    "--full-flow-contract", "four-actor-v3", "--runtime-contract", "capsule-supervisor-v1",
+    "--assurance", "guarded", "--assurance-rationale", "auth state transition", "--scope-unit", "story",
+    "--expected-story", "Story Capsule", "--status", "active", "--story", "Story Capsule", "--phase", "atdd",
+    "--ledger", "docs/ai/ACEF_capsule_DELIVERY_AUDIT.md", "--context", "docs/ai/ACEF_CURRENT_CONTEXT.md",
+    "--worker-scope", "docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json"]);
+  stateRun(["worker-scope", "--repo", tmp, "--story", "Story Capsule", "--phase", "development",
+    "--worker-id", "acef_story_capsule_development", "--allow", "app/**", "--allow", "tests/**"]);
+
+  fs.writeFileSync(path.join(tmp, "tests", "demo.test.js"), "const test = require('node:test'); const assert = require('node:assert'); test('demo contract', () => assert.strictEqual(require('../app/demo.js'), true));\n");
+  git(["add", "tests/demo.test.js"]); git(["commit", "-qm", "red test"]);
+  const red = cp.spawnSync(process.execPath, [state, "evidence-run", "--repo", tmp, "--id", "capsule-red",
+    "--kind", "runtime-test", "--actor", "acef_story_capsule_atdd", "--story", "Story Capsule",
+    "--model", "gpt-5.6-sol", "--effort", "high", "--satisfies", "story-capsule-ac1",
+    "--", process.execPath, "--test", "tests/demo.test.js"], { cwd: tmp, encoding: "utf8" });
+  if (red.status === 0 || !fs.existsSync(path.join(tmp, "docs", "ai", "evidence", "capsule-red.json"))) {
+    throw new Error("red evidence was not captured");
+  }
+  const atddDone = JSON.parse(run(process.execPath, [supervisor, "--repo", tmp]));
+  if (atddDone.action.command !== ".acef/bin/acef-state phase-transition --repo . --phase development") {
+    throw new Error("supervisor did not provide the exact ATDD transition command");
+  }
+  stateRun(["phase-transition", "--repo", tmp, "--phase", "development"]);
+  stateRun(["actor", "--repo", tmp, "--id", "acef_story_capsule_development", "--story", "Story Capsule",
+    "--phase", "development", "--role", "developer", "--client", "codex", "--session-id", "/root/acef_story_capsule_development",
+    "--context-profile", "development", "--model", "gpt-5.6-sol", "--effort", "high"]);
+  fs.writeFileSync(path.join(tmp, "app", "demo.js"), "module.exports = 'almost';\n");
+  git(["add", "app/demo.js"]); git(["commit", "-qm", "failed implementation"]);
+  const failed = cp.spawnSync(process.execPath, [state, "evidence-run", "--repo", tmp, "--id", "capsule-failed",
+    "--kind", "runtime-test", "--actor", "acef_story_capsule_development", "--story", "Story Capsule",
+    "--satisfies", "story-capsule-ac1", "--", process.execPath, "--test", "tests/demo.test.js"], { cwd: tmp, encoding: "utf8" });
+  if (failed.status === 0) throw new Error("failed implementation evidence unexpectedly passed");
+
+  const missingDiscovery = cp.spawnSync(process.execPath, [state, "evidence-run", "--repo", tmp, "--id", "capsule-missing-discovery",
+    "--kind", "runtime-test", "--actor", "acef_story_capsule_development", "--story", "Story Capsule",
+    "--satisfies", "story-capsule-ac1", "--discovery-command-json", JSON.stringify([process.execPath, "-e", "console.log('other test')"]),
+    "--expected-test", "demo contract", "--", process.execPath, "--test", "tests/demo.test.js"], { cwd: tmp, encoding: "utf8" });
+  if (missingDiscovery.status === 0 || fs.existsSync(path.join(tmp, "docs", "ai", "evidence", "capsule-missing-discovery.json"))) {
+    throw new Error("missing discovery test did not fail atomically");
+  }
+
+  fs.writeFileSync(path.join(tmp, "app", "demo.js"), "module.exports = true; // initial\n");
+  git(["add", "app/demo.js"]); git(["commit", "-qm", "green implementation"]);
+  stateRun(["evidence-run", "--repo", tmp, "--id", "capsule-green", "--kind", "runtime-test",
+    "--actor", "acef_story_capsule_development", "--story", "Story Capsule", "--satisfies", "story-capsule-ac1",
+    "--discovery-command-json", JSON.stringify([process.execPath, "-e", "console.log('demo contract')"]),
+    "--expected-test", "demo contract", "--", process.execPath, "--test", "tests/demo.test.js"]);
+  const developmentDone = JSON.parse(run(process.execPath, [supervisor, "--repo", tmp]));
+  if (developmentDone.action.type !== "transition" || developmentDone.action.nextPhase !== "code-review") {
+    throw new Error("supervisor did not transition after the one Developer turn produced discovered green");
+  }
+  stateRun(["phase-transition", "--repo", tmp, "--phase", "code-review"]);
+  const scopePreparation = JSON.parse(run(process.execPath, [supervisor, "--repo", tmp]));
+  if (scopePreparation.action.type !== "prepare-review-capsules" || scopePreparation.action.runtime !== null
+    || scopePreparation.action.scopeCommand !== ".acef/bin/acef-state review-scope --repo ."
+    || scopePreparation.action.capsuleCommands.length !== 2
+    || !scopePreparation.action.capsuleCommands.every((command) => command.includes("--review-cycle 0"))) {
+    throw new Error("supervisor did not select deterministic review-scope preparation");
+  }
+  stateRun(["review-scope", "--repo", tmp]);
+  const reviewScope = readJson("docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json");
+  if (reviewScope.phase !== "code-review" || JSON.stringify(reviewScope.surfaces) !== JSON.stringify(["internal"])) {
+    throw new Error("review-scope did not derive the committed production surface");
+  }
+  git(["add", "docs/ai"]); git(["commit", "-qm", "review transition"]);
+  const reviewBase = baseCommit;
+  for (const role of ["code-review", "patch-assurance"]) {
+    const id = `story-capsule-${role}`;
+    const actor = `acef_story_capsule_${role.replaceAll("-", "_")}`;
+    stateRun(["review-capsule", "--repo", tmp, "--id", id, "--role", role, "--actor", actor,
+      "--base-commit", reviewBase, "--red-evidence", "capsule-red", "--green-evidence", "capsule-green"]);
+    const first = fs.readFileSync(path.join(tmp, "docs", "ai", "capsules", `${id}.json`), "utf8");
+    stateRun(["review-capsule", "--repo", tmp, "--id", id, "--role", role, "--actor", actor,
+      "--base-commit", reviewBase, "--red-evidence", "capsule-red", "--green-evidence", "capsule-green"]);
+    if (fs.readFileSync(path.join(tmp, "docs", "ai", "capsules", `${id}.json`), "utf8") !== first) {
+      throw new Error("capsule generation is not byte-identical for the same tree");
+    }
+    stateRun(["capsule-show", "--repo", tmp, "--id", id]);
+  }
+  const next = JSON.parse(run(process.execPath, [supervisor, "--repo", tmp]));
+  if (next.action.type !== "dispatch-parallel" || next.action.actors.length !== 2
+    || next.action.actors.some((actor) => actor.runtime.model !== "gpt-5.6-sol" || actor.runtime.reasoningEffort !== "high")) {
+    throw new Error("supervisor did not emit the pinned parallel reviewer action");
+  }
+
+  stateRun(["review-result", "--repo", tmp, "--actor", "acef_story_capsule_code_review",
+    "--model", "gpt-5.6-sol", "--effort", "high", "--verdict", "PASS"]);
+  stateRun(["review-result", "--repo", tmp, "--actor", "acef_story_capsule_patch_assurance",
+    "--model", "gpt-5.6-sol", "--effort", "high", "--verdict", "REVISE",
+    "--finding-id", "PA-REPAIR", "--finding-severity", "HIGH",
+    "--finding-reason", "The test needs one bounded integrity repair"]);
+  const codeReviewHash = readJson("docs/ai/actors/acef_story_capsule_code_review.json").producedArtifactHash;
+  const patchAssuranceHash = readJson("docs/ai/actors/acef_story_capsule_patch_assurance.json").producedArtifactHash;
+  const gateAction = JSON.parse(run(process.execPath, [supervisor, "--repo", tmp]));
+  if (gateAction.action.type !== "write-story-gate"
+    || !gateAction.action.command.includes(`--code-review-report-hash ${codeReviewHash}`)
+    || !gateAction.action.command.includes(`--patch-assurance-report-hash ${patchAssuranceHash}`)) {
+    throw new Error("supervisor did not produce the exact deterministic story-gate command");
+  }
+  stateRun(["gate", "--repo", tmp, "--id", "capsule-revise-cycle0", "--scope", "Story Capsule",
+    "--atdd-actor", "acef_story_capsule_atdd", "--development-actor", "acef_story_capsule_development",
+    "--code-review-actor", "acef_story_capsule_code_review", "--patch-assurance-actor", "acef_story_capsule_patch_assurance",
+    "--red-evidence", "capsule-red", "--green-evidence", "capsule-green",
+    "--code-review-report-hash", codeReviewHash, "--patch-assurance-report-hash", patchAssuranceHash,
+    "--review-cycle", "0"]);
+  if (readJson("docs/ai/gates/capsule-revise-cycle0.json").verdict !== "REVISE") {
+    throw new Error("cycle 0 did not persist the typed reviewer REVISE");
+  }
+  const repairStart = JSON.parse(run(process.execPath, [supervisor, "--repo", tmp]));
+  if (repairStart.action.type !== "resume" || repairStart.action.repairCycle !== 1
+    || repairStart.action.actorInstanceId !== "acef_story_capsule_development") {
+    throw new Error("supervisor did not return the first REVISE to the original Developer");
+  }
+
+  fs.writeFileSync(path.join(tmp, "tests", "demo.test.js"), "const test = require('node:test'); const assert = require('node:assert'); test('demo contract', () => assert.strictEqual(require('../app/demo.js'), false));\n");
+  git(["add", "tests/demo.test.js"]); git(["commit", "-qm", "failed test-only repair"]);
+  const repairFailed = cp.spawnSync(process.execPath, [state, "evidence-run", "--repo", tmp,
+    "--id", "capsule-repair-failed", "--kind", "runtime-test", "--actor", "acef_story_capsule_development",
+    "--story", "Story Capsule", "--satisfies", "story-capsule-ac1",
+    "--", process.execPath, "--test", "tests/demo.test.js"], { cwd: tmp, encoding: "utf8" });
+  if (repairFailed.status === 0) throw new Error("failed repair evidence unexpectedly passed");
+
+  fs.writeFileSync(path.join(tmp, "tests", "demo.test.js"), "const test = require('node:test'); const assert = require('node:assert'); test('demo contract', () => assert.strictEqual(require('../app/demo.js'), true)); // repaired\n");
+  git(["add", "tests/demo.test.js"]); git(["commit", "-qm", "green test-only repair"]);
+  stateRun(["evidence-run", "--repo", tmp, "--id", "capsule-repair-green", "--kind", "runtime-test",
+    "--actor", "acef_story_capsule_development", "--story", "Story Capsule", "--satisfies", "story-capsule-ac1",
+    "--discovery-command-json", JSON.stringify([process.execPath, "-e", "console.log('demo contract')"]),
+    "--expected-test", "demo contract", "--", process.execPath, "--test", "tests/demo.test.js"]);
+  const repairReceiptAction = JSON.parse(run(process.execPath, [supervisor, "--repo", tmp]));
+  if (repairReceiptAction.action.type !== "write-developer-repair" || repairReceiptAction.action.repairCycle !== 1) {
+    throw new Error("supervisor did not request the single final-tree repair receipt");
+  }
+  stateRun(["developer-repair", "--repo", tmp, "--id", "story_capsule-repair1",
+    "--prior-gate", "capsule-revise-cycle0", "--developer-actor", "acef_story_capsule_development"]);
+  const retryPreparation = JSON.parse(run(process.execPath, [supervisor, "--repo", tmp]));
+  if (retryPreparation.action.type !== "prepare-review-capsules" || retryPreparation.action.reviewCycle !== 1
+    || JSON.stringify(retryPreparation.action.roles) !== JSON.stringify(["patch-assurance"])
+    || retryPreparation.action.capsuleCommands.length !== 1
+    || !retryPreparation.action.capsuleCommands.every((command) => command.includes("--repair-receipt docs/ai/repairs/story_capsule-repair1.json"))) {
+    throw new Error("supervisor did not retain Code Review PASS for a test-only repair");
+  }
+
+  const capsulePath = path.join(tmp, "docs", "ai", "capsules", "story-capsule-code-review.json");
+  const tampered = JSON.parse(fs.readFileSync(capsulePath, "utf8"));
+  tampered.reviewPolicy.push("tamper");
+  fs.writeFileSync(capsulePath, `${JSON.stringify(tampered, null, 2)}\n`);
+  const tamperCheck = cp.spawnSync(process.execPath, [state, "capsule-show", "--repo", tmp, "--id", "story-capsule-code-review"], { cwd: tmp, encoding: "utf8" });
+  if (tamperCheck.status === 0 || !`${tamperCheck.stdout}${tamperCheck.stderr}`.includes("payload hash mismatch")) {
+    throw new Error("tampered capsule did not fail closed");
+  }
+  const malformedStateCheck = cp.spawnSync(process.execPath, [supervisor, "--repo", tmp], { cwd: tmp, encoding: "utf8" });
+  if (malformedStateCheck.status === 0 || !`${malformedStateCheck.stdout}${malformedStateCheck.stderr}`.includes("story-capsule-code-review.json")) {
+    throw new Error("supervisor silently ignored malformed typed state");
+  }
+
+  console.log("acef capsule supervisor tests passed");
+} finally {
+  fs.rmSync(tmp, { recursive: true, force: true });
+}

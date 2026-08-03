@@ -22,6 +22,25 @@ first lifecycle actor or gate is recorded; changing it requires a new run. New r
 In v3, every catalog story phase uses `scopeUnit: story`; `scopeUnit: epic` is reserved for epic-level state and the
 terminal Epic Process Judge. The state writer rejects a frozen catalog story opened under epic scope.
 
+### Optional capsule supervisor runtime
+
+`capsule-supervisor-v1` is an execution runtime for a new `full-bmad` / `four-actor-v3` run, not another workflow or
+assurance layer. It preserves the four semantic roles while removing model work from lifecycle bookkeeping:
+
+- `acef-supervisor` reduces typed repository state to one next action. Mechanical scope/evidence/capsule/gate work uses
+  no model.
+- ATDD is fresh per story; the original Developer keeps bounded attempts inside one turn and gets one repair follow-up
+  per REVISE cycle. Reviewers stay independent; a test-only repair retains an earlier Code Review PASS and reruns only
+  Patch Assurance, while production repair reruns both. Conditional Story and terminal Epic Judges remain isolated.
+- Review capsules are immutable, additive, raw-evidence and hash bound. Reviewers consume their focused-run proof and
+  use targeted reads; they rerun the focused command only to adjudicate a named evidence conflict.
+- Green evidence requires frozen test discovery. Review surfaces are derived from committed production paths at the
+  review transition rather than guessed during bootstrap.
+- The first candidate uses `gpt-5.6-sol/high` for semantic actors. `gpt-5.6-terra/medium` is shadow-only until measured
+  evidence supports promotion; mechanical actions use no model.
+
+Treat this runtime as `enforced`, not `proven`, until a separately frozen rehearsal passes.
+
 ## Dependency
 This lane is driven by **BMAD-METHOD** (https://github.com/bmad-code-org/BMAD-METHOD, MIT) — an installable agent
 framework. ACEF does not bundle it; install it where you want the heavy lane. ACEF orchestrates it and normalizes its

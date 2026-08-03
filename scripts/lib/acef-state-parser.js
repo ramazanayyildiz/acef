@@ -179,6 +179,12 @@ function parseActiveRun(filePath) {
         throw new Error("active run fullFlowContract is only valid for full-bmad workflow");
       }
     }
+    if (record.runtimeContract !== undefined) {
+      requireEnum(record, "runtimeContract", ["capsule-supervisor-v1"], "active run");
+      if (record.workflowId !== "full-bmad" || record.fullFlowContract !== "four-actor-v3") {
+        throw new Error("active run runtimeContract requires full-bmad/four-actor-v3");
+      }
+    }
     requireEnum(record, "assuranceProfile", ASSURANCE_PROFILES, "active run");
     requireEnum(record, "scopeUnit", SCOPE_UNITS, "active run");
     if (record.expectedStories !== undefined) {
@@ -279,6 +285,9 @@ function parseActorRecord(filePath) {
     requireStringArray(record, "storyInventory", "four-actor-v3 actor record", { nonEmpty: true });
     if (new Set(record.storyInventory).size !== record.storyInventory.length) throw new Error("four-actor-v3 actor storyInventory must be unique");
   }
+  if (record.reasoningEffort !== undefined && record.reasoningEffort !== null) {
+    requireEnum(record, "reasoningEffort", ["low", "medium", "high", "xhigh", "max"], "actor record");
+  }
   if (record.producedArtifactPath !== undefined && record.producedArtifactPath !== null
     && (typeof record.producedArtifactPath !== "string" || !record.producedArtifactPath.trim())) {
     throw new Error("actor record producedArtifactPath must be a non-empty string");
@@ -288,12 +297,18 @@ function parseActorRecord(filePath) {
 
 function parseReviewReport(filePath) {
   const record = readJson(filePath);
-  const fields = ["schema", "runId", "fullFlowContract", "actorInstanceId", "story", "phase", "inputCommit", "inputTree", "verdict", "findings"];
+  const fields = ["schema", "runId", "fullFlowContract", "actorInstanceId", "story", "phase", "inputCommit", "inputTree", "capsulePath", "capsuleSha256", "verdict", "findings"];
   rejectUnknownFields(record, fields, "review report");
-  requireFields(record, fields, "review report");
+  requireFields(record, ["schema", "runId", "fullFlowContract", "actorInstanceId", "story", "phase", "inputCommit", "inputTree", "verdict", "findings"], "review report");
   if (record.schema !== "acef.review-report.v3") throw new Error("review report schema must be acef.review-report.v3");
   if (typeof record.runId !== "string" || !record.runId.trim()) throw new Error("review report runId must be non-empty");
   if (record.fullFlowContract !== "four-actor-v3") throw new Error("review report fullFlowContract must be four-actor-v3");
+  if (record.capsulePath !== undefined && (typeof record.capsulePath !== "string" || !/^docs\/ai\/capsules\/[^/]+\.json$/.test(record.capsulePath))) {
+    throw new Error("review report capsulePath must be docs/ai/capsules/*.json");
+  }
+  if (record.capsuleSha256 !== undefined && !/^[a-f0-9]{64}$/.test(record.capsuleSha256)) {
+    throw new Error("review report capsuleSha256 must be sha256");
+  }
   requireEnum(record, "phase", ["code-review", "patch-assurance"], "review report");
   if (typeof record.verdict === "string") record.verdict = record.verdict.toUpperCase();
   requireEnum(record, "verdict", ["PASS", "REVISE", "REPLAN"], "review report");
@@ -342,6 +357,46 @@ function parseDeveloperRepair(filePath) {
   return record;
 }
 
+function parseAssuranceCapsule(filePath) {
+  const record = readJson(filePath);
+  const fields = [
+    "schema", "runId", "fullFlowContract", "runtimeContract", "story", "role", "actorInstanceId",
+    "reviewCycle", "baseCommit", "inputCommit", "inputTree", "scopePaths", "acceptanceIds",
+    "currentContext", "diff", "sourceBlobs", "redEvidence", "greenEvidence", "previousFindings",
+    "repairReceipt", "reviewPolicy", "allowedCommands", "integrity",
+  ];
+  rejectUnknownFields(record, fields, "assurance capsule");
+  requireFields(record, fields.filter((field) => !["previousFindings", "repairReceipt"].includes(field)), "assurance capsule");
+  if (record.schema !== "acef.assurance-capsule.v1"
+    || record.fullFlowContract !== "four-actor-v3"
+    || record.runtimeContract !== "capsule-supervisor-v1") {
+    throw new Error("assurance capsule schema/contract mismatch");
+  }
+  requireEnum(record, "role", ["code-review", "patch-assurance"], "assurance capsule");
+  if (!Number.isInteger(record.reviewCycle) || record.reviewCycle < 0 || record.reviewCycle > 2) {
+    throw new Error("assurance capsule reviewCycle must be 0, 1, or 2");
+  }
+  for (const field of ["scopePaths", "acceptanceIds", "reviewPolicy", "allowedCommands"]) {
+    requireStringArray(record, field, "assurance capsule", { nonEmpty: true });
+  }
+  if (!Array.isArray(record.sourceBlobs) || !record.sourceBlobs.length) {
+    throw new Error("assurance capsule sourceBlobs must not be empty");
+  }
+  const blobs = [record.currentContext, record.diff, ...record.sourceBlobs];
+  for (const [index, blob] of blobs.entries()) {
+    if (!blob || typeof blob !== "object" || Array.isArray(blob)) throw new Error(`assurance capsule blob ${index} must be an object`);
+    requireFields(blob, ["path", "sha256", "bytes", "content"], `assurance capsule blob ${index}`);
+    if (!/^[a-f0-9]{64}$/.test(blob.sha256) || Buffer.byteLength(blob.content) !== blob.bytes) {
+      throw new Error(`assurance capsule blob ${index} hash/byte metadata is invalid`);
+    }
+  }
+  if (!record.integrity || record.integrity.algorithm !== "sha256"
+    || !/^[a-f0-9]{64}$/.test(record.integrity.payloadSha256 || "")) {
+    throw new Error("assurance capsule integrity is invalid");
+  }
+  return record;
+}
+
 function parseProcessJudgeDecision(filePath) {
   const record = readJson(filePath);
   const fields = ["schema", "runId", "fullFlowContract", "story", "trigger", "actorId", "gateId", "evidenceIds", "verdict", "createdAt"];
@@ -366,6 +421,15 @@ function parseEvidenceManifest(filePath) {
   if (!record.rawArtifact || typeof record.rawArtifact !== "object") throw new Error("evidence manifest missing rawArtifact");
   requireFields(record.rawArtifact, ["path", "sha256"], "evidence rawArtifact");
   requireRunnerProof(record.runnerProof, "evidence runnerProof");
+  if (record.discovery !== undefined) {
+    requireFields(record.discovery, ["command", "exitCode", "expectedTests", "discoveredTests", "stdoutSha256"], "evidence discovery");
+    if (record.discovery.exitCode !== 0) throw new Error("evidence discovery exitCode must be 0");
+    requireStringArray(record.discovery, "expectedTests", "evidence discovery", { nonEmpty: true });
+    requireStringArray(record.discovery, "discoveredTests", "evidence discovery", { nonEmpty: true });
+    const missing = record.discovery.expectedTests.filter((test) => !record.discovery.discoveredTests.includes(test));
+    if (missing.length) throw new Error(`evidence discovery is missing expected test(s): ${missing.join(", ")}`);
+    if (!/^[a-f0-9]{64}$/.test(record.discovery.stdoutSha256)) throw new Error("evidence discovery stdoutSha256 must be sha256");
+  }
   return record;
 }
 
@@ -1299,6 +1363,7 @@ module.exports = {
   parseActorRecord,
   parseReviewReport,
   parseDeveloperRepair,
+  parseAssuranceCapsule,
   parseProcessJudgeDecision,
   parseEvidenceManifest,
   parseGateVerdict,
