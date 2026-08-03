@@ -22,6 +22,10 @@ or evidence contract. Do not use it to claim implementation status; link to the 
 - Added regressions for literal ATDD evidence commands, missing/admitted v3 adjudication, invocation accounting, and a
   real supervised child process stopped on forbidden ATDD reactivation. The complete repository suite passed 30/30 in
   288 seconds. Maturity remains `enforced` pending a separately frozen rehearsal.
+- Separately froze non-scored `REHEARSAL-v311`; preflight and Stage 0 passed. The run failed closed after 314 seconds
+  with no follow-ups or Development dispatch: the exact evidence command required an ATDD actor record that the
+  lifecycle still scheduled only after FINAL_ANSWER. The transition fence passed, reviewer handoff was not reached,
+  and maturity remains `enforced`.
 
 ### Full story lifecycle v3.10 atomic reviewer handoff
 
