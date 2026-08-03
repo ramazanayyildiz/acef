@@ -22,6 +22,11 @@ or evidence contract. Do not use it to claim implementation status; link to the 
 - Added regressions for invalid-kind atomicity, dirty-tree atomicity, automatic actor/evidence binding, and exact-one
   transcript attribution. The complete repository suite passed 30/30 in 280 seconds. Maturity remains `enforced`
   pending a separately frozen rehearsal.
+- Separately froze and ran non-scored `REHEARSAL-v312`. Atomic ATDD actor/evidence handoff passed on all four stories,
+  Stories 1–2 closed at cycle 0, and the one broad integration shell command exited 0. The immutable attempt still
+  failed after 3,830.6 active seconds: Story 3 Patch Assurance used a nested report binding, Story 4 mistyped its
+  completion artifact path, exact lifecycle-command attribution observed 0/1 because of shell wrapping, and terminal
+  blocked closeout could not be committed without an epic gate. Maturity remains `enforced`.
 
 ### Full story lifecycle v3.11 ATDD transition fence
 
