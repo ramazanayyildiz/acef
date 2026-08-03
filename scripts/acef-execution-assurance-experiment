@@ -579,21 +579,30 @@ function epicPilotPrompt(attempt, resolved, manifest) {
     : fourActorV3
       ? "Use ACEF Full with Guarded assurance and fullFlowContract=four-actor-v3 exactly as installed. Guarded is an additive assurance overlay, not another lifecycle."
       : "Use ACEF Full (BMAD v2) with Guarded assurance exactly as the installed candidate version documents it. Guarded is an assurance overlay, not a second lifecycle.";
-  const stories = resolved.task.stories.map((story, index) => [
-    `${index + 1}. ${story.id}: ${story.prompt}`,
-    `   Acceptance criteria: ${(story.acceptanceCriteria || []).join(" | ") || "the frozen story prompt"}`,
-    `   ATDD constraints: ${(story.atddConstraints || []).join(" | ") || "derive directly from the acceptance criteria"}`,
-    `   Depends on: ${(story.dependsOn || []).join(", ") || "none"}`,
-    `   Allowed production paths: ${story.allowedPaths.join(", ")}`,
-    `   Frozen test paths: ${(story.testPaths || []).join(", ") || "none"}`,
-    `   Focused verification: ${story.verify.join(" ")}`,
-  ].join("\n")).join("\n");
+  const shellLiteral = (value) => /^[A-Za-z0-9_./:=+,-]+$/.test(String(value))
+    ? String(value)
+    : `'${String(value).replaceAll("'", `'"'"'`)}'`;
+  const stories = resolved.task.stories.map((story, index) => {
+    const satisfies = (story.acceptanceCriteria || []).length
+      ? story.acceptanceCriteria.map((_, criterionIndex) => `--satisfies ${story.id}-ac${criterionIndex + 1}`).join(" ")
+      : `--satisfies ${story.id}-contract`;
+    return [
+      `${index + 1}. ${story.id}: ${story.prompt}`,
+      `   Acceptance criteria: ${(story.acceptanceCriteria || []).join(" | ") || "the frozen story prompt"}`,
+      `   ATDD constraints: ${(story.atddConstraints || []).join(" | ") || "derive directly from the acceptance criteria"}`,
+      `   Depends on: ${(story.dependsOn || []).join(", ") || "none"}`,
+      `   Allowed production paths: ${story.allowedPaths.join(", ")}`,
+      `   Frozen test paths: ${(story.testPaths || []).join(", ") || "none"}`,
+      `   Focused verification: ${story.verify.join(" ")}`,
+      `   Exact ATDD red evidence command: .acef/bin/acef-state evidence-run --repo . --id ${story.id}-red --kind runtime-test --actor acef_${normalizedActorToken(story.id)}_atdd --story ${story.id} ${satisfies} -- ${story.verify.map(shellLiteral).join(" ")}`,
+    ].join("\n");
+  }).join("\n");
   const actorContract = lifecycleActorContract(resolved, actorContractVersion).map((entry) =>
     `- ${entry.taskName}: scope=${entry.scope} control=${entry.control} actor=${entry.taskName} persona=${entry.persona}`
   ).join("\n");
   const recoveryInstruction = fourActorV3
     ? [
-      "Initial ATDD maps every acceptance criterion but needs genuine red only on the critical vertical path. The manifest's Frozen test paths are the complete non-protected test envelope; do not discover, invent, or expand that envelope during execution. Run only the story's focused verification and files inside that envelope; do not substitute broad pre-existing suites outside it.",
+      "Initial ATDD maps every acceptance criterion but needs genuine red only on the critical vertical path. The manifest's Frozen test paths are the complete non-protected test envelope; do not discover, invent, or expand that envelope during execution. Run only the story's focused verification and files inside that envelope; do not substitute broad pre-existing suites outside it. Give the ATDD actor the story's literal Exact ATDD red evidence command and require it to run that command once after the clean test-only commit. `runtime-test` is the only allowed kind for this evidence; never invent semantic kinds such as `atdd-red`, add a trailing path operand, reuse a failed evidence ID, or reactivate the ATDD actor after any terminal result.",
       "After development, spawn Code Review and Patch Assurance without waiting for either result first, then wait for both. Code Review owns correctness, security, conformance, scope, and unresolved-finding severity. Patch Assurance is report-only and combines final-tree patch verification with test-quality and focused runner proof; it must not edit production or tests.",
       "Every v3 actor, review report, repair receipt, Judge decision, and deterministic gate must bind the active runId and fullFlowContract=four-actor-v3. Before initial or retry reviewers spawn, the conductor must commit all review-transition control state, capture the resulting shared reviewInputCommit=HEAD and reviewInputTree=HEAD^{tree}, and give both reviewers those exact values; it must not pre-create reviewer actor records. Each Code Review and Patch Assurance actor must write its own typed acef.review-report.v3 JSON at the deterministic path docs/ai/reports/<exact-task-name>.json. The report must use actorInstanceId (never actor) and include schema, runId, fullFlowContract, actorInstanceId, story, phase, the exact shared inputCommit and inputTree, verdict, and findings; every finding uses id, severity, status, and reason. The report verdict is the single machine-carried reviewer result, so reviewer prose does not need to repeat ACTOR_RESULT. The final `.acef/bin/acef-state review-completion --repo . --artifact-path docs/ai/reports/<exact-task-name>.json --actor <exact-task-name>` command is the sole report-shape validator and atomically creates the report-bound immutable reviewer actor record; run it exactly once and do not probe schemas, validator availability, or acef-state help beforehand. Inside each reviewer functions.exec call, invoke tools.exec_command exactly once with one literal cmd string; never use command variables, template strings, arrays, loops, Promise.all, generated commands, shell separators, pipelines, redirections, or command substitution. Use separate calls for separate reads/checks. The harness consumes the completion command's stdout directly from the child transcript; do not hand-copy its path/hash/blob/tree fields into prose. The conductor must not create or rewrite reviewer actor records after the child returns. Before every retry spawn, read the immediately prior typed reports. After every Developer repair, rerun Patch Assurance on the repaired final application/test tree even when its prior verdict was PASS. Rerun Code Review when its prior verdict was REVISE or the repair changed production code; preserve an earlier Code Review PASS only for a test-only repair. The completion blob/hash/tree, report, actor, and gate must bind exactly. A missing, repeated, or invalid review-completion command is a mechanical REPLAN/SPLIT stop: never follow up or retry that reviewer.",
       `The active runId must be exactly ${attempt.id}.`,
@@ -918,7 +927,7 @@ function parseCollaborationEvidence(rawText, sessionText, expectedContract, expe
         failures.push(`${accepted.taskName}: legacy ATDD result is not PASS`);
       }
       acceptedActors.push({ ...expected, taskName: accepted.taskName, receiverThreadId: accepted.receiverThreadId });
-    } else if (expected.control === "atdd" && baseMatches.length === 1 && !fourActorV3) {
+    } else if (expected.control === "atdd" && baseMatches.length === 1) {
       const base = baseMatches[0];
       const basePassed = actorResultIs(base.parentFinalText, "PASS");
       const baseRevised = actorResultIs(base.parentFinalText, "REVISE");
@@ -2567,6 +2576,13 @@ function pilotAgentRequest(attempt, resolved, clone, manifest, rawPath, receiptP
     stderrPath: `${rawPath}.stderr`,
     receiptPath,
     timeoutMs: attempt.activeTimeCapMinutes * 60 * 1000,
+    ...(attempt.actorContractVersion === "four-actor-v3" ? {
+      livePolicy: {
+        schema: "acef.execution-assurance-live-policy.v1",
+        allowedFollowupTargets: resolved.task.stories.map((story) =>
+          `/root/acef_${normalizedActorToken(story.id)}_development`),
+      },
+    } : {}),
   };
 }
 

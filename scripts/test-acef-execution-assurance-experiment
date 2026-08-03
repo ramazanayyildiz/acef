@@ -172,6 +172,12 @@ assert.match(v31Prompt, /must not pre-create reviewer actor records/,
   "the conductor cannot recreate the v3.9 immutable handoff contradiction");
 assert.match(v31Prompt, /atomically creates the report-bound immutable reviewer actor record/,
   "the reviewer completion command owns the durable report/actor handoff");
+assert.match(v31Prompt, /Exact ATDD red evidence command:/,
+  "each frozen story must render a literal evidence-run command");
+assert.match(v31Prompt, /--kind runtime-test/,
+  "ATDD evidence cannot invent an unsupported semantic kind");
+assert.match(v31Prompt, /never invent semantic kinds such as `atdd-red`/,
+  "the compiled contract names the observed v3.10 failure mode");
 assert.match(v31Prompt, /50000000 aggregate conductor-plus-child input tokens/);
 const epicActorContract = lifecycleActorContract(resolvedEpic);
 assert.equal(epicActorContract.length, 25, "four stories need six actors each plus one epic Process Judge");
@@ -255,6 +261,34 @@ const v3SyntheticEvidence = parseCollaborationEvidence(syntheticRaw, v3Synthetic
 });
 assert.equal(v3SyntheticEvidence.ok, true);
 assert.equal(v3SyntheticEvidence.expectedActorCount, 17);
+const v3Atdd = v3ActorContract.find((entry) => entry.control === "atdd");
+const v3AtddReviseSession = lifecycleSession(v3ActorContract, { [v3Atdd.taskName]: "REVISE" });
+const missingV3AtddAdjudication = parseCollaborationEvidence(syntheticRaw, v3AtddReviseSession, v3ActorContract, {
+  actorContractVersion: "four-actor-v3", maximumActorInvocations: 21,
+});
+assert.equal(missingV3AtddAdjudication.ok, false,
+  "v3 ATDD REVISE cannot fall through to Development without a fresh adjudication");
+assert.match(missingV3AtddAdjudication.failures.join("; "), /REVISE requires exactly one independent adjudication/);
+const v3AtddAdjudicationTask = `${v3Atdd.taskName}_adjudication1`;
+const v3AtddAdjudicationSession = lifecycleSession(v3ActorContract, { [v3Atdd.taskName]: "REVISE" }, [
+  JSON.stringify({ timestamp: eventTimestamp(2.1), type: "response_item", payload: {
+    type: "function_call", namespace: "collaboration", name: "spawn_agent", call_id: "v3-atdd-adjudication",
+    arguments: JSON.stringify({ task_name: v3AtddAdjudicationTask, fork_turns: "none" }),
+  } }),
+  JSON.stringify({ timestamp: eventTimestamp(2.2), type: "event_msg", payload: {
+    type: "sub_agent_activity", event_id: "v3-atdd-adjudication", agent_thread_id: "v3-atdd-adjudication-receiver", kind: "started",
+  } }),
+  JSON.stringify({ timestamp: eventTimestamp(2.8), type: "response_item", payload: {
+    type: "agent_message", author: `/root/${v3AtddAdjudicationTask}`,
+    content: [{ type: "input_text", text: `Message Type: FINAL_ANSWER\nSender: /root/${v3AtddAdjudicationTask}\nPayload:\nACTOR_RESULT=PASS\nATDD_ADJUDICATION=OVERRULE` }],
+  } }),
+]);
+const admittedV3AtddAdjudication = parseCollaborationEvidence(syntheticRaw, v3AtddAdjudicationSession, v3ActorContract, {
+  actorContractVersion: "four-actor-v3", maximumActorInvocations: 21,
+});
+assert.equal(admittedV3AtddAdjudication.ok, true, admittedV3AtddAdjudication.failures.join("; "));
+assert.equal(admittedV3AtddAdjudication.totalActorInvocations, 18,
+  "one fresh adjudication is counted without replaying the ATDD author");
 const missingStoryTimestampSession = v3SyntheticSession.replace(
   /"timestamp":"[^"]+","type":"response_item","payload":\{"type":"function_call","namespace":"collaboration","name":"spawn_agent"/,
   '"type":"response_item","payload":{"type":"function_call","namespace":"collaboration","name":"spawn_agent"',
@@ -1838,6 +1872,45 @@ try {
   assert.equal(JSON.parse(fs.readFileSync(timeoutReceiptPath, "utf8")).timedOut, true);
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 1000);
   assert.equal(fs.existsSync(lateWrite), false, "timed-out actor descendants must not mutate after receipt");
+
+  const livePolicyRoot = path.join(tmp, "live-policy-sessions");
+  const livePolicyDirectory = path.join(livePolicyRoot, "2026", "08", "03");
+  const livePolicyRaw = path.join(tmp, "live-policy.stdout");
+  const livePolicyReceipt = path.join(tmp, "live-policy-receipt.json");
+  const livePolicyRequest = path.join(tmp, "live-policy-request.json");
+  const livePolicyThread = "live-policy-thread";
+  const livePolicyTranscript = path.join(livePolicyDirectory, `rollout-${livePolicyThread}.jsonl`);
+  fs.mkdirSync(livePolicyDirectory, { recursive: true });
+  const forbiddenFollowup = JSON.stringify({ timestamp: "2026-08-03T00:00:01.000Z", type: "response_item", payload: {
+    type: "function_call", namespace: "collaboration", name: "followup_task", call_id: "forbidden-atdd-followup",
+    arguments: JSON.stringify({ target: "/root/acef_s1_resolver_fail_closed_atdd", message: "retry" }),
+  } });
+  const livePolicyChild = `const fs=require('fs'); console.log(JSON.stringify({type:'thread.started',thread_id:${JSON.stringify(livePolicyThread)}})); setTimeout(()=>fs.writeFileSync(${JSON.stringify(livePolicyTranscript)},${JSON.stringify(`${forbiddenFollowup}\n`)}),100); setInterval(()=>{},30000);`;
+  fs.writeFileSync(livePolicyRequest, `${JSON.stringify({
+    command: process.execPath,
+    args: ["-e", livePolicyChild],
+    cwd: tmp,
+    stdoutPath: livePolicyRaw,
+    stderrPath: path.join(tmp, "live-policy.stderr"),
+    receiptPath: livePolicyReceipt,
+    timeoutMs: 10000,
+    livePolicy: {
+      schema: "acef.execution-assurance-live-policy.v1",
+      allowedFollowupTargets: ["/root/acef_s1_resolver_fail_closed_development"],
+      sessionRoot: livePolicyRoot,
+    },
+  })}\n`);
+  const livePolicyActor = cp.spawn(process.execPath, [actorCli, livePolicyRequest], {
+    cwd: tmp, detached: true, stdio: "ignore",
+  });
+  livePolicyActor.unref();
+  assert.equal(waitUntil(() => fs.existsSync(livePolicyReceipt)), true,
+    "live supervisor must publish a receipt after a forbidden ATDD follow-up");
+  const livePolicyResult = JSON.parse(fs.readFileSync(livePolicyReceipt, "utf8"));
+  assert.equal(livePolicyResult.policyViolation?.code, "FORBIDDEN_FOLLOWUP_TARGET");
+  assert.equal(livePolicyResult.policyViolation?.target, "/root/acef_s1_resolver_fail_closed_atdd");
+  assert.notEqual(livePolicyResult.status, 0,
+    "forbidden ATDD reactivation must terminate the parent before Development can continue");
 
   const sameOrdinalResults = path.join(tmp, "same-ordinal", "pilot.jsonl");
   fs.mkdirSync(path.dirname(sameOrdinalResults), { recursive: true });

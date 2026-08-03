@@ -9,6 +9,20 @@ or evidence contract. Do not use it to claim implementation status; link to the 
 
 ## Unreleased
 
+### Full story lifecycle v3.11 ATDD transition fence
+
+- Rendered one literal `acef-state evidence-run --kind runtime-test` command for every frozen story and required the
+  ATDD actor to use it once after the clean test-only commit. Unsupported semantic kinds, trailing path operands, and
+  failed evidence-ID reuse are explicitly prohibited.
+- Added a live four-actor-v3 supervisor policy that permits `followup_task` only for canonical Developer identities.
+  A follow-up to ATDD, reviewer, or Judge is detected from the parent session transcript and terminates the process
+  group before later lifecycle work can continue; the bound actor receipt records the exact violation.
+- Corrected post-run collaboration validation so four-actor-v3 ATDD `REVISE` requires one fresh adjudication before
+  Development. The earlier condition accidentally applied the adjudication state machine only outside v3.
+- Added regressions for literal ATDD evidence commands, missing/admitted v3 adjudication, invocation accounting, and a
+  real supervised child process stopped on forbidden ATDD reactivation. The complete repository suite passed 30/30 in
+  288 seconds. Maturity remains `enforced` pending a separately frozen rehearsal.
+
 ### Full story lifecycle v3.10 atomic reviewer handoff
 
 - Changed the final `review-completion` command from report-only validation into one atomic handoff: it validates the

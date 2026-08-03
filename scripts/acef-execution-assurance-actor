@@ -27,6 +27,79 @@ function wait(milliseconds) {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
+function findSessionTranscript(root, threadId) {
+  if (!root || !threadId || !fs.existsSync(root)) return null;
+  const pending = [root];
+  while (pending.length) {
+    const directory = pending.pop();
+    for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+      const fullPath = path.join(directory, entry.name);
+      if (entry.isDirectory()) pending.push(fullPath);
+      else if (entry.isFile() && entry.name.includes(threadId) && entry.name.endsWith(".jsonl")) return fullPath;
+    }
+  }
+  return null;
+}
+
+function livePolicyMonitor(request) {
+  const policy = request.livePolicy;
+  if (!policy) return () => null;
+  if (policy.schema !== "acef.execution-assurance-live-policy.v1"
+    || !Array.isArray(policy.allowedFollowupTargets) || !policy.allowedFollowupTargets.length
+    || policy.allowedFollowupTargets.some((entry) => typeof entry !== "string" || !entry)) {
+    throw new Error("invalid live policy contract");
+  }
+  const allowedTargets = new Set(policy.allowedFollowupTargets);
+  const sessionRoot = policy.sessionRoot
+    || path.join(process.env.CODEX_HOME || path.join(require("node:os").homedir(), ".codex"), "sessions");
+  let threadId = "";
+  let transcriptPath = "";
+  let offset = 0;
+  let remainder = "";
+  return () => {
+    if (!threadId && fs.existsSync(request.stdoutPath)) {
+      for (const line of fs.readFileSync(request.stdoutPath, "utf8").split(/\r?\n/).filter(Boolean)) {
+        try {
+          const event = JSON.parse(line);
+          if (event.type === "thread.started" && event.thread_id) { threadId = event.thread_id; break; }
+        } catch {}
+      }
+    }
+    if (threadId && !transcriptPath) transcriptPath = findSessionTranscript(sessionRoot, threadId) || "";
+    if (!transcriptPath || !fs.existsSync(transcriptPath)) return null;
+    const size = fs.statSync(transcriptPath).size;
+    if (size < offset) { offset = 0; remainder = ""; }
+    if (size === offset) return null;
+    const length = size - offset;
+    const buffer = Buffer.alloc(length);
+    const descriptor = fs.openSync(transcriptPath, "r");
+    try { fs.readSync(descriptor, buffer, 0, length, offset); } finally { fs.closeSync(descriptor); }
+    offset = size;
+    const rows = `${remainder}${buffer.toString("utf8")}`.split(/\r?\n/);
+    remainder = rows.pop() || "";
+    for (const line of rows) {
+      let event;
+      try { event = JSON.parse(line); } catch { continue; }
+      const payload = event.payload || {};
+      if (event.type !== "response_item" || payload.type !== "function_call"
+        || payload.namespace !== "collaboration" || payload.name !== "followup_task") continue;
+      let args = {};
+      try { args = JSON.parse(payload.arguments || "{}"); } catch {}
+      const target = String(args.target || "");
+      if (!allowedTargets.has(target)) {
+        return {
+          code: "FORBIDDEN_FOLLOWUP_TARGET",
+          callId: payload.call_id || null,
+          target,
+          threadId,
+          observedAt: event.timestamp || new Date().toISOString(),
+        };
+      }
+    }
+    return null;
+  };
+}
+
 async function runCaptured(request, onSpawn) {
   fs.mkdirSync(path.dirname(request.stdoutPath), { recursive: true });
   fs.mkdirSync(path.dirname(request.stderrPath), { recursive: true });
@@ -40,7 +113,19 @@ async function runCaptured(request, onSpawn) {
   });
   onSpawn(child.pid);
   let timedOut = false;
+  let policyViolation = null;
   let forceKillTimer = null;
+  const checkLivePolicy = livePolicyMonitor(request);
+  const policyTimer = setInterval(() => {
+    if (policyViolation) return;
+    try { policyViolation = checkLivePolicy(); } catch (error) {
+      policyViolation = { code: "LIVE_POLICY_MONITOR_ERROR", reason: error.message, observedAt: new Date().toISOString() };
+    }
+    if (policyViolation) {
+      stopGroup(child.pid, "SIGTERM");
+      if (!forceKillTimer) forceKillTimer = setTimeout(() => stopGroup(child.pid, "SIGKILL"), 1000);
+    }
+  }, 250);
   const timer = setTimeout(() => {
     timedOut = true;
     stopGroup(child.pid, "SIGTERM");
@@ -51,6 +136,7 @@ async function runCaptured(request, onSpawn) {
     child.once("exit", (code, signal) => resolve({ code, signal }));
   }).finally(() => {
     clearTimeout(timer);
+    clearInterval(policyTimer);
     if (forceKillTimer) clearTimeout(forceKillTimer);
   });
   if (groupAlive(child.pid)) {
@@ -68,6 +154,7 @@ async function runCaptured(request, onSpawn) {
     status: Number.isInteger(outcome.code) ? outcome.code : 1,
     signal: outcome.signal || (timedOut ? "SIGTERM" : null),
     timedOut,
+    policyViolation,
   };
 }
 
@@ -98,6 +185,7 @@ async function main() {
     status: result.status,
     signal: result.signal,
     timedOut: result.timedOut,
+    policyViolation: result.policyViolation,
   });
 }
 
