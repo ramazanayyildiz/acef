@@ -180,6 +180,28 @@ try {
   fs.writeFileSync(path.join(tmp, "app", "demo.js"), "module.exports = 'v3-green';\n");
   run("git", ["add", "app/demo.js"]);
   run("git", ["commit", "-qm", "v3 implementation"]);
+  runState(["active-run", "--repo", tmp, "--run-id", "RUN-v3", "--workflow-id", "full-bmad", "--scope-unit", "story", "--expected-story", "Story 3.1", "--status", "active", "--story", "Story 3.1", "--phase", "review", "--ledger", "docs/ai/ACEF_demo_DELIVERY_AUDIT.md"]);
+  const canonicalReviewActor = "acef_story_3_1_code_review";
+  const invalidCanonicalReview = cp.spawnSync(process.execPath, [state, "review-result", "--repo", tmp, "--actor", canonicalReviewActor, "--verdict", "REVISE"], { encoding: "utf8" });
+  if (invalidCanonicalReview.status === 0 || !`${invalidCanonicalReview.stdout}${invalidCanonicalReview.stderr}`.includes("requires at least one OPEN finding")
+    || fs.existsSync(path.join(tmp, "docs", "ai", "reports", `${canonicalReviewActor}.json`))
+    || fs.existsSync(path.join(tmp, "docs", "ai", "actors", `${canonicalReviewActor}.json`))) {
+    throw new Error("failed canonical review-result left a partial report/actor handoff");
+  }
+  const canonicalReviewResult = runState(["review-result", "--repo", tmp, "--actor", canonicalReviewActor, "--verdict", "PASS"]);
+  const canonicalReviewReport = readJson(`docs/ai/reports/${canonicalReviewActor}.json`);
+  const canonicalReviewRecord = readJson(`docs/ai/actors/${canonicalReviewActor}.json`);
+  if (!canonicalReviewResult.includes(`REVIEW_REPORT_PATH=docs/ai/reports/${canonicalReviewActor}.json`)
+    || canonicalReviewReport.actorInstanceId !== canonicalReviewActor
+    || canonicalReviewReport.story !== "Story 3.1" || canonicalReviewReport.phase !== "code-review"
+    || canonicalReviewReport.inputCommit !== run("git", ["rev-parse", "HEAD"]).trim()
+    || canonicalReviewRecord.producedArtifactPath !== `docs/ai/reports/${canonicalReviewActor}.json`) {
+    throw new Error("review-result did not derive and atomically bind canonical reviewer fields");
+  }
+  const repeatedCanonicalReview = cp.spawnSync(process.execPath, [state, "review-result", "--repo", tmp, "--actor", canonicalReviewActor, "--verdict", "PASS"], { encoding: "utf8" });
+  if (repeatedCanonicalReview.status === 0 || !`${repeatedCanonicalReview.stdout}${repeatedCanonicalReview.stderr}`.includes("Refusing to overwrite immutable review result")) {
+    throw new Error("review-result could repeat an immutable report/actor handoff");
+  }
   const reviewPath = writeReviewReport("docs/ai/reports/review-v3.json", { actorInstanceId: "review-v3", story: "Story 3.1", phase: "code-review" });
   const wrongReviewCompletion = cp.spawnSync(process.execPath, [state, "review-completion", "--repo", tmp, "--artifact-path", reviewPath, "--actor", "wrong-reviewer"], { encoding: "utf8" });
   if (wrongReviewCompletion.status === 0 || !`${wrongReviewCompletion.stdout}${wrongReviewCompletion.stderr}`.includes("actor/run/story/phase/input commit/tree binding mismatch")) {
@@ -313,6 +335,28 @@ try {
     throw new Error("v3 run did not preserve mandatory actor-decided Epic Process Judge gate");
   }
   if (!v3EpicGate.evidenceIds.includes("EV-v3-green")) throw new Error("Epic gate could not aggregate story evidence");
+  const terminalTmp = fs.mkdtempSync(path.join(os.tmpdir(), "acef-state-terminal-epic-"));
+  try {
+    cp.execFileSync("git", ["init", "-q"], { cwd: terminalTmp });
+    cp.execFileSync("git", ["config", "user.email", "acef@example.invalid"], { cwd: terminalTmp });
+    cp.execFileSync("git", ["config", "user.name", "ACEF Test"], { cwd: terminalTmp });
+    cp.execFileSync("git", ["commit", "--allow-empty", "-qm", "terminal fixture"], { cwd: terminalTmp });
+    const terminalState = (args) => cp.execFileSync(process.execPath, [state, ...args], { cwd: terminalTmp, encoding: "utf8" });
+    terminalState(["active-run", "--repo", terminalTmp, "--run-id", "RUN-terminal", "--workflow-id", "full-bmad",
+      "--scope-unit", "epic", "--expected-story", "Story A", "--expected-story", "Story B", "--status", "active",
+      "--story", "Epic terminal", "--phase", "epic-process-judge", "--ledger", "docs/ai/ACEF_terminal_DELIVERY_AUDIT.md"]);
+    terminalState(["actor", "--repo", terminalTmp, "--id", "epic-terminal-judge", "--story", "Epic terminal",
+      "--phase", "epic-process-judge", "--role", "epic-process-judge", "--client", "codex", "--context-profile", "epic-judge"]);
+    terminalState(["gate", "--repo", terminalTmp, "--id", "GATE-terminal", "--scope", "Epic terminal",
+      "--verdict", "FAIL", "--decided-by", "epic-terminal-judge", "--notes", "missing story gates"]);
+    const terminalGate = JSON.parse(fs.readFileSync(path.join(terminalTmp, "docs", "ai", "gates", "GATE-terminal.json"), "utf8"));
+    if (terminalGate.verdict !== "FAIL" || JSON.stringify(terminalGate.missingStories) !== JSON.stringify(["Story A", "Story B"])
+      || terminalGate.storyGateVerdicts["Story A"] !== "MISSING" || terminalGate.storyGateVerdicts["Story B"] !== "MISSING") {
+      throw new Error("terminal non-PASS Epic gate did not durably preserve missing story inventory");
+    }
+  } finally {
+    fs.rmSync(terminalTmp, { recursive: true, force: true });
+  }
   const inventoryMutation = cp.spawnSync(process.execPath, [state, "active-run", "--repo", tmp, "--run-id", "RUN-v3", "--workflow-id", "full-bmad", "--scope-unit", "epic", "--expected-story", "Story 3.1", "--expected-story", "Story 3.2", "--status", "active", "--story", "Epic 3", "--phase", "epic-process-judge", "--ledger", "docs/ai/ACEF_demo_DELIVERY_AUDIT.md"], { encoding: "utf8" });
   if (inventoryMutation.status === 0 || !`${inventoryMutation.stdout}${inventoryMutation.stderr}`.includes("expectedStories inventory is frozen")) {
     throw new Error("same v3 run could add a successful-subset story after lifecycle evidence");

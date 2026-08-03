@@ -105,9 +105,10 @@ risk acceptance for the unresolved items.
    brittleness, false-positive risk, fixtures, and adjacent invariants. Code Review and Patch Assurance should run in
    parallel from the same implementation tree. Patch Assurance is report-only and cannot edit implementation.
    Before dispatch, the conductor commits transition state and freezes one shared input commit/tree for both reviewers.
-   Each reviewer writes only its typed report; its final `acef-state review-completion` validates that report and creates
-   the report-bound immutable reviewer actor record atomically. The conductor never pre-creates or rewrites those actor
-   records.
+   Reviewers do not construct report paths, binding fields, or report JSON. Their final `acef-state review-result`
+   supplies only the canonical actor, verdict, and any base64-encoded typed findings; the state writer derives and
+   validates the report and creates the report-bound immutable reviewer actor atomically. The conductor never
+   pre-creates or rewrites those report/actor records.
 9. **Bounded repair** — a finding returns to the original Developer (or one explicitly scoped repair Developer).
    Every repair reruns Patch Assurance against the repaired final application/test tree. Code Review reruns when its
    prior verdict was non-PASS or the repair changed production code; an earlier Code Review PASS may remain only after
@@ -314,6 +315,9 @@ Epic close must end with an **Epic Process Judge** pass. The epic may not be mar
 that drift audit (when specs exist), trace, epic test-review, E2E/user-flow evidence, manual QA ledger, product-done
 audit, retrospective, and status close all exist when required. Missing gates are not prose deferrals; they return to the
 missing gate or halt for a human decision.
+When PASS is impossible, the same Judge writes a typed terminal non-PASS Epic gate that records missing story gates and
+their latest typed dispositions. This durably blocks product-done and permits a fail-closed run closeout; it does not
+waive, synthesize, or replace any missing story gate.
 
 ## Operating contract (kept verbatim, stack-agnostic)
 Blind session isolation between phases · artifact-mediated handoffs (no side-chat) · `MERGE/REVISE/REPLAN` ·

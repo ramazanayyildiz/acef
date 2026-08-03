@@ -54,7 +54,8 @@ Usage:
   acef-state approval --repo <path> --id <id> --decision APPROVE|REJECT|ACCEPT_RISK --scope <scope> --quote <exact human words> [options]
   acef-state evidence-run --repo <path> --id <id> --kind <kind> --actor <id> --story <scope> --satisfies <id>... -- <command> [args...]
   acef-state developer-repair --repo <path> --id <id> --prior-gate <gate-id> --developer-actor <actor-id>
-  acef-state review-completion --repo <path> --artifact-path <docs/ai/reports/report.json> --actor <exact-reviewer-id>
+  acef-state review-result --repo <path> --actor <exact-reviewer-id> --verdict PASS|REVISE|REPLAN [--finding <base64-json-object>]...
+  acef-state review-completion --repo <path> --artifact-path <docs/ai/reports/report.json> --actor <exact-reviewer-id>  # compatibility
   acef-state judge-decision --repo <path> --id <id> --gate-id <future-gate-id> --actor <judge-id> --trigger ambiguity|waiver|evidence-conflict|gate-anomaly --evidence <id>...
   acef-state gate --repo <path> --id <id> --scope <scope> --verdict <verdict> --decided-by <actor-id> [--evidence <id>...] [options]
   acef-state gate --repo <path> --id <id> --scope <scope> --atdd-actor <id> --development-actor <id> --code-review-actor <id> --patch-assurance-actor <id> --red-evidence <id> --green-evidence <id> --code-review-report-hash <sha256> --patch-assurance-report-hash <sha256> [--review-cycle 0|1|2] [--unresolved-finding SEVERITY:id] [--process-judge-actor <id> --judge-trigger ambiguity|waiver|evidence-conflict|gate-anomaly] [--verdict <computed-verdict>] [options]
@@ -64,7 +65,7 @@ Record files are written under docs/ai. Immutable records refuse overwrite; acti
 
 function parseArgs(argv) {
   const [command, ...rest] = argv;
-  const opts = { command, repo: process.cwd(), allow: [], satisfies: [], evidence: [], surface: [], surfaceEvidence: [], binding: [], bindingEvidence: [], riskTrigger: [], clarifyingQuestion: [], inferredAnswer: [], unresolvedQuestion: [], requiredSurface: [], coveredSurface: [], goalEvidence: [], goalMissing: [], acceptance: [], changedPath: [], verificationCommand: [], verificationExitCode: [], unresolvedRisk: [], unresolvedFinding: [], promotionReason: [], expectedStory: [], commandArgv: [] };
+  const opts = { command, repo: process.cwd(), allow: [], satisfies: [], evidence: [], surface: [], surfaceEvidence: [], binding: [], bindingEvidence: [], riskTrigger: [], clarifyingQuestion: [], inferredAnswer: [], unresolvedQuestion: [], requiredSurface: [], coveredSurface: [], goalEvidence: [], goalMissing: [], acceptance: [], changedPath: [], verificationCommand: [], verificationExitCode: [], unresolvedRisk: [], unresolvedFinding: [], finding: [], promotionReason: [], expectedStory: [], commandArgv: [] };
   for (let index = 0; index < rest.length; index += 1) {
     const arg = rest[index];
     if (arg === "--help" || arg === "-h") {
@@ -84,7 +85,7 @@ function parseArgs(argv) {
     const value = rest[index + 1];
     if (value === undefined || value.startsWith("--")) throw new Error(`Missing value for ${arg}`);
     index += 1;
-    if (["allow", "satisfies", "evidence", "surface", "surfaceEvidence", "binding", "bindingEvidence", "riskTrigger", "clarifyingQuestion", "inferredAnswer", "unresolvedQuestion", "requiredSurface", "coveredSurface", "goalEvidence", "goalMissing", "acceptance", "changedPath", "verificationCommand", "verificationExitCode", "unresolvedRisk", "unresolvedFinding", "promotionReason", "expectedStory"].includes(key)) opts[key].push(value);
+    if (["allow", "satisfies", "evidence", "surface", "surfaceEvidence", "binding", "bindingEvidence", "riskTrigger", "clarifyingQuestion", "inferredAnswer", "unresolvedQuestion", "requiredSurface", "coveredSurface", "goalEvidence", "goalMissing", "acceptance", "changedPath", "verificationCommand", "verificationExitCode", "unresolvedRisk", "unresolvedFinding", "finding", "promotionReason", "expectedStory"].includes(key)) opts[key].push(value);
     else opts[key] = value;
   }
   opts.repo = path.resolve(opts.repo);
@@ -1213,17 +1214,24 @@ function writeLegacyGate(opts) {
     const expectedKeys = new Map((activeRun.expectedStories || []).map((story) => [normalizedScope(story), story]));
     const missingStories = [...expectedKeys].filter(([key]) => !byStory.has(key)).map(([, story]) => story);
     const unexpectedStories = [...byStory].filter(([key]) => !expectedKeys.has(key)).map(([, entries]) => entries[0].scope);
-    if (missingStories.length || unexpectedStories.length) {
+    if (unexpectedStories.length || (opts.verdict === "PASS" && missingStories.length)) {
       throw new Error(`Epic story inventory mismatch; missing=${missingStories.join(", ") || "none"}; unexpected=${unexpectedStories.join(", ") || "none"}`);
     }
+    record.missingStories = missingStories;
+    record.storyGateVerdicts = {};
     for (const [key, story] of expectedKeys) {
       const entries = byStory.get(key);
+      if (!entries) {
+        record.storyGateVerdicts[story] = "MISSING";
+        continue;
+      }
       entries.sort((left, right) => left.reviewCycle - right.reviewCycle);
       const passes = entries.filter((candidate) => candidate.verdict === "PASS");
-      if (passes.length !== 1 || entries.at(-1).verdict !== "PASS") {
+      record.storyGateVerdicts[story] = entries.at(-1).verdict;
+      if (opts.verdict === "PASS" && (passes.length !== 1 || entries.at(-1).verdict !== "PASS")) {
         throw new Error(`${story} must have exactly one terminal deterministic PASS before Epic close`);
       }
-      if (!record.evidenceIds.includes(passes[0].greenEvidenceId)) {
+      if (opts.verdict === "PASS" && !record.evidenceIds.includes(passes[0].greenEvidenceId)) {
         throw new Error(`Epic close must aggregate ${passes[0].scope} green evidence ${passes[0].greenEvidenceId}`);
       }
     }
@@ -1314,6 +1322,64 @@ function writeReviewCompletion(opts) {
   console.log(`REVIEW_INPUT_TREE=${report.inputTree}`);
 }
 
+function decodeReviewFindings(entries) {
+  return entries.map((entry, index) => {
+    let bytes;
+    try { bytes = Buffer.from(String(entry), "base64"); }
+    catch { throw new Error(`--finding ${index + 1} must be canonical base64 JSON`); }
+    if (!bytes.length || bytes.toString("base64") !== String(entry)) {
+      throw new Error(`--finding ${index + 1} must be canonical base64 JSON`);
+    }
+    let finding;
+    try { finding = JSON.parse(bytes.toString("utf8")); }
+    catch { throw new Error(`--finding ${index + 1} must decode to one JSON object`); }
+    if (!finding || typeof finding !== "object" || Array.isArray(finding)) {
+      throw new Error(`--finding ${index + 1} must decode to one JSON object`);
+    }
+    return finding;
+  });
+}
+
+function writeReviewResult(opts) {
+  required(opts, ["actor", "verdict"]);
+  const activeRun = activeV3Run(opts.repo);
+  if (activeRun.scopeUnit !== "story" || canonicalGatePhase(activeRun.activePhase) !== "codereview") {
+    throw new Error("review-result requires the active four-actor-v3 story review phase");
+  }
+  const storyToken = String(activeRun.activeStory).toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+  const actorPattern = new RegExp(`^acef_${storyToken}_(code_review|patch_assurance)(?:_retry[12])?$`);
+  const actorMatch = String(opts.actor).match(actorPattern);
+  if (!actorMatch) throw new Error("review-result actor must be the canonical active-story Code Review or Patch Assurance identity");
+  const verdict = String(opts.verdict).toUpperCase();
+  if (!["PASS", "REVISE", "REPLAN"].includes(verdict)) throw new Error("review-result verdict must be PASS, REVISE, or REPLAN");
+  const phase = actorMatch[1] === "code_review" ? "code-review" : "patch-assurance";
+  const findings = decodeReviewFindings(opts.finding);
+  const reportPath = path.join(opts.repo, "docs", "ai", "reports", `${safeId(opts.actor, "review actor id")}.json`);
+  const reviewerPath = actorPath(opts.repo, opts.actor);
+  if (fs.existsSync(reportPath) || fs.existsSync(reviewerPath)) {
+    throw new Error(`Refusing to overwrite immutable review result ${opts.actor}`);
+  }
+  const report = {
+    schema: "acef.review-report.v3",
+    runId: activeRun.runId,
+    fullFlowContract: activeRun.fullFlowContract,
+    actorInstanceId: opts.actor,
+    story: activeRun.activeStory,
+    phase,
+    inputCommit: gitCommit(opts.repo),
+    inputTree: gitTree(opts.repo),
+    verdict,
+    findings,
+  };
+  try {
+    atomicJson(reportPath, report, { validate: parseReviewReport });
+    writeReviewCompletion({ repo: opts.repo, artifactPath: relative(opts.repo, reportPath), actor: opts.actor });
+  } catch (error) {
+    if (!fs.existsSync(reviewerPath)) fs.rmSync(reportPath, { force: true });
+    throw error;
+  }
+}
+
 function writeJudgeDecision(opts) {
   required(opts, ["id", "gateId", "actor", "trigger"]);
   if (!opts.evidence.length) throw new Error("judge-decision requires at least one --evidence id");
@@ -1371,6 +1437,7 @@ function main() {
   if (opts.command === "approval") return writeApproval(opts);
   if (opts.command === "evidence-run") return writeEvidence(opts);
   if (opts.command === "developer-repair") return writeDeveloperRepair(opts);
+  if (opts.command === "review-result") return writeReviewResult(opts);
   if (opts.command === "review-completion") return writeReviewCompletion(opts);
   if (opts.command === "judge-decision") return writeJudgeDecision(opts);
   if (opts.command === "gate") return writeGate(opts);

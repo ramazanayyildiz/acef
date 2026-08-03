@@ -604,7 +604,7 @@ function epicPilotPrompt(attempt, resolved, manifest) {
     ? [
       "Initial ATDD maps every acceptance criterion but needs genuine red only on the critical vertical path. The manifest's Frozen test paths are the complete non-protected test envelope; do not discover, invent, or expand that envelope during execution. Run only the story's focused verification and files inside that envelope; do not substitute broad pre-existing suites outside it. Give the ATDD actor the story's literal Exact ATDD red evidence command and require it to run that command once after the clean test-only commit. For four-actor-v3 that command validates the red tree and atomically creates the missing canonical ATDD actor record before executing the test; neither the child nor conductor runs a separate actor command. `runtime-test` is the only allowed kind for this evidence; never invent semantic kinds such as `atdd-red`, add a trailing path operand, reuse a failed evidence ID, pre-create the ATDD actor, or reactivate the ATDD actor after any terminal result.",
       "After development, spawn Code Review and Patch Assurance without waiting for either result first, then wait for both. Code Review owns correctness, security, conformance, scope, and unresolved-finding severity. Patch Assurance is report-only and combines final-tree patch verification with test-quality and focused runner proof; it must not edit production or tests.",
-      "Every v3 actor, review report, repair receipt, Judge decision, and deterministic gate must bind the active runId and fullFlowContract=four-actor-v3. Before initial or retry reviewers spawn, the conductor must commit all review-transition control state, capture the resulting shared reviewInputCommit=HEAD and reviewInputTree=HEAD^{tree}, and give both reviewers those exact values; it must not pre-create reviewer actor records. Each Code Review and Patch Assurance actor must write its own typed acef.review-report.v3 JSON at the deterministic path docs/ai/reports/<exact-task-name>.json. The report must use actorInstanceId (never actor) and include schema, runId, fullFlowContract, actorInstanceId, story, phase, the exact shared inputCommit and inputTree, verdict, and findings; every finding uses id, severity, status, and reason. The report verdict is the single machine-carried reviewer result, so reviewer prose does not need to repeat ACTOR_RESULT. The final `.acef/bin/acef-state review-completion --repo . --artifact-path docs/ai/reports/<exact-task-name>.json --actor <exact-task-name>` command is the sole report-shape validator and atomically creates the report-bound immutable reviewer actor record; run it exactly once and do not probe schemas, validator availability, or acef-state help beforehand. Inside each reviewer functions.exec call, invoke tools.exec_command exactly once with one literal cmd string; never use command variables, template strings, arrays, loops, Promise.all, generated commands, shell separators, pipelines, redirections, or command substitution. Use separate calls for separate reads/checks. The harness consumes the completion command's stdout directly from the child transcript; do not hand-copy its path/hash/blob/tree fields into prose. The conductor must not create or rewrite reviewer actor records after the child returns. Before every retry spawn, read the immediately prior typed reports. After every Developer repair, rerun Patch Assurance on the repaired final application/test tree even when its prior verdict was PASS. Rerun Code Review when its prior verdict was REVISE or the repair changed production code; preserve an earlier Code Review PASS only for a test-only repair. The completion blob/hash/tree, report, actor, and gate must bind exactly. A missing, repeated, or invalid review-completion command is a mechanical REPLAN/SPLIT stop: never follow up or retry that reviewer.",
+      "Every v3 actor, review report, repair receipt, Judge decision, and deterministic gate must bind the active runId and fullFlowContract=four-actor-v3. Before initial or retry reviewers spawn, the conductor must commit all review-transition control state, capture the resulting shared reviewInputCommit=HEAD and reviewInputTree=HEAD^{tree}, and give both reviewers those exact values; it must not pre-create reviewer actor records or reports. Reviewers never construct report paths, identity/input binding fields, or report JSON. Their final state mutation is exactly one `.acef/bin/acef-state review-result --repo . --actor <exact-task-name> --verdict <PASS|REVISE|REPLAN>` command. The state writer derives the canonical report path, run, contract, story, phase, HEAD commit/tree, writes the typed acef.review-report.v3 report, validates it, and atomically creates the report-bound reviewer actor. PASS uses no --finding options. REVISE or REPLAN appends one `--finding <canonical-base64-json-object>` per finding; each decoded object uses id, severity, status=OPEN, and reason. The report verdict is the single machine-carried reviewer result, so reviewer prose does not repeat ACTOR_RESULT. Run review-result exactly once and do not probe schemas, validator availability, paths, or acef-state help beforehand. Inside the completion functions.exec call, invoke tools.exec_command exactly once with one literal cmd string; never use command variables, template strings, arrays, loops, Promise.all, generated commands, shell separators, pipelines, redirections, or command substitution. Use separate calls for separate reads/checks. The harness consumes the completion command's stdout directly from the child transcript; do not hand-copy its path/hash/blob/tree fields into prose. The conductor must not create or rewrite reviewer report/actor records after the child returns. Before every retry spawn, read the immediately prior typed reports. After every Developer repair, rerun Patch Assurance on the repaired final application/test tree even when its prior verdict was PASS. Rerun Code Review when its prior verdict was REVISE or the repair changed production code; preserve an earlier Code Review PASS only for a test-only repair. The completion blob/hash/tree, report, actor, and gate must bind exactly. A missing, repeated, or invalid review-result command is a mechanical REPLAN/SPLIT stop: never follow up or retry that reviewer.",
       `The active runId must be exactly ${attempt.id}.`,
       `The active run expectedStories inventory must equal this frozen ordered catalog exactly: ${JSON.stringify(resolved.task.stories.map((story) => story.id))}. Do not add, omit, rename, or reorder stories; the epic gate must close every listed story on the same runId.`,
       "If either reviewer returns REVISE, reactivate the original developer with exactly one bounded followup_task for that global story repair cycle and the exact findings; do not let the conductor or reviewer patch. The followup must include the original canonical Developer identity returned by spawn_agent, exactly /root/<task_name>. The original developer must set developerSessionId to that exact canonical identity, never to the bare task_name or an unobservable internal UUID, in its typed acef.developer-repair.v3 receipt and return a fresh FINAL_ANSWER containing REPAIR_CYCLE=<n>, REPAIR_RECEIPT_PATH=<path>, REPAIR_RECEIPT_SHA256=<sha256>, and ACTOR_RESULT=PASS before any retry reviewer starts. Spawn the required independent delta reviewers as <base-task-name>_retry1 or _retry2, where the suffix is that same global story repair cycle, require final answers to include the matching REPAIR_CYCLE=<n>, and give every reviewer in one cycle the receipt postTree. Patch Assurance is mandatory in every repair cycle; Code Review is mandatory after a production repair and otherwise reruns only when its prior report was REVISE. At most two repair cycles are allowed for a story; a third cycle is REPLAN/SPLIT and quarantine.",
@@ -622,7 +622,7 @@ function epicPilotPrompt(attempt, resolved, manifest) {
     ].join(" ")
     : "Follow the installed legacy treatment's own ATDD and retry rules. Do not synthesize candidate adjudication, correction, quarantine, or lifecycle-budget semantics.";
   const closeoutInstruction = fourActorV3
-    ? "Run focused verification inside each story. The conductor runs the provided broad integration verification exactly once at epic close; the harness then runs its independent oracle verification separately, and measurement must not count that harness oracle as a second lifecycle suite. Then use exactly one independent epic Process Judge. Trace, statistics, coverage, documentation, and closeout views must reuse the story-close packages and must not create another evidence-writing chain."
+    ? "Run focused verification inside each story. The conductor runs the provided broad integration verification exactly once at epic close; invoke the exact frozen sh -c argv literally so transcript attribution cannot change its shell shape. The harness then runs its independent oracle verification separately, and measurement must not count that harness oracle as a second lifecycle suite. Then use exactly one independent epic Process Judge. A PASS Epic gate still requires every frozen deterministic story PASS gate and aggregated green evidence. If PASS is impossible, the same Judge writes one typed terminal FAIL, REPLAN, or BLOCKED Epic gate that records missingStories and storyGateVerdicts; this persists the fail-closed outcome but never synthesizes a missing story gate. Trace, statistics, coverage, documentation, and closeout views must reuse the story-close packages and must not create another evidence-writing chain."
     : attempt.treatment === "candidate"
     ? "The mandatory closeout inventory is frozen to the listed contract rows before execution. Use focused verification during stories and run the provided integration verification once at final closeout unless that command itself fails once. Trace, statistics, coverage analysis, test quality, documentation, and closeout review are evidence views only: do not spawn actors, create mandatory work items, enlarge the denominator, or open another closeout chain for them."
     : "Use the installed legacy treatment's closeout workflow exactly. Additional legacy-required actors or evidence work are permitted and measured; do not apply the candidate's frozen-inventory/non-recursive policy to this arm.";
@@ -1318,19 +1318,29 @@ function correctionSessionWrites(sessionText, repoRoot) {
       if (!commands.length) unsafeShellMutations.push(rawArguments);
       for (const command of commands) {
         if (!isAllowedCorrectionShellCommand(command)) unsafeShellMutations.push(command);
-        const reviewerActor = reviewerActorPathFromCompletionCommand(command, repoRoot);
-        if (reviewerActor) paths.push(reviewerActor);
+        paths.push(...reviewerPathsFromCompletionCommand(command, repoRoot));
       }
     }
   }
   return { paths: [...new Set(paths)], unsafeShellMutations, unsafeDelegations };
 }
 
-function reviewerActorPathFromCompletionCommand(command, repoRoot) {
-  const match = String(command || "").trim().match(
-    /^(?:\.acef\/bin\/)?acef-state\s+review-completion\s+--repo\s+\.\s+--artifact-path\s+docs\/ai\/reports\/[A-Za-z0-9._-]+\.json\s+--actor\s+([A-Za-z0-9._-]+)$/,
+function reviewerPathsFromCompletionCommand(command, repoRoot) {
+  const normalized = String(command || "").trim();
+  const compatibility = normalized.match(
+    /^(?:\.acef\/bin\/)?acef-state\s+review-completion\s+--repo\s+\.\s+--artifact-path\s+(docs\/ai\/reports\/[A-Za-z0-9._-]+\.json)\s+--actor\s+([A-Za-z0-9._-]+)$/,
   );
-  return match ? path.resolve(repoRoot, "docs", "ai", "actors", `${match[1]}.json`) : null;
+  if (compatibility) return [
+    path.resolve(repoRoot, compatibility[1]),
+    path.resolve(repoRoot, "docs", "ai", "actors", `${compatibility[2]}.json`),
+  ];
+  const canonical = normalized.match(
+    /^(?:\.acef\/bin\/)?acef-state\s+review-result\s+--repo\s+\.\s+--actor\s+([A-Za-z0-9._-]+)\s+--verdict\s+(?:PASS|REVISE|REPLAN)(?:\s+--finding\s+[A-Za-z0-9+/=]+)*$/,
+  );
+  return canonical ? [
+    path.resolve(repoRoot, "docs", "ai", "reports", `${canonical[1]}.json`),
+    path.resolve(repoRoot, "docs", "ai", "actors", `${canonical[1]}.json`),
+  ] : [];
 }
 
 function parseReviewerCompletion(lastAgentMessage, repoRoot) {
@@ -1395,16 +1405,16 @@ function reviewerCompletionFromSession(sessionText, repoRoot, actorName) {
     let args = {};
     try { args = JSON.parse(rawArguments || "{}"); } catch {}
     for (const command of extractCorrectionShellCommands(args, rawArguments)) {
-      if (!/(?:^|\s)(?:\.acef\/bin\/)?acef-state\s+review-completion\b/.test(command)
+      if (!/(?:^|\s)(?:\.acef\/bin\/)?acef-state\s+(?:review-result|review-completion)\b/.test(command)
         || !new RegExp(`(?:^|\\s)--actor\\s+${actorName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?:\\s|$)`).test(command)) continue;
       const outputRow = rows.find((candidate) => candidate.type === "response_item"
         && candidate.payload?.type === `${payload.type}_output`
         && candidate.payload?.call_id === payload.call_id);
-      if (!outputRow) throw new Error("review-completion command output is missing from child transcript");
+      if (!outputRow) throw new Error("review result command output is missing from child transcript");
       matches.push(parseReviewerCompletion(toolOutputText(outputRow.payload), repoRoot));
     }
   }
-  if (matches.length !== 1) throw new Error(`reviewer must run exactly one machine-observed review-completion command; observed ${matches.length}`);
+  if (matches.length !== 1) throw new Error(`reviewer must run exactly one machine-observed review result command; observed ${matches.length}`);
   return matches[0];
 }
 
@@ -1517,6 +1527,9 @@ function isAllowedCorrectionShellCommand(command) {
     /^(?:npm|pnpm|yarn)\s+test(?:\s+[^\s;|&<>`]+)*$/,
     /^npx\s+(?:vitest|playwright)\s+test(?:\s+[^\s;|&<>`]+)*$/,
     /^composer\s+test(?:\s+[^\s;|&<>`]+)*$/,
+    /^test\s+(?:!\s+)?-(?:e|f|d|r)\s+[^\s;|&<>`]+$/,
+    /^php\s+-l\s+[^\s;|&<>`]+$/,
+    /^(?:\.acef\/bin\/)?acef-state\s+review-result\s+--repo\s+\.\s+--actor\s+[A-Za-z0-9._-]+\s+--verdict\s+(?:PASS|REVISE|REPLAN)(?:\s+--finding\s+[A-Za-z0-9+/=]+)*$/,
     /^(?:\.acef\/bin\/)?acef-state\s+review-completion\s+--repo\s+\.\s+--artifact-path\s+docs\/ai\/reports\/[A-Za-z0-9._-]+\.json\s+--actor\s+[A-Za-z0-9._-]+$/,
   ].some((pattern) => pattern.test(normalized));
 }
@@ -1537,6 +1550,9 @@ function isAllowedReviewerShellCommand(command) {
     /^npx\s+(?:vitest|playwright)\s+test\b/,
     /^composer\s+test\b/,
     /^node\s+--check\b/,
+    /^test\s+(?:!\s+)?-(?:e|f|d|r)\s+[^\s;|&<>`]+$/,
+    /^php\s+-l\s+[^\s;|&<>`]+$/,
+    /^(?:\.acef\/bin\/)?acef-state\s+review-result\s+--repo\s+\.\s+--actor\s+[A-Za-z0-9._-]+\s+--verdict\s+(?:PASS|REVISE|REPLAN)(?:\s+--finding\s+[A-Za-z0-9+/=]+)*$/,
     /^(?:\.acef\/bin\/)?acef-state\s+review-completion\s+--repo\s+\.\s+--artifact-path\s+docs\/ai\/reports\/[A-Za-z0-9._-]+\.json\s+--actor\s+[A-Za-z0-9._-]+$/,
   ].some((pattern) => pattern.test(normalized));
 }
@@ -1916,6 +1932,8 @@ function lifecycleIntegrationCommand(argv) {
 
 function parseLifecycleIntegrationEvidence(sessionText, expectedArgv, afterStoryAt, beforeJudgeAt) {
   const expectedCommand = lifecycleIntegrationCommand(expectedArgv);
+  const expectedShellWrapper = expectedArgv[0] === "sh" && expectedArgv[1] === "-c" && expectedArgv.length === 3
+    ? `sh -c ${JSON.stringify(expectedArgv[2])}` : "";
   const calls = [];
   const outputs = new Map();
   for (const line of String(sessionText || "").split(/\r?\n/).filter(Boolean)) {
@@ -1928,7 +1946,7 @@ function parseLifecycleIntegrationEvidence(sessionText, expectedArgv, afterStory
       try { args = JSON.parse(payload.arguments || "{}"); } catch {}
       if (typeof args.cmd === "string") commands.push(args.cmd);
       if (typeof args.command === "string") commands.push(args.command);
-      for (const command of new Set(commands)) if (command === expectedCommand) {
+      for (const command of new Set(commands)) if (command === expectedCommand || command === expectedShellWrapper) {
         calls.push({ callId: payload.call_id || payload.id || "", startedAt: row.timestamp || null, command });
       }
     }

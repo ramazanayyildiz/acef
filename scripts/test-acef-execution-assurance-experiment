@@ -165,14 +165,14 @@ assert.deepEqual(resolvedV31Epic.task.stories[3].testPaths, [
 ]);
 const v31Prompt = epicPilotPrompt({ ...v3Manifest.pilot.attempts[0], id: "P0-candidate-v31" }, resolvedV31Epic, validV31Budget);
 assert.match(v31Prompt, /Frozen test paths:/);
-assert.match(v31Prompt, /acef-state review-completion/);
-assert.match(v31Prompt, /missing, repeated, or invalid review-completion command is a mechanical REPLAN\/SPLIT stop/);
+assert.match(v31Prompt, /acef-state review-result/);
+assert.match(v31Prompt, /missing, repeated, or invalid review-result command is a mechanical REPLAN\/SPLIT stop/);
 assert.match(v31Prompt, /shared reviewInputCommit=HEAD and reviewInputTree=HEAD\^\{tree\}/,
   "concurrent reviewers must receive one committed shared input tree");
-assert.match(v31Prompt, /must not pre-create reviewer actor records/,
+assert.match(v31Prompt, /must not pre-create reviewer actor records or reports/,
   "the conductor cannot recreate the v3.9 immutable handoff contradiction");
-assert.match(v31Prompt, /atomically creates the report-bound immutable reviewer actor record/,
-  "the reviewer completion command owns the durable report/actor handoff");
+assert.match(v31Prompt, /Reviewers never construct report paths, identity\/input binding fields, or report JSON/,
+  "the state writer owns the complete durable reviewer report/actor handoff");
 assert.match(v31Prompt, /Exact ATDD red evidence command:/,
   "each frozen story must render a literal evidence-run command");
 assert.match(v31Prompt, /--kind runtime-test/,
@@ -807,6 +807,13 @@ const integrationOutput = JSON.stringify({ timestamp: eventTimestamp(12), type: 
 } });
 assert.equal(parseLifecycleIntegrationEvidence(`${integrationCall}\n${integrationOutput}`, frozenIntegrationArgv,
   eventTimestamp(10), eventTimestamp(20)).ok, true);
+const shellWrappedIntegrationCall = JSON.stringify({ timestamp: eventTimestamp(11), type: "response_item", payload: {
+  type: "function_call", name: "exec_command", call_id: "integration-1",
+  arguments: JSON.stringify({ cmd: `sh -c ${JSON.stringify(frozenIntegrationArgv[2])}` }),
+} });
+assert.equal(parseLifecycleIntegrationEvidence(`${shellWrappedIntegrationCall}\n${integrationOutput}`, frozenIntegrationArgv,
+  eventTimestamp(10), eventTimestamp(20)).ok, true,
+"the exact frozen sh -c argv remains attributable through the Codex shell wrapper");
 assert.equal(parseLifecycleIntegrationEvidence("", frozenIntegrationArgv,
   eventTimestamp(10), eventTimestamp(20)).ok, false, "missing frozen lifecycle integration command fails closed");
 assert.equal(parseLifecycleIntegrationEvidence(`${integrationCall}\n${integrationOutput}\n${integrationCall}\n${integrationOutput}`,
@@ -1168,7 +1175,7 @@ const machineCompletionOutput = [
   `REVIEW_REPORT_BASE64=${Buffer.from(reviewerReportBytes).toString("base64")}`,
   `REVIEW_INPUT_TREE=${"a".repeat(40)}`,
 ].join("\n");
-const machineCompletionCommand = ".acef/bin/acef-state review-completion --repo . --artifact-path docs/ai/reports/reviewer.json --actor reviewer";
+const machineCompletionCommand = ".acef/bin/acef-state review-result --repo . --actor reviewer --verdict PASS";
 const machineCompletionSession = [
   JSON.stringify({ type: "response_item", payload: { type: "custom_tool_call", name: "exec", call_id: "machine-review",
     input: `const r = await tools.exec_command({\"cmd\":${JSON.stringify(machineCompletionCommand)}}); text(JSON.stringify({output:r.output,exit_code:r.exit_code}));` } }),
@@ -1193,8 +1200,8 @@ assert.equal(reviewerCompletionFromSession(machineCompletionSession, root, "revi
 assert.equal(correctionSessionWrites(machineCompletionSession, root).unsafeShellMutations.length, 0,
   "the exact review-completion command is a safe atomic reviewer handoff under functions.exec");
 assert.deepEqual(correctionSessionWrites(machineCompletionSession, root).paths.map((entry) => path.relative(root, entry)),
-  ["docs/ai/actors/reviewer.json"],
-  "the transcript audit observes the immutable actor written by review-completion");
+  ["docs/ai/reports/reviewer.json", "docs/ai/actors/reviewer.json"],
+  "the transcript audit observes both immutable artifacts written by review-result");
 assert.equal(isAllowedReviewerShellCommand(`git show --no-ext-diff --stat ${"a".repeat(40)}`), true);
 assert.equal(isAllowedReviewerShellCommand(`git show --output=/tmp/leak ${"a".repeat(40)}`), false);
 assert.equal(isAllowedReviewerShellCommand("git status --short && git reset --hard"), false);
@@ -1205,12 +1212,16 @@ assert.equal(isAllowedReviewerShellCommand("jq -e '.findings | length == 0' docs
 assert.equal(isAllowedReviewerShellCommand("git status --short | git reset --hard"), false,
   "an unquoted shell pipeline remains forbidden");
 assert.equal(isAllowedReviewerShellCommand(machineCompletionCommand), true,
-  "the exact atomic review-completion handoff remains allowlisted");
-assert.equal(isAllowedReviewerShellCommand(".acef/bin/acef-state review-completion --repo /tmp/other --artifact-path docs/ai/reports/reviewer.json --actor reviewer"), false,
-  "review-completion cannot target another repository");
+  "the exact atomic review-result handoff remains allowlisted");
+assert.equal(isAllowedReviewerShellCommand(".acef/bin/acef-state review-result --repo /tmp/other --actor reviewer --verdict PASS"), false,
+  "review-result cannot target another repository");
 assert.equal(isAllowedReviewerShellCommand(`${machineCompletionCommand} --force true`), false,
-  "review-completion cannot smuggle unregistered options");
-assert.match(codexSessionMetrics(machineCompletionSession).commandText, /acef-state review-completion/,
+  "review-result cannot smuggle unregistered options");
+assert.equal(isAllowedReviewerShellCommand("test ! -e docs/ai/reports/reviewer.json"), true,
+  "bounded reviewer existence checks are read-only");
+assert.equal(isAllowedReviewerShellCommand("php -l app/Example.php"), true,
+  "bounded reviewer syntax checks are read-only");
+assert.match(codexSessionMetrics(machineCompletionSession).commandText, /acef-state review-result/,
   "functions.exec-wrapped exec_command calls remain visible to command-trace validation");
 assert.equal(correctionSessionWrites(JSON.stringify({ type: "response_item", payload: {
   type: "custom_tool_call", name: "exec", input: "const p = await tools.update_plan({plan:[]}); text(p);",

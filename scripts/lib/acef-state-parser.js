@@ -404,6 +404,15 @@ function parseGateVerdict(filePath) {
   if (record.fullFlowContract === "four-actor-v3" && record.gateType === "actor-decided-v1") {
     requireStringArray(record, "storyInventory", "four-actor-v3 Epic gate", { nonEmpty: true });
     if (new Set(record.storyInventory).size !== record.storyInventory.length) throw new Error("four-actor-v3 Epic gate storyInventory must be unique");
+    if (record.missingStories !== undefined) requireStringArray(record, "missingStories", "four-actor-v3 Epic gate");
+    if (record.storyGateVerdicts !== undefined) {
+      requireObject(record, "storyGateVerdicts", "four-actor-v3 Epic gate");
+      for (const [story, verdict] of Object.entries(record.storyGateVerdicts)) {
+        if (!record.storyInventory.includes(story) || !["PASS", "FAIL", "REVISE", "REPLAN", "BLOCKED", "MISSING"].includes(verdict)) {
+          throw new Error("four-actor-v3 Epic gate storyGateVerdicts must bind inventory stories to typed verdicts");
+        }
+      }
+    }
   }
   if (record.decisionMode !== undefined) requireEnum(record, "decisionMode", ["actor", "deterministic"], "gate verdict");
   if (record.gateType === "deterministic-story-close-v3") {

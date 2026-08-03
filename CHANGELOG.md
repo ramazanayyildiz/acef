@@ -9,6 +9,21 @@ or evidence contract. Do not use it to claim implementation status; link to the 
 
 ## Unreleased
 
+### Full story lifecycle v3.13 canonical reviewer and terminal closeout
+
+- Added reviewer-owned `acef-state review-result`: reviewers supply only canonical actor, verdict, and optional
+  base64-encoded findings. The state writer derives the report path plus run/story/phase/commit/tree bindings, validates
+  the typed report, and creates report and reviewer actor as one failure-atomic handoff. Legacy `review-completion`
+  remains readable for frozen compatibility runs.
+- Canonicalized exact lifecycle integration attribution through the observed `sh -c` wrapper and allowlisted bounded
+  read-only reviewer existence/syntax checks without authorizing application writes.
+- Allowed the mandatory Epic Process Judge to persist a typed terminal non-PASS gate with missing-story inventory and
+  latest story dispositions. PASS still requires exactly one terminal deterministic PASS gate and aggregated green
+  evidence for every frozen story.
+- Added regressions for derived reviewer binding, failed-handoff cleanup, immutable replay refusal, wrapped lifecycle
+  attribution, reviewer read-only commands, and terminal non-PASS Epic durability. The complete repository suite passed
+  30/30 in 266 seconds. Maturity remains `enforced` pending a separately frozen rehearsal.
+
 ### Full story lifecycle v3.12 atomic ATDD evidence handoff
 
 - Changed four-actor-v3 `evidence-run` so the one literal runtime-test command validates a clean committed test-only red
