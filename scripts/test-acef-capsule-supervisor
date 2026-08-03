@@ -7,6 +7,7 @@ const cp = require("node:child_process");
 const root = path.resolve(__dirname, "..");
 const state = path.join(root, "scripts", "acef-state");
 const supervisor = path.join(root, "scripts", "acef-supervisor");
+const validator = path.join(root, "scripts", "acef-process-validator");
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "acef-capsule-supervisor-"));
 
 function run(command, args, options = {}) {
@@ -119,7 +120,9 @@ try {
   }
   const next = JSON.parse(run(process.execPath, [supervisor, "--repo", tmp]));
   if (next.action.type !== "dispatch-parallel" || next.action.actors.length !== 2
-    || next.action.actors.some((actor) => actor.runtime.model !== "gpt-5.6-sol" || actor.runtime.reasoningEffort !== "high")) {
+    || next.action.actors.some((actor) => actor.runtime.model !== "gpt-5.6-sol" || actor.runtime.reasoningEffort !== "high"
+      || !actor.capsule?.path.startsWith("docs/ai/capsules/") || !/^[a-f0-9]{64}$/.test(actor.capsule?.sha256 || "")
+      || actor.capsule.showCommand !== `.acef/bin/acef-state capsule-show --repo . --id ${actor.capsule.id}`)) {
     throw new Error("supervisor did not emit the pinned parallel reviewer action");
   }
 
@@ -187,6 +190,10 @@ try {
   const tamperCheck = cp.spawnSync(process.execPath, [state, "capsule-show", "--repo", tmp, "--id", "story-capsule-code-review"], { cwd: tmp, encoding: "utf8" });
   if (tamperCheck.status === 0 || !`${tamperCheck.stdout}${tamperCheck.stderr}`.includes("payload hash mismatch")) {
     throw new Error("tampered capsule did not fail closed");
+  }
+  const certificationCheck = cp.spawnSync(process.execPath, [validator, "--repo", tmp, "--check", "gate-verdict"], { cwd: tmp, encoding: "utf8" });
+  if (certificationCheck.status === 0 || !`${certificationCheck.stdout}${certificationCheck.stderr}`.includes("capsule")) {
+    throw new Error("process certification did not fail closed on a corrupted bound capsule");
   }
   const malformedStateCheck = cp.spawnSync(process.execPath, [supervisor, "--repo", tmp], { cwd: tmp, encoding: "utf8" });
   if (malformedStateCheck.status === 0 || !`${malformedStateCheck.stdout}${malformedStateCheck.stderr}`.includes("story-capsule-code-review.json")) {

@@ -15,6 +15,7 @@ const {
   parsePrReviewProfile,
   parseReviewReport,
   parseDeveloperRepair,
+  parseAssuranceCapsule,
   parseProcessJudgeDecision,
   parseCapabilityChange,
   parseSpecReadiness,
@@ -1879,6 +1880,32 @@ function boundReviewReportIntegrity(repoRoot, actor, reportPathValue, reportHash
       || report.inputCommit !== actor.inputCommit
       || report.inputTree !== actor.inputTree) {
       throw new Error(`${expectedPhase} review report identity/scope/input binding mismatch`);
+    }
+    if (activeRun.runtimeContract === "capsule-supervisor-v1") {
+      if (!report.capsulePath || !report.capsuleSha256) throw new Error(`${expectedPhase} review report is missing capsule binding`);
+      const capsulePath = resolvePath(report.capsulePath, repoRoot);
+      const capsuleRelative = safeRelative(capsulePath, repoRoot).replaceAll(path.sep, "/");
+      if (!/^docs\/ai\/capsules\/[^/]+\.json$/.test(capsuleRelative) || !exists(capsulePath)) {
+        throw new Error(`${expectedPhase} review capsule path is missing or invalid`);
+      }
+      if (sha256File(capsulePath) !== report.capsuleSha256) throw new Error(`${expectedPhase} review capsule hash mismatch`);
+      const capsule = parseAssuranceCapsule(capsulePath);
+      const { integrity, ...payload } = capsule;
+      if (integrity.payloadSha256 !== sha256(JSON.stringify(payload))) throw new Error(`${expectedPhase} review capsule payload hash mismatch`);
+      for (const blob of [capsule.currentContext, capsule.diff, ...capsule.sourceBlobs]) {
+        if (blob.sha256 !== sha256(Buffer.from(blob.content)) || blob.bytes !== Buffer.byteLength(blob.content)) {
+          throw new Error(`${expectedPhase} review capsule blob mismatch: ${blob.path}`);
+        }
+      }
+      const expectedRole = expectedPhase === "codereview" ? "code-review" : "patch-assurance";
+      const expectedCycle = Number(actor.actorInstanceId.match(/_retry([12])$/)?.[1] || 0);
+      if (capsule.runId !== activeRun.runId || capsule.fullFlowContract !== activeRun.fullFlowContract
+        || capsule.runtimeContract !== activeRun.runtimeContract || capsule.role !== expectedRole
+        || capsule.actorInstanceId !== actor.actorInstanceId || normalizedScope(capsule.story) !== normalizedScope(story)
+        || capsule.reviewCycle !== expectedCycle || capsule.inputCommit !== report.inputCommit
+        || capsule.inputTree !== report.inputTree || capsule.inputTree !== gitTreeAt(repoRoot, capsule.inputCommit)) {
+        throw new Error(`${expectedPhase} review capsule run/role/actor/story/cycle/input binding mismatch`);
+      }
     }
   } catch (error) {
     failures.push(error.message);

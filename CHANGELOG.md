@@ -19,7 +19,8 @@ or evidence contract. Do not use it to claim implementation status; link to the 
   independent, while a prior Code Review PASS is reused after a test-only repair and Patch Assurance alone reruns.
 - Added hash-bound additive review capsules, test-discovery proof before green evidence, deterministic review-surface
   derivation, capsule-to-report binding, model/effort receipts, and model-cycle budgets. Reviewers consume the one
-  bound focused-run proof instead of racing duplicate test runs. The first candidate pins semantic actors to
+  bound focused-run proof instead of racing duplicate test runs. Reviewer dispatch actions carry the exact capsule
+  ID/path/hash/show command, and process certification revalidates the durable capsule bytes and bindings. The first candidate pins semantic actors to
   `gpt-5.6-sol/high`; `gpt-5.6-terra/medium` is shadow-only until measured evidence supports promotion.
 - Made intermediate non-PASS gate commits state-aware and removed the unconditional story Process Judge placeholder
   from Lean close evidence when deterministic story close did not trigger a Judge. Existing Full contracts remain

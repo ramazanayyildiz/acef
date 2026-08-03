@@ -130,7 +130,7 @@ function build(repo) {
     .map((filePath) => readRecord(parseDeveloperRepair, filePath))
     .filter((record) => token(record.story) === storyKey && record.runId === run.runId);
   const capsules = files(path.join(repo, "docs", "ai", "capsules"))
-    .map((filePath) => readCapsule(filePath))
+    .map((filePath) => ({ ...readCapsule(filePath), supervisorFilePath: filePath }))
     .filter((record) => token(record.story) === storyKey && record.runId === run.runId);
   const currentPhase = phase(run.activePhase);
   const workerScopePath = run.workerScopePath
@@ -221,8 +221,22 @@ function build(repo) {
         }
       } else if (!codeReport || !assuranceReport) {
         const pending = [];
-        if (!codeReport) pending.push({ role: "code-review", actorInstanceId: codeId, runtime: RUNTIME["code-review"] });
-        if (!assuranceReport) pending.push({ role: "patch-assurance", actorInstanceId: assuranceId, runtime: RUNTIME["patch-assurance"] });
+        const reviewerAction = (role, id) => {
+          const capsule = currentCapsule(id);
+          const capsuleId = path.basename(capsule.supervisorFilePath, ".json");
+          const capsulePath = path.relative(repo, capsule.supervisorFilePath).replaceAll(path.sep, "/");
+          return {
+            role, actorInstanceId: id, runtime: RUNTIME[role],
+            capsule: {
+              id: capsuleId,
+              path: capsulePath,
+              sha256: sha256(fs.readFileSync(capsule.supervisorFilePath)),
+              showCommand: `.acef/bin/acef-state capsule-show --repo . --id ${capsuleId}`,
+            },
+          };
+        };
+        if (!codeReport) pending.push(reviewerAction("code-review", codeId));
+        if (!assuranceReport) pending.push(reviewerAction("patch-assurance", assuranceId));
         action = {
           type: pending.length > 1 ? "dispatch-parallel" : "dispatch",
           reviewCycle,
