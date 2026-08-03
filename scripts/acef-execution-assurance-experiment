@@ -602,7 +602,7 @@ function epicPilotPrompt(attempt, resolved, manifest) {
   ).join("\n");
   const recoveryInstruction = fourActorV3
     ? [
-      "Initial ATDD maps every acceptance criterion but needs genuine red only on the critical vertical path. The manifest's Frozen test paths are the complete non-protected test envelope; do not discover, invent, or expand that envelope during execution. Run only the story's focused verification and files inside that envelope; do not substitute broad pre-existing suites outside it. Give the ATDD actor the story's literal Exact ATDD red evidence command and require it to run that command once after the clean test-only commit. `runtime-test` is the only allowed kind for this evidence; never invent semantic kinds such as `atdd-red`, add a trailing path operand, reuse a failed evidence ID, or reactivate the ATDD actor after any terminal result.",
+      "Initial ATDD maps every acceptance criterion but needs genuine red only on the critical vertical path. The manifest's Frozen test paths are the complete non-protected test envelope; do not discover, invent, or expand that envelope during execution. Run only the story's focused verification and files inside that envelope; do not substitute broad pre-existing suites outside it. Give the ATDD actor the story's literal Exact ATDD red evidence command and require it to run that command once after the clean test-only commit. For four-actor-v3 that command validates the red tree and atomically creates the missing canonical ATDD actor record before executing the test; neither the child nor conductor runs a separate actor command. `runtime-test` is the only allowed kind for this evidence; never invent semantic kinds such as `atdd-red`, add a trailing path operand, reuse a failed evidence ID, pre-create the ATDD actor, or reactivate the ATDD actor after any terminal result.",
       "After development, spawn Code Review and Patch Assurance without waiting for either result first, then wait for both. Code Review owns correctness, security, conformance, scope, and unresolved-finding severity. Patch Assurance is report-only and combines final-tree patch verification with test-quality and focused runner proof; it must not edit production or tests.",
       "Every v3 actor, review report, repair receipt, Judge decision, and deterministic gate must bind the active runId and fullFlowContract=four-actor-v3. Before initial or retry reviewers spawn, the conductor must commit all review-transition control state, capture the resulting shared reviewInputCommit=HEAD and reviewInputTree=HEAD^{tree}, and give both reviewers those exact values; it must not pre-create reviewer actor records. Each Code Review and Patch Assurance actor must write its own typed acef.review-report.v3 JSON at the deterministic path docs/ai/reports/<exact-task-name>.json. The report must use actorInstanceId (never actor) and include schema, runId, fullFlowContract, actorInstanceId, story, phase, the exact shared inputCommit and inputTree, verdict, and findings; every finding uses id, severity, status, and reason. The report verdict is the single machine-carried reviewer result, so reviewer prose does not need to repeat ACTOR_RESULT. The final `.acef/bin/acef-state review-completion --repo . --artifact-path docs/ai/reports/<exact-task-name>.json --actor <exact-task-name>` command is the sole report-shape validator and atomically creates the report-bound immutable reviewer actor record; run it exactly once and do not probe schemas, validator availability, or acef-state help beforehand. Inside each reviewer functions.exec call, invoke tools.exec_command exactly once with one literal cmd string; never use command variables, template strings, arrays, loops, Promise.all, generated commands, shell separators, pipelines, redirections, or command substitution. Use separate calls for separate reads/checks. The harness consumes the completion command's stdout directly from the child transcript; do not hand-copy its path/hash/blob/tree fields into prose. The conductor must not create or rewrite reviewer actor records after the child returns. Before every retry spawn, read the immediately prior typed reports. After every Developer repair, rerun Patch Assurance on the repaired final application/test tree even when its prior verdict was PASS. Rerun Code Review when its prior verdict was REVISE or the repair changed production code; preserve an earlier Code Review PASS only for a test-only repair. The completion blob/hash/tree, report, actor, and gate must bind exactly. A missing, repeated, or invalid review-completion command is a mechanical REPLAN/SPLIT stop: never follow up or retry that reviewer.",
       `The active runId must be exactly ${attempt.id}.`,
@@ -632,7 +632,7 @@ function epicPilotPrompt(attempt, resolved, manifest) {
     fourActorV3
       ? "This prompt is the complete compiled ACEF contract for the scored run. Do not reread ACEF/BMAD method documents or ask child actors to load linked workflow files; the installed skill entry may be consulted only when host policy requires it, without following links outside the active artifact allowlist. Run readiness and reuse checks as deterministic conductor gates, not extra persona workers. The actor rows listed below are the exhaustive base lifecycle inventory. Preserve actor separation; do not self-approve."
       : "Load and follow the repo-local ACEF skill. Act as conductor and use fresh independent actors/sessions for every role the installed workflow requires. Preserve actor separation; do not self-approve.",
-    "For each contract row below, call spawn_agent exactly once using the exact task_name and fork_turns=none before accepting that phase. Give the fresh actor a bounded artifact-only message: put the listed scope/control/actor/persona tuple first, then only the exact files/commit/question it needs. Do not ask the actor to reread ACEF/BMAD workflow documents. Limit its initial read envelope to the current context plus at most six exact task files and 300 lines per read; targeted follow-up reads are allowed only when a named unresolved question requires them. If it cannot identify progress within ten active minutes, it must return ACTOR_RESULT=REVISE with the exact bottleneck instead of broadening inspection. Accept `ACTOR_RESULT=PASS` and the semantically identical `ACTOR_RESULT: PASS` spelling; likewise for REVISE. Wait for that actor's FINAL_ANSWER and persist a typed actor record whose actorInstanceId exactly equals task_name, except that each v3 reviewer owns its actor record through the final atomic review-completion command. For Development, set actor sessionId to the exact canonical /root/<task_name> identity returned by spawn_agent, never to the bare task_name or an unobservable internal receiver UUID; the harness independently binds that path to the child session UUID. Do not combine rows in one actor. For ATDD, commit the clean test-only red tree before invoking evidence-run; never bind red evidence while a production or test path is dirty.",
+    "For each contract row below, call spawn_agent exactly once using the exact task_name and fork_turns=none before accepting that phase. Give the fresh actor a bounded artifact-only message: put the listed scope/control/actor/persona tuple first, then only the exact files/commit/question it needs. Do not ask the actor to reread ACEF/BMAD workflow documents. Limit its initial read envelope to the current context plus at most six exact task files and 300 lines per read; targeted follow-up reads are allowed only when a named unresolved question requires them. If it cannot identify progress within ten active minutes, it must return ACTOR_RESULT=REVISE with the exact bottleneck instead of broadening inspection. Accept `ACTOR_RESULT=PASS` and the semantically identical `ACTOR_RESULT: PASS` spelling; likewise for REVISE. Wait for that actor's FINAL_ANSWER and persist a typed actor record whose actorInstanceId exactly equals task_name, except that v3 ATDD evidence-run and each v3 reviewer completion atomically own their respective actor records. For Development, set actor sessionId to the exact canonical /root/<task_name> identity returned by spawn_agent, never to the bare task_name or an unobservable internal receiver UUID; the harness independently binds that path to the child session UUID. Do not combine rows in one actor. For ATDD, commit the clean test-only red tree before invoking evidence-run; never bind red evidence while a production or test path is dirty.",
     recoveryInstruction,
     fourActorV3
       ? `ATDD and development are single mandatory actor identities. Code Review and Patch Assurance may each use at most two fresh, affected-only delta retry actors after a developer repair; the ${manifest.promotionGates.budget.maximumActorInvocations}-invocation epic cap still binds. Story Process Judge is optional only for the four named triggers. The epic Process Judge cannot retry. Never replay a complete lifecycle.`
@@ -1439,6 +1439,16 @@ function codexSessionMetrics(sessionText) {
   };
 }
 
+function v3AtddEvidenceCommandObserved(sessionText, taskName, story) {
+  const commands = codexSessionMetrics(sessionText).commandText.split(/\r?\n/).map((entry) => entry.trim()).filter(Boolean);
+  const actorPattern = taskName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const storyPattern = story.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const matches = commands.filter((command) => new RegExp(
+    `^(?:\\.acef/bin/)?acef-state\\s+evidence-run\\s+--repo\\s+\\.\\s+--id\\s+[A-Za-z0-9._-]+\\s+--kind\\s+runtime-test\\s+--actor\\s+${actorPattern}\\s+--story\\s+${storyPattern}(?:\\s+--satisfies\\s+[A-Za-z0-9._-]+)+\\s+--\\s+.+$`,
+  ).test(command));
+  return matches.length === 1;
+}
+
 function aggregateTeamMetrics(conductorMetrics, childMetrics) {
   return {
     input_tokens: Number(conductorMetrics.input_tokens || 0) + Number(childMetrics.input_tokens || 0),
@@ -1647,6 +1657,20 @@ function loadCollaborationEvidence(rawPath, expectedContract, expectedSession = 
     if (expectedSession.actorContractVersion === "four-actor-v3" && lifecycleEntry?.control === "development"
       && !developerActorSessionBound(expectedSession.cwd, dispatch.taskName, meta?.agent_path)) {
       failures.push(`${dispatch.taskName}: Developer actor sessionId does not bind the canonical spawn identity`);
+    }
+    if (expectedSession.actorContractVersion === "four-actor-v3" && lifecycleEntry?.control === "atdd") {
+      let actor = null;
+      try {
+        actor = installedStateParser(expectedSession.cwd)
+          .parseActorRecord(path.join(expectedSession.cwd, "docs", "ai", "actors", `${dispatch.taskName}.json`));
+      } catch {}
+      if (!actor || actor.sessionId !== meta?.agent_path || actor.role !== "test-author"
+        || canonicalLifecyclePhase(actor.phase) !== "atdd") {
+        failures.push(`${dispatch.taskName}: ATDD actor record was not atomically created by its canonical child session`);
+      }
+      if (!v3AtddEvidenceCommandObserved(childText, dispatch.taskName, lifecycleEntry.scope)) {
+        failures.push(`${dispatch.taskName}: child transcript must contain exactly one canonical runtime-test evidence-run command`);
+      }
     }
     const machineCarriedReviewer = expectedSession.actorContractVersion === "four-actor-v3"
       && ["code-review", "patch-assurance"].includes(lifecycleEntry?.control);
@@ -3663,6 +3687,7 @@ module.exports = {
   parseCollaborationEvidence,
   parseReviewerCompletion,
   reviewerCompletionFromSession,
+  v3AtddEvidenceCommandObserved,
   codexSessionMetrics,
   aggregateTeamMetrics,
   committedUnchangedAtHead,

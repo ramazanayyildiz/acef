@@ -57,6 +57,7 @@ const {
   parseReviewerCompletion,
   reviewerResultFromReport,
   reviewerCompletionFromSession,
+  v3AtddEvidenceCommandObserved,
   codexSessionMetrics,
   aggregateTeamMetrics,
   blindJudgePrompt,
@@ -178,6 +179,10 @@ assert.match(v31Prompt, /--kind runtime-test/,
   "ATDD evidence cannot invent an unsupported semantic kind");
 assert.match(v31Prompt, /never invent semantic kinds such as `atdd-red`/,
   "the compiled contract names the observed v3.10 failure mode");
+assert.match(v31Prompt, /atomically creates the missing canonical ATDD actor record/,
+  "the literal evidence command owns the ATDD actor/evidence handoff");
+assert.match(v31Prompt, /neither the child nor conductor runs a separate actor command/,
+  "the compiled contract removes the v3.11 actor-ordering contradiction");
 assert.match(v31Prompt, /50000000 aggregate conductor-plus-child input tokens/);
 const epicActorContract = lifecycleActorContract(resolvedEpic);
 assert.equal(epicActorContract.length, 25, "four stories need six actors each plus one epic Process Judge");
@@ -1172,6 +1177,17 @@ const machineCompletionSession = [
     { type: "input_text", text: JSON.stringify({ output: `${machineCompletionOutput}\n`, exit_code: 0 }) },
   ] } }),
 ].join("\n");
+const atddEvidenceCommand = ".acef/bin/acef-state evidence-run --repo . --id story-red --kind runtime-test --actor acef_story_atdd --story story --satisfies story-ac1 -- node --test tests/story.test.js";
+const atddEvidenceSession = JSON.stringify({ type: "response_item", payload: {
+  type: "function_call", name: "exec_command", call_id: "atdd-evidence",
+  arguments: JSON.stringify({ cmd: atddEvidenceCommand }),
+} });
+assert.equal(v3AtddEvidenceCommandObserved(atddEvidenceSession, "acef_story_atdd", "story"), true,
+  "one exact runtime-test evidence command is attributed to the ATDD child transcript");
+assert.equal(v3AtddEvidenceCommandObserved(atddEvidenceSession.replace("runtime-test", "atdd-red"), "acef_story_atdd", "story"), false,
+  "an invented evidence kind cannot satisfy ATDD transcript binding");
+assert.equal(v3AtddEvidenceCommandObserved(`${atddEvidenceSession}\n${atddEvidenceSession}`, "acef_story_atdd", "story"), false,
+  "repeated ATDD evidence commands fail exact-one transcript binding");
 assert.equal(reviewerCompletionFromSession(machineCompletionSession, root, "reviewer").reportPath,
   "docs/ai/reports/reviewer.json", "review completion must come from machine-observed command stdout, not copied prose");
 assert.equal(correctionSessionWrites(machineCompletionSession, root).unsafeShellMutations.length, 0,

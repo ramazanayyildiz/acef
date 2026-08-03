@@ -616,11 +616,50 @@ function writeEvidence(opts) {
   required(opts, ["id", "kind", "actor", "story"]);
   if (!opts.satisfies.length) throw new Error("evidence-run requires at least one --satisfies value");
   if (!opts.commandArgv.length) throw new Error("evidence-run requires a command after --");
-  const actor = parseActorRecord(actorPath(opts.repo, opts.actor));
-  if (actor.story !== opts.story) throw new Error(`actor story ${actor.story} does not match evidence story ${opts.story}`);
+  if (!["runtime-test", "static-check", "manual-smoke", "build", "lint", "typecheck", "other"].includes(opts.kind)) {
+    throw new Error("evidence manifest kind must be one of: runtime-test, static-check, manual-smoke, build, lint, typecheck, other");
+  }
+  const rawPath = rawEvidencePath(opts.repo, opts.id);
+  const target = evidencePath(opts.repo, opts.id);
+  if (fs.existsSync(rawPath) || fs.existsSync(target)) {
+    throw new Error(`Refusing to overwrite immutable evidence ${opts.id}`);
+  }
   const beforeDirty = dirtyApplicationPaths(opts.repo);
   const activeRunPath = path.join(opts.repo, "docs", "ai", "ACEF_ACTIVE_RUN.json");
   const activeRun = fs.existsSync(activeRunPath) ? parseActiveRun(activeRunPath) : null;
+  const actorFile = actorPath(opts.repo, opts.actor);
+  const canonicalAtddId = `acef_${String(opts.story).toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "")}_atdd`;
+  const mayCreateV3Atdd = activeRun?.fullFlowContract === "four-actor-v3" && !fs.existsSync(actorFile);
+  if (mayCreateV3Atdd) {
+    if (opts.kind !== "runtime-test" || opts.actor !== canonicalAtddId
+      || normalizedScope(opts.story) !== normalizedScope(activeRun.activeStory)) {
+      throw new Error("four-actor-v3 evidence may create only the canonical active-story ATDD actor for runtime-test evidence");
+    }
+    if (beforeDirty.length) {
+      throw new Error(`four-actor-v3 ATDD evidence requires a clean committed test-only red tree before execution; dirty paths: ${beforeDirty.join(", ")}`);
+    }
+    const redCommit = gitCommit(opts.repo);
+    let redParent = "";
+    try { redParent = runGit(opts.repo, ["rev-parse", `${redCommit}^`]); } catch {}
+    const redPaths = redParent ? applicationChangedSince(opts.repo, redParent, redCommit) : [];
+    if (!redParent || !redPaths.length || !redPaths.every(testPath)) {
+      throw new Error("four-actor-v3 ATDD evidence requires HEAD to be a new test-only commit before actor creation");
+    }
+    writeActor({
+      repo: opts.repo,
+      id: opts.actor,
+      story: opts.story,
+      phase: "atdd",
+      role: "test-author",
+      client: "codex",
+      sessionId: `/root/${opts.actor}`,
+      contextProfile: "atdd",
+      inputCommit: redParent,
+      inputTree: gitTreeAt(opts.repo, redParent),
+    });
+  }
+  const actor = parseActorRecord(actorFile);
+  if (actor.story !== opts.story) throw new Error(`actor story ${actor.story} does not match evidence story ${opts.story}`);
   const v3Atdd = activeRun?.fullFlowContract === "four-actor-v3" && canonicalGatePhase(actor.phase) === "atdd";
   if (v3Atdd) {
     if (beforeDirty.length) {
@@ -658,11 +697,7 @@ function writeEvidence(opts) {
     "--- stderr ---",
     execution.stderr || execution.error?.message || "",
   ].filter((line) => line !== "").join("\n");
-  const rawPath = rawEvidencePath(opts.repo, opts.id);
   fs.mkdirSync(path.dirname(rawPath), { recursive: true });
-  if (fs.existsSync(rawPath) || fs.existsSync(evidencePath(opts.repo, opts.id))) {
-    throw new Error(`Refusing to overwrite immutable evidence ${opts.id}`);
-  }
   fs.writeFileSync(rawPath, `${raw}\n`);
 
   const afterDirty = dirtyApplicationPaths(opts.repo);
@@ -689,7 +724,6 @@ function writeEvidence(opts) {
     runner: "acef-state evidence-run",
     sha256: evidenceRunnerProof(record),
   };
-  const target = evidencePath(opts.repo, opts.id);
   atomicJson(target, record, { validate: parseEvidenceManifest });
   console.log(`WROTE evidence ${relative(opts.repo, target)} exit=${exitCode} raw=${record.rawArtifact.path}`);
   if (afterDirty.length) {

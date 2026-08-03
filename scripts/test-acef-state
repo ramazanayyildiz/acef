@@ -146,22 +146,36 @@ try {
   if (readJson("docs/ai/ACEF_ACTIVE_RUN.json").fullFlowContract !== "four-actor-v3") {
     throw new Error("new Full run did not default to four-actor-v3");
   }
-  runState(["actor", "--repo", tmp, "--id", "atdd-v3", "--story", "Story 3.1", "--phase", "atdd", "--role", "test-author", "--client", "codex", "--context-profile", "atdd"]);
+  const v3AtddActor = "acef_story_3_1_atdd";
+  fs.mkdirSync(path.join(tmp, "tests"), { recursive: true });
+  fs.writeFileSync(path.join(tmp, "tests", "story-3-1-red.test.js"), "const test = require('node:test'); const assert = require('node:assert'); const actual = require('../app/demo.js'); test('story-3-1-red', () => assert.strictEqual(actual, 'v3-green'));\n");
+  const dirtyRedRun = cp.spawnSync(process.execPath, [state, "evidence-run", "--repo", tmp, "--id", "EV-v3-dirty-red", "--kind", "runtime-test", "--actor", v3AtddActor, "--story", "Story 3.1", "--satisfies", "AC-v3", "--", process.execPath, "--test", "tests/story-3-1-red.test.js"], { encoding: "utf8" });
+  if (dirtyRedRun.status === 0 || !`${dirtyRedRun.stdout}${dirtyRedRun.stderr}`.includes("requires a clean committed test-only red tree before execution")
+    || fs.existsSync(path.join(tmp, "docs", "ai", "evidence", "EV-v3-dirty-red.json"))
+    || fs.existsSync(path.join(tmp, "docs", "ai", "actors", `${v3AtddActor}.json`))) {
+    throw new Error("v3 ATDD evidence accepted or persisted actor/evidence for an uncommitted red test tree");
+  }
+  run("git", ["add", "tests/story-3-1-red.test.js"]);
+  run("git", ["commit", "-qm", "Story 3.1 ATDD red tests"]);
+  const invalidKindRun = cp.spawnSync(process.execPath, [state, "evidence-run", "--repo", tmp, "--id", "EV-v3-invalid-kind", "--kind", "atdd-red", "--actor", v3AtddActor, "--story", "Story 3.1", "--satisfies", "AC-v3", "--", process.execPath, "--test", "tests/frozen-verification.test.js"], { encoding: "utf8" });
+  if (invalidKindRun.status === 0 || !`${invalidKindRun.stdout}${invalidKindRun.stderr}`.includes("kind must be one of")
+    || fs.existsSync(path.join(tmp, "docs", "ai", "actors", `${v3AtddActor}.json`))
+    || fs.existsSync(path.join(tmp, "docs", "ai", "evidence", "raw", "EV-v3-invalid-kind.log"))) {
+    throw new Error("invalid ATDD evidence kind executed or left a partial actor/evidence artifact");
+  }
+  const redParent = run("git", ["rev-parse", "HEAD^"]).trim();
+  const redRun = cp.spawnSync(process.execPath, [state, "evidence-run", "--repo", tmp, "--id", "EV-v3-red", "--kind", "runtime-test", "--actor", v3AtddActor, "--story", "Story 3.1", "--satisfies", "AC-v3", "--", process.execPath, "--test", "tests/frozen-verification.test.js"], { encoding: "utf8" });
+  if (redRun.status !== 1) throw new Error("v3 red evidence was not captured as failing");
+  const atomicAtddActor = readJson(`docs/ai/actors/${v3AtddActor}.json`);
+  if (atomicAtddActor.inputCommit !== redParent || atomicAtddActor.role !== "test-author"
+    || atomicAtddActor.sessionId !== `/root/${v3AtddActor}`
+    || readJson("docs/ai/evidence/EV-v3-red.json").actorInstanceId !== v3AtddActor) {
+    throw new Error("evidence-run did not atomically create and bind the canonical ATDD actor");
+  }
   const inventoryChangeAfterActor = cp.spawnSync(process.execPath, [state, "active-run", "--repo", tmp, "--run-id", "RUN-v3", "--workflow-id", "full-bmad", "--expected-story", "Story 3.1", "--expected-story", "Story 3.2", "--status", "active", "--story", "Story 3.1", "--phase", "atdd", "--ledger", "docs/ai/ACEF_demo_DELIVERY_AUDIT.md"], { encoding: "utf8" });
   if (inventoryChangeAfterActor.status === 0 || !`${inventoryChangeAfterActor.stdout}${inventoryChangeAfterActor.stderr}`.includes("expectedStories inventory is frozen")) {
     throw new Error("v3 inventory could change after the first actor record");
   }
-  fs.mkdirSync(path.join(tmp, "tests"), { recursive: true });
-  fs.writeFileSync(path.join(tmp, "tests", "story-3-1-red.test.js"), "const test = require('node:test'); const assert = require('node:assert'); const actual = require('../app/demo.js'); test('story-3-1-red', () => assert.strictEqual(actual, 'v3-green'));\n");
-  const dirtyRedRun = cp.spawnSync(process.execPath, [state, "evidence-run", "--repo", tmp, "--id", "EV-v3-dirty-red", "--kind", "runtime-test", "--actor", "atdd-v3", "--story", "Story 3.1", "--satisfies", "AC-v3", "--", process.execPath, "--test", "tests/story-3-1-red.test.js"], { encoding: "utf8" });
-  if (dirtyRedRun.status === 0 || !`${dirtyRedRun.stdout}${dirtyRedRun.stderr}`.includes("requires a clean committed test-only red tree before execution")
-    || fs.existsSync(path.join(tmp, "docs", "ai", "evidence", "EV-v3-dirty-red.json"))) {
-    throw new Error("v3 ATDD evidence accepted or persisted an uncommitted red test tree");
-  }
-  run("git", ["add", "tests/story-3-1-red.test.js"]);
-  run("git", ["commit", "-qm", "Story 3.1 ATDD red tests"]);
-  const redRun = cp.spawnSync(process.execPath, [state, "evidence-run", "--repo", tmp, "--id", "EV-v3-red", "--kind", "runtime-test", "--actor", "atdd-v3", "--story", "Story 3.1", "--satisfies", "AC-v3", "--", process.execPath, "--test", "tests/frozen-verification.test.js"], { encoding: "utf8" });
-  if (redRun.status !== 1) throw new Error("v3 red evidence was not captured as failing");
   runState(["actor", "--repo", tmp, "--id", "dev-v3", "--story", "Story 3.1", "--phase", "development", "--role", "developer", "--client", "codex", "--session-id", "dev-session-v3", "--context-profile", "development"]);
   fs.writeFileSync(path.join(tmp, "app", "demo.js"), "module.exports = 'v3-green';\n");
   run("git", ["add", "app/demo.js"]);
@@ -214,7 +228,7 @@ try {
   const reviewHash = readJson("docs/ai/actors/review-v3.json").producedArtifactHash;
   const assuranceHash = readJson("docs/ai/actors/assurance-v3.json").producedArtifactHash;
   runState(["evidence-run", "--repo", tmp, "--id", "EV-v3-green", "--kind", "runtime-test", "--actor", "dev-v3", "--story", "Story 3.1", "--satisfies", "AC-v3", "--", process.execPath, "--test", "tests/frozen-verification.test.js"]);
-  runState(["gate", "--repo", tmp, "--id", "GATE-v3", "--scope", "Story 3.1", "--atdd-actor", "atdd-v3", "--development-actor", "dev-v3", "--code-review-actor", "review-v3", "--patch-assurance-actor", "assurance-v3", "--red-evidence", "EV-v3-red", "--green-evidence", "EV-v3-green", "--code-review-report-hash", reviewHash, "--patch-assurance-report-hash", assuranceHash]);
+  runState(["gate", "--repo", tmp, "--id", "GATE-v3", "--scope", "Story 3.1", "--atdd-actor", v3AtddActor, "--development-actor", "dev-v3", "--code-review-actor", "review-v3", "--patch-assurance-actor", "assurance-v3", "--red-evidence", "EV-v3-red", "--green-evidence", "EV-v3-green", "--code-review-report-hash", reviewHash, "--patch-assurance-report-hash", assuranceHash]);
   const v3Gate = readJson("docs/ai/gates/GATE-v3.json");
   if (v3Gate.verdict !== "PASS" || v3Gate.decisionMode !== "deterministic" || v3Gate.decidedBy !== "acef-story-close-v3") {
     throw new Error("v3 gate was not deterministically closed");
@@ -230,11 +244,11 @@ try {
     || !v3Gate.scopePaths.includes("tests/v3.test.js")) {
     throw new Error("v3 gate did not freeze the complete story-scoped application/test tree");
   }
-  const override = cp.spawnSync(process.execPath, [state, "gate", "--repo", tmp, "--id", "GATE-v3-override", "--scope", "Story 3.1", "--verdict", "FAIL", "--atdd-actor", "atdd-v3", "--development-actor", "dev-v3", "--code-review-actor", "review-v3", "--patch-assurance-actor", "assurance-v3", "--red-evidence", "EV-v3-red", "--green-evidence", "EV-v3-green", "--code-review-report-hash", reviewHash, "--patch-assurance-report-hash", assuranceHash], { encoding: "utf8" });
+  const override = cp.spawnSync(process.execPath, [state, "gate", "--repo", tmp, "--id", "GATE-v3-override", "--scope", "Story 3.1", "--verdict", "FAIL", "--atdd-actor", v3AtddActor, "--development-actor", "dev-v3", "--code-review-actor", "review-v3", "--patch-assurance-actor", "assurance-v3", "--red-evidence", "EV-v3-red", "--green-evidence", "EV-v3-green", "--code-review-report-hash", reviewHash, "--patch-assurance-report-hash", assuranceHash], { encoding: "utf8" });
   if (override.status === 0 || !/cannot override computed verdict PASS|PASS gate is terminal/.test(`${override.stdout}${override.stderr}`)) {
     throw new Error("caller could override deterministic v3 verdict");
   }
-  const terminalPass = cp.spawnSync(process.execPath, [state, "gate", "--repo", tmp, "--id", "GATE-v3-after-pass", "--scope", "Story 3.1", "--atdd-actor", "atdd-v3", "--development-actor", "dev-v3", "--code-review-actor", "review-v3", "--patch-assurance-actor", "assurance-v3", "--red-evidence", "EV-v3-red", "--green-evidence", "EV-v3-green"], { encoding: "utf8" });
+  const terminalPass = cp.spawnSync(process.execPath, [state, "gate", "--repo", tmp, "--id", "GATE-v3-after-pass", "--scope", "Story 3.1", "--atdd-actor", v3AtddActor, "--development-actor", "dev-v3", "--code-review-actor", "review-v3", "--patch-assurance-actor", "assurance-v3", "--red-evidence", "EV-v3-red", "--green-evidence", "EV-v3-green"], { encoding: "utf8" });
   if (terminalPass.status === 0 || !`${terminalPass.stdout}${terminalPass.stderr}`.includes("PASS gate is terminal")) throw new Error("PASS did not terminate the v3 story gate chain");
   runState(["active-run", "--repo", tmp, "--run-id", "RUN-epic-name-story", "--workflow-id", "full-bmad", "--scope-unit", "story", "--expected-story", "Epic 99", "--status", "active", "--story", "Epic 99", "--phase", "process-judge", "--ledger", "docs/ai/ACEF_demo_DELIVERY_AUDIT.md"]);
   runState(["actor", "--repo", tmp, "--id", "epic-name-judge", "--story", "Epic 99", "--phase", "process-judge", "--role", "process-judge", "--client", "codex", "--context-profile", "judge"]);

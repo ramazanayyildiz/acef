@@ -120,8 +120,9 @@ A worker launched before this bootstrap is drift. Stop, record it, patch the amb
   and correction actor IDs, exact parent-result SHA-256, `scope: test-artifacts-only`, and explicit non-glob allowed
   paths. Never replay the ATDD lifecycle; a second incomplete result is `REPLAN/SPLIT`.
 - Give each Full v3 ATDD worker one literal `acef-state evidence-run --kind runtime-test` command using the frozen
-  focused argv. Run it once after the clean test-only commit; never invent evidence kinds, append path operands, reuse
-  a failed evidence ID, or send `followup_task` to an ATDD identity.
+  focused argv. Run it once after the clean test-only commit; that command atomically creates the canonical ATDD actor
+  record, so neither conductor nor child runs a separate actor command. Never invent evidence kinds, append path
+  operands, reuse a failed evidence ID, pre-create the ATDD actor, or send `followup_task` to an ATDD identity.
 - Quarantine a failed story and its transitive dependants while continuing dependency-independent stories. Halt the
   whole run only for a declared dependency or shared safety invariant; quarantined work still fails product closeout.
 - After any bounded Developer repair, rerun Patch Assurance on the repaired final application/test tree. Rerun Code

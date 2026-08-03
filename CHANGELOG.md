@@ -9,6 +9,20 @@ or evidence contract. Do not use it to claim implementation status; link to the 
 
 ## Unreleased
 
+### Full story lifecycle v3.12 atomic ATDD evidence handoff
+
+- Changed four-actor-v3 `evidence-run` so the one literal runtime-test command validates a clean committed test-only red
+  tree and atomically creates the missing canonical ATDD actor record before test execution. The record binds the
+  canonical child identity plus the pre-red parent commit/tree; no separate conductor actor step remains.
+- Moved evidence-kind and immutable evidence-ID validation before actor creation or command execution. Invalid kinds,
+  dirty trees, non-test commits, wrong actor/story identities, and consumed evidence IDs leave no actor, raw log, or
+  evidence manifest.
+- Added child-transcript enforcement for exactly one canonical runtime-test evidence command and canonical ATDD actor
+  session binding.
+- Added regressions for invalid-kind atomicity, dirty-tree atomicity, automatic actor/evidence binding, and exact-one
+  transcript attribution. The complete repository suite passed 30/30 in 280 seconds. Maturity remains `enforced`
+  pending a separately frozen rehearsal.
+
 ### Full story lifecycle v3.11 ATDD transition fence
 
 - Rendered one literal `acef-state evidence-run --kind runtime-test` command for every frozen story and required the

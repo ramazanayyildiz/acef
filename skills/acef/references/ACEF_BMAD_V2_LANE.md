@@ -87,9 +87,11 @@ risk acceptance for the unresolved items.
    produce hollow greens; the correct result is `REPLAN`.
 5. **ATDD** — failing tests land **before** implementation, as their own commit. Every test fails on HEAD first.
    The conductor gives the actor one literal `acef-state evidence-run --kind runtime-test` command bound to the frozen
-   focused verification argv; the actor runs it once after the clean test-only commit. Do not invent evidence kinds,
-   add path operands, or retry a consumed evidence ID. After any terminal ATDD result, never reactivate that actor: a
-   `REVISE` requires one fresh report-only adjudicator before Development can start.
+   focused verification argv; the actor runs it once after the clean test-only commit. In four-actor-v3 that command
+   atomically creates the canonical ATDD actor record bound to the pre-red parent commit/tree; do not pre-create it or
+   run a separate actor command. Do not invent evidence kinds, add path operands, or retry a consumed evidence ID.
+   After any terminal ATDD result, never reactivate that actor: a `REVISE` requires one fresh report-only adjudicator
+   before Development can start.
 6. **Dev-story** — implement until the ATDD tests go green. Developer prompts must keep ACEF/BMAD evidence out of
    source comments: Story/Epic/AC/NFR/OD labels, gate-pass proof, reviewer/judge language, and implementation history
    belong in the ledger or story artifact. Source comments may only carry durable technical invariants a maintainer
