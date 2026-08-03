@@ -107,16 +107,20 @@ risk acceptance for the unresolved items.
    brittleness, false-positive risk, fixtures, and adjacent invariants. Code Review and Patch Assurance should run in
    parallel from the same implementation tree. Patch Assurance is report-only and cannot edit implementation.
    Before dispatch, the conductor commits transition state and freezes one shared input commit/tree for both reviewers.
-   Reviewers do not construct report paths, binding fields, or report JSON. Their final `acef-state review-result`
-   supplies only the canonical actor, verdict, and any base64-encoded typed findings; the state writer derives and
-   validates the report and creates the report-bound immutable reviewer actor atomically. The conductor never
+   Reviewers do not construct report paths, binding fields, report JSON, or base64. Their final `acef-state
+   review-result` supplies the canonical actor, verdict, and one ordered
+   `--finding-id/--finding-severity/--finding-reason` triple per finding; the state writer injects `OPEN`, derives and
+   validates the report, and creates the report-bound immutable reviewer actor atomically. The conductor never
    pre-creates or rewrites those report/actor records. Every reviewer shell call contains exactly one literal
-   read-only/focused-test command and one `exec_command`; split inspection into separate calls. Shell separators,
-   pipelines, dynamic commands, and batched tool calls are invalid even when every intended operation is read-only.
+   allowlisted read-only/repository-test command and one `exec_command`; split inspection into separate calls. Ad-hoc
+   interpreter snippets, schema/metadata probes, shell separators, pipelines, dynamic commands, and batched tool calls
+   are invalid even when every intended operation is read-only.
 9. **Bounded repair** — a finding returns to the original Developer (or one explicitly scoped repair Developer).
    Every repair reruns Patch Assurance against the repaired final application/test tree. Code Review reruns when its
    prior verdict was non-PASS or the repair changed production code; an earlier Code Review PASS may remain only after
-   a test-only repair. Two repair cycles are the maximum; a third cycle mechanically returns `REPLAN/SPLIT`. A new HIGH
+   a test-only repair. The one Developer receipt remains bound across the later conductor-owned control-only review
+   transition; that transition cannot cause a second follow-up or replacement receipt. Two repair cycles are the
+   maximum; a third cycle mechanically returns `REPLAN/SPLIT`. A new HIGH
    in consecutive rounds or growing patch scope is an earlier reviewer signal to choose the same disposition. The
    conductor and reviewers never patch production code.
 10. **Deterministic story close** — compute, rather than narrate, that four distinct actors ran, ATDD red preceded

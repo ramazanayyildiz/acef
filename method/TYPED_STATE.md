@@ -91,6 +91,12 @@ scripts/install-acef-tools --repo /path/to/repo
 .acef/bin/acef-state developer-repair --repo . --id story-4-1-repair-1 \
   --prior-gate story-4-1-close --developer-actor dev-4-1
 
+# A reviewer submits typed findings in its one final command. The writer adds
+# status=OPEN and atomically creates both report and reviewer actor records.
+.acef/bin/acef-state review-result --repo . --actor acef_story_4_1_code_review \
+  --verdict REVISE --finding-id CR-4-1-1 --finding-severity HIGH \
+  --finding-reason 'Frozen regression is not discovered by the focused runner'
+
 # When a conditional Story Judge trigger exists, derive its run/story/actor
 # binding and verdict; pass this artifact to gate with --judge-decision.
 .acef/bin/acef-state judge-decision --repo . --id story-4-1-ambiguity \

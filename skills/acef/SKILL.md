@@ -127,11 +127,15 @@ A worker launched before this bootstrap is drift. Stop, record it, patch the amb
   whole run only for a declared dependency or shared safety invariant; quarantined work still fails product closeout.
 - After any bounded Developer repair, rerun Patch Assurance on the repaired final application/test tree. Rerun Code
   Review when its prior verdict was non-PASS or production changed; preserve Code Review PASS only for test-only repair.
+  The repair receipt binds the Developer commit/application tree across the later control-only review transition; do
+  not reactivate the Developer or generate a replacement receipt for that transition.
 - Dispatch v3 Code Review and Patch Assurance from one committed shared input tree. Do not pre-create report or actor
-  records: each reviewer's final `acef-state review-result` supplies only its canonical actor, verdict, and typed
-  findings; the state writer derives the report path/bindings and atomically creates the report-bound actor record.
+  records: each reviewer's final `acef-state review-result` supplies only its canonical actor, verdict, and repeated
+  `--finding-id/--finding-severity/--finding-reason` triples; the state writer injects `OPEN`, derives the report
+  path/bindings, and atomically creates the report-bound actor record. Do not construct base64 or use helper commands.
 - Use `scopeUnit: story` for every frozen catalog story phase and `scopeUnit: epic` only for epic-level state. Give each
-  reviewer exactly one literal read-only/focused-test command per shell call; never batch calls, separators, or pipelines.
+  reviewer exactly one literal allowlisted read-only/repository-test command per shell call; never use ad-hoc
+  interpreter snippets, metadata probes, batched calls, separators, or pipelines.
 - Commit a story's exact close package before writing the next story's active-run, Current Context, or ledger transition.
 - Freeze the mandatory closeout inventory before execution. Closeout analysis may not create actors, mandatory work,
   a larger denominator, or another closeout chain.

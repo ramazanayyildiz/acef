@@ -9,6 +9,20 @@ or evidence contract. Do not use it to claim implementation status; link to the 
 
 ## Unreleased
 
+### Full story lifecycle v3.15 typed findings and repair receipts
+
+- Replaced reviewer-authored base64 in the active v3 prompt with repeated typed finding ID/severity/reason options;
+  `acef-state review-result` injects `OPEN` and retains failure-atomic report/actor creation. Compatibility base64 stays
+  readable but is not the new-run interface.
+- Bound a Developer repair receipt to its repaired application tree across later conductor-owned control-only review
+  transition commits. Those commits cannot trigger an extra Developer follow-up or replacement receipt.
+- Required the one lifecycle integration wrapper to emit both output and the inner `exit_code`; successful-looking test
+  prose without that typed field remains fail-closed.
+- Prohibited reviewer encoding helpers, ad-hoc interpreter snippets, metadata probes, and obsolete finding options;
+  added focused regressions for typed findings, control-only repair transitions, command allowlisting, and output-only
+  lifecycle receipts. Focused validators pass and the complete repository suite passed 30/30 in 227 seconds. Maturity
+  remains `enforced` pending a separately frozen rehearsal.
+
 ### Full story lifecycle v3.14 story scope and structured receipts
 
 - Made `scopeUnit` fail closed at the state-writer boundary: a frozen four-actor-v3 catalog story cannot start or

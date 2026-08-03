@@ -54,7 +54,7 @@ Usage:
   acef-state approval --repo <path> --id <id> --decision APPROVE|REJECT|ACCEPT_RISK --scope <scope> --quote <exact human words> [options]
   acef-state evidence-run --repo <path> --id <id> --kind <kind> --actor <id> --story <scope> --satisfies <id>... -- <command> [args...]
   acef-state developer-repair --repo <path> --id <id> --prior-gate <gate-id> --developer-actor <actor-id>
-  acef-state review-result --repo <path> --actor <exact-reviewer-id> --verdict PASS|REVISE|REPLAN [--finding <base64-json-object>]...
+  acef-state review-result --repo <path> --actor <exact-reviewer-id> --verdict PASS|REVISE|REPLAN [--finding-id <id> --finding-severity LOW|MEDIUM|HIGH|CRITICAL --finding-reason <plain-text>]...
   acef-state review-completion --repo <path> --artifact-path <docs/ai/reports/report.json> --actor <exact-reviewer-id>  # compatibility
   acef-state judge-decision --repo <path> --id <id> --gate-id <future-gate-id> --actor <judge-id> --trigger ambiguity|waiver|evidence-conflict|gate-anomaly --evidence <id>...
   acef-state gate --repo <path> --id <id> --scope <scope> --verdict <verdict> --decided-by <actor-id> [--evidence <id>...] [options]
@@ -65,7 +65,7 @@ Record files are written under docs/ai. Immutable records refuse overwrite; acti
 
 function parseArgs(argv) {
   const [command, ...rest] = argv;
-  const opts = { command, repo: process.cwd(), allow: [], satisfies: [], evidence: [], surface: [], surfaceEvidence: [], binding: [], bindingEvidence: [], riskTrigger: [], clarifyingQuestion: [], inferredAnswer: [], unresolvedQuestion: [], requiredSurface: [], coveredSurface: [], goalEvidence: [], goalMissing: [], acceptance: [], changedPath: [], verificationCommand: [], verificationExitCode: [], unresolvedRisk: [], unresolvedFinding: [], finding: [], promotionReason: [], expectedStory: [], commandArgv: [] };
+  const opts = { command, repo: process.cwd(), allow: [], satisfies: [], evidence: [], surface: [], surfaceEvidence: [], binding: [], bindingEvidence: [], riskTrigger: [], clarifyingQuestion: [], inferredAnswer: [], unresolvedQuestion: [], requiredSurface: [], coveredSurface: [], goalEvidence: [], goalMissing: [], acceptance: [], changedPath: [], verificationCommand: [], verificationExitCode: [], unresolvedRisk: [], unresolvedFinding: [], finding: [], findingId: [], findingSeverity: [], findingReason: [], promotionReason: [], expectedStory: [], commandArgv: [] };
   for (let index = 0; index < rest.length; index += 1) {
     const arg = rest[index];
     if (arg === "--help" || arg === "-h") {
@@ -85,7 +85,7 @@ function parseArgs(argv) {
     const value = rest[index + 1];
     if (value === undefined || value.startsWith("--")) throw new Error(`Missing value for ${arg}`);
     index += 1;
-    if (["allow", "satisfies", "evidence", "surface", "surfaceEvidence", "binding", "bindingEvidence", "riskTrigger", "clarifyingQuestion", "inferredAnswer", "unresolvedQuestion", "requiredSurface", "coveredSurface", "goalEvidence", "goalMissing", "acceptance", "changedPath", "verificationCommand", "verificationExitCode", "unresolvedRisk", "unresolvedFinding", "finding", "promotionReason", "expectedStory"].includes(key)) opts[key].push(value);
+    if (["allow", "satisfies", "evidence", "surface", "surfaceEvidence", "binding", "bindingEvidence", "riskTrigger", "clarifyingQuestion", "inferredAnswer", "unresolvedQuestion", "requiredSurface", "coveredSurface", "goalEvidence", "goalMissing", "acceptance", "changedPath", "verificationCommand", "verificationExitCode", "unresolvedRisk", "unresolvedFinding", "finding", "findingId", "findingSeverity", "findingReason", "promotionReason", "expectedStory"].includes(key)) opts[key].push(value);
     else opts[key] = value;
   }
   opts.repo = path.resolve(opts.repo);
@@ -1112,10 +1112,13 @@ function writeDeterministicStoryCloseGate(opts, activeRun) {
       || receipt.priorGateId !== priorGate.gateId || receipt.findingsSha256 !== findingsSha256
       || receipt.developerActorId !== actorIds.development || receipt.developerSessionId !== actors.development.sessionId
       || receipt.preCommit !== priorGate.applicationCommit || receipt.preTree !== priorGate.applicationTree
-      || receipt.postCommit !== head || receipt.postTree !== applicationTree
+      || receipt.postTree !== applicationTree
       || !gitIsAncestor(opts.repo, receipt.preCommit, receipt.postCommit)
+      || !gitIsAncestor(opts.repo, receipt.postCommit, head)
       || applicationChangedSince(opts.repo, receipt.preCommit, receipt.postCommit)
-        .filter((filePath) => scopePaths.includes(filePath)).length === 0) {
+        .filter((filePath) => scopePaths.includes(filePath)).length === 0
+      || applicationChangedSince(opts.repo, receipt.postCommit, head)
+        .filter((filePath) => scopePaths.includes(filePath)).length !== 0) {
       throw new Error("Developer repair receipt run/findings/session/commit/tree binding mismatch");
     }
     repair = { cycle: reviewCycle, priorGateId: priorGate.gateId, developerActorId: actorIds.development, receiptPath: relativeReceiptPath, receiptSha256 };
@@ -1344,6 +1347,20 @@ function decodeReviewFindings(entries) {
   });
 }
 
+function typedReviewFindings(opts) {
+  const counts = [opts.findingId.length, opts.findingSeverity.length, opts.findingReason.length];
+  if (counts.every((count) => count === 0)) return [];
+  if (new Set(counts).size !== 1) {
+    throw new Error("typed review findings require one --finding-id, --finding-severity, and --finding-reason per finding");
+  }
+  return opts.findingId.map((id, index) => ({
+    id: safeId(id, `finding ${index + 1} id`),
+    severity: String(opts.findingSeverity[index]).toUpperCase(),
+    status: "OPEN",
+    reason: String(opts.findingReason[index]).trim(),
+  }));
+}
+
 function writeReviewResult(opts) {
   required(opts, ["actor", "verdict"]);
   const activeRun = activeV3Run(opts.repo);
@@ -1357,7 +1374,10 @@ function writeReviewResult(opts) {
   const verdict = String(opts.verdict).toUpperCase();
   if (!["PASS", "REVISE", "REPLAN"].includes(verdict)) throw new Error("review-result verdict must be PASS, REVISE, or REPLAN");
   const phase = actorMatch[1] === "code_review" ? "code-review" : "patch-assurance";
-  const findings = decodeReviewFindings(opts.finding);
+  if (opts.finding.length && opts.findingId.length) {
+    throw new Error("review-result cannot mix compatibility --finding with typed finding options");
+  }
+  const findings = opts.finding.length ? decodeReviewFindings(opts.finding) : typedReviewFindings(opts);
   const reportPath = path.join(opts.repo, "docs", "ai", "reports", `${safeId(opts.actor, "review actor id")}.json`);
   const reviewerPath = actorPath(opts.repo, opts.actor);
   if (fs.existsSync(reportPath) || fs.existsSync(reviewerPath)) {

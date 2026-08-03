@@ -171,12 +171,20 @@ assert.match(v31Prompt, /shared reviewInputCommit=HEAD and reviewInputTree=HEAD\
   "concurrent reviewers must receive one committed shared input tree");
 assert.match(v31Prompt, /must not pre-create reviewer actor records or reports/,
   "the conductor cannot recreate the v3.9 immutable handoff contradiction");
-assert.match(v31Prompt, /Reviewers never construct report paths, identity\/input binding fields, or report JSON/,
+assert.match(v31Prompt, /Reviewers never construct report paths, identity\/input binding fields, report JSON, base64, or helper commands/,
   "the state writer owns the complete durable reviewer report/actor handoff");
 assert.match(v31Prompt, /A catalog story may be active only with scopeUnit=story/,
   "the compiled contract cannot carry epic scope into a story lifecycle");
 assert.match(v31Prompt, /REVIEWER TOOL RULE: every reviewer functions\.exec call may invoke tools\.exec_command exactly once/,
   "reviewer inspection and completion both use one literal command per tool call");
+assert.match(v31Prompt, /--finding-id <safe-id> --finding-severity <LOW\|MEDIUM\|HIGH\|CRITICAL> --finding-reason/,
+  "reviewers receive one directly typed finding handoff instead of constructing base64");
+assert.match(v31Prompt, /Do not use compatibility `--finding`, obsolete `--findings-base64`, Python, `php -r`, `node -e`, `ALL_TOOLS`/,
+  "the compiled contract names the measured reviewer helper and obsolete-option failures");
+assert.match(v31Prompt, /control-only review-transition commit must not trigger another Developer followup or replacement receipt/,
+  "one Developer repair receipt survives the later conductor-owned review transition");
+assert.match(v31Prompt, /text\(JSON\.stringify\(\{output:r\.output,exit_code:r\.exit_code\}\)\)/,
+  "the lifecycle integration command must emit a typed inner exit receipt");
 assert.match(v31Prompt, /Commit the complete close package successfully before writing any next-story active-run/,
   "the next story cannot contaminate staged close-package validation");
 assert.match(v31Prompt, /Exact ATDD red evidence command:/,
@@ -829,6 +837,14 @@ const structuredIntegrationOutput = JSON.stringify({ timestamp: eventTimestamp(1
 assert.equal(parseLifecycleIntegrationEvidence(`${shellWrappedIntegrationCall}\n${structuredIntegrationOutput}`,
   frozenIntegrationArgv, eventTimestamp(10), eventTimestamp(20)).ok, true,
 "structured custom-tool output preserves the inner exit receipt instead of escaping it out of recognition");
+const outputOnlyIntegration = JSON.stringify({ timestamp: eventTimestamp(12), type: "response_item", payload: {
+  type: "custom_tool_call_output", call_id: "integration-1", output: [
+    { type: "input_text", text: "Script completed\nOutput:\nPASS\n" },
+  ],
+} });
+assert.equal(parseLifecycleIntegrationEvidence(`${shellWrappedIntegrationCall}\n${outputOnlyIntegration}`,
+  frozenIntegrationArgv, eventTimestamp(10), eventTimestamp(20)).ok, false,
+"successful-looking test prose without an explicit inner exit code is not a lifecycle receipt");
 assert.equal(parseLifecycleIntegrationEvidence("", frozenIntegrationArgv,
   eventTimestamp(10), eventTimestamp(20)).ok, false, "missing frozen lifecycle integration command fails closed");
 assert.equal(parseLifecycleIntegrationEvidence(`${integrationCall}\n${integrationOutput}\n${integrationCall}\n${integrationOutput}`,
@@ -1191,6 +1207,7 @@ const machineCompletionOutput = [
   `REVIEW_INPUT_TREE=${"a".repeat(40)}`,
 ].join("\n");
 const machineCompletionCommand = ".acef/bin/acef-state review-result --repo . --actor reviewer --verdict PASS";
+const typedFindingCompletionCommand = ".acef/bin/acef-state review-result --repo . --actor reviewer --verdict REVISE --finding-id REVIEW-1 --finding-severity HIGH --finding-reason 'Frozen regression is not discovered by the focused runner'";
 const machineCompletionSession = [
   JSON.stringify({ type: "response_item", payload: { type: "custom_tool_call", name: "exec", call_id: "machine-review",
     input: `const r = await tools.exec_command({\"cmd\":${JSON.stringify(machineCompletionCommand)}}); text(JSON.stringify({output:r.output,exit_code:r.exit_code}));` } }),
@@ -1228,6 +1245,14 @@ assert.equal(isAllowedReviewerShellCommand("git status --short | git reset --har
   "an unquoted shell pipeline remains forbidden");
 assert.equal(isAllowedReviewerShellCommand(machineCompletionCommand), true,
   "the exact atomic review-result handoff remains allowlisted");
+assert.equal(isAllowedReviewerShellCommand(typedFindingCompletionCommand), true,
+  "a directly typed finding remains one safe atomic review-result handoff");
+assert.equal(isAllowedReviewerShellCommand(`${typedFindingCompletionCommand} --finding-status OPEN`), false,
+  "reviewers cannot override the state-writer-owned OPEN status");
+assert.equal(isAllowedReviewerShellCommand(".acef/bin/acef-state review-result --repo . --actor reviewer --verdict REVISE --findings-base64 abc"), false,
+  "the obsolete plural base64 finding option remains rejected");
+assert.equal(isAllowedReviewerShellCommand("php -r 'echo base64_encode(\"finding\");'"), false,
+  "ad-hoc reviewer encoding helpers remain outside the allowlist");
 assert.equal(isAllowedReviewerShellCommand(".acef/bin/acef-state review-result --repo /tmp/other --actor reviewer --verdict PASS"), false,
   "review-result cannot target another repository");
 assert.equal(isAllowedReviewerShellCommand(`${machineCompletionCommand} --force true`), false,

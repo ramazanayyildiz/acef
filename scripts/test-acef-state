@@ -206,6 +206,22 @@ try {
   if (repeatedCanonicalReview.status === 0 || !`${repeatedCanonicalReview.stdout}${repeatedCanonicalReview.stderr}`.includes("Refusing to overwrite immutable review result")) {
     throw new Error("review-result could repeat an immutable report/actor handoff");
   }
+  const invalidTypedActor = "acef_story_3_1_patch_assurance_retry1";
+  const invalidTypedFinding = cp.spawnSync(process.execPath, [state, "review-result", "--repo", tmp, "--actor", invalidTypedActor, "--verdict", "REVISE", "--finding-id", "PA-INVALID", "--finding-severity", "HIGH"], { encoding: "utf8" });
+  if (invalidTypedFinding.status === 0 || !`${invalidTypedFinding.stdout}${invalidTypedFinding.stderr}`.includes("typed review findings require one")
+    || fs.existsSync(path.join(tmp, "docs", "ai", "reports", `${invalidTypedActor}.json`))
+    || fs.existsSync(path.join(tmp, "docs", "ai", "actors", `${invalidTypedActor}.json`))) {
+    throw new Error("incomplete typed review finding was accepted or left a partial handoff");
+  }
+  const typedReviewActor = "acef_story_3_1_patch_assurance";
+  runState(["review-result", "--repo", tmp, "--actor", typedReviewActor, "--verdict", "REVISE",
+    "--finding-id", "PA-TYPED-1", "--finding-severity", "HIGH",
+    "--finding-reason", "Focused regression does not execute the frozen acceptance case"]);
+  const typedReviewReport = readJson(`docs/ai/reports/${typedReviewActor}.json`);
+  if (typedReviewReport.findings.length !== 1 || typedReviewReport.findings[0].status !== "OPEN"
+    || typedReviewReport.findings[0].severity !== "HIGH") {
+    throw new Error("typed review-result did not inject one canonical OPEN finding");
+  }
   const reviewPath = writeReviewReport("docs/ai/reports/review-v3.json", { actorInstanceId: "review-v3", story: "Story 3.1", phase: "code-review" });
   const wrongReviewCompletion = cp.spawnSync(process.execPath, [state, "review-completion", "--repo", tmp, "--artifact-path", reviewPath, "--actor", "wrong-reviewer"], { encoding: "utf8" });
   if (wrongReviewCompletion.status === 0 || !`${wrongReviewCompletion.stdout}${wrongReviewCompletion.stderr}`.includes("actor/run/story/phase/input commit/tree binding mismatch")) {
@@ -315,6 +331,12 @@ try {
     const priorGate = readJson(`docs/ai/gates/GATE-v32-${cycle - 1}.json`);
     runState(["developer-repair", "--repo", tmp, "--id", `repair-v32-${cycle}`, "--prior-gate", priorGate.gateId, "--developer-actor", "dev-v32"]);
     const receipt = `docs/ai/repairs/repair-v32-${cycle}.json`;
+    if (cycle === 2) {
+      fs.mkdirSync(path.join(tmp, "docs", "ai", "review-transitions"), { recursive: true });
+      const transitionPath = `docs/ai/review-transitions/story-3-2-cycle-${cycle}.txt`;
+      fs.writeFileSync(path.join(tmp, transitionPath), `cycle ${cycle} shared review\n`);
+      run("git", ["add", transitionPath]); run("git", ["commit", "-qm", `Story 3.2 review transition ${cycle}`]);
+    }
     const reviewActor = `review-v32-${cycle}`; const assuranceActor = `assurance-v32-${cycle}`;
     const reviewReport = writeReviewReport(`docs/ai/reports/${reviewActor}.json`, { actorInstanceId: reviewActor, story: "Story 3.2", phase: "code-review" });
     const assuranceReport = writeReviewReport(`docs/ai/reports/${assuranceActor}.json`, { actorInstanceId: assuranceActor, story: "Story 3.2", phase: "patch-assurance", verdict: "REVISE", findings: [{ id: `F-32${cycle}`, severity: "HIGH", status: "OPEN" }] });
