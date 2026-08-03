@@ -29,8 +29,8 @@ from 0/1 to 1/1 and the frozen command exited 0.
 
 The attempt still failed closed for four reasons:
 
-1. The conductor opened Story 1's concurrent reviewers under generic active phase `review`. `review-result` accepted
-   only recognized v3 reviewer phases, so both one-shot completions were mechanically rejected. The conductor correctly
+1. The conductor left Story 1 under `scopeUnit: epic` while opening generic active phase `review`. `review-result`
+   requires a v3 story-scoped review, so both one-shot completions were mechanically rejected. The conductor correctly
    did not retry or synthesize reviewer records, leaving Story 1 without a deterministic gate.
 2. Several otherwise successful reviewers batched read-only inspection with `awk`, pipelines, or `&&`. Their report and
    actor handoffs were correct, but the transcript safety oracle classified those calls as unsafe or unobservable. The
@@ -44,7 +44,7 @@ The attempt still failed closed for four reasons:
 
 ## Decision
 
-V3.13 is not promotable and does not change maturity. The next candidate must make generic shared review an admitted
-canonical phase, decode structured tool output before exit-receipt validation, make reviewer inspection mechanically
+V3.13 is not promotable and does not change maturity. The next candidate must reject frozen catalog stories opened
+under epic scope, decode structured tool output before exit-receipt validation, make reviewer inspection mechanically
 single-command/read-only rather than relying on prose, and bind staged close-package validation to the gate's own story
 instead of the subsequently active story. The v3.13 attempt is not replayed.

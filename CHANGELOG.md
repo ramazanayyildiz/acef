@@ -9,6 +9,19 @@ or evidence contract. Do not use it to claim implementation status; link to the 
 
 ## Unreleased
 
+### Full story lifecycle v3.14 story scope and structured receipts
+
+- Made `scopeUnit` fail closed at the state-writer boundary: a frozen four-actor-v3 catalog story cannot start or
+  continue under epic scope. Epic scope remains available for epic-level state and the terminal Epic Process Judge.
+- Decoded structured Codex tool-output blocks before lifecycle exit-receipt validation. The immutable V3.13 integration
+  transcript now re-evaluates as exactly one attributed command with exit 0 and valid story/Judge ordering.
+- Applied the one-literal-command/one-exec rule to every reviewer read and completion call, allowlisted only bounded
+  `awk` and safe `git grep` reads, and retained fail-closed rejection of separators, pipelines, dynamic commands, and
+  text-conversion filters.
+- Required each exact story-close package to commit before any next-story active-run, Current Context, or ledger
+  transition. Focused state, experiment, process-validator, skill, installer, and capability tests pass; the complete
+  repository suite passed 30/30 in 264 seconds. Maturity remains `enforced` pending a separately frozen rehearsal.
+
 ### Full story lifecycle v3.13 canonical reviewer and terminal closeout
 
 - Added reviewer-owned `acef-state review-result`: reviewers supply only canonical actor, verdict, and optional
@@ -26,9 +39,9 @@ or evidence contract. Do not use it to claim implementation status; link to the 
 - Separately froze and ran non-scored `REHEARSAL-v313`. Canonical reviewer handoff closed Stories 2–4, including both
   previously failing Story 3/4 Patch Assurance cases; the wrapped integration command was recognized 1/1 and exited 0;
   and the Epic Judge durably wrote a terminal `REPLAN` gate with one missing story. The immutable run still failed after
-  2,802.8 seconds because Story 1 opened generic `review`, structured tool output hid the successful exit receipt from
-  the parser, several reviewers batched read-only shell commands, and staged Story 2 closeout was checked against active
-  Story 3. Maturity remains `enforced`.
+  2,802.8 seconds because Story 1 remained epic-scoped when review opened, structured tool output hid the successful
+  exit receipt from the parser, several reviewers batched read-only shell commands, and staged Story 2 closeout was
+  checked against active Story 3. Maturity remains `enforced`.
 
 ### Full story lifecycle v3.12 atomic ATDD evidence handoff
 

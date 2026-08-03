@@ -130,6 +130,9 @@ A worker launched before this bootstrap is drift. Stop, record it, patch the amb
 - Dispatch v3 Code Review and Patch Assurance from one committed shared input tree. Do not pre-create report or actor
   records: each reviewer's final `acef-state review-result` supplies only its canonical actor, verdict, and typed
   findings; the state writer derives the report path/bindings and atomically creates the report-bound actor record.
+- Use `scopeUnit: story` for every frozen catalog story phase and `scopeUnit: epic` only for epic-level state. Give each
+  reviewer exactly one literal read-only/focused-test command per shell call; never batch calls, separators, or pipelines.
+- Commit a story's exact close package before writing the next story's active-run, Current Context, or ledger transition.
 - Freeze the mandatory closeout inventory before execution. Closeout analysis may not create actors, mandatory work,
   a larger denominator, or another closeout chain.
 - Full BMAD delegation is approved once per run for ACEF-required persona workers only; generic delegation remains forbidden.

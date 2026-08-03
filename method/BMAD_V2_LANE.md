@@ -19,6 +19,8 @@ controls. It does not run the same assurance decision through multiple synonymou
 
 The active run records `fullFlowContract`. Missing values mean `six-actor-v2`. The contract is immutable after the
 first lifecycle actor or gate is recorded; changing it requires a new run. New runs default to `four-actor-v3`.
+In v3, every catalog story phase uses `scopeUnit: story`; `scopeUnit: epic` is reserved for epic-level state and the
+terminal Epic Process Judge. The state writer rejects a frozen catalog story opened under epic scope.
 
 ## Dependency
 This lane is driven by **BMAD-METHOD** (https://github.com/bmad-code-org/BMAD-METHOD, MIT) — an installable agent
@@ -108,7 +110,9 @@ risk acceptance for the unresolved items.
    Reviewers do not construct report paths, binding fields, or report JSON. Their final `acef-state review-result`
    supplies only the canonical actor, verdict, and any base64-encoded typed findings; the state writer derives and
    validates the report and creates the report-bound immutable reviewer actor atomically. The conductor never
-   pre-creates or rewrites those report/actor records.
+   pre-creates or rewrites those report/actor records. Every reviewer shell call contains exactly one literal
+   read-only/focused-test command and one `exec_command`; split inspection into separate calls. Shell separators,
+   pipelines, dynamic commands, and batched tool calls are invalid even when every intended operation is read-only.
 9. **Bounded repair** — a finding returns to the original Developer (or one explicitly scoped repair Developer).
    Every repair reruns Patch Assurance against the repaired final application/test tree. Code Review reruns when its
    prior verdict was non-PASS or the repair changed production code; an earlier Code Review PASS may remain only after
@@ -117,7 +121,9 @@ risk acceptance for the unresolved items.
    conductor and reviewers never patch production code.
 10. **Deterministic story close** — compute, rather than narrate, that four distinct actors ran, ATDD red preceded
     implementation green, review and patch assurance bind the final tree, successful runner proof exists, findings are
-    resolved, and scope/commit hashes match. Write one formal close package after the story is green.
+    resolved, and scope/commit hashes match. Write one formal close package after the story is green. Commit that
+    package before changing active-run, Current Context, or ledger state to the next story; staged prior-story evidence
+    must never be validated against a working tree that already names the next story.
 11. **Conditional Story Process Judge** — dispatch only for a waiver, evidence conflict, non-mechanical ambiguity, or
     deterministic gate anomaly. The Judge may resolve judgment but cannot override a failed mechanical check.
 12. **Product-done audit + manual QA** — see below. User/runtime surfaces also require a product-outcome verifier when

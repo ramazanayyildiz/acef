@@ -173,6 +173,12 @@ assert.match(v31Prompt, /must not pre-create reviewer actor records or reports/,
   "the conductor cannot recreate the v3.9 immutable handoff contradiction");
 assert.match(v31Prompt, /Reviewers never construct report paths, identity\/input binding fields, or report JSON/,
   "the state writer owns the complete durable reviewer report/actor handoff");
+assert.match(v31Prompt, /A catalog story may be active only with scopeUnit=story/,
+  "the compiled contract cannot carry epic scope into a story lifecycle");
+assert.match(v31Prompt, /REVIEWER TOOL RULE: every reviewer functions\.exec call may invoke tools\.exec_command exactly once/,
+  "reviewer inspection and completion both use one literal command per tool call");
+assert.match(v31Prompt, /Commit the complete close package successfully before writing any next-story active-run/,
+  "the next story cannot contaminate staged close-package validation");
 assert.match(v31Prompt, /Exact ATDD red evidence command:/,
   "each frozen story must render a literal evidence-run command");
 assert.match(v31Prompt, /--kind runtime-test/,
@@ -814,6 +820,15 @@ const shellWrappedIntegrationCall = JSON.stringify({ timestamp: eventTimestamp(1
 assert.equal(parseLifecycleIntegrationEvidence(`${shellWrappedIntegrationCall}\n${integrationOutput}`, frozenIntegrationArgv,
   eventTimestamp(10), eventTimestamp(20)).ok, true,
 "the exact frozen sh -c argv remains attributable through the Codex shell wrapper");
+const structuredIntegrationOutput = JSON.stringify({ timestamp: eventTimestamp(12), type: "response_item", payload: {
+  type: "custom_tool_call_output", call_id: "integration-1", output: [
+    { type: "input_text", text: "Script completed\nOutput:\n" },
+    { type: "input_text", text: JSON.stringify({ exit_code: 0, output: "PASS" }) },
+  ],
+} });
+assert.equal(parseLifecycleIntegrationEvidence(`${shellWrappedIntegrationCall}\n${structuredIntegrationOutput}`,
+  frozenIntegrationArgv, eventTimestamp(10), eventTimestamp(20)).ok, true,
+"structured custom-tool output preserves the inner exit receipt instead of escaping it out of recognition");
 assert.equal(parseLifecycleIntegrationEvidence("", frozenIntegrationArgv,
   eventTimestamp(10), eventTimestamp(20)).ok, false, "missing frozen lifecycle integration command fails closed");
 assert.equal(parseLifecycleIntegrationEvidence(`${integrationCall}\n${integrationOutput}\n${integrationCall}\n${integrationOutput}`,
@@ -1221,6 +1236,14 @@ assert.equal(isAllowedReviewerShellCommand("test ! -e docs/ai/reports/reviewer.j
   "bounded reviewer existence checks are read-only");
 assert.equal(isAllowedReviewerShellCommand("php -l app/Example.php"), true,
   "bounded reviewer syntax checks are read-only");
+assert.equal(isAllowedReviewerShellCommand("awk 'FNR<=300 {print}' docs/ai/evidence/red.json docs/ai/evidence/green.json"), true,
+  "bounded reviewer line reads are read-only");
+assert.equal(isAllowedReviewerShellCommand("git grep -n -C 5 pattern HEAD -- tests/FocusedTest.php"), true,
+  "bounded git grep inspection is read-only");
+assert.equal(isAllowedReviewerShellCommand("git grep --textconv pattern HEAD"), false,
+  "reviewer git grep cannot execute text-conversion filters");
+assert.equal(isAllowedReviewerShellCommand("git status --short && git diff --stat"), false,
+  "reviewer reads remain one literal command per shell call");
 assert.match(codexSessionMetrics(machineCompletionSession).commandText, /acef-state review-result/,
   "functions.exec-wrapped exec_command calls remain visible to command-trace validation");
 assert.equal(correctionSessionWrites(JSON.stringify({ type: "response_item", payload: {

@@ -142,6 +142,10 @@ try {
   if (missingInitialInventory.status === 0 || !`${missingInitialInventory.stdout}${missingInitialInventory.stderr}`.includes("requires at least one --expected-story")) {
     throw new Error("new v3 story run accepted no frozen expectedStories inventory");
   }
+  const epicScopedCatalogStory = cp.spawnSync(process.execPath, [state, "active-run", "--repo", tmp, "--run-id", "RUN-v3-wrong-scope", "--workflow-id", "full-bmad", "--scope-unit", "epic", "--expected-story", "Story 3.1", "--status", "active", "--story", "Story 3.1", "--phase", "atdd", "--ledger", "docs/ai/ACEF_demo_DELIVERY_AUDIT.md"], { encoding: "utf8" });
+  if (epicScopedCatalogStory.status === 0 || !`${epicScopedCatalogStory.stdout}${epicScopedCatalogStory.stderr}`.includes("requires --scope-unit story")) {
+    throw new Error("four-actor-v3 admitted a catalog story under epic scope");
+  }
   runState(["active-run", "--repo", tmp, "--run-id", "RUN-v3", "--workflow-id", "full-bmad", "--expected-story", "Story 3.1", "--status", "active", "--story", "Story 3.1", "--phase", "atdd", "--ledger", "docs/ai/ACEF_demo_DELIVERY_AUDIT.md"]);
   if (readJson("docs/ai/ACEF_ACTIVE_RUN.json").fullFlowContract !== "four-actor-v3") {
     throw new Error("new Full run did not default to four-actor-v3");

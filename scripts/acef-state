@@ -340,6 +340,10 @@ function writeActiveRun(opts) {
   if (fullFlowContract === "four-actor-v3" && !expectedStories?.length) {
     throw new Error("new four-actor-v3 run requires at least one --expected-story before lifecycle work begins");
   }
+  if (fullFlowContract === "four-actor-v3" && scopeUnit !== "story"
+    && expectedStories.some((story) => normalizedScope(story) === normalizedScope(opts.story))) {
+    throw new Error(`four-actor-v3 active story ${opts.story} requires --scope-unit story`);
+  }
   if (fullFlowContract === "four-actor-v3" && scopeUnit === "story"
     && !expectedStories.some((story) => normalizedScope(story) === normalizedScope(opts.story))) {
     throw new Error(`active story ${opts.story} is not in the frozen expectedStories inventory`);
