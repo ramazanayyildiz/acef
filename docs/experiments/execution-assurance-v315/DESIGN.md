@@ -1,6 +1,7 @@
 # Execution Assurance v3.15 typed findings and repair receipts
 
-Status: **implementation and complete repository verification pass; rehearsal must be frozen separately.**
+Status: **implementation and repository verification passed; the frozen rehearsal and sleep-inhibited repeat both
+failed, so capability maturity remains `enforced`.**
 
 V3.14 proved story-scope enforcement and close-package-before-transition sequencing. Its real rehearsal exposed three
 mechanical handoff defects around an otherwise legitimate Story 4 product-evidence stop:
@@ -24,5 +25,6 @@ V3.15 makes those handoffs low-freedom and typed:
 The genuine V3.14 Story 4 discovery finding is not weakened: additive ATDD assertions still must be collected by the
 frozen runner before product close can pass. Capability maturity remains `enforced`; implementation and tests cannot
 make it `proven`. Focused state/experiment, process-validator, repository-native skill, and capability checks pass; the
-complete 30-entrypoint repository suite passed in 227 seconds. No rehearsal is authorized until a clean candidate,
-manifest, preflight, and Stage 0 are committed separately.
+complete 30-entrypoint repository suite passed in 227 seconds. The frozen rehearsal was interrupted by host sleep; its
+unchanged sleep-inhibited repeat completed in 3,016.3 seconds and failed on discovered Story 2/4 test defects plus an
+unrepresentable Developer non-PASS repair continuation. See `REHEARSAL_RESULT.md`. V3.15 is not promotable.

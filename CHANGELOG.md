@@ -22,6 +22,11 @@ or evidence contract. Do not use it to claim implementation status; link to the 
   added focused regressions for typed findings, control-only repair transitions, command allowlisting, and output-only
   lifecycle receipts. Focused validators pass and the complete repository suite passed 30/30 in 227 seconds. Maturity
   remains `enforced` pending a separately frozen rehearsal.
+- Froze and repeated the non-scored V3.15 rehearsal. The first attempt was environmentally interrupted by clamshell
+  sleep; the unchanged sleep-inhibited repeat completed normally in 3,016.3 seconds but failed closed. Typed reviewer
+  findings and explicit lifecycle exit receipts worked, while undiscovered Story 2 tests, a Developer non-PASS repair
+  dead end, unbound pre-review continuations, close-bootstrap omissions, the intermediate-REVISE hook conflict, and a
+  source-shape-sensitive webhook assertion prevented promotion. Maturity remains `enforced`.
 
 ### Full story lifecycle v3.14 story scope and structured receipts
 
