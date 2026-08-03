@@ -53,6 +53,7 @@ Usage:
   acef-state actor --repo <path> --id <id> --story <scope> --phase <phase> --role <role> --client <client> --context-profile <profile> [options]
   acef-state worker-scope --repo <path> --story <scope> --phase <phase> --worker-id <id> --allow <glob>... [--surface <name>...] [--pattern-use <kind>] [--requires-round-trip true|false] [--binding <input>><output>:<field>[:defaultMaskingRisk]] [options]
   acef-state phase-transition --repo <path> --phase development|code-review
+  acef-state story-transition --repo <path>
   acef-state review-scope --repo <path>
   acef-state approval --repo <path> --id <id> --decision APPROVE|REJECT|ACCEPT_RISK --scope <scope> --quote <exact human words> [options]
   acef-state evidence-run --repo <path> --id <id> --kind <kind> --actor <id> --story <scope> --satisfies <id>... [--discovery-command-json <json-argv> --expected-test <identity>...] -- <command> [args...]
@@ -254,7 +255,7 @@ function dirtyDigest(repo) {
 
 function isControlPath(filePath) {
   const normalized = filePath.replaceAll(path.sep, "/");
-  return /^docs\/ai\/(?:ACEF_(?:ACTIVE_RUN\.json|ACTIVE_WORKER_SCOPE\.json|ACTIVE_LEDGER|DIRECT_RUN\.json|CURRENT_CONTEXT\.md|DELIVERY_LEDGER(?:_[^/]+)?\.md|[^/]+_DELIVERY_AUDIT\.md)|actors\/|gates\/|evidence\/|reports\/|approvals\/|repairs\/|capsules\/|judges\/)/.test(normalized);
+  return /^docs\/ai\/(?:ACEF_(?:ACTIVE_RUN\.json|ACTIVE_WORKER_SCOPE\.json|ACTIVE_LEDGER|DIRECT_RUN\.json|CURRENT_CONTEXT\.md|RUN_[^/]+\.md|DELIVERY_LEDGER(?:_[^/]+)?\.md|[^/]+_DELIVERY_AUDIT\.md)|actors\/|gates\/|evidence\/|reports\/|approvals\/|repairs\/|capsules\/|judges\/)/.test(normalized);
 }
 
 function dirtyApplicationPaths(repo) {
@@ -382,24 +383,24 @@ function writeActiveRun(opts) {
     assuranceApprovalId: opts.assuranceApproval ? safeId(opts.assuranceApproval, "assurance approval id") : null,
     track: opts.track === "guarded" ? null : (opts.track || null),
     status: opts.status,
-    activeEpic: opts.epic || null,
+    activeEpic: opts.epic || (sameRun ? previous.activeEpic : null),
     activeStory: opts.story,
     activePhase: opts.phase,
-    activeGoal: activeGoal(opts),
-    goalCoverage: goalCoverage(opts),
-    workerRole: opts.workerRole || null,
-    activeActorId: opts.actor || null,
-    workflowRationale: opts.workflowRationale || opts.laneRationale || null,
-    intakeDecision: intakeDecision(opts),
-    riskTriggers,
-    workerScopePath: opts.workerScope || null,
-    workflowPath: opts.workflow || null,
-    workflowNodeId: opts.workflowNode || null,
-    fullLedgerAccess: opts.fullLedgerAccess || null,
-    maxLines: opts.maxLines ? Number(opts.maxLines) : null,
-    nextAllowedStep: opts.nextAllowedStep || null,
+    activeGoal: activeGoal(opts) || (sameRun ? previous.activeGoal : null),
+    goalCoverage: goalCoverage(opts) || (sameRun ? previous.goalCoverage : null),
+    workerRole: opts.workerRole || (sameRun ? previous.workerRole : null),
+    activeActorId: opts.actor || (sameRun ? previous.activeActorId : null),
+    workflowRationale: opts.workflowRationale || opts.laneRationale || (sameRun ? previous.workflowRationale : null),
+    intakeDecision: intakeDecision(opts) || (sameRun ? previous.intakeDecision : null),
+    riskTriggers: riskTriggers.length ? riskTriggers : (sameRun ? previous.riskTriggers : []),
+    workerScopePath: opts.workerScope || (sameRun ? previous.workerScopePath : null),
+    workflowPath: opts.workflow || (sameRun ? previous.workflowPath : null),
+    workflowNodeId: opts.workflowNode || (sameRun ? previous.workflowNodeId : null),
+    fullLedgerAccess: opts.fullLedgerAccess || (sameRun ? previous.fullLedgerAccess : null),
+    maxLines: opts.maxLines ? Number(opts.maxLines) : (sameRun ? previous.maxLines : null),
+    nextAllowedStep: opts.nextAllowedStep || (sameRun ? previous.nextAllowedStep : null),
     ledgerPath: opts.ledger,
-    contextPath: opts.context || null,
+    contextPath: opts.context || (sameRun ? previous.contextPath : null),
     updatedAt: new Date().toISOString(),
   };
   atomicJson(target, record, { overwrite: true, validate: parseActiveRun });
@@ -1419,6 +1420,49 @@ function writePhaseTransition(opts) {
   console.log(`WROTE phase-transition ${activeRun.activePhase} -> ${opts.phase}`);
 }
 
+function writeStoryTransition(opts) {
+  const activeRun = activeV3Run(opts.repo);
+  if (activeRun.runtimeContract !== "capsule-supervisor-v1" || activeRun.scopeUnit !== "story"
+    || canonicalGatePhase(activeRun.activePhase) !== "codereview") {
+    throw new Error("story-transition requires an active capsule-supervisor story in code-review");
+  }
+  const gates = priorDeterministicStoryGates(opts.repo, activeRun.activeStory, activeRun);
+  const latest = gates.at(-1)?.gate;
+  if (!latest || latest.verdict !== "PASS") {
+    throw new Error("story-transition requires the active story's terminal deterministic PASS gate");
+  }
+  const storyIndex = activeRun.expectedStories.findIndex((story) => normalizedScope(story) === normalizedScope(activeRun.activeStory));
+  if (storyIndex < 0) throw new Error("active story is absent from the frozen expectedStories inventory");
+  const nextStory = activeRun.expectedStories[storyIndex + 1];
+  const target = path.join(opts.repo, "docs", "ai", "ACEF_ACTIVE_RUN.json");
+  const { lane: _compatibilityLane, ...storedRun } = activeRun;
+  const record = nextStory
+    ? {
+      ...storedRun,
+      scopeUnit: "story",
+      activeStory: nextStory,
+      activePhase: "atdd",
+      workerRole: null,
+      activeActorId: null,
+      nextAllowedStep: "refresh current context and worker scope for the frozen next story",
+      updatedAt: new Date().toISOString(),
+    }
+    : {
+      ...storedRun,
+      scopeUnit: "epic",
+      activeStory: activeRun.activeEpic || "Epic closeout",
+      activePhase: "epic-process-judge",
+      workerRole: "epic-process-judge",
+      activeActorId: null,
+      nextAllowedStep: "run final integration verification, then dispatch the epic Process Judge",
+      updatedAt: new Date().toISOString(),
+    };
+  atomicJson(target, record, { overwrite: true, validate: parseActiveRun });
+  console.log(nextStory
+    ? `WROTE story-transition ${activeRun.activeStory} -> ${nextStory}`
+    : `WROTE story-transition ${activeRun.activeStory} -> ${record.activeStory}`);
+}
+
 function writeDeveloperRepair(opts) {
   required(opts, ["id", "priorGate", "developerActor"]);
   const activeRun = activeV3Run(opts.repo);
@@ -1780,6 +1824,7 @@ function main() {
   if (opts.command === "actor") return writeActor(opts);
   if (opts.command === "worker-scope") return writeWorkerScope(opts);
   if (opts.command === "phase-transition") return writePhaseTransition(opts);
+  if (opts.command === "story-transition") return writeStoryTransition(opts);
   if (opts.command === "review-scope") return writeReviewScope(opts);
   if (opts.command === "approval") return writeApproval(opts);
   if (opts.command === "evidence-run") return writeEvidence(opts);

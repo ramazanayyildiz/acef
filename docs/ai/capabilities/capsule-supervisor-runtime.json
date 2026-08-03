@@ -26,6 +26,7 @@
     ],
     "cli": [
       "scripts/acef-supervisor",
+      "scripts/acef-state#writeStoryTransition",
       "scripts/acef-state#writeReviewScope",
       "scripts/acef-state#writeReviewCapsule",
       "scripts/acef-state#showCapsule"
@@ -54,7 +55,7 @@
   "limitations": [
     "The first candidate keeps every semantic actor on gpt-5.6-sol/high; lower-cost semantic routing is shadow-only until separately measured.",
     "A review capsule is additive transport and cannot replace independent reviewer judgment or targeted reads needed to resolve a named uncertainty; a reviewer may rerun the focused command only for a named evidence conflict.",
-    "The runtime is enforced by schemas, writers, validators, tests, and installer wiring but has not yet passed the frozen end-to-end rehearsal, so it is not proven or installed in target repositories.",
+    "The runtime is enforced by schemas, writers, validators, tests, and installer wiring. Its first frozen end-to-end rehearsal failed closed on conductor/control metadata after Story 1, so it is not proven or installed in target repositories.",
     "Existing Full runs with lifecycle evidence cannot adopt this runtime contract in place."
   ],
   "evidence": [
@@ -72,6 +73,11 @@
       "layer": "tests",
       "ref": "scripts/test-acef-execution-assurance-experiment",
       "note": "Covers model-cycle accounting, aggregate cost, runtime profile enforcement, and capsule-supervisor budgets."
+    },
+    {
+      "layer": "tests",
+      "ref": "docs/experiments/execution-assurance-v316/REHEARSAL_RESULT.md",
+      "note": "Records the immutable failed first rehearsal, including Story 1 timing, actor topology, token/tool telemetry, and the exact conductor/control metadata failure that defines the successor repair."
     }
   ],
   "createdAt": "2026-08-04"

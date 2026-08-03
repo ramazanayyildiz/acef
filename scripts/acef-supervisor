@@ -150,10 +150,13 @@ function build(repo) {
       ? { type: "stop", disposition: latestGate.verdict, reason: "terminal epic gate exists" }
       : { type: "dispatch", role: "epic-judge", actorInstanceId: "acef_epic_process_judge", runtime: RUNTIME["epic-judge"] };
   } else if (currentPhase === "atdd") {
+    const scopeReady = workerScope && token(workerScope.activeStory) === storyKey;
     const red = evidence.find((record) => record.actorInstanceId === actorId("atdd") && record.exitCode !== 0);
-    action = red
-      ? { type: "transition", nextPhase: "development", command: ".acef/bin/acef-state phase-transition --repo . --phase development", reason: "typed red evidence exists" }
-      : { type: "dispatch", role: "atdd", actorInstanceId: actorId("atdd"), runtime: RUNTIME.atdd };
+    action = !scopeReady
+      ? { type: "blocked", reason: "refresh the typed worker scope for the active frozen story before ATDD dispatch" }
+      : red
+        ? { type: "transition", nextPhase: "development", command: ".acef/bin/acef-state phase-transition --repo . --phase development", reason: "typed red evidence exists" }
+        : { type: "dispatch", role: "atdd", actorInstanceId: actorId("atdd"), runtime: RUNTIME.atdd };
   } else if (currentPhase === "development") {
     if (!hasActor(actorId("development"))) {
       action = { type: "dispatch", role: "development", actorInstanceId: actorId("development"), runtime: RUNTIME.development };
@@ -164,7 +167,12 @@ function build(repo) {
     }
   } else if (currentPhase === "codereview") {
     if (latestGate?.verdict === "PASS") {
-      action = { type: "transition", nextPhase: "next-story-or-epic-close", reason: "deterministic story PASS exists" };
+      action = {
+        type: "transition",
+        nextPhase: "next-story-or-epic-close",
+        command: ".acef/bin/acef-state story-transition --repo .",
+        reason: "deterministic story PASS exists",
+      };
     } else if (latestGate?.verdict === "REVISE" && !repairs.some((record) => record.cycle === reviewCycle)) {
       const postGateEvidence = developerEvidence.filter((record) => String(record.finishedAt || record.startedAt || "") > String(latestGate.createdAt || ""));
       const latestRepairEvidence = postGateEvidence.at(-1) || null;
@@ -249,15 +257,18 @@ function build(repo) {
         const assuranceActor = actors.find((record) => record.actorInstanceId === assuranceId);
         if (!red || !green || !codeActor?.producedArtifactHash || !assuranceActor?.producedArtifactHash) {
           action = { type: "blocked", reason: "typed story-gate inputs are incomplete" };
+        } else if (!workerScope?.surfaces?.length) {
+          action = { type: "blocked", reason: "typed story-gate inputs require derived worker-scope surfaces" };
         } else {
           const gateId = `${storyKey}-review-cycle${reviewCycle}`;
           const repairArg = reviewCycle > 0 ? ` --repair-receipt docs/ai/repairs/${storyKey}-repair${reviewCycle}.json` : "";
+          const surfaceArgs = workerScope.surfaces.map((surface) => ` --surface-evidence ${surface}:${green.evidenceId}`).join("");
           const command = `.acef/bin/acef-state gate --repo . --id ${gateId} --scope ${quote(story)}`
             + ` --atdd-actor ${actorId("atdd")} --development-actor ${actorId("development")}`
             + ` --code-review-actor ${codeId} --patch-assurance-actor ${assuranceId}`
             + ` --red-evidence ${red.evidenceId} --green-evidence ${green.evidenceId}`
             + ` --code-review-report-hash ${codeActor.producedArtifactHash} --patch-assurance-report-hash ${assuranceActor.producedArtifactHash}`
-            + ` --review-cycle ${reviewCycle}${repairArg}`;
+            + ` --review-cycle ${reviewCycle}${repairArg}${surfaceArgs}`;
           action = { type: "write-story-gate", reviewCycle, command, runtime: null,
             expectedDisposition: [codeReport.verdict, assuranceReport.verdict].every((verdict) => verdict === "PASS") ? "PASS" : "REVISE_OR_REPLAN",
             reason: "both independent typed review results are present; deterministic gate computes disposition" };

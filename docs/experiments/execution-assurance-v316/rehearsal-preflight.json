@@ -3,16 +3,16 @@
   "experimentId": "acef-execution-assurance-v316-rehearsal",
   "candidateCommit": "f3f9c9c17a567b03d9751bf6cb12bdc04a01ebee",
   "manifestSha256": "f0f62285344bed419c75c3f49e24374578cd154fb695ace4381e5975c27a2ae5",
-  "runnerCommit": "92363c6714432cda7efa5b4bb6e9529e74833368",
-  "runnerDirtyBefore": true,
+  "runnerCommit": "893373d244983ebc9bd8958fb6266e635239eb12",
+  "runnerDirtyBefore": false,
   "runnerSourceSha256": "38361264267dc8e5a2f3b98047041c8e5af93f2acccbebc0312068ca5040c3a8",
   "taskBindings": [
     {
       "taskId": "full-guarded-motivation-v316",
-      "resolvedTaskSha256": "804d6e01c8a7c3f7fdf8052fe473d7ae2a10bd341562917a282edc1c92d42b68"
+      "resolvedTaskSha256": "26dd445c0b2fe99a03910f56259e3240d3827dcaebc7c74834d31c294f7162e1"
     }
   ],
-  "checkedAt": "2026-08-03T22:59:48.821Z",
+  "checkedAt": "2026-08-03T23:04:55.330Z",
   "ok": true,
   "checks": [
     {
@@ -38,20 +38,20 @@
   ],
   "collaborationCanary": {
     "ok": true,
-    "checkedAt": "2026-08-03T22:57:23.668Z",
+    "checkedAt": "2026-08-03T23:02:20.210Z",
     "clientPath": "/opt/homebrew/Caskroom/codex/0.146.0/bin/codex",
     "clientBinarySha256": "ae1d3ffe6d48aec6a4dc3f50e7eb8e0d11962485a6a9406c5a7012139383da02",
     "clientVersion": "codex-cli 0.146.0",
     "model": "gpt-5.6-sol",
     "reasoningEffort": "high",
-    "threadId": "019fc9d8-5009-72f1-beac-4f8ba5cf2ba7",
+    "threadId": "019fc9dc-dd73-74f0-aa75-faa80e5b875c",
     "exitCode": 0,
     "expectedActorCount": 1,
     "observedActorCount": 1,
     "receiverThreadIds": [
-      "019fc9d8-76a2-7691-ae0f-4862891df514"
+      "019fc9dd-039a-7701-be35-59c2572d254a"
     ],
-    "sessionSha256": "aaa63030072d92a003dcfae2652be1e61acad9e67a750ea1b456364ce8a0e62e",
+    "sessionSha256": "2772d17fd01391e9c3634accdbd80bb985707a3c1903521d1ead87096a46f37f",
     "failures": []
   },
   "environmentProbes": [
@@ -68,9 +68,9 @@
           "expect": "behavioral-red",
           "exitCode": 2,
           "matchedExpectation": true,
-          "stdoutPath": "/tmp/acef-v316-rehearsal-final/environment-probes/preflight-full-guarded-motivation-v316/1.stdout.log",
-          "stderrPath": "/tmp/acef-v316-rehearsal-final/environment-probes/preflight-full-guarded-motivation-v316/1.stderr.log",
-          "stdoutSha256": "a1277f8de9266fbf08539e0fe3e20a0480b238f6309cf1c93a44e67bca83c921",
+          "stdoutPath": "/tmp/acef-v316-rehearsal-clean/environment-probes/preflight-full-guarded-motivation-v316/1.stdout.log",
+          "stderrPath": "/tmp/acef-v316-rehearsal-clean/environment-probes/preflight-full-guarded-motivation-v316/1.stderr.log",
+          "stdoutSha256": "0cf06d2e9bf9d795ac90f3009a552637a035eba846deffaa2a8bf6007e245314",
           "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
         }
       ]
@@ -84,7 +84,7 @@
       "stories": [
         {
           "storyId": "s1-resolver-fail-closed",
-          "patchPath": "/Users/ramazanayyildiz/CODE/acef/docs/experiments/epic-benchmark/canonical/canonical-s1.patch",
+          "patchPath": "/private/tmp/acef-v316-clean-runner/docs/experiments/epic-benchmark/canonical/canonical-s1.patch",
           "patchSha256": "a44fad50b023eca1e7a9f15067d0ec9659382c1611c54a99f6786f08e7324ed1",
           "patchPaths": [
             "packages/platform/authz/src/Http/RouteRequirementResolver.php",
@@ -93,19 +93,19 @@
           "scopeViolations": [],
           "baselineExitCode": 1,
           "baselineRed": true,
-          "baselineStdoutSha256": "38cf873a7baf735473c34a266ded8ac5d47750e2fc7dc55561d764b8493c5648",
+          "baselineStdoutSha256": "66ca6918692467b11d0d4af4bf16d62da1882c85bb7877c5ab14e367b2cd4f6d",
           "baselineStderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
           "patchCheckExitCode": 0,
           "patchApplyExitCode": 0,
           "referenceExitCode": 0,
           "referenceGreen": true,
-          "referenceStdoutSha256": "3c824ecd0b161e522b6a82f013d83c4f6fcc911e56e10798bcecef8f6321bc1b",
+          "referenceStdoutSha256": "c9b1cb5173d4e969d3a32137bd2c39a27814d2f20b954cc78aa224de7a28c576",
           "referenceStderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
           "expectationFailures": []
         },
         {
           "storyId": "s2-middleware-idempotency",
-          "patchPath": "/Users/ramazanayyildiz/CODE/acef/docs/experiments/epic-benchmark/canonical/canonical-s2.patch",
+          "patchPath": "/private/tmp/acef-v316-clean-runner/docs/experiments/epic-benchmark/canonical/canonical-s2.patch",
           "patchSha256": "2a02d0e5f8c73548786e25261f0a53f648bac6126d4eb762c5c6c56de7c25a53",
           "patchPaths": [
             "packages/platform/authz/src/Http/RouteCapabilityMiddleware.php"
@@ -113,19 +113,19 @@
           "scopeViolations": [],
           "baselineExitCode": 2,
           "baselineRed": true,
-          "baselineStdoutSha256": "1682e8f043033a2918f878fafc3d6464f490a68623193251bbd5e49ac69ba641",
+          "baselineStdoutSha256": "ef382b0c574d4dc1f16b1c3305f3e60f41491f68e728acbde009712c6b46c1c9",
           "baselineStderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
           "patchCheckExitCode": 0,
           "patchApplyExitCode": 0,
           "referenceExitCode": 0,
           "referenceGreen": true,
-          "referenceStdoutSha256": "a9588f20f18e1803995409a4e42e88cce33f8c052d61cbb1a9d63119d21471f2",
+          "referenceStdoutSha256": "dbc08298a3ef34f4a88b7f90ca020bc6ed3a689e56e73427b70f8fbbeb0ff55e",
           "referenceStderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
           "expectationFailures": []
         },
         {
           "storyId": "s3-legacy-alias-cleanup",
-          "patchPath": "/Users/ramazanayyildiz/CODE/acef/docs/experiments/epic-benchmark/canonical/canonical-s3.patch",
+          "patchPath": "/private/tmp/acef-v316-clean-runner/docs/experiments/epic-benchmark/canonical/canonical-s3.patch",
           "patchSha256": "4d5c89bce8226cb0715a7ec29ac96a800a9bb7d8871a76fe757d7940b16232f7",
           "patchPaths": [
             "app/Modules/Billing/routes.php",
@@ -137,19 +137,19 @@
           "scopeViolations": [],
           "baselineExitCode": 1,
           "baselineRed": true,
-          "baselineStdoutSha256": "62d757565f594cb50120194d09efd82b1f0ab0edfedb23e33de2e5806c6c8151",
+          "baselineStdoutSha256": "8ee8ec2329305eec81d6f7ff81718cce4baaf31f9a9ea518b4f34968b2554631",
           "baselineStderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
           "patchCheckExitCode": 0,
           "patchApplyExitCode": 0,
           "referenceExitCode": 0,
           "referenceGreen": true,
-          "referenceStdoutSha256": "5217a5f5980a7580768cabde6645fe20518ce354381327feb3cdfe28531e4e5c",
+          "referenceStdoutSha256": "97f5dc6482ef0199fbae210f58fe03dbb7c5e1d28e4760cc169577dec75d8347",
           "referenceStderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
           "expectationFailures": []
         },
         {
           "storyId": "s4-webhook-ingress-correctness",
-          "patchPath": "/Users/ramazanayyildiz/CODE/acef/docs/experiments/execution-assurance-v33/canonical/canonical-s4.patch",
+          "patchPath": "/private/tmp/acef-v316-clean-runner/docs/experiments/execution-assurance-v33/canonical/canonical-s4.patch",
           "patchSha256": "0d1f9de0be270a6e5c2eea7fa01ea48b51ed0efb5b0d555356bf83a17656a479",
           "patchPaths": [
             "app/Modules/Billing/Http/Controllers/RevolutWebhookController.php",
@@ -159,13 +159,13 @@
           "scopeViolations": [],
           "baselineExitCode": 2,
           "baselineRed": true,
-          "baselineStdoutSha256": "178b116d3a0966b94addee7d330d6321172da2e1a47df08b3fbafe5115e8eadb",
+          "baselineStdoutSha256": "ad615cf58a3063a9d92623e4bb78c3dc0d87674623b354f452d2d8bd26561327",
           "baselineStderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
           "patchCheckExitCode": 0,
           "patchApplyExitCode": 0,
           "referenceExitCode": 0,
           "referenceGreen": true,
-          "referenceStdoutSha256": "b8493683c5c73b3d44e8855b108f7380b8a60bc833f8e5fe30c36b4aacc8fd34",
+          "referenceStdoutSha256": "f20d803ef022b9618daf3408d23a4bc5cf58f6bfb23cc37669a2c2e292cb5d80",
           "referenceStderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
           "expectationFailures": []
         }

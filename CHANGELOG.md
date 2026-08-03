@@ -25,9 +25,15 @@ or evidence contract. Do not use it to claim implementation status; link to the 
 - Made intermediate non-PASS gate commits state-aware and removed the unconditional story Process Judge placeholder
   from Lean close evidence when deterministic story close did not trigger a Judge. Existing Full contracts remain
   readable and unchanged.
+- The first frozen V3.16 rehearsal failed closed after 879.8 seconds. Its four semantic actors completed Story 1 in
+  422.6 seconds, but the model-driven conductor spent the remaining critical path reconciling a missing surface
+  binding, a duplicate Lean-evidence view, and an underspecified post-PASS transition. The successor now compiles
+  surface evidence into the exact gate command, reuses the deterministic story-close package as Lean evidence,
+  preserves active-run pointers on same-run updates, and emits an exact model-free story transition command.
 - Replaced the generic-MySQL source-text oracle in the successor rehearsal fixture with executable behavior against
   both duplicate-classification paths. Focused state, validator, experiment, installer, and supervisor regressions
-  pass. Maturity is `enforced`, not `proven`, pending the separately frozen rehearsal.
+  pass; the complete 28-script repository suite plus closeout fixture passed in 246 seconds. Maturity is `enforced`,
+  not `proven`, pending a successful separately frozen successor rehearsal.
 
 ### Full story lifecycle v3.15 typed findings and repair receipts
 

@@ -296,7 +296,7 @@ function normalizedScope(value) {
 
 function stateControlPath(filePath) {
   const normalized = String(filePath || "").replaceAll(path.sep, "/");
-  return /^docs\/ai\/(?:ACEF_(?:ACTIVE_RUN\.json|ACTIVE_WORKER_SCOPE\.json|ACTIVE_LEDGER|DIRECT_RUN\.json|CURRENT_CONTEXT\.md|DELIVERY_LEDGER(?:_[^/]+)?\.md|[^/]+_DELIVERY_AUDIT\.md)|actors\/|gates\/|evidence\/|reports\/|approvals\/|repairs\/|capsules\/|judges\/)/.test(normalized);
+  return /^docs\/ai\/(?:ACEF_(?:ACTIVE_RUN\.json|ACTIVE_WORKER_SCOPE\.json|ACTIVE_LEDGER|DIRECT_RUN\.json|CURRENT_CONTEXT\.md|RUN_[^/]+\.md|DELIVERY_LEDGER(?:_[^/]+)?\.md|[^/]+_DELIVERY_AUDIT\.md)|actors\/|gates\/|evidence\/|reports\/|approvals\/|repairs\/|capsules\/|judges\/)/.test(normalized);
 }
 
 function normalizedScopePaths(paths) {
@@ -2175,9 +2175,11 @@ function checkGateVerdict(repoRoot) {
   const activeRun = typedActiveRun(repoRoot);
   if (!activeRun) return result("gate-verdict", true, "No typed active run; legacy gate checks remain active");
   let activeScope = null;
-  if (activeRun.workerScopePath) {
+  const activeScopePath = activeRun.workerScopePath
+    || (activeRun.runtimeContract === "capsule-supervisor-v1" ? "docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json" : null);
+  if (activeScopePath) {
     try {
-      activeScope = parseWorkerScope(resolvePath(activeRun.workerScopePath, repoRoot));
+      activeScope = parseWorkerScope(resolvePath(activeScopePath, repoRoot));
     } catch {
       activeScope = null;
     }
@@ -2713,6 +2715,17 @@ function controlDoseForExecution(controlDosing, controlId, execution) {
 
 function checkLeanEvidence(repoRoot, ledgerPath) {
   if (!ledgerPath || !exists(ledgerPath)) return result("lean-evidence", false, "Missing ledger path");
+  const activeRun = typedActiveRun(repoRoot);
+  if (activeRun?.runtimeContract === "capsule-supervisor-v1" && activeRun.scopeUnit === "story") {
+    const latest = latestGateForActiveRun(repoRoot, activeRun, { requirePass: false }).gate;
+    if (latest?.gateType === "deterministic-story-close-v3" && latest.verdict === "PASS") {
+      const packagePaths = [latest.reportPaths?.codeReview, latest.reportPaths?.patchAssurance]
+        .filter(Boolean).map((entry) => resolvePath(entry, repoRoot));
+      if (packagePaths.length === 2 && packagePaths.every(exists)) {
+        return result("lean-evidence", true, `${latest.scope} deterministic story-close package is the reusable Lean evidence view`);
+      }
+    }
+  }
   let controlDosing = null;
   try {
     controlDosing = readControlDosing(repoRoot);
