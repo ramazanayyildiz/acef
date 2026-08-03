@@ -23,6 +23,12 @@ or evidence contract. Do not use it to claim implementation status; link to the 
 - Added regressions for derived reviewer binding, failed-handoff cleanup, immutable replay refusal, wrapped lifecycle
   attribution, reviewer read-only commands, and terminal non-PASS Epic durability. The complete repository suite passed
   30/30 in 266 seconds. Maturity remains `enforced` pending a separately frozen rehearsal.
+- Separately froze and ran non-scored `REHEARSAL-v313`. Canonical reviewer handoff closed Stories 2–4, including both
+  previously failing Story 3/4 Patch Assurance cases; the wrapped integration command was recognized 1/1 and exited 0;
+  and the Epic Judge durably wrote a terminal `REPLAN` gate with one missing story. The immutable run still failed after
+  2,802.8 seconds because Story 1 opened generic `review`, structured tool output hid the successful exit receipt from
+  the parser, several reviewers batched read-only shell commands, and staged Story 2 closeout was checked against active
+  Story 3. Maturity remains `enforced`.
 
 ### Full story lifecycle v3.12 atomic ATDD evidence handoff
 

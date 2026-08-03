@@ -1,6 +1,6 @@
 # Execution Assurance v3.13 canonical reviewer and terminal closeout
 
-Status: **implementation and complete repository verification pass; rehearsal must be frozen separately.**
+Status: **immutable non-scored rehearsal FAIL recorded; capability remains `enforced`.**
 
 V3.12 proved atomic ATDD actor/evidence creation on all four stories and completed deterministic cycle-0 close for
 Stories 1–2. Stories 3–4 failed later Patch Assurance completion because reviewers still constructed report JSON and
@@ -25,3 +25,5 @@ The rehearsal manifest must be committed separately and bind exact clean impleme
 `b899c980d7204132a8d08bdea0d0bdeace279fad`. It may authorize only one non-scored, non-promotable `REHEARSAL-v313`
 attempt over the unchanged four-story contract. Preflight and all six Stage 0 traps must pass before the actor run. No
 blind Judge, promotion, maturity change, installation, or rollout is allowed.
+
+That attempt is now consumed. Its immutable result is recorded in `REHEARSAL_RESULT.md`; it must not be replayed.
