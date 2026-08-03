@@ -30,6 +30,11 @@ or evidence contract. Do not use it to claim implementation status; link to the 
   binding, a duplicate Lean-evidence view, and an underspecified post-PASS transition. The successor now compiles
   surface evidence into the exact gate command, reuses the deterministic story-close package as Lean evidence,
   preserves active-run pointers on same-run updates, and emits an exact model-free story transition command.
+- The frozen V3.17 successor failed closed in 75.7 seconds before product writes or actor dispatch because the
+  conductor selected a deterministic `readiness` bootstrap phase that the supervisor did not recognize. The runtime
+  now explicitly starts at ATDD after deterministic readiness/reuse, binds context and worker-scope pointers during
+  bootstrap, forbids bootstrap help/source probes, and provides an exact model-free readiness-to-ATDD compatibility
+  transition. The fast stop confirms the circuit breaker works; it does not promote the capability.
 - Replaced the generic-MySQL source-text oracle in the successor rehearsal fixture with executable behavior against
   both duplicate-classification paths. Focused state, validator, experiment, installer, and supervisor regressions
   pass; the complete 28-script repository suite plus closeout fixture passed in 246 seconds. Maturity is `enforced`,

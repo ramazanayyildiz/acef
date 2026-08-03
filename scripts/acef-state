@@ -52,7 +52,7 @@ Usage:
   acef-state direct-run --repo <path> --run-id <id> --status active|complete|promoted --scope <scope> --acceptance <criterion>... --technical-boundary <kind> --reversible true [--changed-path <path>...] [--verification-command <command> --verification-exit-code <code>]... [options]
   acef-state actor --repo <path> --id <id> --story <scope> --phase <phase> --role <role> --client <client> --context-profile <profile> [options]
   acef-state worker-scope --repo <path> --story <scope> --phase <phase> --worker-id <id> --allow <glob>... [--surface <name>...] [--pattern-use <kind>] [--requires-round-trip true|false] [--binding <input>><output>:<field>[:defaultMaskingRisk]] [options]
-  acef-state phase-transition --repo <path> --phase development|code-review
+  acef-state phase-transition --repo <path> --phase atdd|development|code-review
   acef-state story-transition --repo <path>
   acef-state review-scope --repo <path>
   acef-state approval --repo <path> --id <id> --decision APPROVE|REJECT|ACCEPT_RISK --scope <scope> --quote <exact human words> [options]
@@ -1410,7 +1410,8 @@ function writePhaseTransition(opts) {
   }
   const current = canonicalGatePhase(activeRun.activePhase);
   const requested = canonicalGatePhase(opts.phase);
-  const allowed = (current === "atdd" && requested === "development")
+  const allowed = (current === "readiness" && requested === "atdd")
+    || (current === "atdd" && requested === "development")
     || (current === "development" && requested === "codereview");
   if (!allowed) throw new Error(`invalid capsule-supervisor phase transition ${activeRun.activePhase} -> ${opts.phase}`);
   const target = path.join(opts.repo, "docs", "ai", "ACEF_ACTIVE_RUN.json");

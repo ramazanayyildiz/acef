@@ -149,6 +149,13 @@ function build(repo) {
     action = terminal
       ? { type: "stop", disposition: latestGate.verdict, reason: "terminal epic gate exists" }
       : { type: "dispatch", role: "epic-judge", actorInstanceId: "acef_epic_process_judge", runtime: RUNTIME["epic-judge"] };
+  } else if (currentPhase === "readiness") {
+    action = {
+      type: "transition",
+      nextPhase: "atdd",
+      command: ".acef/bin/acef-state phase-transition --repo . --phase atdd",
+      reason: "readiness and reuse are deterministic conductor gates; enter the compiled actor lifecycle",
+    };
   } else if (currentPhase === "atdd") {
     const scopeReady = workerScope && token(workerScope.activeStory) === storyKey;
     const red = evidence.find((record) => record.actorInstanceId === actorId("atdd") && record.exitCode !== 0);

@@ -48,6 +48,14 @@ try {
   stateRun(["worker-scope", "--repo", tmp, "--story", "Story Capsule", "--phase", "development",
     "--worker-id", "acef_story_capsule_development", "--allow", "app/**", "--allow", "tests/**"]);
 
+  const atddRun = readJson("docs/ai/ACEF_ACTIVE_RUN.json");
+  fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_ACTIVE_RUN.json"), JSON.stringify({ ...atddRun, activePhase: "readiness" }, null, 2));
+  const readiness = JSON.parse(run(process.execPath, [supervisor, "--repo", tmp]));
+  if (readiness.action.command !== ".acef/bin/acef-state phase-transition --repo . --phase atdd") {
+    throw new Error("supervisor did not recover the deterministic readiness bootstrap phase");
+  }
+  stateRun(["phase-transition", "--repo", tmp, "--phase", "atdd"]);
+
   fs.writeFileSync(path.join(tmp, "tests", "demo.test.js"), "const test = require('node:test'); const assert = require('node:assert'); test('demo contract', () => assert.strictEqual(require('../app/demo.js'), true));\n");
   git(["add", "tests/demo.test.js"]); git(["commit", "-qm", "red test"]);
   const red = cp.spawnSync(process.execPath, [state, "evidence-run", "--repo", tmp, "--id", "capsule-red",
