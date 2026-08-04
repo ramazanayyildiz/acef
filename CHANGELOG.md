@@ -27,7 +27,9 @@ or evidence contract. Do not use it to claim implementation status; link to the 
   and Story 2 closed PASS, while Story 3 failed closed because Development changed a semantically defective ATDD test
   after red evidence binding. The run remains FAIL and exposes the need for a bounded post-red ATDD correction
   transition. The external blind Judge launch also exposed an accidental medium-conductor fallback; it was aborted
-  before ingestion, and the harness now resolves external judgment from the high terminal Epic Judge profile.
+  before ingestion. The harness now resolves external judgment from the high terminal Epic Judge profile and
+  quarantines abandoned launch roots instead of overwriting them. A fresh high-effort blind judgment then correctly
+  returned FAIL with three HIGH findings for the unstarted Story 4 and no scope/test-integrity violation.
 
 ### Capsule supervisor runtime candidate
 

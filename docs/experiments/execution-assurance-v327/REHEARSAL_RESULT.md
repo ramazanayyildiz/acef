@@ -8,10 +8,11 @@ the conductor and Code Review used `gpt-5.6-sol/medium`, while ATDD, Development
 then the deterministic close gate correctly rejected it because Development had changed the ATDD test after the red
 evidence commit. Story 4 and Epic closeout did not run.
 
-The outer attempt exited normally in 2,282.7 active seconds rather than timing out. No valid blind external judgment
-was persisted. Its first launch exposed that the external Judge inherited the medium conductor runtime instead of the
-high terminal-Judge runtime; the launch was aborted before ingestion and the successor harness now resolves it from
-`actorRuntimeProfiles.epic-process-judge`.
+The outer attempt exited normally in 2,282.7 active seconds rather than timing out. The first blind external Judge
+launch exposed that it inherited the medium conductor runtime instead of the high terminal-Judge runtime; that launch
+was quarantined before ingestion. The successor harness resolved a new isolated launch from
+`actorRuntimeProfiles.epic-process-judge`. That valid `gpt-5.6-sol/high` Judge returned FAIL with three Story 4 HIGH
+findings, no scope violation, and no test weakening.
 
 ## Calibration and routing result
 
@@ -21,6 +22,8 @@ high terminal-Judge runtime; the launch was aborted before ingestion and the suc
 - The live rehearsal provided additional, non-calibration evidence: medium Code Review found Story 1's real
   `malformed-empty-operands` HIGH; the original high-effort Developer repaired it, and fresh medium/high reviewers
   passed the repaired tree.
+- The recovered external Judge receipt binds `gpt-5.6-sol/high`, while the abandoned medium launch remains isolated
+  under a different ordinal and has no judgment record.
 - The qualification remains narrow: OpenAI Code Review may use medium. No other semantic role and no other provider is
   downgraded without its own frozen calibration.
 
@@ -46,6 +49,8 @@ high terminal-Judge runtime; the launch was aborted before ingestion and the suc
 - Story 3's product patch and focused tests passed, and both semantic reviewers passed the final tree.
 - No scope violation, infrastructure retry, broad-suite duplication, or conductor resume occurred.
 - The frozen role receipts show Code Review at medium and ATDD, Development, and Patch Assurance at high.
+- The independent high Blind Judge correctly rejected the incomplete product outcome. Its HIGH findings cover the
+  unstarted Story 4 controller retry status, SQLite job dedup tuple, and unrelated SQLite uniqueness handling.
 
 ## Why the run stopped
 
@@ -67,8 +72,9 @@ before another full rehearsal.
 1. Add a fail-closed `atdd-correction` supervisor transition for a Development-discovered semantic harness defect.
    It must preserve the frozen test envelope and test identity, supersede rather than mutate the old red evidence, use
    an independent ATDD correction actor, and forbid production changes until replacement red evidence is bound.
-2. Route the external blind Judge through the terminal `epic-process-judge` runtime. This repair is now covered by the
-   focused experiment regression test; legacy manifests without actor profiles retain their prior fallback.
+2. The external blind Judge now routes through the terminal `epic-process-judge` runtime. Abandoned launch roots are
+   quarantined by ordinal instead of overwritten; focused regression and the live high-effort judgment both pass the
+   routing/provenance contract. Legacy manifests without actor profiles retain their prior fallback.
 3. Split wait telemetry into productive delegated execution and actual coordination idle. Budget the latter; report
    the former as useful parallel work rather than a speed failure.
 4. Freeze a successor rehearsal. Do not retry or relabel V3.27.
