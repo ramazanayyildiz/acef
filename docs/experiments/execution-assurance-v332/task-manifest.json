@@ -1,0 +1,103 @@
+{
+  "schemaVersion": 1,
+  "experimentId": "acef-execution-assurance-v332-task",
+  "repo": "jakomeet",
+  "stack": "php-laravel",
+  "source": "/Users/ramazanayyildiz/CODE/OPA/jakomeet",
+  "commit": "a12ac50441114943efd099f9e601bbee4a9d8a12",
+  "fixtureRoot": "../epic-benchmark/fixtures",
+  "setupDirs": [
+    "tests/Integration",
+    "tests/Performance"
+  ],
+  "epic": {
+    "id": "middleware-correction-proof-v332",
+    "requireReferenceValidation": true,
+    "environmentProbe": [
+      {
+        "argv": [
+          "php",
+          "artisan",
+          "test",
+          "--filter=BenchmarkAuthzMiddlewareIdempotencyTest|RouteCapabilityMiddlewareTest"
+        ],
+        "expect": "behavioral-red"
+      }
+    ],
+    "stories": [
+      {
+        "id": "s1-middleware-correction-proof",
+        "dependsOn": [],
+        "prompt": "Add a request-scoped run-once guard to RouteCapabilityMiddleware. Prove it with a structurally nested regression: the outer middleware invocation must call the same middleware again from inside its next closure, and the inner invocation must call the final downstream handler once. For that same Request, resolver and Gate authorization run exactly once. Single execution remains unchanged. Do not touch the benchmark test file.",
+        "allowedPaths": [
+          "packages/platform/authz/src/Http/RouteCapabilityMiddleware.php"
+        ],
+        "testPaths": [
+          "tests/Unit/Platform/Authz/RouteCapabilityMiddlewareTest.php"
+        ],
+        "referencePatch": "../epic-benchmark/canonical/canonical-s2.patch",
+        "setup": [
+          {
+            "type": "copy-fixture",
+            "fixture": "BenchmarkAuthzMiddlewareIdempotencyTest.php",
+            "path": "tests/Feature/BenchmarkAuthzMiddlewareIdempotencyTest.php"
+          }
+        ],
+        "verify": [
+          "php",
+          "artisan",
+          "test",
+          "--filter=BenchmarkAuthzMiddlewareIdempotencyTest|RouteCapabilityMiddlewareTest"
+        ],
+        "expected": [
+          {
+            "path": "tests/Feature/BenchmarkAuthzMiddlewareIdempotencyTest.php",
+            "fixtureUnchanged": "BenchmarkAuthzMiddlewareIdempotencyTest.php"
+          }
+        ],
+        "acceptanceCriteria": [
+          "For the same Request, an outer RouteCapabilityMiddleware invocation delegates to a nested invocation of that middleware; resolver and Gate authorization execute exactly once, and the final downstream handler executes exactly once.",
+          "Single execution behavior remains unchanged.",
+          "Only the frozen middleware production file and unit-test path may change."
+        ],
+        "atddConstraints": [
+          "The editable unit test must place the second middleware handle() call inside the outer invocation's next closure; two sequential top-level handle() calls do not satisfy the contract.",
+          "The correct nested test declares RouteRequirementResolver::resolve('invoices.index')->once(), Gate::forUser($user)->once(), Gate::allows('invoices.view')->once(), and the final invokable downstream handler once.",
+          "The editable unit test must use the exact method identity same_request_is_evaluated_only_once_when_middleware_runs_twice so discovery is frozen before green."
+        ],
+        "controlledPostRedCorrection": {
+          "schema": "acef.controlled-post-red-correction-stimulus.v1",
+          "initialAtddDefect": "Create the initial editable test with exactly one deliberate contradiction and no other semantic defect. The outer RouteCapabilityMiddleware::handle() call must receive a next closure that calls RouteCapabilityMiddleware::handle() again with the same Request; the inner call must invoke a mocked final downstream handler exactly once. Expect RouteRequirementResolver::resolve('invoices.index') twice(), Gate::forUser($user) once() returning the mocked Gate, and Gate::allows('invoices.view') once() returning true. Assert the outer response content is OK. The resolver twice() expectation is the only intentional defect.",
+          "developerFinding": "Before any mutation, detect that only RouteRequirementResolver::resolve()->twice() contradicts the nested run-once acceptance criterion. Confirm that the second middleware call is structurally inside the outer next closure, the final downstream handler is once(), and Gate::forUser() and Gate::allows() are each once(); then request the typed post-red correction.",
+          "replacementExpectation": "Change only RouteRequirementResolver::resolve()->twice() to once(). Preserve the exact test identity, structurally nested middleware calls, final downstream handler once(), Gate::forUser()->once(), Gate::allows()->once(), and all other bytes before binding the replacement behavioral red."
+        },
+        "discovery": {
+          "argv": [
+            "vendor/bin/phpunit",
+            "--list-tests",
+            "--filter=BenchmarkAuthzMiddlewareIdempotencyTest|RouteCapabilityMiddlewareTest"
+          ],
+          "expectedTests": [
+            "Tests\\Feature\\BenchmarkAuthzMiddlewareIdempotencyTest::middleware_evaluates_a_request_only_once_when_registered_twice",
+            "Tests\\Unit\\Platform\\Authz\\RouteCapabilityMiddlewareTest::same_request_is_evaluated_only_once_when_middleware_runs_twice"
+          ]
+        }
+      }
+    ],
+    "integration": {
+      "verify": [
+        "php",
+        "artisan",
+        "test",
+        "--filter=BenchmarkAuthzMiddlewareIdempotencyTest|RouteCapabilityMiddlewareTest"
+      ],
+      "expected": [
+        {
+          "path": "tests/Feature/BenchmarkAuthzMiddlewareIdempotencyTest.php",
+          "fixtureUnchanged": "BenchmarkAuthzMiddlewareIdempotencyTest.php"
+        }
+      ]
+    }
+  }
+}
+
