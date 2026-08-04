@@ -89,6 +89,7 @@ const {
   correctionSessionWrites,
   ensureActorRequest,
   evaluatePilotBudgets,
+  evaluatePostRedCorrectionProof,
   evaluateTreatmentState,
   validateFrozenDiscoveryContracts,
   finalizePilotAttempt,
@@ -189,6 +190,27 @@ assert.doesNotThrow(() => validateManifest(roleRoutedCapsuleManifest));
 const postRedCorrectionManifest = structuredClone(roleRoutedCapsuleManifest);
 postRedCorrectionManifest.promotionGates.budget.profileId = "capsule-supervisor-v1-post-red-correction-v328";
 assert.doesNotThrow(() => validateManifest(postRedCorrectionManifest));
+const correctionProofManifest = structuredClone(postRedCorrectionManifest);
+Object.assign(correctionProofManifest.promotionGates.budget, {
+  profileId: "capsule-supervisor-v1-correction-proof-v329",
+  baseActorCount: 5,
+  maximumActorInvocations: 11,
+  maximumInfrastructureRetriesTotal: 2,
+  targetStoryActiveSeconds: 600,
+  maximumStoryActiveSeconds: 1200,
+  targetActiveDeliverySeconds: 900,
+  maximumActiveDeliverySeconds: 1800,
+  maximumInputTokens: 10000000,
+  maximumModelCycles: 150,
+  maximumToolCalls: 220,
+  maximumHarnessWaitSeconds: 180,
+});
+correctionProofManifest.promotionGates.process.requiredPostRedAtddCorrections = 1;
+correctionProofManifest.pilot.attempts[0].activeTimeCapMinutes = 30;
+assert.doesNotThrow(() => validateManifest(correctionProofManifest));
+const missingCorrectionProofGate = structuredClone(correctionProofManifest);
+delete missingCorrectionProofGate.promotionGates.process.requiredPostRedAtddCorrections;
+assert.throws(() => validateManifest(missingCorrectionProofGate), /must require exactly one post-red ATDD correction/);
 assert.deepEqual(
   blindJudgeRuntimeProfile(roleRoutedCapsuleManifest),
   { ...roleRoutedCapsuleManifest.pilotRuntime, model: "gpt-5.6-sol", reasoningEffort: "high" },
@@ -315,6 +337,33 @@ const roleRoutedPrompt = epicPilotPrompt({ ...roleRoutedCapsuleManifest.pilot.at
   resolvedV31Epic, postRedCorrectionManifest);
 assert.match(roleRoutedPrompt, /Do not spawn a replacement Developer/,
   "post-red correction must resume the original Developer session");
+const controlledCorrectionEpic = structuredClone(resolvedV31Epic);
+controlledCorrectionEpic.task.stories = [{
+  ...controlledCorrectionEpic.task.stories[1],
+  controlledPostRedCorrection: {
+    initialAtddDefect: "declare the resolver expectation as twice while keeping Gate authorization at once",
+    developerFinding: "twice contradicts the frozen request-scoped run-once contract",
+    replacementExpectation: "change only the resolver expectation from twice to once",
+  },
+}];
+controlledCorrectionEpic.task.integration = {
+  verify: controlledCorrectionEpic.task.stories[0].verify,
+  expected: controlledCorrectionEpic.task.stories[0].expected,
+};
+const controlledCorrectionPrompt = epicPilotPrompt(
+  { ...correctionProofManifest.pilot.attempts[0], id: "REHEARSAL-v329" },
+  controlledCorrectionEpic,
+  correctionProofManifest,
+);
+assert.match(controlledCorrectionPrompt, /preregistered live correction-mechanism rehearsal/);
+assert.match(controlledCorrectionPrompt, /declare the resolver expectation as twice while keeping Gate authorization at once/);
+assert.match(controlledCorrectionPrompt, /change only the resolver expectation from twice to once/);
+assert.equal(lifecycleActorContract(controlledCorrectionEpic, "four-actor-v3").length, 5,
+  "one correction-proof story has four base roles and one Epic Judge");
+assert.deepEqual(evaluatePostRedCorrectionProof(correctionProofManifest, { correctionBindings: [] }),
+  { required: 1, observed: 0, passed: false });
+assert.deepEqual(evaluatePostRedCorrectionProof(correctionProofManifest, { correctionBindings: [{}] }),
+  { required: 1, observed: 1, passed: true });
 assert.match(v31Prompt, /50000000 aggregate conductor-plus-child input tokens/);
 const epicActorContract = lifecycleActorContract(resolvedEpic);
 assert.equal(epicActorContract.length, 25, "four stories need six actors each plus one epic Process Judge");
