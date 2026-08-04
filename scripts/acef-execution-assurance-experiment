@@ -3626,6 +3626,17 @@ function judgeFinalAnswerFromTranscript(sessionText) {
   return answers.at(-1);
 }
 
+function nextBlindJudgeOrdinal(judgeLaunchRoot, priorJudgments) {
+  let maximum = Array.isArray(priorJudgments) ? priorJudgments.length : 0;
+  if (fs.existsSync(judgeLaunchRoot)) {
+    for (const entry of fs.readdirSync(judgeLaunchRoot, { withFileTypes: true })) {
+      const match = entry.isDirectory() ? entry.name.match(/^judge-(\d+)$/) : null;
+      if (match) maximum = Math.max(maximum, Number(match[1]));
+    }
+  }
+  return maximum + 1;
+}
+
 function runPilotJudge(manifest, opts) {
   const attempt = readPilotResultRow(opts.pilotResults, opts.pilotJudge);
   if (!attempt) throw new Error(`immutable pilot attempt not found: ${opts.pilotJudge}`);
@@ -3642,7 +3653,7 @@ function runPilotJudge(manifest, opts) {
   if (priorJudgments.some((entry) => entry.verdict !== "PENDING")) {
     throw new Error(`${attempt.attemptRunId} already has a terminal blind judgment`);
   }
-  const ordinal = priorJudgments.length + 1;
+  const ordinal = nextBlindJudgeOrdinal(attempt.judgeLaunchRoot, priorJudgments);
   const launchRoot = path.join(attempt.judgeLaunchRoot, `judge-${ordinal}`);
   fs.mkdirSync(launchRoot, { recursive: true });
   const prompt = blindJudgePrompt(packet);
@@ -4018,6 +4029,7 @@ module.exports = {
   finalizePilotAttempt,
   forceTrackInstalledFramework,
   ingestPilotJudgment,
+  nextBlindJudgeOrdinal,
   runPilotJudge,
   blindJudgePrompt,
   epicPilotPrompt,
