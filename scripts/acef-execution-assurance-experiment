@@ -10,6 +10,7 @@ const { performance } = require("node:perf_hooks");
 const {
   acquireFinalizationClaim,
   assessTaskShape,
+  blindJudgeRuntimeProfile,
   buildPilotPlan,
   captureGitDiff,
   derivePilotVerdict,
@@ -3635,7 +3636,8 @@ function runPilotJudge(manifest, opts) {
   const packet = JSON.parse(fs.readFileSync(attempt.judgePacketPath, "utf8"));
   packet._packetPath = attempt.judgePacketPath;
   packet._packetSha256 = attempt.judgePacketSha256;
-  const runtime = resolvePinnedClient(manifest.pilotRuntime);
+  const judgeRuntime = blindJudgeRuntimeProfile(manifest);
+  const runtime = resolvePinnedClient(judgeRuntime);
   const priorJudgments = readJsonlRows(opts.pilotJudgments).filter((entry) => entry.attemptRunId === attempt.attemptRunId);
   if (priorJudgments.some((entry) => entry.verdict !== "PENDING")) {
     throw new Error(`${attempt.attemptRunId} already has a terminal blind judgment`);
@@ -3653,8 +3655,8 @@ function runPilotJudge(manifest, opts) {
     args: [
       "exec", "--json", "--ignore-user-config", "--ignore-rules",
       "--dangerously-bypass-approvals-and-sandbox", "--dangerously-bypass-hook-trust",
-      "--model", manifest.pilotRuntime.model,
-      "--config", `model_reasoning_effort=${JSON.stringify(manifest.pilotRuntime.reasoningEffort)}`,
+      "--model", judgeRuntime.model,
+      "--config", `model_reasoning_effort=${JSON.stringify(judgeRuntime.reasoningEffort)}`,
       "-C", launchRoot, prompt,
     ],
     cwd: launchRoot,
@@ -3701,8 +3703,8 @@ function runPilotJudge(manifest, opts) {
     inputBundleSha256: attempt.judgeInputBundleSha256, productContractSha256: attempt.productContractSha256,
     judgeSessionId, sessionTranscriptPath, sessionTranscriptSha256: sha256(sessionText),
     freshSession: true, artifactOnly: true, treatmentBlinded: true, transcriptWithheld: true,
-    crossRunMemory: false, parentSessionId: null, judgeModel: manifest.pilotRuntime.model,
-    reasoningEffort: manifest.pilotRuntime.reasoningEffort, clientPath: runtime.clientPath,
+    crossRunMemory: false, parentSessionId: null, judgeModel: judgeRuntime.model,
+    reasoningEffort: judgeRuntime.reasoningEffort, clientPath: runtime.clientPath,
     clientBinarySha256: runtime.clientBinarySha256, clientVersion: runtime.observedClientVersion,
     requestPath, requestSha256: sha256(fs.readFileSync(requestPath, "utf8")),
     actorReceiptPath, actorReceiptSha256: sha256(fs.readFileSync(actorReceiptPath, "utf8")),
@@ -3713,7 +3715,7 @@ function runPilotJudge(manifest, opts) {
     schema: "acef.execution-assurance-pilot-judgment.v3", experimentId: manifest.experimentId,
     attemptId: attempt.attemptId, attemptRunId: attempt.attemptRunId, attemptOrdinal: attempt.attemptOrdinal,
     diffSha256: attempt.diffSha256, judgePacketId: `J-${ordinal}-${sha256(sessionText).slice(0, 12)}`,
-    judgePacketSha256: attempt.judgePacketSha256, judgeModel: manifest.pilotRuntime.model,
+    judgePacketSha256: attempt.judgePacketSha256, judgeModel: judgeRuntime.model,
     judgeReceiptPath, judgeReceiptSha256: sha256(fs.readFileSync(judgeReceiptPath, "utf8")), judgeSessionId,
     productDoneReceiptSha256: attempt.productDoneReceiptSha256, treatmentBlinded: true, transcriptWithheld: true,
     scopeViolation: payload.scopeViolation, testWeakening: payload.testWeakening,

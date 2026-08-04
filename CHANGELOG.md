@@ -23,6 +23,11 @@ or evidence contract. Do not use it to claim implementation status; link to the 
   completion receipts outside the calibrated role mapping. The installer ships the policy, schema, and resolver.
   Provider remapping changes only the provider table, but remains fail-closed until all abstract execution/reasoning
   tiers resolve and provider-specific calibration exists.
+- The immutable V3.27 rehearsal applied the matrix for 38m02.7s. Medium Code Review found a real Story 1 HIGH; Story 1
+  and Story 2 closed PASS, while Story 3 failed closed because Development changed a semantically defective ATDD test
+  after red evidence binding. The run remains FAIL and exposes the need for a bounded post-red ATDD correction
+  transition. The external blind Judge launch also exposed an accidental medium-conductor fallback; it was aborted
+  before ingestion, and the harness now resolves external judgment from the high terminal Epic Judge profile.
 
 ### Capsule supervisor runtime candidate
 

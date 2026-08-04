@@ -234,6 +234,16 @@ function validateManifest(manifest) {
   return manifest;
 }
 
+function blindJudgeRuntimeProfile(manifest) {
+  const pilotRuntime = manifest?.pilotRuntime || {};
+  const terminalJudge = manifest?.actorRuntimeProfiles?.["epic-process-judge"] || {};
+  return {
+    ...pilotRuntime,
+    model: terminalJudge.model || pilotRuntime.model,
+    reasoningEffort: terminalJudge.reasoningEffort || pilotRuntime.reasoningEffort,
+  };
+}
+
 function assessTaskShape(task) {
   const boundaries = unique((task.technicalBoundaries || []).map((value) => String(value).trim()).filter(Boolean));
   const surfaces = unique((task.productSurfaces || []).map((value) => String(value).trim()).filter(Boolean));
@@ -447,6 +457,7 @@ function readPilotResultRow(resultsPath, attemptRunId) {
 }
 
 function validatePilotJudgment(judgment, attempt, manifest) {
+  const judgeRuntime = blindJudgeRuntimeProfile(manifest);
   if (!judgment || typeof judgment !== "object" || Array.isArray(judgment)) throw new Error("judgment must be an object");
   if (judgment.schema !== "acef.execution-assurance-pilot-judgment.v3") {
     throw new Error("judgment schema must be acef.execution-assurance-pilot-judgment.v3");
@@ -570,8 +581,8 @@ function validatePilotJudgment(judgment, attempt, manifest) {
     || judgeReceipt.judgePacketSha256 !== attempt.judgePacketSha256 || judgeReceipt.judgeSessionId !== judgment.judgeSessionId
     || judgeReceipt.inputBundleSha256 !== attempt.judgeInputBundleSha256
     || judgeReceipt.productContractSha256 !== attempt.productContractSha256
-    || judgeReceipt.judgeModel !== manifest.pilotRuntime.model || judgment.judgeModel !== manifest.pilotRuntime.model
-    || judgeReceipt.reasoningEffort !== manifest.pilotRuntime.reasoningEffort
+    || judgeReceipt.judgeModel !== judgeRuntime.model || judgment.judgeModel !== judgeRuntime.model
+    || judgeReceipt.reasoningEffort !== judgeRuntime.reasoningEffort
     || judgeReceipt.freshSession !== true || judgeReceipt.artifactOnly !== true || judgeReceipt.treatmentBlinded !== true
     || judgeReceipt.transcriptWithheld !== true || judgeReceipt.crossRunMemory !== false || judgeReceipt.parentSessionId !== null) {
     throw new Error("judge receipt provenance is not fresh, artifact-only, and blinded");
@@ -591,8 +602,8 @@ function validatePilotJudgment(judgment, attempt, manifest) {
     || judgeReceipt.clientVersion !== manifest.pilotRuntime.clientVersion || judgeRequest.command !== judgeReceipt.clientPath
     || fs.realpathSync(judgeRequest.cwd) !== path.dirname(receiptReal)
     || sha256(String(judgeRequest.args?.at(-1) || "")) !== judgeReceipt.promptSha256
-    || !judgeRequest.args?.includes(manifest.pilotRuntime.model)
-    || !judgeRequest.args?.includes(`model_reasoning_effort=${JSON.stringify(manifest.pilotRuntime.reasoningEffort)}`)
+    || !judgeRequest.args?.includes(judgeRuntime.model)
+    || !judgeRequest.args?.includes(`model_reasoning_effort=${JSON.stringify(judgeRuntime.reasoningEffort)}`)
     || judgeActorReceipt.status !== 0 || judgeActorReceipt.requestSha256 !== judgeReceipt.requestSha256
     || judgeActorReceipt.launchNonce !== judgeRequest.launchNonce) {
     throw new Error("judge receipt is not bound to the pinned client/model/reasoning launch");
@@ -974,6 +985,7 @@ module.exports = {
   WORKFLOWS,
   assessTaskShape,
   actorContractVersionForAttempt,
+  blindJudgeRuntimeProfile,
   dependencyAwareQuarantine,
   derivePilotVerdict,
   acquireFinalizationClaim,

@@ -10,6 +10,7 @@ const cp = require("node:child_process");
 const {
   acquireFinalizationClaim,
   assessTaskShape,
+  blindJudgeRuntimeProfile,
   actorContractVersionForAttempt,
   buildPilotPlan,
   captureGitDiff,
@@ -183,6 +184,11 @@ roleRoutedCapsuleManifest.modelRoutingPolicy = {
   sha256: "a".repeat(64), calibrationId: "V327-CAL-001",
 };
 assert.doesNotThrow(() => validateManifest(roleRoutedCapsuleManifest));
+assert.deepEqual(
+  blindJudgeRuntimeProfile(roleRoutedCapsuleManifest),
+  { ...roleRoutedCapsuleManifest.pilotRuntime, model: "gpt-5.6-sol", reasoningEffort: "high" },
+  "the external blind Judge must inherit the isolated terminal Judge runtime, not the medium conductor runtime",
+);
 const invalidRoleRoutedCapsuleManifest = structuredClone(roleRoutedCapsuleManifest);
 invalidRoleRoutedCapsuleManifest.actorRuntimeProfiles["code-review"].reasoningEffort = "high";
 assert.throws(() => validateManifest(invalidRoleRoutedCapsuleManifest), /code-review=gpt-5\.6-sol\/medium/);
