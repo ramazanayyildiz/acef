@@ -36,6 +36,11 @@ assurance layer. It preserves the four semantic roles while removing model work 
   use targeted reads; they rerun the focused command only to adjudicate a named evidence conflict.
 - Green evidence requires frozen test discovery. Review surfaces are derived from committed production paths at the
   review transition rather than guessed during bootstrap.
+- One post-red correction is allowed only when Development identifies a semantic test-harness defect before any
+  application/test mutation and restores the clean original-red commit. A typed `acef.atdd-correction.v2` record binds
+  the requesting Developer, original red, exact test paths, and resume scope. One fresh high-tier ATDD actor may repair
+  only those tests and must bind replacement failing evidence; the conductor then resumes the original Developer.
+  Any second request, path expansion, production write, non-red replacement, or missing binding is `REPLAN/SPLIT`.
 - Model routing is role-based and provider-neutral. Mechanical actions use no model; the conductor uses
   `orchestration/medium`; unmeasured semantic roles retain `semantic-critical/high`. V327-CAL-001 qualified Code
   Review as `semantic-standard/medium` on the active OpenAI mapping. Other providers require a complete mapping and

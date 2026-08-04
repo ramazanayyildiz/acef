@@ -9,6 +9,21 @@ or evidence contract. Do not use it to claim implementation status; link to the 
 
 ## Unreleased
 
+### Bounded post-red ATDD correction
+
+- Added a one-shot `acef.atdd-correction.v2` transition for `capsule-supervisor-v1`. When Development identifies a
+  semantic defect in already-bound red evidence before product/test mutation, it must restore the clean original-red
+  commit and return hash-bound correction findings. The state writer freezes the original ATDD/Developer identities,
+  replayable command/discovery argv, explicit test paths, base commit, and Developer resume scope.
+- The supervisor commits the correction control binding before dispatching one fresh ATDD correction actor at the
+  existing high-tier ATDD runtime. Replacement evidence must use the supervisor-owned ID, remain a new test-only red
+  commit inside the frozen path set, and rerun the original exact command and discovery identities. The original
+  Developer then resumes through one `followup_task`; a replacement Developer, second correction, expanded path,
+  production write, non-red replacement, or missing continuation marker fails closed.
+- Updated evidence runner proofs, deterministic gate validation, transcript accounting, role budgets, installer
+  coverage, and the ACEF method/skill mirror. The repository suite passes 31/31; maturity remains `enforced` pending
+  the separately frozen V3.28 live rehearsal and blind judgment.
+
 ### Provider-neutral calibrated model routing
 
 - Added a typed role-routing policy that separates ACEF execution class and reasoning tier from provider model names.

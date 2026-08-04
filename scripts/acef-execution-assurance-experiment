@@ -625,7 +625,7 @@ function epicPilotPrompt(attempt, resolved, manifest) {
   ).join("\n");
   const recoveryInstruction = fourActorV3
     ? [
-      "Initial ATDD maps every acceptance criterion but needs genuine red only on the critical vertical path. The manifest's Frozen test paths are the complete non-protected test envelope; do not discover, invent, or expand that envelope during execution. Run only the story's focused verification and files inside that envelope; do not substitute broad pre-existing suites outside it. After editing tests and before committing, execute the supervisor's exact atdd precheckCommand; repair every reported harness defect in the same ATDD turn. Before committing or binding red evidence, also run both the focused verification and the frozen discovery command directly. Inspect every failure and require every exact expected test identity: repair test syntax, identity, fixture, closure, setup, and harness defects inside the same ATDD turn until discovery matches and every remaining focused failure is caused by the missing product behavior. Only then make the clean test-only commit and run the story's literal Exact ATDD red evidence command exactly once. That command repeats both harness safety and frozen discovery as failure-atomic final guards before actor/evidence creation. A test-harness failure must never be bound as red evidence or returned after binding as terminal REVISE. For four-actor-v3 that command validates the red tree and atomically creates the missing canonical ATDD actor record before executing the test; neither the child nor conductor runs a separate actor command. `runtime-test` is the only allowed kind for this evidence; never invent semantic kinds such as `atdd-red`, add a trailing path operand, reuse a failed evidence ID, pre-create the ATDD actor, or reactivate the ATDD actor after any terminal result.",
+      "Initial ATDD maps every acceptance criterion but needs genuine red only on the critical vertical path. The manifest's Frozen test paths are the complete non-protected test envelope; do not discover, invent, or expand that envelope during execution. Run only the story's focused verification and files inside that envelope; do not substitute broad pre-existing suites outside it. After editing tests and before committing, execute the supervisor's exact atdd precheckCommand; repair every reported harness defect in the same ATDD turn. Before committing or binding red evidence, also run both the focused verification and the frozen discovery command directly. Inspect every failure and require every exact expected test identity: repair test syntax, identity, fixture, closure, setup, and harness defects inside the same ATDD turn until discovery matches and every remaining focused failure is caused by the missing product behavior. Only then make the clean test-only commit and run the story's literal Exact ATDD red evidence command exactly once. That command repeats both harness safety and frozen discovery as failure-atomic final guards before actor/evidence creation. A test-harness failure must never be bound as red evidence. For four-actor-v3 that command validates the red tree and atomically creates the missing canonical ATDD actor record before executing the test; neither the child nor conductor runs a separate actor command. `runtime-test` is the only allowed kind for this evidence; never invent semantic kinds such as `atdd-red`, add a trailing path operand, reuse a failed evidence ID, pre-create the ATDD actor, or reactivate the ATDD actor after any terminal result. If and only if the Developer later proves that this bound red is semantically defective before making any application/test mutation, it must restore the exact clean original-red HEAD and return ACTOR_RESULT=REVISE, ATDD_CORRECTION_REQUIRED=true, and canonical ATDD_CORRECTION_FINDINGS_BASE64/ATDD_CORRECTION_FINDINGS_SHA256 fields. That is the one bounded post-red correction route below, not a Developer test edit or a lifecycle retry.",
       "After development, spawn Code Review and Patch Assurance without waiting for either result first, then wait for both. Code Review owns correctness, security, conformance, scope, and unresolved-finding severity. Patch Assurance is report-only and combines final-tree patch verification with test-quality and focused runner proof; it must not edit production or tests.",
       "Every v3 actor, review report, repair receipt, Judge decision, and deterministic gate must bind the active runId and fullFlowContract=four-actor-v3. A catalog story may be active only with scopeUnit=story; use scopeUnit=epic only for the terminal Epic Process Judge. Before initial or retry reviewers spawn, the conductor must commit all review-transition control state, set a recognized shared review phase (`code-review` is canonical), capture the resulting shared reviewInputCommit=HEAD and reviewInputTree=HEAD^{tree}, and give both reviewers those exact values; it must not pre-create reviewer actor records or reports. Reviewers never construct report paths, identity/input binding fields, report JSON, base64, or helper commands. Their final state mutation is exactly one `.acef/bin/acef-state review-result --repo . --actor <exact-task-name> --model <manifest-model> --effort <manifest-effort> --verdict <PASS|REVISE|REPLAN>` command. The state writer derives the canonical report path, run, contract, story, phase, HEAD commit/tree, writes the typed acef.review-report.v3 report, validates it, and atomically creates the report-bound reviewer actor. PASS uses no finding options. REVISE or REPLAN appends one ordered `--finding-id <safe-id> --finding-severity <LOW|MEDIUM|HIGH|CRITICAL> --finding-reason '<plain ASCII reason without quotes, backslashes, newlines, or shell metacharacters>'` triple per finding; the state writer injects status=OPEN. Do not use compatibility `--finding`, obsolete `--findings-base64`, Python, `php -r`, `node -e`, `ALL_TOOLS`, or any encoding/schema helper. The report verdict is the single machine-carried reviewer result, so reviewer prose does not repeat ACTOR_RESULT. Run review-result exactly once and do not probe schemas, validator availability, paths, or acef-state help beforehand. REVIEWER TOOL RULE: every reviewer functions.exec call may invoke tools.exec_command exactly once, and that exec_command must contain exactly one literal allowlisted read-only command, repository focused-test command, or the final review-result command. This applies to inspection and completion alike. Never batch calls; never use command variables, template strings, arrays, loops, Promise.all, generated commands, ad-hoc interpreter snippets, shell separators such as `&&`, pipelines, redirections, or command substitution. Prefer `sed -n`, bounded `awk`, `rg`, safe `git` reads, and the story's repository test runner; use a new tool call for every read/check. The harness consumes the completion command's stdout directly from the child transcript; do not hand-copy its path/hash/blob/tree fields into prose. The conductor must not create or rewrite reviewer report/actor records after the child returns. Before every retry spawn, read the immediately prior typed reports. After every Developer repair, rerun Patch Assurance on the repaired final application/test tree even when its prior verdict was PASS. Rerun Code Review when its prior verdict was REVISE or the repair changed production code; preserve an earlier Code Review PASS only for a test-only repair. The completion blob/hash/tree, report, actor, and gate must bind exactly. A missing, repeated, or invalid review-result command is a mechanical REPLAN/SPLIT stop: never follow up or retry that reviewer.",
       `The active runId must be exactly ${attempt.id}.`,
@@ -634,7 +634,7 @@ function epicPilotPrompt(attempt, resolved, manifest) {
       "Close each story with exactly one deterministic PASS gate and an immutable layered story-close package. Use acef-state gate with the run, contract, ATDD, development, code-review, patch-assurance, red/green evidence, report hashes, review-cycle, repair receipt, and unresolved findings. The validator computes the verdict; no actor may self-declare it. Introduce cycle 0's gate, four actor records, two exact reviewer reports, cited evidence manifests/raw artifacts, and any bound Judge decision together in one exact control-only commit. After a REVISE, preserve that layer unchanged and introduce only the repair cycle's new gate, retry actor/report records, fresh green evidence, repair receipt, and any new bound decision together in one exact control-only delta commit. No other path may enter either commit and all layer bytes must remain unchanged at HEAD. Readiness/reuse notes are conductor-only working state, are not part of the bound package, and must never be staged in a story-close commit; stage exact paths explicitly rather than using a broad docs/ai add. Commit the complete close package successfully before writing any next-story active-run, Current Context, or ledger transition; never validate a staged prior-story gate against a working tree that already names the next story.",
       "Red evidence must come from a clean committed test-only tree. Additive ATDD tests must exercise executable application behavior; source-text, token, file-content, AST-shape, or implementation-string scans are not authentic red evidence. Green evidence must begin and end with no dirty application/test paths. After repairs, Patch Assurance always binds the final application/test tree. Earlier Code Review may remain only when every later non-control change is test-only; any production change requires affected-only delta Code Review.",
       "A story Process Judge is conditional, not routine. Spawn acef_<story>_process_judge at most once, only for ambiguity, waiver, evidence-conflict, or gate-anomaly; it must write one typed acef.process-judge-decision.v3 artifact and the gate must bind its exact path/hash/verdict. Never follow up or reactivate that Judge for a later gate, and never use it to override a mechanical failure; a later mechanical anomaly stops or replans directly. The separate epic Process Judge remains mandatory.",
-      `The frozen budget profile is ${manifest.promotionGates.budget.profileId || "v3-preregistered"}: ${manifest.promotionGates.budget.baseActorCount} base actors and ${manifest.promotionGates.budget.maximumActorInvocations} total invocations including every Developer followup and infrastructure retry, ${manifest.promotionGates.budget.maximumRepairCyclesPerStory} repair cycles per story, one infrastructure retry per logical invocation and ${manifest.promotionGates.budget.maximumInfrastructureRetriesTotal} total, ${manifest.promotionGates.budget.maximumInputTokens} aggregate conductor-plus-child input tokens, ${manifest.promotionGates.budget.maximumToolCalls} aggregate tool calls, ${manifest.promotionGates.budget.targetActiveDeliverySeconds}s target and ${manifest.promotionGates.budget.maximumActiveDeliverySeconds}s hard active time, and ${manifest.promotionGates.budget.maximumHarnessWaitSeconds}s/${Math.round(manifest.promotionGates.budget.maximumHarnessWaitShare * 100)}% ${manifest.promotionGates.budget.profileId === "v33-measured" ? "coordination-idle wait (productive child execution is reported separately)" : "harness-wait"}. An infrastructure retry is allowed only after the original invocation has no FINAL_ANSWER and a terminal acef.infrastructure-failure.v1 event binds its task/session, failure interval, identical pre/post tree, and empty writePaths; audit the failed child transcript for zero writes, wait for terminal failure, then name the non-overlapping retry <logical-task-name>_infra_retry1. Never retry an infrastructure retry. If a hard budget cannot be met, stop with REPLAN/SPLIT or FAIL rather than expanding the actor graph.`,
+      `The frozen budget profile is ${manifest.promotionGates.budget.profileId || "v3-preregistered"}: ${manifest.promotionGates.budget.baseActorCount} base actors and ${manifest.promotionGates.budget.maximumActorInvocations} total invocations including every Developer followup and infrastructure retry, ${manifest.promotionGates.budget.maximumRepairCyclesPerStory} repair cycles per story, one infrastructure retry per logical invocation and ${manifest.promotionGates.budget.maximumInfrastructureRetriesTotal} total, ${manifest.promotionGates.budget.maximumInputTokens} aggregate conductor-plus-child input tokens, ${manifest.promotionGates.budget.maximumToolCalls} aggregate tool calls, ${manifest.promotionGates.budget.targetActiveDeliverySeconds}s target and ${manifest.promotionGates.budget.maximumActiveDeliverySeconds}s hard active time, and ${manifest.promotionGates.budget.maximumHarnessWaitSeconds}s/${Math.round(manifest.promotionGates.budget.maximumHarnessWaitShare * 100)}% ${["v33-measured", "capsule-supervisor-v1", "capsule-supervisor-v1-measured-v325", "capsule-supervisor-v1-role-routing-v327", "capsule-supervisor-v1-post-red-correction-v328"].includes(manifest.promotionGates.budget.profileId) ? "coordination-idle wait (productive child execution is reported separately)" : "harness-wait"}. An infrastructure retry is allowed only after the original invocation has no FINAL_ANSWER and a terminal acef.infrastructure-failure.v1 event binds its task/session, failure interval, identical pre/post tree, and empty writePaths; audit the failed child transcript for zero writes, wait for terminal failure, then name the non-overlapping retry <logical-task-name>_infra_retry1. Never retry an infrastructure retry. If a hard budget cannot be met, stop with REPLAN/SPLIT or FAIL rather than expanding the actor graph.`,
     ].join(" ")
     : attempt.treatment === "candidate"
     ? [
@@ -658,6 +658,7 @@ function epicPilotPrompt(attempt, resolved, manifest) {
       "Every successful green evidence command must add the story's exact `--discovery-command-json` and all `--expected-test` identities before `--`. A green run that did not discover the frozen tests is invalid even when its test command exits zero.",
       "The original Developer remains one session for the story. It may perform bounded focused-test attempts inside its original turn and one repair follow-up per review cycle, but it must not return on the first failed attempt. It returns only with accepted discovered green evidence and, for a repair, one final repair receipt; a terminal non-green return is REPLAN/SPLIT, never another continuation or replacement Developer.",
       "When the supervisor dispatches Development, execute its exact registrationCommand once before spawn, then spawn that same actorInstanceId. The command binds the canonical /root/<actorInstanceId> session before any green evidence call. The Developer and conductor must not create, probe, replace, or rewrite that actor record later.",
+      "On a typed post-red ATDD correction request from Development, verify that application/test state is clean at the original red HEAD, then run `.acef/bin/acef-state atdd-correction-start --repo . --findings-sha256 <the exact Developer findings hash>` exactly once. Follow the supervisor: commit only its listed control paths; spawn exactly one fresh `<atdd-task-name>_correction1` with the ATDD runtime and the supervisor's frozen explicit allowedPaths, precheckCommand, and redEvidenceCommand; let that actor change and commit only those tests and execute the exact replacement red command once. It returns ACTOR_RESULT=PASS only after failing replacement evidence exists. Run the supervisor transition back to Development, then use exactly one followup_task to the original Developer session. Do not spawn a replacement Developer. The resumed Developer implements against the corrected red and returns POST_RED_ATDD_CORRECTION=<correction-task-name> plus ACTOR_RESULT=PASS after discovered green evidence. Any second correction request, production write by the correction actor, non-red replacement, missing binding, or expanded test path is REPLAN/SPLIT.",
       "At epic close, obey a supervisor context-sync transition before dispatch. Then execute the epic-judge dispatch registrationCommand exactly once before spawning the one non-retryable Judge. Give that Judge the supervisor's exact storyGateIds, greenEvidenceIds, and decisionCommands; its only terminal mutation is exactly one matching PASS, FAIL, REPLAN, or BLOCKED command. Never redispatch an existing epic Judge without a terminal gate. After that terminal gate exists, call the supervisor once more, require action type complete-epic, execute its exact completionCommand and then its exact commitCommand, and do not hand-author or broaden the terminal path list.",
       "Mechanical state transitions, evidence collection, capsule generation, report generation, and gate construction use deterministic tools. Do not delegate them or ask a model to restate their JSON. Every semantic role and the conductor must use the manifest-pinned provider-neutral policy mapping; do not upgrade, downgrade, or substitute a role runtime during the run.",
     ].join("\n")
@@ -855,13 +856,19 @@ function parseCollaborationEvidence(rawText, sessionText, expectedContract, expe
   }
   const dispatches = [...calls.values()].map((call) => {
     const delivered = [...(completedAuthors.get(`/root/${call.taskName}`) || []), ...(completedAuthors.get(call.taskName) || [])]
-      .find((entry) => /Message Type:\s*FINAL_ANSWER/i.test(entry.content)
+      .filter((entry) => /Message Type:\s*FINAL_ANSWER/i.test(entry.content)
         && new RegExp(`Sender:\\s*\\/root\\/${call.taskName}(?:\\s|$)`).test(entry.content));
+    const initial = delivered[0] || null;
+    const selected = initial && /\bATDD_CORRECTION_REQUIRED=true\b/.test(initial.content)
+      ? delivered.at(-1) : initial;
     return {
       ...call,
       receiverThreadId: started.get(call.callId) || "",
-      parentFinalText: delivered?.content || "",
-      finalDeliveredAt: delivered?.deliveredAt || null,
+      parentFinalText: selected?.content || "",
+      finalDeliveredAt: selected?.deliveredAt || null,
+      initialParentFinalText: initial?.content || "",
+      initialFinalDeliveredAt: initial?.deliveredAt || null,
+      parentFinals: delivered,
     };
   });
   const failures = [];
@@ -877,6 +884,8 @@ function parseCollaborationEvidence(rawText, sessionText, expectedContract, expe
   const acceptedActors = [];
   const observedContract = [];
   const correctionBindings = [];
+  const postRedCorrections = [];
+  const postRedDeveloperReactivations = [];
   const knownTaskNames = new Set();
   const infrastructureFailureReceipts = [];
   const boundFollowupCallIds = new Set();
@@ -993,8 +1002,48 @@ function parseCollaborationEvidence(rawText, sessionText, expectedContract, expe
         }
       }
       if (basePassed) {
-        if (adjudications.length || corrections.length) failures.push(`${expected.taskName}: PASS must not create ATDD correction work`);
-        acceptedActors.push({ ...expected, taskName: base.taskName, receiverThreadId: base.receiverThreadId });
+        const developerTaskName = expectedContract.find((entry) => entry.scope === expected.scope
+          && entry.control === "development")?.taskName;
+        const developer = dispatches.find((entry) => entry.taskName === developerTaskName);
+        const requestText = developer?.initialParentFinalText || "";
+        const findingsSha256 = requestText.match(/^ATDD_CORRECTION_FINDINGS_SHA256=([a-f0-9]{64})\s*$/m)?.[1] || "";
+        const findingsBase64 = requestText.match(/^ATDD_CORRECTION_FINDINGS_BASE64=([A-Za-z0-9+/=]+)\s*$/m)?.[1] || "";
+        let findingsBindingValid = false;
+        try {
+          const findings = Buffer.from(findingsBase64, "base64");
+          findingsBindingValid = findings.length > 0 && findings.toString("base64") === findingsBase64
+            && sha256(findings) === findingsSha256;
+        } catch {}
+        const postRedRequested = actorResultIs(requestText, "REVISE")
+          && /\bATDD_CORRECTION_REQUIRED=true\b/.test(requestText) && findingsBindingValid;
+        if (postRedRequested) {
+          if (adjudications.length) failures.push(`${expected.taskName}: post-red Developer correction must not create ATDD adjudication`);
+          if (corrections.length !== 1) failures.push(`${expected.taskName}: post-red Developer correction requires exactly one fresh ATDD correction actor`);
+          if (corrections.length === 1) {
+            const correction = corrections[0];
+            if (!actorResultIs(correction.parentFinalText, "PASS")) failures.push(`${correctionTaskName}: correction result is not PASS`);
+            correctionBindings.push({
+              taskName: correctionTaskName,
+              sourceTaskName: expected.taskName,
+              requestingActorId: developerTaskName,
+              findingsSha256,
+              schema: "acef.atdd-correction.v2",
+            });
+            observedContract.push({
+              scope: expected.scope,
+              control: "atdd-correction",
+              persona: "test-author",
+              retryable: false,
+              taskName: correctionTaskName,
+            });
+            acceptedActors.push({ ...expected, taskName: correctionTaskName, receiverThreadId: correction.receiverThreadId });
+            postRedCorrections.push({ scope: expected.scope, developerTaskName, correctionTaskName,
+              developer, correction, findingsSha256 });
+          }
+        } else {
+          if (adjudications.length || corrections.length) failures.push(`${expected.taskName}: PASS must not create ATDD correction work without a typed Developer request`);
+          acceptedActors.push({ ...expected, taskName: base.taskName, receiverThreadId: base.receiverThreadId });
+        }
       } else if (baseRevised) {
         if (adjudications.length !== 1) failures.push(`${expected.taskName}: REVISE requires exactly one independent adjudication`);
         if (adjudications.length === 1) {
@@ -1053,6 +1102,54 @@ function parseCollaborationEvidence(rawText, sessionText, expectedContract, expe
       acceptedActors.push({ ...expected, taskName: accepted.taskName, receiverThreadId: accepted.receiverThreadId });
     }
   }
+  for (const entry of postRedCorrections) {
+    const requestAt = Date.parse(entry.developer?.initialFinalDeliveredAt || "");
+    const correctionStartedAt = Date.parse(entry.correction?.spawnedAt || "");
+    const correctionFinishedAt = Date.parse(entry.correction?.finalDeliveredAt || "");
+    const reviewStarts = expectedContract.filter((candidate) => candidate.scope === entry.scope
+      && ["code-review", "patch-assurance"].includes(candidate.control))
+      .map((candidate) => dispatches.find((dispatch) => dispatch.taskName === candidate.taskName)?.spawnedAt)
+      .map((value) => Date.parse(value || "")).filter(Number.isFinite);
+    const beforeReviewAt = reviewStarts.length ? Math.min(...reviewStarts) : Number.POSITIVE_INFINITY;
+    if (![requestAt, correctionStartedAt, correctionFinishedAt].every(Number.isFinite)
+      || correctionStartedAt <= requestAt || correctionFinishedAt < correctionStartedAt) {
+      failures.push(`${entry.scope}: post-red ATDD correction ordering is not observable`);
+      continue;
+    }
+    const matchingFollowups = followups.filter((followup) => {
+      const target = String(followup.target || "").split("/").filter(Boolean).at(-1) || "";
+      const calledAt = Date.parse(followup.calledAt || "");
+      return target === entry.developerTaskName && Number.isFinite(calledAt)
+        && calledAt > correctionFinishedAt && calledAt < beforeReviewAt;
+    });
+    if (matchingFollowups.length !== 1) {
+      failures.push(`${entry.scope}: post-red ATDD correction requires exactly one followup_task to the original Developer`);
+      continue;
+    }
+    const followup = matchingFollowups[0];
+    const followupAt = Date.parse(followup.calledAt || "");
+    const resumedFinals = (entry.developer?.parentFinals || []).filter((final) => {
+      const deliveredAt = Date.parse(final.deliveredAt || "");
+      return Number.isFinite(deliveredAt) && deliveredAt > followupAt && deliveredAt < beforeReviewAt
+        && actorResultIs(final.content, "PASS")
+        && new RegExp(`^POST_RED_ATDD_CORRECTION=${entry.correctionTaskName}\\s*$`, "m").test(final.content);
+    });
+    if (resumedFinals.length !== 1) {
+      failures.push(`${entry.scope}: resumed Developer must return one PASS bound to ${entry.correctionTaskName}`);
+      continue;
+    }
+    boundFollowupCallIds.add(followup.callId);
+    postRedDeveloperReactivations.push({
+      scope: entry.scope,
+      reason: "post-red-atdd-correction",
+      developerTaskName: entry.developerTaskName,
+      developerReceiverThreadId: entry.developer?.receiverThreadId || null,
+      correctionTaskName: entry.correctionTaskName,
+      followupCallId: followup.callId,
+      calledAt: followup.calledAt,
+      completedAt: resumedFinals[0].deliveredAt,
+    });
+  }
   const conditionalJudges = [];
   if (fourActorV3) {
     for (const scope of [...new Set(expectedContract.map((entry) => entry.scope).filter((entry) => entry !== "epic"))]) {
@@ -1103,7 +1200,7 @@ function parseCollaborationEvidence(rawText, sessionText, expectedContract, expe
   if (new Set(receiverIds).size !== receiverIds.length) failures.push("lifecycle actors do not have distinct receiver thread ids");
   const repairCyclesByScope = {};
   const storyDeliverySeconds = {};
-  const developerReactivations = [];
+  const developerReactivations = [...postRedDeveloperReactivations];
   const initialReviewPairs = [];
   let lifecycleIntegration = null;
   let storyTimingComplete = true;
@@ -1625,6 +1722,8 @@ function isAllowedCorrectionShellCommand(command) {
   if (/\brg\b.*(?:--pre|--pre-glob)\b/.test(normalized)) return false;
   if (canonicalReviewResultActor(normalized)) return true;
   return [
+    /^git\s+add\s+--(?:\s+(?:tests?|spec)\/[A-Za-z0-9_./-]+)+$/,
+    /^git\s+commit\s+-m\s+(?:'[^'\r\n]+'|"[^"\r\n]+"|[^\s;|&<>`]+)\s+--(?:\s+(?:tests?|spec)\/[A-Za-z0-9_./-]+)+$/,
     /^git\s+status(?:\s+(?:--short|--branch|--porcelain(?:=v[12])?))*$/,
     /^git\s+show\s+[A-Za-z0-9_./:@{}^,+~-]+$/,
     /^git\s+diff(?:\s+(?:--stat|--name-only|--check|--cached|--staged|--|[A-Za-z0-9_./:@{}^,+~-]+))*$/,
@@ -1639,6 +1738,8 @@ function isAllowedCorrectionShellCommand(command) {
     /^composer\s+test(?:\s+[^\s;|&<>`]+)*$/,
     /^test\s+(?:!\s+)?-(?:e|f|d|r)\s+[^\s;|&<>`]+$/,
     /^php\s+-l\s+[^\s;|&<>`]+$/,
+    /^(?:\.acef\/bin\/)?acef-state\s+atdd-precheck\s+--repo\s+\.(?:\s+--test-path\s+(?:tests?|spec)\/[A-Za-z0-9_./-]+)+$/,
+    /^(?:\.acef\/bin\/)?acef-state\s+evidence-run\s+--repo\s+\.\s+--id\s+[A-Za-z0-9._-]+\s+--kind\s+runtime-test\s+--actor\s+[A-Za-z0-9._-]+\s+--story\s+(?:'[^'\r\n]+'|"[^"\r\n]+"|[^\s;|&<>`]+)\b/,
     /^(?:\.acef\/bin\/)?acef-state\s+review-completion\s+--repo\s+\.\s+--artifact-path\s+docs\/ai\/reports\/[A-Za-z0-9._-]+\.json\s+--actor\s+[A-Za-z0-9._-]+$/,
   ].some((pattern) => pattern.test(normalized));
 }
@@ -1684,11 +1785,20 @@ function validateCorrectionBinding(repoRoot, binding) {
   try { record = JSON.parse(fs.readFileSync(recordPath, "utf8")); }
   catch { return [`${binding.taskName}: durable correction binding is invalid JSON`]; }
   const failures = [];
-  if (record.schema !== "acef.atdd-correction.v1") failures.push(`${binding.taskName}: correction binding schema mismatch`);
+  if (!['acef.atdd-correction.v1', 'acef.atdd-correction.v2'].includes(record.schema)
+    || (binding.schema && record.schema !== binding.schema)) failures.push(`${binding.taskName}: correction binding schema mismatch`);
   if (record.sourceActorId !== binding.sourceTaskName) failures.push(`${binding.taskName}: correction source actor mismatch`);
   if (record.correctionActorId !== binding.taskName) failures.push(`${binding.taskName}: correction actor mismatch`);
   if (record.scope !== "test-artifacts-only") failures.push(`${binding.taskName}: correction scope is not test-artifacts-only`);
   if (record.findingsSha256 !== binding.findingsSha256) failures.push(`${binding.taskName}: correction findings hash mismatch`);
+  if (record.schema === "acef.atdd-correction.v2") {
+    try { installedStateParser(repoRoot).parseAtddCorrection(recordPath); }
+    catch (error) { failures.push(`${binding.taskName}: ${error.message}`); }
+    if (record.requestingActorId !== binding.requestingActorId) failures.push(`${binding.taskName}: correction requesting Developer mismatch`);
+    if (!record.runId || !record.story || !record.originalRedEvidenceId || !record.baseCommit) {
+      failures.push(`${binding.taskName}: post-red correction lifecycle binding is incomplete`);
+    }
+  }
   if (!Array.isArray(record.allowedPaths) || !record.allowedPaths.length) failures.push(`${binding.taskName}: correction allowedPaths missing`);
   else {
     for (const entry of record.allowedPaths) {
@@ -1786,7 +1896,8 @@ function loadCollaborationEvidence(rawPath, expectedContract, expectedSession = 
       && !developerActorSessionBound(expectedSession.cwd, dispatch.taskName, meta?.agent_path)) {
       failures.push(`${dispatch.taskName}: Developer actor sessionId does not bind the canonical spawn identity`);
     }
-    if (expectedSession.actorContractVersion === "four-actor-v3" && lifecycleEntry?.control === "atdd") {
+    if (expectedSession.actorContractVersion === "four-actor-v3"
+      && ["atdd", "atdd-correction"].includes(lifecycleEntry?.control)) {
       let actor = null;
       try {
         actor = installedStateParser(expectedSession.cwd)
@@ -2173,7 +2284,8 @@ function evaluatePilotBudgets(manifest, attempt, activeDeliverySeconds, actor, c
     failures.push(`model cycles ${actor.model_cycles}/${budget.maximumModelCycles}`);
   }
   if (actor.tool_calls > budget.maximumToolCalls) failures.push(`tool calls ${actor.tool_calls}/${budget.maximumToolCalls}`);
-  const coordinationIdleBudget = ["v33-measured", "capsule-supervisor-v1", "capsule-supervisor-v1-measured-v325"].includes(budget.profileId);
+  const coordinationIdleBudget = ["v33-measured", "capsule-supervisor-v1", "capsule-supervisor-v1-measured-v325",
+    "capsule-supervisor-v1-role-routing-v327", "capsule-supervisor-v1-post-red-correction-v328"].includes(budget.profileId);
   const measuredWaitSeconds = coordinationIdleBudget
     ? Number(harnessWait.coordinationIdleSeconds || 0) : harnessWait.seconds;
   const measuredWaitShare = coordinationIdleBudget

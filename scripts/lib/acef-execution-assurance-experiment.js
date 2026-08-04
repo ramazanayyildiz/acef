@@ -148,6 +148,11 @@ function validateManifest(manifest) {
                 maximumToolCalls: 320, maximumHarnessWaitSeconds: 300, maximumHarnessWaitShare: 0.05,
                 targetStoryActiveSeconds: 600, maximumStoryActiveSeconds: 900,
                 targetActiveDeliverySeconds: 2700, maximumActiveDeliverySeconds: 3600 }
+            : budgetProfile === "capsule-supervisor-v1-post-red-correction-v328"
+              ? { maximumActorInvocations: 25, maximumInputTokens: 18000000, maximumModelCycles: 220,
+                maximumToolCalls: 320, maximumHarnessWaitSeconds: 300, maximumHarnessWaitShare: 0.05,
+                targetStoryActiveSeconds: 600, maximumStoryActiveSeconds: 900,
+                targetActiveDeliverySeconds: 2700, maximumActiveDeliverySeconds: 3600 }
           : null;
     if (!expectedBudget) {
       throw new Error("v3 P0 candidate budget.profileId is not recognized");
@@ -166,7 +171,8 @@ function validateManifest(manifest) {
       || budget.maximumHarnessWaitShare !== expectedBudget.maximumHarnessWaitShare) {
       throw new Error("v3 P0 candidate must freeze actor, repair, time, token, tool, and harness-wait budgets");
     }
-    if (["capsule-supervisor-v1", "capsule-supervisor-v1-measured-v325", "capsule-supervisor-v1-role-routing-v327"].includes(budgetProfile)) {
+    if (["capsule-supervisor-v1", "capsule-supervisor-v1-measured-v325", "capsule-supervisor-v1-role-routing-v327",
+      "capsule-supervisor-v1-post-red-correction-v328"].includes(budgetProfile)) {
       if (manifest.runtimeContract !== "capsule-supervisor-v1") {
         throw new Error("capsule supervisor budget requires runtimeContract=capsule-supervisor-v1");
       }
@@ -176,13 +182,14 @@ function validateManifest(manifest) {
       const requiredProfiles = ["atdd", "development", "code-review", "patch-assurance", "process-judge", "epic-process-judge"];
       for (const role of requiredProfiles) {
         const profile = manifest.actorRuntimeProfiles?.[role];
-        const expectedEffort = budgetProfile === "capsule-supervisor-v1-role-routing-v327" && role === "code-review"
+        const roleRouted = ["capsule-supervisor-v1-role-routing-v327", "capsule-supervisor-v1-post-red-correction-v328"].includes(budgetProfile);
+        const expectedEffort = roleRouted && role === "code-review"
           ? "medium" : "high";
         if (!profile || profile.model !== "gpt-5.6-sol" || profile.reasoningEffort !== expectedEffort) {
           throw new Error(`capsule supervisor requires actorRuntimeProfiles.${role}=gpt-5.6-sol/${expectedEffort}`);
         }
       }
-      if (budgetProfile === "capsule-supervisor-v1-role-routing-v327") {
+      if (["capsule-supervisor-v1-role-routing-v327", "capsule-supervisor-v1-post-red-correction-v328"].includes(budgetProfile)) {
         if (manifest.pilotRuntime?.model !== "gpt-5.6-sol" || manifest.pilotRuntime?.reasoningEffort !== "medium") {
           throw new Error("role-routed capsule supervisor requires conductor pilotRuntime=gpt-5.6-sol/medium");
         }

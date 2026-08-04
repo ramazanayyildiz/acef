@@ -21,6 +21,7 @@
       "schemas/active-run-v2.schema.json",
       "schemas/actor.schema.json",
       "schemas/evidence.schema.json",
+      "schemas/atdd-correction.schema.json",
       "schemas/review-report-v3.schema.json",
       "schemas/assurance-capsule-v1.schema.json"
     ],
@@ -34,6 +35,7 @@
       "scripts/acef-state#syncRuntimeContext",
       "scripts/acef-state#writeContextSync",
       "scripts/acef-state#writeAtddPrecheck",
+      "scripts/acef-state#writeAtddCorrectionStart",
       "scripts/acef-state#writeEpicComplete",
       "scripts/acef-state#writeStoryTransition",
       "scripts/acef-state#writeReviewScope",
@@ -67,14 +69,14 @@
   "limitations": [
     "V327-CAL-001 qualifies gpt-5.6-sol/medium only for Code Review. ATDD, Development, Patch Assurance, and Judge roles retain gpt-5.6-sol/high until role-specific evidence exists.",
     "A review capsule is additive transport and cannot replace independent reviewer judgment or targeted reads needed to resolve a named uncertainty; a reviewer may rerun the focused command only for a named evidence conflict.",
-    "The runtime is enforced by schemas, writers, validators, tests, and installer wiring. V3.27 stopped correctly when Story 3 Development changed a semantically defective ATDD test after red evidence binding; capsule-supervisor-v1 still lacks a bounded post-red ATDD correction transition, so the capability is not proven or installed in target repositories.",
+    "The runtime is enforced by schemas, writers, validators, tests, and installer wiring. The V3.27 post-red semantic-test defect now has a one-shot typed correction transition that resumes the original Developer, but the successor V3.28 live rehearsal and blind judgment have not yet proven it and target repositories have not yet been updated.",
     "Existing Full runs with lifecycle evidence cannot adopt this runtime contract in place."
   ],
   "evidence": [
     {
       "layer": "tests",
       "ref": "scripts/test-acef-capsule-supervisor",
-      "note": "Covers deterministic next-action selection, model-free scope/capsule preparation, exact discovery, one resumable Developer session, independent capsules, historical worker-scope assurance replay, PASS and record-only non-PASS Epic completion, named-Epic completion, terminal non-reopening, exact gate/Judge/context binding, and verdict/scope/actor/context tamper failure."
+      "note": "Covers deterministic next-action selection, model-free scope/capsule preparation, exact discovery, one resumable Developer session, one-shot post-red ATDD correction with frozen test-only scope and forged-ID failure atomicity, independent capsules, historical worker-scope assurance replay, PASS and record-only non-PASS Epic completion, named-Epic completion, terminal non-reopening, exact gate/Judge/context binding, and verdict/scope/actor/context tamper failure."
     },
     {
       "layer": "tests",
@@ -84,7 +86,7 @@
     {
       "layer": "tests",
       "ref": "scripts/test-acef-execution-assurance-experiment",
-      "note": "Covers model-cycle accounting, aggregate cost, runtime profile enforcement, and capsule-supervisor budgets."
+      "note": "Covers model-cycle accounting, aggregate cost, runtime profile enforcement, capsule-supervisor budgets, typed post-red correction transcript ordering, one fresh correction actor, and same-session Developer continuation."
     },
     {
       "layer": "tests",

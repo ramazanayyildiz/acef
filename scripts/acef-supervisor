@@ -11,6 +11,7 @@ const {
   parseReviewReport,
   parseDeveloperRepair,
   parseAssuranceCapsule,
+  parseAtddCorrection,
   parseWorkerScope,
 } = require("./lib/acef-state-parser");
 const { loadModelRoutingPolicy, resolveRoleRuntime } = require("./lib/acef-model-routing");
@@ -131,6 +132,10 @@ function build(repo) {
   const repairs = files(path.join(repo, "docs", "ai", "repairs"))
     .map((filePath) => readRecord(parseDeveloperRepair, filePath))
     .filter((record) => token(record.story) === storyKey && record.runId === run.runId);
+  const corrections = files(path.join(repo, "docs", "ai", "corrections"))
+    .map((filePath) => ({ ...readRecord(parseAtddCorrection, filePath), supervisorFilePath: filePath }))
+    .filter((record) => record.schema === "acef.atdd-correction.v2"
+      && token(record.story) === storyKey && record.runId === run.runId);
   const capsules = files(path.join(repo, "docs", "ai", "capsules"))
     .map((filePath) => ({ ...readCapsule(filePath), supervisorFilePath: filePath }))
     .filter((record) => token(record.story) === storyKey && record.runId === run.runId);
@@ -145,6 +150,9 @@ function build(repo) {
   const hasActor = (id) => actors.some((record) => record.actorInstanceId === id);
   const developerEvidence = evidence.filter((record) => record.actorInstanceId === actorId("development"));
   const latestDeveloperEvidence = developerEvidence.at(-1) || null;
+  const activeCorrection = corrections.at(-1) || null;
+  const activeAtddActorId = activeCorrection?.correctionActorId || actorId("atdd");
+  const activeRedEvidence = evidence.find((record) => record.actorInstanceId === activeAtddActorId && record.exitCode !== 0) || null;
   let action;
   if (run.scopeUnit === "epic") {
     const contextPath = run.contextPath ? path.resolve(repo, run.contextPath) : null;
@@ -216,6 +224,62 @@ function build(repo) {
         : { type: "dispatch", role: "atdd", actorInstanceId: actorId("atdd"), runtime: runtime.atdd,
           precheckCommand: `.acef/bin/acef-state atdd-precheck --repo .${frozenTestPaths.map((filePath) => ` --test-path ${quote(filePath)}`).join("")}`,
           reason: "run the deterministic test-harness precheck after editing and before the clean red commit" };
+  } else if (currentPhase === "atddcorrection") {
+    const bindingPath = activeCorrection?.supervisorFilePath || "";
+    const bindingRelative = bindingPath ? path.relative(repo, bindingPath).replaceAll(path.sep, "/") : "";
+    let bindingCommitted = false;
+    if (bindingRelative) {
+      try { bindingCommitted = git(repo, ["show", `HEAD:${bindingRelative}`]) === fs.readFileSync(bindingPath, "utf8").trim(); }
+      catch {}
+    }
+    if (!activeCorrection) {
+      action = { type: "replan", reason: "ATDD correction phase lacks its immutable v2 correction binding" };
+    } else if (!bindingCommitted) {
+      const controlPaths = [
+        bindingRelative,
+        "docs/ai/ACEF_ACTIVE_RUN.json",
+        "docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json",
+        run.contextPath || "docs/ai/ACEF_CURRENT_CONTEXT.md",
+      ];
+      action = {
+        type: "commit-control",
+        command: `git add -- ${controlPaths.map(quote).join(" ")} && git commit -m ${quote(`chore(acef): start ${story} ATDD correction`)} -- ${controlPaths.map(quote).join(" ")}`,
+        committedPaths: controlPaths,
+        reason: "commit the bounded correction binding and restricted worker scope before fresh ATDD correction dispatch",
+      };
+    } else if (activeRedEvidence) {
+      action = {
+        type: "transition", nextPhase: "development",
+        command: ".acef/bin/acef-state phase-transition --repo . --phase development",
+        reason: "replacement test-only red evidence is bound; resume the original Developer session",
+      };
+    } else {
+      const originalRed = evidence.find((record) => record.evidenceId === activeCorrection.originalRedEvidenceId);
+      if (!originalRed?.commandArgv?.length || !originalRed.discovery?.argv?.length) {
+        action = { type: "replan", reason: "original red evidence lacks replayable command/discovery argv" };
+      } else {
+        const replacementId = `${storyKey}-red-correction1`;
+        const evidenceCommand = [
+          ".acef/bin/acef-state", "evidence-run", "--repo", ".", "--id", replacementId,
+          "--kind", "runtime-test", "--actor", activeCorrection.correctionActorId, "--story", story,
+          "--model", runtime.atdd.model, "--effort", runtime.atdd.reasoningEffort,
+          "--discovery-command-json", JSON.stringify(originalRed.discovery.argv),
+          ...originalRed.discovery.expectedTests.flatMap((identity) => ["--expected-test", identity]),
+          ...originalRed.satisfies.flatMap((acceptance) => ["--satisfies", acceptance]),
+          "--", ...originalRed.commandArgv,
+        ].map(quote).join(" ");
+        action = {
+          type: "dispatch", role: "atdd-correction", actorInstanceId: activeCorrection.correctionActorId,
+          runtime: runtime.atdd,
+          precheckCommand: `.acef/bin/acef-state atdd-precheck --repo .${activeCorrection.allowedPaths.map((filePath) => ` --test-path ${quote(filePath)}`).join("")}`,
+          redEvidenceId: replacementId,
+          redEvidenceCommand: evidenceCommand,
+          correctionBindingPath: bindingRelative,
+          correctionBindingSha256: sha256(fs.readFileSync(bindingPath)),
+          reason: "fresh independent ATDD actor must repair only frozen tests and bind replacement behavioral red evidence",
+        };
+      }
+    }
   } else if (currentPhase === "development") {
     if (!hasActor(actorId("development"))) {
       const developerId = actorId("development");
@@ -226,6 +290,15 @@ function build(repo) {
         runtime: runtime.development,
         registrationCommand: `.acef/bin/acef-state actor --repo . --id ${developerId} --story ${quote(story)} --phase development --role developer --client codex --session-id /root/${developerId} --context-profile development --model ${runtime.development.model} --effort ${runtime.development.reasoningEffort}`,
         reason: "register the one canonical story Developer before spawn so green evidence can bind its session",
+      };
+    } else if (activeCorrection && !activeRedEvidence) {
+      action = { type: "replan", reason: "post-red ATDD correction exists without replacement red evidence" };
+    } else if (activeCorrection && !latestDeveloperEvidence) {
+      action = {
+        type: "resume", role: "development", actorInstanceId: actorId("development"), runtime: runtime.development,
+        correctionActorInstanceId: activeCorrection.correctionActorId,
+        requiredFinalMarker: `POST_RED_ATDD_CORRECTION=${activeCorrection.correctionActorId}`,
+        reason: "resume the original Developer only after independent replacement red evidence",
       };
     } else if (latestDeveloperEvidence?.exitCode === 0 && latestDeveloperEvidence.discovery) {
       action = { type: "transition", nextPhase: "code-review", command: ".acef/bin/acef-state phase-transition --repo . --phase code-review", reason: "green evidence and discovery contract exist" };
@@ -285,7 +358,7 @@ function build(repo) {
       const requiredReviewerIds = retainCodeReview ? [assuranceId] : [codeId, assuranceId];
       const missingCapsuleIds = requiredReviewerIds.filter((id) => !currentCapsule(id));
       if (missingCapsuleIds.length) {
-        const red = evidence.find((record) => record.actorInstanceId === actorId("atdd") && record.exitCode !== 0);
+        const red = activeRedEvidence;
         const green = [...developerEvidence].reverse().find((record) => record.exitCode === 0 && record.discovery);
         const baseCommit = reviewCycle > 0 ? latestGate?.applicationCommit : workerScope?.baseRef;
         const repairReceipt = reviewCycle > 0 ? `docs/ai/repairs/${storyKey}-repair${reviewCycle}.json` : null;
@@ -333,7 +406,7 @@ function build(repo) {
           ...(pending.length > 1 ? { actors: pending } : pending[0]),
         };
       } else {
-        const red = evidence.find((record) => record.actorInstanceId === actorId("atdd") && record.exitCode !== 0);
+        const red = activeRedEvidence;
         const green = [...developerEvidence].reverse().find((record) => record.exitCode === 0 && record.discovery);
         const codeActor = actors.find((record) => record.actorInstanceId === codeId);
         const assuranceActor = actors.find((record) => record.actorInstanceId === assuranceId);
@@ -351,7 +424,7 @@ function build(repo) {
             ` --binding-evidence ${quote(`${binding.inputSurface}>${binding.outputSurface}:${binding.field}:${green.evidenceId}:true:${binding.defaultMaskingRisk === true}`)}`
           ).join("");
           const command = `.acef/bin/acef-state gate --repo . --id ${gateId} --scope ${quote(story)}`
-            + ` --atdd-actor ${actorId("atdd")} --development-actor ${actorId("development")}`
+            + ` --atdd-actor ${activeAtddActorId} --development-actor ${actorId("development")}`
             + ` --code-review-actor ${codeId} --patch-assurance-actor ${assuranceId}`
             + ` --red-evidence ${red.evidenceId} --green-evidence ${green.evidenceId}`
             + ` --code-review-report-hash ${codeActor.producedArtifactHash} --patch-assurance-report-hash ${assuranceActor.producedArtifactHash}`

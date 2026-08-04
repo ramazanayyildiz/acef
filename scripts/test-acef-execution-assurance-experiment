@@ -185,6 +185,9 @@ roleRoutedCapsuleManifest.modelRoutingPolicy = {
   sha256: "a".repeat(64), calibrationId: "V327-CAL-001",
 };
 assert.doesNotThrow(() => validateManifest(roleRoutedCapsuleManifest));
+const postRedCorrectionManifest = structuredClone(roleRoutedCapsuleManifest);
+postRedCorrectionManifest.promotionGates.budget.profileId = "capsule-supervisor-v1-post-red-correction-v328";
+assert.doesNotThrow(() => validateManifest(postRedCorrectionManifest));
 assert.deepEqual(
   blindJudgeRuntimeProfile(roleRoutedCapsuleManifest),
   { ...roleRoutedCapsuleManifest.pilotRuntime, model: "gpt-5.6-sol", reasoningEffort: "high" },
@@ -305,6 +308,12 @@ assert.match(v31Prompt, /atomically creates the missing canonical ATDD actor rec
   "the literal evidence command owns the ATDD actor/evidence handoff");
 assert.match(v31Prompt, /neither the child nor conductor runs a separate actor command/,
   "the compiled contract removes the v3.11 actor-ordering contradiction");
+assert.match(v31Prompt, /ATDD_CORRECTION_REQUIRED=true/,
+  "the compiled contract exposes the bounded post-red semantic-harness correction route");
+const roleRoutedPrompt = epicPilotPrompt({ ...roleRoutedCapsuleManifest.pilot.attempts[0], id: "P0-candidate-v328" },
+  resolvedV31Epic, postRedCorrectionManifest);
+assert.match(roleRoutedPrompt, /Do not spawn a replacement Developer/,
+  "post-red correction must resume the original Developer session");
 assert.match(v31Prompt, /50000000 aggregate conductor-plus-child input tokens/);
 const epicActorContract = lifecycleActorContract(resolvedEpic);
 assert.equal(epicActorContract.length, 25, "four stories need six actors each plus one epic Process Judge");
@@ -416,6 +425,58 @@ const admittedV3AtddAdjudication = parseCollaborationEvidence(syntheticRaw, v3At
 assert.equal(admittedV3AtddAdjudication.ok, true, admittedV3AtddAdjudication.failures.join("; "));
 assert.equal(admittedV3AtddAdjudication.totalActorInvocations, 18,
   "one fresh adjudication is counted without replaying the ATDD author");
+const v3PostRedDeveloper = v3ActorContract.find((entry) => entry.scope === v3Atdd.scope && entry.control === "development");
+const v3CorrectionTask = `${v3Atdd.taskName}_correction1`;
+const correctionFindings = Buffer.from(JSON.stringify({ defect: "assertion permits the wrong state" }));
+const correctionFindingsBase64 = correctionFindings.toString("base64");
+const correctionFindingsSha256 = sha256(correctionFindings);
+const developerCorrectionRequest = `Message Type: FINAL_ANSWER\nSender: /root/${v3PostRedDeveloper.taskName}\nPayload:\nACTOR_RESULT=REVISE\nATDD_CORRECTION_REQUIRED=true\nATDD_CORRECTION_FINDINGS_BASE64=${correctionFindingsBase64}\nATDD_CORRECTION_FINDINGS_SHA256=${correctionFindingsSha256}`;
+const postRedBaseSession = lifecycleSession(v3ActorContract).split("\n").map((line) => {
+  const event = JSON.parse(line);
+  if (event.type === "response_item" && event.payload?.type === "agent_message"
+    && event.payload.author === `/root/${v3PostRedDeveloper.taskName}`) {
+    event.payload.content = [{ type: "input_text", text: developerCorrectionRequest }];
+  }
+  return JSON.stringify(event);
+}).join("\n");
+const postRedCorrectionEvents = [
+  JSON.stringify({ timestamp: eventTimestamp(4.2), type: "response_item", payload: {
+    type: "function_call", namespace: "collaboration", name: "spawn_agent", call_id: "post-red-correction",
+    arguments: JSON.stringify({ task_name: v3CorrectionTask, fork_turns: "none" }),
+  } }),
+  JSON.stringify({ timestamp: eventTimestamp(4.3), type: "event_msg", payload: {
+    type: "sub_agent_activity", event_id: "post-red-correction", agent_thread_id: "post-red-correction-receiver", kind: "started",
+  } }),
+  JSON.stringify({ timestamp: eventTimestamp(4.6), type: "response_item", payload: {
+    type: "agent_message", author: `/root/${v3CorrectionTask}`,
+    content: [{ type: "input_text", text: `Message Type: FINAL_ANSWER\nSender: /root/${v3CorrectionTask}\nPayload:\nACTOR_RESULT=PASS` }],
+  } }),
+  JSON.stringify({ timestamp: eventTimestamp(4.7), type: "response_item", payload: {
+    type: "function_call", namespace: "collaboration", name: "followup_task", call_id: "post-red-developer-resume",
+    arguments: JSON.stringify({ target: `/root/${v3PostRedDeveloper.taskName}` }),
+  } }),
+  JSON.stringify({ timestamp: eventTimestamp(4.9), type: "response_item", payload: {
+    type: "agent_message", author: `/root/${v3PostRedDeveloper.taskName}`,
+    content: [{ type: "input_text", text: `Message Type: FINAL_ANSWER\nSender: /root/${v3PostRedDeveloper.taskName}\nPayload:\nPOST_RED_ATDD_CORRECTION=${v3CorrectionTask}\nACTOR_RESULT=PASS` }],
+  } }),
+];
+const postRedCorrectionEvidence = parseCollaborationEvidence(syntheticRaw,
+  `${postRedBaseSession}\n${postRedCorrectionEvents.join("\n")}`, v3ActorContract, {
+    actorContractVersion: "four-actor-v3", maximumActorInvocations: 21,
+  });
+assert.equal(postRedCorrectionEvidence.ok, true, postRedCorrectionEvidence.failures.join("; "));
+assert.equal(postRedCorrectionEvidence.totalActorInvocations, 19,
+  "post-red correction adds one fresh ATDD actor and one continuation of the original Developer");
+assert.deepEqual(postRedCorrectionEvidence.correctionBindings, [{
+  taskName: v3CorrectionTask, sourceTaskName: v3Atdd.taskName, requestingActorId: v3PostRedDeveloper.taskName,
+  findingsSha256: correctionFindingsSha256, schema: "acef.atdd-correction.v2",
+}]);
+const missingPostRedResume = parseCollaborationEvidence(syntheticRaw,
+  `${postRedBaseSession}\n${postRedCorrectionEvents.slice(0, 3).join("\n")}`, v3ActorContract, {
+    actorContractVersion: "four-actor-v3", maximumActorInvocations: 21,
+  });
+assert.equal(missingPostRedResume.ok, false, "a correction cannot replace or silently abandon the original Developer session");
+assert.match(missingPostRedResume.failures.join("; "), /exactly one followup_task to the original Developer/);
 const missingStoryTimestampSession = v3SyntheticSession.replace(
   /"timestamp":"[^"]+","type":"response_item","payload":\{"type":"function_call","namespace":"collaboration","name":"spawn_agent"/,
   '"type":"response_item","payload":{"type":"function_call","namespace":"collaboration","name":"spawn_agent"',

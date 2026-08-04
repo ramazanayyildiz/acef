@@ -86,6 +86,8 @@ try {
   const red = cp.spawnSync(process.execPath, [state, "evidence-run", "--repo", tmp, "--id", "capsule-red",
     "--kind", "runtime-test", "--actor", "acef_story_capsule_atdd", "--story", "Story Capsule",
     "--model", "gpt-5.6-sol", "--effort", "high", "--satisfies", "story-capsule-ac1",
+    "--discovery-command-json", JSON.stringify([process.execPath, "-e", "console.log('demo contract')"]),
+    "--expected-test", "demo contract",
     "--", process.execPath, "--test", "tests/demo.test.js"], { cwd: tmp, encoding: "utf8" });
   if (red.status === 0 || !fs.existsSync(path.join(tmp, "docs", "ai", "evidence", "capsule-red.json"))) {
     throw new Error("red evidence was not captured");
@@ -113,6 +115,71 @@ try {
   stateRun(["actor", "--repo", tmp, "--id", "acef_story_capsule_development", "--story", "Story Capsule",
     "--phase", "development", "--role", "developer", "--client", "codex", "--session-id", "/root/acef_story_capsule_development",
     "--context-profile", "development", "--model", "gpt-5.6-sol", "--effort", "high"]);
+
+  const correctionHash = "a".repeat(64);
+  stateRun(["atdd-correction-start", "--repo", tmp, "--findings-sha256", correctionHash]);
+  const correction = readJson("docs/ai/corrections/acef_story_capsule_atdd_correction1.json");
+  const correctionScope = readJson("docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json");
+  if (correction.schema !== "acef.atdd-correction.v2"
+    || correction.requestingActorId !== "acef_story_capsule_development"
+    || correction.originalRedEvidenceId !== "capsule-red"
+    || correction.baseCommit !== git(["rev-parse", "HEAD"])
+    || correctionScope.phase !== "atdd-correction"
+    || correctionScope.workerId !== "acef_story_capsule_atdd_correction1"
+    || correctionScope.allowedPaths.some((entry) => !entry.startsWith("tests"))) {
+    throw new Error("post-red ATDD correction did not freeze the requesting Developer, original red, and test-only scope");
+  }
+  const correctionCommit = JSON.parse(run(process.execPath, [supervisor, "--repo", tmp]));
+  if (correctionCommit.action.type !== "commit-control"
+    || !correctionCommit.action.committedPaths.includes("docs/ai/corrections/acef_story_capsule_atdd_correction1.json")) {
+    throw new Error("supervisor did not require the correction binding before dispatch");
+  }
+  run("/bin/sh", ["-c", correctionCommit.action.command]);
+  const correctionDispatch = JSON.parse(run(process.execPath, [supervisor, "--repo", tmp]));
+  if (correctionDispatch.action.type !== "dispatch" || correctionDispatch.action.role !== "atdd-correction"
+    || correctionDispatch.action.actorInstanceId !== "acef_story_capsule_atdd_correction1"
+    || correctionDispatch.action.redEvidenceId !== "story_capsule-red-correction1"
+    || !correctionDispatch.action.redEvidenceCommand.includes("--discovery-command-json")
+    || !correctionDispatch.action.redEvidenceCommand.includes("demo contract")) {
+    throw new Error("supervisor did not compile the bounded replayable ATDD correction dispatch");
+  }
+  fs.appendFileSync(path.join(tmp, "tests", "demo.test.js"), "// corrected semantic fixture\n");
+  stateRun(["atdd-precheck", "--repo", tmp, "--test-path", "tests/demo.test.js"]);
+  git(["add", "tests/demo.test.js"]); git(["commit", "-qm", "correct red test semantics"]);
+  const wrongCorrectionId = cp.spawnSync(process.execPath, [state, "evidence-run", "--repo", tmp,
+    "--id", "forged-correction-red", "--kind", "runtime-test",
+    "--actor", "acef_story_capsule_atdd_correction1", "--story", "Story Capsule",
+    "--model", "gpt-5.6-sol", "--effort", "high", "--satisfies", "story-capsule-ac1",
+    "--discovery-command-json", JSON.stringify([process.execPath, "-e", "console.log('demo contract')"]),
+    "--expected-test", "demo contract", "--", process.execPath, "--test", "tests/demo.test.js"],
+  { cwd: tmp, encoding: "utf8" });
+  if (wrongCorrectionId.status === 0
+    || fs.existsSync(path.join(tmp, "docs", "ai", "actors", "acef_story_capsule_atdd_correction1.json"))
+    || fs.existsSync(path.join(tmp, "docs", "ai", "evidence", "forged-correction-red.json"))) {
+    throw new Error("post-red correction accepted a forged evidence identity or partially persisted actor/evidence state");
+  }
+  const correctedRed = cp.spawnSync(process.execPath, [state, "evidence-run", "--repo", tmp,
+    "--id", "story_capsule-red-correction1", "--kind", "runtime-test",
+    "--actor", "acef_story_capsule_atdd_correction1", "--story", "Story Capsule",
+    "--model", "gpt-5.6-sol", "--effort", "high", "--satisfies", "story-capsule-ac1",
+    "--discovery-command-json", JSON.stringify([process.execPath, "-e", "console.log('demo contract')"]),
+    "--expected-test", "demo contract", "--", process.execPath, "--test", "tests/demo.test.js"],
+  { cwd: tmp, encoding: "utf8" });
+  if (correctedRed.status === 0
+    || !fs.existsSync(path.join(tmp, "docs", "ai", "evidence", "story_capsule-red-correction1.json"))) {
+    throw new Error("replacement red evidence was not captured by the fresh correction actor");
+  }
+  const correctionDone = JSON.parse(run(process.execPath, [supervisor, "--repo", tmp]));
+  if (correctionDone.action.type !== "transition" || correctionDone.action.nextPhase !== "development") {
+    throw new Error("supervisor did not resume Development after replacement red evidence");
+  }
+  stateRun(["phase-transition", "--repo", tmp, "--phase", "development"]);
+  const resumedDevelopment = JSON.parse(run(process.execPath, [supervisor, "--repo", tmp]));
+  if (resumedDevelopment.action.type !== "resume" || resumedDevelopment.action.role !== "development"
+    || resumedDevelopment.action.actorInstanceId !== "acef_story_capsule_development"
+    || resumedDevelopment.action.requiredFinalMarker !== "POST_RED_ATDD_CORRECTION=acef_story_capsule_atdd_correction1") {
+    throw new Error("supervisor did not reactivate the original Developer with the correction marker");
+  }
   fs.writeFileSync(path.join(tmp, "app", "demo.js"), "module.exports = 'almost';\n");
   git(["add", "app/demo.js"]); git(["commit", "-qm", "failed implementation"]);
   const failed = cp.spawnSync(process.execPath, [state, "evidence-run", "--repo", tmp, "--id", "capsule-failed",
@@ -158,10 +225,10 @@ try {
     const id = `story-capsule-${role}`;
     const actor = `acef_story_capsule_${role.replaceAll("-", "_")}`;
     stateRun(["review-capsule", "--repo", tmp, "--id", id, "--role", role, "--actor", actor,
-      "--base-commit", reviewBase, "--red-evidence", "capsule-red", "--green-evidence", "capsule-green"]);
+      "--base-commit", reviewBase, "--red-evidence", "story_capsule-red-correction1", "--green-evidence", "capsule-green"]);
     const first = fs.readFileSync(path.join(tmp, "docs", "ai", "capsules", `${id}.json`), "utf8");
     stateRun(["review-capsule", "--repo", tmp, "--id", id, "--role", role, "--actor", actor,
-      "--base-commit", reviewBase, "--red-evidence", "capsule-red", "--green-evidence", "capsule-green"]);
+      "--base-commit", reviewBase, "--red-evidence", "story_capsule-red-correction1", "--green-evidence", "capsule-green"]);
     if (fs.readFileSync(path.join(tmp, "docs", "ai", "capsules", `${id}.json`), "utf8") !== first) {
       throw new Error("capsule generation is not byte-identical for the same tree");
     }
@@ -208,9 +275,9 @@ try {
     throw new Error("supervisor did not produce the exact deterministic story-gate command");
   }
   stateRun(["gate", "--repo", tmp, "--id", "capsule-revise-cycle0", "--scope", "Story Capsule",
-    "--atdd-actor", "acef_story_capsule_atdd", "--development-actor", "acef_story_capsule_development",
+    "--atdd-actor", "acef_story_capsule_atdd_correction1", "--development-actor", "acef_story_capsule_development",
     "--code-review-actor", "acef_story_capsule_code_review", "--patch-assurance-actor", "acef_story_capsule_patch_assurance",
-    "--red-evidence", "capsule-red", "--green-evidence", "capsule-green",
+    "--red-evidence", "story_capsule-red-correction1", "--green-evidence", "capsule-green",
     "--code-review-report-hash", codeReviewHash, "--patch-assurance-report-hash", patchAssuranceHash,
     "--review-cycle", "0", "--surface-evidence", "integration:capsule-green:true:true",
     "--surface-evidence", "internal:capsule-green:true:true",

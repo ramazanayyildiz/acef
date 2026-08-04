@@ -6,8 +6,12 @@
   "additionalProperties": false,
   "required": ["schema", "sourceActorId", "correctionActorId", "scope", "findingsSha256", "allowedPaths"],
   "properties": {
-    "schema": { "type": "string", "const": "acef.atdd-correction.v1" },
+    "schema": { "type": "string", "enum": ["acef.atdd-correction.v1", "acef.atdd-correction.v2"] },
+    "runId": { "type": "string", "minLength": 1 },
+    "fullFlowContract": { "type": "string", "const": "four-actor-v3" },
+    "story": { "type": "string", "minLength": 1 },
     "sourceActorId": { "type": "string", "minLength": 1 },
+    "requestingActorId": { "type": "string", "minLength": 1 },
     "correctionActorId": { "type": "string", "minLength": 1 },
     "scope": { "type": "string", "const": "test-artifacts-only" },
     "findingsSha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
@@ -17,6 +21,17 @@
       "uniqueItems": true,
       "items": { "type": "string", "minLength": 1 }
     },
+    "originalRedEvidenceId": { "type": "string", "minLength": 1 },
+    "baseCommit": { "type": "string", "pattern": "^[a-f0-9]{40,64}$" },
+    "resumeWorkerScope": { "type": "object" },
     "createdAt": { "type": ["string", "null"] }
-  }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "schema": { "const": "acef.atdd-correction.v2" } }, "required": ["schema"] },
+      "then": {
+        "required": ["runId", "fullFlowContract", "story", "requestingActorId", "originalRedEvidenceId", "baseCommit", "resumeWorkerScope", "createdAt"]
+      }
+    }
+  ]
 }

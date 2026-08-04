@@ -15,6 +15,7 @@ const {
   parseReviewReport,
   parseDeveloperRepair,
   parseAssuranceCapsule,
+  parseAtddCorrection,
   parseProcessJudgeDecision,
   parseWorkerScope,
   validateWorkerScopeRecord,
@@ -57,6 +58,7 @@ Usage:
   acef-state worker-scope --repo <path> --story <scope> --phase <phase> --worker-id <id> --allow <glob>... [--surface <name>...] [--pattern-use <kind>] [--requires-round-trip true|false] [--binding <input>><output>:<field>[:defaultMaskingRisk]] [options]
   acef-state context-sync --repo <path>
   acef-state atdd-precheck --repo <path> --test-path <path>...
+  acef-state atdd-correction-start --repo <path> --findings-sha256 <sha256>
   acef-state phase-transition --repo <path> --phase atdd|development|code-review
   acef-state story-transition --repo <path>
   acef-state epic-complete --repo <path> --gate-id <terminal-epic-gate-id>
@@ -238,6 +240,7 @@ function evidenceRunnerProof(record) {
     evidenceId: record.evidenceId,
     kind: record.kind,
     command: record.command,
+    ...(Object.prototype.hasOwnProperty.call(record, "commandArgv") ? { commandArgv: record.commandArgv } : {}),
     exitCode: record.exitCode,
     startedAt: record.startedAt || null,
     finishedAt: record.finishedAt || null,
@@ -266,7 +269,7 @@ function dirtyDigest(repo) {
 
 function isControlPath(filePath) {
   const normalized = filePath.replaceAll(path.sep, "/");
-  return /^docs\/ai\/(?:ACEF_(?:ACTIVE_RUN\.json|ACTIVE_WORKER_SCOPE\.json|ACTIVE_LEDGER|DIRECT_RUN\.json|CURRENT_CONTEXT\.md|RUN_[^/]+\.md|DELIVERY_LEDGER(?:_[^/]+)?\.md|[^/]+_DELIVERY_AUDIT\.md)|actors\/|gates\/|evidence\/|reports\/|approvals\/|repairs\/|capsules\/|judges\/)/.test(normalized);
+  return /^docs\/ai\/(?:ACEF_(?:ACTIVE_RUN\.json|ACTIVE_WORKER_SCOPE\.json|ACTIVE_LEDGER|DIRECT_RUN\.json|CURRENT_CONTEXT\.md|RUN_[^/]+\.md|DELIVERY_LEDGER(?:_[^/]+)?\.md|[^/]+_DELIVERY_AUDIT\.md)|actors\/|gates\/|evidence\/|reports\/|approvals\/|repairs\/|corrections\/|capsules\/|judges\/)/.test(normalized);
 }
 
 function dirtyApplicationPaths(repo) {
@@ -743,6 +746,7 @@ function executeDiscoveryContract(opts) {
   }
   return {
     command: discoveryArgv.map(quoteArg).join(" "),
+    argv: discoveryArgv,
     exitCode: 0,
     expectedTests: [...new Set(opts.expectedTest)],
     discoveredTests,
@@ -774,9 +778,18 @@ function writeEvidence(opts) {
   const activeRun = fs.existsSync(activeRunPath) ? parseActiveRun(activeRunPath) : null;
   const actorFile = actorPath(opts.repo, opts.actor);
   const canonicalAtddId = `acef_${String(opts.story).toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "")}_atdd`;
+  const correctionDir = path.join(opts.repo, "docs", "ai", "corrections");
+  const correction = activeRun?.runtimeContract === "capsule-supervisor-v1"
+    && canonicalGatePhase(activeRun.activePhase) === "atddcorrection" && fs.existsSync(correctionDir)
+    ? fs.readdirSync(correctionDir).filter((name) => name.endsWith(".json")).map((name) => {
+      try { return parseAtddCorrection(path.join(correctionDir, name)); } catch { return null; }
+    }).filter((record) => record?.schema === "acef.atdd-correction.v2"
+      && record.runId === activeRun.runId && normalizedScope(record.story) === normalizedScope(opts.story)).at(-1)
+    : null;
+  const allowedAtddId = correction?.correctionActorId || canonicalAtddId;
   const mayCreateV3Atdd = activeRun?.fullFlowContract === "four-actor-v3" && !fs.existsSync(actorFile);
   if (mayCreateV3Atdd) {
-    if (opts.kind !== "runtime-test" || opts.actor !== canonicalAtddId
+    if (opts.kind !== "runtime-test" || opts.actor !== allowedAtddId
       || normalizedScope(opts.story) !== normalizedScope(activeRun.activeStory)) {
       throw new Error("four-actor-v3 evidence may create only the canonical active-story ATDD actor for runtime-test evidence");
     }
@@ -787,7 +800,9 @@ function writeEvidence(opts) {
     let redParent = "";
     try { redParent = runGit(opts.repo, ["rev-parse", `${redCommit}^`]); } catch {}
     const redPaths = redParent ? applicationChangedSince(opts.repo, redParent, redCommit) : [];
-    if (!redParent || !redPaths.length || !redPaths.every(testPath)) {
+    if (!redParent || !redPaths.length || !redPaths.every(testPath)
+      || (correction && (opts.id !== `${normalizedActorToken(opts.story)}-red-correction1`
+        || redPaths.some((filePath) => !scopeAllows(correction.allowedPaths, filePath))))) {
       throw new Error("four-actor-v3 ATDD evidence requires HEAD to be a new test-only commit before actor creation");
     }
     const workerScopePath = activeRun.workerScopePath
@@ -856,6 +871,7 @@ function writeEvidence(opts) {
     evidenceId: opts.id,
     kind: opts.kind,
     command: commandText,
+    commandArgv: opts.commandArgv,
     exitCode,
     startedAt,
     finishedAt,
@@ -886,8 +902,97 @@ function writeEvidence(opts) {
   }
 }
 
+function writeAtddCorrectionStart(opts) {
+  required(opts, ["findingsSha256"]);
+  if (!/^[a-f0-9]{64}$/.test(opts.findingsSha256)) throw new Error("--findings-sha256 must be lowercase SHA-256");
+  const activeRun = activeV3Run(opts.repo);
+  if (activeRun.runtimeContract !== "capsule-supervisor-v1" || activeRun.scopeUnit !== "story"
+    || canonicalGatePhase(activeRun.activePhase) !== "development") {
+    throw new Error("atdd-correction-start requires an active capsule-supervisor story in Development");
+  }
+  if (dirtyApplicationPaths(opts.repo).length) {
+    throw new Error("post-red ATDD correction requires a clean application/test tree at the original red commit");
+  }
+  const storyToken = String(activeRun.activeStory).toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+  const sourceActorId = `acef_${storyToken}_atdd`;
+  const requestingActorId = `acef_${storyToken}_development`;
+  const correctionActorId = `${sourceActorId}_correction1`;
+  parseActorRecord(actorPath(opts.repo, sourceActorId));
+  parseActorRecord(actorPath(opts.repo, requestingActorId));
+  const redRecords = fs.existsSync(path.join(opts.repo, "docs", "ai", "evidence"))
+    ? fs.readdirSync(path.join(opts.repo, "docs", "ai", "evidence")).filter((name) => name.endsWith(".json")).map((name) => {
+      try { return parseEvidenceManifest(path.join(opts.repo, "docs", "ai", "evidence", name)); } catch { return null; }
+    }).filter((record) => record?.actorInstanceId === sourceActorId && record.story === activeRun.activeStory && record.exitCode !== 0)
+    : [];
+  const red = redRecords.at(-1);
+  if (!red || red.repositoryCommit !== gitCommit(opts.repo) || !red.commandArgv?.length || !red.discovery?.argv?.length) {
+    throw new Error("post-red ATDD correction must start clean at the original red commit with replayable command argv");
+  }
+  const workerScopePath = activeRun.workerScopePath
+    ? path.resolve(opts.repo, activeRun.workerScopePath)
+    : path.join(opts.repo, "docs", "ai", "ACEF_ACTIVE_WORKER_SCOPE.json");
+  const resumeWorkerScope = parseWorkerScope(workerScopePath);
+  if (resumeWorkerScope.runId !== activeRun.runId
+    || normalizedScope(resumeWorkerScope.activeStory) !== normalizedScope(activeRun.activeStory)
+    || canonicalGatePhase(resumeWorkerScope.phase) !== "development") {
+    throw new Error("post-red ATDD correction requires the canonical Development worker scope");
+  }
+  let redParent = "";
+  try { redParent = runGit(opts.repo, ["rev-parse", `${red.repositoryCommit}^`]); } catch {}
+  const allowedPaths = redParent
+    ? applicationChangedSince(opts.repo, redParent, red.repositoryCommit)
+      .filter((filePath) => testPath(filePath) && scopeAllows(resumeWorkerScope.allowedPaths, filePath))
+    : [];
+  if (!allowedPaths.length) throw new Error("post-red ATDD correction has no frozen explicit test paths");
+  const correctionPath = path.join(opts.repo, "docs", "ai", "corrections", `${correctionActorId}.json`);
+  if (fs.existsSync(correctionPath)) throw new Error("post-red ATDD correction is one-shot for this story");
+  const correction = {
+    schema: "acef.atdd-correction.v2",
+    runId: activeRun.runId,
+    fullFlowContract: activeRun.fullFlowContract,
+    story: activeRun.activeStory,
+    sourceActorId,
+    requestingActorId,
+    correctionActorId,
+    scope: "test-artifacts-only",
+    findingsSha256: opts.findingsSha256,
+    allowedPaths,
+    originalRedEvidenceId: red.evidenceId,
+    baseCommit: red.repositoryCommit,
+    resumeWorkerScope,
+    createdAt: new Date().toISOString(),
+  };
+  const restrictedScope = {
+    ...resumeWorkerScope,
+    phase: "atdd-correction",
+    workerId: correctionActorId,
+    allowedPaths,
+    baseRef: red.repositoryCommit,
+    maxCommits: 1,
+    createdAt: correction.createdAt,
+  };
+  const { lane: _compatibilityLane, ...storedRun } = activeRun;
+  const runRecord = {
+    ...storedRun,
+    activePhase: "atdd-correction",
+    workerRole: "test-author",
+    activeActorId: correctionActorId,
+    nextAllowedStep: "commit the bounded ATDD correction transition, then follow the supervisor",
+    updatedAt: correction.createdAt,
+  };
+  atomicJson(correctionPath, correction, { validate: parseAtddCorrection });
+  atomicJson(path.join(opts.repo, "docs", "ai", "ACEF_ACTIVE_RUN.json"), runRecord, { overwrite: true, validate: parseActiveRun });
+  atomicJson(workerScopePath, restrictedScope, { overwrite: true, validate: parseWorkerScope });
+  syncRuntimeContext(opts.repo, runRecord, restrictedScope);
+  console.log(`WROTE atdd-correction-start ${relative(opts.repo, correctionPath)}`);
+}
+
 function normalizedScope(value) {
   return String(value || "").toLowerCase().replace(/[^a-z0-9]+/g, "");
+}
+
+function normalizedActorToken(value) {
+  return String(value || "").toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
 }
 
 function canonicalGatePhase(value) {
@@ -984,8 +1089,8 @@ function assertAtddHarnessSafe(repo, testPaths, workerScope) {
 function writeAtddPrecheck(opts) {
   const activeRun = activeV3Run(opts.repo);
   if (activeRun.runtimeContract !== "capsule-supervisor-v1" || activeRun.scopeUnit !== "story"
-    || canonicalGatePhase(activeRun.activePhase) !== "atdd") {
-    throw new Error("atdd-precheck requires an active capsule-supervisor ATDD story");
+    || !["atdd", "atddcorrection"].includes(canonicalGatePhase(activeRun.activePhase))) {
+    throw new Error("atdd-precheck requires an active capsule-supervisor ATDD or ATDD-correction story");
   }
   const workerScopePath = activeRun.workerScopePath
     ? path.resolve(opts.repo, activeRun.workerScopePath)
@@ -1204,6 +1309,13 @@ function writeDeterministicStoryCloseGate(opts, activeRun) {
 
   const red = gateEvidence(opts.repo, opts.redEvidence, opts.scope);
   const green = gateEvidence(opts.repo, opts.greenEvidence, opts.scope);
+  const correctionPath = path.join(opts.repo, "docs", "ai", "corrections", `${actorIds.atdd}.json`);
+  const correction = fs.existsSync(correctionPath) ? parseAtddCorrection(correctionPath) : null;
+  if (correction && (correction.schema !== "acef.atdd-correction.v2"
+    || correction.runId !== activeRun.runId || normalizedScope(correction.story) !== normalizedScope(opts.scope)
+    || correction.requestingActorId !== actorIds.development)) {
+    failures.push("post-red ATDD correction binding does not match the gate run/story/Developer");
+  }
   const head = gitCommit(opts.repo);
   const tree = gitTree(opts.repo);
   const priorGates = priorDeterministicStoryGates(opts.repo, opts.scope, activeRun);
@@ -1220,7 +1332,20 @@ function writeDeterministicStoryCloseGate(opts, activeRun) {
     throw new Error(`--review-cycle is mechanically derived as ${reviewCycle}; caller supplied ${opts.reviewCycle}`);
   }
   const redParent = runGit(opts.repo, ["rev-parse", `${red.repositoryCommit}^`]);
-  const derivedScopePaths = normalizedScopePaths(applicationChangedSince(opts.repo, redParent, head));
+  let scopeBaseParent = redParent;
+  if (correction) {
+    try {
+      const originalRed = gateEvidence(opts.repo, correction.originalRedEvidenceId, opts.scope);
+      if (originalRed.actorInstanceId !== correction.sourceActorId || originalRed.repositoryCommit !== correction.baseCommit
+        || originalRed.exitCode === 0 || !gitIsAncestor(opts.repo, originalRed.repositoryCommit, red.repositoryCommit)) {
+        failures.push("post-red ATDD correction does not supersede the bound original failing red evidence");
+      }
+      scopeBaseParent = runGit(opts.repo, ["rev-parse", `${originalRed.repositoryCommit}^`]);
+    } catch (error) {
+      failures.push(`post-red ATDD original red binding failed: ${error.message}`);
+    }
+  }
+  const derivedScopePaths = normalizedScopePaths(applicationChangedSince(opts.repo, scopeBaseParent, head));
   const scopePaths = reviewCycle > 0 ? normalizedScopePaths(priorGate.scopePaths) : derivedScopePaths;
   const scopeExpanded = reviewCycle > 0 && derivedScopePaths.some((filePath) => !scopePaths.includes(filePath));
   const activeScopePath = path.resolve(opts.repo, activeRun.workerScopePath || "docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json");
@@ -1263,10 +1388,12 @@ function writeDeterministicStoryCloseGate(opts, activeRun) {
     const redRaw = fs.readFileSync(path.resolve(opts.repo, red.rawArtifact.path), "utf8");
     const redSources = redPaths.map((filePath) => ({ filePath, source: runGit(opts.repo, ["show", `${red.repositoryCommit}:${filePath}`]) }));
     const greenSources = redPaths.map((filePath) => ({ filePath, source: runGit(opts.repo, ["show", `${green.repositoryCommit}:${filePath}`]) }));
+    const developerOrdering = gitIsAncestor(opts.repo, red.repositoryCommit, actors.development.inputCommit)
+      || (correction && gitIsAncestor(opts.repo, actors.development.inputCommit, red.repositoryCommit));
     atddTestOnlyRed = redPaths.length > 0
       && redPaths.every(testPath)
       && red.repositoryTree === gitTreeAt(opts.repo, red.repositoryCommit)
-      && gitIsAncestor(opts.repo, red.repositoryCommit, actors.development.inputCommit)
+      && developerOrdering
       && !atddRedExecutionFailure(red, redRaw, redPaths)
       && !atddTestSourceAuthenticityFailure(redSources)
       && !atddGreenTestContinuityFailure(redSources, greenSources);
@@ -1617,21 +1744,30 @@ function writePhaseTransition(opts) {
   const requested = canonicalGatePhase(opts.phase);
   const allowed = (current === "readiness" && requested === "atdd")
     || (current === "atdd" && requested === "development")
+    || (current === "atddcorrection" && requested === "development")
     || (current === "development" && requested === "codereview");
   if (!allowed) throw new Error(`invalid capsule-supervisor phase transition ${activeRun.activePhase} -> ${opts.phase}`);
   let workerScopeTransition = null;
   let workerScopeTarget = null;
-  if (current === "atdd" && requested === "development") {
+  if (["atdd", "atddcorrection"].includes(current) && requested === "development") {
     workerScopeTarget = activeRun.workerScopePath
       ? path.resolve(opts.repo, activeRun.workerScopePath)
       : path.join(opts.repo, "docs", "ai", "ACEF_ACTIVE_WORKER_SCOPE.json");
     if (!fs.existsSync(workerScopeTarget)) throw new Error("ATDD to Development requires the typed active worker scope");
-    const workerScope = parseWorkerScope(workerScopeTarget);
+    let workerScope = parseWorkerScope(workerScopeTarget);
     if (workerScope.runId !== activeRun.runId
       || normalizedScope(workerScope.activeStory) !== normalizedScope(activeRun.activeStory)) {
       throw new Error("ATDD to Development worker scope does not match the active run/story");
     }
     const storyToken = String(activeRun.activeStory).toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+    if (current === "atddcorrection") {
+      const correctionPath = path.join(opts.repo, "docs", "ai", "corrections", `acef_${storyToken}_atdd_correction1.json`);
+      const correction = parseAtddCorrection(correctionPath);
+      if (correction.schema !== "acef.atdd-correction.v2" || correction.runId !== activeRun.runId) {
+        throw new Error("ATDD correction to Development requires the bound post-red correction record");
+      }
+      workerScope = correction.resumeWorkerScope;
+    }
     workerScopeTransition = {
       ...workerScope,
       phase: "development",
@@ -2106,6 +2242,7 @@ function main() {
   if (opts.command === "worker-scope") return writeWorkerScope(opts);
   if (opts.command === "context-sync") return writeContextSync(opts);
   if (opts.command === "atdd-precheck") return writeAtddPrecheck(opts);
+  if (opts.command === "atdd-correction-start") return writeAtddCorrectionStart(opts);
   if (opts.command === "phase-transition") return writePhaseTransition(opts);
   if (opts.command === "story-transition") return writeStoryTransition(opts);
   if (opts.command === "epic-complete") return writeEpicComplete(opts);

@@ -439,6 +439,7 @@ function parseEvidenceManifest(filePath) {
   const record = readJson(filePath);
   requireFields(record, ["evidenceId", "kind", "command", "repositoryCommit", "actorInstanceId", "story", "rawArtifact", "runnerProof", "satisfies"], "evidence manifest");
   requireEnum(record, "kind", ["runtime-test", "static-check", "manual-smoke", "build", "lint", "typecheck", "other"], "evidence manifest");
+  if (record.commandArgv !== undefined) requireStringArray(record, "commandArgv", "evidence manifest", { nonEmpty: true });
   if (!Number.isInteger(record.exitCode)) throw new Error("evidence manifest missing integer exitCode");
   requireStringArray(record, "satisfies", "evidence manifest", { nonEmpty: true });
   for (const field of ["dirtyApplicationPathsBefore", "dirtyApplicationPathsAfter"]) {
@@ -450,6 +451,7 @@ function parseEvidenceManifest(filePath) {
   if (record.discovery !== undefined) {
     requireFields(record.discovery, ["command", "exitCode", "expectedTests", "discoveredTests", "stdoutSha256"], "evidence discovery");
     if (record.discovery.exitCode !== 0) throw new Error("evidence discovery exitCode must be 0");
+    if (record.discovery.argv !== undefined) requireStringArray(record.discovery, "argv", "evidence discovery", { nonEmpty: true });
     requireStringArray(record.discovery, "expectedTests", "evidence discovery", { nonEmpty: true });
     requireStringArray(record.discovery, "discoveredTests", "evidence discovery", { nonEmpty: true });
     const missing = record.discovery.expectedTests.filter((test) => !record.discovery.discoveredTests.includes(test));
@@ -678,13 +680,19 @@ function parseWorkerScope(filePath) {
 function parseAtddCorrection(filePath) {
   const record = readJson(filePath);
   requireFields(record, ["schema", "sourceActorId", "correctionActorId", "scope", "findingsSha256", "allowedPaths"], "ATDD correction");
-  requireEnum(record, "schema", ["acef.atdd-correction.v1"], "ATDD correction");
+  requireEnum(record, "schema", ["acef.atdd-correction.v1", "acef.atdd-correction.v2"], "ATDD correction");
   requireEnum(record, "scope", ["test-artifacts-only"], "ATDD correction");
   if (!/^[a-f0-9]{64}$/.test(record.findingsSha256)) throw new Error("ATDD correction findingsSha256 must be lowercase SHA-256");
   requireStringArray(record, "allowedPaths", "ATDD correction", { nonEmpty: true });
   if (new Set(record.allowedPaths).size !== record.allowedPaths.length) throw new Error("ATDD correction allowedPaths must be unique");
   if (record.allowedPaths.some((entry) => path.isAbsolute(entry) || entry.split(/[\\/]/).includes("..") || /[*?\[\]{}]/.test(entry))) {
     throw new Error("ATDD correction allowedPaths must be explicit repo-relative paths without globs or ..");
+  }
+  if (record.schema === "acef.atdd-correction.v2") {
+    requireFields(record, ["runId", "fullFlowContract", "story", "requestingActorId", "originalRedEvidenceId", "baseCommit", "resumeWorkerScope", "createdAt"], "post-red ATDD correction");
+    requireEnum(record, "fullFlowContract", ["four-actor-v3"], "post-red ATDD correction");
+    if (!/^[a-f0-9]{40,64}$/.test(record.baseCommit)) throw new Error("post-red ATDD correction baseCommit must be a commit hash");
+    validateWorkerScopeRecord(record.resumeWorkerScope);
   }
   return record;
 }

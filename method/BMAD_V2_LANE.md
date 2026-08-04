@@ -40,6 +40,12 @@ assurance layer. It preserves the four semantic roles while removing model work 
 - Successful green evidence must first pass the frozen test-discovery command and exact expected-test identities.
   Review scope surfaces are derived from committed production paths at the review transition instead of being guessed
   during bootstrap.
+- If Development proves that already-bound red evidence has a semantic test-harness defect before any application/test
+  mutation, the supervisor permits one post-red correction. The Developer restores the clean original-red commit and
+  emits a hash-bound `REVISE`; state then freezes the original red, requesting Developer, exact test paths, and resume
+  scope in `acef.atdd-correction.v2`. One fresh high-tier ATDD correction actor may change only those tests and must
+  produce a replacement failing evidence receipt. The conductor then resumes—not respawns—the original Developer.
+  A second correction, expanded path, production write, non-red replacement, or missing binding is `REPLAN/SPLIT`.
 - Runtime selection is role-based and provider-neutral. Mechanical work has no model. The conductor is
   `orchestration/medium`; unmeasured ATDD, Development, Patch Assurance, and Judge roles remain
   `semantic-critical/high`. V327-CAL-001 qualified Code Review as `semantic-standard/medium` by a blind comparison

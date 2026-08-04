@@ -16,6 +16,7 @@ const {
   parseReviewReport,
   parseDeveloperRepair,
   parseAssuranceCapsule,
+  parseAtddCorrection,
   parseProcessJudgeDecision,
   parseCapabilityChange,
   parseSpecReadiness,
@@ -263,6 +264,7 @@ function evidenceRunnerProof(record) {
     evidenceId: record.evidenceId,
     kind: record.kind,
     command: record.command,
+    ...(Object.prototype.hasOwnProperty.call(record, "commandArgv") ? { commandArgv: record.commandArgv } : {}),
     exitCode: record.exitCode,
     startedAt: record.startedAt || null,
     finishedAt: record.finishedAt || null,
@@ -302,7 +304,7 @@ function normalizedScope(value) {
 
 function stateControlPath(filePath) {
   const normalized = String(filePath || "").replaceAll(path.sep, "/");
-  return /^docs\/ai\/(?:ACEF_(?:ACTIVE_RUN\.json|ACTIVE_WORKER_SCOPE\.json|ACTIVE_LEDGER|DIRECT_RUN\.json|CURRENT_CONTEXT\.md|RUN_[^/]+\.md|DELIVERY_LEDGER(?:_[^/]+)?\.md|[^/]+_DELIVERY_AUDIT\.md)|actors\/|gates\/|evidence\/|reports\/|approvals\/|repairs\/|capsules\/|judges\/)/.test(normalized);
+  return /^docs\/ai\/(?:ACEF_(?:ACTIVE_RUN\.json|ACTIVE_WORKER_SCOPE\.json|ACTIVE_LEDGER|DIRECT_RUN\.json|CURRENT_CONTEXT\.md|RUN_[^/]+\.md|DELIVERY_LEDGER(?:_[^/]+)?\.md|[^/]+_DELIVERY_AUDIT\.md)|actors\/|gates\/|evidence\/|reports\/|approvals\/|repairs\/|corrections\/|capsules\/|judges\/)/.test(normalized);
 }
 
 function normalizedScopePaths(paths) {
@@ -2000,6 +2002,23 @@ function deterministicGateRecordIntegrityFailures(repoRoot, activeRun, gate) {
       failures.push(error.message);
     }
   }
+  let correction = null;
+  const correctionPath = path.join(repoRoot, "docs", "ai", "corrections", `${actorIds.atdd}.json`);
+  if (exists(correctionPath)) {
+    try {
+      correction = parseAtddCorrection(correctionPath);
+      if (correction.schema !== "acef.atdd-correction.v2"
+        || correction.runId !== activeRun.runId
+        || correction.fullFlowContract !== activeRun.fullFlowContract
+        || normalizedScope(correction.story) !== normalizedScope(activeRun.activeStory)
+        || correction.correctionActorId !== actorIds.atdd
+        || correction.requestingActorId !== actorIds.development) {
+        failures.push("post-red ATDD correction binding does not match the deterministic gate run/story/Developer");
+      }
+    } catch (error) {
+      failures.push(error.message);
+    }
+  }
   const codeBinding = boundReviewReportIntegrity(repoRoot, actorRecords.codeReview, gate.reportPaths?.codeReview, gate.reportHashes?.codeReview, "codereview", activeRun.activeStory, activeRun);
   const assuranceBinding = boundReviewReportIntegrity(repoRoot, actorRecords.patchAssurance, gate.reportPaths?.patchAssurance, gate.reportHashes?.patchAssurance, "patchassurance", activeRun.activeStory, activeRun);
   failures.push(...codeBinding.failures, ...assuranceBinding.failures);
@@ -2057,9 +2076,20 @@ function deterministicGateRecordIntegrityFailures(repoRoot, activeRun, gate) {
         filePath,
         source: cp.execFileSync("git", ["show", `${green.repositoryCommit}:${filePath}`], { cwd: repoRoot, encoding: "utf8" }),
       }));
-      atddTestOnlyRed = redPaths.length > 0 && redPaths.every(isTestPath)
+      let correctionBinding = true;
+      if (correction) {
+        const originalRed = evidenceRecordById(repoRoot, correction.originalRedEvidenceId);
+        correctionBinding = originalRed.actorInstanceId === correction.sourceActorId
+          && originalRed.repositoryCommit === correction.baseCommit
+          && originalRed.exitCode !== 0
+          && gitIsAncestor(repoRoot, originalRed.repositoryCommit, red.repositoryCommit);
+        if (!correctionBinding) failures.push("post-red ATDD correction does not supersede the bound original failing red evidence");
+      }
+      const developerOrdering = gitIsAncestor(repoRoot, red.repositoryCommit, actorRecords.development.inputCommit)
+        || (correction && gitIsAncestor(repoRoot, actorRecords.development.inputCommit, red.repositoryCommit));
+      atddTestOnlyRed = correctionBinding && redPaths.length > 0 && redPaths.every(isTestPath)
         && red.repositoryTree === gitTreeAt(repoRoot, red.repositoryCommit)
-        && gitIsAncestor(repoRoot, red.repositoryCommit, actorRecords.development.inputCommit)
+        && developerOrdering
         && !atddRedExecutionFailure(red, redRaw, redPaths)
         && !atddTestSourceAuthenticityFailure(redSources)
         && !atddGreenTestContinuityFailure(redSources, greenSources);
