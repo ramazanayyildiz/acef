@@ -1854,6 +1854,9 @@ function splitReadOnlyCorrectionConjunction(command) {
       segments.push(source.slice(start, index).trim());
       start = index + 2;
       index += 1;
+    } else if (character === ";") {
+      segments.push(source.slice(start, index).trim());
+      start = index + 1;
     } else if (character === "\n" || character === "\r") {
       segments.push(source.slice(start, index).trim());
       if (character === "\r" && source[index + 1] === "\n") index += 1;

@@ -23,7 +23,8 @@ or evidence contract. Do not use it to claim implementation status; link to the 
   before committing the story gate and later included review capsules in the close commit. The repaired mechanism is
   deterministically enforced; capability maturity remains `enforced` pending a successor live proof.
 - Transcript scoring now recognizes safely escaped shell metacharacters that produce the exact frozen integration
-  argv and permits newline-separated read-only correction inspection while continuing to reject combined mutations.
+  argv and permits separator-composed read-only correction inspection while continuing to reject any block containing
+  a mutation.
 
 ### Bounded post-red ATDD correction
 

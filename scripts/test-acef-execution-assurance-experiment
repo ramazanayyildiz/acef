@@ -1092,6 +1092,10 @@ assert.equal(isAllowedCorrectionShellCommand("sed -n '1,120p' tests/Unit/Example
 "newline-separated read-only correction inspection remains safe");
 assert.equal(isAllowedCorrectionShellCommand("git status --short\ngit add -- tests/Unit/ExampleTest.php"), false,
 "a newline-separated mutation cannot hide inside a read-only correction inspection block");
+assert.equal(isAllowedCorrectionShellCommand("sed -n '1,120p' docs/ai/ACEF_CURRENT_CONTEXT.md; git status --short -- tests; git show --stat HEAD"), true,
+"semicolon-separated read-only correction inspection remains safe");
+assert.equal(isAllowedCorrectionShellCommand("git status --short; git add -- tests/Unit/ExampleTest.php"), false,
+"a semicolon-separated mutation cannot hide inside a read-only correction inspection block");
 const structuredIntegrationOutput = JSON.stringify({ timestamp: eventTimestamp(12), type: "response_item", payload: {
   type: "custom_tool_call_output", call_id: "integration-1", output: [
     { type: "input_text", text: "Script completed\nOutput:\n" },
