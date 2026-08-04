@@ -1,0 +1,104 @@
+{
+  "schema": "acef.execution-assurance-experiment.v1",
+  "experimentId": "acef-execution-assurance-v330-correction-proof",
+  "parentExperimentId": "acef-execution-assurance-v329-correction-proof",
+  "repairBasis": "docs/experiments/execution-assurance-v329/REHEARSAL_RESULT.md",
+  "preregisteredAt": "2026-08-04T20:31:36Z",
+  "preregistrationStatus": "frozen-live-mechanism-proof",
+  "pilotRunAllowed": true,
+  "actorContractVersion": "four-actor-v3",
+  "runtimeContract": "capsule-supervisor-v1",
+  "actorRuntimeProfiles": {
+    "atdd": { "model": "gpt-5.6-sol", "reasoningEffort": "high" },
+    "development": { "model": "gpt-5.6-sol", "reasoningEffort": "high" },
+    "code-review": { "model": "gpt-5.6-sol", "reasoningEffort": "medium" },
+    "patch-assurance": { "model": "gpt-5.6-sol", "reasoningEffort": "high" },
+    "process-judge": { "model": "gpt-5.6-sol", "reasoningEffort": "high" },
+    "epic-process-judge": { "model": "gpt-5.6-sol", "reasoningEffort": "high" }
+  },
+  "treatments": {
+    "legacy": { "commit": "d8b816c", "actorContractVersion": "six-actor-v2" },
+    "candidate": { "commit": "f2e5b0193f1efc5b39319ad4d69b2de68813a82d", "actorContractVersion": "four-actor-v3" }
+  },
+  "judgmentContract": {
+    "schema": "acef.execution-assurance-pilot-judgment.v3",
+    "appendOnly": true,
+    "immutableDerivedVerdict": true,
+    "keyFields": ["experimentId", "attemptId", "attemptRunId", "attemptOrdinal", "diffSha256", "judgePacketId", "judgePacketSha256"],
+    "pendingMayBeSupersededByNewPacket": true,
+    "terminalVerdictsImmutable": true
+  },
+  "promotionGates": {
+    "product": { "allStoriesComplete": true, "blindJudge": "PASS", "maximumCritical": 0, "maximumHigh": 0 },
+    "process": {
+      "automatedOracle": "PASS",
+      "deterministicStoryClose": true,
+      "conditionalStoryProcessJudge": true,
+      "oneFormalStoryCloseEvidencePackage": true,
+      "epicProcessJudgeCount": 1,
+      "maximumBroadSuiteInvocations": 1,
+      "maximumScopePhaseResultViolations": 0,
+      "maximumDuplicateLifecycles": 0,
+      "maximumCloseoutCreatedMandatoryChains": 0,
+      "requiredPostRedAtddCorrections": 1
+    },
+    "budget": {
+      "profileId": "capsule-supervisor-v1-correction-proof-v329",
+      "baseActorCount": 5,
+      "maximumActorInvocations": 11,
+      "maximumRepairCyclesPerStory": 2,
+      "thirdRepairDisposition": "REPLAN_SPLIT",
+      "maximumInfrastructureRetriesPerInvocation": 1,
+      "maximumInfrastructureRetriesTotal": 2,
+      "targetStoryActiveSeconds": 600,
+      "maximumStoryActiveSeconds": 1200,
+      "targetActiveDeliverySeconds": 900,
+      "maximumActiveDeliverySeconds": 1800,
+      "maximumInputTokens": 10000000,
+      "maximumModelCycles": 150,
+      "maximumToolCalls": 220,
+      "maximumHarnessWaitSeconds": 180,
+      "maximumHarnessWaitShare": 0.05
+    },
+    "passingDisposition": "controlled-canary-only"
+  },
+  "pilotRuntime": {
+    "client": "codex",
+    "clientVersion": "codex-cli 0.146.0",
+    "model": "gpt-5.6-sol",
+    "reasoningEffort": "medium",
+    "freshSession": true,
+    "crossRunMemory": false
+  },
+  "stage0": {
+    "traps": [
+      { "id": "D1-routing-sweep" }, { "id": "D2-oversized-scope" }, { "id": "D3-duplicate-lifecycle" },
+      { "id": "D4-scope-write" }, { "id": "D5-dirty-worktree" }, { "id": "D6-broken-environment" }
+    ]
+  },
+  "taskCatalog": {
+    "middleware-correction-proof-v330": { "sourceManifest": "task-manifest.json", "selector": "middleware-correction-proof-v330" }
+  },
+  "pilot": {
+    "design": "single-p0-v3-candidate",
+    "attempts": [
+      {
+        "id": "REHEARSAL-v330",
+        "order": 1,
+        "taskId": "middleware-correction-proof-v330",
+        "treatment": "candidate",
+        "workflowId": "full-bmad",
+        "assuranceProfile": "guarded",
+        "actorContractVersion": "four-actor-v3",
+        "runtimeContract": "capsule-supervisor-v1",
+        "activeTimeCapMinutes": 30
+      }
+    ]
+  },
+  "modelRoutingPolicy": {
+    "policyId": "v327-role-calibrated-openai",
+    "provider": "openai",
+    "sha256": "e9a23ab1383012937ee89f30333af94447ccdf1d5cf7cd85a7bff9f26dc944ec",
+    "calibrationId": "V327-CAL-001"
+  }
+}
