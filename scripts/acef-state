@@ -640,6 +640,36 @@ function writeApproval(opts) {
   console.log(`WROTE approval ${relative(opts.repo, target)}`);
 }
 
+function executeDiscoveryContract(opts) {
+  if (!opts.discoveryCommandJson) return null;
+  let discoveryArgv;
+  try { discoveryArgv = JSON.parse(opts.discoveryCommandJson); }
+  catch { throw new Error("--discovery-command-json must be a JSON argv array"); }
+  if (!Array.isArray(discoveryArgv) || !discoveryArgv.length
+    || discoveryArgv.some((entry) => typeof entry !== "string" || !entry)) {
+    throw new Error("--discovery-command-json must be a non-empty JSON argv array of strings");
+  }
+  const discoveryExecution = cp.spawnSync(discoveryArgv[0], discoveryArgv.slice(1), {
+    cwd: opts.repo, encoding: "utf8", env: process.env, maxBuffer: 100 * 1024 * 1024,
+  });
+  const discoveryExit = Number.isInteger(discoveryExecution.status) ? discoveryExecution.status : 1;
+  const discoveryOutput = discoveryExecution.stdout || "";
+  const discoveredTests = [...new Set(discoveryOutput.split(/\r?\n/)
+    .map((line) => line.trim().replace(/^-\s+/, ""))
+    .filter(Boolean))];
+  const missingTests = [...new Set(opts.expectedTest)].filter((test) => !discoveredTests.includes(test));
+  if (discoveryExit !== 0 || missingTests.length) {
+    throw new Error(`test discovery contract failed; exit=${discoveryExit}; missing=${missingTests.join(", ") || "none"}`);
+  }
+  return {
+    command: discoveryArgv.map(quoteArg).join(" "),
+    exitCode: 0,
+    expectedTests: [...new Set(opts.expectedTest)],
+    discoveredTests,
+    stdoutSha256: sha256(discoveryOutput),
+  };
+}
+
 function writeEvidence(opts) {
   required(opts, ["id", "kind", "actor", "story"]);
   if (!opts.satisfies.length) throw new Error("evidence-run requires at least one --satisfies value");
@@ -658,6 +688,7 @@ function writeEvidence(opts) {
   if (fs.existsSync(rawPath) || fs.existsSync(target)) {
     throw new Error(`Refusing to overwrite immutable evidence ${opts.id}`);
   }
+  const discovery = executeDiscoveryContract(opts);
   const beforeDirty = dirtyApplicationPaths(opts.repo);
   const activeRunPath = path.join(opts.repo, "docs", "ai", "ACEF_ACTIVE_RUN.json");
   const activeRun = fs.existsSync(activeRunPath) ? parseActiveRun(activeRunPath) : null;
@@ -709,36 +740,6 @@ function writeEvidence(opts) {
       || actor.inputCommit === redCommit || !gitIsAncestor(opts.repo, actor.inputCommit, redCommit)) {
       throw new Error("four-actor-v3 ATDD evidence requires HEAD to be a new test-only commit descended from the ATDD actor input commit");
     }
-  }
-
-  let discovery = null;
-  if (opts.discoveryCommandJson) {
-    let discoveryArgv;
-    try { discoveryArgv = JSON.parse(opts.discoveryCommandJson); }
-    catch { throw new Error("--discovery-command-json must be a JSON argv array"); }
-    if (!Array.isArray(discoveryArgv) || !discoveryArgv.length
-      || discoveryArgv.some((entry) => typeof entry !== "string" || !entry)) {
-      throw new Error("--discovery-command-json must be a non-empty JSON argv array of strings");
-    }
-    const discoveryExecution = cp.spawnSync(discoveryArgv[0], discoveryArgv.slice(1), {
-      cwd: opts.repo, encoding: "utf8", env: process.env, maxBuffer: 100 * 1024 * 1024,
-    });
-    const discoveryExit = Number.isInteger(discoveryExecution.status) ? discoveryExecution.status : 1;
-    const discoveryOutput = discoveryExecution.stdout || "";
-    const discoveredTests = [...new Set(discoveryOutput.split(/\r?\n/)
-      .map((line) => line.trim().replace(/^-\s+/, ""))
-      .filter(Boolean))];
-    const missingTests = [...new Set(opts.expectedTest)].filter((test) => !discoveredTests.includes(test));
-    if (discoveryExit !== 0 || missingTests.length) {
-      throw new Error(`test discovery contract failed; exit=${discoveryExit}; missing=${missingTests.join(", ") || "none"}`);
-    }
-    discovery = {
-      command: discoveryArgv.map(quoteArg).join(" "),
-      exitCode: 0,
-      expectedTests: [...new Set(opts.expectedTest)],
-      discoveredTests,
-      stdoutSha256: sha256(discoveryOutput),
-    };
   }
 
   const commandText = opts.commandArgv.map(quoteArg).join(" ");

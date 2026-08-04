@@ -168,6 +168,17 @@ try {
     throw new Error("invalid ATDD evidence kind executed or left a partial actor/evidence artifact");
   }
   const redParent = run("git", ["rev-parse", "HEAD^"]).trim();
+  const discoveryMismatch = cp.spawnSync(process.execPath, [state, "evidence-run", "--repo", tmp,
+    "--id", "EV-v3-discovery-mismatch", "--kind", "runtime-test", "--actor", v3AtddActor,
+    "--story", "Story 3.1", "--satisfies", "AC-v3",
+    "--discovery-command-json", JSON.stringify([process.execPath, "-e", "console.log('Tests\\\\Wrong::identity')"]),
+    "--expected-test", "Tests\\Expected::identity", "--", process.execPath, "--test", "tests/frozen-verification.test.js"], { encoding: "utf8" });
+  if (discoveryMismatch.status === 0 || !`${discoveryMismatch.stdout}${discoveryMismatch.stderr}`.includes("test discovery contract failed")
+    || fs.existsSync(path.join(tmp, "docs", "ai", "actors", `${v3AtddActor}.json`))
+    || fs.existsSync(path.join(tmp, "docs", "ai", "evidence", "EV-v3-discovery-mismatch.json"))
+    || fs.existsSync(path.join(tmp, "docs", "ai", "evidence", "raw", "EV-v3-discovery-mismatch.log"))) {
+    throw new Error("v3 ATDD discovery mismatch left a partial actor/evidence artifact");
+  }
   const redRun = cp.spawnSync(process.execPath, [state, "evidence-run", "--repo", tmp, "--id", "EV-v3-red", "--kind", "runtime-test", "--actor", v3AtddActor, "--story", "Story 3.1", "--satisfies", "AC-v3", "--", process.execPath, "--test", "tests/frozen-verification.test.js"], { encoding: "utf8" });
   if (redRun.status !== 1) throw new Error("v3 red evidence was not captured as failing");
   const atomicAtddActor = readJson(`docs/ai/actors/${v3AtddActor}.json`);

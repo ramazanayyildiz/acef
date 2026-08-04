@@ -60,6 +60,14 @@ or evidence contract. Do not use it to claim implementation status; link to the 
   at most once, on that exact capacity signature, within the original remaining time budget. It records the resume in
   the immutable receipt and instructs the same conductor to use the existing typed child infrastructure-retry rule;
   completed actors and lifecycles may not be replayed.
+- V3.22 ran for 2,223.7 seconds without a capacity interruption, so the new conductor-resume path remained unused.
+  Story 1 closed PASS in 1,118 seconds after Code Review found one real empty-special-key bypass and the original
+  Developer completed one bounded repair; Story 2 closed PASS in 355.4 seconds; Story 3 reached a green product patch
+  in 442 seconds but failed before green evidence because ATDD had created a `test_`-prefixed method that did not match
+  the frozen discovery identity. The successor moves discovery validation before any atomic ATDD actor/evidence write,
+  embeds the frozen discovery contract in the exact red-evidence command, and requires a direct discovery precheck
+  before the test-only commit. A mismatch therefore remains repairable inside the one ATDD turn and cannot consume a
+  Developer session.
 - Replaced the generic-MySQL source-text oracle in the successor rehearsal fixture with executable behavior against
   both duplicate-classification paths. Focused state, validator, experiment, installer, and supervisor regressions
   pass; the complete 28-script repository suite plus closeout fixture passed in 246 seconds. Maturity is `enforced`,
