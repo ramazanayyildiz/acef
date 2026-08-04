@@ -21,3 +21,9 @@ The V3.27 role matrix is unchanged. Conductor and Code Review use `gpt-5.6-sol/m
 Assurance, conditional Process Judge, Epic Process Judge, and the external blind Judge use `gpt-5.6-sol/high`.
 The target is 15 active minutes and the hard cap is 30 active minutes. The run is single-attempt, sleep-inhibited,
 fail-closed, and non-retryable as a whole.
+
+Before the timed lifecycle, the first preflight exposed an incomplete fixture declaration: PHPUnit requires the
+repository's empty `tests/Integration` and `tests/Performance` directories. The manifest was amended to restore the
+same deterministic setup used by the source benchmark. No model lifecycle actor had started, so this did not consume
+the single measured attempt; the failed preflight remains external diagnostic evidence and the successful preflight
+must bind the final manifest hash.
