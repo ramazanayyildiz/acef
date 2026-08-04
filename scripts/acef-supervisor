@@ -180,6 +180,17 @@ function build(repo) {
         command: ".acef/bin/acef-state story-transition --repo .",
         reason: "deterministic story PASS exists",
       };
+    } else if (latestGate?.verdict === "REVISE"
+      && [latestGate.actors?.codeReview, latestGate.actors?.patchAssurance]
+        .map((id) => reports.find((report) => report.actorInstanceId === id))
+        .every((report) => report?.verdict === "PASS")
+      && Object.entries(latestGate.executedChecks || {}).some(([, passed]) => passed !== true)) {
+      const failedChecks = Object.entries(latestGate.executedChecks || {})
+        .filter(([, passed]) => passed !== true).map(([check]) => check);
+      action = {
+        type: "replan",
+        reason: `mechanical story gate failed with semantic reviewers PASS: ${failedChecks.join(", ") || "unknown check"}`,
+      };
     } else if (latestGate?.verdict === "REVISE" && !repairs.some((record) => record.cycle === reviewCycle)) {
       const postGateEvidence = developerEvidence.filter((record) => String(record.finishedAt || record.startedAt || "") > String(latestGate.createdAt || ""));
       const latestRepairEvidence = postGateEvidence.at(-1) || null;

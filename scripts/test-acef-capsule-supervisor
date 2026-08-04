@@ -158,6 +158,19 @@ try {
   if (readJson("docs/ai/gates/capsule-revise-cycle0.json").verdict !== "REVISE") {
     throw new Error("cycle 0 did not persist the typed reviewer REVISE");
   }
+  const patchReportPath = path.join(tmp, "docs", "ai", "reports", "acef_story_capsule_patch_assurance.json");
+  const patchReportBeforeMechanicalCheck = readJson("docs/ai/reports/acef_story_capsule_patch_assurance.json");
+  fs.writeFileSync(patchReportPath, JSON.stringify({
+    ...patchReportBeforeMechanicalCheck,
+    verdict: "PASS",
+    findings: [],
+  }, null, 2));
+  const mechanicalFailure = JSON.parse(run(process.execPath, [supervisor, "--repo", tmp]));
+  if (mechanicalFailure.action.type !== "replan"
+    || !mechanicalFailure.action.reason.includes("mechanical story gate failed with semantic reviewers PASS")) {
+    throw new Error("supervisor sent a mechanical gate failure into a semantic Developer repair loop");
+  }
+  fs.writeFileSync(patchReportPath, JSON.stringify(patchReportBeforeMechanicalCheck, null, 2));
   const activeBeforeTransition = readJson("docs/ai/ACEF_ACTIVE_RUN.json");
   const gateBeforeTransition = readJson("docs/ai/gates/capsule-revise-cycle0.json");
   fs.writeFileSync(path.join(tmp, "docs", "ai", "gates", "capsule-revise-cycle0.json"), JSON.stringify({

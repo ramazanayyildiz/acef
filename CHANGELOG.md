@@ -35,6 +35,12 @@ or evidence contract. Do not use it to claim implementation status; link to the 
   now explicitly starts at ATDD after deterministic readiness/reuse, binds context and worker-scope pointers during
   bootstrap, forbids bootstrap help/source probes, and provides an exact model-free readiness-to-ATDD compatibility
   transition. The fast stop confirms the circuit breaker works; it does not promote the capability.
+- V3.18 crossed the prior boundary and completed three story implementations plus twelve base actors in 1,848.9
+  seconds. Story 1 and Story 2 closed PASS in 455.2 and 383.1 seconds; Story 3 reached green and two reviewer PASS
+  results in 485.2 seconds, then correctly failed its deterministic test-authenticity check because the additive ATDD
+  test scanned PHP source tokens. The successor now forbids source-shape ATDD, prints exact bootstrap/per-story scope
+  commands, and routes semantic-reviewer PASS plus mechanical-gate FAIL directly to REPLAN instead of wasting a
+  Developer follow-up.
 - Replaced the generic-MySQL source-text oracle in the successor rehearsal fixture with executable behavior against
   both duplicate-classification paths. Focused state, validator, experiment, installer, and supervisor regressions
   pass; the complete 28-script repository suite plus closeout fixture passed in 246 seconds. Maturity is `enforced`,
