@@ -1,0 +1,98 @@
+{
+  "schemaVersion": 1,
+  "experimentId": "acef-execution-assurance-v329-task",
+  "repo": "jakomeet",
+  "stack": "php-laravel",
+  "source": "/Users/ramazanayyildiz/CODE/OPA/jakomeet",
+  "commit": "a12ac50441114943efd099f9e601bbee4a9d8a12",
+  "fixtureRoot": "../epic-benchmark/fixtures",
+  "epic": {
+    "id": "middleware-correction-proof-v329",
+    "requireReferenceValidation": true,
+    "environmentProbe": [
+      {
+        "argv": [
+          "php",
+          "artisan",
+          "test",
+          "--filter=BenchmarkAuthzMiddlewareIdempotencyTest|RouteCapabilityMiddlewareTest"
+        ],
+        "expect": "behavioral-red"
+      }
+    ],
+    "stories": [
+      {
+        "id": "s1-middleware-correction-proof",
+        "dependsOn": [],
+        "prompt": "Add a request-scoped run-once guard to RouteCapabilityMiddleware so the same request traversing the middleware twice evaluates the resolver and authorization exactly once. Single execution remains unchanged. Do not touch the benchmark test file.",
+        "allowedPaths": [
+          "packages/platform/authz/src/Http/RouteCapabilityMiddleware.php"
+        ],
+        "testPaths": [
+          "tests/Unit/Platform/Authz/RouteCapabilityMiddlewareTest.php"
+        ],
+        "referencePatch": "../epic-benchmark/canonical/canonical-s2.patch",
+        "setup": [
+          {
+            "type": "copy-fixture",
+            "fixture": "BenchmarkAuthzMiddlewareIdempotencyTest.php",
+            "path": "tests/Feature/BenchmarkAuthzMiddlewareIdempotencyTest.php"
+          }
+        ],
+        "verify": [
+          "php",
+          "artisan",
+          "test",
+          "--filter=BenchmarkAuthzMiddlewareIdempotencyTest|RouteCapabilityMiddlewareTest"
+        ],
+        "expected": [
+          {
+            "path": "tests/Feature/BenchmarkAuthzMiddlewareIdempotencyTest.php",
+            "fixtureUnchanged": "BenchmarkAuthzMiddlewareIdempotencyTest.php"
+          }
+        ],
+        "acceptanceCriteria": [
+          "The same request traversing RouteCapabilityMiddleware twice invokes RouteRequirementResolver exactly once and evaluates Gate authorization exactly once.",
+          "Single execution behavior remains unchanged.",
+          "Only the frozen middleware production file and unit-test path may change."
+        ],
+        "atddConstraints": [
+          "The correct nested double-traversal test must declare shouldReceive('resolve')->once(); a twice() resolver expectation contradicts the frozen product contract.",
+          "Both resolver calls and Gate evaluations are observable authorization work and must each equal one.",
+          "The editable Unit test must use the exact method identity same_request_is_evaluated_only_once_when_middleware_runs_twice so discovery is frozen before green."
+        ],
+        "controlledPostRedCorrection": {
+          "schema": "acef.controlled-post-red-correction-stimulus.v1",
+          "initialAtddDefect": "In the initial editable test, deliberately declare shouldReceive('resolve')->twice() while keeping Gate::shouldReceive('allows')->once(); the current implementation must therefore produce a genuine red through the Gate expectation, and the initial red must be bound with this one semantic contradiction still present.",
+          "developerFinding": "The resolver twice() expectation contradicts the acceptance criterion and frozen ATDD constraint requiring request-scoped resolver evaluation exactly once; detect this before any application or test mutation and request the typed post-red correction.",
+          "replacementExpectation": "Change only the editable resolver expectation from twice() to once(), preserve the Gate once() expectation and test identity, then bind the replacement behavioral red before resuming the original Developer."
+        },
+        "discovery": {
+          "argv": [
+            "vendor/bin/phpunit",
+            "--list-tests",
+            "--filter=BenchmarkAuthzMiddlewareIdempotencyTest|RouteCapabilityMiddlewareTest"
+          ],
+          "expectedTests": [
+            "Tests\\Feature\\BenchmarkAuthzMiddlewareIdempotencyTest::middleware_evaluates_a_request_only_once_when_registered_twice",
+            "Tests\\Unit\\Platform\\Authz\\RouteCapabilityMiddlewareTest::same_request_is_evaluated_only_once_when_middleware_runs_twice"
+          ]
+        }
+      }
+    ],
+    "integration": {
+      "verify": [
+        "php",
+        "artisan",
+        "test",
+        "--filter=BenchmarkAuthzMiddlewareIdempotencyTest|RouteCapabilityMiddlewareTest"
+      ],
+      "expected": [
+        {
+          "path": "tests/Feature/BenchmarkAuthzMiddlewareIdempotencyTest.php",
+          "fixtureUnchanged": "BenchmarkAuthzMiddlewareIdempotencyTest.php"
+        }
+      ]
+    }
+  }
+}
