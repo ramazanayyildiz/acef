@@ -24,6 +24,7 @@ const {
 } = require("./lib/acef-state-parser");
 const { riskRequiresGuarded } = require("./lib/acef-execution-policy");
 const { buildAssuranceRequirements } = require("./lib/acef-assurance-requirements");
+const { loadModelRoutingPolicy, resolveRoleRuntime } = require("./lib/acef-model-routing");
 
 function usage(command = "") {
   if (command === "direct-run") {
@@ -616,8 +617,18 @@ function writeActor(opts) {
     throw new Error("four-actor-v3 Developer actor requires --session-id for repair continuity");
   }
   if (activeRun?.runtimeContract === "capsule-supervisor-v1") {
-    if (opts.model !== "gpt-5.6-sol" || opts.effort !== "high") {
-      throw new Error("capsule-supervisor-v1 semantic actor must bind manifest floor gpt-5.6-sol/high");
+    const actorPhase = canonicalGatePhase(opts.phase);
+    const routingRole = actorPhase === "atdd" ? "atdd"
+      : actorPhase === "development" ? "development"
+        : actorPhase === "codereview" ? "code-review"
+          : actorPhase === "patchassurance" ? "patch-assurance"
+            : actorPhase === "epicprocessjudge" ? "epic-process-judge"
+              : actorPhase === "processjudge" && activeRun.scopeUnit === "epic" ? "epic-process-judge"
+              : actorPhase === "processjudge" ? "process-judge" : null;
+    if (!routingRole) throw new Error(`capsule-supervisor-v1 cannot route semantic actor phase ${opts.phase}`);
+    const routing = resolveRoleRuntime(loadModelRoutingPolicy(opts.repo).record, routingRole);
+    if (opts.model !== routing.model || opts.effort !== routing.reasoningEffort) {
+      throw new Error(`capsule-supervisor-v1 ${routingRole} actor must bind calibrated runtime ${routing.model}/${routing.reasoningEffort}`);
     }
   }
   const record = {
@@ -1779,6 +1790,7 @@ function writeReviewCapsule(opts) {
   const totalBytes = Buffer.byteLength(contextContent) + Buffer.byteLength(diffContent)
     + sourceBlobs.reduce((sum, blob) => sum + blob.bytes, 0);
   if (totalBytes > 400000) throw new Error(`review-capsule exceeds 400000-byte bounded context limit (${totalBytes})`);
+  const reviewRuntime = resolveRoleRuntime(loadModelRoutingPolicy(opts.repo).record, opts.role);
   const reviewPolicy = opts.role === "code-review"
     ? ["Judge correctness, security, acceptance conformance, and scope.", "Consume the hash-bound runner proof; do not rerun it unless reporting a named evidence conflict.", "Do not edit files or consume the other reviewer conclusion.", "Use targeted follow-up reads only for a named uncertainty."]
     : ["Judge final-tree patch integrity, test quality, discovery proof, and runner evidence.", "Consume the hash-bound runner proof; rerun only when a named evidence conflict requires adjudication.", "Do not edit files or consume the Code Review conclusion.", "Use targeted follow-up reads only for a named uncertainty."];
@@ -1806,7 +1818,7 @@ function writeReviewCapsule(opts) {
     reviewPolicy,
     allowedCommands: [
       `.acef/bin/acef-state capsule-show --repo . --id ${opts.id}`,
-      `.acef/bin/acef-state review-result --repo . --actor ${opts.actor} --model gpt-5.6-sol --effort high --verdict <PASS|REVISE|REPLAN>`,
+      `.acef/bin/acef-state review-result --repo . --actor ${opts.actor} --model ${reviewRuntime.model} --effort ${reviewRuntime.reasoningEffort} --verdict <PASS|REVISE|REPLAN>`,
     ],
   };
   const record = { ...payload, integrity: { algorithm: "sha256", payloadSha256: sha256(JSON.stringify(payload)) } };

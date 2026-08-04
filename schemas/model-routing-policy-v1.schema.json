@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://acef.local/schemas/model-routing-policy-v1.schema.json",
+  "title": "ACEF Model Routing Policy v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "policyId", "activeProvider", "roles", "providers"],
+  "properties": {
+    "schema": { "const": "acef.model-routing-policy.v1" },
+    "policyId": { "type": "string", "pattern": "^[A-Za-z0-9._-]+$" },
+    "activeProvider": { "type": "string", "pattern": "^[A-Za-z0-9._-]+$" },
+    "roles": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["executionClass", "reasoningTier", "sessionPolicy", "evidence"],
+        "properties": {
+          "executionClass": { "enum": ["orchestration", "semantic-standard", "semantic-critical"] },
+          "reasoningTier": { "enum": ["low", "medium", "high", "xhigh", "max"] },
+          "sessionPolicy": { "type": "string", "minLength": 1 },
+          "evidence": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "providers": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["models", "reasoning"],
+        "properties": {
+          "models": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["orchestration", "semantic-standard", "semantic-critical"],
+            "properties": {
+              "orchestration": { "type": "string", "minLength": 1 },
+              "semantic-standard": { "type": "string", "minLength": 1 },
+              "semantic-critical": { "type": "string", "minLength": 1 }
+            }
+          },
+          "reasoning": {
+            "type": "object",
+            "additionalProperties": { "type": "string", "enum": ["low", "medium", "high", "xhigh", "max"] }
+          }
+        }
+      }
+    }
+  }
+}

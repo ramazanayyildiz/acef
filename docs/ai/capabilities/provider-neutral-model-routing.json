@@ -1,0 +1,52 @@
+{
+  "capabilityId": "provider-neutral-model-routing",
+  "requestedIntent": "Select model and reasoning effort by ACEF role while allowing equivalent runtimes from additional LLM providers to be mapped without changing lifecycle semantics.",
+  "status": "enforced",
+  "requiredLayers": ["docs", "schema", "cli", "validator", "tests", "installer"],
+  "implementedLayers": {
+    "docs": [
+      "method/BMAD_V2_LANE.md#Optional capsule supervisor runtime",
+      "skills/acef/references/ACEF_BMAD_V2_LANE.md#Optional capsule supervisor runtime",
+      "docs/experiments/execution-assurance-v327/CALIBRATION_DESIGN.md",
+      "docs/experiments/execution-assurance-v327/CALIBRATION_RESULT.md"
+    ],
+    "schema": [
+      "schemas/model-routing-policy-v1.schema.json",
+      "method/model-routing-policy-v1.json"
+    ],
+    "cli": [
+      "scripts/lib/acef-model-routing.js",
+      "scripts/acef-supervisor#modelPolicy",
+      "scripts/acef-state#writeActor",
+      "scripts/acef-state#writeReviewCapsule"
+    ],
+    "validator": [
+      "scripts/acef-state#writeActor",
+      "scripts/lib/acef-execution-assurance-experiment.js#validateManifest",
+      "scripts/acef-execution-assurance-experiment#modelRoutingPolicy"
+    ],
+    "tests": [
+      "scripts/test-acef-model-routing",
+      "scripts/test-acef-capsule-supervisor",
+      "scripts/test-acef-execution-assurance-experiment",
+      "docs/experiments/execution-assurance-v327/results/blind-judge.json"
+    ],
+    "installer": [
+      "scripts/install-acef-tools#copyModelRoutingPolicy",
+      "scripts/test-install-acef-tools"
+    ]
+  },
+  "limitations": [
+    "The current concrete mapping is OpenAI-only. Other providers have no authorized mapping until their model identifiers, reasoning controls, and role-specific calibration evidence are added.",
+    "V327-CAL-001 qualifies medium only for Code Review on one held-out authorization defect. It does not lower ATDD, Development, Patch Assurance, or Process Judge floors.",
+    "The policy is enforced and installed by ACEF tooling but remains unproven until the separately frozen V3.27 role-routed rehearsal passes."
+  ],
+  "evidence": [
+    { "layer": "tests", "ref": "docs/experiments/execution-assurance-v327/calibration-manifest.json" },
+    { "layer": "tests", "ref": "docs/experiments/execution-assurance-v327/CALIBRATION_RESULT.md" },
+    { "layer": "tests", "ref": "scripts/test-acef-model-routing" },
+    { "layer": "tests", "ref": "scripts/test-acef-capsule-supervisor" },
+    { "layer": "installer", "ref": "scripts/test-install-acef-tools" }
+  ],
+  "createdAt": "2026-08-04"
+}

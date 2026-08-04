@@ -115,6 +115,15 @@ function copyControlDosing(targetRepo) {
   return target;
 }
 
+function copyModelRoutingPolicy(targetRepo) {
+  const source = path.join(repoRoot, "method", "model-routing-policy-v1.json");
+  if (!fs.existsSync(source)) return "";
+  const target = path.join(targetRepo, ".acef", "model-routing-policy.json");
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+  fs.copyFileSync(source, target);
+  return target;
+}
+
 function copyExperimentFixtures(targetRepo) {
   const sourceDir = path.join(repoRoot, "docs", "experiments", "context-retrieval", "tasks");
   const targetDir = path.join(targetRepo, ".acef", "context-retrieval", "tasks");
@@ -162,6 +171,10 @@ const controlDosing = copyControlDosing(opts.repo);
 if (controlDosing) {
   console.log(`Installed control dosing manifest: ${controlDosing}`);
 }
+const modelRoutingPolicy = copyModelRoutingPolicy(opts.repo);
+if (modelRoutingPolicy) {
+  console.log(`Installed model routing policy: ${modelRoutingPolicy}`);
+}
 for (const fixture of copyExperimentFixtures(opts.repo)) {
   console.log(`Installed context experiment fixture: ${fixture}`);
 }
@@ -172,5 +185,6 @@ console.log(`Updated ACEF installation manifest: ${writeInstallationManifest(opt
   tools,
   schemas: fs.existsSync(path.join(repoRoot, "schemas")),
   controlDosing: fs.existsSync(path.join(repoRoot, "method", "control-dosing.json")),
+  modelRoutingPolicy: fs.existsSync(path.join(repoRoot, "method", "model-routing-policy-v1.json")),
   workflows: fs.existsSync(path.join(repoRoot, "workflows")),
 })}`);

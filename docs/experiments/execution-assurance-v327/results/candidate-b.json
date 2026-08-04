@@ -1,0 +1,26 @@
+{
+  "candidateId": "B",
+  "verdict": "REVISE",
+  "findings": [
+    {
+      "id": "resolver-partial-empty-operands-not-rejected",
+      "severity": "HIGH",
+      "status": "OPEN",
+      "reason": "The parser still normalizes away empty operands before validating them, so malformed authorization expressions containing at least one non-empty capability are accepted instead of failing closed. For example, admin.access & becomes a single admin.access requirement, and | invoices.view becomes a single invoices.view requirement. A truncated conjunction can therefore silently drop an intended authorization constraint.",
+      "evidence": {
+        "path": "packages/platform/authz/src/Http/RouteRequirementResolver.php",
+        "symbol": "RouteRequirementResolver::parse and RouteRequirementResolver::parseClause",
+        "detail": "Both methods call array_filter() to remove empty operands and only throw when the filtered array has count zero. Consequently, leading, trailing, or repeated operators with a non-empty neighbor bypass the new InvalidArgumentException checks."
+      },
+      "remediation": "Validate every trimmed operand before filtering: reject the expression if any AND clause is empty, and reject each clause if any OR operand is empty. Preserve the existing rejection for wholly empty expressions.",
+      "regressionTest": "Add cases asserting InvalidArgumentException for capability &, & capability, capability && other, capability |, | capability, and capability || other, including at least one resolve() test using a malformed configured route permission."
+    }
+  ],
+  "coverage": [
+    "Reviewed the complete embedded diff for RouteRequirementResolver and its unit tests.",
+    "Checked empty-expression handling across top-level AND parsing and per-clause OR parsing.",
+    "Checked the hash-bound red/green test evidence and discovered-test lists; the green evidence covers wholly empty expressions but not partially empty operands.",
+    "Checked public, null, missing-route, special-permission, single, ANY_OF, and ALL_OF paths for patch-related regressions."
+  ],
+  "confidence": "high"
+}

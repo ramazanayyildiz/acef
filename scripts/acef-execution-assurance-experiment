@@ -658,7 +658,7 @@ function epicPilotPrompt(attempt, resolved, manifest) {
       "The original Developer remains one session for the story. It may perform bounded focused-test attempts inside its original turn and one repair follow-up per review cycle, but it must not return on the first failed attempt. It returns only with accepted discovered green evidence and, for a repair, one final repair receipt; a terminal non-green return is REPLAN/SPLIT, never another continuation or replacement Developer.",
       "When the supervisor dispatches Development, execute its exact registrationCommand once before spawn, then spawn that same actorInstanceId. The command binds the canonical /root/<actorInstanceId> session before any green evidence call. The Developer and conductor must not create, probe, replace, or rewrite that actor record later.",
       "At epic close, obey a supervisor context-sync transition before dispatch. Then execute the epic-judge dispatch registrationCommand exactly once before spawning the one non-retryable Judge. Give that Judge the supervisor's exact storyGateIds, greenEvidenceIds, and decisionCommands; its only terminal mutation is exactly one matching PASS, FAIL, REPLAN, or BLOCKED command. Never redispatch an existing epic Judge without a terminal gate. After that terminal gate exists, call the supervisor once more, require action type complete-epic, execute its exact completionCommand and then its exact commitCommand, and do not hand-author or broaden the terminal path list.",
-      "Mechanical state transitions, evidence collection, capsule generation, report generation, and gate construction use deterministic tools. Do not delegate them or ask a model to restate their JSON. The manifest-pinned Sol/high semantic actors remain unchanged in this first candidate; the Terra/medium thin-proxy profile is shadow-only and cannot certify the run.",
+      "Mechanical state transitions, evidence collection, capsule generation, report generation, and gate construction use deterministic tools. Do not delegate them or ask a model to restate their JSON. Every semantic role and the conductor must use the manifest-pinned provider-neutral policy mapping; do not upgrade, downgrade, or substitute a role runtime during the run.",
     ].join("\n")
     : "";
   return [
@@ -3802,6 +3802,14 @@ function runPilotAttempt(manifest, opts) {
   if (pilotPreflight.runnerDirtyBefore !== false) preflightFailures.push("preflight runner worktree was dirty");
   if (pilotPreflight.runnerSourceSha256 !== runnerSourceSha256()) preflightFailures.push("preflight runner source drift");
   if (pilotPreflight.manifestSha256 !== sha256(fs.readFileSync(opts.manifest, "utf8"))) preflightFailures.push("preflight manifest binding drift");
+  if (manifest.modelRoutingPolicy) {
+    const policyPath = path.join(root, "method", "model-routing-policy-v1.json");
+    const policySha256 = fs.existsSync(policyPath) ? sha256(fs.readFileSync(policyPath)) : null;
+    if (!pilotPreflight.modelRoutingPolicy?.ok || pilotPreflight.modelRoutingPolicy.sha256 !== policySha256
+      || policySha256 !== manifest.modelRoutingPolicy.sha256) {
+      preflightFailures.push("preflight model-routing policy binding drift");
+    }
+  }
   const preflightTaskBinding = (pilotPreflight.taskBindings || []).find((entry) => entry.taskId === attempt.taskId);
   if (!preflightTaskBinding || preflightTaskBinding.resolvedTaskSha256 !== resolvedTaskSha256(resolved)) {
     preflightFailures.push("preflight resolved task/fixture binding drift");
@@ -3921,6 +3929,20 @@ function main() {
         return { taskId, ok: false, required: true, stories: [], error: error.message };
       }
     });
+    const modelRoutingPolicy = (() => {
+      if (!manifest.modelRoutingPolicy) return { required: false, ok: true };
+      const policyPath = path.join(root, "method", "model-routing-policy-v1.json");
+      const actualSha256 = fs.existsSync(policyPath) ? sha256(fs.readFileSync(policyPath)) : null;
+      return {
+        required: true,
+        path: "method/model-routing-policy-v1.json",
+        policyId: manifest.modelRoutingPolicy.policyId,
+        provider: manifest.modelRoutingPolicy.provider,
+        sha256: actualSha256,
+        expectedSha256: manifest.modelRoutingPolicy.sha256,
+        ok: actualSha256 === manifest.modelRoutingPolicy.sha256,
+      };
+    })();
     const row = {
       schema: "acef.execution-assurance-pilot-preflight.v1",
       experimentId: manifest.experimentId,
@@ -3933,14 +3955,16 @@ function main() {
       checkedAt: new Date().toISOString(),
       ...preflight,
       collaborationCanary,
+      modelRoutingPolicy,
       environmentProbes,
       referenceValidations,
       ok: preflight.ok && collaborationCanary.ok && environmentProbes.every((entry) => entry.ok)
-        && referenceValidations.every((entry) => entry.ok),
+        && referenceValidations.every((entry) => entry.ok) && modelRoutingPolicy.ok,
     };
     writeJson(opts.preflightOutput, row);
     for (const check of row.checks) console.log(`${check.ok ? "PASS" : "FAIL"} ${check.taskId}${check.blockers.length ? `: ${check.blockers.join("; ")}` : ""}`);
     console.log(`${collaborationCanary.ok ? "PASS" : "FAIL"} collaboration-canary${collaborationCanary.failures.length ? `: ${collaborationCanary.failures.join("; ")}` : ""}`);
+    if (modelRoutingPolicy.required) console.log(`${modelRoutingPolicy.ok ? "PASS" : "FAIL"} model-routing-policy ${modelRoutingPolicy.policyId}`);
     for (const probe of environmentProbes) console.log(`${probe.ok ? "PASS" : "FAIL"} environment-probe ${probe.taskId}${probe.error ? `: ${probe.error}` : ""}`);
     for (const validation of referenceValidations) console.log(`${validation.ok ? "PASS" : "FAIL"} reference-validation ${validation.taskId}${validation.error ? `: ${validation.error}` : ""}`);
     console.log(`PILOT_PREFLIGHT ${row.ok ? "PASS" : "FAIL"}: ${row.checks.filter((check) => check.ok).length}/${row.checks.length} tasks ready`);

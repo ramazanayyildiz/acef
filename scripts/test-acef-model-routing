@@ -1,0 +1,56 @@
+#!/usr/bin/env node
+"use strict";
+
+const fs = require("node:fs");
+const path = require("node:path");
+const {
+  loadModelRoutingPolicy,
+  resolveRoleRuntime,
+  validateModelRoutingPolicy,
+} = require("./lib/acef-model-routing");
+
+const repoRoot = path.resolve(__dirname, "..");
+const loaded = loadModelRoutingPolicy(repoRoot);
+const codeReview = resolveRoleRuntime(loaded.record, "code-review");
+const patchAssurance = resolveRoleRuntime(loaded.record, "patch-assurance");
+const conductor = resolveRoleRuntime(loaded.record, "conductor");
+
+if (codeReview.model !== "gpt-5.6-sol" || codeReview.reasoningEffort !== "medium"
+  || codeReview.executionClass !== "semantic-standard") {
+  throw new Error("calibrated Code Review route was not resolved");
+}
+if (patchAssurance.reasoningEffort !== "high" || patchAssurance.executionClass !== "semantic-critical") {
+  throw new Error("unmeasured Patch Assurance floor was lowered");
+}
+if (conductor.reasoningEffort !== "medium" || conductor.executionClass !== "orchestration") {
+  throw new Error("compiled conductor route was not resolved");
+}
+
+const portable = structuredClone(loaded.record);
+portable.activeProvider = "future-provider";
+portable.providers["future-provider"] = {
+  models: {
+    orchestration: "future-fast-model",
+    "semantic-standard": "future-standard-model",
+    "semantic-critical": "future-frontier-model"
+  },
+  reasoning: { low: "low", medium: "medium", high: "high", xhigh: "xhigh", max: "max" }
+};
+validateModelRoutingPolicy(portable);
+const futureCodeReview = resolveRoleRuntime(portable, "code-review");
+if (futureCodeReview.model !== "future-standard-model" || futureCodeReview.reasoningEffort !== "medium") {
+  throw new Error("provider-neutral role assignment did not survive provider remapping");
+}
+
+const invalid = structuredClone(loaded.record);
+delete invalid.providers.openai.models["semantic-standard"];
+let rejected = false;
+try { validateModelRoutingPolicy(invalid); } catch { rejected = true; }
+if (!rejected) throw new Error("incomplete provider mapping was accepted");
+
+if (!/^[a-f0-9]{64}$/.test(loaded.sha256)
+  || !fs.existsSync(path.join(repoRoot, "schemas", "model-routing-policy-v1.schema.json"))) {
+  throw new Error("model routing policy lacks durable hash/schema evidence");
+}
+
+console.log("acef model routing tests passed");

@@ -1,7 +1,7 @@
 {
   "schema": "acef.model-routing-calibration.v1",
   "calibrationId": "V327-CAL-001",
-  "status": "frozen",
+  "status": "complete",
   "frozenAt": "2026-08-04T10:01:31Z",
   "role": "code-review",
   "budgetSeconds": 900,
@@ -14,15 +14,24 @@
   },
   "oracleCommitment": {
     "sha256": "102a910a4cb5882276e812a25e03ae41963321b96250e450f9732f06f040beea",
-    "revealed": false
+    "revealed": true,
+    "path": "docs/experiments/execution-assurance-v327/oracle/review-report.json"
   },
   "allocationCommitment": {
     "sha256": "d620d4733382594f74098e00cfa117441f138d2e1e12c05b37307a89cb50f5d8",
-    "revealed": false
+    "revealed": true,
+    "reveal": "V327-CAL-001|A=gpt-5.6-sol/high|B=gpt-5.6-sol/medium|salt=5d19d0c202e7c274354269beaf9020b7"
   },
   "candidates": ["A", "B"],
   "judgeBlindToAllocation": true,
   "decisionScope": "OpenAI Code Review role only",
+  "completedAt": "2026-08-04T10:04:48Z",
+  "result": {
+    "candidateA": { "runtime": "gpt-5.6-sol/high", "score": 28, "hardGate": true },
+    "candidateB": { "runtime": "gpt-5.6-sol/medium", "score": 30, "hardGate": true },
+    "blindJudgeVerdict": "B",
+    "qualifiedRuntime": "gpt-5.6-sol/medium"
+  },
   "mediumQualification": {
     "requiredVerdict": "REVISE",
     "requiredSeverity": "HIGH",

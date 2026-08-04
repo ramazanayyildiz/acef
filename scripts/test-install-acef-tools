@@ -36,6 +36,7 @@ try {
   const parser = path.join(tmp, ".acef", "bin", "lib", "acef-state-parser.js");
   const authorization = path.join(tmp, ".acef", "bin", "lib", "acef-run-authorization.js");
   const assuranceRequirements = path.join(tmp, ".acef", "bin", "lib", "acef-assurance-requirements.js");
+  const modelRouting = path.join(tmp, ".acef", "bin", "lib", "acef-model-routing.js");
   const executionPolicy = path.join(tmp, ".acef", "bin", "lib", "acef-execution-policy.js");
   const installationHelper = path.join(tmp, ".acef", "bin", "lib", "acef-installation.js");
   const schema = path.join(tmp, ".acef", "schemas", "active-run.schema.json");
@@ -50,6 +51,8 @@ try {
   const controlDosingSchema = path.join(tmp, ".acef", "schemas", "control-dosing.schema.json");
   const controlDosingV2Schema = path.join(tmp, ".acef", "schemas", "control-dosing-v2.schema.json");
   const controlDosingManifest = path.join(tmp, ".acef", "control-dosing.json");
+  const modelRoutingManifest = path.join(tmp, ".acef", "model-routing-policy.json");
+  const modelRoutingSchema = path.join(tmp, ".acef", "schemas", "model-routing-policy-v1.schema.json");
   const workflowSchema = path.join(tmp, ".acef", "schemas", "workflow.schema.json");
   const workflow = path.join(tmp, ".acef", "workflows", "lightweight-review.yaml");
   const runtimePackage = path.join(tmp, ".acef", "bin", "package.json");
@@ -62,6 +65,7 @@ try {
   if (!fs.existsSync(parser)) throw new Error("parser support library was not installed");
   if (!fs.existsSync(authorization)) throw new Error("run authorization support library was not installed");
   if (!fs.existsSync(assuranceRequirements)) throw new Error("assurance requirements support library was not installed");
+  if (!fs.existsSync(modelRouting)) throw new Error("model routing support library was not installed");
   if (!fs.existsSync(executionPolicy)) throw new Error("execution policy support library was not installed");
   if (!fs.existsSync(installationHelper)) throw new Error("installation support library was not installed");
   if (!fs.existsSync(schema)) throw new Error("typed-state schemas were not installed");
@@ -84,6 +88,13 @@ try {
   if (!fs.existsSync(controlDosingSchema)) throw new Error("control-dosing schema was not installed");
   if (!fs.existsSync(controlDosingV2Schema)) throw new Error("control-dosing v2 schema was not installed");
   if (!fs.existsSync(controlDosingManifest)) throw new Error("control-dosing manifest was not installed");
+  if (!fs.existsSync(modelRoutingManifest) || !fs.existsSync(modelRoutingSchema)) throw new Error("model routing policy/schema was not installed");
+  const installedRouting = JSON.parse(fs.readFileSync(modelRoutingManifest, "utf8"));
+  if (installedRouting.schema !== "acef.model-routing-policy.v1"
+    || installedRouting.roles?.["code-review"]?.reasoningTier !== "medium"
+    || installedRouting.providers?.openai?.models?.["semantic-standard"] !== "gpt-5.6-sol") {
+    throw new Error("installed model routing policy lost calibrated provider-neutral role mapping");
+  }
   const installedDosing = JSON.parse(fs.readFileSync(controlDosingManifest, "utf8"));
   if (installedDosing.schema !== "acef.control-dosing.v2") {
     throw new Error("installed control-dosing manifest is not workflow/assurance v2");
@@ -102,6 +113,7 @@ try {
   if (!installation.components?.tools) throw new Error("installation manifest missing tools component");
   if (!installation.components.tools.tools.includes("update-acef-installation")) throw new Error("tools component missing updater");
   if (!installation.components.tools.controlDosing) throw new Error("tools component missing control-dosing manifest");
+  if (!installation.components.tools.modelRoutingPolicy) throw new Error("tools component missing model-routing policy");
 
   fs.mkdirSync(path.join(tmp, "docs", "ai"), { recursive: true });
   fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_demo_DELIVERY_AUDIT.md"), [

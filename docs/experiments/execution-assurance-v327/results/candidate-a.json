@@ -1,0 +1,25 @@
+{
+  "candidateId": "A",
+  "verdict": "REVISE",
+  "findings": [
+    {
+      "id": "authz-empty-operand-not-rejected",
+      "severity": "HIGH",
+      "status": "OPEN",
+      "reason": "The parser removes empty operands before validating the expression, so malformed authorization requirements with a nonempty operand still succeed. For example, parse('reports.view.team & ') returns a single-capability requirement instead of rejecting the missing conjunct. This is fail-open behavior because the malformed expression is normalized into a weaker requirement.",
+      "evidence": {
+        "path": "packages/platform/authz/src/Http/RouteRequirementResolver.php",
+        "symbol": "RouteRequirementResolver::parse",
+        "detail": "array_filter discards empty & clauses and validation only checks whether every clause was removed; with reports.view.team &, one clause remains and is returned as TYPE_SINGLE. parseClause applies the same pattern to | operands."
+      },
+      "remediation": "Validate every token before filtering, rejecting an expression when any & clause or | operand is empty after trimming. Preserve filtering only after successful validation, or avoid filtering entirely.",
+      "regressionTest": "Add cases asserting InvalidArgumentException for leading, trailing, and repeated operators, including & cap, cap &, cap1 && cap2, | cap, cap |, and cap1 || cap2."
+    }
+  ],
+  "coverage": [
+    "RouteRequirementResolver empty-expression handling",
+    "Malformed AND/OR operand normalization",
+    "Updated unit tests and hash-bound red/green evidence"
+  ],
+  "confidence": "high"
+}

@@ -1,0 +1,21 @@
+{
+  "schema": "acef.review-report.v3",
+  "runId": "REHEARSAL-v325",
+  "fullFlowContract": "four-actor-v3",
+  "actorInstanceId": "acef_s1_resolver_fail_closed_code_review",
+  "story": "s1-resolver-fail-closed",
+  "phase": "code-review",
+  "inputCommit": "174fadf97767c946c5a46b4b3495cf722e260738",
+  "inputTree": "ad7c22aeaea2cdff9a5d08a2cacb4aa39f1af482",
+  "capsulePath": "docs/ai/capsules/s1_resolver_fail_closed-code-review.json",
+  "capsuleSha256": "aae943a8c02ad4fbcd1ef980e3326e61a0d9f1f0c454d2bb2f47e3865db503e4",
+  "verdict": "REVISE",
+  "findings": [
+    {
+      "id": "malformed-operator-gaps-accepted",
+      "severity": "HIGH",
+      "status": "OPEN",
+      "reason": "Trailing or repeated operators are silently discarded so malformed expressions with an empty operand are accepted and can authorize access instead of failing closed"
+    }
+  ]
+}

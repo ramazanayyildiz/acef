@@ -9,6 +9,21 @@ or evidence contract. Do not use it to claim implementation status; link to the 
 
 ## Unreleased
 
+### Provider-neutral calibrated model routing
+
+- Added a typed role-routing policy that separates ACEF execution class and reasoning tier from provider model names.
+  The installed OpenAI mapping resolves the conductor to `gpt-5.6-sol/medium`, Code Review to
+  `gpt-5.6-sol/medium`, and unmeasured ATDD, Development, Patch Assurance, and Judge roles to
+  `gpt-5.6-sol/high`. Mechanical supervisor/state/capsule/gate work remains model-free.
+- Preregistered V327-CAL-001 against one immutable V3.25 Code Review capsule with a held-out HIGH oracle and blinded
+  allocation. Both medium and high found the fail-open empty-operand defect; the blind Judge scored medium 30/30 and
+  high 28/30 with no unsupported HIGH findings. The result qualifies only the OpenAI Code Review role, not other
+  semantic roles or providers.
+- The supervisor emits the policy ID/provider/hash and resolved role runtimes; the state writer rejects actor or review
+  completion receipts outside the calibrated role mapping. The installer ships the policy, schema, and resolver.
+  Provider remapping changes only the provider table, but remains fail-closed until all abstract execution/reasoning
+  tiers resolve and provider-specific calibration exists.
+
 ### Capsule supervisor runtime candidate
 
 - Added the optional `capsule-supervisor-v1` runtime contract for new `full-bmad` / `four-actor-v3` runs. A

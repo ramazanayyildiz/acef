@@ -167,6 +167,25 @@ assert.doesNotThrow(() => validateManifest(measuredCapsuleManifest));
 const invalidMeasuredCapsuleManifest = structuredClone(measuredCapsuleManifest);
 invalidMeasuredCapsuleManifest.promotionGates.budget.maximumToolCalls = 319;
 assert.throws(() => validateManifest(invalidMeasuredCapsuleManifest), /freeze actor, repair, time, token, tool, and harness-wait budgets/);
+const roleRoutedCapsuleManifest = structuredClone(measuredCapsuleManifest);
+Object.assign(roleRoutedCapsuleManifest.promotionGates.budget, {
+  profileId: "capsule-supervisor-v1-role-routing-v327",
+  targetStoryActiveSeconds: 600,
+  maximumStoryActiveSeconds: 900,
+  targetActiveDeliverySeconds: 2700,
+  maximumActiveDeliverySeconds: 3600,
+});
+roleRoutedCapsuleManifest.pilot.attempts[0].activeTimeCapMinutes = 60;
+roleRoutedCapsuleManifest.actorRuntimeProfiles["code-review"].reasoningEffort = "medium";
+roleRoutedCapsuleManifest.pilotRuntime.reasoningEffort = "medium";
+roleRoutedCapsuleManifest.modelRoutingPolicy = {
+  policyId: "v327-role-calibrated-openai", provider: "openai",
+  sha256: "a".repeat(64), calibrationId: "V327-CAL-001",
+};
+assert.doesNotThrow(() => validateManifest(roleRoutedCapsuleManifest));
+const invalidRoleRoutedCapsuleManifest = structuredClone(roleRoutedCapsuleManifest);
+invalidRoleRoutedCapsuleManifest.actorRuntimeProfiles["code-review"].reasoningEffort = "high";
+assert.throws(() => validateManifest(invalidRoleRoutedCapsuleManifest), /code-review=gpt-5\.6-sol\/medium/);
 const underpoweredCapsuleManifest = structuredClone(capsuleSupervisorManifest);
 underpoweredCapsuleManifest.actorRuntimeProfiles["code-review"].model = "gpt-5.6-terra";
 underpoweredCapsuleManifest.actorRuntimeProfiles["code-review"].reasoningEffort = "medium";

@@ -40,8 +40,11 @@ assurance layer. It preserves the four semantic roles while removing model work 
 - Successful green evidence must first pass the frozen test-discovery command and exact expected-test identities.
   Review scope surfaces are derived from committed production paths at the review transition instead of being guessed
   during bootstrap.
-- The first measured candidate pins every semantic actor to `gpt-5.6-sol/high`. Mechanical work has no model.
-  `gpt-5.6-terra/medium` may observe the reducer in shadow mode but cannot produce promotable evidence yet.
+- Runtime selection is role-based and provider-neutral. Mechanical work has no model. The conductor is
+  `orchestration/medium`; unmeasured ATDD, Development, Patch Assurance, and Judge roles remain
+  `semantic-critical/high`. V327-CAL-001 qualified Code Review as `semantic-standard/medium` by a blind comparison
+  against the same held-out HIGH defect. `method/model-routing-policy-v1.json` maps those abstract tiers to the active
+  provider; another provider must add a complete mapping and earn its own calibration evidence.
 
 This runtime is `enforced` in the framework but remains unproven until its frozen rehearsal passes product, process,
 and cost gates. Existing runs cannot opt in after lifecycle evidence exists.

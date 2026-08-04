@@ -169,14 +169,28 @@ try {
   }
   const next = JSON.parse(run(process.execPath, [supervisor, "--repo", tmp]));
   if (next.action.type !== "dispatch-parallel" || next.action.actors.length !== 2
-    || next.action.actors.some((actor) => actor.runtime.model !== "gpt-5.6-sol" || actor.runtime.reasoningEffort !== "high"
+    || next.action.actors.some((actor) => actor.runtime.model !== "gpt-5.6-sol"
+      || actor.runtime.reasoningEffort !== (actor.role === "code-review" ? "medium" : "high")
       || !actor.capsule?.path.startsWith("docs/ai/capsules/") || !/^[a-f0-9]{64}$/.test(actor.capsule?.sha256 || "")
       || actor.capsule.showCommand !== `.acef/bin/acef-state capsule-show --repo . --id ${actor.capsule.id}`)) {
     throw new Error("supervisor did not emit the pinned parallel reviewer action");
   }
+  if (next.modelPolicy.provider !== "openai" || next.modelPolicy.roles["code-review"].reasoningTier !== "medium"
+    || !/^[a-f0-9]{64}$/.test(next.modelPolicy.policySha256 || "")) {
+    throw new Error("supervisor did not expose the calibrated provider-neutral model policy");
+  }
 
+  const wrongCodeReviewFloor = cp.spawnSync(process.execPath, [state, "review-result", "--repo", tmp,
+    "--actor", "acef_story_capsule_code_review", "--model", "gpt-5.6-sol", "--effort", "high",
+    "--verdict", "PASS"], { cwd: tmp, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+  if (wrongCodeReviewFloor.status === 0
+    || !`${wrongCodeReviewFloor.stdout}${wrongCodeReviewFloor.stderr}`.includes("calibrated runtime gpt-5.6-sol/medium")
+    || fs.existsSync(path.join(tmp, "docs", "ai", "reports", "acef_story_capsule_code_review.json"))
+    || fs.existsSync(path.join(tmp, "docs", "ai", "actors", "acef_story_capsule_code_review.json"))) {
+    throw new Error("Code Review accepted or partially persisted a runtime outside the calibrated role floor");
+  }
   stateRun(["review-result", "--repo", tmp, "--actor", "acef_story_capsule_code_review",
-    "--model", "gpt-5.6-sol", "--effort", "high", "--verdict", "PASS"]);
+    "--model", "gpt-5.6-sol", "--effort", "medium", "--verdict", "PASS"]);
   stateRun(["review-result", "--repo", tmp, "--actor", "acef_story_capsule_patch_assurance",
     "--model", "gpt-5.6-sol", "--effort", "high", "--verdict", "REVISE",
     "--finding-id", "PA-REPAIR", "--finding-severity", "HIGH",

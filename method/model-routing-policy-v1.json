@@ -1,0 +1,65 @@
+{
+  "schema": "acef.model-routing-policy.v1",
+  "policyId": "v327-role-calibrated-openai",
+  "activeProvider": "openai",
+  "roles": {
+    "conductor": {
+      "executionClass": "orchestration",
+      "reasoningTier": "medium",
+      "sessionPolicy": "single-resumable-per-epic",
+      "evidence": "compiled capsule-supervisor actions; semantic acceptance remains delegated"
+    },
+    "atdd": {
+      "executionClass": "semantic-critical",
+      "reasoningTier": "high",
+      "sessionPolicy": "fresh-per-story",
+      "evidence": "unmeasured semantic role; retain conservative floor"
+    },
+    "development": {
+      "executionClass": "semantic-critical",
+      "reasoningTier": "high",
+      "sessionPolicy": "single-resumable-per-story",
+      "evidence": "unmeasured semantic role; retain conservative floor"
+    },
+    "code-review": {
+      "executionClass": "semantic-standard",
+      "reasoningTier": "medium",
+      "sessionPolicy": "fresh-per-reviewed-tree",
+      "evidence": "V327-CAL-001 blind Judge: medium 30/30, high 28/30, both found held-out HIGH"
+    },
+    "patch-assurance": {
+      "executionClass": "semantic-critical",
+      "reasoningTier": "high",
+      "sessionPolicy": "fresh-per-reviewed-tree",
+      "evidence": "unmeasured semantic role; retain conservative floor"
+    },
+    "process-judge": {
+      "executionClass": "semantic-critical",
+      "reasoningTier": "high",
+      "sessionPolicy": "fresh-conditional",
+      "evidence": "independent escalation role; retain conservative floor"
+    },
+    "epic-process-judge": {
+      "executionClass": "semantic-critical",
+      "reasoningTier": "high",
+      "sessionPolicy": "fresh-isolated",
+      "evidence": "independent terminal role; retain conservative floor"
+    }
+  },
+  "providers": {
+    "openai": {
+      "models": {
+        "orchestration": "gpt-5.6-sol",
+        "semantic-standard": "gpt-5.6-sol",
+        "semantic-critical": "gpt-5.6-sol"
+      },
+      "reasoning": {
+        "low": "low",
+        "medium": "medium",
+        "high": "high",
+        "xhigh": "xhigh",
+        "max": "max"
+      }
+    }
+  }
+}

@@ -1,0 +1,27 @@
+{
+  "judgeVerdict": "B",
+  "scores": {
+    "A": {
+      "correctness": 5,
+      "severityVerdictCalibration": 5,
+      "evidencePrecision": 5,
+      "remediationQuality": 5,
+      "regressionTestQuality": 4,
+      "boundednessFalsePositiveControl": 4,
+      "total": 28,
+      "unsupportedHighs": 0
+    },
+    "B": {
+      "correctness": 5,
+      "severityVerdictCalibration": 5,
+      "evidencePrecision": 5,
+      "remediationQuality": 5,
+      "regressionTestQuality": 5,
+      "boundednessFalsePositiveControl": 5,
+      "total": 30,
+      "unsupportedHighs": 0
+    }
+  },
+  "hardGate": { "A": true, "B": true },
+  "rationale": "Both outputs correctly identify the HIGH fail-open empty-operand defect, cite the relevant filtering behavior, recommend pre-filter validation, and cover leading, trailing, and repeated operators. B is marginally stronger because it precisely addresses both parser levels, adds a resolve()-level regression test, and explicitly bounds its review against unaffected paths and the evidence gap."
+}

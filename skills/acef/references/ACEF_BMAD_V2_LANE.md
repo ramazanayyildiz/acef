@@ -36,8 +36,10 @@ assurance layer. It preserves the four semantic roles while removing model work 
   use targeted reads; they rerun the focused command only to adjudicate a named evidence conflict.
 - Green evidence requires frozen test discovery. Review surfaces are derived from committed production paths at the
   review transition rather than guessed during bootstrap.
-- The first candidate uses `gpt-5.6-sol/high` for semantic actors. `gpt-5.6-terra/medium` is shadow-only until measured
-  evidence supports promotion; mechanical actions use no model.
+- Model routing is role-based and provider-neutral. Mechanical actions use no model; the conductor uses
+  `orchestration/medium`; unmeasured semantic roles retain `semantic-critical/high`. V327-CAL-001 qualified Code
+  Review as `semantic-standard/medium` on the active OpenAI mapping. Other providers require a complete mapping and
+  provider-specific calibration before they can certify work.
 
 Treat this runtime as `enforced`, not `proven`, until a separately frozen rehearsal passes.
 

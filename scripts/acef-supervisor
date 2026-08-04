@@ -13,6 +13,7 @@ const {
   parseAssuranceCapsule,
   parseWorkerScope,
 } = require("./lib/acef-state-parser");
+const { loadModelRoutingPolicy, resolveRoleRuntime } = require("./lib/acef-model-routing");
 
 function sha256(value) {
   return crypto.createHash("sha256").update(value).digest("hex");
@@ -89,16 +90,6 @@ function phase(value) {
   return aliases[normalized] || normalized;
 }
 
-const RUNTIME = {
-  atdd: { model: "gpt-5.6-sol", reasoningEffort: "high", sessionPolicy: "fresh-per-story" },
-  development: { model: "gpt-5.6-sol", reasoningEffort: "high", sessionPolicy: "single-resumable-per-story" },
-  "code-review": { model: "gpt-5.6-sol", reasoningEffort: "high", sessionPolicy: "fresh-per-reviewed-tree" },
-  "patch-assurance": { model: "gpt-5.6-sol", reasoningEffort: "high", sessionPolicy: "fresh-per-reviewed-tree" },
-  "story-judge": { model: "gpt-5.6-sol", reasoningEffort: "high", sessionPolicy: "fresh-conditional" },
-  "epic-judge": { model: "gpt-5.6-sol", reasoningEffort: "high", sessionPolicy: "fresh-isolated" },
-  "thin-proxy-shadow": { model: "gpt-5.6-terra", reasoningEffort: "medium", sessionPolicy: "shadow-only" },
-};
-
 function build(repo) {
   const activeRunPath = path.join(repo, "docs", "ai", "ACEF_ACTIVE_RUN.json");
   if (!fs.existsSync(activeRunPath)) throw new Error("missing docs/ai/ACEF_ACTIVE_RUN.json");
@@ -107,6 +98,15 @@ function build(repo) {
     || run.fullFlowContract !== "four-actor-v3" || run.runtimeContract !== "capsule-supervisor-v1") {
     throw new Error("supervisor requires an active full-bmad/four-actor-v3/capsule-supervisor-v1 run");
   }
+  const routingPolicy = loadModelRoutingPolicy(repo);
+  const runtime = {
+    atdd: resolveRoleRuntime(routingPolicy.record, "atdd"),
+    development: resolveRoleRuntime(routingPolicy.record, "development"),
+    "code-review": resolveRoleRuntime(routingPolicy.record, "code-review"),
+    "patch-assurance": resolveRoleRuntime(routingPolicy.record, "patch-assurance"),
+    "story-judge": resolveRoleRuntime(routingPolicy.record, "process-judge"),
+    "epic-judge": resolveRoleRuntime(routingPolicy.record, "epic-process-judge"),
+  };
   const story = run.activeStory;
   const storyKey = token(story);
   const headCommit = git(repo, ["rev-parse", "HEAD"]);
@@ -187,10 +187,10 @@ function build(repo) {
       : judgeExists
         ? { type: "replan", reason: "the non-retryable epic Process Judge exists without a terminal epic gate" }
         : {
-          type: "dispatch", role: "epic-judge", actorInstanceId: judgeId, runtime: RUNTIME["epic-judge"],
+          type: "dispatch", role: "epic-judge", actorInstanceId: judgeId, runtime: runtime["epic-judge"],
           registrationCommand: `.acef/bin/acef-state actor --repo . --id ${judgeId} --story ${quote(story)}`
             + ` --phase epic-process-judge --role process-judge --client codex --session-id /root/${judgeId}`
-            + " --context-profile epic-process-judge --model gpt-5.6-sol --effort high",
+            + ` --context-profile epic-process-judge --model ${runtime["epic-judge"].model} --effort ${runtime["epic-judge"].reasoningEffort}`,
           decisionCommands: {
             PASS: gateCommand("PASS"), FAIL: gateCommand("FAIL"), REPLAN: gateCommand("REPLAN"), BLOCKED: gateCommand("BLOCKED"),
           },
@@ -213,7 +213,7 @@ function build(repo) {
       ? { type: "blocked", reason: "refresh the typed worker scope for the active frozen story before ATDD dispatch" }
       : red
         ? { type: "transition", nextPhase: "development", command: ".acef/bin/acef-state phase-transition --repo . --phase development", reason: "typed red evidence exists" }
-        : { type: "dispatch", role: "atdd", actorInstanceId: actorId("atdd"), runtime: RUNTIME.atdd,
+        : { type: "dispatch", role: "atdd", actorInstanceId: actorId("atdd"), runtime: runtime.atdd,
           precheckCommand: `.acef/bin/acef-state atdd-precheck --repo .${frozenTestPaths.map((filePath) => ` --test-path ${quote(filePath)}`).join("")}`,
           reason: "run the deterministic test-harness precheck after editing and before the clean red commit" };
   } else if (currentPhase === "development") {
@@ -223,8 +223,8 @@ function build(repo) {
         type: "dispatch",
         role: "development",
         actorInstanceId: developerId,
-        runtime: RUNTIME.development,
-        registrationCommand: `.acef/bin/acef-state actor --repo . --id ${developerId} --story ${quote(story)} --phase development --role developer --client codex --session-id /root/${developerId} --context-profile development --model gpt-5.6-sol --effort high`,
+        runtime: runtime.development,
+        registrationCommand: `.acef/bin/acef-state actor --repo . --id ${developerId} --story ${quote(story)} --phase development --role developer --client codex --session-id /root/${developerId} --context-profile development --model ${runtime.development.model} --effort ${runtime.development.reasoningEffort}`,
         reason: "register the one canonical story Developer before spawn so green evidence can bind its session",
       };
     } else if (latestDeveloperEvidence?.exitCode === 0 && latestDeveloperEvidence.discovery) {
@@ -259,7 +259,7 @@ function build(repo) {
       const repairCommand = `.acef/bin/acef-state developer-repair --repo . --id ${repairReceiptId} --prior-gate ${latestGate.gateId} --developer-actor ${actorId("development")}`;
       if (!latestRepairEvidence) {
         action = {
-          type: "resume", role: "development", actorInstanceId: actorId("development"), runtime: RUNTIME.development,
+          type: "resume", role: "development", actorInstanceId: actorId("development"), runtime: runtime.development,
           repairCycle: reviewCycle, repairCommand, repairReceiptPath,
           reason: "review findings require original Developer; the same Developer must write the exact supervisor-owned repair receipt after green evidence",
         };
@@ -316,7 +316,7 @@ function build(repo) {
           const capsuleId = path.basename(capsule.supervisorFilePath, ".json");
           const capsulePath = path.relative(repo, capsule.supervisorFilePath).replaceAll(path.sep, "/");
           return {
-            role, actorInstanceId: id, runtime: RUNTIME[role],
+            role, actorInstanceId: id, runtime: runtime[role],
             capsule: {
               id: capsuleId,
               path: capsulePath,
@@ -363,7 +363,7 @@ function build(repo) {
       }
     }
   } else if (currentPhase === "processjudge") {
-    action = { type: "dispatch", role: run.scopeUnit === "epic" ? "epic-judge" : "story-judge", actorInstanceId: run.scopeUnit === "epic" ? "acef_epic_process_judge" : actorId("process_judge"), runtime: RUNTIME[run.scopeUnit === "epic" ? "epic-judge" : "story-judge"] };
+    action = { type: "dispatch", role: run.scopeUnit === "epic" ? "epic-judge" : "story-judge", actorInstanceId: run.scopeUnit === "epic" ? "acef_epic_process_judge" : actorId("process_judge"), runtime: runtime[run.scopeUnit === "epic" ? "epic-judge" : "story-judge"] };
   } else {
     action = { type: "blocked", reason: `unsupported active phase ${run.activePhase}` };
   }
@@ -378,10 +378,12 @@ function build(repo) {
     state,
     action,
     modelPolicy: {
-      active: "semantic-job-granularity",
+      active: routingPolicy.record.policyId,
+      provider: routingPolicy.record.activeProvider,
+      policySha256: routingPolicy.sha256,
       mechanicalOperations: "no-model",
-      thinProxyShadow: RUNTIME["thin-proxy-shadow"],
-      note: "Shadow profile is not authorized for promotion until the deterministic reducer is proven.",
+      roles: runtime,
+      note: "Role assignments use provider-neutral execution classes and reasoning tiers; provider mappings are replaceable only through a calibrated policy artifact.",
     },
   };
 }

@@ -143,6 +143,11 @@ function validateManifest(manifest) {
                 maximumToolCalls: 320, maximumHarnessWaitSeconds: 300, maximumHarnessWaitShare: 0.05,
                 targetStoryActiveSeconds: 900, maximumStoryActiveSeconds: 1200,
                 targetActiveDeliverySeconds: 3600, maximumActiveDeliverySeconds: 4500 }
+            : budgetProfile === "capsule-supervisor-v1-role-routing-v327"
+              ? { maximumActorInvocations: 25, maximumInputTokens: 18000000, maximumModelCycles: 220,
+                maximumToolCalls: 320, maximumHarnessWaitSeconds: 300, maximumHarnessWaitShare: 0.05,
+                targetStoryActiveSeconds: 600, maximumStoryActiveSeconds: 900,
+                targetActiveDeliverySeconds: 2700, maximumActiveDeliverySeconds: 3600 }
           : null;
     if (!expectedBudget) {
       throw new Error("v3 P0 candidate budget.profileId is not recognized");
@@ -161,7 +166,7 @@ function validateManifest(manifest) {
       || budget.maximumHarnessWaitShare !== expectedBudget.maximumHarnessWaitShare) {
       throw new Error("v3 P0 candidate must freeze actor, repair, time, token, tool, and harness-wait budgets");
     }
-    if (["capsule-supervisor-v1", "capsule-supervisor-v1-measured-v325"].includes(budgetProfile)) {
+    if (["capsule-supervisor-v1", "capsule-supervisor-v1-measured-v325", "capsule-supervisor-v1-role-routing-v327"].includes(budgetProfile)) {
       if (manifest.runtimeContract !== "capsule-supervisor-v1") {
         throw new Error("capsule supervisor budget requires runtimeContract=capsule-supervisor-v1");
       }
@@ -171,8 +176,21 @@ function validateManifest(manifest) {
       const requiredProfiles = ["atdd", "development", "code-review", "patch-assurance", "process-judge", "epic-process-judge"];
       for (const role of requiredProfiles) {
         const profile = manifest.actorRuntimeProfiles?.[role];
-        if (!profile || profile.model !== "gpt-5.6-sol" || profile.reasoningEffort !== "high") {
-          throw new Error(`capsule supervisor requires actorRuntimeProfiles.${role}=gpt-5.6-sol/high`);
+        const expectedEffort = budgetProfile === "capsule-supervisor-v1-role-routing-v327" && role === "code-review"
+          ? "medium" : "high";
+        if (!profile || profile.model !== "gpt-5.6-sol" || profile.reasoningEffort !== expectedEffort) {
+          throw new Error(`capsule supervisor requires actorRuntimeProfiles.${role}=gpt-5.6-sol/${expectedEffort}`);
+        }
+      }
+      if (budgetProfile === "capsule-supervisor-v1-role-routing-v327") {
+        if (manifest.pilotRuntime?.model !== "gpt-5.6-sol" || manifest.pilotRuntime?.reasoningEffort !== "medium") {
+          throw new Error("role-routed capsule supervisor requires conductor pilotRuntime=gpt-5.6-sol/medium");
+        }
+        if (manifest.modelRoutingPolicy?.policyId !== "v327-role-calibrated-openai"
+          || manifest.modelRoutingPolicy?.provider !== "openai"
+          || !/^[a-f0-9]{64}$/.test(manifest.modelRoutingPolicy?.sha256 || "")
+          || manifest.modelRoutingPolicy?.calibrationId !== "V327-CAL-001") {
+          throw new Error("role-routed capsule supervisor requires a hash-bound calibrated modelRoutingPolicy");
         }
       }
     }
