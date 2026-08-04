@@ -11,3 +11,7 @@ Process Judge. The state writer independently rejects an uncommitted, split, mut
 Success requires the same product and correction proof as V3.31, collaboration PASS, one integration invocation after
 a durably complete story gate, an exact formal story-close delta, Epic Process Judge PASS, and an external artifact-only
 blind Judge PASS. This is one measured attempt and is fail-closed.
+
+The measured attempt is immutable. Its product, live correction, durable story close, integration ordering, budgets,
+Epic gate, and blind judgment all passed. The original row failed only because four read-only `sed` commands were
+semicolon-composed; corrected exact-transcript reanalysis is fully green. See `REHEARSAL_RESULT.md`.
