@@ -27,6 +27,10 @@ or evidence contract. Do not use it to claim implementation status; link to the 
   but the outer transcript scorer initially treated the Judge's prose as the result channel and required a redundant
   `ACTOR_RESULT` marker. The scorer now derives the terminal result from the validated actor-decided Epic gate, just as
   reviewer verdicts come from typed reports; free-form prose cannot override or invalidate the durable gate.
+- The immutable V3.28 attempt completed product work in 46m47.6s wall time (46m35.4s active), stayed inside every hard
+  actor/token/cycle/tool/time/idle budget, and received a zero-finding artifact-only high-effort Blind Judge `PASS`.
+  Its derived verdict remains `PRODUCT_PASS_PROCESS_FAIL` because immutable attempt rows are not rewritten after a
+  harness repair; the corrected exact-transcript reanalysis is 17/17 actors with zero collaboration failures.
 
 ### Provider-neutral calibrated model routing
 

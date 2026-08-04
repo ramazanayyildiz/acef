@@ -8,7 +8,8 @@
       "method/BMAD_V2_LANE.md#Optional capsule supervisor runtime",
       "skills/acef/references/ACEF_BMAD_V2_LANE.md#Optional capsule supervisor runtime",
       "docs/experiments/execution-assurance-v327/CALIBRATION_DESIGN.md",
-      "docs/experiments/execution-assurance-v327/CALIBRATION_RESULT.md"
+      "docs/experiments/execution-assurance-v327/CALIBRATION_RESULT.md",
+      "docs/experiments/execution-assurance-v328/REHEARSAL_RESULT.md"
     ],
     "schema": [
       "schemas/model-routing-policy-v1.schema.json",
@@ -41,7 +42,7 @@
   "limitations": [
     "The current concrete mapping is OpenAI-only. Other providers have no authorized mapping until their model identifiers, reasoning controls, and role-specific calibration evidence are added.",
     "V327-CAL-001 qualifies medium only for Code Review on one held-out authorization defect. It does not lower ATDD, Development, Patch Assurance, or Process Judge floors.",
-    "The immutable V3.27 role-routed rehearsal failed at Story 3's deterministic ATDD integrity gate, so the capability remains enforced rather than proven.",
+    "V3.28 exercised the complete role-routed matrix across four cycle-0 story PASS gates, typed Epic PASS, hard-budget PASS, and a zero-finding high-effort blind product PASS. Its immutable process row still failed on a repaired outer-scorer false negative, so the capability remains enforced rather than proven.",
     "V3.27 also exposed that the external blind Judge inherited the conductor runtime. The successor harness now resolves it from the high terminal epic-process-judge profile, quarantines abandoned launch roots, and produced a valid high-effort FAIL judgment; no invalid medium judgment was persisted."
   ],
   "evidence": [
@@ -50,6 +51,7 @@
     { "layer": "tests", "ref": "scripts/test-acef-model-routing" },
     { "layer": "tests", "ref": "scripts/test-acef-capsule-supervisor" },
     { "layer": "tests", "ref": "docs/experiments/execution-assurance-v327/REHEARSAL_RESULT.md" },
+    { "layer": "tests", "ref": "docs/experiments/execution-assurance-v328/REHEARSAL_RESULT.md" },
     { "layer": "installer", "ref": "scripts/test-install-acef-tools" }
   ],
   "createdAt": "2026-08-04"
