@@ -2700,6 +2700,13 @@ function pilotAgentRequest(attempt, resolved, clone, manifest, rawPath, receiptP
   ];
   if (attempt.treatment === "repo-native") args.push("--ignore-rules");
   args.push(resolved.kind === "epic" ? epicPilotPrompt(attempt, resolved, manifest) : pilotPrompt(attempt, resolved));
+  const resumeArgsPrefix = [
+    "exec", "resume", "--json", "--ignore-user-config",
+    "--dangerously-bypass-approvals-and-sandbox", "--dangerously-bypass-hook-trust",
+    "--model", runtime.model,
+    "--config", `model_reasoning_effort=${JSON.stringify(runtime.reasoningEffort)}`,
+  ];
+  if (attempt.treatment === "repo-native") resumeArgsPrefix.push("--ignore-rules");
   return {
     command: clientRuntime.clientPath,
     args,
@@ -2708,6 +2715,12 @@ function pilotAgentRequest(attempt, resolved, clone, manifest, rawPath, receiptP
     stderrPath: `${rawPath}.stderr`,
     receiptPath,
     timeoutMs: attempt.activeTimeCapMinutes * 60 * 1000,
+    transientResume: {
+      schema: "acef.execution-assurance-transient-resume.v1",
+      maximumResumes: 1,
+      argsPrefix: resumeArgsPrefix,
+      prompt: "Continue the same scored attempt after a transient model-capacity interruption. Reconcile durable repository state and child status. For any child interrupted without FINAL_ANSWER, apply the frozen typed infrastructure-failure receipt and _infra_retry1 rule. Do not replay a completed actor, story, or lifecycle.",
+    },
     ...(attempt.actorContractVersion === "four-actor-v3" ? {
       livePolicy: {
         schema: "acef.execution-assurance-live-policy.v1",
@@ -3399,6 +3412,7 @@ function finalizePilotAttempt(manifest, opts, checkpoint) {
       modelCycles: actor.model_cycles,
       toolCalls: actor.tool_calls,
     },
+    conductorResumes: receipt.transientResumes || [],
     teamMetrics,
     changedPaths: paths,
     scopeViolations,

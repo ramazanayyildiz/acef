@@ -100,11 +100,11 @@ function livePolicyMonitor(request) {
   };
 }
 
-async function runCaptured(request, onSpawn) {
+async function runCaptured(request, onSpawn, options = {}) {
   fs.mkdirSync(path.dirname(request.stdoutPath), { recursive: true });
   fs.mkdirSync(path.dirname(request.stderrPath), { recursive: true });
-  const stdoutFd = fs.openSync(request.stdoutPath, "w");
-  const stderrFd = fs.openSync(request.stderrPath, "w");
+  const stdoutFd = fs.openSync(request.stdoutPath, options.append ? "a" : "w");
+  const stderrFd = fs.openSync(request.stderrPath, options.append ? "a" : "w");
   const child = cp.spawn(request.command, request.args, {
     cwd: request.cwd,
     env: process.env,
@@ -158,6 +158,29 @@ async function runCaptured(request, onSpawn) {
   };
 }
 
+function startedThreadId(stdoutPath) {
+  if (!fs.existsSync(stdoutPath)) return "";
+  for (const line of fs.readFileSync(stdoutPath, "utf8").split(/\r?\n/).filter(Boolean)) {
+    try {
+      const event = JSON.parse(line);
+      if (event.type === "thread.started" && typeof event.thread_id === "string" && event.thread_id) {
+        return event.thread_id;
+      }
+    } catch {}
+  }
+  return "";
+}
+
+function transientCapacityReason(request, result) {
+  if (result.status === 0 || result.timedOut || result.policyViolation) return "";
+  const output = [request.stdoutPath, request.stderrPath]
+    .filter((filePath) => fs.existsSync(filePath))
+    .map((filePath) => fs.readFileSync(filePath, "utf8"))
+    .join("\n");
+  if (/Selected model is at capacity\. Please try a different model\./i.test(output)) return "model-capacity";
+  return "";
+}
+
 async function main() {
   const requestPath = process.argv[2];
   if (!requestPath) throw new Error("actor request path is required");
@@ -174,7 +197,34 @@ async function main() {
     startedAt,
   });
   recordStart();
-  const result = await runCaptured(request, (processGroupPid) => recordStart(processGroupPid));
+  let result = await runCaptured(request, (processGroupPid) => recordStart(processGroupPid));
+  const transientResumes = [];
+  const resumePolicy = request.transientResume || null;
+  const maximumResumes = resumePolicy?.schema === "acef.execution-assurance-transient-resume.v1"
+    ? Number(resumePolicy.maximumResumes || 0) : 0;
+  for (let ordinal = 1; ordinal <= maximumResumes; ordinal += 1) {
+    const reason = transientCapacityReason(request, result);
+    if (!reason) break;
+    const threadId = startedThreadId(request.stdoutPath);
+    const elapsedMs = Date.now() - Date.parse(startedAt);
+    const remainingMs = Number(request.timeoutMs || 120000) - elapsedMs;
+    if (!threadId || remainingMs <= 0 || !Array.isArray(resumePolicy.argsPrefix) || !resumePolicy.argsPrefix.length) break;
+    const resumeStartedAt = new Date().toISOString();
+    const resumeRequest = {
+      ...request,
+      args: [...resumePolicy.argsPrefix, threadId, resumePolicy.prompt],
+      timeoutMs: remainingMs,
+    };
+    result = await runCaptured(resumeRequest, (processGroupPid) => recordStart(processGroupPid), { append: true });
+    transientResumes.push({
+      ordinal,
+      reason,
+      threadId,
+      startedAt: resumeStartedAt,
+      finishedAt: new Date().toISOString(),
+      status: result.status,
+    });
+  }
   writeJsonAtomic(request.receiptPath, {
     schema: "acef.execution-assurance-actor-receipt.v1",
     requestPath,
@@ -186,6 +236,7 @@ async function main() {
     signal: result.signal,
     timedOut: result.timedOut,
     policyViolation: result.policyViolation,
+    transientResumes,
   });
 }
 

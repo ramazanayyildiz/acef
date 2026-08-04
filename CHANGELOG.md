@@ -52,6 +52,14 @@ or evidence contract. Do not use it to claim implementation status; link to the 
   still underspecified and therefore no typed green evidence could bind the canonical session. The successor now
   compiles the exact canonical Developer registration command into the supervisor dispatch and requires the conductor
   to execute it once before spawning that actor; the Developer may no longer create, probe, or rewrite its own record.
+- V3.21 confirmed that registration repair and completed Story 1 PASS in 387.7 seconds with four semantic actors and no
+  repair cycle. Story 2 also reached a 20-test/31-assertion focused green and dispatched both reviewers from one shared
+  tree. The attempt then ended after 1,059.8 seconds because the root Codex conductor received a transient model-capacity
+  error; its in-flight Patch Assurance child was interrupted after capsule consumption. This is a measurement-harness
+  failure, not a product or deterministic ACEF gate failure. The outer experiment actor now resumes the same root thread
+  at most once, on that exact capacity signature, within the original remaining time budget. It records the resume in
+  the immutable receipt and instructs the same conductor to use the existing typed child infrastructure-retry rule;
+  completed actors and lifecycles may not be replayed.
 - Replaced the generic-MySQL source-text oracle in the successor rehearsal fixture with executable behavior against
   both duplicate-classification paths. Focused state, validator, experiment, installer, and supervisor regressions
   pass; the complete 28-script repository suite plus closeout fixture passed in 246 seconds. Maturity is `enforced`,
