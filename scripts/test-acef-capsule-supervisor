@@ -320,6 +320,23 @@ try {
     reportHashes: { ...gateBeforeTransition.reportHashes, patchAssurance: passingPatchHash },
     executedChecks: Object.fromEntries(Object.keys(gateBeforeTransition.executedChecks).map((key) => [key, true])),
   }, null, 2));
+  const prematureTransition = cp.spawnSync(process.execPath, [state, "story-transition", "--repo", tmp], {
+    cwd: tmp,
+    encoding: "utf8",
+  });
+  if (prematureTransition.status === 0
+    || !prematureTransition.stderr.includes("requires a durably committed exact story-close package")) {
+    throw new Error("story-transition did not reject an uncommitted PASS gate/package");
+  }
+  const closePackage = JSON.parse(run(process.execPath, [supervisor, "--repo", tmp]));
+  if (closePackage.action.type !== "commit-story-close"
+    || !closePackage.action.stageCommand.startsWith("git add -f -- ")
+    || !closePackage.action.commitCommand.startsWith("git commit -m ")
+    || closePackage.action.packagePaths.some((entry) => entry.includes("/capsules/"))) {
+    throw new Error("supervisor did not compile the exact capsule-free story-close commit");
+  }
+  run("/bin/sh", ["-c", closePackage.action.stageCommand]);
+  run("/bin/sh", ["-c", closePackage.action.commitCommand]);
   const storyTransition = JSON.parse(run(process.execPath, [supervisor, "--repo", tmp]));
   if (storyTransition.action.command !== ".acef/bin/acef-state story-transition --repo .") {
     throw new Error("supervisor did not provide the exact post-PASS story transition command");

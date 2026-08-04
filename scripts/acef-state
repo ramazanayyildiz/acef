@@ -23,6 +23,7 @@ const {
   atddTestSourceAuthenticityFailure,
   atddGreenTestContinuityFailure,
 } = require("./lib/acef-state-parser");
+const { validateDurableStoryClosePackage } = require("./lib/acef-story-close");
 const { riskRequiresGuarded } = require("./lib/acef-execution-policy");
 const { buildAssuranceRequirements } = require("./lib/acef-assurance-requirements");
 const { loadModelRoutingPolicy, resolveRoleRuntime } = require("./lib/acef-model-routing");
@@ -1793,9 +1794,18 @@ function writeStoryTransition(opts) {
     throw new Error("story-transition requires an active capsule-supervisor story in code-review");
   }
   const gates = priorDeterministicStoryGates(opts.repo, activeRun.activeStory, activeRun);
-  const latest = gates.at(-1)?.gate;
+  const latestEntry = gates.at(-1);
+  const latest = latestEntry?.gate;
   if (!latest || latest.verdict !== "PASS") {
     throw new Error("story-transition requires the active story's terminal deterministic PASS gate");
+  }
+  const closePackage = validateDurableStoryClosePackage(
+    opts.repo,
+    latest,
+    path.join(opts.repo, "docs", "ai", "gates", latestEntry.fileName),
+  );
+  if (!closePackage.ok) {
+    throw new Error(`story-transition requires a durably committed exact story-close package: ${closePackage.failures.join("; ")}`);
   }
   const storyIndex = activeRun.expectedStories.findIndex((story) => normalizedScope(story) === normalizedScope(activeRun.activeStory));
   if (storyIndex < 0) throw new Error("active story is absent from the frozen expectedStories inventory");

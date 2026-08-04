@@ -30,6 +30,7 @@
       "scripts/acef-status",
       "scripts/acef-next",
       "scripts/acef-codex-guard",
+      "scripts/lib/acef-story-close.js",
       "scripts/lib/acef-assurance-requirements.js",
       "scripts/lib/acef-run-authorization.js#completedCapsuleTerminalBlockers",
       "scripts/acef-state#syncRuntimeContext",
@@ -69,8 +70,8 @@
   "limitations": [
     "V327-CAL-001 qualifies gpt-5.6-sol/medium only for Code Review. ATDD, Development, Patch Assurance, and Judge roles retain gpt-5.6-sol/high until role-specific evidence exists.",
     "A review capsule is additive transport and cannot replace independent reviewer judgment or targeted reads needed to resolve a named uncertainty; a reviewer may rerun the focused command only for a named evidence conflict.",
-    "The runtime is enforced by schemas, writers, validators, tests, and installer wiring. V3.28 completed four deterministic story PASS gates, the broad integration command, typed Epic PASS, budget gates, and a zero-finding blind product PASS, but its immutable process row failed on a repaired outer-scorer false negative; the capability therefore remains enforced rather than proven and target repositories have not yet been updated.",
-    "The one-shot post-red ATDD correction transition is deterministically and adversarially tested but was not live-triggered in V3.28; Story 3 succeeded through a production-only Developer patch.",
+    "The runtime is enforced by schemas, writers, validators, tests, and installer wiring. V3.31 live-triggered the one-shot correction, completed the nested product contract, and received a zero-finding blind product PASS, but exposed a real durable story-close ordering defect. The supervisor/state repair is deterministically enforced but has not yet passed a successor live proof; the capability therefore remains enforced rather than proven and target repositories have not yet been updated.",
+    "V3.31's immutable story-close package was committed after integration and included pre-dispatch capsules. The repaired supervisor now emits one exact capsule-free close commit and story-transition rejects any uncommitted or malformed package, but immutable V3.31 remains PRODUCT_PASS_PROCESS_FAIL.",
     "Existing Full runs with lifecycle evidence cannot adopt this runtime contract in place."
   ],
   "evidence": [
@@ -103,6 +104,21 @@
       "layer": "tests",
       "ref": "docs/experiments/execution-assurance-v328/REHEARSAL_RESULT.md",
       "note": "Records four cycle-0 story PASS gates, 48/48 tests and 122 assertions, typed Epic PASS, role/budget telemetry, zero-finding blind product PASS, the outer Epic-result scorer false negative, corrected 17/17 transcript reanalysis, and the absence of a live post-red correction trigger."
+    },
+    {
+      "layer": "tests",
+      "ref": "docs/experiments/execution-assurance-v329/REHEARSAL_RESULT.md",
+      "note": "Records the first live correction trigger, one fresh correction actor, same-session Developer continuation, and the valid fail-closed response to an initial stimulus containing an extra semantic defect."
+    },
+    {
+      "layer": "tests",
+      "ref": "docs/experiments/execution-assurance-v330/REHEARSAL_RESULT.md",
+      "note": "Records a complete one-correction lifecycle and the blind Judge's valid product FAIL because the editable regression was sequential rather than structurally nested."
+    },
+    {
+      "layer": "tests",
+      "ref": "docs/experiments/execution-assurance-v331/REHEARSAL_RESULT.md",
+      "note": "Records a structurally nested correction proof, 19-test product green, zero-finding blind product PASS, corrected transcript collaboration PASS, and the remaining durable close-ordering process failure that defines the enforced successor repair."
     },
     {
       "layer": "tests",

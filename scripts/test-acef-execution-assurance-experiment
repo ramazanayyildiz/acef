@@ -96,6 +96,7 @@ const {
   forceTrackInstalledFramework,
   ingestPilotJudgment,
   isBehavioralRed,
+  isAllowedCorrectionShellCommand,
   isAllowedReviewerShellCommand,
   lifecycleActorContract,
   normalizeShellCommandForPolicy,
@@ -1076,6 +1077,21 @@ const nestedQuotedFilterIntegrationCall = JSON.stringify({ timestamp: eventTimes
 assert.equal(parseLifecycleIntegrationEvidence(`${nestedQuotedFilterIntegrationCall}\n${integrationOutput}`, quotedFilterArgv,
   eventTimestamp(10), eventTimestamp(20)).ok, true,
 "a Codex sh -c wrapper around safely quoted frozen argv remains attributable");
+const escapedPipeFilterIntegrationCall = JSON.stringify({ timestamp: eventTimestamp(11), type: "response_item", payload: {
+  type: "function_call", name: "exec_command", call_id: "integration-1",
+  arguments: JSON.stringify({ cmd: "sh -c 'php artisan test --filter=BenchmarkOne\\|BenchmarkTwo'" }),
+} });
+assert.equal(parseLifecycleIntegrationEvidence(`${escapedPipeFilterIntegrationCall}\n${integrationOutput}`, quotedFilterArgv,
+  eventTimestamp(10), eventTimestamp(20)).ok, true,
+"an escaped shell metacharacter that produces the exact frozen argv remains attributable");
+assert.equal(isAllowedCorrectionShellCommand("git show --format=fuller --stat --oneline HEAD"), true,
+"bounded correction actors may use scoped read-only git show inspection");
+assert.equal(isAllowedCorrectionShellCommand("git show --format= --unified=3 HEAD -- tests/Unit/ExampleTest.php"), true,
+"bounded correction actors may inspect the committed test patch without a false mutation finding");
+assert.equal(isAllowedCorrectionShellCommand("sed -n '1,120p' tests/Unit/ExampleTest.php\ngit status --short -- tests\ngit show --stat HEAD"), true,
+"newline-separated read-only correction inspection remains safe");
+assert.equal(isAllowedCorrectionShellCommand("git status --short\ngit add -- tests/Unit/ExampleTest.php"), false,
+"a newline-separated mutation cannot hide inside a read-only correction inspection block");
 const structuredIntegrationOutput = JSON.stringify({ timestamp: eventTimestamp(12), type: "response_item", payload: {
   type: "custom_tool_call_output", call_id: "integration-1", output: [
     { type: "input_text", text: "Script completed\nOutput:\n" },

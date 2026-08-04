@@ -15,6 +15,7 @@ const {
   parseWorkerScope,
 } = require("./lib/acef-state-parser");
 const { loadModelRoutingPolicy, resolveRoleRuntime } = require("./lib/acef-model-routing");
+const { validateDurableStoryClosePackage } = require("./lib/acef-story-close");
 
 function sha256(value) {
   return crypto.createHash("sha256").update(value).digest("hex");
@@ -64,6 +65,14 @@ function git(repo, args) {
 
 function changedPaths(repo, from, to) {
   return git(repo, ["diff", "--name-only", `${from}..${to}`]).split(/\r?\n/).filter(Boolean);
+}
+
+function committedAtHead(repo, relativePath) {
+  return cp.spawnSync("git", ["cat-file", "-e", `HEAD:${relativePath}`], {
+    cwd: repo,
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+  }).status === 0;
 }
 
 function isControlPath(filePath) {
@@ -309,12 +318,45 @@ function build(repo) {
     }
   } else if (currentPhase === "codereview") {
     if (latestGate?.verdict === "PASS") {
-      action = {
-        type: "transition",
-        nextPhase: "next-story-or-epic-close",
-        command: ".acef/bin/acef-state story-transition --repo .",
-        reason: "deterministic story PASS exists",
-      };
+      const gatePath = path.join(repo, "docs", "ai", "gates", `${latestGate.gateId}.json`);
+      const closePackage = validateDurableStoryClosePackage(repo, latestGate, gatePath);
+      if (closePackage.ok) {
+        action = {
+          type: "transition",
+          nextPhase: "next-story-or-epic-close",
+          command: ".acef/bin/acef-state story-transition --repo .",
+          storyCloseCommit: closePackage.packageCommit,
+          reason: "deterministic story PASS and its exact close package are durably committed",
+        };
+      } else if (!closePackage.gateCommitted) {
+        const precommittedOwnedPaths = closePackage.closeOwnedPaths
+          .filter((relativePath) => relativePath !== `docs/ai/gates/${latestGate.gateId}.json`)
+          .filter((relativePath) => committedAtHead(repo, relativePath));
+        const missingPaths = closePackage.packagePaths.filter((relativePath) => !fs.existsSync(path.join(repo, relativePath)));
+        if (precommittedOwnedPaths.length || missingPaths.length) {
+          action = {
+            type: "replan",
+            reason: precommittedOwnedPaths.length
+              ? `story-close ownership was split before the PASS gate: ${precommittedOwnedPaths.join(", ")}`
+              : `story-close package paths are missing: ${missingPaths.join(", ")}`,
+          };
+        } else {
+          const pathspec = closePackage.packagePaths.map(quote).join(" ");
+          action = {
+            type: "commit-story-close",
+            gateId: latestGate.gateId,
+            packagePaths: closePackage.packagePaths,
+            stageCommand: `git add -f -- ${pathspec}`,
+            commitCommand: `git commit -m ${quote(`chore(acef): close ${story}`)} -- ${pathspec}`,
+            reason: "commit the exact gate-bound control package before any story or epic transition",
+          };
+        }
+      } else {
+        action = {
+          type: "replan",
+          reason: `committed story-close package is invalid and immutable: ${closePackage.failures.join("; ")}`,
+        };
+      }
     } else if (latestGate?.verdict === "REVISE"
       && [latestGate.actors?.codeReview, latestGate.actors?.patchAssurance]
         .map((id) => reports.find((report) => report.actorInstanceId === id))

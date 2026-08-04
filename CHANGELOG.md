@@ -9,6 +9,22 @@ or evidence contract. Do not use it to claim implementation status; link to the 
 
 ## Unreleased
 
+### Durable story-close transition enforcement
+
+- `capsule-supervisor-v1` now emits one exact `commit-story-close` action after a deterministic PASS gate. Its stage
+  and commit commands include only the gate-bound actor, report, evidence, raw-artifact, repair, and Judge records;
+  pre-dispatch review capsules are explicitly excluded.
+- `acef-state story-transition` independently validates that the complete close package is committed unchanged, that
+  the PASS gate and fresh reviewer artifacts were introduced together, and that the close commit contains exactly the
+  bound control delta. An uncommitted, split, mutated, or capsule-contaminated package fails before Current Context,
+  active-run, or ledger state can advance.
+- V3.31 live-triggered the bounded post-red correction and received a zero-finding artifact-only product PASS in
+  20m55.6s active time. Its immutable final result remains `PRODUCT_PASS_PROCESS_FAIL` because the conductor advanced
+  before committing the story gate and later included review capsules in the close commit. The repaired mechanism is
+  deterministically enforced; capability maturity remains `enforced` pending a successor live proof.
+- Transcript scoring now recognizes safely escaped shell metacharacters that produce the exact frozen integration
+  argv and permits newline-separated read-only correction inspection while continuing to reject combined mutations.
+
 ### Bounded post-red ATDD correction
 
 - Added a one-shot `acef.atdd-correction.v2` transition for `capsule-supervisor-v1`. When Development identifies a

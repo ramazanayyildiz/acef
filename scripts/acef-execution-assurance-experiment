@@ -1774,6 +1774,70 @@ function normalizeShellCommandForPolicy(command) {
     ? entry : entry.includes("'") ? JSON.stringify(entry) : `'${entry}'`).join(" ");
 }
 
+function simpleShellArgv(command) {
+  const source = String(command || "").trim();
+  if (!source) return [];
+  const tokens = [];
+  let token = "";
+  let tokenStarted = false;
+  let quoted = null;
+  let escaping = false;
+  for (let index = 0; index < source.length; index += 1) {
+    const character = source[index];
+    if (escaping) {
+      token += character;
+      tokenStarted = true;
+      escaping = false;
+      continue;
+    }
+    if (quoted === "'") {
+      if (character === "'") quoted = null;
+      else token += character;
+      tokenStarted = true;
+      continue;
+    }
+    if (character === "\\") {
+      escaping = true;
+      tokenStarted = true;
+      continue;
+    }
+    if (quoted === '"') {
+      if (character === '"') quoted = null;
+      else if (character === "`" || (character === "$" && source[index + 1] === "(")) return null;
+      else token += character;
+      tokenStarted = true;
+      continue;
+    }
+    if (character === "'" || character === '"') {
+      quoted = character;
+      tokenStarted = true;
+      continue;
+    }
+    if (character === "`" || (character === "$" && source[index + 1] === "(")
+      || ";|&<>\n\r".includes(character)) return null;
+    if (/\s/.test(character)) {
+      if (tokenStarted) {
+        tokens.push(token);
+        token = "";
+        tokenStarted = false;
+      }
+      continue;
+    }
+    token += character;
+    tokenStarted = true;
+  }
+  if (escaping || quoted) return null;
+  if (tokenStarted) tokens.push(token);
+  return tokens;
+}
+
+function lifecycleCommandSemanticArgv(command) {
+  const outer = simpleShellArgv(command);
+  if (!outer) return null;
+  if (outer[0] === "sh" && outer[1] === "-c" && outer.length === 3) return simpleShellArgv(outer[2]);
+  return outer;
+}
+
 function splitReadOnlyCorrectionConjunction(command) {
   const source = String(command || "").trim();
   const segments = [];
@@ -1790,11 +1854,15 @@ function splitReadOnlyCorrectionConjunction(command) {
       segments.push(source.slice(start, index).trim());
       start = index + 2;
       index += 1;
+    } else if (character === "\n" || character === "\r") {
+      segments.push(source.slice(start, index).trim());
+      if (character === "\r" && source[index + 1] === "\n") index += 1;
+      start = index + 1;
     }
   }
   if (escaping || quoted) return [];
   if (start) segments.push(source.slice(start).trim());
-  return segments;
+  return segments.filter(Boolean);
 }
 
 function isAllowedCorrectionReadOnlyCommand(command) {
@@ -1821,6 +1889,7 @@ function isAllowedCorrectionShellCommand(command) {
   if (!normalized) return false;
   if (/\bgit\s+(?:diff|show)\b.*(?:--ext-diff|--textconv|--output(?:=|\s)|-o(?:\s|$))/.test(normalized)) return false;
   if (/\brg\b.*(?:--pre|--pre-glob)\b/.test(normalized)) return false;
+  if (isAllowedCorrectionReadOnlyCommand(source)) return true;
   if (canonicalReviewResultActor(normalized)) return true;
   return [
     /^git\s+add\s+--(?:\s+(?:tests?|spec)\/[A-Za-z0-9_./-]+)+$/,
@@ -2290,6 +2359,8 @@ function parseLifecycleIntegrationEvidence(sessionText, expectedArgv, afterStory
     ? [] : [`sh -c ${JSON.stringify(expectedCommand)}`, `sh -c ${JSON.stringify(safelyQuotedArgvCommand)}`];
   const normalizedExpectedCommands = new Set([expectedCommand, safelyQuotedArgvCommand, expectedShellWrapper, ...genericShellWrappers]
     .filter(Boolean).map((entry) => normalizeShellCommandForPolicy(entry)));
+  const expectedSemanticArgv = expectedArgv[0] === "sh" && expectedArgv[1] === "-c"
+    ? null : expectedArgv;
   const calls = [];
   const outputs = new Map();
   for (const line of String(sessionText || "").split(/\r?\n/).filter(Boolean)) {
@@ -2302,8 +2373,12 @@ function parseLifecycleIntegrationEvidence(sessionText, expectedArgv, afterStory
       try { args = JSON.parse(payload.arguments || "{}"); } catch {}
       if (typeof args.cmd === "string") commands.push(args.cmd);
       if (typeof args.command === "string") commands.push(args.command);
-      for (const command of new Set(commands)) if (normalizedExpectedCommands.has(normalizeShellCommandForPolicy(command))) {
-        calls.push({ callId: payload.call_id || payload.id || "", startedAt: row.timestamp || null, command });
+      for (const command of new Set(commands)) {
+        const semanticArgv = expectedSemanticArgv ? lifecycleCommandSemanticArgv(command) : null;
+        const semanticMatch = semanticArgv && JSON.stringify(semanticArgv) === JSON.stringify(expectedSemanticArgv);
+        if (semanticMatch || normalizedExpectedCommands.has(normalizeShellCommandForPolicy(command))) {
+          calls.push({ callId: payload.call_id || payload.id || "", startedAt: row.timestamp || null, command });
+        }
       }
     }
     if (row.type === "response_item" && ["function_call_output", "custom_tool_call_output"].includes(payload.type)) {
@@ -4259,6 +4334,7 @@ module.exports = {
   blindJudgePrompt,
   epicPilotPrompt,
   isBehavioralRed,
+  isAllowedCorrectionShellCommand,
   isAllowedReviewerShellCommand,
   lifecycleActorContract,
   loadCollaborationEvidence,
