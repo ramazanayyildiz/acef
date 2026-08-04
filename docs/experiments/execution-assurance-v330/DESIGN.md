@@ -16,3 +16,6 @@ remains canonical ATDD phase evidence; its distinct lifecycle purpose is bound b
 Success requires exactly one correction binding, exactly one follow-up to the original Developer, accepted discovered
 green evidence, concurrent Code Review and Patch Assurance, one deterministic story-close package, one integration
 verification, one Epic Process Judge, and one external blind Judge. The run is single-attempt and fail-closed.
+
+The measured attempt failed as recorded in `REHEARSAL_RESULT.md`; it is not rerun or rewritten. V3.31 is the only
+admissible successor.

@@ -1,0 +1,41 @@
+{
+  "schema": "acef.execution-assurance-post-run-reanalysis.v1",
+  "experimentId": "acef-execution-assurance-v330-correction-proof",
+  "attemptRunId": "REHEARSAL-v330",
+  "immutableAttemptResult": "FAIL",
+  "reanalysisCommit": "bbbe4da",
+  "collaboration": {
+    "ok": true,
+    "failures": [],
+    "observedActorCount": 6,
+    "totalActorInvocations": 7,
+    "postRedCorrectionBindings": 1,
+    "sameDeveloperReactivations": 1,
+    "lifecycleIntegrationInvocations": 1
+  },
+  "durableLifecycle": {
+    "ok": true,
+    "failures": [],
+    "actorCount": 6,
+    "gateCount": 2
+  },
+  "automatedProductVerification": "PASS",
+  "typedEpicGate": "PASS",
+  "blindJudge": "FAIL",
+  "blindFinding": {
+    "id": "ATDD-NESTED-TRAVERSAL-NOT-TESTED",
+    "severity": "HIGH",
+    "message": "The required unit test calls handle() twice sequentially; it does not exercise nested double traversal, so the frozen nested-traversal ATDD constraint is unmet."
+  },
+  "finalDisposition": "PRODUCT_FAIL",
+  "sourceBindings": {
+    "preflightSha256": "7e11fe990630f4a42be39ef2f24818cf8e50b0e17535cba822d904816b43546f",
+    "rawTranscriptSha256": "635fbef1f0447dc9c3cd87b5fcd69d70cb3394c4f00d537b60da9378cfc84542",
+    "collaborationSessionSha256": "d64862cba8cc80000dbea5a0c05ab9cf48afade7474ae8734139fdb98d3bb5af",
+    "pilotRowSha256": "fcfb60ff1b5ea6f91bb2d93ad24200f2f1f8d81acbf7e8515ed66dc04945890e",
+    "verificationReceiptSha256": "eeec86b5742c6a2ed2ddf49ac641f5e0daaed922e908bd6747e76519b5d853c9",
+    "judgePacketSha256": "b240bbf42476e2cea2a4a894fd0a8a1454cfe4479b0945efe07011ef6d88bcda",
+    "judgmentLogSha256": "5d032a772b740a2b36bc82a9e9f052f184c1e4fd12eb8e689984860953ce5416",
+    "verdictSha256": "56b728edf1ad5fda433ceae74f92d9a1d90b8cc342d55892fdda9f689fe88132"
+  }
+}

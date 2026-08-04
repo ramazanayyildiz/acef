@@ -1,0 +1,29 @@
+{
+  "schema": "acef.execution-assurance-mechanism-proof-summary.v1",
+  "experimentId": "acef-execution-assurance-v330-correction-proof",
+  "attemptRunId": "REHEARSAL-v330",
+  "result": "FAIL",
+  "startedAt": "2026-08-04T20:35:45.432Z",
+  "finishedAt": "2026-08-04T20:52:07.730Z",
+  "activeDeliverySeconds": 973.6,
+  "targetActiveDeliverySeconds": 900,
+  "maximumActiveDeliverySeconds": 1800,
+  "actorExitCode": 0,
+  "verificationExitCode": 0,
+  "postRedCorrectionProof": { "required": 1, "observed": 1, "passed": true },
+  "postRunProcessReanalysis": "PASS",
+  "blindJudge": "FAIL",
+  "failureClass": "product-contract-test-shape",
+  "failureReason": "The editable Gate-aware regression executed the same Request sequentially rather than nesting the second middleware traversal inside the first next closure.",
+  "metrics": {
+    "inputTokens": 4745761,
+    "cachedInputTokens": 4436224,
+    "outputTokens": 30951,
+    "modelCycles": 61,
+    "toolCalls": 116,
+    "delegatedExecutionSeconds": 452.7,
+    "coordinationIdleSeconds": 3.7,
+    "coordinationIdleShare": 0.0038
+  },
+  "capabilityDisposition": "enforced-not-proven"
+}
