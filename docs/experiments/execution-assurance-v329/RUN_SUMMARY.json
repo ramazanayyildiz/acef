@@ -1,0 +1,46 @@
+{
+  "schema": "acef.execution-assurance-mechanism-proof-summary.v1",
+  "experimentId": "acef-execution-assurance-v329-correction-proof",
+  "attemptRunId": "REHEARSAL-v329",
+  "result": "FAIL",
+  "startedAt": "2026-08-04T20:10:28.882Z",
+  "finishedAt": "2026-08-04T20:23:54.952Z",
+  "activeDeliverySeconds": 796.6,
+  "targetActiveDeliverySeconds": 900,
+  "maximumActiveDeliverySeconds": 1800,
+  "actorExitCode": 0,
+  "verificationExitCode": 2,
+  "postRedCorrectionProof": {
+    "required": 1,
+    "observed": 1,
+    "passed": true
+  },
+  "terminalDeveloperResult": "REPLAN/SPLIT",
+  "failureClass": "controlled-stimulus-under-specification",
+  "failureReason": "The initial ATDD test added an unregistered Gate::forUser()->twice() expectation in addition to the intended resolver twice() defect. The bounded correction repaired only the registered resolver defect, so the resumed Developer correctly refused mutation and green evidence remained unavailable.",
+  "blindJudge": "not-launched-product-incomplete",
+  "metrics": {
+    "inputTokens": 2415274,
+    "cachedInputTokens": 2268928,
+    "outputTokens": 24763,
+    "modelCycles": 42,
+    "toolCalls": 68,
+    "delegatedExecutionSeconds": 475.4,
+    "coordinationIdleSeconds": 2.4,
+    "coordinationIdleShare": 0.003
+  },
+  "bindings": {
+    "frameworkCommit": "9b2d04418b810077aa154fe9a47f156bb363d42e",
+    "initialRedCommit": "0eaee170",
+    "correctionControlCommit": "45c0febe",
+    "replacementRedCommit": "90ce7659",
+    "correctionActorId": "acef_s1_middleware_correction_proof_atdd_correction1",
+    "correctionFindingsSha256": "48c6dbc3833f0fb41252c967e92285eb77ce3a321d4aa360c62399faf24c7d93",
+    "preflightSha256": "3a7699a26b13d03704d356054f279c5da55613dea9b16aa710d149635e8a9f47",
+    "rawTranscriptSha256": "7fd133b2d40757e85327b7e361377a02e8a3dcbec44273858d9a554fcd11a616",
+    "collaborationSessionSha256": "50aaca8ba94e2ee459f0bb33092aad4209ee01e4277973bd0bfc157c09f2fb0d",
+    "pilotRowSha256": "ddbec6375e28fb97be801987f54515f41d4b1d93103e1fbfe538a1c6de22b238",
+    "verificationReceiptSha256": "1a2a15c6ef74219efd673c3f2375c0c2795fa90ddf1a518385acda6cc2a9ed99"
+  },
+  "capabilityDisposition": "enforced-not-proven"
+}

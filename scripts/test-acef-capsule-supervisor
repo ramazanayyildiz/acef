@@ -139,6 +139,8 @@ try {
   if (correctionDispatch.action.type !== "dispatch" || correctionDispatch.action.role !== "atdd-correction"
     || correctionDispatch.action.actorInstanceId !== "acef_story_capsule_atdd_correction1"
     || correctionDispatch.action.redEvidenceId !== "story_capsule-red-correction1"
+    || correctionDispatch.action.stageCommand !== "git add -- 'tests/demo.test.js'"
+    || !correctionDispatch.action.commitCommand.startsWith("git commit -m ")
     || !correctionDispatch.action.redEvidenceCommand.includes("--discovery-command-json")
     || !correctionDispatch.action.redEvidenceCommand.includes("demo contract")) {
     throw new Error("supervisor did not compile the bounded replayable ATDD correction dispatch");

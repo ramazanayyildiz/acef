@@ -98,6 +98,7 @@ const {
   isBehavioralRed,
   isAllowedReviewerShellCommand,
   lifecycleActorContract,
+  normalizeShellCommandForPolicy,
   parseCollaborationEvidence,
   parseReviewerCompletion,
   reviewerResultFromReport,
@@ -1381,6 +1382,16 @@ assert.equal(correctionSessionWrites(JSON.stringify({
   type: "response_item",
   payload: { type: "custom_tool_call", name: "exec", input: "const r=await tools.exec_command({cmd:\"php artisan test --filter=FocusedTest\"}); text(r.output);" },
 }), root).unsafeShellMutations.length, 0, "one structurally allowed focused test command remains permitted");
+for (const command of [
+  "git add -- tests/Feature/FocusedTest.php",
+  "git commit -m 'test(acef): correct focused red semantics' -- tests/Feature/FocusedTest.php",
+  "'.acef/bin/acef-state' 'evidence-run' '--repo' '.' '--id' 'focused-red-correction1' '--kind' 'runtime-test' '--actor' 'focused_atdd_correction1' '--story' 'focused' '--model' 'gpt-5.6-sol' '--effort' 'high' '--satisfies' 'focused-ac1' '--' 'php' 'artisan' 'test' '--filter=FocusedTest'",
+]) {
+  assert.equal(correctionSessionWrites(JSON.stringify({
+    type: "response_item",
+    payload: { type: "custom_tool_call", name: "exec", input: `const r=await tools.exec_command({cmd:${JSON.stringify(command)}}); text(r.output);` },
+  }), root).unsafeShellMutations.length, 0, `supervisor-owned correction command must be accepted: ${command}`);
+}
 const committedFileRepo = fs.mkdtempSync(path.join(os.tmpdir(), "acef-committed-file-"));
 process.on("exit", () => fs.rmSync(committedFileRepo, { recursive: true, force: true }));
 cp.spawnSync("git", ["init", "-q"], { cwd: committedFileRepo });
@@ -1458,6 +1469,15 @@ assert.equal(v3AtddEvidenceCommandObserved(atddEvidenceSession, "acef_story_atdd
 const capsuleAtddEvidenceSession = atddEvidenceSession.replace("--story story --satisfies", "--story story --model gpt-5.6-sol --effort high --satisfies");
 assert.equal(v3AtddEvidenceCommandObserved(capsuleAtddEvidenceSession, "acef_story_atdd", "story"), true,
   "the capsule runtime model and effort receipt remains compatible with exact-one ATDD transcript binding");
+const quotedCapsuleAtddEvidenceCommand = "'.acef/bin/acef-state' 'evidence-run' '--repo' '.' '--id' 'story-red' '--kind' 'runtime-test' '--actor' 'acef_story_atdd' '--story' 'story' '--model' 'gpt-5.6-sol' '--effort' 'high' '--satisfies' 'story-ac1' '--' 'node' '--test' 'tests/story.test.js'";
+const quotedCapsuleAtddEvidenceSession = JSON.stringify({ type: "response_item", payload: {
+  type: "custom_tool_call", name: "exec", call_id: "quoted-atdd-evidence",
+  input: `const r=await tools.exec_command({cmd:${JSON.stringify(quotedCapsuleAtddEvidenceCommand)}}); text(JSON.stringify(r));`,
+} });
+assert.equal(v3AtddEvidenceCommandObserved(quotedCapsuleAtddEvidenceSession, "acef_story_atdd", "story"), true,
+  "the scorer must accept the supervisor's shell-quoted argv spelling");
+assert.equal(normalizeShellCommandForPolicy("'git' 'add' '--' 'tests/Feature/FocusedTest.php'"),
+  "git add -- tests/Feature/FocusedTest.php");
 const discoveredAtddEvidenceCommand = atddEvidenceCommand
   .replace("--story story --satisfies", "--story story --model gpt-5.6-sol --effort high --satisfies")
   .replace("--satisfies story-ac1",

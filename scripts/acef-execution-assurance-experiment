@@ -668,7 +668,7 @@ function epicPilotPrompt(attempt, resolved, manifest) {
       "Every successful green evidence command must add the story's exact `--discovery-command-json` and all `--expected-test` identities before `--`. A green run that did not discover the frozen tests is invalid even when its test command exits zero.",
       "The original Developer remains one session for the story. It may perform bounded focused-test attempts inside its original turn and one repair follow-up per review cycle, but it must not return on the first failed attempt. It returns only with accepted discovered green evidence and, for a repair, one final repair receipt; a terminal non-green return is REPLAN/SPLIT, never another continuation or replacement Developer.",
       "When the supervisor dispatches Development, execute its exact registrationCommand once before spawn, then spawn that same actorInstanceId. The command binds the canonical /root/<actorInstanceId> session before any green evidence call. The Developer and conductor must not create, probe, replace, or rewrite that actor record later.",
-      "On a typed post-red ATDD correction request from Development, verify that application/test state is clean at the original red HEAD, then run `.acef/bin/acef-state atdd-correction-start --repo . --findings-sha256 <the exact Developer findings hash>` exactly once. Follow the supervisor: commit only its listed control paths; spawn exactly one fresh `<atdd-task-name>_correction1` with the ATDD runtime and the supervisor's frozen explicit allowedPaths, precheckCommand, and redEvidenceCommand; let that actor change and commit only those tests and execute the exact replacement red command once. It returns ACTOR_RESULT=PASS only after failing replacement evidence exists. Run the supervisor transition back to Development, then use exactly one followup_task to the original Developer session. Do not spawn a replacement Developer. The resumed Developer implements against the corrected red and returns POST_RED_ATDD_CORRECTION=<correction-task-name> plus ACTOR_RESULT=PASS after discovered green evidence. Any second correction request, production write by the correction actor, non-red replacement, missing binding, or expanded test path is REPLAN/SPLIT.",
+      "On a typed post-red ATDD correction request from Development, verify that application/test state is clean at the original red HEAD, then run `.acef/bin/acef-state atdd-correction-start --repo . --findings-sha256 <the exact Developer findings hash>` exactly once. Follow the supervisor: commit only its listed control paths; spawn exactly one fresh `<atdd-task-name>_correction1` with the ATDD runtime and the supervisor's frozen explicit allowedPaths, precheckCommand, stageCommand, commitCommand, and redEvidenceCommand. Let that actor change only those tests, run precheckCommand, then run stageCommand and commitCommand as two separate literal exec calls with no shell separator, and finally execute the exact replacement redEvidenceCommand once without re-quoting or reconstructing it. It returns ACTOR_RESULT=PASS only after failing replacement evidence exists. Run the supervisor transition back to Development, then use exactly one followup_task to the original Developer session. Do not spawn a replacement Developer. The resumed Developer implements against the corrected red and returns POST_RED_ATDD_CORRECTION=<correction-task-name> plus ACTOR_RESULT=PASS after discovered green evidence. Any second correction request, production write by the correction actor, non-red replacement, missing binding, or expanded test path is REPLAN/SPLIT.",
       "At epic close, obey a supervisor context-sync transition before dispatch. Then execute the epic-judge dispatch registrationCommand exactly once before spawning the one non-retryable Judge. Give that Judge the supervisor's exact storyGateIds, greenEvidenceIds, and decisionCommands; its only terminal mutation is exactly one matching PASS, FAIL, REPLAN, or BLOCKED command. Never redispatch an existing epic Judge without a terminal gate. After that terminal gate exists, call the supervisor once more, require action type complete-epic, execute its exact completionCommand and then its exact commitCommand, and do not hand-author or broaden the terminal path list.",
       "Mechanical state transitions, evidence collection, capsule generation, report generation, and gate construction use deterministic tools. Do not delegate them or ask a model to restate their JSON. Every semantic role and the conductor must use the manifest-pinned provider-neutral policy mapping; do not upgrade, downgrade, or substitute a role runtime during the run.",
     ].join("\n")
@@ -1685,7 +1685,8 @@ function codexSessionMetrics(sessionText) {
 }
 
 function v3AtddEvidenceCommandObserved(sessionText, taskName, story) {
-  const commands = codexSessionMetrics(sessionText).commandText.split(/\r?\n/).map((entry) => entry.trim()).filter(Boolean);
+  const commands = codexSessionMetrics(sessionText).commandText.split(/\r?\n/)
+    .map((entry) => normalizeShellCommandForPolicy(entry)).filter(Boolean);
   const actorPattern = taskName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const storyPattern = story.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const matches = commands.filter((command) => new RegExp(
@@ -1745,9 +1746,38 @@ function hasUnsafeShellMetacharacter(command) {
   return singleQuoted || doubleQuoted;
 }
 
+function normalizeShellCommandForPolicy(command) {
+  const source = String(command || "").trim();
+  if (!source) return "";
+  const tokens = [];
+  let token = "";
+  let quoted = null;
+  let escaping = false;
+  for (const character of source) {
+    if (escaping) { token += character; escaping = false; continue; }
+    if (character === "\\" && quoted !== "'") { escaping = true; continue; }
+    if (quoted) {
+      if (character === quoted) quoted = null;
+      else token += character;
+      continue;
+    }
+    if (character === "'" || character === '"') { quoted = character; continue; }
+    if (/\s/.test(character)) {
+      if (token) { tokens.push(token); token = ""; }
+      continue;
+    }
+    token += character;
+  }
+  if (escaping || quoted) return "";
+  if (token) tokens.push(token);
+  return tokens.join(" ");
+}
+
 function isAllowedCorrectionShellCommand(command) {
-  const normalized = String(command || "").trim();
-  if (!normalized || hasUnsafeShellMetacharacter(normalized)) return false;
+  const source = String(command || "").trim();
+  if (!source || hasUnsafeShellMetacharacter(source)) return false;
+  const normalized = normalizeShellCommandForPolicy(source);
+  if (!normalized) return false;
   if (/\bgit\s+(?:diff|show)\b.*(?:--ext-diff|--textconv|--output(?:=|\s)|-o(?:\s|$))/.test(normalized)) return false;
   if (/\brg\b.*(?:--pre|--pre-glob)\b/.test(normalized)) return false;
   if (canonicalReviewResultActor(normalized)) return true;
@@ -2600,7 +2630,8 @@ function validateDurableLifecycleEvidence(clone, expectedContract, acceptedActor
     const actor = actors.get(expected.taskName);
     if (!actor) { failures.push(`${expected.taskName}: typed actor record missing`); continue; }
     if (!expectedScopeMatches(expected.scope, actor.story)) failures.push(`${expected.taskName}: actor scope mismatch`);
-    if (canonicalLifecyclePhase(actor.phase) !== canonicalLifecyclePhase(expected.control)) failures.push(`${expected.taskName}: actor phase mismatch`);
+    const expectedActorPhase = expected.control === "atdd-correction" ? "atdd" : expected.control;
+    if (canonicalLifecyclePhase(actor.phase) !== canonicalLifecyclePhase(expectedActorPhase)) failures.push(`${expected.taskName}: actor phase mismatch`);
     if (canonicalLifecyclePhase(actor.role) !== canonicalLifecyclePhase(expected.persona)) failures.push(`${expected.taskName}: actor persona mismatch`);
     if (v3Contract && (actor.runId !== expectedRunId || actor.fullFlowContract !== "four-actor-v3")) {
       failures.push(`${expected.taskName}: actor run/contract binding mismatch`);
@@ -4180,6 +4211,7 @@ module.exports = {
   ensureActorRequest,
   evaluatePilotBudgets,
   evaluatePostRedCorrectionProof,
+  normalizeShellCommandForPolicy,
   evaluateTreatmentState,
   validateFrozenDiscoveryContracts,
   finalizePilotAttempt,

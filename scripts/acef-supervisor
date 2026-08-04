@@ -272,6 +272,8 @@ function build(repo) {
           type: "dispatch", role: "atdd-correction", actorInstanceId: activeCorrection.correctionActorId,
           runtime: runtime.atdd,
           precheckCommand: `.acef/bin/acef-state atdd-precheck --repo .${activeCorrection.allowedPaths.map((filePath) => ` --test-path ${quote(filePath)}`).join("")}`,
+          stageCommand: `git add -- ${activeCorrection.allowedPaths.map(quote).join(" ")}`,
+          commitCommand: `git commit -m ${quote(`test(acef): correct ${story} red semantics`)} -- ${activeCorrection.allowedPaths.map(quote).join(" ")}`,
           redEvidenceId: replacementId,
           redEvidenceCommand: evidenceCommand,
           correctionBindingPath: bindingRelative,

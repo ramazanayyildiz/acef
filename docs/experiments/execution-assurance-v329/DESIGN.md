@@ -27,3 +27,6 @@ repository's empty `tests/Integration` and `tests/Performance` directories. The 
 same deterministic setup used by the source benchmark. No model lifecycle actor had started, so this did not consume
 the single measured attempt; the failed preflight remains external diagnostic evidence and the successful preflight
 must bind the final manifest hash.
+
+The measured attempt failed as recorded in `REHEARSAL_RESULT.md`; it is not rerun or rewritten. V3.30 is the only
+admissible successor.
