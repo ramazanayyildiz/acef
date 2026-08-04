@@ -45,8 +45,8 @@ try {
     "--expected-story", "Story Capsule", "--status", "active", "--story", "Story Capsule", "--phase", "atdd",
     "--ledger", "docs/ai/ACEF_capsule_DELIVERY_AUDIT.md", "--context", "docs/ai/ACEF_CURRENT_CONTEXT.md",
     "--worker-scope", "docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json"]);
-  stateRun(["worker-scope", "--repo", tmp, "--story", "Story Capsule", "--phase", "development",
-    "--worker-id", "acef_story_capsule_development", "--allow", "app/**", "--allow", "tests/**"]);
+  stateRun(["worker-scope", "--repo", tmp, "--story", "Story Capsule", "--phase", "atdd",
+    "--worker-id", "acef_story_capsule_atdd", "--allow", "app/**", "--allow", "tests/**"]);
 
   const atddRun = readJson("docs/ai/ACEF_ACTIVE_RUN.json");
   fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_ACTIVE_RUN.json"), JSON.stringify({ ...atddRun, activePhase: "readiness" }, null, 2));
@@ -70,6 +70,10 @@ try {
     throw new Error("supervisor did not provide the exact ATDD transition command");
   }
   stateRun(["phase-transition", "--repo", tmp, "--phase", "development"]);
+  const developmentScope = readJson("docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json");
+  if (developmentScope.phase !== "development" || developmentScope.workerId !== "acef_story_capsule_development") {
+    throw new Error("ATDD transition did not atomically rebind the typed worker scope to Development");
+  }
   stateRun(["actor", "--repo", tmp, "--id", "acef_story_capsule_development", "--story", "Story Capsule",
     "--phase", "development", "--role", "developer", "--client", "codex", "--session-id", "/root/acef_story_capsule_development",
     "--context-profile", "development", "--model", "gpt-5.6-sol", "--effort", "high"]);

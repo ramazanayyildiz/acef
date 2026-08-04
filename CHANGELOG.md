@@ -41,6 +41,11 @@ or evidence contract. Do not use it to claim implementation status; link to the 
   test scanned PHP source tokens. The successor now forbids source-shape ATDD, prints exact bootstrap/per-story scope
   commands, and routes semantic-reviewer PASS plus mechanical-gate FAIL directly to REPLAN instead of wasting a
   Developer follow-up.
+- V3.19 confirmed exact bootstrap removed option probing, then failed closed in 977.3 seconds. The initial typed worker
+  scope retained the ATDD identity after the phase transition, causing the Developer to refuse its first write; Story
+  2 later returned ATDD REVISE because a genuine product red was mixed with a closure-capture defect. Phase transition
+  now atomically rebinds the worker scope to the canonical Developer, and the compiled ATDD contract requires a direct
+  pre-bind focused run that removes every test-harness defect before the one immutable red-evidence command.
 - Replaced the generic-MySQL source-text oracle in the successor rehearsal fixture with executable behavior against
   both duplicate-classification paths. Focused state, validator, experiment, installer, and supervisor regressions
   pass; the complete 28-script repository suite plus closeout fixture passed in 246 seconds. Maturity is `enforced`,

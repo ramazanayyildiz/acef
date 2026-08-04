@@ -1414,10 +1414,33 @@ function writePhaseTransition(opts) {
     || (current === "atdd" && requested === "development")
     || (current === "development" && requested === "codereview");
   if (!allowed) throw new Error(`invalid capsule-supervisor phase transition ${activeRun.activePhase} -> ${opts.phase}`);
+  let workerScopeTransition = null;
+  let workerScopeTarget = null;
+  if (current === "atdd" && requested === "development") {
+    workerScopeTarget = activeRun.workerScopePath
+      ? path.resolve(opts.repo, activeRun.workerScopePath)
+      : path.join(opts.repo, "docs", "ai", "ACEF_ACTIVE_WORKER_SCOPE.json");
+    if (!fs.existsSync(workerScopeTarget)) throw new Error("ATDD to Development requires the typed active worker scope");
+    const workerScope = parseWorkerScope(workerScopeTarget);
+    if (workerScope.runId !== activeRun.runId
+      || normalizedScope(workerScope.activeStory) !== normalizedScope(activeRun.activeStory)) {
+      throw new Error("ATDD to Development worker scope does not match the active run/story");
+    }
+    const storyToken = String(activeRun.activeStory).toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+    workerScopeTransition = {
+      ...workerScope,
+      phase: "development",
+      workerId: `acef_${storyToken}_development`,
+      createdAt: new Date().toISOString(),
+    };
+  }
   const target = path.join(opts.repo, "docs", "ai", "ACEF_ACTIVE_RUN.json");
   const { lane: _compatibilityLane, ...storedRun } = activeRun;
   const record = { ...storedRun, activePhase: opts.phase, updatedAt: new Date().toISOString() };
   atomicJson(target, record, { overwrite: true, validate: parseActiveRun });
+  if (workerScopeTransition) {
+    atomicJson(workerScopeTarget, workerScopeTransition, { overwrite: true, validate: parseWorkerScope });
+  }
   console.log(`WROTE phase-transition ${activeRun.activePhase} -> ${opts.phase}`);
 }
 
