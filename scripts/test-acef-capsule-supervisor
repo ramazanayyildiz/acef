@@ -204,8 +204,10 @@ try {
   fs.writeFileSync(path.join(tmp, "docs", "ai", "gates", "capsule-revise-cycle0.json"), JSON.stringify(gateBeforeTransition, null, 2));
   const repairStart = JSON.parse(run(process.execPath, [supervisor, "--repo", tmp]));
   if (repairStart.action.type !== "resume" || repairStart.action.repairCycle !== 1
-    || repairStart.action.actorInstanceId !== "acef_story_capsule_development") {
-    throw new Error("supervisor did not return the first REVISE to the original Developer");
+    || repairStart.action.actorInstanceId !== "acef_story_capsule_development"
+    || repairStart.action.repairReceiptPath !== "docs/ai/repairs/story_capsule-repair1.json"
+    || repairStart.action.repairCommand !== ".acef/bin/acef-state developer-repair --repo . --id story_capsule-repair1 --prior-gate capsule-revise-cycle0 --developer-actor acef_story_capsule_development") {
+    throw new Error("supervisor did not return the first REVISE and exact repair receipt command to the original Developer");
   }
 
   fs.writeFileSync(path.join(tmp, "tests", "demo.test.js"), "const test = require('node:test'); const assert = require('node:assert'); test('demo contract', () => assert.strictEqual(require('../app/demo.js'), false));\n");
@@ -222,9 +224,10 @@ try {
     "--actor", "acef_story_capsule_development", "--story", "Story Capsule", "--satisfies", "story-capsule-ac1",
     "--discovery-command-json", JSON.stringify([process.execPath, "-e", "console.log('demo contract')"]),
     "--expected-test", "demo contract", "--", process.execPath, "--test", "tests/demo.test.js"]);
-  const repairReceiptAction = JSON.parse(run(process.execPath, [supervisor, "--repo", tmp]));
-  if (repairReceiptAction.action.type !== "write-developer-repair" || repairReceiptAction.action.repairCycle !== 1) {
-    throw new Error("supervisor did not request the single final-tree repair receipt");
+  const missingRepairReceipt = JSON.parse(run(process.execPath, [supervisor, "--repo", tmp]));
+  if (missingRepairReceipt.action.type !== "replan"
+    || !missingRepairReceipt.action.reason.includes("docs/ai/repairs/story_capsule-repair1.json")) {
+    throw new Error("supervisor did not fail closed when the Developer omitted its exact repair receipt");
   }
   stateRun(["developer-repair", "--repo", tmp, "--id", "story_capsule-repair1",
     "--prior-gate", "capsule-revise-cycle0", "--developer-actor", "acef_story_capsule_development"]);

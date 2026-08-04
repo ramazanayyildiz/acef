@@ -1296,6 +1296,16 @@ assert.equal(v3AtddEvidenceCommandObserved(atddEvidenceSession, "acef_story_atdd
 const capsuleAtddEvidenceSession = atddEvidenceSession.replace("--story story --satisfies", "--story story --model gpt-5.6-sol --effort high --satisfies");
 assert.equal(v3AtddEvidenceCommandObserved(capsuleAtddEvidenceSession, "acef_story_atdd", "story"), true,
   "the capsule runtime model and effort receipt remains compatible with exact-one ATDD transcript binding");
+const discoveredAtddEvidenceCommand = atddEvidenceCommand
+  .replace("--story story --satisfies", "--story story --model gpt-5.6-sol --effort high --satisfies")
+  .replace("--satisfies story-ac1",
+    "--discovery-command-json '[\"vendor/bin/phpunit\",\"--list-tests\"]' --expected-test 'Tests\\\\Feature\\\\StoryTest::critical_path' --satisfies story-ac1");
+const discoveredAtddEvidenceSession = JSON.stringify({ type: "response_item", payload: {
+  type: "function_call", name: "exec_command", call_id: "atdd-evidence-discovery",
+  arguments: JSON.stringify({ cmd: discoveredAtddEvidenceCommand }),
+} });
+assert.equal(v3AtddEvidenceCommandObserved(discoveredAtddEvidenceSession, "acef_story_atdd", "story"), true,
+  "the failure-atomic frozen discovery binding remains one canonical ATDD evidence command");
 assert.equal(v3AtddEvidenceCommandObserved(capsuleAtddEvidenceSession.replace("--effort high", "--effort medium"), "acef_story_atdd", "story"), false,
   "an underpowered capsule ATDD receipt cannot satisfy transcript binding");
 assert.equal(v3AtddEvidenceCommandObserved(atddEvidenceSession.replace("runtime-test", "atdd-red"), "acef_story_atdd", "story"), false,

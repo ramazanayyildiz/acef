@@ -68,6 +68,13 @@ or evidence contract. Do not use it to claim implementation status; link to the 
   embeds the frozen discovery contract in the exact red-evidence command, and requires a direct discovery precheck
   before the test-only commit. A mismatch therefore remains repairable inside the one ATDD turn and cannot consume a
   Developer session.
+- V3.23 confirmed failure-atomic ATDD discovery in an 851.2-second attempt and reached a genuine Story 1 repair. Code
+  Review found a mixed-operator normalization edge case, the original Developer repaired it, and focused tests passed.
+  The run then stopped because the Developer invented a valid but non-canonical repair receipt ID while the supervisor
+  compiled retry capsules against a different path. The successor makes repair identity supervisor-owned: every resume
+  action carries the exact `repairCommand` and `repairReceiptPath`; the same Developer executes that command after green
+  evidence, and omission or substitution is mechanical REPLAN rather than conductor-authored repair. The experiment
+  transcript parser now also recognizes the new discovery-bound red-evidence command as the one canonical ATDD call.
 - Replaced the generic-MySQL source-text oracle in the successor rehearsal fixture with executable behavior against
   both duplicate-classification paths. Focused state, validator, experiment, installer, and supervisor regressions
   pass; the complete 28-script repository suite plus closeout fixture passed in 246 seconds. Maturity is `enforced`,

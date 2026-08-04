@@ -202,13 +202,17 @@ function build(repo) {
     } else if (latestGate?.verdict === "REVISE" && !repairs.some((record) => record.cycle === reviewCycle)) {
       const postGateEvidence = developerEvidence.filter((record) => String(record.finishedAt || record.startedAt || "") > String(latestGate.createdAt || ""));
       const latestRepairEvidence = postGateEvidence.at(-1) || null;
+      const repairReceiptId = `${storyKey}-repair${reviewCycle}`;
+      const repairReceiptPath = `docs/ai/repairs/${repairReceiptId}.json`;
+      const repairCommand = `.acef/bin/acef-state developer-repair --repo . --id ${repairReceiptId} --prior-gate ${latestGate.gateId} --developer-actor ${actorId("development")}`;
       if (!latestRepairEvidence) {
-        action = { type: "resume", role: "development", actorInstanceId: actorId("development"), runtime: RUNTIME.development, repairCycle: reviewCycle, reason: "review findings require original Developer" };
-      } else if (latestRepairEvidence.exitCode === 0 && latestRepairEvidence.discovery) {
         action = {
-          type: "write-developer-repair", runtime: null, repairCycle: reviewCycle,
-          command: `.acef/bin/acef-state developer-repair --repo . --id ${storyKey}-repair${reviewCycle} --prior-gate ${latestGate.gateId} --developer-actor ${actorId("development")}`,
+          type: "resume", role: "development", actorInstanceId: actorId("development"), runtime: RUNTIME.development,
+          repairCycle: reviewCycle, repairCommand, repairReceiptPath,
+          reason: "review findings require original Developer; the same Developer must write the exact supervisor-owned repair receipt after green evidence",
         };
+      } else if (latestRepairEvidence.exitCode === 0 && latestRepairEvidence.discovery) {
+        action = { type: "replan", reason: `Developer repair returned green evidence without the exact supervisor-owned receipt ${repairReceiptPath}` };
       } else {
         action = { type: "replan", reason: "Developer repair follow-up returned without accepted green evidence" };
       }
