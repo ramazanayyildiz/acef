@@ -20,6 +20,7 @@ const {
   parseCapabilityChange,
   parseSpecReadiness,
   parseWorkerScope,
+  validateWorkerScopeRecord,
   safeRelative,
   parseControlDosing,
   atddRedExecutionFailure,
@@ -27,6 +28,11 @@ const {
   atddGreenTestContinuityFailure,
 } = require("./lib/acef-state-parser");
 const { inspectRunAuthorization } = require("./lib/acef-run-authorization");
+const {
+  buildAssuranceRequirements,
+  derivableRequirementFailures,
+  stateChangingRiskSignals,
+} = require("./lib/acef-assurance-requirements");
 const {
   assuranceProfile,
   displayName,
@@ -461,17 +467,6 @@ function inferredRiskTriggers(paths) {
     if (/state[-_]?machine|workflow[-_]?state|transition[-_]?guard/i.test(filePath)) triggers.add("state-machine");
   }
   return [...triggers];
-}
-
-function stateChangingRiskSignals(activeRun, activeScope = null, paths = []) {
-  const text = [
-    activeRun?.activeStory,
-    activeRun?.laneRationale,
-    ...(activeRun?.riskTriggers || []),
-    ...(activeScope?.surfaces || []),
-    ...paths,
-  ].filter(Boolean).join(" ");
-  return /\b(create|capture|record|save|store|persist(?:ence|ent|ed|ing)?|write|update|delete|notes?|lead|crm|follow[-_ ]?up|conversion|history|tracking|stateful[-_ ]product[-_ ]data|migration|database|schema|app[-_ ]?store|memory|singleton|demo[-_ ]?data|fixture[-_ ]?store)\b/i.test(text);
 }
 
 function stateChangingRisk(repoRoot, activeRun, activeScope = null) {
@@ -1011,11 +1006,13 @@ function checkEpicTransitionApproval(repoRoot, ledgerPath, targetEpic) {
 }
 
 function checkRunAuthorization(repoRoot, options = {}) {
+  const activeRun = typedActiveRun(repoRoot);
   const authorization = inspectRunAuthorization(repoRoot, {
     allowDirect: true,
     allowedStatuses: options.allowedStatuses || ["active", "complete"],
     requireWorkerScope: options.requireWorkerScope === true,
     requireScopeRunId: options.requireScopeRunId === true,
+    allowFinalStoryScopeAtV3EpicClose: isFourActorV3EpicClose(activeRun),
   });
   return authorization.ok
     ? result("run-authorization", true, `${authorization.mode} run authorization is consistent`)
@@ -1600,6 +1597,12 @@ function isFourActorV3(activeRun) {
   return activeRun?.workflowId === "full-bmad" && activeRun?.fullFlowContract === "four-actor-v3";
 }
 
+function isFourActorV3EpicClose(activeRun) {
+  return isFourActorV3(activeRun)
+    && activeRun.scopeUnit === "epic"
+    && ["closeout", "epicprocessjudge"].includes(canonicalPhase(activeRun.activePhase));
+}
+
 function checkTypedActorSeparation(repoRoot, activeRun) {
   const actorFiles = jsonRecords(path.join(repoRoot, "docs", "ai", "actors"));
   const actors = actorFiles.map(parseActorRecord).filter((actor) => normalizedScope(actor.story) === normalizedScope(activeRun.activeStory)
@@ -2070,7 +2073,105 @@ function deterministicGateRecordIntegrityFailures(repoRoot, activeRun, gate) {
   return failures;
 }
 
-function deterministicGateIntegrityFailures(repoRoot, activeRun, gate) {
+function compiledAssuranceFailures(repoRoot, activeRun, gate, { requireSnapshot = false } = {}) {
+  let requirements = gate.assuranceRequirements || null;
+  if (!requirements && !requireSnapshot) return [];
+  const failures = [];
+  const scopePaths = normalizedScopePaths(gate.scopePaths);
+  const historicalScopePath = activeRun.workerScopePath || "docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json";
+  let historicalScope = null;
+  try {
+    historicalScope = validateWorkerScopeRecord(JSON.parse(cp.execFileSync(
+      "git", ["show", `${gate.repositoryCommit}:${historicalScopePath}`],
+      { cwd: repoRoot, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] },
+    )));
+    if (historicalScope.runId !== activeRun.runId
+      || normalizedScope(historicalScope.activeStory) !== normalizedScope(activeRun.activeStory)) {
+      failures.push("historical worker scope run/story does not bind the frozen story package");
+    }
+    const historicalRequirements = buildAssuranceRequirements(activeRun, historicalScope, scopePaths);
+    if (!requirements) requirements = historicalRequirements;
+    else if (JSON.stringify(historicalRequirements) !== JSON.stringify(requirements)) {
+      failures.push("frozen assuranceRequirements do not match the worker scope committed at the story gate input");
+    }
+  } catch (error) {
+    failures.push(`cannot replay committed story worker scope: ${error.message}`);
+  }
+  if (!requirements) return failures;
+  failures.push(...derivableRequirementFailures(activeRun, requirements, scopePaths));
+  const activeScopePath = activeRun.workerScopePath
+    || (activeRun.runtimeContract === "capsule-supervisor-v1" ? "docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json" : null);
+  if (activeScopePath) {
+    try {
+      const currentScope = parseWorkerScope(resolvePath(activeScopePath, repoRoot));
+      if (normalizedScope(currentScope.activeStory) === normalizedScope(activeRun.activeStory)) {
+        const expected = buildAssuranceRequirements(activeRun, currentScope, scopePaths);
+        if (gate.assuranceRequirements && JSON.stringify(expected) !== JSON.stringify(requirements)) {
+          failures.push("frozen assuranceRequirements do not match the bound story worker scope/paths");
+        }
+      }
+    } catch (error) {
+      if (activeRun.scopeUnit === "story") failures.push(error.message);
+    }
+  }
+  if (requirements.inferredSurfaces.some((surface) => !requirements.declaredSurfaces.includes(surface))) {
+    failures.push("frozen story scope omitted an inferred surface declaration");
+  }
+  let surfaceCoverage = true;
+  for (const surface of requirements.requiredSurfaces) {
+    const match = (gate.surfaceEvidence || []).find((entry) => entry.surface === surface);
+    if (!match || !(gate.evidenceIds || []).includes(match.evidenceId)) {
+      surfaceCoverage = false;
+      failures.push(`frozen story package lacks surface evidence for ${surface}`);
+      continue;
+    }
+    try {
+      if (evidenceRecordById(repoRoot, match.evidenceId).exitCode !== 0) throw new Error("evidence failed");
+    } catch (error) {
+      surfaceCoverage = false;
+      failures.push(`frozen story surface ${surface} evidence is invalid: ${error.message}`);
+    }
+  }
+  let roundTripCoverage = true;
+  if (requirements.roundTripRequired) {
+    for (const surface of requirements.requiredSurfaces.length ? requirements.requiredSurfaces : ["surface"]) {
+      if (!(gate.surfaceEvidence || []).some((entry) => entry.surface === surface && entry.roundTrip === true)) {
+        roundTripCoverage = false;
+        failures.push(`frozen story package lacks round-trip evidence for ${surface}`);
+      }
+    }
+  }
+  let inputOutputCoverage = true;
+  for (const binding of requirements.inputOutputBindings) {
+    const label = `${binding.inputSurface}>${binding.outputSurface}:${binding.field}`;
+    const match = (gate.inputOutputEvidence || []).find((entry) => entry.inputSurface === binding.inputSurface
+      && entry.outputSurface === binding.outputSurface && entry.field === binding.field);
+    if (!match || !(gate.evidenceIds || []).includes(match.evidenceId) || match.nonDefaultValue !== true
+      || (binding.defaultMaskingRisk && match.defaultRejected !== true)) {
+      inputOutputCoverage = false;
+      failures.push(`frozen story package lacks complete input/output evidence for ${label}`);
+    }
+  }
+  let durableStateEvidence = true;
+  if (requirements.durableStateRequired) {
+    const rawTexts = [];
+    for (const evidenceId of gate.evidenceIds || []) {
+      try { rawTexts.push(evidenceRawText(repoRoot, evidenceRecordById(repoRoot, evidenceId))); }
+      catch { /* Normal evidence integrity checks report missing records. */ }
+    }
+    durableStateEvidence = rawTexts.some(durablePersistenceEvidenceText);
+    if (!durableStateEvidence) failures.push("frozen story package lacks durable write/read persistence evidence");
+  }
+  const derivedChecks = { surfaceCoverage, roundTripCoverage, inputOutputCoverage, durableStateEvidence };
+  if (gate.assuranceRequirements || gate.validatorVersion === "acef-story-close-v3.1.0") {
+    for (const [check, value] of Object.entries(derivedChecks)) {
+      if (gate.executedChecks?.[check] !== value) failures.push(`deterministic gate ${check} does not match replayed assurance evidence`);
+    }
+  }
+  return failures;
+}
+
+function deterministicGateIntegrityFailures(repoRoot, activeRun, gate, options = {}) {
   if (gate.gateType !== "deterministic-story-close-v3") return [];
   const failures = deterministicGateRecordIntegrityFailures(repoRoot, activeRun, gate);
   const expectedPhases = { atdd: "atdd", development: "development", codeReview: "codereview", patchAssurance: "patchassurance" };
@@ -2133,6 +2234,9 @@ function deterministicGateIntegrityFailures(repoRoot, activeRun, gate) {
   } catch (error) {
     failures.push(error.message);
   }
+  failures.push(...compiledAssuranceFailures(repoRoot, activeRun, gate, {
+    requireSnapshot: options.requireCompiledAssurance === true,
+  }));
   return failures;
 }
 
@@ -2184,9 +2288,12 @@ function checkGateVerdict(repoRoot) {
       activeScope = null;
     }
   }
-  const requiresDurableStateEvidence = stateChangingRisk(repoRoot, activeRun, activeScope);
+  const requiresDurableStateEvidence = !isFourActorV3EpicClose(activeRun)
+    && stateChangingRisk(repoRoot, activeRun, activeScope);
   const { gate, failures } = latestGateForActiveRun(repoRoot, activeRun);
   if (gate) {
+    const epicAggregate = isFourActorV3EpicClose(activeRun)
+      && gate.gateType === "actor-decided-v1";
     failures.push(...gateDeciderIntegrityFailures(repoRoot, activeRun, gate));
     failures.push(...deterministicGateIntegrityFailures(repoRoot, activeRun, gate));
     const commitError = gate.gateType === "deterministic-story-close-v3"
@@ -2205,14 +2312,14 @@ function checkGateVerdict(repoRoot) {
           failures.push(`PASS gate cites evidence ${evidenceId} from another story`);
         }
         failures.push(...validateEvidenceRecord(repoRoot, evidence, {
-          requireFresh: !expectedRed,
+          requireFresh: !expectedRed && !epicAggregate,
           scopePaths: gate.gateType === "deterministic-story-close-v3" ? gate.scopePaths : null,
         }));
       } catch (error) {
         failures.push(error.message);
       }
     }
-    const fullSurfaceValidation = isHeavy(activeRun);
+    const fullSurfaceValidation = isHeavy(activeRun) && !epicAggregate;
     if (fullSurfaceValidation && !activeScope?.surfaces?.length) {
       failures.push(`${displayName(activeRun)} PASS gate requires active worker scope surfaces`);
     }
@@ -2268,7 +2375,7 @@ function checkGateVerdict(repoRoot) {
         failures.push(error.message);
       }
     }
-    const scopeRequiresRoundTrip = activeScope
+    const scopeRequiresRoundTrip = !epicAggregate && activeScope
       && (activeScope.requiresRoundTrip === true || activeScope.patternUse === "new-reusable-pattern");
     if (scopeRequiresRoundTrip) {
       const roundTripSurfaces = new Set((gate.surfaceEvidence || [])
@@ -2281,7 +2388,7 @@ function checkGateVerdict(repoRoot) {
         }
       }
     }
-    if (activeScope?.inputOutputBindings?.length) {
+    if (!epicAggregate && activeScope?.inputOutputBindings?.length) {
       const bindingEvidence = gate.inputOutputEvidence || [];
       for (const binding of activeScope.inputOutputBindings) {
         const label = `${binding.inputSurface}>${binding.outputSurface}:${binding.field}`;
@@ -2316,6 +2423,37 @@ function checkGateVerdict(repoRoot) {
       }
       if (!rawTexts.some(durablePersistenceEvidenceText)) {
         failures.push(stateChangingEvidenceFailure("state-changing PASS gate", rawTexts.join("\n")));
+      }
+    }
+    if (epicAggregate) {
+      const storyGates = jsonRecords(path.join(repoRoot, "docs", "ai", "gates"))
+        .map((filePath) => {
+          try { return parseGateVerdict(filePath); } catch { return null; }
+        })
+        .filter((candidate) => candidate?.gateType === "deterministic-story-close-v3"
+          && candidate.runId === activeRun.runId
+          && candidate.fullFlowContract === activeRun.fullFlowContract);
+      for (const story of activeRun.expectedStories || []) {
+        const matching = storyGates.filter((candidate) => normalizedScope(candidate.scope) === normalizedScope(story));
+        const terminal = matching.sort((left, right) => left.reviewCycle - right.reviewCycle).at(-1);
+        const passes = matching.filter((candidate) => candidate.verdict === "PASS");
+        if (!terminal || terminal.verdict !== "PASS" || passes.length !== 1) continue;
+        const storyRun = { ...activeRun, activeStory: story, scopeUnit: "story" };
+        failures.push(...deterministicGateIntegrityFailures(repoRoot, storyRun, terminal, { requireCompiledAssurance: true })
+          .map((failure) => `${story}: ${failure}`));
+        for (const surfaceEntry of terminal.surfaceEvidence || []) {
+          if (!terminal.evidenceIds?.includes(surfaceEntry.evidenceId)) {
+            failures.push(`${story}: surface ${surfaceEntry.surface} cites evidence outside its story gate`);
+            continue;
+          }
+          try {
+            if (evidenceRecordById(repoRoot, surfaceEntry.evidenceId).exitCode !== 0) {
+              failures.push(`${story}: surface ${surfaceEntry.surface} cites failed evidence ${surfaceEntry.evidenceId}`);
+            }
+          } catch (error) {
+            failures.push(`${story}: ${error.message}`);
+          }
+        }
       }
     }
   }
@@ -2716,6 +2854,27 @@ function controlDoseForExecution(controlDosing, controlId, execution) {
 function checkLeanEvidence(repoRoot, ledgerPath) {
   if (!ledgerPath || !exists(ledgerPath)) return result("lean-evidence", false, "Missing ledger path");
   const activeRun = typedActiveRun(repoRoot);
+  if (activeRun?.runtimeContract === "capsule-supervisor-v1" && isFourActorV3EpicClose(activeRun)) {
+    const latest = latestGateForActiveRun(repoRoot, activeRun, { requirePass: false }).gate;
+    const storyGates = jsonRecords(path.join(repoRoot, "docs", "ai", "gates"))
+      .map((filePath) => {
+        try { return parseGateVerdict(filePath); } catch { return null; }
+      })
+      .filter((gate) => gate?.gateType === "deterministic-story-close-v3"
+        && gate.runId === activeRun.runId && gate.fullFlowContract === activeRun.fullFlowContract);
+    const completePackages = (activeRun.expectedStories || []).every((story) => {
+      const matching = storyGates.filter((gate) => normalizedScope(gate.scope) === normalizedScope(story));
+      const terminal = matching.sort((left, right) => left.reviewCycle - right.reviewCycle).at(-1);
+      const reportPaths = [terminal?.reportPaths?.codeReview, terminal?.reportPaths?.patchAssurance].filter(Boolean);
+      return terminal?.verdict === "PASS"
+        && matching.filter((gate) => gate.verdict === "PASS").length === 1
+        && reportPaths.length === 2
+        && reportPaths.every((entry) => exists(resolvePath(entry, repoRoot)));
+    });
+    if (latest?.gateType === "actor-decided-v1" && latest.verdict === "PASS" && completePackages) {
+      return result("lean-evidence", true, "Epic Judge gate reuses every deterministic story-close package as the compiled Lean evidence view");
+    }
+  }
   if (activeRun?.runtimeContract === "capsule-supervisor-v1" && activeRun.scopeUnit === "story") {
     const latest = latestGateForActiveRun(repoRoot, activeRun, { requirePass: false }).gate;
     if (latest?.gateType === "deterministic-story-close-v3" && latest.verdict === "PASS") {
@@ -3415,8 +3574,9 @@ function checkPrecommitGate(repoRoot) {
   const execution = inferActiveExecution(repoRoot, ledger);
   let stagedCloseout = false;
   let stagedGateTransition = false;
+  let stagedPaths = [];
   try {
-    const stagedPaths = cp.execFileSync("git", ["diff", "--cached", "--name-only"], { cwd: repoRoot, encoding: "utf8" })
+    stagedPaths = cp.execFileSync("git", ["diff", "--cached", "--name-only"], { cwd: repoRoot, encoding: "utf8" })
       .split(/\r?\n/).filter(Boolean);
     const stagedDiff = cp.execFileSync("git", ["diff", "--cached", "--unified=0"], { cwd: repoRoot, encoding: "utf8" });
     const stagedGateVerdicts = stagedPaths.filter((filePath) => /^docs\/ai\/gates\/[^/]+\.json$/.test(filePath)).map((filePath) => {
@@ -3442,10 +3602,28 @@ function checkPrecommitGate(repoRoot) {
   const epicClosing = closingPhase && execution.record
     && isFull(execution.record)
     && (execution.record.scopeUnit === "epic" || /^\s*epic\b/i.test(execution.record.activeStory || ""));
+  let terminalNonPassEpic = false;
+  if (epicClosing && execution.record?.fullFlowContract === "four-actor-v3") {
+    try {
+      const terminalGate = latestGateForActiveRun(repoRoot, execution.record, { requirePass: false }).gate;
+      terminalNonPassEpic = terminalGate?.gateType === "actor-decided-v1"
+        && ["FAIL", "REPLAN", "BLOCKED"].includes(terminalGate.verdict);
+    } catch {
+      terminalNonPassEpic = false;
+    }
+  }
   const subChecks = execution.record && isHeavy(execution.record)
-    ? ["run-authorization", "review-circuit-breaker", ...(stagedGateTransition ? ["gate-transition"] : []), ...(closingPhase ? ["gate-decider", "gate-verdict", ...(epicClosing ? ["epic-process-judge"] : []), "lean-evidence"] : [])]
+    ? terminalNonPassEpic
+      ? ["run-authorization", "review-circuit-breaker", "gate-transition"]
+      : ["run-authorization", "review-circuit-breaker", ...(stagedGateTransition ? ["gate-transition"] : []), ...(closingPhase ? ["gate-decider", "gate-verdict", ...(epicClosing ? ["epic-process-judge"] : []), "lean-evidence"] : [])]
     : ["run-authorization", "lean-evidence"];
   const failures = [];
+  if (epicClosing) {
+    const dirtyApplicationPaths = workingApplicationChanges(repoRoot);
+    if (dirtyApplicationPaths.length) {
+      failures.push(`epic-close-scope: Epic closeout requires a clean application tree; only ACEF control artifacts may remain dirty: ${dirtyApplicationPaths.slice(0, 8).join(", ")}`);
+    }
+  }
   for (const name of subChecks) {
     const sub = name === "run-authorization"
       ? checkRunAuthorization(repoRoot, { requireScopeRunId: true })
@@ -3466,7 +3644,7 @@ function checkPrecommitGate(repoRoot) {
   if (failures.length) {
     return result("precommit-gate", false, `${executionLabel} pre-commit bundle failed — ${failures.join("; ")}`);
   }
-  return result("precommit-gate", true, `${executionLabel} pre-commit bundle passed (${subChecks.join(", ")}); PASS certification is required only for terminal closeout`);
+  return result("precommit-gate", true, `${executionLabel} pre-commit bundle passed (${subChecks.join(", ")}); ${terminalNonPassEpic ? "terminal non-PASS disposition is recorded without promotion" : "PASS certification is required only for terminal closeout"}`);
 }
 
 function capabilityChangePaths(repoRoot) {

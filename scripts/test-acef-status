@@ -99,6 +99,85 @@ try {
     throw new Error(`acef-status text output missing expected summary:\n${text}`);
   }
 
+  const epicCloseRun = {
+    schema: "acef.active-run.v2",
+    runId: "RUN-status-epic-close",
+    repo: "status-fixture",
+    workflowId: "full-bmad",
+    fullFlowContract: "four-actor-v3",
+    runtimeContract: "capsule-supervisor-v1",
+    assuranceProfile: "baseline",
+    scopeUnit: "epic",
+    expectedStories: ["Story 2.2"],
+    status: "active",
+    activeStory: "Epic closeout",
+    activePhase: "epic-process-judge",
+    workerRole: "epic-process-judge",
+    nextAllowedStep: "run exact terminal closeout command",
+    workerScopePath: "docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json",
+    ledgerPath: "docs/ai/ACEF_demo_DELIVERY_AUDIT.md",
+    contextPath: "docs/ai/ACEF_CURRENT_CONTEXT.md",
+  };
+  fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_ACTIVE_RUN.json"), `${JSON.stringify(epicCloseRun, null, 2)}\n`);
+  fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_ACTIVE_WORKER_SCOPE.json"), `${JSON.stringify({
+    runId: epicCloseRun.runId,
+    activeStory: "Story 2.2",
+    phase: "patch-assurance",
+    workerId: "story-2-2-patch-assurance",
+    allowedPaths: ["app/Story22.php"],
+    baseRef: "HEAD",
+    maxCommits: 1,
+    canEditLedger: false,
+    canSpawnAgents: false,
+  }, null, 2)}\n`);
+  const epicReady = JSON.parse(mustRun(status, ["--repo", tmp, "--format", "json"]));
+  if (epicReady.status !== "ready" || epicReady.activeRun.activePhase !== "epic-process-judge") {
+    throw new Error("acef-status rejected the frozen final-story scope during v3 epic closeout");
+  }
+  fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_ACTIVE_RUN.json"), `${JSON.stringify({
+    ...epicCloseRun,
+    status: "complete",
+    activePhase: "closeout",
+    activeActorId: "acef_epic_process_judge",
+    terminalDisposition: "REPLAN",
+    terminalGateId: "status-terminal-gate",
+    nextAllowedStep: "commit exact terminal control artifacts",
+  }, null, 2)}\n`);
+  fs.mkdirSync(path.join(tmp, "docs", "ai", "gates"), { recursive: true });
+  fs.writeFileSync(path.join(tmp, "docs", "ai", "gates", "status-terminal-gate.json"), `${JSON.stringify({
+    gateId: "status-terminal-gate",
+    runId: epicCloseRun.runId,
+    fullFlowContract: "four-actor-v3",
+    storyInventory: epicCloseRun.expectedStories,
+    gateType: "actor-decided-v1",
+    decisionMode: "actor",
+    scope: "Epic closeout",
+    verdict: "REPLAN",
+    decidedBy: "acef_epic_process_judge",
+    repositoryCommit: "fixture",
+  }, null, 2)}\n`);
+  fs.mkdirSync(path.join(tmp, "docs", "ai", "actors"), { recursive: true });
+  fs.writeFileSync(path.join(tmp, "docs", "ai", "actors", "acef_epic_process_judge.json"), `${JSON.stringify({
+    actorInstanceId: "acef_epic_process_judge", runId: epicCloseRun.runId,
+    fullFlowContract: "four-actor-v3", storyInventory: epicCloseRun.expectedStories,
+    story: "Epic closeout", phase: "epic-process-judge", role: "process-judge", client: "codex",
+    inputCommit: "fixture", allowedContextProfile: "epic-process-judge",
+  }, null, 2)}\n`);
+  fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_CURRENT_CONTEXT.md"), [
+    "# ACEF Current Context", "", `- Run: \`${epicCloseRun.runId}\``,
+    "- Scope unit: `epic`", "- Active story: `Epic closeout`", "- Active phase: `closeout`",
+    "- Terminal disposition: `REPLAN`", "",
+  ].join("\n"));
+  const completed = JSON.parse(mustRun(status, ["--repo", tmp, "--format", "json"]));
+  if (completed.status !== "ready" || completed.activeRun.status !== "complete"
+    || completed.activeRun.terminalDisposition !== "REPLAN") {
+    throw new Error("acef-status reported a valid completed v3 run as unauthorized");
+  }
+  const completedText = mustRun(status, ["--repo", tmp]);
+  if (!completedText.includes("terminal disposition: REPLAN")) {
+    throw new Error("acef-status text startup packet omitted the terminal disposition");
+  }
+
   console.log("acef-status tests passed");
 } finally {
   fs.rmSync(tmp, { recursive: true, force: true });

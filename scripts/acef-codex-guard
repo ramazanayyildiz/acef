@@ -3,7 +3,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const cp = require("node:child_process");
 const { parseWorkerScope } = require("./lib/acef-state-parser");
-const { inspectRunAuthorization } = require("./lib/acef-run-authorization");
+const { finalStoryScopeAtV3EpicClose, inspectRunAuthorization } = require("./lib/acef-run-authorization");
 
 function usage() {
   console.log(`ACEF Codex guard
@@ -69,8 +69,12 @@ function requireNextReady(repoRoot) {
   const authorization = inspectRunAuthorization(repoRoot, {
     requireWorkerScope: true,
     requireScopeRunId: true,
+    allowFinalStoryScopeAtV3EpicClose: true,
   });
   if (!authorization.ok) fail(authorization.blockers.join("; "));
+  if (finalStoryScopeAtV3EpicClose(authorization.activeRun, authorization.workerScope)) {
+    fail("Epic closeout is conductor-owned and prohibits worker writes; execute only the supervisor's exact control commands");
+  }
   return authorization.activeRun;
 }
 

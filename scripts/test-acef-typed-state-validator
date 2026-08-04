@@ -200,6 +200,8 @@ try {
   stateRun(["evidence-run", "--repo", tmp, "--id", "EV-v3-green", "--kind", "runtime-test", "--actor", "dev-v3", "--story", "Story 3.1", "--satisfies", "AC-v3", "--", process.execPath, "--test", "tests/story-3-1-red.test.js"]);
   stateRun(["active-run", "--repo", tmp, "--run-id", "RUN-v3", "--workflow-id", "full-bmad", "--status", "active", "--story", "Story 3.1", "--phase", "patch-assurance", "--ledger", "docs/ai/ACEF_demo_DELIVERY_AUDIT.md", "--worker-role", "patch-assurance", "--actor", "assurance-v3", "--worker-scope", "docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json"]);
   stateRun(["worker-scope", "--repo", tmp, "--story", "Story 3.1", "--phase", "patch-assurance", "--worker-id", "assurance-v3", "--allow", "app/**", "--surface", "internal", "--requires-round-trip", "false"]);
+  run("git", ["add", "docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json"]);
+  run("git", ["commit", "-qm", "bind v3 validator worker scope"]);
   stateRun(["gate", "--repo", tmp, "--id", "GATE-v3", "--scope", "Story 3.1", "--atdd-actor", "atdd-v3", "--development-actor", "dev-v3", "--code-review-actor", "review-v3", "--patch-assurance-actor", "assurance-v3", "--red-evidence", "EV-v3-red", "--green-evidence", "EV-v3-green", "--code-review-report-hash", reviewHash, "--patch-assurance-report-hash", assuranceHash, "--surface-evidence", "internal:EV-v3-green"]);
   expectPass("actor-separation");
   expectPass("evidence-manifest");

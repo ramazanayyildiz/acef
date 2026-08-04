@@ -79,6 +79,8 @@ try {
 }
 const {
   actorResultFromText,
+  capsuleShowIsolationFailures,
+  capsuleShowReceipts,
   conditionalJudgeTrigger,
   developerActorSessionBound,
   catalogTaskBindings,
@@ -1335,6 +1337,26 @@ assert.equal(isAllowedReviewerShellCommand(".acef/bin/acef-state capsule-show --
   "the exact reviewer capsule-show command is allowlisted");
 assert.equal(isAllowedReviewerShellCommand(".acef/bin/acef-state capsule-show --repo /tmp/other --id story-s1-code-review"), false,
   "capsule-show cannot escape the active repository");
+const capsuleReceiptSession = (wrongOutput, boundOutput = '{"schema":"acef.assurance-capsule.v1"}') => [
+  { type: "response_item", payload: { type: "function_call", name: "exec_command", call_id: "wrong-capsule",
+    arguments: JSON.stringify({ cmd: ".acef/bin/acef-state capsule-show --repo . --id foreign-capsule" }) } },
+  { type: "response_item", payload: { type: "function_call_output", call_id: "wrong-capsule", output: wrongOutput } },
+  { type: "response_item", payload: { type: "function_call", name: "exec_command", call_id: "bound-capsule",
+    arguments: JSON.stringify({ cmd: ".acef/bin/acef-state capsule-show --repo . --id bound-capsule" }) } },
+  { type: "response_item", payload: { type: "function_call_output", call_id: "bound-capsule",
+    output: boundOutput } },
+].map((row) => JSON.stringify(row)).join("\n");
+const failedTypoThenBound = capsuleReceiptSession("ACEF_STATE_ERROR: ENOENT foreign-capsule.json");
+assert.deepEqual(capsuleShowIsolationFailures(failedTypoThenBound, "bound-capsule"), [],
+  "a proven failed typo followed by the bound capsule remains measured waste, not a false audit failure");
+assert.equal(capsuleShowReceipts(failedTypoThenBound)[0].failed, true);
+assert.match(capsuleShowIsolationFailures(capsuleReceiptSession('{"schema":"acef.assurance-capsule.v1"}'), "bound-capsule").join(";"),
+  /successfully consumed non-bound capsule/, "a successful foreign capsule read must fail reviewer isolation");
+assert.match(capsuleShowIsolationFailures(capsuleReceiptSession("permission denied", "permission denied"), "bound-capsule").join(";"),
+  /did not successfully execute capsule-show/, "arbitrary output cannot prove bound capsule consumption");
+assert.deepEqual(capsuleShowIsolationFailures(capsuleReceiptSession("permission denied",
+  '{ "schema" : "acef.assurance-capsule.v1", "content":"ACEF_STATE_ERROR: is inert capsule text" }'), "bound-capsule"), [],
+"valid capsule JSON identity is not failed by inert error-like content");
 assert.equal(isAllowedReviewerShellCommand("jq -e '.findings | length == 0' docs/ai/reports/reviewer.json"), true,
   "a quoted jq filter may contain its own pipe operator");
 assert.equal(isAllowedReviewerShellCommand("git status --short | git reset --hard"), false,
@@ -1531,7 +1553,7 @@ try {
 
   const v3Story = "s1-v3";
   const v3RunId = "RUN-v3-fixture";
-  const v3StoryInventory = [v3Story, "s2-v3"];
+  const v3StoryInventory = [v3Story];
   const v3DurableExpected = [
     ["atdd", "test-author"], ["development", "developer"], ["code-review", "code-reviewer"],
     ["patch-assurance", "patch-assurance-reviewer"],
@@ -1628,6 +1650,43 @@ try {
     ...v3DurableOptions,
   });
   assert.equal(committedV3Durable.ok, true, committedV3Durable.failures.join("; "));
+
+  // The experiment contract names the aggregate scope "epic", while the installed
+  // active run deliberately uses a human-readable label such as "Epic closeout".
+  // Durable validation must bind both through the active run instead of treating
+  // that harmless label difference as missing evidence.
+  const epicLifecycleRepo = path.join(tmp, "durable-epic-lifecycle-repo");
+  fs.cpSync(lifecycleRepo, epicLifecycleRepo, { recursive: true });
+  fs.writeFileSync(path.join(epicLifecycleRepo, "docs", "ai", "ACEF_ACTIVE_RUN.json"), `${JSON.stringify({
+    schema: "acef.active-run.v2", runId: v3RunId, repo: "fixture", workflowId: "full-bmad",
+    fullFlowContract: "four-actor-v3", assuranceProfile: "guarded", assuranceRationale: "fixture",
+    runtimeContract: "capsule-supervisor-v1", expectedStories: [v3Story], scopeUnit: "epic",
+    status: "active", activeStory: "Epic closeout", activePhase: "epic-process-judge",
+    ledgerPath: "docs/ai/ACEF_DELIVERY_LEDGER.md",
+  })}\n`);
+  fs.writeFileSync(path.join(epicLifecycleRepo, "docs", "ai", "actors", "acef_epic_process_judge.json"), `${JSON.stringify({
+    actorInstanceId: "acef_epic_process_judge", runId: v3RunId, fullFlowContract: "four-actor-v3",
+    storyInventory: [v3Story], story: "Epic closeout", phase: "epic-process-judge", role: "process-judge",
+    client: "codex", inputCommit: lifecycleRedCommit, allowedContextProfile: "artifact-only",
+  })}\n`);
+  fs.writeFileSync(path.join(epicLifecycleRepo, "docs", "ai", "gates", "v3-epic-close.json"), `${JSON.stringify({
+    gateId: "v3-epic-close", gateType: "actor-decided-v1", decisionMode: "actor",
+    runId: v3RunId, fullFlowContract: "four-actor-v3", storyInventory: [v3Story],
+    scope: "Epic closeout", verdict: "PASS", decidedBy: "acef_epic_process_judge",
+    repositoryCommit: lifecycleRedCommit, evidenceIds: ["v3-green"],
+  })}\n`);
+  cp.spawnSync("git", ["add", "docs/ai"], { cwd: epicLifecycleRepo });
+  const epicPackageCommit = cp.spawnSync("git", ["commit", "-qm", "chore: commit v3 epic package"], {
+    cwd: epicLifecycleRepo, encoding: "utf8",
+  });
+  assert.equal(epicPackageCommit.status, 0, epicPackageCommit.stderr);
+  const v3EpicExpected = [...v3DurableExpected, {
+    scope: "epic", control: "process-judge", persona: "process-judge", taskName: "acef_epic_process_judge",
+  }];
+  const committedV3Epic = validateDurableLifecycleEvidence(epicLifecycleRepo, v3EpicExpected, v3EpicExpected, {
+    ...v3DurableOptions,
+  });
+  assert.equal(committedV3Epic.ok, true, committedV3Epic.failures.join("; "));
   const layeredParser = require(path.join(lifecycleRepo, ".acef", "bin", "lib", "acef-state-parser.js"));
   const baseLayerGatePath = path.join(lifecycleRepo, "docs", "ai", "gates", "v3-story-close.json");
   const baseLayerGate = layeredParser.parseGateVerdict(baseLayerGatePath);
@@ -1657,7 +1716,7 @@ try {
   const subsetActorPath = path.join(lifecycleRepo, "docs", "ai", "actors", `${v3DurableExpected[2].taskName}.json`);
   const fullInventoryActorBytes = fs.readFileSync(subsetActorPath, "utf8");
   fs.writeFileSync(subsetActorPath, `${JSON.stringify({
-    ...JSON.parse(fullInventoryActorBytes), storyInventory: [v3Story],
+    ...JSON.parse(fullInventoryActorBytes), storyInventory: ["different-v3"],
   })}\n`);
   const subsetInventoryDurable = validateDurableLifecycleEvidence(lifecycleRepo, v3DurableExpected, v3DurableExpected,
     v3DurableOptions);

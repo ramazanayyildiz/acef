@@ -33,6 +33,8 @@
     "repo": { "type": "string", "minLength": 1 },
     "track": { "type": ["string", "null"], "enum": ["mechanical", "standard", null] },
     "status": { "type": "string", "enum": ["active", "paused", "blocked", "complete"] },
+    "terminalDisposition": { "type": "string", "enum": ["PASS", "FAIL", "REPLAN", "BLOCKED"] },
+    "terminalGateId": { "type": "string", "pattern": "^[A-Za-z0-9._-]+$" },
     "activeEpic": { "type": ["string", "null"] },
     "activeStory": { "type": "string", "minLength": 1 },
     "activePhase": { "type": "string", "minLength": 1 },
@@ -142,6 +144,36 @@
           "fullFlowContract": { "const": "four-actor-v3" }
         },
         "required": ["fullFlowContract"]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "runtimeContract": { "const": "capsule-supervisor-v1" },
+          "status": { "const": "complete" }
+        },
+        "required": ["runtimeContract", "status"]
+      },
+      "then": {
+        "properties": {
+          "scopeUnit": { "const": "epic" },
+          "activePhase": { "const": "closeout" },
+          "workerRole": { "const": "epic-process-judge" },
+          "activeActorId": { "const": "acef_epic_process_judge" }
+        },
+        "required": ["terminalDisposition", "terminalGateId", "workerRole", "activeActorId"]
+      }
+    },
+    {
+      "if": {
+        "properties": { "status": { "not": { "const": "complete" } } },
+        "required": ["status"]
+      },
+      "then": {
+        "allOf": [
+          { "not": { "required": ["terminalDisposition"] } },
+          { "not": { "required": ["terminalGateId"] } }
+        ]
       }
     }
   ],

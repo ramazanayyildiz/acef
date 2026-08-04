@@ -26,15 +26,23 @@
     ],
     "cli": [
       "scripts/acef-supervisor",
+      "scripts/acef-status",
+      "scripts/acef-next",
+      "scripts/acef-codex-guard",
+      "scripts/lib/acef-assurance-requirements.js",
+      "scripts/lib/acef-run-authorization.js#completedCapsuleTerminalBlockers",
       "scripts/acef-state#syncRuntimeContext",
       "scripts/acef-state#writeContextSync",
       "scripts/acef-state#writeAtddPrecheck",
+      "scripts/acef-state#writeEpicComplete",
       "scripts/acef-state#writeStoryTransition",
       "scripts/acef-state#writeReviewScope",
       "scripts/acef-state#writeReviewCapsule",
       "scripts/acef-state#showCapsule"
     ],
     "validator": [
+      "scripts/acef-process-validator#checkRunAuthorization",
+      "scripts/acef-process-validator#checkGateVerdict",
       "scripts/acef-process-validator#checkGateTransition",
       "scripts/acef-process-validator#checkLeanEvidence",
       "scripts/acef-process-validator#checkPrecommitGate"
@@ -59,19 +67,19 @@
   "limitations": [
     "The first candidate keeps every semantic actor on gpt-5.6-sol/high; lower-cost semantic routing is shadow-only until separately measured.",
     "A review capsule is additive transport and cannot replace independent reviewer judgment or targeted reads needed to resolve a named uncertainty; a reviewer may rerun the focused command only for a named evidence conflict.",
-    "The runtime is enforced by schemas, writers, validators, tests, and installer wiring. V3.25 proved typed context synchronization, supervisor-owned same-session repair identity, and two-layer close durability through a repaired Story 1, then stopped on a newly measured immutable ATDD harness defect in Story 2; it is not proven or installed in target repositories.",
+    "The runtime is enforced by schemas, writers, validators, tests, and installer wiring. V3.26 completed four deterministic story packages, one broad integration run, and an independent Epic Judge PASS, then exposed a legacy story-control overlay at the epic artifact commit. Successor replay now completes typed closeout in a disposable clone, but the immutable result remains FAIL, so the capability is not proven or installed in target repositories.",
     "Existing Full runs with lifecycle evidence cannot adopt this runtime contract in place."
   ],
   "evidence": [
     {
       "layer": "tests",
       "ref": "scripts/test-acef-capsule-supervisor",
-      "note": "Covers deterministic next-action selection, model-free scope/capsule preparation, exact discovery, one Developer turn/follow-up policy, independent capsule generation, current-HEAD/report binding, and tamper failure."
+      "note": "Covers deterministic next-action selection, model-free scope/capsule preparation, exact discovery, one resumable Developer session, independent capsules, historical worker-scope assurance replay, PASS and record-only non-PASS Epic completion, named-Epic completion, terminal non-reopening, exact gate/Judge/context binding, and verdict/scope/actor/context tamper failure."
     },
     {
       "layer": "tests",
       "ref": "scripts/test-acef-process-validator",
-      "note": "Covers state-aware precommit and conditional deterministic story close compatibility."
+      "note": "Covers state-aware precommit, v3.0/v3.1 historical-scope compatibility replay, weakened assurance-package rejection, and conductor-owned Epic closeout."
     },
     {
       "layer": "tests",
@@ -127,6 +135,11 @@
       "layer": "tests",
       "ref": "docs/experiments/execution-assurance-v325/REHEARSAL_RESULT.md",
       "note": "Records synchronized typed context, one genuine HIGH repair in the original Developer session, successful two-layer close validation, detailed cost telemetry, and fail-closed rejection of a PHP nested-arrow ATDD observation trap."
+    },
+    {
+      "layer": "tests",
+      "ref": "docs/experiments/execution-assurance-v326/REHEARSAL_RESULT.md",
+      "note": "Records four first-cycle deterministic story PASS packages, the 48-test/122-assertion integration PASS, independent Epic Judge PASS, detailed model/session telemetry, and the legacy story-control overlay that invalidated the terminal epic artifact commit."
     }
   ],
   "createdAt": "2026-08-04"

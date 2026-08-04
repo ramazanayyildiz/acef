@@ -65,7 +65,9 @@ function loadInstallation(repo) {
 function buildStatus(repo) {
   const authorization = inspectRunAuthorization(repo, {
     allowDirect: true,
+    allowedStatuses: ["active", "complete"],
     requireScopeRunId: true,
+    allowFinalStoryScopeAtV3EpicClose: true,
   });
   const activeRun = { record: authorization.activeRun };
   const workerScope = { record: authorization.workerScope };
@@ -109,6 +111,7 @@ function buildStatus(repo) {
       workerRole: activeRun.record.workerRole ?? null,
       activeActorId: activeRun.record.activeActorId ?? null,
       lastPassedGate: activeRun.record.lastPassedGate ?? null,
+      terminalDisposition: activeRun.record.terminalDisposition ?? null,
       nextAllowedStep,
       ledgerPath,
       contextPath,
@@ -170,6 +173,7 @@ function printText(status) {
     if (status.activeRun.activeEpic) console.log(`- epic: ${status.activeRun.activeEpic}`);
     console.log(`- story: ${status.activeRun.activeStory}`);
     console.log(`- phase: ${status.activeRun.activePhase}`);
+    if (status.activeRun.terminalDisposition) console.log(`- terminal disposition: ${status.activeRun.terminalDisposition}`);
     if (status.activeRun.lastPassedGate) console.log(`- last passed gate: ${status.activeRun.lastPassedGate}`);
     if (status.activeRun.nextAllowedStep) console.log(`- next allowed step: ${status.activeRun.nextAllowedStep}`);
     console.log(`- ledger: ${status.activeRun.ledgerPath}`);

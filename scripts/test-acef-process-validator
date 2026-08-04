@@ -11,6 +11,29 @@ const codexGuard = path.join(repoRoot, "scripts", "acef-codex-guard");
 const bmadHook = path.join(repoRoot, "claude-plugins", "acef-bmad-guard", "hooks", "acef-bmad-hard-wall.mjs");
 const bmadDispatcher = path.join(repoRoot, "claude-plugins", "acef-bmad-guard", "hooks", "acef-bmad-dispatcher.mjs");
 const { stateChangingRiskSignals, stateControlPath } = require("./acef-process-validator");
+const { buildAssuranceRequirements, derivableRequirementFailures } = require("./lib/acef-assurance-requirements");
+
+const derivableFixture = buildAssuranceRequirements(
+  { activeStory: "Persist replay record", riskTriggers: ["persistence"] },
+  { surfaces: ["api", "database"], patternUse: "new-reusable-pattern", requiresRoundTrip: true, inputOutputBindings: [] },
+  ["app/Http/ReplayController.php", "database/migrations/create_replays.php"],
+);
+if (!derivableFixture.inferredSurfaces.includes("api") || !derivableFixture.inferredSurfaces.includes("database")
+  || derivableRequirementFailures(
+    { activeStory: "Persist replay record", riskTriggers: ["persistence"] },
+    { ...derivableFixture, inferredSurfaces: [], durableStateRequired: false, roundTripRequired: false },
+    ["app/Http/ReplayController.php", "database/migrations/create_replays.php"],
+  ).length !== 3) {
+  throw new Error("compiled assurance derivation did not reject lowered surface/durable/round-trip requirements");
+}
+const storageFixture = buildAssuranceRequirements(
+  { activeStory: "Upload avatar", riskTriggers: ["provider-integration"] },
+  { surfaces: ["storage"], patternUse: "reuse-existing-pattern", inputOutputBindings: [] },
+  ["app/Services/AvatarUploader.php"],
+);
+if (storageFixture.durableStateRequired !== true) {
+  throw new Error("compiled assurance did not require durable evidence for storage/upload work");
+}
 
 if (!stateControlPath("docs/ai/ACEF_DELIVERY_LEDGER.md")
   || !stateControlPath("docs/ai/ACEF_DELIVERY_LEDGER_P0.md")
@@ -108,6 +131,17 @@ function expectFail(label, args) {
   throw new Error(`Expected ${label} to fail, but it passed`);
 }
 
+function expectFailMessage(label, args, pattern) {
+  try {
+    runValidator(args);
+  } catch (error) {
+    const output = `${error.stdout || ""}${error.stderr || ""}`;
+    if (output.includes(`FAIL ${label}:`) && pattern.test(output)) return;
+    throw new Error(`Expected ${label} to fail with ${pattern}, got:\n${output}`);
+  }
+  throw new Error(`Expected ${label} to fail with ${pattern}, but it passed`);
+}
+
 function runCodexGuard(args, options = {}) {
   return run("node", [codexGuard, ...args], options);
 }
@@ -126,6 +160,17 @@ function expectCodexGuardFail(label, args) {
     const output = `${error.stdout || ""}${error.stderr || ""}`;
     if (output.includes("FAIL codex-guard:")) return;
     throw new Error(`Expected codex guard ${label} to fail, got:\n${output}`);
+  }
+  throw new Error(`Expected codex guard ${label} to fail, but it passed`);
+}
+
+function expectCodexGuardFailMessage(label, args, pattern) {
+  try {
+    runCodexGuard(args);
+  } catch (error) {
+    const output = `${error.stdout || ""}${error.stderr || ""}`;
+    if (output.includes("FAIL codex-guard:") && pattern.test(output)) return;
+    throw new Error(`Expected codex guard ${label} to fail with ${pattern}, got:\n${output}`);
   }
   throw new Error(`Expected codex guard ${label} to fail, but it passed`);
 }
@@ -1565,7 +1610,7 @@ try {
   }, null, 2));
   const epicEvidenceCommand = "node epic-integration.js";
   const epicEvidenceArtifact = path.join(tmp, "docs", "ai", "reports", "epic-1-integration.log");
-  fs.writeFileSync(epicEvidenceArtifact, runnerArtifact(epicEvidenceCommand, 0, "epic integration PASS"));
+  fs.writeFileSync(epicEvidenceArtifact, runnerArtifact(epicEvidenceCommand, 0, "database write/read persisted row exists; epic integration PASS"));
   const epicEvidence = {
     evidenceId: "epic-1-evidence", kind: "runtime-test", command: epicEvidenceCommand, exitCode: 0,
     repositoryCommit: head, dirtyDigest: null, actorInstanceId: "epic-1-judge", story: "Epic 1",
@@ -1585,22 +1630,85 @@ try {
     storyInventory: ["Story 1.1"],
     gateType: "deterministic-story-close-v3", decisionMode: "deterministic", scope: "Story 1.1", verdict: "PASS",
     decidedBy: "acef-story-close-v3", repositoryCommit: head, repositoryTree: head,
-    applicationCommit: head, applicationTree: head, validatorVersion: "acef-story-close-v3.0.0",
+    applicationCommit: head, applicationTree: head, validatorVersion: "acef-story-close-v3.1.0",
     scopePaths: ["README.md"],
+    assuranceRequirements: {
+      schema: "acef.assurance-requirements.v1",
+      declaredSurfaces: ["api"], inferredSurfaces: [], requiredSurfaces: ["api"],
+      patternUse: "unknown", roundTripRequired: false, inputOutputBindings: [], durableStateRequired: true,
+    },
     actors: { atdd: "fixture-atdd", development: "fixture-dev", codeReview: "fixture-review", patchAssurance: "fixture-assurance" },
     redEvidenceId: "fixture-red", greenEvidenceId: "epic-1-evidence",
-    executedChecks: { actorSeparation: true, atddTestOnlyRed: true, redGreenChronology: true, finalTreeReview: true, patchAssurance: true, findingsResolved: true, runnerProof: true, scopeBinding: true, hashBinding: true },
+    executedChecks: {
+      actorSeparation: true, atddTestOnlyRed: true, redGreenChronology: true, finalTreeReview: true,
+      patchAssurance: true, findingsResolved: true, runnerProof: true, scopeBinding: true, hashBinding: true,
+      surfaceCoverage: true, roundTripCoverage: true, inputOutputCoverage: true, durableStateEvidence: true,
+    },
     reviewCycle: 0, unresolvedFindings: [], findingDispositions: [],
     reportHashes: { codeReview: "a".repeat(64), patchAssurance: "b".repeat(64) },
     reportPaths: { codeReview: "docs/ai/reports/fixture-review.json", patchAssurance: "docs/ai/reports/fixture-assurance.json" },
-    evidenceIds: ["fixture-red", "epic-1-evidence"], createdAt: "2026-06-25T00:59:00.000Z",
+    evidenceIds: ["fixture-red", "epic-1-evidence"],
+    surfaceEvidence: [{ surface: "api", evidenceId: "epic-1-evidence", roundTrip: false }],
+    inputOutputEvidence: [], createdAt: "2026-06-25T00:59:00.000Z",
   }, null, 2));
   fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_ACTIVE_RUN.json"), JSON.stringify({
     schema: "acef.active-run.v2", runId: "RUN-epic-close", repo: "fixture", workflowId: "full-bmad",
     fullFlowContract: "four-actor-v3", assuranceProfile: "baseline", scopeUnit: "epic", expectedStories: ["Story 1.1"], status: "active",
-    activeStory: "Epic 1", activePhase: "closeout", ledgerPath: "docs/ai/ACEF_demo_DELIVERY_AUDIT.md",
+    activeStory: "Epic 1", activePhase: "closeout", riskTriggers: ["persistence"], ledgerPath: "docs/ai/ACEF_demo_DELIVERY_AUDIT.md",
   }, null, 2));
   expectPass("epic-process-judge", ["--repo", tmp, "--check", "epic-process-judge"]);
+
+  const epicCloseRunPath = path.join(tmp, "docs", "ai", "ACEF_ACTIVE_RUN.json");
+  const epicCloseRun = JSON.parse(fs.readFileSync(epicCloseRunPath, "utf8"));
+  fs.writeFileSync(epicCloseRunPath, JSON.stringify({
+    ...epicCloseRun,
+    assuranceProfile: "guarded",
+    assuranceRationale: "Guarded epic closeout regression fixture",
+    runtimeContract: "capsule-supervisor-v1",
+  }, null, 2));
+  fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_ACTIVE_WORKER_SCOPE.json"), JSON.stringify({
+    runId: "RUN-epic-close", activeStory: "Story 1.1", phase: "patch-assurance",
+    workerId: "fixture-assurance", allowedPaths: ["README.md"], surfaces: ["api"],
+    baseRef: head, maxCommits: 1, canEditLedger: false, canSpawnAgents: false,
+  }, null, 2));
+  fs.writeFileSync(path.join(tmp, "docs", "ai", "reports", "fixture-review.json"), "{}\n");
+  fs.writeFileSync(path.join(tmp, "docs", "ai", "reports", "fixture-assurance.json"), "{}\n");
+  expectPass("run-authorization", ["--repo", tmp, "--check", "run-authorization"]);
+  expectPass("lean-evidence", ["--repo", tmp, "--check", "lean-evidence"]);
+  const compiledStoryGatePath = path.join(tmp, "docs", "ai", "gates", "story-1-1-v3-pass.json");
+  const compiledStoryGate = JSON.parse(fs.readFileSync(compiledStoryGatePath, "utf8"));
+  const assertAggregateRejects = (label, mutate) => {
+    fs.writeFileSync(compiledStoryGatePath, JSON.stringify(mutate(structuredClone(compiledStoryGate)), null, 2));
+    expectFail("gate-verdict", ["--repo", tmp, "--check", "gate-verdict"]);
+    fs.writeFileSync(compiledStoryGatePath, JSON.stringify(compiledStoryGate, null, 2));
+  };
+  assertAggregateRejects("missing frozen requirements", (gate) => { delete gate.assuranceRequirements; return gate; });
+  assertAggregateRejects("missing surface proof", (gate) => { gate.surfaceEvidence = []; return gate; });
+  assertAggregateRejects("missing round-trip proof", (gate) => {
+    gate.assuranceRequirements.roundTripRequired = true;
+    return gate;
+  });
+  assertAggregateRejects("missing input-output proof", (gate) => {
+    gate.assuranceRequirements.inputOutputBindings = [{
+      inputSurface: "api", outputSurface: "database", field: "event_id", defaultMaskingRisk: true,
+    }];
+    return gate;
+  });
+  assertAggregateRejects("lowered durable state requirement", (gate) => {
+    gate.assuranceRequirements.durableStateRequired = false;
+    return gate;
+  });
+  const dirtyEpicApplicationPath = path.join(tmp, "000-epic-close-dirty.php");
+  fs.writeFileSync(dirtyEpicApplicationPath, "<?php // must block epic close\n");
+  expectFailMessage("precommit-gate", ["--repo", tmp, "--check", "precommit-gate"],
+    /epic-close-scope: Epic closeout requires a clean application tree.*000-epic-close-dirty\.php/);
+  fs.rmSync(dirtyEpicApplicationPath);
+  const finalStoryScope = JSON.parse(fs.readFileSync(path.join(tmp, "docs", "ai", "ACEF_ACTIVE_WORKER_SCOPE.json"), "utf8"));
+  fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_ACTIVE_WORKER_SCOPE.json"), JSON.stringify({
+    ...finalStoryScope, activeStory: "Story 9.9",
+  }, null, 2));
+  expectFail("run-authorization", ["--repo", tmp, "--check", "run-authorization"]);
+  fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_ACTIVE_WORKER_SCOPE.json"), JSON.stringify(finalStoryScope, null, 2));
 
   const epicGatePath = path.join(tmp, "docs", "ai", "gates", "epic-1.json");
   const passingEpicGate = JSON.parse(fs.readFileSync(epicGatePath, "utf8"));
@@ -2012,6 +2120,22 @@ try {
   fs.rmSync(path.join(codexTmp, "src", "story-1-2.ts"));
   fs.appendFileSync(path.join(codexTmp, "docs", "ai", "ACEF_demo_DELIVERY_AUDIT.md"), "worker should not edit ledger\n");
   expectCodexGuardFail("worker ledger edit", ["--repo", codexTmp, "--role", "worker", "--story", "1.1", "--base-ref", codexScopedBase]);
+  fs.writeFileSync(path.join(codexTmp, "docs", "ai", "ACEF_ACTIVE_RUN.json"), JSON.stringify({
+    schema: "acef.active-run.v2", runId: "RUN-codex-guard", repo: "codex-guard-fixture",
+    workflowId: "full-bmad", fullFlowContract: "four-actor-v3", runtimeContract: "capsule-supervisor-v1",
+    assuranceProfile: "baseline", scopeUnit: "epic", expectedStories: ["1.1"], status: "active",
+    activeStory: "Epic closeout", activePhase: "epic-process-judge",
+    workerScopePath: "docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json",
+    ledgerPath: "docs/ai/ACEF_demo_DELIVERY_AUDIT.md", contextPath: "docs/ai/ACEF_CURRENT_CONTEXT.md",
+  }, null, 2));
+  fs.writeFileSync(path.join(codexTmp, "docs", "ai", "ACEF_ACTIVE_WORKER_SCOPE.json"), JSON.stringify({
+    runId: "RUN-codex-guard", activeStory: "1.1", phase: "patch-assurance", workerId: "final-story-worker",
+    allowedPaths: ["src/story-1-1/**"], baseRef: codexScopedBase, maxCommits: 1,
+    canEditLedger: false, canSpawnAgents: false,
+  }, null, 2));
+  expectCodexGuardFailMessage("epic closeout worker denial",
+    ["--repo", codexTmp, "--role", "worker", "--story", "1.1", "--base-ref", codexScopedBase],
+    /Epic closeout is conductor-owned and prohibits worker writes/);
   fs.rmSync(codexTmp, { recursive: true, force: true });
 
   const dispatcherNoHook = fs.mkdtempSync(path.join(os.tmpdir(), "acef-dispatcher-no-hook-"));

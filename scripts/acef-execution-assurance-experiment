@@ -657,7 +657,7 @@ function epicPilotPrompt(attempt, resolved, manifest) {
       "Every successful green evidence command must add the story's exact `--discovery-command-json` and all `--expected-test` identities before `--`. A green run that did not discover the frozen tests is invalid even when its test command exits zero.",
       "The original Developer remains one session for the story. It may perform bounded focused-test attempts inside its original turn and one repair follow-up per review cycle, but it must not return on the first failed attempt. It returns only with accepted discovered green evidence and, for a repair, one final repair receipt; a terminal non-green return is REPLAN/SPLIT, never another continuation or replacement Developer.",
       "When the supervisor dispatches Development, execute its exact registrationCommand once before spawn, then spawn that same actorInstanceId. The command binds the canonical /root/<actorInstanceId> session before any green evidence call. The Developer and conductor must not create, probe, replace, or rewrite that actor record later.",
-      "At epic close, obey a supervisor context-sync transition before dispatch. Then execute the epic-judge dispatch registrationCommand exactly once before spawning the one non-retryable Judge. Give that Judge the supervisor's exact storyGateIds, greenEvidenceIds, and decisionCommands; its only terminal mutation is exactly one matching PASS, FAIL, REPLAN, or BLOCKED command. Never redispatch an existing epic Judge without a terminal gate.",
+      "At epic close, obey a supervisor context-sync transition before dispatch. Then execute the epic-judge dispatch registrationCommand exactly once before spawning the one non-retryable Judge. Give that Judge the supervisor's exact storyGateIds, greenEvidenceIds, and decisionCommands; its only terminal mutation is exactly one matching PASS, FAIL, REPLAN, or BLOCKED command. Never redispatch an existing epic Judge without a terminal gate. After that terminal gate exists, call the supervisor once more, require action type complete-epic, execute its exact completionCommand and then its exact commitCommand, and do not hand-author or broaden the terminal path list.",
       "Mechanical state transitions, evidence collection, capsule generation, report generation, and gate construction use deterministic tools. Do not delegate them or ask a model to restate their JSON. The manifest-pinned Sol/high semantic actors remain unchanged in this first candidate; the Terra/medium thin-proxy profile is shadow-only and cannot certify the run.",
     ].join("\n")
     : "";
@@ -1455,6 +1455,50 @@ function toolOutputText(payload) {
   return expanded.join("\n");
 }
 
+function capsuleShowReceipts(sessionText) {
+  const rows = String(sessionText || "").split(/\r?\n/).filter(Boolean).flatMap((line) => {
+    try { return [JSON.parse(line)]; } catch { return []; }
+  });
+  const receipts = [];
+  for (const row of rows) {
+    const payload = row.payload || {};
+    if (row.type !== "response_item" || !["function_call", "custom_tool_call"].includes(payload.type)) continue;
+    const rawArguments = String(payload.arguments || payload.input || "");
+    let args = {};
+    try { args = JSON.parse(rawArguments || "{}"); } catch {}
+    const commands = typeof args.cmd === "string" ? [args.cmd]
+      : typeof args.command === "string" ? [args.command]
+        : extractCorrectionShellCommands(args, rawArguments);
+    for (const command of commands) {
+      const match = String(command).trim().match(/^(?:\.acef\/bin\/)?acef-state\s+capsule-show\s+--repo\s+\.\s+--id\s+([A-Za-z0-9._-]+)$/);
+      if (!match) continue;
+      const outputRow = rows.find((candidate) => candidate.type === "response_item"
+        && candidate.payload?.type === `${payload.type}_output`
+        && candidate.payload?.call_id === payload.call_id);
+      const output = outputRow ? toolOutputText(outputRow.payload) : "";
+      const capsulePayloadObserved = /["']schema["']\s*:\s*["']acef\.assurance-capsule\.v1["']/i.test(output);
+      const explicitNonzeroExit = /(?:exit[_ ]code|code)\s*[=:]\s*[1-9]\d*/i.test(output)
+        || (Number.isInteger(outputRow?.payload?.exit_code) && outputRow.payload.exit_code !== 0);
+      const failed = !outputRow || !capsulePayloadObserved || explicitNonzeroExit;
+      receipts.push({ capsuleId: match[1], command: String(command).trim(), output, failed });
+    }
+  }
+  return receipts;
+}
+
+function capsuleShowIsolationFailures(sessionText, expectedCapsuleId) {
+  const receipts = capsuleShowReceipts(sessionText);
+  const failures = [];
+  if (!receipts.some((receipt) => receipt.capsuleId === expectedCapsuleId && !receipt.failed)) {
+    failures.push(`reviewer did not successfully execute capsule-show for ${expectedCapsuleId}`);
+  }
+  const successfulForeign = receipts.filter((receipt) => receipt.capsuleId !== expectedCapsuleId && !receipt.failed);
+  if (successfulForeign.length) {
+    failures.push(`reviewer successfully consumed non-bound capsule(s): ${[...new Set(successfulForeign.map((receipt) => receipt.capsuleId))].join(", ")}`);
+  }
+  return failures;
+}
+
 function reviewerCompletionFromSession(sessionText, repoRoot, actorName) {
   const rows = String(sessionText || "").split(/\r?\n/).filter(Boolean).flatMap((line) => {
     try { return [JSON.parse(line)]; } catch { return []; }
@@ -1796,12 +1840,10 @@ function loadCollaborationEvidence(rawPath, expectedContract, expectedSession = 
     if (expectedSession.actorContractVersion === "four-actor-v3"
       && ["code-review", "patch-assurance"].includes(lifecycleEntry?.control)) {
       const writes = correctionSessionWrites(childText, expectedSession.cwd);
-      const childCommands = codexSessionMetrics(childText).commandText.split(/\r?\n/).map((entry) => entry.trim()).filter(Boolean);
-      const capsuleShowCommands = childCommands.filter((command) => /^(?:\.acef\/bin\/)?acef-state\s+capsule-show\s+--repo\s+\.\s+--id\s+[A-Za-z0-9._-]+$/.test(command));
-      const distinctCapsuleShowCommands = [...new Set(capsuleShowCommands)];
+      const observedCapsuleShows = capsuleShowReceipts(childText);
       if (expectedSession.runtimeContract === "capsule-supervisor-v1"
-        && (capsuleShowCommands.length < 1 || distinctCapsuleShowCommands.length !== 1)) {
-        failures.push(`${dispatch.taskName}: reviewer must execute one uniquely bound capsule-show command`);
+        && observedCapsuleShows.length < 1) {
+        failures.push(`${dispatch.taskName}: reviewer must execute its report-bound capsule-show command`);
       }
       let captured = null;
       try { captured = reviewerCompletionFromSession(childText, expectedSession.cwd, dispatch.taskName); }
@@ -1837,12 +1879,14 @@ function loadCollaborationEvidence(rawPath, expectedContract, expectedSession = 
           || fs.readFileSync(captured.absoluteReportPath, "utf8") !== Buffer.from(captured.reportBase64, "base64").toString("utf8")) {
           failures.push(`${dispatch.taskName}: reviewer completion report was replaced after child completion`);
         }
-        if (expectedSession.runtimeContract === "capsule-supervisor-v1" && distinctCapsuleShowCommands.length === 1) {
+        if (expectedSession.runtimeContract === "capsule-supervisor-v1") {
           try {
-            const capsuleId = distinctCapsuleShowCommands[0].match(/--id\s+([A-Za-z0-9._-]+)$/)[1];
-            const capsulePath = path.join(expectedSession.cwd, "docs", "ai", "capsules", `${capsuleId}.json`);
-            const capsule = installedStateParser(expectedSession.cwd).parseAssuranceCapsule(capsulePath);
             const report = installedStateParser(expectedSession.cwd).parseReviewReport(captured.absoluteReportPath);
+            const capsulePath = path.resolve(expectedSession.cwd, report.capsulePath);
+            const capsuleId = path.basename(capsulePath, ".json");
+            failures.push(...capsuleShowIsolationFailures(childText, capsuleId)
+              .map((failure) => `${dispatch.taskName}: ${failure}`));
+            const capsule = installedStateParser(expectedSession.cwd).parseAssuranceCapsule(capsulePath);
             const expectedRole = lifecycleEntry.control;
             if (capsule.actorInstanceId !== dispatch.taskName || capsule.role !== expectedRole
               || capsule.inputTree !== captured.inputTree || report.capsulePath !== path.relative(expectedSession.cwd, capsulePath).replaceAll(path.sep, "/")
@@ -2367,6 +2411,18 @@ function validateDurableLifecycleEvidence(clone, expectedContract, acceptedActor
   let parser;
   try { parser = installedStateParser(clone); }
   catch (error) { return { ok: false, actorCount: 0, gateCount: 0, failures: [error.message] }; }
+  let epicScope = "epic";
+  const activeRunPath = path.join(clone, "docs", "ai", "ACEF_ACTIVE_RUN.json");
+  if (v3Contract && fs.existsSync(activeRunPath)) {
+    try {
+      const activeRun = parser.parseActiveRun(activeRunPath);
+      if (activeRun.scopeUnit === "epic") epicScope = activeRun.activeStory;
+    } catch (error) {
+      failures.push(`active epic scope: ${error.message}`);
+    }
+  }
+  const expectedScopeMatches = (expectedScope, actualScope) => normalizedActorToken(actualScope)
+    === normalizedActorToken(v3Contract && expectedScope === "epic" ? epicScope : expectedScope);
   const actorDir = path.join(clone, "docs", "ai", "actors");
   const gateDir = path.join(clone, "docs", "ai", "gates");
   const actors = new Map();
@@ -2391,7 +2447,7 @@ function validateDurableLifecycleEvidence(clone, expectedContract, acceptedActor
   for (const expected of expectedContract) {
     const actor = actors.get(expected.taskName);
     if (!actor) { failures.push(`${expected.taskName}: typed actor record missing`); continue; }
-    if (normalizedActorToken(actor.story) !== normalizedActorToken(expected.scope)) failures.push(`${expected.taskName}: actor scope mismatch`);
+    if (!expectedScopeMatches(expected.scope, actor.story)) failures.push(`${expected.taskName}: actor scope mismatch`);
     if (canonicalLifecyclePhase(actor.phase) !== canonicalLifecyclePhase(expected.control)) failures.push(`${expected.taskName}: actor phase mismatch`);
     if (canonicalLifecyclePhase(actor.role) !== canonicalLifecyclePhase(expected.persona)) failures.push(`${expected.taskName}: actor persona mismatch`);
     if (v3Contract && (actor.runId !== expectedRunId || actor.fullFlowContract !== "four-actor-v3")) {
@@ -2590,8 +2646,9 @@ function validateDurableLifecycleEvidence(clone, expectedContract, acceptedActor
       continue;
     }
     const judge = acceptedActors.find((entry) => entry.scope === scope && entry.control === "process-judge");
+    const durableScope = v3Contract && scope === "epic" ? epicScope : scope;
     const matchingEpicGates = gates.filter((entry) => entry.verdict === "PASS"
-      && normalizedActorToken(entry.scope) === normalizedActorToken(scope)
+      && normalizedActorToken(entry.scope) === normalizedActorToken(durableScope)
       && entry.decidedBy === judge?.taskName
       && (!v3Contract || (entry.runId === expectedRunId && entry.fullFlowContract === "four-actor-v3"
         && JSON.stringify(entry.storyInventory || []) === JSON.stringify(expectedStoryInventory))));
@@ -2601,7 +2658,24 @@ function validateDurableLifecycleEvidence(clone, expectedContract, acceptedActor
     }
     const gate = matchingEpicGates[0];
     if (!gate) { failures.push(`${scope}: typed PASS gate from required Process Judge missing`); continue; }
-    failures.push(...validateGateEvidence(scope, gate, clone, parser, actors));
+    if (v3Contract && scope === "epic") {
+      const expectedGreenEvidence = [];
+      for (const story of expectedStoryInventory) {
+        const storyGates = gates.filter((entry) => entry.gateType === "deterministic-story-close-v3"
+          && entry.runId === expectedRunId
+          && normalizedActorToken(entry.scope) === normalizedActorToken(story));
+        const terminal = storyGates.sort((left, right) => left.reviewCycle - right.reviewCycle).at(-1);
+        if (terminal?.verdict === "PASS") expectedGreenEvidence.push(terminal.greenEvidenceId);
+      }
+      if (JSON.stringify([...(gate.evidenceIds || [])].sort()) !== JSON.stringify(expectedGreenEvidence.sort())) {
+        failures.push("epic: aggregate evidenceIds do not equal the terminal story green evidence set");
+      }
+      if (execute("git", ["merge-base", "--is-ancestor", gate.repositoryCommit, "HEAD"], clone).status !== 0) {
+        failures.push("epic: gate repositoryCommit is not an ancestor of HEAD");
+      }
+    } else {
+      failures.push(...validateGateEvidence(scope, gate, clone, parser, actors));
+    }
   }
   return { ok: failures.length === 0, actorCount: actors.size, gateCount: gates.length, failures };
 }
@@ -3904,6 +3978,8 @@ if (require.main === module) {
 
 module.exports = {
   actorResultFromText,
+  capsuleShowIsolationFailures,
+  capsuleShowReceipts,
   conditionalJudgeTrigger,
   developerActorSessionBound,
   reviewerResultFromReport,

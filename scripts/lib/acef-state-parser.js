@@ -213,6 +213,32 @@ function parseActiveRun(filePath) {
     requireEnum(record, "lane", ["quick-fix", "lightweight", "full-bmad", "guarded", "custom"], "active run");
   }
   requireEnum(record, "status", ["active", "paused", "blocked", "complete"], "active run");
+  if (record.terminalDisposition !== undefined) {
+    requireEnum(record, "terminalDisposition", ["PASS", "FAIL", "REPLAN", "BLOCKED"], "active run");
+    if (record.status !== "complete") throw new Error("active run terminalDisposition is valid only when status is complete");
+  }
+  if (record.terminalGateId !== undefined) {
+    if (typeof record.terminalGateId !== "string" || !/^[A-Za-z0-9._-]+$/.test(record.terminalGateId)) {
+      throw new Error("active run terminalGateId must be a safe typed gate id");
+    }
+    if (record.status !== "complete") throw new Error("active run terminalGateId is valid only when status is complete");
+  }
+  if (record.runtimeContract === "capsule-supervisor-v1" && record.status === "complete") {
+    const expectedEpicScope = record.activeEpic || "Epic closeout";
+    if (record.scopeUnit !== "epic"
+      || normalizedRecordScope(record.activeStory) !== normalizedRecordScope(expectedEpicScope)
+      || String(record.activePhase).toLowerCase() !== "closeout"
+      || record.workerRole !== "epic-process-judge"
+      || record.activeActorId !== "acef_epic_process_judge") {
+      throw new Error("completed capsule-supervisor run must preserve the canonical Epic Process Judge closeout shape");
+    }
+    if (record.terminalDisposition === undefined) {
+      throw new Error("completed capsule-supervisor Epic run requires terminalDisposition");
+    }
+    if (record.terminalGateId === undefined) {
+      throw new Error("completed capsule-supervisor Epic run requires a safe terminalGateId");
+    }
+  }
   if (record.maxLines !== undefined && record.maxLines !== null
     && (!Number.isInteger(record.maxLines) || record.maxLines < 1 || record.maxLines > 150)) {
     throw new Error("active run maxLines must be an integer between 1 and 150");
@@ -485,6 +511,48 @@ function parseGateVerdict(filePath) {
       "redEvidenceId", "greenEvidenceId", "executedChecks", "reviewCycle", "unresolvedFindings", "findingDispositions", "reportHashes", "reportPaths",
     ], "deterministic story-close gate");
     if (record.fullFlowContract !== "four-actor-v3") throw new Error("deterministic story-close gate fullFlowContract must be four-actor-v3");
+    const compiledAssurance = record.validatorVersion === "acef-story-close-v3.1.0";
+    if (compiledAssurance && record.assuranceRequirements === undefined) {
+      throw new Error("acef-story-close-v3.1.0 gate requires frozen assuranceRequirements");
+    }
+    if (record.assuranceRequirements !== undefined) {
+      const requirements = record.assuranceRequirements;
+      if (!requirements || typeof requirements !== "object" || Array.isArray(requirements)) {
+        throw new Error("deterministic story-close assuranceRequirements must be an object");
+      }
+      requireFields(requirements, [
+        "schema", "declaredSurfaces", "inferredSurfaces", "requiredSurfaces", "patternUse",
+        "roundTripRequired", "inputOutputBindings", "durableStateRequired",
+      ], "deterministic story-close assuranceRequirements");
+      if (requirements.schema !== "acef.assurance-requirements.v1") {
+        throw new Error("deterministic story-close assuranceRequirements schema mismatch");
+      }
+      for (const field of ["declaredSurfaces", "inferredSurfaces", "requiredSurfaces"]) {
+        requireStringArray(requirements, field, "deterministic story-close assuranceRequirements");
+        if (new Set(requirements[field]).size !== requirements[field].length
+          || JSON.stringify([...requirements[field]].sort()) !== JSON.stringify(requirements[field])) {
+          throw new Error(`deterministic story-close assuranceRequirements ${field} must be unique and sorted`);
+        }
+        for (const surface of requirements[field]) requireSurface(surface, `deterministic story-close assuranceRequirements.${field}`);
+      }
+      const expectedRequired = [...new Set([...requirements.declaredSurfaces, ...requirements.inferredSurfaces])].sort();
+      if (JSON.stringify(expectedRequired) !== JSON.stringify(requirements.requiredSurfaces)) {
+        throw new Error("deterministic story-close assuranceRequirements requiredSurfaces must equal declared/inferred union");
+      }
+      requireEnum(requirements, "patternUse", ["new-reusable-pattern", "reuse-existing-pattern", "one-off", "unknown"], "deterministic story-close assuranceRequirements");
+      if (typeof requirements.roundTripRequired !== "boolean" || typeof requirements.durableStateRequired !== "boolean") {
+        throw new Error("deterministic story-close assuranceRequirements boolean fields are invalid");
+      }
+      if (!Array.isArray(requirements.inputOutputBindings)) {
+        throw new Error("deterministic story-close assuranceRequirements inputOutputBindings must be an array");
+      }
+      for (const [index, binding] of requirements.inputOutputBindings.entries()) {
+        validateBindingEntry(binding, index, "deterministic story-close assuranceRequirements.inputOutputBindings");
+        if (typeof binding.defaultMaskingRisk !== "boolean") {
+          throw new Error("deterministic story-close assuranceRequirements binding defaultMaskingRisk must be boolean");
+        }
+      }
+    }
     if (record.decisionMode !== "deterministic" || record.decidedBy !== "acef-story-close-v3") {
       throw new Error("deterministic story-close gate must be decided mechanically by acef-story-close-v3");
     }
@@ -501,7 +569,11 @@ function parseGateVerdict(filePath) {
       throw new Error("deterministic story-close gate actors must be distinct");
     }
     requireObject(record, "executedChecks", "deterministic story-close gate");
-    const checks = ["actorSeparation", "atddTestOnlyRed", "redGreenChronology", "finalTreeReview", "patchAssurance", "findingsResolved", "runnerProof", "scopeBinding", "hashBinding"];
+    const checks = [
+      "actorSeparation", "atddTestOnlyRed", "redGreenChronology", "finalTreeReview", "patchAssurance",
+      "findingsResolved", "runnerProof", "scopeBinding", "hashBinding",
+      ...(compiledAssurance ? ["surfaceCoverage", "roundTripCoverage", "inputOutputCoverage", "durableStateEvidence"] : []),
+    ];
     requireFields(record.executedChecks, checks, "deterministic story-close gate executedChecks");
     if (checks.some((check) => typeof record.executedChecks[check] !== "boolean")) {
       throw new Error("deterministic story-close gate executedChecks values must be boolean");
@@ -564,8 +636,7 @@ function parseApproval(filePath) {
   return record;
 }
 
-function parseWorkerScope(filePath) {
-  const record = readJson(filePath);
+function validateWorkerScopeRecord(record) {
   requireFields(record, ["activeStory", "phase", "workerId", "allowedPaths", "baseRef", "maxCommits"], "worker scope");
   if (record.runId !== undefined && (typeof record.runId !== "string" || !record.runId.trim())) {
     throw new Error("worker scope runId must be a non-empty string");
@@ -598,6 +669,10 @@ function parseWorkerScope(filePath) {
   if (record.canEditLedger !== false) throw new Error("worker scope canEditLedger must be false");
   if (record.canSpawnAgents !== false) throw new Error("worker scope canSpawnAgents must be false");
   return record;
+}
+
+function parseWorkerScope(filePath) {
+  return validateWorkerScopeRecord(readJson(filePath));
 }
 
 function parseAtddCorrection(filePath) {
@@ -1369,6 +1444,7 @@ module.exports = {
   parseGateVerdict,
   parseApproval,
   parseWorkerScope,
+  validateWorkerScopeRecord,
   parseAtddCorrection,
   parseWorkflow,
   parsePrReview,

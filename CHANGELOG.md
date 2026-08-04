@@ -99,6 +99,30 @@ or evidence contract. Do not use it to claim implementation status; link to the 
   both duplicate-classification paths. Focused state, validator, experiment, installer, and supervisor regressions
   pass; the complete 28-script repository suite plus closeout fixture passed in 246 seconds. Maturity is `enforced`,
   not `proven`, pending a successful separately frozen successor rehearsal.
+- V3.26 completed all four stories on their first review cycle in 2,254.9 seconds, passed the one 48-test/122-assertion
+  integration run, and received an independent Epic Process Judge PASS. The immutable attempt still failed because the
+  guarded pre-commit bundle reapplied story freshness, surface, worker-scope, and ledger controls to the aggregate epic
+  commit; durable measurement also compared abstract `epic` literally with `Epic closeout`, and rejected one harmless
+  mistyped capsule read before the correct hash-bound read. No blind Judge ran and maturity remains `enforced`.
+- Four-actor-v3 epic close now reuses and revalidates every deterministic story-close package on its frozen paths. The
+  final-story worker scope is accepted only for an inventory-bound, control-artifact-only epic commit; any dirty
+  application file still fails closed. Epic Lean/surface/freshness evidence is compiled from story packages, durable
+  measurement resolves the typed epic label, and capsule validation requires the correct report-bound read at least
+  once. Transcript-proven failed capsule typos count as waste; any successful foreign capsule read fails isolation.
+- Deterministic story-close v3.1 freezes normalized surface, round-trip, input/output, and durable-state requirements
+  plus their replayable check results. The writer requires the current worker scope to equal the copy committed at its
+  input commit. Epic replay reloads that historical scope for every story and rebuilds the requirements, including
+  compatibility replay for v3.0 packages, so old sessions do not need to reopen and requirements cannot be lowered.
+  Review-scope derivation preserves the union of explicitly declared and path-inferred surfaces; non-inferable provider,
+  storage, or notification boundaries cannot disappear during the review transition.
+  `epic-complete` now durably records the terminal Judge disposition; the supervisor emits the exact control-only
+  close commit. PASS uses the promotion bundle; FAIL/REPLAN/BLOCKED use a record-only terminal bundle and cannot be
+  mistaken for promotion. Completed runs cannot be reopened under the same run ID, terminal disposition remains visible
+  in Current Context/status/next, and worker writes fail closed. Completion is bound to the exact terminal gate ID,
+  actor-decided verdict, canonical named-Epic scope, Epic Judge identity, frozen inventory, and synchronized Current
+  Context. Verdict, context, or completed-scope tampering now blocks both startup authorization and precommit; parser-
+  derived compatibility fields cannot leak into the schema record. The immutable V3.26 closeout replay, disposable
+  completion replay, adversarial regressions, installer coverage, and complete 32-script suite pass in 337 seconds.
 
 ### Full story lifecycle v3.15 typed findings and repair receipts
 

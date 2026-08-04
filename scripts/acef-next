@@ -168,7 +168,9 @@ function buildDirectNext(repo, authorization) {
 function buildNext(repo, roleOverride) {
   const authorization = inspectRunAuthorization(repo, {
     allowDirect: true,
+    allowedStatuses: ["active", "complete"],
     requireScopeRunId: true,
+    allowFinalStoryScopeAtV3EpicClose: true,
   });
   if (authorization.mode === "direct") return buildDirectNext(repo, authorization);
   const activeRun = {
@@ -237,6 +239,7 @@ function buildNext(repo, roleOverride) {
     story: activeRun.record.activeStory,
     role,
     last_passed_gate: activeRun.record.lastPassedGate || null,
+    terminal_disposition: activeRun.record.terminalDisposition || null,
     next_allowed_action: blockers.length ? null : action,
     workflow_node_id: activeRun.record.workflowNodeId || null,
   };
@@ -248,6 +251,8 @@ function buildNext(repo, roleOverride) {
   base.evidence_required = blockers.length ? [] : evidenceFor(activeRun.record, roleOverride);
   base.stop_condition = blockers.length
     ? "fix_blockers_then_rerun_acef_next"
+    : activeRun.record.status === "complete"
+      ? "exact_terminal_control_commit_then_report"
     : workerScope.record
       ? `max_${workerScope.record.maxCommits}_commit_then_report`
       : "report_then_stop";

@@ -163,6 +163,12 @@ function build(repo) {
       .filter(Boolean);
     const greenEvidenceIds = [...new Set(storyPassGates.map((record) => record.greenEvidenceId).filter(Boolean))];
     const epicGateId = `${token(run.runId)}-epic-close`;
+    const epicClosePaths = [
+      "docs/ai/ACEF_ACTIVE_RUN.json",
+      run.contextPath || "docs/ai/ACEF_CURRENT_CONTEXT.md",
+      `docs/ai/actors/${judgeId}.json`,
+      `docs/ai/gates/${epicGateId}.json`,
+    ];
     const gateCommand = (verdict) => `.acef/bin/acef-state gate --repo . --id ${epicGateId} --scope ${quote(story)}`
       + ` --verdict ${verdict} --decided-by ${judgeId}`
       + (verdict === "PASS" ? greenEvidenceIds.map((id) => ` --evidence ${id}`).join("") : "");
@@ -170,7 +176,14 @@ function build(repo) {
       ? { type: "transition", nextPhase: "epic-process-judge", command: ".acef/bin/acef-state context-sync --repo .",
         reason: "synchronize the bounded Current Context from typed epic state before the one-shot Judge" }
       : terminal
-      ? { type: "stop", disposition: latestGate.verdict, reason: "terminal epic gate exists" }
+      ? {
+        type: "complete-epic",
+        disposition: latestGate.verdict,
+        completionCommand: `.acef/bin/acef-state epic-complete --repo . --gate-id ${latestGate.gateId}`,
+        commitCommand: `git add -- ${epicClosePaths.map(quote).join(" ")} && git commit -m ${quote(`chore(acef): close ${run.runId}`)} -- ${epicClosePaths.map(quote).join(" ")}`,
+        committedPaths: epicClosePaths,
+        reason: "terminal Epic Judge gate exists; complete typed state and commit the exact control-only close package",
+      }
       : judgeExists
         ? { type: "replan", reason: "the non-retryable epic Process Judge exists without a terminal epic gate" }
         : {
@@ -331,13 +344,18 @@ function build(repo) {
         } else {
           const gateId = `${storyKey}-review-cycle${reviewCycle}`;
           const repairArg = reviewCycle > 0 ? ` --repair-receipt docs/ai/repairs/${storyKey}-repair${reviewCycle}.json` : "";
-          const surfaceArgs = workerScope.surfaces.map((surface) => ` --surface-evidence ${surface}:${green.evidenceId}`).join("");
+          const roundTripRequired = workerScope.requiresRoundTrip === true || workerScope.patternUse === "new-reusable-pattern";
+          const firstUsePattern = workerScope.patternUse === "new-reusable-pattern";
+          const surfaceArgs = workerScope.surfaces.map((surface) => ` --surface-evidence ${surface}:${green.evidenceId}:${roundTripRequired}:${firstUsePattern}`).join("");
+          const bindingArgs = (workerScope.inputOutputBindings || []).map((binding) =>
+            ` --binding-evidence ${quote(`${binding.inputSurface}>${binding.outputSurface}:${binding.field}:${green.evidenceId}:true:${binding.defaultMaskingRisk === true}`)}`
+          ).join("");
           const command = `.acef/bin/acef-state gate --repo . --id ${gateId} --scope ${quote(story)}`
             + ` --atdd-actor ${actorId("atdd")} --development-actor ${actorId("development")}`
             + ` --code-review-actor ${codeId} --patch-assurance-actor ${assuranceId}`
             + ` --red-evidence ${red.evidenceId} --green-evidence ${green.evidenceId}`
             + ` --code-review-report-hash ${codeActor.producedArtifactHash} --patch-assurance-report-hash ${assuranceActor.producedArtifactHash}`
-            + ` --review-cycle ${reviewCycle}${repairArg}${surfaceArgs}`;
+            + ` --review-cycle ${reviewCycle}${repairArg}${surfaceArgs}${bindingArgs}`;
           action = { type: "write-story-gate", reviewCycle, command, runtime: null,
             expectedDisposition: [codeReport.verdict, assuranceReport.verdict].every((verdict) => verdict === "PASS") ? "PASS" : "REVISE_OR_REPLAN",
             reason: "both independent typed review results are present; deterministic gate computes disposition" };

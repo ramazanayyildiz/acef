@@ -150,6 +150,10 @@ try {
   if (readJson("docs/ai/ACEF_ACTIVE_RUN.json").fullFlowContract !== "four-actor-v3") {
     throw new Error("new Full run did not default to four-actor-v3");
   }
+  runState(["worker-scope", "--repo", tmp, "--story", "Story 3.1", "--phase", "atdd",
+    "--worker-id", "acef_story_3_1_atdd", "--allow", "app/**", "--allow", "tests/**"]);
+  run("git", ["add", "docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json"]);
+  run("git", ["commit", "-qm", "bind Story 3.1 worker scope"]);
   const v3AtddActor = "acef_story_3_1_atdd";
   fs.mkdirSync(path.join(tmp, "tests"), { recursive: true });
   fs.writeFileSync(path.join(tmp, "tests", "story-3-1-red.test.js"), "const test = require('node:test'); const assert = require('node:assert'); const actual = require('../app/demo.js'); test('story-3-1-red', () => assert.strictEqual(actual, 'v3-green'));\n");

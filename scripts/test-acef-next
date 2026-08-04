@@ -117,6 +117,83 @@ try {
   if (!readyJson.context.outputs.includes("docs/ai/reports/story-2-2-dev.md")) throw new Error("acef-next lost workflow outputs");
   if (readyJson.stop_condition !== "max_1_commit_then_report") throw new Error("acef-next lost worker stop condition");
 
+  const epicCloseRun = {
+    schema: "acef.active-run.v2",
+    runId: "RUN-next-epic-close",
+    repo: "next-fixture",
+    workflowId: "full-bmad",
+    fullFlowContract: "four-actor-v3",
+    runtimeContract: "capsule-supervisor-v1",
+    assuranceProfile: "baseline",
+    scopeUnit: "epic",
+    expectedStories: ["Story 2.2"],
+    status: "active",
+    activeStory: "Epic closeout",
+    activePhase: "epic-process-judge",
+    workerRole: "epic-process-judge",
+    nextAllowedStep: "run exact terminal closeout command",
+    workerScopePath: "docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json",
+    ledgerPath: "docs/ai/ACEF_demo_DELIVERY_AUDIT.md",
+    contextPath: "docs/ai/ACEF_CURRENT_CONTEXT.md",
+  };
+  fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_ACTIVE_RUN.json"), `${JSON.stringify(epicCloseRun, null, 2)}\n`);
+  fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_ACTIVE_WORKER_SCOPE.json"), `${JSON.stringify({
+    runId: epicCloseRun.runId,
+    activeStory: "Story 2.2",
+    phase: "patch-assurance",
+    workerId: "story-2-2-patch-assurance",
+    allowedPaths: ["app/Story22.php"],
+    baseRef: "HEAD",
+    maxCommits: 1,
+    canEditLedger: false,
+    canSpawnAgents: false,
+  }, null, 2)}\n`);
+  const epicClose = JSON.parse(mustRun(next, ["--repo", tmp, "--role", "epic-process-judge"]));
+  if (epicClose.status !== "ready" || epicClose.allowed.can_write !== false
+    || epicClose.active_state.next_allowed_action !== "run exact terminal closeout command") {
+    throw new Error("acef-next did not expose a read-only terminal epic closeout action");
+  }
+  fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_ACTIVE_RUN.json"), `${JSON.stringify({
+    ...epicCloseRun,
+    status: "complete",
+    activePhase: "closeout",
+    activeActorId: "acef_epic_process_judge",
+    terminalDisposition: "REPLAN",
+    terminalGateId: "next-terminal-gate",
+    nextAllowedStep: "commit exact terminal control artifacts",
+  }, null, 2)}\n`);
+  fs.mkdirSync(path.join(tmp, "docs", "ai", "gates"), { recursive: true });
+  fs.writeFileSync(path.join(tmp, "docs", "ai", "gates", "next-terminal-gate.json"), `${JSON.stringify({
+    gateId: "next-terminal-gate",
+    runId: epicCloseRun.runId,
+    fullFlowContract: "four-actor-v3",
+    storyInventory: epicCloseRun.expectedStories,
+    gateType: "actor-decided-v1",
+    decisionMode: "actor",
+    scope: "Epic closeout",
+    verdict: "REPLAN",
+    decidedBy: "acef_epic_process_judge",
+    repositoryCommit: "fixture",
+  }, null, 2)}\n`);
+  fs.mkdirSync(path.join(tmp, "docs", "ai", "actors"), { recursive: true });
+  fs.writeFileSync(path.join(tmp, "docs", "ai", "actors", "acef_epic_process_judge.json"), `${JSON.stringify({
+    actorInstanceId: "acef_epic_process_judge", runId: epicCloseRun.runId,
+    fullFlowContract: "four-actor-v3", storyInventory: epicCloseRun.expectedStories,
+    story: "Epic closeout", phase: "epic-process-judge", role: "process-judge", client: "codex",
+    inputCommit: "fixture", allowedContextProfile: "epic-process-judge",
+  }, null, 2)}\n`);
+  fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_CURRENT_CONTEXT.md"), [
+    "# ACEF Current Context", "", `- Run: \`${epicCloseRun.runId}\``,
+    "- Scope unit: `epic`", "- Active story: `Epic closeout`", "- Active phase: `closeout`",
+    "- Terminal disposition: `REPLAN`", "",
+  ].join("\n"));
+  const completedEpic = JSON.parse(mustRun(next, ["--repo", tmp]));
+  if (completedEpic.status !== "ready" || completedEpic.allowed.can_write !== false
+    || completedEpic.stop_condition !== "exact_terminal_control_commit_then_report"
+    || completedEpic.active_state.terminal_disposition !== "REPLAN") {
+    throw new Error("acef-next did not keep a completed epic read-only and observable");
+  }
+
   fs.rmSync(path.join(tmp, "docs", "ai", "ACEF_ACTIVE_RUN.json"));
   fs.rmSync(path.join(tmp, "docs", "ai", "ACEF_ACTIVE_WORKER_SCOPE.json"));
   fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_DIRECT_RUN.json"), `${JSON.stringify({

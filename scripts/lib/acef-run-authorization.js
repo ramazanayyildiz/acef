@@ -4,7 +4,9 @@ const fs = require("node:fs");
 const path = require("node:path");
 const {
   parseActiveRun,
+  parseActorRecord,
   parseDirectRun,
+  parseGateVerdict,
   parseWorkerScope,
 } = require("./acef-state-parser");
 
@@ -27,6 +29,76 @@ function loadParsed(filePath, parser, label) {
 
 function readPointer(filePath) {
   return exists(filePath) ? fs.readFileSync(filePath, "utf8").trim() : "";
+}
+
+function finalStoryScopeAtV3EpicClose(activeRun, workerScope) {
+  return activeRun?.workflowId === "full-bmad"
+    && activeRun.fullFlowContract === "four-actor-v3"
+    && activeRun.scopeUnit === "epic"
+    && ["closeout", "epic-process-judge"].includes(String(activeRun.activePhase || "").toLowerCase())
+    && (activeRun.expectedStories || []).includes(workerScope?.activeStory);
+}
+
+function normalizedScope(value) {
+  return String(value || "").toLowerCase().replace(/[^a-z0-9]+/g, "");
+}
+
+function completedCapsuleTerminalBlockers(repoRoot, activeRun, contextPath) {
+  if (activeRun?.runtimeContract !== "capsule-supervisor-v1" || activeRun.status !== "complete") return [];
+  const blockers = [];
+  const gatePath = path.join(repoRoot, "docs", "ai", "gates", `${activeRun.terminalGateId}.json`);
+  const parsedGate = loadParsed(gatePath, parseGateVerdict, "invalid terminal Epic gate");
+  if (!parsedGate.exists) blockers.push(`terminal Epic gate not found: docs/ai/gates/${activeRun.terminalGateId}.json`);
+  if (parsedGate.error) blockers.push(parsedGate.error);
+  if (parsedGate.record) {
+    const gate = parsedGate.record;
+    if (gate.gateId !== activeRun.terminalGateId
+      || gate.gateType !== "actor-decided-v1"
+      || gate.decisionMode !== "actor"
+      || gate.runId !== activeRun.runId
+      || gate.fullFlowContract !== activeRun.fullFlowContract
+      || normalizedScope(gate.scope) !== normalizedScope(activeRun.activeStory)
+      || gate.decidedBy !== activeRun.activeActorId
+      || gate.verdict !== activeRun.terminalDisposition
+      || JSON.stringify(gate.storyInventory) !== JSON.stringify(activeRun.expectedStories)) {
+      blockers.push("completed Epic state does not match its bound actor-decided terminal gate");
+    }
+  }
+  const actorPath = path.join(repoRoot, "docs", "ai", "actors", `${activeRun.activeActorId}.json`);
+  const parsedActor = loadParsed(actorPath, parseActorRecord, "invalid terminal Epic Judge actor");
+  if (!parsedActor.exists) blockers.push(`terminal Epic Judge actor not found: docs/ai/actors/${activeRun.activeActorId}.json`);
+  if (parsedActor.error) blockers.push(parsedActor.error);
+  if (parsedActor.record) {
+    const actor = parsedActor.record;
+    if (actor.actorInstanceId !== activeRun.activeActorId
+      || actor.runId !== activeRun.runId
+      || actor.fullFlowContract !== activeRun.fullFlowContract
+      || normalizedScope(actor.story) !== normalizedScope(activeRun.activeStory)
+      || JSON.stringify(actor.storyInventory) !== JSON.stringify(activeRun.expectedStories)
+      || actor.role !== "process-judge"
+      || actor.phase !== "epic-process-judge") {
+      blockers.push("completed Epic state does not match its bound Epic Process Judge actor");
+    }
+  }
+  const absoluteContextPath = path.resolve(repoRoot, contextPath);
+  if (exists(absoluteContextPath)) {
+    const context = fs.readFileSync(absoluteContextPath, "utf8");
+    const lines = context.split(/\r?\n/);
+    const requiredBindings = [
+      ["- Run:", `- Run: \`${activeRun.runId}\``],
+      ["- Scope unit:", "- Scope unit: `epic`"],
+      ["- Active story:", `- Active story: \`${activeRun.activeStory}\``],
+      ["- Active phase:", "- Active phase: `closeout`"],
+      ["- Terminal disposition:", `- Terminal disposition: \`${activeRun.terminalDisposition}\``],
+    ];
+    if (requiredBindings.some(([prefix, expected]) => {
+      const matching = lines.filter((line) => line.startsWith(prefix));
+      return matching.length !== 1 || matching[0] !== expected;
+    })) {
+      blockers.push("Current Context does not match the completed Epic terminal state");
+    }
+  }
+  return blockers;
 }
 
 function inspectRunAuthorization(repo, options = {}) {
@@ -104,6 +176,7 @@ function inspectRunAuthorization(repo, options = {}) {
   if (options.requireContext !== false && !exists(path.resolve(repoRoot, contextPath))) {
     blockers.push(`current context not found: ${contextPath}`);
   }
+  blockers.push(...completedCapsuleTerminalBlockers(repoRoot, activeRun, contextPath));
 
   const configuredScopePath = activeRun.workerScopePath || "docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json";
   const scope = loadParsed(
@@ -116,7 +189,9 @@ function inspectRunAuthorization(repo, options = {}) {
     blockers.push(`missing worker scope: ${configuredScopePath}`);
   }
   if (scope.record) {
-    if (String(scope.record.activeStory) !== String(activeRun.activeStory)) {
+    const allowedFinalStoryScope = options.allowFinalStoryScopeAtV3EpicClose === true
+      && finalStoryScopeAtV3EpicClose(activeRun, scope.record);
+    if (String(scope.record.activeStory) !== String(activeRun.activeStory) && !allowedFinalStoryScope) {
       blockers.push(`worker scope story ${scope.record.activeStory} does not match active run story ${activeRun.activeStory}`);
     }
     if (scope.record.runId && scope.record.runId !== activeRun.runId) {
@@ -142,5 +217,7 @@ function inspectRunAuthorization(repo, options = {}) {
 }
 
 module.exports = {
+  completedCapsuleTerminalBlockers,
+  finalStoryScopeAtV3EpicClose,
   inspectRunAuthorization,
 };

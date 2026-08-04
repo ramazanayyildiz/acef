@@ -35,6 +35,7 @@ try {
   const workflowValidate = path.join(tmp, ".acef", "bin", "acef-workflow-validate");
   const parser = path.join(tmp, ".acef", "bin", "lib", "acef-state-parser.js");
   const authorization = path.join(tmp, ".acef", "bin", "lib", "acef-run-authorization.js");
+  const assuranceRequirements = path.join(tmp, ".acef", "bin", "lib", "acef-assurance-requirements.js");
   const executionPolicy = path.join(tmp, ".acef", "bin", "lib", "acef-execution-policy.js");
   const installationHelper = path.join(tmp, ".acef", "bin", "lib", "acef-installation.js");
   const schema = path.join(tmp, ".acef", "schemas", "active-run.schema.json");
@@ -60,10 +61,19 @@ try {
   if (!fs.existsSync(workflowValidate)) throw new Error("workflow validator was not installed");
   if (!fs.existsSync(parser)) throw new Error("parser support library was not installed");
   if (!fs.existsSync(authorization)) throw new Error("run authorization support library was not installed");
+  if (!fs.existsSync(assuranceRequirements)) throw new Error("assurance requirements support library was not installed");
   if (!fs.existsSync(executionPolicy)) throw new Error("execution policy support library was not installed");
   if (!fs.existsSync(installationHelper)) throw new Error("installation support library was not installed");
   if (!fs.existsSync(schema)) throw new Error("typed-state schemas were not installed");
   if (!fs.existsSync(activeRunV2Schema)) throw new Error("active-run v2 schema was not installed");
+  const installedActiveRunV2Schema = JSON.parse(fs.readFileSync(activeRunV2Schema, "utf8"));
+  if (JSON.stringify(installedActiveRunV2Schema.properties?.terminalDisposition?.enum)
+    !== JSON.stringify(["PASS", "FAIL", "REPLAN", "BLOCKED"])) {
+    throw new Error("installed active-run v2 schema does not accept typed terminal dispositions");
+  }
+  if (installedActiveRunV2Schema.properties?.terminalGateId?.pattern !== "^[A-Za-z0-9._-]+$") {
+    throw new Error("installed active-run v2 schema does not bind terminal completion to a safe gate id");
+  }
   if (!fs.existsSync(reviewReportV3Schema)) throw new Error("review-report v3 schema was not installed");
   if (!fs.existsSync(developerRepairV3Schema)) throw new Error("developer-repair v3 schema was not installed");
   if (!fs.existsSync(processJudgeDecisionV3Schema)) throw new Error("Process Judge decision v3 schema was not installed");

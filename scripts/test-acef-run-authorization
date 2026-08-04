@@ -87,6 +87,41 @@ try {
   }
   writeJson(workerScopePath, workerScope);
 
+  const epicCloseRun = {
+    ...activeRun,
+    workflowId: "full-bmad",
+    fullFlowContract: "four-actor-v3",
+    assuranceProfile: "baseline",
+    scopeUnit: "epic",
+    expectedStories: ["Story 1.1"],
+    activeStory: "Epic closeout",
+    activePhase: "epic-process-judge",
+  };
+  const finalStoryScope = { ...workerScope, activeStory: "Story 1.1", phase: "patch-assurance" };
+  writeJson(activeRunPath, epicCloseRun);
+  writeJson(workerScopePath, finalStoryScope);
+  const strictEpicClose = inspectRunAuthorization(tmp, { requireScopeRunId: true });
+  if (strictEpicClose.ok || !strictEpicClose.blockers.some((item) => item.includes("does not match active run"))) {
+    throw new Error("final-story scope exception activated without an explicit epic-close opt-in");
+  }
+  const authorizedEpicClose = inspectRunAuthorization(tmp, {
+    requireScopeRunId: true,
+    allowFinalStoryScopeAtV3EpicClose: true,
+  });
+  if (!authorizedEpicClose.ok) {
+    throw new Error(`valid final-story scope at v3 epic close was rejected: ${authorizedEpicClose.blockers.join("; ")}`);
+  }
+  writeJson(workerScopePath, { ...finalStoryScope, activeStory: "Story 9.9" });
+  const foreignEpicScope = inspectRunAuthorization(tmp, {
+    requireScopeRunId: true,
+    allowFinalStoryScopeAtV3EpicClose: true,
+  });
+  if (foreignEpicScope.ok || !foreignEpicScope.blockers.some((item) => item.includes("does not match active run"))) {
+    throw new Error("epic close accepted a worker scope outside the frozen story inventory");
+  }
+  writeJson(activeRunPath, activeRun);
+  writeJson(workerScopePath, workerScope);
+
   const durations = [];
   for (let index = 0; index < 500; index += 1) {
     const started = performance.now();
