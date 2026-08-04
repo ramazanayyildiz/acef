@@ -1,0 +1,159 @@
+{
+  "schema": "acef.execution-assurance-experiment.v1",
+  "experimentId": "acef-execution-assurance-v328-rehearsal",
+  "parentExperimentId": "acef-execution-assurance-v327-rehearsal",
+  "repairBasis": "docs/experiments/execution-assurance-v327/REHEARSAL_RESULT.md",
+  "preregisteredAt": "2026-08-04T12:19:08Z",
+  "preregistrationStatus": "frozen-rehearsal-non-promotable",
+  "pilotRunAllowed": true,
+  "actorContractVersion": "four-actor-v3",
+  "runtimeContract": "capsule-supervisor-v1",
+  "actorRuntimeProfiles": {
+    "atdd": {
+      "model": "gpt-5.6-sol",
+      "reasoningEffort": "high"
+    },
+    "development": {
+      "model": "gpt-5.6-sol",
+      "reasoningEffort": "high"
+    },
+    "code-review": {
+      "model": "gpt-5.6-sol",
+      "reasoningEffort": "medium"
+    },
+    "patch-assurance": {
+      "model": "gpt-5.6-sol",
+      "reasoningEffort": "high"
+    },
+    "process-judge": {
+      "model": "gpt-5.6-sol",
+      "reasoningEffort": "high"
+    },
+    "epic-process-judge": {
+      "model": "gpt-5.6-sol",
+      "reasoningEffort": "high"
+    }
+  },
+  "treatments": {
+    "legacy": {
+      "commit": "d8b816c",
+      "actorContractVersion": "six-actor-v2"
+    },
+    "candidate": {
+      "commit": "d7b58f99afa90359f318c8213cd35aff2bb1f1af",
+      "actorContractVersion": "four-actor-v3"
+    }
+  },
+  "judgmentContract": {
+    "schema": "acef.execution-assurance-pilot-judgment.v3",
+    "appendOnly": true,
+    "immutableDerivedVerdict": true,
+    "keyFields": [
+      "experimentId",
+      "attemptId",
+      "attemptRunId",
+      "attemptOrdinal",
+      "diffSha256",
+      "judgePacketId",
+      "judgePacketSha256"
+    ],
+    "pendingMayBeSupersededByNewPacket": true,
+    "terminalVerdictsImmutable": true
+  },
+  "promotionGates": {
+    "product": {
+      "allStoriesComplete": true,
+      "blindJudge": "PASS",
+      "maximumCritical": 0,
+      "maximumHigh": 0
+    },
+    "process": {
+      "automatedOracle": "PASS",
+      "deterministicStoryClose": true,
+      "conditionalStoryProcessJudge": true,
+      "oneFormalStoryCloseEvidencePackage": true,
+      "epicProcessJudgeCount": 1,
+      "maximumBroadSuiteInvocations": 1,
+      "maximumScopePhaseResultViolations": 0,
+      "maximumDuplicateLifecycles": 0,
+      "maximumCloseoutCreatedMandatoryChains": 0
+    },
+    "budget": {
+      "profileId": "capsule-supervisor-v1-post-red-correction-v328",
+      "baseActorCount": 17,
+      "maximumActorInvocations": 25,
+      "maximumRepairCyclesPerStory": 2,
+      "thirdRepairDisposition": "REPLAN_SPLIT",
+      "maximumInfrastructureRetriesPerInvocation": 1,
+      "maximumInfrastructureRetriesTotal": 3,
+      "targetStoryActiveSeconds": 600,
+      "maximumStoryActiveSeconds": 900,
+      "targetActiveDeliverySeconds": 2700,
+      "maximumActiveDeliverySeconds": 3600,
+      "maximumInputTokens": 18000000,
+      "maximumModelCycles": 220,
+      "maximumToolCalls": 320,
+      "maximumHarnessWaitSeconds": 300,
+      "maximumHarnessWaitShare": 0.05
+    },
+    "passingDisposition": "controlled-canary-only"
+  },
+  "pilotRuntime": {
+    "client": "codex",
+    "clientVersion": "codex-cli 0.146.0",
+    "model": "gpt-5.6-sol",
+    "reasoningEffort": "medium",
+    "freshSession": true,
+    "crossRunMemory": false
+  },
+  "stage0": {
+    "traps": [
+      {
+        "id": "D1-routing-sweep"
+      },
+      {
+        "id": "D2-oversized-scope"
+      },
+      {
+        "id": "D3-duplicate-lifecycle"
+      },
+      {
+        "id": "D4-scope-write"
+      },
+      {
+        "id": "D5-dirty-worktree"
+      },
+      {
+        "id": "D6-broken-environment"
+      }
+    ]
+  },
+  "taskCatalog": {
+    "full-guarded-motivation-v328": {
+      "sourceManifest": "../execution-assurance-v316/task-manifest.json",
+      "selector": "authz-fail-closed-hardening-v316"
+    }
+  },
+  "pilot": {
+    "design": "single-p0-v3-candidate",
+    "attempts": [
+      {
+        "id": "REHEARSAL-v328",
+        "order": 1,
+        "taskId": "full-guarded-motivation-v328",
+        "treatment": "candidate",
+        "workflowId": "full-bmad",
+        "assuranceProfile": "guarded",
+        "actorContractVersion": "four-actor-v3",
+        "runtimeContract": "capsule-supervisor-v1",
+        "activeTimeCapMinutes": 60
+      }
+    ]
+  },
+  "modelRoutingPolicy": {
+    "policyId": "v327-role-calibrated-openai",
+    "provider": "openai",
+    "sha256": "e9a23ab1383012937ee89f30333af94447ccdf1d5cf7cd85a7bff9f26dc944ec",
+    "calibrationId": "V327-CAL-001"
+  }
+}
