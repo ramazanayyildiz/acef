@@ -23,6 +23,10 @@ or evidence contract. Do not use it to claim implementation status; link to the 
 - Updated evidence runner proofs, deterministic gate validation, transcript accounting, role budgets, installer
   coverage, and the ACEF method/skill mirror. The repository suite passes 31/31; maturity remains `enforced` pending
   the separately frozen V3.28 live rehearsal and blind judgment.
+- V3.28 completed all four deterministic story gates, the broad integration command, and its typed Epic PASS gate,
+  but the outer transcript scorer initially treated the Judge's prose as the result channel and required a redundant
+  `ACTOR_RESULT` marker. The scorer now derives the terminal result from the validated actor-decided Epic gate, just as
+  reviewer verdicts come from typed reports; free-form prose cannot override or invalidate the durable gate.
 
 ### Provider-neutral calibrated model routing
 

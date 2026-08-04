@@ -30,6 +30,7 @@ const {
 const { riskRequiresGuarded } = require("./lib/acef-execution-policy");
 const { parseJsonLines, codexMetrics, isAllowedPath } = require("./lib/acef-empirical");
 const { evaluateExpectations, linkDependencies } = require("./acef-empirical-validation");
+const { parseGateVerdict } = require("./lib/acef-state-parser");
 
 const root = path.resolve(__dirname, "..");
 const defaultManifest = path.join(root, "docs", "experiments", "execution-assurance-v2", "manifest.json");
@@ -791,6 +792,21 @@ function reviewerResultFromReport(repoRoot, taskName) {
   }
 }
 
+function epicJudgeResultFromGate(repoRoot, taskName) {
+  if (!repoRoot || !taskName) return "";
+  const gateDirectory = path.join(repoRoot, "docs", "ai", "gates");
+  if (!fs.existsSync(gateDirectory)) return "";
+  const matches = fs.readdirSync(gateDirectory).filter((name) => name.endsWith(".json")).flatMap((name) => {
+    try {
+      const gate = parseGateVerdict(path.join(gateDirectory, name));
+      return gate.gateType === "actor-decided-v1" && gate.decisionMode === "actor"
+        && gate.decidedBy === taskName && ["PASS", "FAIL", "REPLAN", "BLOCKED"].includes(gate.verdict)
+        ? [gate.verdict] : [];
+    } catch { return []; }
+  });
+  return matches.length === 1 ? matches[0] : "";
+}
+
 function parseCollaborationEvidence(rawText, sessionText, expectedContract, expectedSession = {}) {
   let threadId = null;
   for (const line of String(rawText || "").split(/\r?\n/).filter(Boolean)) {
@@ -891,10 +907,15 @@ function parseCollaborationEvidence(rawText, sessionText, expectedContract, expe
   const boundFollowupCallIds = new Set();
   const legacyPolicy = expectedSession.legacyPolicy === true;
   const fourActorV3 = expectedSession.actorContractVersion === "four-actor-v3";
-  const dispatchResult = (entry, control = "") => fourActorV3 && expectedSession.cwd
-    && ["code-review", "patch-assurance"].includes(control)
-    ? reviewerResultFromReport(expectedSession.cwd, entry.taskName)
-    : actorResultFromText(entry.parentFinalText);
+  const dispatchResult = (entry, control = "", scope = "") => {
+    if (fourActorV3 && expectedSession.cwd && ["code-review", "patch-assurance"].includes(control)) {
+      return reviewerResultFromReport(expectedSession.cwd, entry.taskName);
+    }
+    if (fourActorV3 && expectedSession.cwd && scope === "epic" && control === "process-judge") {
+      return epicJudgeResultFromGate(expectedSession.cwd, entry.taskName);
+    }
+    return actorResultFromText(entry.parentFinalText);
+  };
   const maximumRetryOrdinal = fourActorV3 ? 2 : 1;
   const selectPhysicalInvocation = (logicalTaskName) => {
     const originals = dispatches.filter((entry) => entry.taskName === logicalTaskName);
@@ -1089,10 +1110,10 @@ function parseCollaborationEvidence(rawText, sessionText, expectedContract, expe
       }
     } else if (attempts.length) {
       const accepted = attempts[attempts.length - 1];
-      if (!legacyPolicy && dispatchResult(accepted, expected.control) !== "PASS") failures.push(`${accepted.taskName}: final actor result is not PASS`);
+      if (!legacyPolicy && dispatchResult(accepted, expected.control, expected.scope) !== "PASS") failures.push(`${accepted.taskName}: final actor result is not PASS`);
       if (legacyPolicy && !actorResultIs(accepted.parentFinalText, "PASS")) failures.push(`${accepted.taskName}: legacy actor result is not PASS`);
       for (const superseded of legacyPolicy ? [] : attempts.slice(0, -1)) {
-        const supersededResult = dispatchResult(superseded, expected.control);
+          const supersededResult = dispatchResult(superseded, expected.control, expected.scope);
         if (fourActorV3 && ["code-review", "patch-assurance"].includes(expected.control)) {
           if (!["PASS", "REVISE"].includes(supersededResult)) failures.push(`${superseded.taskName}: retry requires a valid prior typed reviewer result`);
         } else if (supersededResult !== "REVISE") {
@@ -1913,12 +1934,14 @@ function loadCollaborationEvidence(rawPath, expectedContract, expectedSession = 
     }
     const machineCarriedReviewer = expectedSession.actorContractVersion === "four-actor-v3"
       && ["code-review", "patch-assurance"].includes(lifecycleEntry?.control);
+    const machineCarriedEpicJudge = expectedSession.actorContractVersion === "four-actor-v3"
+      && lifecycleEntry?.scope === "epic" && lifecycleEntry?.control === "process-judge";
     if (!completion) failures.push(`${dispatch.taskName}: child task_complete missing`);
     else {
       const parentResult = actorResultFromText(dispatch.parentFinalText);
       const childResult = actorResultFromText(completion.last_agent_message);
-      if (machineCarriedReviewer) {
-        // The validated report verdict and review-completion receipt are the single typed reviewer result channel.
+      if (machineCarriedReviewer || machineCarriedEpicJudge) {
+        // The validated report/gate is the single typed semantic result channel.
       } else if (dispatch.auxiliary && !parentResult && !childResult) {
         if (!dispatch.parentFinalText.includes(String(completion.last_agent_message || ""))) failures.push(`${dispatch.taskName}: auxiliary child/parent final answer mismatch`);
       } else if (!childResult || childResult !== parentResult) failures.push(`${dispatch.taskName}: child/parent actor result mismatch`);
@@ -4131,6 +4154,7 @@ module.exports = {
   capsuleShowReceipts,
   conditionalJudgeTrigger,
   developerActorSessionBound,
+  epicJudgeResultFromGate,
   reviewerResultFromReport,
   catalogTaskBindings,
   correctionSessionWrites,

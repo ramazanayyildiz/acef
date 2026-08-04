@@ -84,6 +84,7 @@ const {
   capsuleShowReceipts,
   conditionalJudgeTrigger,
   developerActorSessionBound,
+  epicJudgeResultFromGate,
   catalogTaskBindings,
   correctionSessionWrites,
   ensureActorRequest,
@@ -359,6 +360,13 @@ fs.writeFileSync(path.join(reviewerResultFixture, "docs", "ai", "reports", "wron
 }));
 assert.equal(reviewerResultFromReport(reviewerResultFixture, "wrong-reviewer"), "",
   "a reviewer report cannot carry another actor's result");
+fs.mkdirSync(path.join(reviewerResultFixture, "docs", "ai", "gates"), { recursive: true });
+fs.writeFileSync(path.join(reviewerResultFixture, "docs", "ai", "gates", "epic.json"), JSON.stringify({
+  gateId: "epic", gateType: "actor-decided-v1", decisionMode: "actor", scope: "Epic closeout", verdict: "PASS",
+  decidedBy: "typed-epic-judge", repositoryCommit: "a".repeat(40), evidenceIds: ["green"], createdAt: "2026-08-04T00:00:00.000Z",
+}));
+assert.equal(epicJudgeResultFromGate(reviewerResultFixture, "typed-epic-judge"), "PASS",
+  "the typed Epic gate carries the terminal Judge result even when prose omits ACTOR_RESULT");
 fs.rmSync(reviewerResultFixture, { recursive: true, force: true });
 assert.equal(parseCollaborationEvidence(syntheticRaw,
   syntheticSession.replaceAll("ACTOR_RESULT=PASS", "ACTOR_RESULT: PASS"), epicActorContract).ok, true,
