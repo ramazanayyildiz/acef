@@ -1,0 +1,186 @@
+{
+  "schema": "acef.assurance-capsule.v1",
+  "runId": "REHEARSAL-v325",
+  "fullFlowContract": "four-actor-v3",
+  "runtimeContract": "capsule-supervisor-v1",
+  "story": "s1-resolver-fail-closed",
+  "role": "code-review",
+  "actorInstanceId": "acef_s1_resolver_fail_closed_code_review",
+  "reviewCycle": 0,
+  "baseCommit": "8d65305ccd5d8793bd5bb0b089bdcb7088081295",
+  "inputCommit": "174fadf97767c946c5a46b4b3495cf722e260738",
+  "inputTree": "ad7c22aeaea2cdff9a5d08a2cacb4aa39f1af482",
+  "scopePaths": [
+    "packages/platform/authz/src/Http/RouteRequirementResolver.php",
+    "tests/Unit/Platform/Authz/RouteRequirementResolverTest.php"
+  ],
+  "acceptanceIds": [
+    "s1-resolver-fail-closed-ac1",
+    "s1-resolver-fail-closed-ac2",
+    "s1-resolver-fail-closed-ac3"
+  ],
+  "currentContext": {
+    "path": "docs/ai/ACEF_CURRENT_CONTEXT.md",
+    "sha256": "e6bd3848eadccc28755795d955f1b8271c8c19e06f59493e702cc5d495999bf8",
+    "bytes": 386,
+    "content": "# ACEF Current Context\n\n- Run: `REHEARSAL-v325`\n- Contract: `four-actor-v3`\n- Runtime: `capsule-supervisor-v1`\n- Assurance: `guarded`\n- Scope unit: `story`\n- Active story: `s1-resolver-fail-closed`\n- Active phase: `code-review`\n- Next allowed step: follow the typed supervisor action\n- Stop rule: refuse writes outside typed scope; stop fail-closed when state and supervisor disagree.\n\n"
+  },
+  "diff": {
+    "path": "git-diff:8d65305ccd5d8793bd5bb0b089bdcb7088081295..174fadf97767c946c5a46b4b3495cf722e260738",
+    "sha256": "05f102952aa222a7c324d7b13644df7c63c1b2a3d570d42de0caeb6ce57937ef",
+    "bytes": 11018,
+    "content": "diff --git a/packages/platform/authz/src/Http/RouteRequirementResolver.php b/packages/platform/authz/src/Http/RouteRequirementResolver.php\nindex 75156bc6..f9462c1b 100644\n--- a/packages/platform/authz/src/Http/RouteRequirementResolver.php\n+++ b/packages/platform/authz/src/Http/RouteRequirementResolver.php\n@@ -1,120 +1,130 @@\n <?php\n \n declare(strict_types=1);\n \n namespace Platform\\Authz\\Http;\n \n+use InvalidArgumentException;\n+\n class RouteRequirementResolver\n {\n     /** @var array<string, string> Map of special permission names to user method names */\n     private array $specialPermissions;\n \n     /**\n      * @param array<string, string> $specialPermissions Map of special permission name => user method name\n      */\n     public function __construct(array $specialPermissions = [])\n     {\n         $this->specialPermissions = $specialPermissions;\n     }\n \n     /**\n      * Resolve the requirement for a given route name.\n      *\n      * Reads from config('route_permissions.routes') and parses the permission\n      * string into a structured RouteRequirement.\n      *\n      * @return RouteRequirement|null Null if route not found in config\n      */\n     public function resolve(string $routeName): ?RouteRequirement\n     {\n         $routes = config('route_permissions.routes', []);\n \n         if (!array_key_exists($routeName, $routes)) {\n             return null; // Missing mapping is handled as a fail-closed error by the middleware.\n         }\n \n         $permissionString = $routes[$routeName];\n \n         if ($permissionString === null) {\n             return new RouteRequirement(RouteRequirement::TYPE_NONE);\n         }\n \n         return $this->parse($permissionString);\n     }\n \n     /**\n      * Parse a permission string into a RouteRequirement.\n      *\n      * Supports:\n      *   - 'capability.string.scope' → TYPE_SINGLE\n      *   - 'cap1 | cap2' → TYPE_ANY_OF\n      *   - 'cap1 & cap2' → TYPE_ALL_OF (each part may contain | for OR)\n      *   - 'system_admin_access' → TYPE_SPECIAL (if in specialPermissions map)\n      */\n     public function parse(string $permissionString): RouteRequirement\n     {\n         $permissionString = trim($permissionString);\n \n         if ($permissionString === '__public__') {\n             return new RouteRequirement(RouteRequirement::TYPE_PUBLIC);\n         }\n \n         // Check if it's a special permission\n         if (isset($this->specialPermissions[$permissionString])) {\n             return new RouteRequirement(\n                 type: RouteRequirement::TYPE_SPECIAL,\n                 specialMethod: $this->specialPermissions[$permissionString],\n             );\n         }\n \n         // Split by '&' for AND clauses\n         $andClauses = array_map('trim', explode('&', $permissionString));\n         $andClauses = array_filter($andClauses, fn(string $c) => $c !== '');\n \n         if (count($andClauses) === 0) {\n-            return new RouteRequirement(RouteRequirement::TYPE_NONE);\n+            throw new InvalidArgumentException(\n+                'Route permission expression must contain at least one capability.',\n+            );\n         }\n \n         if (count($andClauses) === 1) {\n             // Single clause — might contain | for OR\n             return $this->parseClause($andClauses[0]);\n         }\n \n         // Multiple AND clauses — each is a sub-requirement\n         $subRequirements = array_map(fn(string $clause) => $this->parseClause($clause), $andClauses);\n \n         return new RouteRequirement(\n             type: RouteRequirement::TYPE_ALL_OF,\n             clauses: $subRequirements,\n         );\n     }\n \n     private function parseClause(string $clause): RouteRequirement\n     {\n         $clause = trim($clause);\n \n         // Check if this clause is a special permission\n         if (isset($this->specialPermissions[$clause])) {\n             return new RouteRequirement(\n                 type: RouteRequirement::TYPE_SPECIAL,\n                 specialMethod: $this->specialPermissions[$clause],\n             );\n         }\n \n         // Check for OR (|)\n         $orParts = array_map('trim', explode('|', $clause));\n         $orParts = array_filter($orParts, fn(string $p) => $p !== '');\n \n+        if (count($orParts) === 0) {\n+            throw new InvalidArgumentException(\n+                'Route permission expression must contain at least one capability.',\n+            );\n+        }\n+\n         if (count($orParts) === 1) {\n             return new RouteRequirement(\n                 type: RouteRequirement::TYPE_SINGLE,\n                 capabilities: [$orParts[0]],\n             );\n         }\n \n         return new RouteRequirement(\n             type: RouteRequirement::TYPE_ANY_OF,\n             capabilities: $orParts,\n         );\n     }\n }\ndiff --git a/tests/Unit/Platform/Authz/RouteRequirementResolverTest.php b/tests/Unit/Platform/Authz/RouteRequirementResolverTest.php\nindex cc6b82f5..b87a72d7 100644\n--- a/tests/Unit/Platform/Authz/RouteRequirementResolverTest.php\n+++ b/tests/Unit/Platform/Authz/RouteRequirementResolverTest.php\n@@ -1,44 +1,45 @@\n <?php\n \n namespace Tests\\Unit\\Platform\\Authz;\n \n+use InvalidArgumentException;\n use Tests\\TestCase;\n use Platform\\Authz\\Http\\RouteRequirement;\n use Platform\\Authz\\Http\\RouteRequirementResolver;\n use PHPUnit\\Framework\\Attributes\\Test;\n \n class RouteRequirementResolverTest extends TestCase\n {\n     private RouteRequirementResolver $resolver;\n \n     protected function setUp(): void\n     {\n         parent::setUp();\n \n         // Initialize resolver with special permissions map\n         $this->resolver = new RouteRequirementResolver([\n             'system_admin_access' => 'shouldBypassTeamScope',\n         ]);\n     }\n \n     #[Test]\n     public function resolve_returns_null_for_unknown_route(): void\n     {\n         config(['route_permissions.routes' => [\n             'invoices.index' => 'invoices.view.team',\n         ]]);\n \n         $result = $this->resolver->resolve('unknown.route.name');\n \n         $this->assertNull($result);\n     }\n \n     #[Test]\n     public function resolve_returns_none_for_null_permission(): void\n     {\n         config(['route_permissions.routes' => [\n             'public.route' => null,\n         ]]);\n \n         $result = $this->resolver->resolve('public.route');\n \n@@ -129,108 +130,108 @@ public function resolve_handles_special_permission(): void\n \n         $this->assertNotNull($result);\n         $this->assertSame(RouteRequirement::TYPE_SPECIAL, $result->type);\n         $this->assertSame('shouldBypassTeamScope', $result->specialMethod);\n     }\n \n     #[Test]\n     public function resolve_handles_special_in_and_clause(): void\n     {\n         config(['route_permissions.routes' => [\n             'admin.delete' => 'system_admin_access & invoices.delete.team',\n         ]]);\n \n         $result = $this->resolver->resolve('admin.delete');\n \n         $this->assertNotNull($result);\n         $this->assertSame(RouteRequirement::TYPE_ALL_OF, $result->type);\n         $this->assertCount(2, $result->clauses);\n \n         // First clause should be SPECIAL\n         $this->assertSame(RouteRequirement::TYPE_SPECIAL, $result->clauses[0]->type);\n         $this->assertSame('shouldBypassTeamScope', $result->clauses[0]->specialMethod);\n \n         // Second clause should be SINGLE\n         $this->assertSame(RouteRequirement::TYPE_SINGLE, $result->clauses[1]->type);\n         $this->assertSame(['invoices.delete.team'], $result->clauses[1]->capabilities);\n     }\n \n     #[Test]\n     public function parse_trims_whitespace(): void\n     {\n         $result = $this->resolver->parse('  invoices.view.team  |  invoices.view.own  ');\n \n         $this->assertSame(RouteRequirement::TYPE_ANY_OF, $result->type);\n         $this->assertSame(['invoices.view.team', 'invoices.view.own'], $result->capabilities);\n     }\n \n     #[Test]\n     public function parse_empty_string_returns_none(): void\n     {\n-        $result = $this->resolver->parse('');\n+        $this->expectException(InvalidArgumentException::class);\n+        $this->expectExceptionMessage('Route permission expression must contain at least one capability.');\n \n-        $this->assertSame(RouteRequirement::TYPE_NONE, $result->type);\n+        $this->resolver->parse('');\n     }\n \n     #[Test]\n     public function parse_handles_complex_nested_expressions(): void\n     {\n         // Complex: 'cap1 & cap2 | cap3 & cap4 | cap5'\n         // This splits by & into: ['cap1', 'cap2 | cap3', 'cap4 | cap5']\n         $result = $this->resolver->parse('cap1 & cap2 | cap3 & cap4 | cap5');\n \n         $this->assertSame(RouteRequirement::TYPE_ALL_OF, $result->type);\n         $this->assertCount(3, $result->clauses);\n \n         // First clause: SINGLE 'cap1'\n         $this->assertSame(RouteRequirement::TYPE_SINGLE, $result->clauses[0]->type);\n         $this->assertSame(['cap1'], $result->clauses[0]->capabilities);\n \n         // Second clause: ANY_OF ['cap2', 'cap3']\n         $this->assertSame(RouteRequirement::TYPE_ANY_OF, $result->clauses[1]->type);\n         $this->assertSame(['cap2', 'cap3'], $result->clauses[1]->capabilities);\n \n         // Third clause: ANY_OF ['cap4', 'cap5']\n         $this->assertSame(RouteRequirement::TYPE_ANY_OF, $result->clauses[2]->type);\n         $this->assertSame(['cap4', 'cap5'], $result->clauses[2]->capabilities);\n     }\n \n     #[Test]\n     public function parse_handles_only_whitespace_with_and_operator(): void\n     {\n-        // Should filter out empty strings and return NONE\n-        $result = $this->resolver->parse('  &  &  ');\n+        $this->expectException(InvalidArgumentException::class);\n+        $this->expectExceptionMessage('Route permission expression must contain at least one capability.');\n \n-        $this->assertSame(RouteRequirement::TYPE_NONE, $result->type);\n+        $this->resolver->parse('  &  &  ');\n     }\n \n     #[Test]\n     public function parse_handles_only_whitespace_with_or_operator(): void\n     {\n-        // Whitespace-only OR parts get filtered out, resulting in ANY_OF with empty capabilities\n-        $result = $this->resolver->parse('  |  |  ');\n+        $this->expectException(InvalidArgumentException::class);\n+        $this->expectExceptionMessage('Route permission expression must contain at least one capability.');\n \n-        $this->assertSame(RouteRequirement::TYPE_ANY_OF, $result->type);\n-        $this->assertEmpty($result->capabilities);\n+        $this->resolver->parse('  |  |  ');\n     }\n \n     #[Test]\n     public function resolve_returns_public_for_public_sentinel(): void\n     {\n         config(['route_permissions.routes' => [\n             'healthz' => '__public__',\n         ]]);\n \n         $result = $this->resolver->resolve('healthz');\n \n         $this->assertNotNull($result);\n         $this->assertSame(RouteRequirement::TYPE_PUBLIC, $result->type);\n     }\n \n     #[Test]\n     public function parse_returns_public_for_public_sentinel(): void\n     {\n         $result = $this->resolver->parse('__public__');\n \n         $this->assertSame(RouteRequirement::TYPE_PUBLIC, $result->type);\n     }\n }"
+  },
+  "sourceBlobs": [
+    {
+      "path": "packages/platform/authz/src/Http/RouteRequirementResolver.php",
+      "sha256": "e6738da7f9c8dd9b6bd16032d80e77a3a942c718dd0d8d7eed81f23a0062fdea",
+      "bytes": 4212,
+      "content": "<?php\n\ndeclare(strict_types=1);\n\nnamespace Platform\\Authz\\Http;\n\nuse InvalidArgumentException;\n\nclass RouteRequirementResolver\n{\n    /** @var array<string, string> Map of special permission names to user method names */\n    private array $specialPermissions;\n\n    /**\n     * @param array<string, string> $specialPermissions Map of special permission name => user method name\n     */\n    public function __construct(array $specialPermissions = [])\n    {\n        $this->specialPermissions = $specialPermissions;\n    }\n\n    /**\n     * Resolve the requirement for a given route name.\n     *\n     * Reads from config('route_permissions.routes') and parses the permission\n     * string into a structured RouteRequirement.\n     *\n     * @return RouteRequirement|null Null if route not found in config\n     */\n    public function resolve(string $routeName): ?RouteRequirement\n    {\n        $routes = config('route_permissions.routes', []);\n\n        if (!array_key_exists($routeName, $routes)) {\n            return null; // Missing mapping is handled as a fail-closed error by the middleware.\n        }\n\n        $permissionString = $routes[$routeName];\n\n        if ($permissionString === null) {\n            return new RouteRequirement(RouteRequirement::TYPE_NONE);\n        }\n\n        return $this->parse($permissionString);\n    }\n\n    /**\n     * Parse a permission string into a RouteRequirement.\n     *\n     * Supports:\n     *   - 'capability.string.scope' → TYPE_SINGLE\n     *   - 'cap1 | cap2' → TYPE_ANY_OF\n     *   - 'cap1 & cap2' → TYPE_ALL_OF (each part may contain | for OR)\n     *   - 'system_admin_access' → TYPE_SPECIAL (if in specialPermissions map)\n     */\n    public function parse(string $permissionString): RouteRequirement\n    {\n        $permissionString = trim($permissionString);\n\n        if ($permissionString === '__public__') {\n            return new RouteRequirement(RouteRequirement::TYPE_PUBLIC);\n        }\n\n        // Check if it's a special permission\n        if (isset($this->specialPermissions[$permissionString])) {\n            return new RouteRequirement(\n                type: RouteRequirement::TYPE_SPECIAL,\n                specialMethod: $this->specialPermissions[$permissionString],\n            );\n        }\n\n        // Split by '&' for AND clauses\n        $andClauses = array_map('trim', explode('&', $permissionString));\n        $andClauses = array_filter($andClauses, fn(string $c) => $c !== '');\n\n        if (count($andClauses) === 0) {\n            throw new InvalidArgumentException(\n                'Route permission expression must contain at least one capability.',\n            );\n        }\n\n        if (count($andClauses) === 1) {\n            // Single clause — might contain | for OR\n            return $this->parseClause($andClauses[0]);\n        }\n\n        // Multiple AND clauses — each is a sub-requirement\n        $subRequirements = array_map(fn(string $clause) => $this->parseClause($clause), $andClauses);\n\n        return new RouteRequirement(\n            type: RouteRequirement::TYPE_ALL_OF,\n            clauses: $subRequirements,\n        );\n    }\n\n    private function parseClause(string $clause): RouteRequirement\n    {\n        $clause = trim($clause);\n\n        // Check if this clause is a special permission\n        if (isset($this->specialPermissions[$clause])) {\n            return new RouteRequirement(\n                type: RouteRequirement::TYPE_SPECIAL,\n                specialMethod: $this->specialPermissions[$clause],\n            );\n        }\n\n        // Check for OR (|)\n        $orParts = array_map('trim', explode('|', $clause));\n        $orParts = array_filter($orParts, fn(string $p) => $p !== '');\n\n        if (count($orParts) === 0) {\n            throw new InvalidArgumentException(\n                'Route permission expression must contain at least one capability.',\n            );\n        }\n\n        if (count($orParts) === 1) {\n            return new RouteRequirement(\n                type: RouteRequirement::TYPE_SINGLE,\n                capabilities: [$orParts[0]],\n            );\n        }\n\n        return new RouteRequirement(\n            type: RouteRequirement::TYPE_ANY_OF,\n            capabilities: $orParts,\n        );\n    }\n}"
+    },
+    {
+      "path": "tests/Unit/Platform/Authz/RouteRequirementResolverTest.php",
+      "sha256": "2f03640b7db2b0d6ae18dc98de152abd4b82e8ee476b4de38a810ce11caf0d78",
+      "bytes": 8358,
+      "content": "<?php\n\nnamespace Tests\\Unit\\Platform\\Authz;\n\nuse InvalidArgumentException;\nuse Tests\\TestCase;\nuse Platform\\Authz\\Http\\RouteRequirement;\nuse Platform\\Authz\\Http\\RouteRequirementResolver;\nuse PHPUnit\\Framework\\Attributes\\Test;\n\nclass RouteRequirementResolverTest extends TestCase\n{\n    private RouteRequirementResolver $resolver;\n\n    protected function setUp(): void\n    {\n        parent::setUp();\n\n        // Initialize resolver with special permissions map\n        $this->resolver = new RouteRequirementResolver([\n            'system_admin_access' => 'shouldBypassTeamScope',\n        ]);\n    }\n\n    #[Test]\n    public function resolve_returns_null_for_unknown_route(): void\n    {\n        config(['route_permissions.routes' => [\n            'invoices.index' => 'invoices.view.team',\n        ]]);\n\n        $result = $this->resolver->resolve('unknown.route.name');\n\n        $this->assertNull($result);\n    }\n\n    #[Test]\n    public function resolve_returns_none_for_null_permission(): void\n    {\n        config(['route_permissions.routes' => [\n            'public.route' => null,\n        ]]);\n\n        $result = $this->resolver->resolve('public.route');\n\n        $this->assertNotNull($result);\n        $this->assertSame(RouteRequirement::TYPE_NONE, $result->type);\n    }\n\n    #[Test]\n    public function resolve_returns_single_capability(): void\n    {\n        config(['route_permissions.routes' => [\n            'invoices.index' => 'invoices.view.team',\n        ]]);\n\n        $result = $this->resolver->resolve('invoices.index');\n\n        $this->assertNotNull($result);\n        $this->assertSame(RouteRequirement::TYPE_SINGLE, $result->type);\n        $this->assertSame(['invoices.view.team'], $result->capabilities);\n    }\n\n    #[Test]\n    public function resolve_returns_any_of_for_or_expression(): void\n    {\n        config(['route_permissions.routes' => [\n            'invoices.show' => 'invoices.view.team | invoices.view.own',\n        ]]);\n\n        $result = $this->resolver->resolve('invoices.show');\n\n        $this->assertNotNull($result);\n        $this->assertSame(RouteRequirement::TYPE_ANY_OF, $result->type);\n        $this->assertSame(['invoices.view.team', 'invoices.view.own'], $result->capabilities);\n    }\n\n    #[Test]\n    public function resolve_returns_all_of_for_and_expression(): void\n    {\n        config(['route_permissions.routes' => [\n            'reports.export' => 'reports.view.team & reports.export.team',\n        ]]);\n\n        $result = $this->resolver->resolve('reports.export');\n\n        $this->assertNotNull($result);\n        $this->assertSame(RouteRequirement::TYPE_ALL_OF, $result->type);\n        $this->assertCount(2, $result->clauses);\n\n        // First clause should be SINGLE with 'reports.view.team'\n        $this->assertSame(RouteRequirement::TYPE_SINGLE, $result->clauses[0]->type);\n        $this->assertSame(['reports.view.team'], $result->clauses[0]->capabilities);\n\n        // Second clause should be SINGLE with 'reports.export.team'\n        $this->assertSame(RouteRequirement::TYPE_SINGLE, $result->clauses[1]->type);\n        $this->assertSame(['reports.export.team'], $result->clauses[1]->capabilities);\n    }\n\n    #[Test]\n    public function resolve_handles_mixed_and_or(): void\n    {\n        config(['route_permissions.routes' => [\n            'admin.dashboard' => 'admin.view.global & reports.view.team | reports.view.own',\n        ]]);\n\n        $result = $this->resolver->resolve('admin.dashboard');\n\n        $this->assertNotNull($result);\n        $this->assertSame(RouteRequirement::TYPE_ALL_OF, $result->type);\n        $this->assertCount(2, $result->clauses);\n\n        // First clause should be SINGLE with 'admin.view.global'\n        $this->assertSame(RouteRequirement::TYPE_SINGLE, $result->clauses[0]->type);\n        $this->assertSame(['admin.view.global'], $result->clauses[0]->capabilities);\n\n        // Second clause should be ANY_OF with 2 capabilities\n        $this->assertSame(RouteRequirement::TYPE_ANY_OF, $result->clauses[1]->type);\n        $this->assertSame(['reports.view.team', 'reports.view.own'], $result->clauses[1]->capabilities);\n    }\n\n    #[Test]\n    public function resolve_handles_special_permission(): void\n    {\n        config(['route_permissions.routes' => [\n            'system.settings' => 'system_admin_access',\n        ]]);\n\n        $result = $this->resolver->resolve('system.settings');\n\n        $this->assertNotNull($result);\n        $this->assertSame(RouteRequirement::TYPE_SPECIAL, $result->type);\n        $this->assertSame('shouldBypassTeamScope', $result->specialMethod);\n    }\n\n    #[Test]\n    public function resolve_handles_special_in_and_clause(): void\n    {\n        config(['route_permissions.routes' => [\n            'admin.delete' => 'system_admin_access & invoices.delete.team',\n        ]]);\n\n        $result = $this->resolver->resolve('admin.delete');\n\n        $this->assertNotNull($result);\n        $this->assertSame(RouteRequirement::TYPE_ALL_OF, $result->type);\n        $this->assertCount(2, $result->clauses);\n\n        // First clause should be SPECIAL\n        $this->assertSame(RouteRequirement::TYPE_SPECIAL, $result->clauses[0]->type);\n        $this->assertSame('shouldBypassTeamScope', $result->clauses[0]->specialMethod);\n\n        // Second clause should be SINGLE\n        $this->assertSame(RouteRequirement::TYPE_SINGLE, $result->clauses[1]->type);\n        $this->assertSame(['invoices.delete.team'], $result->clauses[1]->capabilities);\n    }\n\n    #[Test]\n    public function parse_trims_whitespace(): void\n    {\n        $result = $this->resolver->parse('  invoices.view.team  |  invoices.view.own  ');\n\n        $this->assertSame(RouteRequirement::TYPE_ANY_OF, $result->type);\n        $this->assertSame(['invoices.view.team', 'invoices.view.own'], $result->capabilities);\n    }\n\n    #[Test]\n    public function parse_empty_string_returns_none(): void\n    {\n        $this->expectException(InvalidArgumentException::class);\n        $this->expectExceptionMessage('Route permission expression must contain at least one capability.');\n\n        $this->resolver->parse('');\n    }\n\n    #[Test]\n    public function parse_handles_complex_nested_expressions(): void\n    {\n        // Complex: 'cap1 & cap2 | cap3 & cap4 | cap5'\n        // This splits by & into: ['cap1', 'cap2 | cap3', 'cap4 | cap5']\n        $result = $this->resolver->parse('cap1 & cap2 | cap3 & cap4 | cap5');\n\n        $this->assertSame(RouteRequirement::TYPE_ALL_OF, $result->type);\n        $this->assertCount(3, $result->clauses);\n\n        // First clause: SINGLE 'cap1'\n        $this->assertSame(RouteRequirement::TYPE_SINGLE, $result->clauses[0]->type);\n        $this->assertSame(['cap1'], $result->clauses[0]->capabilities);\n\n        // Second clause: ANY_OF ['cap2', 'cap3']\n        $this->assertSame(RouteRequirement::TYPE_ANY_OF, $result->clauses[1]->type);\n        $this->assertSame(['cap2', 'cap3'], $result->clauses[1]->capabilities);\n\n        // Third clause: ANY_OF ['cap4', 'cap5']\n        $this->assertSame(RouteRequirement::TYPE_ANY_OF, $result->clauses[2]->type);\n        $this->assertSame(['cap4', 'cap5'], $result->clauses[2]->capabilities);\n    }\n\n    #[Test]\n    public function parse_handles_only_whitespace_with_and_operator(): void\n    {\n        $this->expectException(InvalidArgumentException::class);\n        $this->expectExceptionMessage('Route permission expression must contain at least one capability.');\n\n        $this->resolver->parse('  &  &  ');\n    }\n\n    #[Test]\n    public function parse_handles_only_whitespace_with_or_operator(): void\n    {\n        $this->expectException(InvalidArgumentException::class);\n        $this->expectExceptionMessage('Route permission expression must contain at least one capability.');\n\n        $this->resolver->parse('  |  |  ');\n    }\n\n    #[Test]\n    public function resolve_returns_public_for_public_sentinel(): void\n    {\n        config(['route_permissions.routes' => [\n            'healthz' => '__public__',\n        ]]);\n\n        $result = $this->resolver->resolve('healthz');\n\n        $this->assertNotNull($result);\n        $this->assertSame(RouteRequirement::TYPE_PUBLIC, $result->type);\n    }\n\n    #[Test]\n    public function parse_returns_public_for_public_sentinel(): void\n    {\n        $result = $this->resolver->parse('__public__');\n\n        $this->assertSame(RouteRequirement::TYPE_PUBLIC, $result->type);\n    }\n}"
+    }
+  ],
+  "redEvidence": {
+    "evidenceId": "s1-resolver-fail-closed-red",
+    "kind": "runtime-test",
+    "command": "php artisan test '--filter=BenchmarkAuthzResolverFailClosedTest|RouteRequirementResolverTest'",
+    "exitCode": 1,
+    "startedAt": "2026-08-04T04:23:32.750Z",
+    "finishedAt": "2026-08-04T04:23:33.863Z",
+    "repositoryCommit": "f7158f728e61b503f5a901e57526f68de09944a6",
+    "repositoryTree": "923546d96328002f346909a2eed81b3a457e1ac6",
+    "dirtyDigest": "34ebd2d8c1316b1b4a3273123608dcd4094016e78aacda360b6b36c012555ff9",
+    "dirtyApplicationPathsBefore": [],
+    "dirtyApplicationPathsAfter": [],
+    "environmentDigest": "be59bee09f2255564d83d8ddde6d4045bc8dfb0819457db3ce60170b5efd8966",
+    "actorInstanceId": "acef_s1_resolver_fail_closed_atdd",
+    "story": "s1-resolver-fail-closed",
+    "rawArtifact": {
+      "path": "docs/ai/evidence/raw/s1-resolver-fail-closed-red.log",
+      "sha256": "47312ae202b25c2cce36b1f94c0c67f1122389f1376fec7596c27f8dae054b34"
+    },
+    "discovery": {
+      "command": "vendor/bin/phpunit --list-tests '--filter=BenchmarkAuthzResolverFailClosedTest|RouteRequirementResolverTest'",
+      "exitCode": 0,
+      "expectedTests": [
+        "Tests\\Feature\\BenchmarkAuthzResolverFailClosedTest::empty_permission_expressions_fail_closed_after_normalization",
+        "Tests\\Unit\\Platform\\Authz\\RouteRequirementResolverTest::parse_empty_string_returns_none",
+        "Tests\\Unit\\Platform\\Authz\\RouteRequirementResolverTest::parse_handles_only_whitespace_with_and_operator",
+        "Tests\\Unit\\Platform\\Authz\\RouteRequirementResolverTest::parse_handles_only_whitespace_with_or_operator"
+      ],
+      "discoveredTests": [
+        "PHPUnit 11.5.55 by Sebastian Bergmann and contributors.",
+        "Available tests:",
+        "Tests\\Unit\\Platform\\Authz\\RouteRequirementResolverTest::resolve_returns_null_for_unknown_route",
+        "Tests\\Unit\\Platform\\Authz\\RouteRequirementResolverTest::resolve_returns_none_for_null_permission",
+        "Tests\\Unit\\Platform\\Authz\\RouteRequirementResolverTest::resolve_returns_single_capability",
+        "Tests\\Unit\\Platform\\Authz\\RouteRequirementResolverTest::resolve_returns_any_of_for_or_expression",
+        "Tests\\Unit\\Platform\\Authz\\RouteRequirementResolverTest::resolve_returns_all_of_for_and_expression",
+        "Tests\\Unit\\Platform\\Authz\\RouteRequirementResolverTest::resolve_handles_mixed_and_or",
+        "Tests\\Unit\\Platform\\Authz\\RouteRequirementResolverTest::resolve_handles_special_permission",
+        "Tests\\Unit\\Platform\\Authz\\RouteRequirementResolverTest::resolve_handles_special_in_and_clause",
+        "Tests\\Unit\\Platform\\Authz\\RouteRequirementResolverTest::parse_trims_whitespace",
+        "Tests\\Unit\\Platform\\Authz\\RouteRequirementResolverTest::parse_empty_string_returns_none",
+        "Tests\\Unit\\Platform\\Authz\\RouteRequirementResolverTest::parse_handles_complex_nested_expressions",
+        "Tests\\Unit\\Platform\\Authz\\RouteRequirementResolverTest::parse_handles_only_whitespace_with_and_operator",
+        "Tests\\Unit\\Platform\\Authz\\RouteRequirementResolverTest::parse_handles_only_whitespace_with_or_operator",
+        "Tests\\Unit\\Platform\\Authz\\RouteRequirementResolverTest::resolve_returns_public_for_public_sentinel",
+        "Tests\\Unit\\Platform\\Authz\\RouteRequirementResolverTest::parse_returns_public_for_public_sentinel",
+        "Tests\\Feature\\BenchmarkAuthzResolverFailClosedTest::empty_permission_expressions_fail_closed_after_normalization"
+      ],
+      "stdoutSha256": "cf972add1832ca75dddcfc0b10827d09e6b0ffad88dd7add75420573c7dcbce0"
+    },
+    "satisfies": [
+      "s1-resolver-fail-closed-ac1",
+      "s1-resolver-fail-closed-ac2",
+      "s1-resolver-fail-closed-ac3"
+    ],
+    "runnerProof": {
+      "schema": "acef-evidence-runner-proof-v1",
+      "runner": "acef-state evidence-run",
+      "sha256": "46c76fa7f7b8fce6734819b97bcb49571ac4328b8d5d1b8fb8a6cfc1a7bcfe57"
+    }
+  },
+  "greenEvidence": {
+    "evidenceId": "s1-resolver-fail-closed-green",
+    "kind": "runtime-test",
+    "command": "php artisan test '--filter=BenchmarkAuthzResolverFailClosedTest|RouteRequirementResolverTest'",
+    "exitCode": 0,
+    "startedAt": "2026-08-04T04:26:05.480Z",
+    "finishedAt": "2026-08-04T04:26:06.495Z",
+    "repositoryCommit": "165d816b6686687108653d08cfb56897250b0830",
+    "repositoryTree": "4a759a1fa7d71410d35ca2a4d2fdd11bed0c119e",
+    "dirtyDigest": "a8314101aaa13ca7c633f7dc070e9b4073610d724cd2b18e4890657220b748f5",
+    "dirtyApplicationPathsBefore": [],
+    "dirtyApplicationPathsAfter": [],
+    "environmentDigest": "be59bee09f2255564d83d8ddde6d4045bc8dfb0819457db3ce60170b5efd8966",
+    "actorInstanceId": "acef_s1_resolver_fail_closed_development",
+    "story": "s1-resolver-fail-closed",
+    "rawArtifact": {
+      "path": "docs/ai/evidence/raw/s1-resolver-fail-closed-green.log",
+      "sha256": "3775f677c9ef43dc89290100a05622c232bc3c781d129aa32cdb428de2ea29a5"
+    },
+    "discovery": {
+      "command": "vendor/bin/phpunit --list-tests '--filter=BenchmarkAuthzResolverFailClosedTest|RouteRequirementResolverTest'",
+      "exitCode": 0,
+      "expectedTests": [
+        "Tests\\Feature\\BenchmarkAuthzResolverFailClosedTest::empty_permission_expressions_fail_closed_after_normalization",
+        "Tests\\Unit\\Platform\\Authz\\RouteRequirementResolverTest::parse_empty_string_returns_none",
+        "Tests\\Unit\\Platform\\Authz\\RouteRequirementResolverTest::parse_handles_only_whitespace_with_and_operator",
+        "Tests\\Unit\\Platform\\Authz\\RouteRequirementResolverTest::parse_handles_only_whitespace_with_or_operator"
+      ],
+      "discoveredTests": [
+        "PHPUnit 11.5.55 by Sebastian Bergmann and contributors.",
+        "Available tests:",
+        "Tests\\Unit\\Platform\\Authz\\RouteRequirementResolverTest::resolve_returns_null_for_unknown_route",
+        "Tests\\Unit\\Platform\\Authz\\RouteRequirementResolverTest::resolve_returns_none_for_null_permission",
+        "Tests\\Unit\\Platform\\Authz\\RouteRequirementResolverTest::resolve_returns_single_capability",
+        "Tests\\Unit\\Platform\\Authz\\RouteRequirementResolverTest::resolve_returns_any_of_for_or_expression",
+        "Tests\\Unit\\Platform\\Authz\\RouteRequirementResolverTest::resolve_returns_all_of_for_and_expression",
+        "Tests\\Unit\\Platform\\Authz\\RouteRequirementResolverTest::resolve_handles_mixed_and_or",
+        "Tests\\Unit\\Platform\\Authz\\RouteRequirementResolverTest::resolve_handles_special_permission",
+        "Tests\\Unit\\Platform\\Authz\\RouteRequirementResolverTest::resolve_handles_special_in_and_clause",
+        "Tests\\Unit\\Platform\\Authz\\RouteRequirementResolverTest::parse_trims_whitespace",
+        "Tests\\Unit\\Platform\\Authz\\RouteRequirementResolverTest::parse_empty_string_returns_none",
+        "Tests\\Unit\\Platform\\Authz\\RouteRequirementResolverTest::parse_handles_complex_nested_expressions",
+        "Tests\\Unit\\Platform\\Authz\\RouteRequirementResolverTest::parse_handles_only_whitespace_with_and_operator",
+        "Tests\\Unit\\Platform\\Authz\\RouteRequirementResolverTest::parse_handles_only_whitespace_with_or_operator",
+        "Tests\\Unit\\Platform\\Authz\\RouteRequirementResolverTest::resolve_returns_public_for_public_sentinel",
+        "Tests\\Unit\\Platform\\Authz\\RouteRequirementResolverTest::parse_returns_public_for_public_sentinel",
+        "Tests\\Feature\\BenchmarkAuthzResolverFailClosedTest::empty_permission_expressions_fail_closed_after_normalization"
+      ],
+      "stdoutSha256": "cf972add1832ca75dddcfc0b10827d09e6b0ffad88dd7add75420573c7dcbce0"
+    },
+    "satisfies": [
+      "s1-resolver-fail-closed-ac1",
+      "s1-resolver-fail-closed-ac2",
+      "s1-resolver-fail-closed-ac3"
+    ],
+    "runnerProof": {
+      "schema": "acef-evidence-runner-proof-v1",
+      "runner": "acef-state evidence-run",
+      "sha256": "0f269b828037fa6d3d03d1ff63f80f658ade5d344ae04fd1d7bbc80b2afdd3be"
+    }
+  },
+  "previousFindings": [],
+  "repairReceipt": null,
+  "reviewPolicy": [
+    "Judge correctness, security, acceptance conformance, and scope.",
+    "Consume the hash-bound runner proof; do not rerun it unless reporting a named evidence conflict.",
+    "Do not edit files or consume the other reviewer conclusion.",
+    "Use targeted follow-up reads only for a named uncertainty."
+  ],
+  "allowedCommands": [
+    ".acef/bin/acef-state capsule-show --repo . --id s1_resolver_fail_closed-code-review",
+    ".acef/bin/acef-state review-result --repo . --actor acef_s1_resolver_fail_closed_code_review --model gpt-5.6-sol --effort high --verdict <PASS|REVISE|REPLAN>"
+  ],
+  "integrity": {
+    "algorithm": "sha256",
+    "payloadSha256": "7c772e2bcad0a7402f3d9d9bb26181ba546c3ae4f637a9710152c2b9a59a9c43"
+  }
+}
