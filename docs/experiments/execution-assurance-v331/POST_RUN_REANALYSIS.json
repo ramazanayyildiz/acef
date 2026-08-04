@@ -1,0 +1,36 @@
+{
+  "schema": "acef.execution-assurance-post-run-reanalysis.v1",
+  "experimentId": "acef-execution-assurance-v331-correction-proof",
+  "attemptRunId": "REHEARSAL-v331",
+  "immutableTranscriptSha256": "1fca4f5e457401d304d0048797621490e4906527023db12184daaeb18124d78f",
+  "scorerCorrections": [
+    "Treat a safely escaped pipe inside a simple sh -c command as the same frozen argv as the quoted filter argument.",
+    "Permit newline-separated read-only inspection commands in the bounded correction actor while continuing to reject any combined mutation."
+  ],
+  "collaboration": {
+    "result": "PASS",
+    "failures": [],
+    "actorCount": 6,
+    "actorInvocations": 7,
+    "correctionBindings": 1,
+    "developerReactivations": 1,
+    "integrationInvocations": 1,
+    "integrationResult": "PASS"
+  },
+  "durableLifecycle": {
+    "result": "FAIL",
+    "actorCount": 6,
+    "gateCount": 2,
+    "failures": [
+      "s1-middleware-correction-proof: formal story-close layer s1_middleware_correction_proof-review-cycle0 close commit is not exactly the bound control delta"
+    ]
+  },
+  "blindJudge": {
+    "verdict": "PASS",
+    "scopeViolation": false,
+    "testWeakening": false,
+    "productOutcomeComplete": true,
+    "findings": []
+  },
+  "disposition": "PRODUCT_PASS_PROCESS_FAIL"
+}

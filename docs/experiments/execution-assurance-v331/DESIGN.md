@@ -17,3 +17,8 @@ Success requires exactly one correction binding, one continuation of the origina
 green evidence, concurrent Code Review and Patch Assurance, one deterministic story-close package, one integration
 verification, one Epic Process Judge, and one external artifact-only blind Judge with no HIGH or CRITICAL finding.
 The attempt is single-run and fail-closed. Another design failure triggers replan rather than another rehearsal.
+
+The measured attempt is immutable. It proved the nested product contract and received an artifact-only blind-Judge
+PASS, but it exposed a durable process-ordering defect. The story PASS gate was committed only after integration and
+the Epic Judge, and the close commit incorrectly included the two pre-dispatch capsules. The final disposition is
+`PRODUCT_PASS_PROCESS_FAIL`; see `REHEARSAL_RESULT.md`.

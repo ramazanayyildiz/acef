@@ -1,0 +1,52 @@
+{
+  "schema": "acef.execution-assurance-mechanism-proof-summary.v1",
+  "experimentId": "acef-execution-assurance-v331-correction-proof",
+  "attemptRunId": "REHEARSAL-v331",
+  "result": "PRODUCT_PASS_PROCESS_FAIL",
+  "startedAt": "2026-08-04T21:57:33.391Z",
+  "finishedAt": "2026-08-04T22:18:36.046Z",
+  "activeDeliverySeconds": 1255.6,
+  "wallTimeToProductDoneSeconds": 1262.3,
+  "targetActiveDeliverySeconds": 900,
+  "maximumActiveDeliverySeconds": 1800,
+  "actorExitCode": 0,
+  "verificationExitCode": 0,
+  "postRedCorrectionProof": {
+    "required": 1,
+    "observed": 1,
+    "passed": true
+  },
+  "product": {
+    "automatedFocusedVerification": "PASS",
+    "blindJudge": "PASS",
+    "scopeViolation": false,
+    "testWeakening": false,
+    "findingCount": 0
+  },
+  "process": {
+    "collaborationReanalysis": "PASS",
+    "durableLifecycle": "FAIL",
+    "failureClass": "story-close-commit-ordering",
+    "failureReason": "The PASS gate and story-close package were not durably committed before integration and Epic judgment; the later close commit also included pre-dispatch capsules outside the bound control delta."
+  },
+  "metrics": {
+    "inputTokens": 5702815,
+    "cachedInputTokens": 5460224,
+    "outputTokens": 39247,
+    "modelCycles": 56,
+    "toolCalls": 122,
+    "delegatedExecutionSeconds": 485.4,
+    "coordinationIdleSeconds": 1.1,
+    "coordinationIdleShare": 0.0009
+  },
+  "evidenceSha256": {
+    "preflight": "b47629682eaa3d7fc8d1735005eaa5eb2a63195306de62e4fb912611a27d2ea2",
+    "transcript": "1fca4f5e457401d304d0048797621490e4906527023db12184daaeb18124d78f",
+    "pilotRow": "1215d9d8bfd5cd5e19a8214332fc76b6a11e94fc4db85cc21fdc710d548623e1",
+    "verificationReceipt": "895930dfaec2939fa3f32c17941758bec6fee3d82c4c0c07749fbd9c1bfade25",
+    "judgePacket": "cf9e897c7f17564f3a71534819a37d2b17d8463ef7d31b07f054de2db571c3ba",
+    "judgmentLog": "a072ca8d4270dd55efe5215955bc850f0109df6ba905ba41f075a4b23f6fa0b6",
+    "verdict": "ce6298e4389e66d2a2c9733b34eb7b07aa66d76a626a14ecd6985dd2c3ce8038"
+  },
+  "capabilityDisposition": "enforced-not-proven"
+}
