@@ -46,6 +46,12 @@ or evidence contract. Do not use it to claim implementation status; link to the 
   2 later returned ATDD REVISE because a genuine product red was mixed with a closure-capture defect. Phase transition
   now atomically rebinds the worker scope to the canonical Developer, and the compiled ATDD contract requires a direct
   pre-bind focused run that removes every test-harness defect before the one immutable red-evidence command.
+- V3.20 confirmed both repairs in a clean 587-second attempt: exact bootstrap and ATDD completed, and the typed phase
+  transition atomically rebound the active run and worker scope to the canonical Developer. The Developer produced a
+  16-test/58-assertion focused green, but correctly returned terminal REVISE because its actor registration command was
+  still underspecified and therefore no typed green evidence could bind the canonical session. The successor now
+  compiles the exact canonical Developer registration command into the supervisor dispatch and requires the conductor
+  to execute it once before spawning that actor; the Developer may no longer create, probe, or rewrite its own record.
 - Replaced the generic-MySQL source-text oracle in the successor rehearsal fixture with executable behavior against
   both duplicate-classification paths. Focused state, validator, experiment, installer, and supervisor regressions
   pass; the complete 28-script repository suite plus closeout fixture passed in 246 seconds. Maturity is `enforced`,

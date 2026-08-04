@@ -166,7 +166,15 @@ function build(repo) {
         : { type: "dispatch", role: "atdd", actorInstanceId: actorId("atdd"), runtime: RUNTIME.atdd };
   } else if (currentPhase === "development") {
     if (!hasActor(actorId("development"))) {
-      action = { type: "dispatch", role: "development", actorInstanceId: actorId("development"), runtime: RUNTIME.development };
+      const developerId = actorId("development");
+      action = {
+        type: "dispatch",
+        role: "development",
+        actorInstanceId: developerId,
+        runtime: RUNTIME.development,
+        registrationCommand: `.acef/bin/acef-state actor --repo . --id ${developerId} --story ${quote(story)} --phase development --role developer --client codex --session-id /root/${developerId} --context-profile development --model gpt-5.6-sol --effort high`,
+        reason: "register the one canonical story Developer before spawn so green evidence can bind its session",
+      };
     } else if (latestDeveloperEvidence?.exitCode === 0 && latestDeveloperEvidence.discovery) {
       action = { type: "transition", nextPhase: "code-review", command: ".acef/bin/acef-state phase-transition --repo . --phase code-review", reason: "green evidence and discovery contract exist" };
     } else {

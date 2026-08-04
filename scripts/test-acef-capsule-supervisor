@@ -74,6 +74,13 @@ try {
   if (developmentScope.phase !== "development" || developmentScope.workerId !== "acef_story_capsule_development") {
     throw new Error("ATDD transition did not atomically rebind the typed worker scope to Development");
   }
+  const developmentDispatch = JSON.parse(run(process.execPath, [supervisor, "--repo", tmp]));
+  if (developmentDispatch.action.type !== "dispatch"
+    || developmentDispatch.action.actorInstanceId !== "acef_story_capsule_development"
+    || !developmentDispatch.action.registrationCommand.includes("--session-id /root/acef_story_capsule_development")
+    || !developmentDispatch.action.registrationCommand.includes("--model gpt-5.6-sol --effort high")) {
+    throw new Error("supervisor did not compile the canonical Development registration before dispatch");
+  }
   stateRun(["actor", "--repo", tmp, "--id", "acef_story_capsule_development", "--story", "Story Capsule",
     "--phase", "development", "--role", "developer", "--client", "codex", "--session-id", "/root/acef_story_capsule_development",
     "--context-profile", "development", "--model", "gpt-5.6-sol", "--effort", "high"]);
