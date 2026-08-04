@@ -114,13 +114,15 @@ function build(repo) {
   const actors = files(path.join(repo, "docs", "ai", "actors"))
     .map((filePath) => readRecord(parseActorRecord, filePath))
     .filter((record) => token(record.story) === storyKey && record.runId === run.runId);
-  const evidence = files(path.join(repo, "docs", "ai", "evidence"))
-    .map((filePath) => readRecord(parseEvidenceManifest, filePath))
+  const allEvidence = files(path.join(repo, "docs", "ai", "evidence"))
+    .map((filePath) => readRecord(parseEvidenceManifest, filePath));
+  const evidence = allEvidence
     .filter((record) => token(record.story) === storyKey)
     .sort((left, right) => String(left.finishedAt || left.startedAt || "").localeCompare(String(right.finishedAt || right.startedAt || ""))
       || left.evidenceId.localeCompare(right.evidenceId));
-  const gates = files(path.join(repo, "docs", "ai", "gates"))
-    .map((filePath) => readRecord(parseGateVerdict, filePath))
+  const allGates = files(path.join(repo, "docs", "ai", "gates"))
+    .map((filePath) => readRecord(parseGateVerdict, filePath));
+  const gates = allGates
     .filter((record) => token(record.scope) === storyKey && record.runId === run.runId)
     .sort((left, right) => Number(left.reviewCycle || 0) - Number(right.reviewCycle || 0));
   const reports = files(path.join(repo, "docs", "ai", "reports"))
@@ -145,10 +147,44 @@ function build(repo) {
   const latestDeveloperEvidence = developerEvidence.at(-1) || null;
   let action;
   if (run.scopeUnit === "epic") {
+    const contextPath = run.contextPath ? path.resolve(repo, run.contextPath) : null;
+    const contextContent = contextPath && fs.existsSync(contextPath) ? fs.readFileSync(contextPath, "utf8") : "";
+    const contextFresh = contextContent.includes(`- Active story: \`${run.activeStory}\``)
+      && contextContent.includes(`- Active phase: \`${run.activePhase}\``)
+      && contextContent.includes(`- Scope unit: \`${run.scopeUnit}\``);
     const terminal = latestGate && ["PASS", "FAIL", "REPLAN", "BLOCKED"].includes(latestGate.verdict);
-    action = terminal
+    const judgeId = "acef_epic_process_judge";
+    const judgeExists = hasActor(judgeId);
+    const storyPassGates = (run.expectedStories || []).map((expectedStory) => allGates
+      .filter((record) => record.runId === run.runId && record.fullFlowContract === run.fullFlowContract
+        && record.gateType === "deterministic-story-close-v3"
+        && token(record.scope) === token(expectedStory) && record.verdict === "PASS")
+      .sort((left, right) => Number(left.reviewCycle || 0) - Number(right.reviewCycle || 0)).at(-1))
+      .filter(Boolean);
+    const greenEvidenceIds = [...new Set(storyPassGates.map((record) => record.greenEvidenceId).filter(Boolean))];
+    const epicGateId = `${token(run.runId)}-epic-close`;
+    const gateCommand = (verdict) => `.acef/bin/acef-state gate --repo . --id ${epicGateId} --scope ${quote(story)}`
+      + ` --verdict ${verdict} --decided-by ${judgeId}`
+      + (verdict === "PASS" ? greenEvidenceIds.map((id) => ` --evidence ${id}`).join("") : "");
+    action = !contextFresh
+      ? { type: "transition", nextPhase: "epic-process-judge", command: ".acef/bin/acef-state context-sync --repo .",
+        reason: "synchronize the bounded Current Context from typed epic state before the one-shot Judge" }
+      : terminal
       ? { type: "stop", disposition: latestGate.verdict, reason: "terminal epic gate exists" }
-      : { type: "dispatch", role: "epic-judge", actorInstanceId: "acef_epic_process_judge", runtime: RUNTIME["epic-judge"] };
+      : judgeExists
+        ? { type: "replan", reason: "the non-retryable epic Process Judge exists without a terminal epic gate" }
+        : {
+          type: "dispatch", role: "epic-judge", actorInstanceId: judgeId, runtime: RUNTIME["epic-judge"],
+          registrationCommand: `.acef/bin/acef-state actor --repo . --id ${judgeId} --story ${quote(story)}`
+            + ` --phase epic-process-judge --role process-judge --client codex --session-id /root/${judgeId}`
+            + " --context-profile epic-process-judge --model gpt-5.6-sol --effort high",
+          decisionCommands: {
+            PASS: gateCommand("PASS"), FAIL: gateCommand("FAIL"), REPLAN: gateCommand("REPLAN"), BLOCKED: gateCommand("BLOCKED"),
+          },
+          storyGateIds: storyPassGates.map((record) => record.gateId),
+          greenEvidenceIds,
+          reason: "register the one-shot independent epic Judge and give it state-writer-owned terminal commands",
+        };
   } else if (currentPhase === "readiness") {
     action = {
       type: "transition",

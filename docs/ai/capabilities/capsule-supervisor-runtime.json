@@ -26,6 +26,8 @@
     ],
     "cli": [
       "scripts/acef-supervisor",
+      "scripts/acef-state#syncRuntimeContext",
+      "scripts/acef-state#writeContextSync",
       "scripts/acef-state#writeStoryTransition",
       "scripts/acef-state#writeReviewScope",
       "scripts/acef-state#writeReviewCapsule",
@@ -55,7 +57,7 @@
   "limitations": [
     "The first candidate keeps every semantic actor on gpt-5.6-sol/high; lower-cost semantic routing is shadow-only until separately measured.",
     "A review capsule is additive transport and cannot replace independent reviewer judgment or targeted reads needed to resolve a named uncertainty; a reviewer may rerun the focused command only for a named evidence conflict.",
-    "The runtime is enforced by schemas, writers, validators, tests, and installer wiring. V3.23 confirmed failure-atomic ATDD discovery and a same-session Developer repair but stopped on a non-canonical Developer-authored repair receipt path, so it is not proven or installed in target repositories.",
+    "The runtime is enforced by schemas, writers, validators, tests, and installer wiring. V3.24 completed all four product stories and the one broad integration command inside the time/token/cycle gates, but epic closeout stopped on stale Current Context and the preregistered tool cap missed at 286/240, so it is not proven or installed in target repositories.",
     "Existing Full runs with lifecycle evidence cannot adopt this runtime contract in place."
   ],
   "evidence": [
@@ -113,6 +115,11 @@
       "layer": "tests",
       "ref": "docs/experiments/execution-assurance-v323/REHEARSAL_RESULT.md",
       "note": "Records successful discovery-bound ATDD, a genuine same-session repair, and fail-closed rejection of a repair receipt whose ID/path diverged from the supervisor contract."
+    },
+    {
+      "layer": "tests",
+      "ref": "docs/experiments/execution-assurance-v324/REHEARSAL_RESULT.md",
+      "note": "Records four deterministic story PASS gates, 48/48 terminal integration tests, 40m36.2s active delivery, detailed conductor/child cost, and fail-closed rejection of stale epic context plus two measurement-contract false positives."
     }
   ],
   "createdAt": "2026-08-04"

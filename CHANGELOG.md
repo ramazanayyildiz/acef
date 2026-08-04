@@ -75,6 +75,18 @@ or evidence contract. Do not use it to claim implementation status; link to the 
   action carries the exact `repairCommand` and `repairReceiptPath`; the same Developer executes that command after green
   evidence, and omission or substitution is mechanical REPLAN rather than conductor-authored repair. The experiment
   transcript parser now also recognizes the new discovery-bound red-evidence command as the one canonical ATDD call.
+- V3.24 completed the entire four-story product path in 2,436.2 seconds: every story closed with focused green evidence
+  and two independent reviewer PASS results, and the one epic integration command passed 48/48 tests. It still failed
+  process closeout because Current Context remained at s1/ATDD, the one-shot Epic Judge correctly returned REVISE, the
+  experiment validator misread the required review-snapshot/close-commit pair as an invalid split package, and one
+  reviewer repeated the same read-only capsule display. Time, per-story time, tokens, cycles, and actor-count gates
+  passed; the preregistered tool cap missed at 286/240. No blind Judge ran and maturity remains `enforced`.
+- Current Context is now mechanically regenerated from typed run and worker-scope state on bootstrap and every phase,
+  story, and epic transition. The supervisor blocks a one-shot Epic Judge behind an exact context-sync action, owns
+  its canonical registration plus terminal decision commands, and refuses redispatch when an actor exists without a
+  terminal gate. Formal durability now validates immutable review prerequisites separately from the exact
+  reviewer/capsule/gate close delta while preserving the older one-commit form. Identical repeated capsule display is
+  retained as measured tool waste; a missing or different capsule identity still fails closed.
 - Replaced the generic-MySQL source-text oracle in the successor rehearsal fixture with executable behavior against
   both duplicate-classification paths. Focused state, validator, experiment, installer, and supervisor regressions
   pass; the complete 28-script repository suite plus closeout fixture passed in 246 seconds. Maturity is `enforced`,

@@ -52,6 +52,7 @@ Usage:
   acef-state direct-run --repo <path> --run-id <id> --status active|complete|promoted --scope <scope> --acceptance <criterion>... --technical-boundary <kind> --reversible true [--changed-path <path>...] [--verification-command <command> --verification-exit-code <code>]... [options]
   acef-state actor --repo <path> --id <id> --story <scope> --phase <phase> --role <role> --client <client> --context-profile <profile> [options]
   acef-state worker-scope --repo <path> --story <scope> --phase <phase> --worker-id <id> --allow <glob>... [--surface <name>...] [--pattern-use <kind>] [--requires-round-trip true|false] [--binding <input>><output>:<field>[:defaultMaskingRisk]] [options]
+  acef-state context-sync --repo <path>
   acef-state phase-transition --repo <path> --phase atdd|development|code-review
   acef-state story-transition --repo <path>
   acef-state review-scope --repo <path>
@@ -280,6 +281,46 @@ function atomicJson(filePath, record, { overwrite = false, validate = null } = {
   }
 }
 
+function syncRuntimeContext(repo, activeRun, workerScope = null) {
+  if (activeRun.runtimeContract !== "capsule-supervisor-v1" || !activeRun.contextPath) return;
+  const matchingScope = workerScope
+    && workerScope.runId === activeRun.runId
+    && normalizedScope(workerScope.activeStory) === normalizedScope(activeRun.activeStory)
+    ? workerScope : null;
+  const lines = [
+    "# ACEF Current Context",
+    "",
+    `- Run: \`${activeRun.runId}\``,
+    `- Contract: \`${activeRun.fullFlowContract}\``,
+    `- Runtime: \`${activeRun.runtimeContract}\``,
+    `- Assurance: \`${activeRun.assuranceProfile}\``,
+    `- Scope unit: \`${activeRun.scopeUnit}\``,
+    `- Active story: \`${activeRun.activeStory}\``,
+    `- Active phase: \`${activeRun.activePhase}\``,
+    `- Next allowed step: ${activeRun.nextAllowedStep || "follow the typed supervisor action"}`,
+  ];
+  if (matchingScope) {
+    lines.push(`- Worker: \`${matchingScope.workerId}\``);
+    lines.push(`- Worker phase: \`${matchingScope.phase}\``);
+    for (const allowedPath of matchingScope.allowedPaths || []) lines.push(`- Allowed path: \`${allowedPath}\``);
+    for (const surface of matchingScope.surfaces || []) lines.push(`- Surface: \`${surface}\``);
+  }
+  lines.push("- Stop rule: refuse writes outside typed scope; stop fail-closed when state and supervisor disagree.", "");
+  const target = path.resolve(repo, activeRun.contextPath);
+  const relativeTarget = relative(repo, target);
+  if (!relativeTarget || relativeTarget.startsWith("..") || path.isAbsolute(relativeTarget)) {
+    throw new Error("capsule-supervisor contextPath must stay inside the repository");
+  }
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+  const tmp = `${target}.${process.pid}.tmp`;
+  try {
+    fs.writeFileSync(tmp, `${lines.join("\n")}\n`);
+    fs.renameSync(tmp, target);
+  } finally {
+    fs.rmSync(tmp, { force: true });
+  }
+}
+
 function relative(repo, filePath) {
   return path.relative(repo, filePath).replaceAll(path.sep, "/");
 }
@@ -404,6 +445,7 @@ function writeActiveRun(opts) {
     updatedAt: new Date().toISOString(),
   };
   atomicJson(target, record, { overwrite: true, validate: parseActiveRun });
+  syncRuntimeContext(opts.repo, record);
   console.log(`WROTE active-run ${relative(opts.repo, target)}`);
 }
 
@@ -618,7 +660,21 @@ function writeWorkerScope(opts) {
   };
   const target = path.join(opts.repo, "docs", "ai", "ACEF_ACTIVE_WORKER_SCOPE.json");
   atomicJson(target, record, { overwrite: true, validate: parseWorkerScope });
+  syncRuntimeContext(opts.repo, activeRun, record);
   console.log(`WROTE worker-scope ${relative(opts.repo, target)}`);
+}
+
+function writeContextSync(opts) {
+  const activeRun = activeV3Run(opts.repo);
+  if (activeRun.runtimeContract !== "capsule-supervisor-v1") {
+    throw new Error("context-sync requires capsule-supervisor-v1");
+  }
+  const workerScopePath = activeRun.workerScopePath
+    ? path.resolve(opts.repo, activeRun.workerScopePath)
+    : path.join(opts.repo, "docs", "ai", "ACEF_ACTIVE_WORKER_SCOPE.json");
+  const workerScope = fs.existsSync(workerScopePath) ? parseWorkerScope(workerScopePath) : null;
+  syncRuntimeContext(opts.repo, activeRun, workerScope);
+  console.log(`WROTE current-context ${activeRun.contextPath}`);
 }
 
 function writeApproval(opts) {
@@ -1442,6 +1498,7 @@ function writePhaseTransition(opts) {
   if (workerScopeTransition) {
     atomicJson(workerScopeTarget, workerScopeTransition, { overwrite: true, validate: parseWorkerScope });
   }
+  syncRuntimeContext(opts.repo, record, workerScopeTransition);
   console.log(`WROTE phase-transition ${activeRun.activePhase} -> ${opts.phase}`);
 }
 
@@ -1483,6 +1540,7 @@ function writeStoryTransition(opts) {
       updatedAt: new Date().toISOString(),
     };
   atomicJson(target, record, { overwrite: true, validate: parseActiveRun });
+  syncRuntimeContext(opts.repo, record);
   console.log(nextStory
     ? `WROTE story-transition ${activeRun.activeStory} -> ${nextStory}`
     : `WROTE story-transition ${activeRun.activeStory} -> ${record.activeStory}`);
@@ -1848,6 +1906,7 @@ function main() {
   if (opts.command === "direct-run") return writeDirectRun(opts);
   if (opts.command === "actor") return writeActor(opts);
   if (opts.command === "worker-scope") return writeWorkerScope(opts);
+  if (opts.command === "context-sync") return writeContextSync(opts);
   if (opts.command === "phase-transition") return writePhaseTransition(opts);
   if (opts.command === "story-transition") return writeStoryTransition(opts);
   if (opts.command === "review-scope") return writeReviewScope(opts);

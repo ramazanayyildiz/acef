@@ -47,6 +47,12 @@ try {
     "--worker-scope", "docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json"]);
   stateRun(["worker-scope", "--repo", tmp, "--story", "Story Capsule", "--phase", "atdd",
     "--worker-id", "acef_story_capsule_atdd", "--allow", "app/**", "--allow", "tests/**"]);
+  const initialContext = fs.readFileSync(path.join(tmp, "docs", "ai", "ACEF_CURRENT_CONTEXT.md"), "utf8");
+  if (!initialContext.includes("- Active story: `Story Capsule`")
+    || !initialContext.includes("- Active phase: `atdd`")
+    || !initialContext.includes("- Allowed path: `app/**`")) {
+    throw new Error("typed bootstrap did not synchronize the bounded Current Context");
+  }
 
   const atddRun = readJson("docs/ai/ACEF_ACTIVE_RUN.json");
   fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_ACTIVE_RUN.json"), JSON.stringify({ ...atddRun, activePhase: "readiness" }, null, 2));
@@ -73,6 +79,10 @@ try {
   const developmentScope = readJson("docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json");
   if (developmentScope.phase !== "development" || developmentScope.workerId !== "acef_story_capsule_development") {
     throw new Error("ATDD transition did not atomically rebind the typed worker scope to Development");
+  }
+  if (!fs.readFileSync(path.join(tmp, "docs", "ai", "ACEF_CURRENT_CONTEXT.md"), "utf8")
+    .includes("- Active phase: `development`")) {
+    throw new Error("phase transition left Current Context stale");
   }
   const developmentDispatch = JSON.parse(run(process.execPath, [supervisor, "--repo", tmp]));
   if (developmentDispatch.action.type !== "dispatch"
@@ -200,7 +210,26 @@ try {
   if (epicRun.scopeUnit !== "epic" || epicRun.activePhase !== "epic-process-judge") {
     throw new Error("story-transition did not deterministically advance the final story to Epic closeout");
   }
+  const epicContextPath = path.join(tmp, "docs", "ai", "ACEF_CURRENT_CONTEXT.md");
+  const epicContext = fs.readFileSync(epicContextPath, "utf8");
+  if (!epicContext.includes("- Scope unit: `epic`") || !epicContext.includes("- Active story: `Epic closeout`")) {
+    throw new Error("story-transition left Current Context stale at Epic closeout");
+  }
+  fs.writeFileSync(epicContextPath, "# stale\n");
+  const epicContextRecovery = JSON.parse(run(process.execPath, [supervisor, "--repo", tmp]));
+  if (epicContextRecovery.action.command !== ".acef/bin/acef-state context-sync --repo .") {
+    throw new Error("supervisor did not stop a one-shot Epic Judge behind stale Current Context");
+  }
+  stateRun(["context-sync", "--repo", tmp]);
+  const epicDispatch = JSON.parse(run(process.execPath, [supervisor, "--repo", tmp]));
+  if (epicDispatch.action.type !== "dispatch" || epicDispatch.action.actorInstanceId !== "acef_epic_process_judge"
+    || !epicDispatch.action.registrationCommand.includes("--session-id /root/acef_epic_process_judge")
+    || !epicDispatch.action.decisionCommands.PASS.includes("--evidence capsule-green")
+    || !epicDispatch.action.decisionCommands.REPLAN.includes("--verdict REPLAN")) {
+    throw new Error("supervisor did not compile the one-shot Epic Judge registration and terminal commands");
+  }
   fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_ACTIVE_RUN.json"), JSON.stringify(activeBeforeTransition, null, 2));
+  stateRun(["context-sync", "--repo", tmp]);
   fs.writeFileSync(path.join(tmp, "docs", "ai", "gates", "capsule-revise-cycle0.json"), JSON.stringify(gateBeforeTransition, null, 2));
   const repairStart = JSON.parse(run(process.execPath, [supervisor, "--repo", tmp]));
   if (repairStart.action.type !== "resume" || repairStart.action.repairCycle !== 1

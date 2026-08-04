@@ -657,6 +657,7 @@ function epicPilotPrompt(attempt, resolved, manifest) {
       "Every successful green evidence command must add the story's exact `--discovery-command-json` and all `--expected-test` identities before `--`. A green run that did not discover the frozen tests is invalid even when its test command exits zero.",
       "The original Developer remains one session for the story. It may perform bounded focused-test attempts inside its original turn and one repair follow-up per review cycle, but it must not return on the first failed attempt. It returns only with accepted discovered green evidence and, for a repair, one final repair receipt; a terminal non-green return is REPLAN/SPLIT, never another continuation or replacement Developer.",
       "When the supervisor dispatches Development, execute its exact registrationCommand once before spawn, then spawn that same actorInstanceId. The command binds the canonical /root/<actorInstanceId> session before any green evidence call. The Developer and conductor must not create, probe, replace, or rewrite that actor record later.",
+      "At epic close, obey a supervisor context-sync transition before dispatch. Then execute the epic-judge dispatch registrationCommand exactly once before spawning the one non-retryable Judge. Give that Judge the supervisor's exact storyGateIds, greenEvidenceIds, and decisionCommands; its only terminal mutation is exactly one matching PASS, FAIL, REPLAN, or BLOCKED command. Never redispatch an existing epic Judge without a terminal gate.",
       "Mechanical state transitions, evidence collection, capsule generation, report generation, and gate construction use deterministic tools. Do not delegate them or ask a model to restate their JSON. The manifest-pinned Sol/high semantic actors remain unchanged in this first candidate; the Terra/medium thin-proxy profile is shadow-only and cannot certify the run.",
     ].join("\n")
     : "";
@@ -1797,8 +1798,10 @@ function loadCollaborationEvidence(rawPath, expectedContract, expectedSession = 
       const writes = correctionSessionWrites(childText, expectedSession.cwd);
       const childCommands = codexSessionMetrics(childText).commandText.split(/\r?\n/).map((entry) => entry.trim()).filter(Boolean);
       const capsuleShowCommands = childCommands.filter((command) => /^(?:\.acef\/bin\/)?acef-state\s+capsule-show\s+--repo\s+\.\s+--id\s+[A-Za-z0-9._-]+$/.test(command));
-      if (expectedSession.runtimeContract === "capsule-supervisor-v1" && capsuleShowCommands.length !== 1) {
-        failures.push(`${dispatch.taskName}: reviewer must execute exactly one capsule-show command`);
+      const distinctCapsuleShowCommands = [...new Set(capsuleShowCommands)];
+      if (expectedSession.runtimeContract === "capsule-supervisor-v1"
+        && (capsuleShowCommands.length < 1 || distinctCapsuleShowCommands.length !== 1)) {
+        failures.push(`${dispatch.taskName}: reviewer must execute one uniquely bound capsule-show command`);
       }
       let captured = null;
       try { captured = reviewerCompletionFromSession(childText, expectedSession.cwd, dispatch.taskName); }
@@ -1834,9 +1837,9 @@ function loadCollaborationEvidence(rawPath, expectedContract, expectedSession = 
           || fs.readFileSync(captured.absoluteReportPath, "utf8") !== Buffer.from(captured.reportBase64, "base64").toString("utf8")) {
           failures.push(`${dispatch.taskName}: reviewer completion report was replaced after child completion`);
         }
-        if (expectedSession.runtimeContract === "capsule-supervisor-v1" && capsuleShowCommands.length === 1) {
+        if (expectedSession.runtimeContract === "capsule-supervisor-v1" && distinctCapsuleShowCommands.length === 1) {
           try {
-            const capsuleId = capsuleShowCommands[0].match(/--id\s+([A-Za-z0-9._-]+)$/)[1];
+            const capsuleId = distinctCapsuleShowCommands[0].match(/--id\s+([A-Za-z0-9._-]+)$/)[1];
             const capsulePath = path.join(expectedSession.cwd, "docs", "ai", "capsules", `${capsuleId}.json`);
             const capsule = installedStateParser(expectedSession.cwd).parseAssuranceCapsule(capsulePath);
             const report = installedStateParser(expectedSession.cwd).parseReviewReport(captured.absoluteReportPath);
@@ -2281,26 +2284,72 @@ function validateFormalStoryClosePackage(scope, gate, clone, actorPaths, reportP
       const historyCommits = history.status === 0 ? history.stdout.split(/\r?\n/).filter(Boolean) : [];
       if (historyCommits.length !== 1) failures.push(`${scope}: ${relativePath} changed after its immutable introduction`);
     }
-    const deltaPaths = relativePaths.filter((entry) => !seenPaths.has(entry));
-    if (!deltaPaths.length) {
-      failures.push(`${scope}: formal story-close layer ${layer.gateId} introduces no new control evidence`);
-      continue;
+    const recordedActorPaths = new Set(Object.values(layer.actors || {})
+      .map((actorId) => `docs/ai/actors/${actorId}.json`));
+    if (layer === gate) for (const actorRecordPath of actorPaths) {
+      const relativeActorPath = path.relative(clone, actorRecordPath).replaceAll(path.sep, "/");
+      if (!recordedActorPaths.has(relativeActorPath)) {
+        failures.push(`${scope}: formal story-close layer ${layer.gateId} files were not introduced in one commit; actor is outside the gate inventory`);
+      }
     }
-    const introductionCommits = new Set();
-    for (const relativePath of deltaPaths) {
-      const added = execute("git", ["log", "--format=%H", "--diff-filter=A", "--", relativePath], clone);
-      const commits = added.status === 0 ? added.stdout.split(/\r?\n/).filter(Boolean) : [];
-      if (commits.length !== 1) failures.push(`${scope}: ${relativePath} was not introduced exactly once`);
-      else introductionCommits.add(commits[0]);
+
+    // The committed review-input snapshot necessarily precedes capsule creation, so
+    // ATDD/Developer records and red/green evidence are immutable prerequisites, not
+    // members that can be introduced in the later close commit. The close layer owns
+    // the gate plus only the fresh reviewer artifacts for that cycle (and repair/Judge
+    // records when present). Requiring every referenced prerequisite to be added in the
+    // close commit made the real two-step protocol impossible and produced false FAILs.
+    const freshReviewerIds = [layer.actors?.codeReview, layer.actors?.patchAssurance].filter(Boolean)
+      .filter((actorId) => Number(layer.reviewCycle || 0) === 0
+        || actorId.endsWith(`_retry${Number(layer.reviewCycle)}`));
+    const closeOwnedPaths = new Set([
+      path.relative(clone, layer._recordPath).replaceAll(path.sep, "/"),
+      ...freshReviewerIds.map((actorId) => `docs/ai/actors/${actorId}.json`),
+    ]);
+    for (const [role, reportPath] of Object.entries(layer.reportPaths || {})) {
+      const actorId = role === "codeReview" ? layer.actors?.codeReview : layer.actors?.patchAssurance;
+      if (freshReviewerIds.includes(actorId)) closeOwnedPaths.add(path.relative(clone, path.resolve(clone, reportPath)).replaceAll(path.sep, "/"));
     }
-    if (introductionCommits.size !== 1) {
-      failures.push(`${scope}: formal story-close layer ${layer.gateId} files were not introduced in one commit`);
+    if (layer.repair?.receiptPath) closeOwnedPaths.add(path.relative(clone, path.resolve(clone, layer.repair.receiptPath)).replaceAll(path.sep, "/"));
+    if (layer.processJudge?.decisionPath) closeOwnedPaths.add(path.relative(clone, path.resolve(clone, layer.processJudge.decisionPath)).replaceAll(path.sep, "/"));
+
+    const gateRelativePath = path.relative(clone, layer._recordPath).replaceAll(path.sep, "/");
+    const gateAdded = execute("git", ["log", "--format=%H", "--diff-filter=A", "--", gateRelativePath], clone);
+    const gateIntroductionCommits = gateAdded.status === 0 ? gateAdded.stdout.split(/\r?\n/).filter(Boolean) : [];
+    if (gateIntroductionCommits.length !== 1) {
+      failures.push(`${scope}: formal story-close layer ${layer.gateId} gate was not introduced exactly once`);
     } else {
-      const [packageCommit] = [...introductionCommits];
+      const packageCommit = gateIntroductionCommits[0];
+      for (const relativePath of closeOwnedPaths) {
+        const added = execute("git", ["log", "--format=%H", "--diff-filter=A", "--", relativePath], clone);
+        const commits = added.status === 0 ? added.stdout.split(/\r?\n/).filter(Boolean) : [];
+        if (commits.length !== 1 || commits[0] !== packageCommit) {
+          failures.push(`${scope}: formal story-close layer ${layer.gateId} files were not introduced in one close commit`);
+        }
+      }
+      const capsulePaths = [];
+      const capsuleDir = path.join(clone, "docs", "ai", "capsules");
+      if (fs.existsSync(capsuleDir)) for (const fileName of fs.readdirSync(capsuleDir).filter((name) => name.endsWith(".json"))) {
+        const capsulePath = path.join(capsuleDir, fileName);
+        try {
+          const capsule = parser.parseAssuranceCapsule(capsulePath);
+          if (capsule.runId === layer.runId && freshReviewerIds.includes(capsule.actorInstanceId)
+            && Number(capsule.reviewCycle || 0) === Number(layer.reviewCycle || 0)) {
+            capsulePaths.push(path.relative(clone, capsulePath).replaceAll(path.sep, "/"));
+          }
+        } catch {}
+      }
+      const referencedPathsIntroducedHere = relativePaths.filter((relativePath) => {
+        const added = execute("git", ["log", "--format=%H", "--diff-filter=A", "--", relativePath], clone);
+        const commits = added.status === 0 ? added.stdout.split(/\r?\n/).filter(Boolean) : [];
+        return commits.length === 1 && commits[0] === packageCommit;
+      });
+      const allowedClosePaths = new Set([...closeOwnedPaths, ...capsulePaths, ...referencedPathsIntroducedHere]);
       const changed = execute("git", ["diff-tree", "--root", "--no-commit-id", "--name-only", "-r", packageCommit, "--"], clone);
-      const changedPaths = changed.status === 0 ? changed.stdout.split(/\r?\n/).filter(Boolean).sort() : [];
-      if (JSON.stringify(changedPaths) !== JSON.stringify([...deltaPaths].sort())) {
-        failures.push(`${scope}: formal story-close layer ${layer.gateId} introduction commit is not exactly the bound control delta`);
+      const changedPaths = changed.status === 0 ? changed.stdout.split(/\r?\n/).filter(Boolean) : [];
+      if (!changedPaths.length || changedPaths.some((entry) => !allowedClosePaths.has(entry))
+        || [...allowedClosePaths].some((entry) => !changedPaths.includes(entry))) {
+        failures.push(`${scope}: formal story-close layer ${layer.gateId} close commit is not exactly the bound control delta`);
       }
     }
     relativePaths.forEach((entry) => seenPaths.add(entry));
