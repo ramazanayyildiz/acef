@@ -2128,7 +2128,7 @@ function evaluatePilotBudgets(manifest, attempt, activeDeliverySeconds, actor, c
     failures.push(`model cycles ${actor.model_cycles}/${budget.maximumModelCycles}`);
   }
   if (actor.tool_calls > budget.maximumToolCalls) failures.push(`tool calls ${actor.tool_calls}/${budget.maximumToolCalls}`);
-  const coordinationIdleBudget = ["v33-measured", "capsule-supervisor-v1"].includes(budget.profileId);
+  const coordinationIdleBudget = ["v33-measured", "capsule-supervisor-v1", "capsule-supervisor-v1-measured-v325"].includes(budget.profileId);
   const measuredWaitSeconds = coordinationIdleBudget
     ? Number(harnessWait.coordinationIdleSeconds || 0) : harnessWait.seconds;
   const measuredWaitShare = coordinationIdleBudget

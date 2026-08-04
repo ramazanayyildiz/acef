@@ -138,6 +138,11 @@ function validateManifest(manifest) {
                 maximumToolCalls: 240, maximumHarnessWaitSeconds: 300, maximumHarnessWaitShare: 0.05,
                 targetStoryActiveSeconds: 900, maximumStoryActiveSeconds: 1200,
                 targetActiveDeliverySeconds: 3600, maximumActiveDeliverySeconds: 4500 }
+            : budgetProfile === "capsule-supervisor-v1-measured-v325"
+              ? { maximumActorInvocations: 25, maximumInputTokens: 18000000, maximumModelCycles: 220,
+                maximumToolCalls: 320, maximumHarnessWaitSeconds: 300, maximumHarnessWaitShare: 0.05,
+                targetStoryActiveSeconds: 900, maximumStoryActiveSeconds: 1200,
+                targetActiveDeliverySeconds: 3600, maximumActiveDeliverySeconds: 4500 }
           : null;
     if (!expectedBudget) {
       throw new Error("v3 P0 candidate budget.profileId is not recognized");
@@ -156,7 +161,7 @@ function validateManifest(manifest) {
       || budget.maximumHarnessWaitShare !== expectedBudget.maximumHarnessWaitShare) {
       throw new Error("v3 P0 candidate must freeze actor, repair, time, token, tool, and harness-wait budgets");
     }
-    if (budgetProfile === "capsule-supervisor-v1") {
+    if (["capsule-supervisor-v1", "capsule-supervisor-v1-measured-v325"].includes(budgetProfile)) {
       if (manifest.runtimeContract !== "capsule-supervisor-v1") {
         throw new Error("capsule supervisor budget requires runtimeContract=capsule-supervisor-v1");
       }

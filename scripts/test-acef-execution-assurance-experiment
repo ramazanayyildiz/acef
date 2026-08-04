@@ -158,6 +158,13 @@ capsuleSupervisorManifest.actorRuntimeProfiles = Object.fromEntries([
   "atdd", "development", "code-review", "patch-assurance", "process-judge", "epic-process-judge",
 ].map((role) => [role, { model: "gpt-5.6-sol", reasoningEffort: "high" }]));
 assert.doesNotThrow(() => validateManifest(capsuleSupervisorManifest));
+const measuredCapsuleManifest = structuredClone(capsuleSupervisorManifest);
+measuredCapsuleManifest.promotionGates.budget.profileId = "capsule-supervisor-v1-measured-v325";
+measuredCapsuleManifest.promotionGates.budget.maximumToolCalls = 320;
+assert.doesNotThrow(() => validateManifest(measuredCapsuleManifest));
+const invalidMeasuredCapsuleManifest = structuredClone(measuredCapsuleManifest);
+invalidMeasuredCapsuleManifest.promotionGates.budget.maximumToolCalls = 319;
+assert.throws(() => validateManifest(invalidMeasuredCapsuleManifest), /freeze actor, repair, time, token, tool, and harness-wait budgets/);
 const underpoweredCapsuleManifest = structuredClone(capsuleSupervisorManifest);
 underpoweredCapsuleManifest.actorRuntimeProfiles["code-review"].model = "gpt-5.6-terra";
 underpoweredCapsuleManifest.actorRuntimeProfiles["code-review"].reasoningEffort = "medium";
