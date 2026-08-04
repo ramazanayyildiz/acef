@@ -61,8 +61,22 @@ try {
     throw new Error("supervisor did not recover the deterministic readiness bootstrap phase");
   }
   stateRun(["phase-transition", "--repo", tmp, "--phase", "atdd"]);
+  const atddDispatch = JSON.parse(run(process.execPath, [supervisor, "--repo", tmp]));
+  if (atddDispatch.action.type !== "dispatch" || atddDispatch.action.role !== "atdd"
+    || atddDispatch.action.precheckCommand !== ".acef/bin/acef-state atdd-precheck --repo . --test-path 'tests/**'") {
+    throw new Error("supervisor did not compile the bounded ATDD harness precheck");
+  }
 
   fs.writeFileSync(path.join(tmp, "tests", "demo.test.js"), "const test = require('node:test'); const assert = require('node:assert'); test('demo contract', () => assert.strictEqual(require('../app/demo.js'), true));\n");
+  stateRun(["atdd-precheck", "--repo", tmp, "--test-path", "tests/demo.test.js"]);
+  const nestedArrowFixture = path.join(tmp, "tests", "NestedArrowTest.php");
+  fs.writeFileSync(nestedArrowFixture, "<?php $count = 0; $run = fn() => call(function () use (&$count) { $count++; });\n");
+  const nestedArrowCheck = cp.spawnSync(process.execPath, [state, "atdd-precheck", "--repo", tmp,
+    "--test-path", "tests/NestedArrowTest.php"], { cwd: tmp, encoding: "utf8" });
+  if (nestedArrowCheck.status === 0 || !`${nestedArrowCheck.stdout}${nestedArrowCheck.stderr}`.includes("outer arrow captures by value")) {
+    throw new Error("ATDD precheck did not reject a nested arrow/by-reference observation trap");
+  }
+  fs.rmSync(nestedArrowFixture);
   git(["add", "tests/demo.test.js"]); git(["commit", "-qm", "red test"]);
   const red = cp.spawnSync(process.execPath, [state, "evidence-run", "--repo", tmp, "--id", "capsule-red",
     "--kind", "runtime-test", "--actor", "acef_story_capsule_atdd", "--story", "Story Capsule",

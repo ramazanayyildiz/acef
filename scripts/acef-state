@@ -53,6 +53,7 @@ Usage:
   acef-state actor --repo <path> --id <id> --story <scope> --phase <phase> --role <role> --client <client> --context-profile <profile> [options]
   acef-state worker-scope --repo <path> --story <scope> --phase <phase> --worker-id <id> --allow <glob>... [--surface <name>...] [--pattern-use <kind>] [--requires-round-trip true|false] [--binding <input>><output>:<field>[:defaultMaskingRisk]] [options]
   acef-state context-sync --repo <path>
+  acef-state atdd-precheck --repo <path> --test-path <path>...
   acef-state phase-transition --repo <path> --phase atdd|development|code-review
   acef-state story-transition --repo <path>
   acef-state review-scope --repo <path>
@@ -72,7 +73,7 @@ Record files are written under docs/ai. Immutable records refuse overwrite; acti
 
 function parseArgs(argv) {
   const [command, ...rest] = argv;
-  const opts = { command, repo: process.cwd(), allow: [], satisfies: [], evidence: [], surface: [], surfaceEvidence: [], binding: [], bindingEvidence: [], riskTrigger: [], clarifyingQuestion: [], inferredAnswer: [], unresolvedQuestion: [], requiredSurface: [], coveredSurface: [], goalEvidence: [], goalMissing: [], acceptance: [], changedPath: [], verificationCommand: [], verificationExitCode: [], unresolvedRisk: [], unresolvedFinding: [], finding: [], findingId: [], findingSeverity: [], findingReason: [], promotionReason: [], expectedStory: [], expectedTest: [], commandArgv: [] };
+  const opts = { command, repo: process.cwd(), allow: [], satisfies: [], evidence: [], surface: [], surfaceEvidence: [], binding: [], bindingEvidence: [], riskTrigger: [], clarifyingQuestion: [], inferredAnswer: [], unresolvedQuestion: [], requiredSurface: [], coveredSurface: [], goalEvidence: [], goalMissing: [], acceptance: [], changedPath: [], verificationCommand: [], verificationExitCode: [], unresolvedRisk: [], unresolvedFinding: [], finding: [], findingId: [], findingSeverity: [], findingReason: [], promotionReason: [], expectedStory: [], expectedTest: [], testPath: [], commandArgv: [] };
   for (let index = 0; index < rest.length; index += 1) {
     const arg = rest[index];
     if (arg === "--help" || arg === "-h") {
@@ -92,7 +93,7 @@ function parseArgs(argv) {
     const value = rest[index + 1];
     if (value === undefined || value.startsWith("--")) throw new Error(`Missing value for ${arg}`);
     index += 1;
-    if (["allow", "satisfies", "evidence", "surface", "surfaceEvidence", "binding", "bindingEvidence", "riskTrigger", "clarifyingQuestion", "inferredAnswer", "unresolvedQuestion", "requiredSurface", "coveredSurface", "goalEvidence", "goalMissing", "acceptance", "changedPath", "verificationCommand", "verificationExitCode", "unresolvedRisk", "unresolvedFinding", "finding", "findingId", "findingSeverity", "findingReason", "promotionReason", "expectedStory", "expectedTest"].includes(key)) opts[key].push(value);
+    if (["allow", "satisfies", "evidence", "surface", "surfaceEvidence", "binding", "bindingEvidence", "riskTrigger", "clarifyingQuestion", "inferredAnswer", "unresolvedQuestion", "requiredSurface", "coveredSurface", "goalEvidence", "goalMissing", "acceptance", "changedPath", "verificationCommand", "verificationExitCode", "unresolvedRisk", "unresolvedFinding", "finding", "findingId", "findingSeverity", "findingReason", "promotionReason", "expectedStory", "expectedTest", "testPath"].includes(key)) opts[key].push(value);
     else opts[key] = value;
   }
   opts.repo = path.resolve(opts.repo);
@@ -766,6 +767,10 @@ function writeEvidence(opts) {
     if (!redParent || !redPaths.length || !redPaths.every(testPath)) {
       throw new Error("four-actor-v3 ATDD evidence requires HEAD to be a new test-only commit before actor creation");
     }
+    const workerScopePath = activeRun.workerScopePath
+      ? path.resolve(opts.repo, activeRun.workerScopePath)
+      : path.join(opts.repo, "docs", "ai", "ACEF_ACTIVE_WORKER_SCOPE.json");
+    assertAtddHarnessSafe(opts.repo, redPaths, parseWorkerScope(workerScopePath));
     writeActor({
       repo: opts.repo,
       id: opts.actor,
@@ -927,6 +932,48 @@ function scopePatternMatches(pattern, filePath) {
 
 function scopeAllows(allowedPaths, filePath) {
   return allowedPaths.some((pattern) => pattern === filePath || scopePatternMatches(pattern, filePath));
+}
+
+function nestedArrowReferenceCaptureFailure(source) {
+  return /fn\s*\([^)]*\)\s*=>[\s\S]{0,2000}?function\s*\([^)]*\)\s*use\s*\([^)]*&\$[A-Za-z_][A-Za-z0-9_]*[^)]*\)/m.test(source);
+}
+
+function assertAtddHarnessSafe(repo, testPaths, workerScope) {
+  if (!testPaths.length) throw new Error("atdd-precheck requires at least one --test-path");
+  for (const testFile of [...new Set(testPaths)]) {
+    const normalized = String(testFile).replaceAll(path.sep, "/");
+    if (!testPath(normalized) || !scopeAllows(workerScope.allowedPaths || [], normalized)) {
+      throw new Error(`ATDD precheck path is not an allowed test path: ${normalized}`);
+    }
+    const absolute = path.resolve(repo, normalized);
+    const relativePath = relative(repo, absolute);
+    if (!relativePath || relativePath.startsWith("..") || path.isAbsolute(relativePath)
+      || !fs.existsSync(absolute) || !fs.statSync(absolute).isFile()) {
+      throw new Error(`ATDD precheck path is not a regular repository file: ${normalized}`);
+    }
+    const source = fs.readFileSync(absolute, "utf8");
+    if (/\.php$/i.test(normalized) && nestedArrowReferenceCaptureFailure(source)) {
+      throw new Error(`${normalized}: nested closure captures mutable state by reference inside an arrow function; the outer arrow captures by value and can make green evidence impossible`);
+    }
+  }
+}
+
+function writeAtddPrecheck(opts) {
+  const activeRun = activeV3Run(opts.repo);
+  if (activeRun.runtimeContract !== "capsule-supervisor-v1" || activeRun.scopeUnit !== "story"
+    || canonicalGatePhase(activeRun.activePhase) !== "atdd") {
+    throw new Error("atdd-precheck requires an active capsule-supervisor ATDD story");
+  }
+  const workerScopePath = activeRun.workerScopePath
+    ? path.resolve(opts.repo, activeRun.workerScopePath)
+    : path.join(opts.repo, "docs", "ai", "ACEF_ACTIVE_WORKER_SCOPE.json");
+  const workerScope = parseWorkerScope(workerScopePath);
+  if (workerScope.runId !== activeRun.runId
+    || normalizedScope(workerScope.activeStory) !== normalizedScope(activeRun.activeStory)) {
+    throw new Error("atdd-precheck worker scope does not match the active run/story");
+  }
+  assertAtddHarnessSafe(opts.repo, opts.testPath, workerScope);
+  console.log(`PASS atdd-precheck ${opts.testPath.length} test path(s)`);
 }
 
 function writeReviewScope(opts) {
@@ -1907,6 +1954,7 @@ function main() {
   if (opts.command === "actor") return writeActor(opts);
   if (opts.command === "worker-scope") return writeWorkerScope(opts);
   if (opts.command === "context-sync") return writeContextSync(opts);
+  if (opts.command === "atdd-precheck") return writeAtddPrecheck(opts);
   if (opts.command === "phase-transition") return writePhaseTransition(opts);
   if (opts.command === "story-transition") return writeStoryTransition(opts);
   if (opts.command === "review-scope") return writeReviewScope(opts);

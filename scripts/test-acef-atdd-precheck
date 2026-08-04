@@ -1,0 +1,73 @@
+#!/usr/bin/env node
+const fs = require("node:fs");
+const os = require("node:os");
+const path = require("node:path");
+const cp = require("node:child_process");
+
+const root = path.resolve(__dirname, "..");
+const state = path.join(root, "scripts", "acef-state");
+const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "acef-atdd-precheck-"));
+
+function run(command, args) {
+  return cp.execFileSync(command, args, { cwd: tmp, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+}
+
+try {
+  run("git", ["init", "-q"]);
+  run("git", ["config", "user.email", "acef@example.invalid"]);
+  run("git", ["config", "user.name", "ACEF Test"]);
+  fs.mkdirSync(path.join(tmp, "app"), { recursive: true });
+  fs.mkdirSync(path.join(tmp, "tests"), { recursive: true });
+  fs.mkdirSync(path.join(tmp, "docs", "ai"), { recursive: true });
+  fs.writeFileSync(path.join(tmp, "app", "demo.php"), "<?php return false;\n");
+  fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_CURRENT_CONTEXT.md"), "# context\n");
+  fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_DELIVERY_LEDGER.md"), "# ledger\n");
+  run("git", ["add", "."]);
+  run("git", ["commit", "-qm", "fixture"]);
+
+  run(process.execPath, [state, "active-run", "--repo", tmp, "--run-id", "ATDD-precheck",
+    "--workflow-id", "full-bmad", "--full-flow-contract", "four-actor-v3",
+    "--runtime-contract", "capsule-supervisor-v1", "--assurance", "guarded",
+    "--assurance-rationale", "test harness integrity", "--scope-unit", "story",
+    "--expected-story", "Story Harness", "--status", "active", "--story", "Story Harness",
+    "--phase", "atdd", "--ledger", "docs/ai/ACEF_DELIVERY_LEDGER.md",
+    "--context", "docs/ai/ACEF_CURRENT_CONTEXT.md", "--worker-scope", "docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json"]);
+  run(process.execPath, [state, "worker-scope", "--repo", tmp, "--story", "Story Harness",
+    "--phase", "atdd", "--worker-id", "acef_story_harness_atdd",
+    "--allow", "app/demo.php", "--allow", "tests/NestedArrowTest.php"]);
+
+  fs.writeFileSync(path.join(tmp, "tests", "NestedArrowTest.php"), [
+    "<?php",
+    "$terminalExecutions = 0;",
+    "$next = fn($request) => call(function () use (&$terminalExecutions) { $terminalExecutions++; });",
+    "assert($terminalExecutions === 1);",
+    "",
+  ].join("\n"));
+  const precheck = cp.spawnSync(process.execPath, [state, "atdd-precheck", "--repo", tmp,
+    "--test-path", "tests/NestedArrowTest.php"], { cwd: tmp, encoding: "utf8" });
+  if (precheck.status === 0 || !`${precheck.stdout}${precheck.stderr}`.includes("outer arrow captures by value")) {
+    throw new Error("nested arrow/by-reference ATDD precheck did not fail closed");
+  }
+
+  run("git", ["add", "tests/NestedArrowTest.php"]);
+  run("git", ["commit", "-qm", "red test with harness trap"]);
+  const evidence = cp.spawnSync(process.execPath, [state, "evidence-run", "--repo", tmp,
+    "--id", "harness-red", "--kind", "runtime-test", "--actor", "acef_story_harness_atdd",
+    "--story", "Story Harness", "--model", "gpt-5.6-sol", "--effort", "high",
+    "--satisfies", "story-harness-ac1", "--", process.execPath, "-e", "process.exit(1)"],
+  { cwd: tmp, encoding: "utf8" });
+  if (evidence.status === 0 || !`${evidence.stdout}${evidence.stderr}`.includes("outer arrow captures by value")) {
+    throw new Error("evidence-run did not repeat the ATDD harness guard failure-atomically");
+  }
+  for (const relativePath of [
+    "docs/ai/actors/acef_story_harness_atdd.json",
+    "docs/ai/evidence/harness-red.json",
+    "docs/ai/evidence/raw/harness-red.log",
+  ]) {
+    if (fs.existsSync(path.join(tmp, relativePath))) throw new Error(`ATDD harness rejection left ${relativePath}`);
+  }
+
+  console.log("acef ATDD precheck tests passed");
+} finally {
+  fs.rmSync(tmp, { recursive: true, force: true });
+}

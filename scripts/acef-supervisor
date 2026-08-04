@@ -195,11 +195,14 @@ function build(repo) {
   } else if (currentPhase === "atdd") {
     const scopeReady = workerScope && token(workerScope.activeStory) === storyKey;
     const red = evidence.find((record) => record.actorInstanceId === actorId("atdd") && record.exitCode !== 0);
+    const frozenTestPaths = (workerScope?.allowedPaths || []).filter(isTestPath);
     action = !scopeReady
       ? { type: "blocked", reason: "refresh the typed worker scope for the active frozen story before ATDD dispatch" }
       : red
         ? { type: "transition", nextPhase: "development", command: ".acef/bin/acef-state phase-transition --repo . --phase development", reason: "typed red evidence exists" }
-        : { type: "dispatch", role: "atdd", actorInstanceId: actorId("atdd"), runtime: RUNTIME.atdd };
+        : { type: "dispatch", role: "atdd", actorInstanceId: actorId("atdd"), runtime: RUNTIME.atdd,
+          precheckCommand: `.acef/bin/acef-state atdd-precheck --repo .${frozenTestPaths.map((filePath) => ` --test-path ${quote(filePath)}`).join("")}`,
+          reason: "run the deterministic test-harness precheck after editing and before the clean red commit" };
   } else if (currentPhase === "development") {
     if (!hasActor(actorId("development"))) {
       const developerId = actorId("development");

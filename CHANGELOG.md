@@ -87,6 +87,14 @@ or evidence contract. Do not use it to claim implementation status; link to the 
   terminal gate. Formal durability now validates immutable review prerequisites separately from the exact
   reviewer/capsule/gate close delta while preserving the older one-commit form. Identical repeated capsule display is
   retained as measured tool waste; a missing or different capsule identity still fails closed.
+- V3.25 validated those repairs through one complete repaired story and the next story's Development boundary in
+  1,398.4 seconds. Current Context stayed synchronized, Code Review found a real malformed-operator HIGH, the original
+  Developer repaired it under the supervisor-owned receipt, both retry reviewers passed, and the two-layer close
+  package validated. Story 2 then stopped correctly because its immutable ATDD test nested a by-reference closure
+  inside a PHP arrow function, whose value capture made green evidence impossible. No later roles or broad suite ran.
+- Added deterministic `atdd-precheck` routing before the red commit. It validates only frozen in-scope test paths and
+  rejects the measured nested arrow/by-reference mutable-observation trap; `evidence-run` repeats the same check
+  failure-atomically before actor/evidence creation. Focused behavioral red and frozen test discovery remain required.
 - Replaced the generic-MySQL source-text oracle in the successor rehearsal fixture with executable behavior against
   both duplicate-classification paths. Focused state, validator, experiment, installer, and supervisor regressions
   pass; the complete 28-script repository suite plus closeout fixture passed in 246 seconds. Maturity is `enforced`,
