@@ -1,0 +1,59 @@
+{
+  "schema": "acef.execution-assurance-mechanism-proof-summary.v1",
+  "experimentId": "acef-execution-assurance-v333-correction-proof",
+  "attemptRunId": "REHEARSAL-v333",
+  "result": "FAIL",
+  "startedAt": "2026-08-04T23:12:58.414Z",
+  "finishedAt": "2026-08-04T23:31:29.977Z",
+  "activeDeliverySeconds": 1106.9,
+  "targetActiveDeliverySeconds": 900,
+  "maximumActiveDeliverySeconds": 1800,
+  "storyDeliverySeconds": 833.3,
+  "actorExitCode": 0,
+  "verificationExitCode": 0,
+  "focusedVerification": {
+    "tests": 19,
+    "assertions": 24,
+    "passed": true
+  },
+  "postRedCorrectionProof": {
+    "required": 1,
+    "observed": 1,
+    "passed": true
+  },
+  "storyReviews": {
+    "codeReview": "PASS",
+    "patchAssurance": "PASS",
+    "findingCount": 0
+  },
+  "storyGate": "PASS",
+  "epicProcessJudge": "PASS",
+  "blindJudge": "not-run-after-automated-fail",
+  "failureClass": "conductor-shell-quoting-duplicate-integration",
+  "failureReason": "The conductor executed the exact integration suite first through an unquoted sh -c command (exit 127) and then through a correctly quoted sh -c command (exit 0), producing two lifecycle integration invocations where exactly one was allowed.",
+  "integration": {
+    "allowedInvocations": 1,
+    "observedInvocations": 2,
+    "firstExitCode": 127,
+    "secondExitCode": 0
+  },
+  "metrics": {
+    "inputTokens": 5384131,
+    "cachedInputTokens": 5103360,
+    "outputTokens": 38937,
+    "modelCycles": 77,
+    "toolCalls": 128,
+    "actorInvocations": 7,
+    "delegatedExecutionSeconds": 557.3,
+    "coordinationIdleSeconds": 2.3,
+    "coordinationIdleShare": 0.0021
+  },
+  "evidenceSha256": {
+    "preflight": "e51252c896eb30026c1a0fd1bcbae2cc60a76fa306be189663d3612e10beb49e",
+    "transcript": "f28b81f80ba498dc8505cb79f30e8dddc6e3944916b13e3f217095f3b1db6719",
+    "pilotRow": "b252c3c3165340ea25a9be41f46b3ee96d9c3ae5a1ace217984e480cc250c62d",
+    "verificationReceipt": "00cb34ad97798f13b26993211d4ce89a6e4d219b4a3a6bf6381c68d8ff368edf",
+    "judgePacket": "aae41f2d3b8f38be321d3a379dde6ca754dbc8ef4f6882db6dd51b8498c31396"
+  },
+  "capabilityDisposition": "enforced-not-proven"
+}
