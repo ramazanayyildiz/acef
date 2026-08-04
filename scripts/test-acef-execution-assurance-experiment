@@ -1061,6 +1061,21 @@ const shellWrappedIntegrationCall = JSON.stringify({ timestamp: eventTimestamp(1
 assert.equal(parseLifecycleIntegrationEvidence(`${shellWrappedIntegrationCall}\n${integrationOutput}`, frozenIntegrationArgv,
   eventTimestamp(10), eventTimestamp(20)).ok, true,
 "the exact frozen sh -c argv remains attributable through the Codex shell wrapper");
+const quotedFilterArgv = ["php", "artisan", "test", "--filter=BenchmarkOne|BenchmarkTwo"];
+const quotedFilterIntegrationCall = JSON.stringify({ timestamp: eventTimestamp(11), type: "response_item", payload: {
+  type: "function_call", name: "exec_command", call_id: "integration-1",
+  arguments: JSON.stringify({ cmd: "php artisan test '--filter=BenchmarkOne|BenchmarkTwo'" }),
+} });
+assert.equal(parseLifecycleIntegrationEvidence(`${quotedFilterIntegrationCall}\n${integrationOutput}`, quotedFilterArgv,
+  eventTimestamp(10), eventTimestamp(20)).ok, true,
+"shell-equivalent quoting of one frozen filter argv remains attributable");
+const nestedQuotedFilterIntegrationCall = JSON.stringify({ timestamp: eventTimestamp(11), type: "response_item", payload: {
+  type: "function_call", name: "exec_command", call_id: "integration-1",
+  arguments: JSON.stringify({ cmd: "sh -c 'php artisan test '\\''--filter=BenchmarkOne|BenchmarkTwo'\\'''" }),
+} });
+assert.equal(parseLifecycleIntegrationEvidence(`${nestedQuotedFilterIntegrationCall}\n${integrationOutput}`, quotedFilterArgv,
+  eventTimestamp(10), eventTimestamp(20)).ok, true,
+"a Codex sh -c wrapper around safely quoted frozen argv remains attributable");
 const structuredIntegrationOutput = JSON.stringify({ timestamp: eventTimestamp(12), type: "response_item", payload: {
   type: "custom_tool_call_output", call_id: "integration-1", output: [
     { type: "input_text", text: "Script completed\nOutput:\n" },
@@ -1386,12 +1401,20 @@ for (const command of [
   "git add -- tests/Feature/FocusedTest.php",
   "git commit -m 'test(acef): correct focused red semantics' -- tests/Feature/FocusedTest.php",
   "'.acef/bin/acef-state' 'evidence-run' '--repo' '.' '--id' 'focused-red-correction1' '--kind' 'runtime-test' '--actor' 'focused_atdd_correction1' '--story' 'focused' '--model' 'gpt-5.6-sol' '--effort' 'high' '--satisfies' 'focused-ac1' '--' 'php' 'artisan' 'test' '--filter=FocusedTest'",
+  "php artisan test '--filter=BenchmarkOne|BenchmarkTwo'",
+  "vendor/bin/phpunit --list-tests '--filter=BenchmarkOne|BenchmarkTwo'",
+  "git status --short --untracked-files=no -- packages tests",
+  "sed -n '1,20p' docs/ai/ONE.md && sed -n '1,20p' docs/ai/TWO.md",
 ]) {
   assert.equal(correctionSessionWrites(JSON.stringify({
     type: "response_item",
     payload: { type: "custom_tool_call", name: "exec", input: `const r=await tools.exec_command({cmd:${JSON.stringify(command)}}); text(r.output);` },
   }), root).unsafeShellMutations.length, 0, `supervisor-owned correction command must be accepted: ${command}`);
 }
+assert.equal(correctionSessionWrites(JSON.stringify({
+  type: "response_item", payload: { type: "function_call", name: "exec_command",
+    arguments: JSON.stringify({ cmd: "sed -n '1,20p' docs/ai/ONE.md && rm -f tests/Feature/FocusedTest.php" }) },
+}), root).unsafeShellMutations.length, 1, "a read-only conjunction cannot smuggle a mutation");
 const committedFileRepo = fs.mkdtempSync(path.join(os.tmpdir(), "acef-committed-file-"));
 process.on("exit", () => fs.rmSync(committedFileRepo, { recursive: true, force: true }));
 cp.spawnSync("git", ["init", "-q"], { cwd: committedFileRepo });
@@ -1823,6 +1846,12 @@ try {
     ...v3DurableOptions,
   });
   assert.equal(committedV3Durable.ok, true, committedV3Durable.failures.join("; "));
+  fs.mkdirSync(path.join(lifecycleRepo, "docs", "ai", "capsules"), { recursive: true });
+  fs.writeFileSync(path.join(lifecycleRepo, "docs", "ai", "capsules", "pre-dispatch-working-input.json"), "{}\n");
+  const durableWithUntrackedCapsule = validateDurableLifecycleEvidence(lifecycleRepo, v3DurableExpected, v3DurableExpected, {
+    ...v3DurableOptions,
+  });
+  assert.equal(durableWithUntrackedCapsule.ok, true, durableWithUntrackedCapsule.failures.join("; "));
 
   // The experiment contract names the aggregate scope "epic", while the installed
   // active run deliberately uses a human-readable label such as "Epic closeout".
