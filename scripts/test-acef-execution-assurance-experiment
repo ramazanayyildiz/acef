@@ -339,6 +339,32 @@ const roleRoutedPrompt = epicPilotPrompt({ ...roleRoutedCapsuleManifest.pilot.at
   resolvedV31Epic, postRedCorrectionManifest);
 assert.match(roleRoutedPrompt, /Do not spawn a replacement Developer/,
   "post-red correction must resume the original Developer session");
+const metacharacterIntegrationEpic = structuredClone(resolvedV31Epic);
+metacharacterIntegrationEpic.task.integration.verify = [
+  "php", "artisan", "test", "--filter=BenchmarkAuthzMiddlewareIdempotencyTest|RouteCapabilityMiddlewareTest",
+];
+const metacharacterIntegrationPrompt = epicPilotPrompt(
+  { ...roleRoutedCapsuleManifest.pilot.attempts[0], id: "P0-candidate-integration-action" },
+  metacharacterIntegrationEpic,
+  postRedCorrectionManifest,
+);
+const integrationActionMatch = metacharacterIntegrationPrompt.match(/^Compiled final integration action: (.+)$/m);
+assert.ok(integrationActionMatch, "the compiled contract must emit a typed final integration action");
+const compiledIntegrationAction = JSON.parse(integrationActionMatch[1]);
+assert.deepEqual(compiledIntegrationAction.commandArgv, metacharacterIntegrationEpic.task.integration.verify,
+  "the compiled integration action must preserve the exact frozen argv");
+assert.equal(compiledIntegrationAction.type, "run-integration");
+assert.equal(compiledIntegrationAction.maximumInvocations, 1);
+assert.equal(compiledIntegrationAction.onNonzero, "STOP_FAIL_CLOSED");
+const metacharacterArg = metacharacterIntegrationEpic.task.integration.verify.find((entry) => entry.includes("|"));
+assert.ok(metacharacterArg && compiledIntegrationAction.command.includes(`'${metacharacterArg}'`),
+  "the compiled integration command must shell-quote the metacharacter-bearing argv entry");
+assert.match(roleRoutedPrompt, /copy action\.command byte-for-byte into one tools\.exec_command cmd/,
+  "the conductor must execute the compiled command instead of reconstructing shell argv");
+assert.match(roleRoutedPrompt, /Do not reconstruct it from commandArgv, add an sh -c wrapper, change quoting, or retry it/,
+  "the integration action must fail closed before a duplicate lifecycle invocation");
+assert.doesNotMatch(metacharacterIntegrationPrompt, /^Final integration verification:/m,
+  "the unsafe argv.join display that caused V3.33 must not reappear");
 const controlledCorrectionEpic = structuredClone(resolvedV31Epic);
 controlledCorrectionEpic.task.stories = [{
   ...controlledCorrectionEpic.task.stories[1],

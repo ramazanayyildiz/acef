@@ -9,6 +9,20 @@ or evidence contract. Do not use it to claim implementation status; link to the 
 
 ## Unreleased
 
+### Shell-safe single integration action
+
+- The four-actor execution contract now emits a typed `run-integration` action containing the exact frozen argv, a
+  deterministically shell-quoted command, `maximumInvocations: 1`, and `onNonzero: STOP_FAIL_CLOSED`. The conductor
+  copies the compiled command byte-for-byte into one `exec_command`; it may not reconstruct argv, add `sh -c`, change
+  quoting, or retry after a nonzero result.
+- V3.33 completed the nested product path, one same-session post-red correction, 19 tests/24 assertions, two
+  zero-finding story reviews, the durable story-close commit, and an independent Epic Judge PASS in 18m26.9s. Its
+  immutable process result is FAIL because the old plain `argv.join(" ")` display left a filter pipe unquoted: the
+  first integration invocation exited 127 and the corrected retry exited zero, violating the exactly-once gate.
+- Regression coverage freezes the metacharacter-bearing argv, its safe command representation, the one-invocation
+  contract, and removal of the unsafe display. Capability maturity remains `enforced` pending one live successor
+  proof; V3.33 is not rerun or rewritten.
+
 ### Durable story-close transition enforcement
 
 - `capsule-supervisor-v1` now emits one exact `commit-story-close` action after a deterministic PASS gate. Its stage

@@ -584,6 +584,13 @@ function epicPilotPrompt(attempt, resolved, manifest) {
   const shellLiteral = (value) => /^[A-Za-z0-9_./:=+,-]+$/.test(String(value))
     ? String(value)
     : `'${String(value).replaceAll("'", `'"'"'`)}'`;
+  const integrationAction = {
+    type: "run-integration",
+    commandArgv: [...resolved.task.integration.verify],
+    command: resolved.task.integration.verify.map(shellLiteral).join(" "),
+    maximumInvocations: 1,
+    onNonzero: "STOP_FAIL_CLOSED",
+  };
   const firstStory = resolved.task.stories[0];
   const expectedStoryArgs = resolved.task.stories.map((story) => `--expected-story ${shellLiteral(story.id)}`).join(" ");
   const firstScopePaths = [...new Set([...(firstStory?.allowedPaths || []), ...(firstStory?.testPaths || [])])];
@@ -655,7 +662,7 @@ function epicPilotPrompt(attempt, resolved, manifest) {
     ].join(" ")
     : "Follow the installed legacy treatment's own ATDD and retry rules. Do not synthesize candidate adjudication, correction, quarantine, or lifecycle-budget semantics.";
   const closeoutInstruction = fourActorV3
-    ? "Run focused verification inside each story. The conductor runs the provided broad integration verification exactly once at epic close; invoke the exact frozen sh -c argv literally so transcript attribution cannot change its shell shape. When functions.exec wraps that exact exec_command, emit its result with `text(JSON.stringify({output:r.output,exit_code:r.exit_code}))`; returning only `r.output`, prose such as PASS, or an outer wrapper status is not a successful lifecycle receipt. The harness then runs its independent oracle verification separately, and measurement must not count that harness oracle as a second lifecycle suite. Then use exactly one independent epic Process Judge. A PASS Epic gate still requires every frozen deterministic story PASS gate and aggregated green evidence. If PASS is impossible, the same Judge writes one typed terminal FAIL, REPLAN, or BLOCKED Epic gate that records missingStories and storyGateVerdicts; this persists the fail-closed outcome but never synthesizes a missing story gate. Trace, statistics, coverage, documentation, and closeout views must reuse the story-close packages and must not create another evidence-writing chain."
+    ? "Run focused verification inside each story. At epic close, execute the compiled run-integration action below exactly once: copy action.command byte-for-byte into one tools.exec_command cmd. Do not reconstruct it from commandArgv, add an sh -c wrapper, change quoting, or retry it after any nonzero result; a nonzero result stops fail-closed. When functions.exec wraps that exact exec_command, emit its result with `text(JSON.stringify({output:r.output,exit_code:r.exit_code}))`; returning only `r.output`, prose such as PASS, or an outer wrapper status is not a successful lifecycle receipt. The harness then runs its independent oracle verification separately, and measurement must not count that harness oracle as a second lifecycle suite. Then use exactly one independent epic Process Judge. A PASS Epic gate still requires every frozen deterministic story PASS gate and aggregated green evidence. If PASS is impossible, the same Judge writes one typed terminal FAIL, REPLAN, or BLOCKED Epic gate that records missingStories and storyGateVerdicts; this persists the fail-closed outcome but never synthesizes a missing story gate. Trace, statistics, coverage, documentation, and closeout views must reuse the story-close packages and must not create another evidence-writing chain."
     : attempt.treatment === "candidate"
     ? "The mandatory closeout inventory is frozen to the listed contract rows before execution. Use focused verification during stories and run the provided integration verification once at final closeout unless that command itself fails once. Trace, statistics, coverage analysis, test quality, documentation, and closeout review are evidence views only: do not spawn actors, create mandatory work items, enlarge the denominator, or open another closeout chain for them."
     : "Use the installed legacy treatment's closeout workflow exactly. Additional legacy-required actors or evidence work are permitted and measured; do not apply the candidate's frozen-inventory/non-recursive policy to this arm.";
@@ -698,7 +705,7 @@ function epicPilotPrompt(attempt, resolved, manifest) {
     "Do not inspect experiment manifests, sibling worktrees, previous transcripts, or the other treatment. Do not push. Do not weaken or edit Benchmark* tests or phpunit.sqlite.xml.",
     "Frozen epic stories:",
     stories,
-    `Final integration verification: ${resolved.task.integration.verify.join(" ")}`,
+    `Compiled final integration action: ${JSON.stringify(integrationAction)}`,
     "Final response must state RESULT=PASS or RESULT=FAIL, product outcome, story results, review rounds, broad-suite runs, unresolved Critical/High risks, and exact closeout status.",
   ].join("\n");
 }
