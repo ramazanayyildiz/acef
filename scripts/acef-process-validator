@@ -308,6 +308,7 @@ function stateControlPath(filePath) {
   return /^\.acef\//.test(normalized)
     || /^\.(?:codex|claude|opencode)\//.test(normalized)
     || /^_bmad-output\//.test(normalized)
+    || /^docs\/ai\/ACEF_[^/]+\.(?:json|md)$/.test(normalized)
     || /^docs\/ai\/(?:ACEF_(?:ACTIVE_RUN\.json|ACTIVE_WORKER_SCOPE\.json|ACTIVE_LEDGER|DIRECT_RUN\.json|CURRENT_CONTEXT\.md|INSTALLATION\.json|RUN_[^/]+\.md|DELIVERY_LEDGER(?:_[^/]+)?\.md|[^/]+_DELIVERY_AUDIT\.md)|actors\/|gates\/|evidence\/|reports\/|approvals\/|repairs\/|corrections\/|capsules\/|judges\/)/.test(normalized);
 }
 
