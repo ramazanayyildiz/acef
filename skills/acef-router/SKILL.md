@@ -25,9 +25,10 @@ later preflight records resolved paths/commands and evidence.
 
 Do not start implementation, tests, installs, or broad repo scans unless the user explicitly approves that next step.
 
-Ask at most three yes/no clarifying questions before choosing a provisional route. If confidence is low or risk is
-high, route upward to the safer/larger path. Reversible single-boundary/single-surface work is a native repository task
-outside ACEF; do not create ACEF state for it.
+Ask at most three yes/no clarifying questions before choosing a provisional route. Low confidence or planning/scope
+uncertainty may increase execution depth. High risk increases assurance to Guarded; it does not by itself select Full
+BMAD. Reversible single-boundary/single-surface work is a native repository task outside ACEF; do not create ACEF state
+for it.
 
 Before planning, dispatch, or implementation, run `spec-readiness` for thin, broad, product-shaped, CRM/notes/tracking,
 finance/accounting, persistence, RBAC, schema, PII, or money-related requests and write
@@ -81,8 +82,11 @@ Escalate from Route A to Route B when:
 - more than one module/repo is affected
 - no qualified golden neighbor exists
 - a new pattern/contract is introduced
-- auth, payment, data, migration, generated client, shared/core, or release risk appears
 - confidence is low after three questions
+
+Auth, payment, entitlement, data, migration, provider, realtime, security, or public-surface risk selects Guarded
+assurance on the chosen execution route. It escalates execution depth only when it also introduces a new contract,
+architecture, product workflow, broad refactor, scope expansion, or unresolved planning ambiguity.
 
 Escalate from Route C bug fix to Route A/B when root cause reveals new behavior or design change.
 
@@ -107,6 +111,12 @@ Do not run yet:
 
 - Do not make the user pick a skill or SDLC phase.
 - Do not run all SDLC phases; run only what the route needs.
+- A reproduced defect with proven root cause, bounded patch, and no new contract may use ACEF Fix + Guarded even when
+  it touches money, entitlement, auth, realtime, or a public surface. This is correct routing, not a non-BMAD exception.
+- NFR assessment is required only when the change adds or changes a non-functional contract or an acceptance criterion
+  names one. Risky subject matter alone is not an NFR trigger.
+- During Fix/Standard work run focused verification. During Full stories run focused verification and run the broad
+  integration suite once at closeout; reviewers reuse the bound result unless adjudicating a named evidence conflict.
 - If adapter is missing or stale, say adapter extraction is the next step.
 - If work is guarded/critical, require human approval before execution.
 - Brownfield vs greenfield is determined from repo/project evidence, not by asking the user to choose methodology.

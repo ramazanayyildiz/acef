@@ -43,6 +43,7 @@ const {
   resolveControlBundle,
   resolveControlDose,
   riskRequiresGuarded,
+  workflowSelectionFailures,
   workflowId,
 } = require("./lib/acef-execution-policy");
 
@@ -3361,17 +3362,21 @@ function checkLaneSelection(repoRoot) {
   if (!workflowRationale || !String(workflowRationale).trim()) {
     failures.push("active run requires workflowRationale");
   }
-  const fullTerms = /(new-pattern|new abstraction|shared abstraction|unclear repro|scope expansion|broad refactor|crm|notes?|workflow|reporting|dashboard|tracking)/i;
   const guardedTrigger = allTriggers.find((item) => riskRequiresGuarded([item]));
-  const fullTrigger = allTriggers.find((item) => fullTerms.test(item));
   if (guardedTrigger && !isGuarded(activeRun)) {
     failures.push(`risk trigger requires guarded assurance: ${guardedTrigger}`);
   }
-  if (fullTrigger && !isFull(activeRun)) {
-    failures.push(`planning/scope trigger requires Full BMAD workflow: ${fullTrigger}`);
-  }
-  if (workflowId(activeRun) === "quick-fix" && !triggers.includes("bugfix") && !triggers.includes("bug-fix") && !triggers.includes("defect")) {
-    failures.push("ACEF Fix requires bugfix/defect trigger");
+  if (activeRun.intakeDecision?.routingPolicyVersion === "two-axis-v1") {
+    failures.push(...workflowSelectionFailures({ ...activeRun, riskTriggers: allTriggers }));
+  } else {
+    const fullTerms = /(new-pattern|new abstraction|shared abstraction|unclear repro|scope expansion|broad refactor|crm|notes?|workflow|reporting|dashboard|tracking)/i;
+    const fullTrigger = allTriggers.find((item) => fullTerms.test(item));
+    if (fullTrigger && !isFull(activeRun)) {
+      failures.push(`planning/scope trigger requires Full BMAD workflow: ${fullTrigger}`);
+    }
+    if (workflowId(activeRun) === "quick-fix" && !triggers.includes("bugfix") && !triggers.includes("bug-fix") && !triggers.includes("defect")) {
+      failures.push("ACEF Fix requires bugfix/defect trigger");
+    }
   }
   if (isGuarded(activeRun) && activeRun.scopeUnit === "epic" && !isFull(activeRun)) {
     if (!activeRun.assuranceApprovalId) {

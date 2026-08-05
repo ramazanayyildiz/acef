@@ -256,8 +256,8 @@ Trim ceremony by lane, not by deleting the safety model:
   direct records keep their compact compatibility closeout, but no new direct run may start.
 - Quick-fix and operator work can use compact envelopes, focused regression evidence, independent review, and lightweight
   surface/test-integrity gates.
-- Lightweight work should keep reuse-before-create, review, focused tests, and surface floors, but avoid full-BMAD actor
-  matrices unless risk triggers require them.
+- Lightweight work should keep reuse-before-create, review, focused tests, and surface floors. Risk triggers add the
+  Guarded overlay selected for that workflow; they do not import the Full-BMAD lifecycle or actor matrix.
 - Guarded and full-BMAD work should keep typed actor, worker-scope, evidence, approval, and gate records because the
   cost is paying for separation, auditability, and high-risk drift control.
 

@@ -9,6 +9,18 @@ or evidence contract. Do not use it to claim implementation status; link to the 
 
 ## Unreleased
 
+### Risk and execution-depth routing made mechanically independent
+
+- Corrected the brownfield router so billing, entitlement, auth, public-surface, provider, realtime, persistence, and
+  similar risk signals select Guarded assurance without independently escalating a bounded task to Full BMAD.
+- Added versioned `two-axis-v1` intake decisions and lane-selection enforcement. A proven, bounded defect with no new
+  contract is accepted as ACEF Fix + Guarded; selecting Full on risk alone fails. Full remains required for explicit
+  planning/scope triggers such as new contracts, architecture, product workflows, broad refactors, cross-repo work,
+  scope expansion, ambiguity, or epic scope.
+- Made NFR assessment conditional on a changed non-functional contract and made broad-suite execution conditional:
+  focused tests during work, one broad suite at Full closeout, or a recorded shared-contract reason in Fix/Standard.
+  Reviewers reuse bound evidence unless resolving a named conflict.
+
 ### Capsule supervisor controlled-canary authorization
 
 - Authorized `capsule-supervisor-v1` for at most two sequential, explicitly opted-in, new Full + Guarded runs after

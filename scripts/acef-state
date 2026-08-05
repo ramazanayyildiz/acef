@@ -131,6 +131,7 @@ function parseBoolean(value, label) {
 function intakeDecision(opts) {
   if (!opts.route && !opts.routeConfidence && !opts.clarifyingQuestion.length && !opts.inferredAnswer.length && !opts.unresolvedQuestion.length) return null;
   const record = {
+    routingPolicyVersion: "two-axis-v1",
     route: opts.route || "",
     confidence: opts.routeConfidence || "medium",
     clarifyingQuestions: opts.clarifyingQuestion,

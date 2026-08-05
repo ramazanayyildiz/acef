@@ -6,6 +6,48 @@ const SCOPE_UNITS = Object.freeze(["work-item", "story", "epic"]);
 
 const GUARDED_RISK_PATTERN = /(?:auth(?:entication)?|authori[sz]ation|oauth|sso|permission|access[-_ ]?control|role|entitlement|credential|secret|encrypt|key[-_ ]?rotation|payment|billing|invoice|accounting|finance|financial|payout|subscription|refund|migration|delet(?:e|ion)|destructive|security|token|session|webhook|irreversible|tenant|privacy|pii|personal[-_ ]?data|consent|retention|external[-_ ]?provider|provider[-_ ]?integration|realtime|concurrency|fencing|state[-_ ]?machine)/i;
 const CONTAINED_DELETE_PATTERN = /^\s*(?:delete|remove)\s+(?:a\s+|the\s+)?(?:css|style|class|copy|text|label|comment|documentation|docs?|local[-_ ]?variable)\b/i;
+const PLANNING_DEPTH_TRIGGERS = Object.freeze(new Set([
+  "broad-refactor",
+  "cross-repo",
+  "epic-scope",
+  "new-architecture",
+  "new-contract",
+  "new-pattern",
+  "new-product-workflow",
+  "requirements-ambiguous",
+  "scope-expansion",
+]));
+
+function normalizedTrigger(value) {
+  return String(value || "").trim().toLowerCase().replace(/[_ ]+/g, "-");
+}
+
+function planningRequiresFull(record = {}) {
+  if (record.scopeUnit === "epic") return true;
+  if (Array.isArray(record.expectedStories) && record.expectedStories.length > 1) return true;
+  return (record.riskTriggers || []).some((trigger) => PLANNING_DEPTH_TRIGGERS.has(normalizedTrigger(trigger)));
+}
+
+function workflowSelectionFailures(record = {}) {
+  const selected = workflowId(record);
+  const triggers = new Set((record.riskTriggers || []).map(normalizedTrigger));
+  const planningHeavy = planningRequiresFull(record);
+  const failures = [];
+  if (selected === "full-bmad" && !planningHeavy) {
+    failures.push("Full BMAD requires a planning/scope trigger; high-risk boundaries select Guarded assurance, not Full execution");
+  }
+  if (selected !== "full-bmad" && planningHeavy) {
+    failures.push("planning/scope trigger requires Full BMAD workflow");
+  }
+  if (selected === "quick-fix") {
+    if (!["bugfix", "bug-fix", "defect"].some((trigger) => triggers.has(trigger))) {
+      failures.push("ACEF Fix requires bugfix/defect trigger");
+    }
+    if (!triggers.has("root-cause-proven")) failures.push("ACEF Fix requires root-cause-proven");
+    if (!triggers.has("bounded-patch")) failures.push("ACEF Fix requires bounded-patch");
+  }
+  return failures;
+}
 
 function legacyWorkflowId(record) {
   if (!record || typeof record !== "object") return null;
@@ -134,6 +176,7 @@ function resolveControlBundle(manifest, workflow, assurance = "baseline") {
 module.exports = {
   ASSURANCE_PROFILES,
   GUARDED_RISK_PATTERN,
+  PLANNING_DEPTH_TRIGGERS,
   SCOPE_UNITS,
   WORKFLOW_IDS,
   assuranceProfile,
@@ -149,6 +192,8 @@ module.exports = {
   resolveControlDose,
   requiresCapstone,
   riskRequiresGuarded,
+  planningRequiresFull,
   scopeUnit,
   workflowId,
+  workflowSelectionFailures,
 };

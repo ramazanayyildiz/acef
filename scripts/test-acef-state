@@ -99,6 +99,7 @@ try {
   if (activeRun.lane !== undefined) throw new Error("active-run v2 persisted legacy lane state");
   if (activeRun.activeActorId !== "process-judge") throw new Error("active-run actor binding missing");
   if (activeRun.intakeDecision.route !== "B") throw new Error("active-run intake decision missing");
+  if (activeRun.intakeDecision.routingPolicyVersion !== "two-axis-v1") throw new Error("active-run two-axis routing policy missing");
   if (activeRun.activeGoal.completionMode !== "product-workspace") throw new Error("active-run activeGoal missing");
   if (activeRun.goalCoverage.coveredSurfaces[0] !== "ui") throw new Error("active-run goalCoverage missing");
   const scope = readJson("docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json");

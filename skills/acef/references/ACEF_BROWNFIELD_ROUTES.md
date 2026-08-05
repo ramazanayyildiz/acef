@@ -103,7 +103,8 @@ Use these questions before choosing a route:
 5. If the request is feature work:
    - Use Route A when the change is localized and follows an existing pattern.
    - Use Route B when it spans multiple modules/repos, changes a major user flow, introduces a new pattern/contract,
-     or touches data/auth/payment/migration boundaries.
+     or is planning-heavy/ambiguous. Data/auth/payment/migration and similar risks select Guarded assurance; they do
+     not independently select Route B.
 6. If size is unknown, start with the router questions and do not execute until Route A vs B vs C/D/E/F is clear.
 
 ## Per-Repo Adapter
@@ -124,7 +125,8 @@ worker scope, reviewer actors, or ACEF state. Use targeted reads, implement the 
 verification, and report the result.
 
 Admit to Route A/B/C before continuing when the task becomes irreversible, cross-surface, path-expanding, new-pattern, persistent,
-security/privacy/money/migration/provider/realtime/concurrency/state-machine/tracking/reporting/analytics work.
+security/privacy/money/migration/provider/realtime/concurrency/state-machine/tracking/reporting/analytics work. Select
+execution depth from work shape and Guarded assurance from risk as separate decisions.
 
 ### Route A: Existing Codebase, Small Feature
 
@@ -145,7 +147,9 @@ Before copying a golden neighbor, ground the copy at symbol/contract level:
 
 Do not create heavy requirements/design/planning documents unless the route escalates.
 
-Escalate to Route B if there is no qualified golden neighbor, a new contract/pattern is needed, or multiple modules/repos are affected.
+Escalate to Route B if there is no qualified golden neighbor, a new contract/pattern is needed, planning remains
+ambiguous, or multiple modules/repos are affected. A risky boundary without those planning triggers stays on Route A
+with Guarded assurance.
 
 ### Route B: Existing Codebase, Large Feature
 
@@ -173,6 +177,20 @@ Minimum flow:
 5. Review.
 
 Requirements/design/planning are normally skipped unless the fix reveals a larger feature or architecture change.
+
+A defect with a proven root cause, bounded patch, and no new contract uses ACEF Fix when ACEF admission is required.
+Money, entitlement, auth, realtime, persistence, or public-surface exposure adds Guarded assurance without converting
+that fix into Route B/Full. If the root cause is not yet bounded, investigate under Route C and re-route only after the
+actual work shape is known.
+
+## Proportional verification
+
+- NFR assessment is conditional on a new or changed performance, reliability, security, privacy, capacity, recovery,
+  or operability contract. Merely touching a risky domain is not sufficient.
+- Route C/Fix and Route A/Standard use focused regression and touched-surface verification. Run a broader suite only
+  when the patch changes a shared contract or focused evidence cannot cover the affected surface; record that reason.
+- Route B/Full runs focused tests during stories and one broad integration suite at closeout. Review and assurance
+  actors reuse the bound result and rerun it only for a named evidence conflict.
 
 ### Route D: Existing Codebase, Test Case Extraction
 

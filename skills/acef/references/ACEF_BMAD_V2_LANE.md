@@ -112,7 +112,10 @@ risk acceptance for the unresolved items.
    checked, existing symbols/components/helpers searched, what was reused, and why any new pattern is needed.
    `PARTIAL` registries permit only covered mechanical/standard work shapes; guarded stories and new work shapes must
    refresh the registry or record explicit human risk acceptance first.
-3. **(NFR)** — extract non-functional constraints first on state-machine / concurrency / money / security-critical work.
+3. **(NFR, conditional)** — extract non-functional constraints only when the story adds or changes a performance,
+   reliability, security, privacy, capacity, recovery, or operability contract, or an acceptance criterion explicitly
+   names one. Touching state-machine, concurrency, money, or security code alone is handled by Guarded assurance and
+   does not automatically create an NFR phase.
 4. **External framework grounding when needed** — if ATDD depends on third-party framework APIs, prove the installed
    version's real API with a spike/reference implementation before writing failing tests. Wrong framework assumptions
    produce hollow greens; the correct result is `REPLAN`.

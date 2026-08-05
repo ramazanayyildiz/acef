@@ -71,7 +71,9 @@ conductor/router role only (`method/CONTEXT_POLICY.md` role budgets).
 - Route selection: `references/ACEF_BROWNFIELD_ROUTES.md` plus `acef-router` when available.
 - Thin or risky product requests before route dispatch: `spec-readiness`.
 - Adapter/codemap or repo-pattern work: `references/ACEF_PROJECT_ADAPTER_EXTRACTION.md`, `references/ACEF_ADAPTER_MEMORY.md`, `references/ACEF_PATTERN_REGISTRY.md`.
-- Full BMAD / large / risky epic work: `references/ACEF_BMAD_V2_LANE.md` and `references/ACEF_RULE_ENFORCEMENT_MAP.md`.
+- Full BMAD / planning-heavy, broad, new-contract, or ambiguous epic work: `references/ACEF_BMAD_V2_LANE.md` and
+  `references/ACEF_RULE_ENFORCEMENT_MAP.md`. Risk without those planning triggers selects Guarded assurance on Fix or
+  Standard instead of selecting Full.
 - Test extraction/automation/bootstrap: `references/ACEF_TEST_PIPELINE.md`.
 - Behavior/drift questions: `references/ACEF_AGENT_BEHAVIOR.md` and `references/ACEF_RULE_ENFORCEMENT_MAP.md`.
 - Questions about why ACEF controls exist or what can be trimmed safely: `references/ACEF_CONTROL_RATIONALE.md`.
@@ -143,6 +145,9 @@ A worker launched before this bootstrap is drift. Stop, record it, patch the amb
 - Every multi-step feature uses preflight + delivery ledger + Process Judge gates.
 - Epic N+1 needs Epic N Process Judge `PASS` and explicit Epic Transition Approval; generic “go on/devam/continue” is not approval.
 - Guarded work needs explicit approval and at least one symbol-grounded boundary test.
+- A proven, bounded defect with no new contract may use ACEF Fix + Guarded even across multiple risky boundaries; do
+  not ask for a non-BMAD exception. NFR assessment is conditional on a changed NFR contract. Run focused tests during
+  work and one broad suite only at Full closeout or when a named shared-contract trigger makes it necessary.
 - Subagent output is a lead, not evidence; reconcile paths/commands/artifacts on disk.
 - Supporting artifacts do not satisfy requirements; exercised user-visible capabilities do.
 

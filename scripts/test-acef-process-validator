@@ -2217,6 +2217,50 @@ try {
   fs.rmSync(installerHome, { recursive: true, force: true });
   fs.rmSync(installerRepo, { recursive: true, force: true });
 
+  const routingRepo = fs.mkdtempSync(path.join(os.tmpdir(), "acef-two-axis-routing-"));
+  fs.mkdirSync(path.join(routingRepo, "docs", "ai"), { recursive: true });
+  run("git", ["init", "-q"], { cwd: routingRepo });
+  run("git", ["config", "user.email", "acef-routing@example.invalid"], { cwd: routingRepo });
+  run("git", ["config", "user.name", "ACEF Routing Test"], { cwd: routingRepo });
+  fs.writeFileSync(path.join(routingRepo, "README.md"), "routing fixture\n");
+  run("git", ["add", "README.md"], { cwd: routingRepo });
+  run("git", ["commit", "-qm", "fixture"], { cwd: routingRepo });
+  const routingPath = path.join(routingRepo, "docs", "ai", "ACEF_ACTIVE_RUN.json");
+  const billingDefectRun = {
+    schema: "acef.active-run.v2",
+    runId: "RUN-billing-defect",
+    repo: "routing-fixture",
+    workflowId: "quick-fix",
+    assuranceProfile: "guarded",
+    scopeUnit: "story",
+    status: "active",
+    activeStory: "Repair subscription registration regression",
+    activePhase: "intake",
+    workflowRationale: "Proven root cause, bounded patch, no new contract.",
+    assuranceRationale: "Subscription and public authorization boundary.",
+    intakeDecision: {
+      routingPolicyVersion: "two-axis-v1",
+      route: "C",
+      confidence: "high",
+      inferredAnswers: ["Root cause is reproduced and the patch envelope is bounded."],
+      unresolvedQuestions: [],
+    },
+    riskTriggers: ["bugfix", "root-cause-proven", "bounded-patch", "billing", "subscription", "public-auth"],
+    ledgerPath: "docs/ai/ACEF_DELIVERY_LEDGER.md",
+  };
+  fs.writeFileSync(routingPath, JSON.stringify(billingDefectRun, null, 2));
+  expectPass("lane-selection", ["--repo", routingRepo, "--check", "lane-selection"]);
+  fs.writeFileSync(routingPath, JSON.stringify({ ...billingDefectRun, workflowId: "full-bmad" }, null, 2));
+  expectFailMessage("lane-selection", ["--repo", routingRepo, "--check", "lane-selection"],
+    /risk boundaries select Guarded assurance, not Full/);
+  fs.writeFileSync(routingPath, JSON.stringify({
+    ...billingDefectRun,
+    workflowId: "full-bmad",
+    riskTriggers: [...billingDefectRun.riskTriggers, "new-contract"],
+  }, null, 2));
+  expectPass("lane-selection", ["--repo", routingRepo, "--check", "lane-selection"]);
+  fs.rmSync(routingRepo, { recursive: true, force: true });
+
   console.log("acef-process-validator tests passed");
 } finally {
   fs.rmSync(tmp, { recursive: true, force: true });

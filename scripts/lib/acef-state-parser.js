@@ -254,6 +254,9 @@ function parseActiveRun(filePath) {
   if (record.intakeDecision !== undefined && record.intakeDecision !== null) {
     const decision = record.intakeDecision;
     requireFields(decision, ["route", "confidence"], "active run intakeDecision");
+    if (decision.routingPolicyVersion !== undefined) {
+      requireEnum(decision, "routingPolicyVersion", ["two-axis-v1"], "active run intakeDecision");
+    }
     requireEnum(decision, "confidence", ["low", "medium", "high"], "active run intakeDecision");
     for (const field of ["clarifyingQuestions", "inferredAnswers", "unresolvedQuestions"]) {
       if (decision[field] !== undefined) requireStringArray(decision, field, "active run intakeDecision");

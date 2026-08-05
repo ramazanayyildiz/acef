@@ -133,8 +133,8 @@ Trim by lane, not by deleting the safety model:
   keep compact compatibility closeout; no new direct run may start.
 - Quick-fix/operator: compact envelope, focused regression evidence, independent review, lightweight surface and
   test-integrity gates.
-- Lightweight: reuse-before-create, review, focused tests, and surface floors without full-BMAD actor matrices unless
-  risk triggers require them.
+- Lightweight: reuse-before-create, review, focused tests, and surface floors. Risk triggers add the Guarded overlay
+  selected for that workflow; they do not import the Full-BMAD lifecycle or actor matrix.
 - Guarded/full-BMAD: keep typed actor, worker-scope, evidence, approval, and gate records because they pay for
   separation, auditability, and high-risk drift control.
 

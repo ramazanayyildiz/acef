@@ -14,9 +14,11 @@ const {
   isGuarded,
   isHeavy,
   normalizeExecutionState,
+  planningRequiresFull,
   resolveControlBundle,
   resolveControlDose,
   riskRequiresGuarded,
+  workflowSelectionFailures,
 } = require("./lib/acef-execution-policy");
 
 const manifest = parseControlDosing(path.resolve(__dirname, "..", "method", "control-dosing.json"));
@@ -61,6 +63,26 @@ for (const trigger of [
 }
 assert.equal(riskRequiresGuarded(["delete CSS class"]), false);
 assert.equal(riskRequiresGuarded(["remove documentation comment"]), false);
+
+const provenBillingDefect = {
+  workflowId: "quick-fix",
+  assuranceProfile: "guarded",
+  scopeUnit: "story",
+  riskTriggers: ["bugfix", "root-cause-proven", "bounded-patch", "billing", "subscription", "public-auth"],
+};
+assert.equal(planningRequiresFull(provenBillingDefect), false, "risk alone must not select Full execution");
+assert.deepEqual(workflowSelectionFailures(provenBillingDefect), []);
+assert.match(workflowSelectionFailures({ ...provenBillingDefect, workflowId: "full-bmad" }).join("\n"),
+  /risk boundaries select Guarded assurance, not Full/);
+assert.deepEqual(workflowSelectionFailures({
+  ...provenBillingDefect,
+  workflowId: "full-bmad",
+  riskTriggers: [...provenBillingDefect.riskTriggers, "new-contract"],
+}), []);
+assert.match(workflowSelectionFailures({
+  ...provenBillingDefect,
+  riskTriggers: ["bugfix", "billing"],
+}).join("\n"), /root-cause-proven/);
 
 const legacyGuarded = normalizeExecutionState({ lane: "guarded", activeEpic: null });
 assert.equal(legacyGuarded.executionMigrationRequired, true);

@@ -33,11 +33,13 @@ ACEF is lean by default. Lean mode never removes gates or evidence; it only limi
 - Worker final reports should be complete on disk, but chat summaries should stay under about 20 lines.
 - If details are needed for audit, link the file path and exact command rather than copying the body.
 
-Use the heaviest guarded/full-BMAD profile only where it pays for itself: money movement, RBAC/authorization, payout,
-PII, migrations, destructive actions, cross-module contracts, or new product workflows that need interview and brief
-approval. Reversible copy, style, localized UI/config, docs, localized bug fixes, and already-patterned mechanical edits
-stay outside ACEF: use the repository's native workflow, targeted reads, the smallest patch, and focused verification.
-The retired `direct` lane remains only to close or promote existing compatibility records.
+Select execution depth and assurance independently. Use Guarded assurance where it pays for itself: money movement,
+RBAC/authorization, payout, PII, migrations, destructive actions, provider/realtime boundaries, and irreversible
+effects. Use Full BMAD only for planning-heavy work such as broad/cross-module change, new contracts or product
+workflows, architecture change, or unresolved scope. A proven bounded defect in a risky boundary may therefore be ACEF
+Fix + Guarded. Reversible copy, style, localized UI/config, docs, localized bug fixes, and already-patterned mechanical
+edits stay outside ACEF: use the repository's native workflow, targeted reads, the smallest patch, and focused
+verification. The retired `direct` lane remains only to close or promote existing compatibility records.
 
 ## Worker Context Budget
 

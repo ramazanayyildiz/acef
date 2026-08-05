@@ -114,11 +114,21 @@ state.
 
 A lightweight task promotes to full BMAD when any of:
 - it adds new product scope,
-- more than one independent failure surface appears,
+- multiple independent failure surfaces reveal a new/unclear cross-cutting contract rather than a bounded defect,
 - canonical docs conflict,
 - a migration/backfill has legacy-data risk,
 - authz / tenant isolation / entitlement behavior is underspecified,
 - review needs repeated rounds just to discover basic requirements.
+
+Risk alone never satisfies this promotion list. A reproduced, root-cause-proven, bounded defect may use ACEF Fix +
+Guarded across multiple risky boundaries when it introduces no architecture, contract, or product-scope change. That
+selection is not an exception and does not require permission to skip BMAD.
+
+NFR work and broad regression are conditional controls, not lifecycle defaults. Create or refresh an NFR assessment
+only when the patch adds/changes a non-functional contract or an acceptance criterion names one. Use focused tests
+during Fix/Standard and during Full stories. Run a broad suite once at Full/epic close, or once for Fix/Standard only
+when a changed shared contract makes focused evidence insufficient; record the trigger and reuse the result across
+reviewers unless a named evidence conflict requires adjudication.
 
 Two consecutive typed non-`PASS` review verdicts or a third repair cycle on the same guarded/full-BMAD story → stop and
 `REPLAN/SPLIT`. V3 additionally treats a new HIGH in consecutive rounds or growing patch scope as an earlier reviewer

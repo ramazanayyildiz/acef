@@ -86,6 +86,7 @@
       "additionalProperties": false,
       "required": ["route", "confidence"],
       "properties": {
+        "routingPolicyVersion": { "type": "string", "enum": ["two-axis-v1"] },
         "route": { "type": "string", "minLength": 1 },
         "confidence": { "type": "string", "enum": ["low", "medium", "high"] },
         "clarifyingQuestions": {
