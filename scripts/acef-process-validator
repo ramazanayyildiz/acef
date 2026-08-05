@@ -306,6 +306,7 @@ function normalizedScope(value) {
 function stateControlPath(filePath) {
   const normalized = String(filePath || "").replaceAll(path.sep, "/");
   return /^\.acef\//.test(normalized)
+    || /^\.(?:codex|claude|opencode)\/(?:skills\/acef(?:-|\/)|commands\/acef-|plugins\/acef-)/.test(normalized)
     || /^docs\/ai\/(?:ACEF_(?:ACTIVE_RUN\.json|ACTIVE_WORKER_SCOPE\.json|ACTIVE_LEDGER|DIRECT_RUN\.json|CURRENT_CONTEXT\.md|INSTALLATION\.json|RUN_[^/]+\.md|DELIVERY_LEDGER(?:_[^/]+)?\.md|[^/]+_DELIVERY_AUDIT\.md)|actors\/|gates\/|evidence\/|reports\/|approvals\/|repairs\/|corrections\/|capsules\/|judges\/)/.test(normalized);
 }
 

@@ -39,7 +39,11 @@ if (!stateControlPath("docs/ai/ACEF_DELIVERY_LEDGER.md")
   || !stateControlPath("docs/ai/ACEF_DELIVERY_LEDGER_P0.md")
   || !stateControlPath("docs/ai/ACEF_ACTIVE_LEDGER")
   || !stateControlPath("docs/ai/ACEF_INSTALLATION.json")
-  || !stateControlPath(".acef/bin/acef-process-validator.cjs")) {
+  || !stateControlPath(".acef/bin/acef-process-validator.cjs")
+  || !stateControlPath(".codex/skills/acef/SKILL.md")
+  || !stateControlPath(".claude/skills/acef-router/SKILL.md")
+  || !stateControlPath(".opencode/commands/acef-status.md")
+  || !stateControlPath(".opencode/plugins/acef-bmad-hard-wall.js")) {
   throw new Error("legacy and suffixed delivery ledger pointers are not consistently classified as control state");
 }
 if (stateChangingRiskSignals(
