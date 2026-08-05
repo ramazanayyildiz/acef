@@ -566,6 +566,14 @@ function actorRecordById(repoRoot, actorId) {
 
 function actorRecordsForStory(repoRoot, story) {
   return jsonRecords(path.join(repoRoot, "docs", "ai", "actors"))
+    .filter((filePath) => {
+      try {
+        const candidate = JSON.parse(read(filePath));
+        return normalizedScope(candidate.story) === normalizedScope(story);
+      } catch {
+        return false;
+      }
+    })
     .map(parseActorRecord)
     .filter((actor) => normalizedScope(actor.story) === normalizedScope(story));
 }

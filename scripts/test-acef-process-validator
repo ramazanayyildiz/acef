@@ -1467,6 +1467,15 @@ try {
   fs.writeFileSync(judgeActorPath, JSON.stringify(judgeActor, null, 2));
   expectPass("gate-verdict", ["--repo", tmp, "--check", "gate-verdict"]);
   expectPass("gate-decider", ["--repo", tmp, "--check", "gate-decider"]);
+  const unrelatedLegacyActorPath = path.join(tmp, "docs", "ai", "actors", "unrelated-legacy-actor.json");
+  fs.writeFileSync(unrelatedLegacyActorPath, JSON.stringify({
+    actorInstanceId: "unrelated-legacy-actor",
+    story: "historical unrelated story",
+    role: "reviewer",
+  }, null, 2));
+  expectPass("gate-verdict", ["--repo", tmp, "--check", "gate-verdict"]);
+  expectPass("gate-decider", ["--repo", tmp, "--check", "gate-decider"]);
+  fs.rmSync(unrelatedLegacyActorPath);
   const statefulActiveRun = JSON.parse(fs.readFileSync(path.join(tmp, "docs", "ai", "ACEF_ACTIVE_RUN.json"), "utf8"));
   statefulActiveRun.laneRationale = "CRM workspace captures notes and follow-up records";
   statefulActiveRun.riskTriggers = ["crm", "notes", "persistence"];
