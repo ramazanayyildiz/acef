@@ -1473,9 +1473,34 @@ try {
     story: "historical unrelated story",
     role: "reviewer",
   }, null, 2));
+  const actorSeparationRunPath = path.join(tmp, "docs", "ai", "ACEF_ACTIVE_RUN.json");
+  const actorSeparationRun = JSON.parse(fs.readFileSync(actorSeparationRunPath, "utf8"));
+  fs.writeFileSync(actorSeparationRunPath, JSON.stringify({
+    ...actorSeparationRun,
+    lane: "guarded",
+    workflowId: "quick-fix",
+    assuranceProfile: "guarded",
+  }, null, 2));
+  expectPass("actor-separation", ["--repo", tmp, "--check", "actor-separation", "--ledger", "docs/ai/ACEF_demo_DELIVERY_AUDIT.md"]);
+  fs.writeFileSync(actorSeparationRunPath, JSON.stringify(actorSeparationRun, null, 2));
   expectPass("gate-verdict", ["--repo", tmp, "--check", "gate-verdict"]);
   expectPass("gate-decider", ["--repo", tmp, "--check", "gate-decider"]);
   fs.rmSync(unrelatedLegacyActorPath);
+  const unrelatedLegacyEvidencePath = path.join(tmp, "docs", "ai", "evidence", "unrelated-legacy-evidence.json");
+  fs.writeFileSync(unrelatedLegacyEvidencePath, JSON.stringify({
+    evidenceId: "unrelated-legacy-evidence",
+    story: "historical unrelated story",
+  }, null, 2));
+  expectFailMessage("evidence-manifest", ["--repo", tmp, "--check", "evidence-manifest"],
+    /FAIL evidence-manifest: (?!.*unrelated-legacy-evidence).*working tree has application changes/s);
+  fs.rmSync(unrelatedLegacyEvidencePath);
+  const malformedCurrentEvidencePath = path.join(tmp, "docs", "ai", "evidence", "malformed-current-evidence.json");
+  fs.writeFileSync(malformedCurrentEvidencePath, JSON.stringify({
+    evidenceId: "malformed-current-evidence",
+    story: "story 1.1",
+  }, null, 2));
+  expectFail("evidence-manifest", ["--repo", tmp, "--check", "evidence-manifest"]);
+  fs.rmSync(malformedCurrentEvidencePath);
   const statefulActiveRun = JSON.parse(fs.readFileSync(path.join(tmp, "docs", "ai", "ACEF_ACTIVE_RUN.json"), "utf8"));
   statefulActiveRun.laneRationale = "CRM workspace captures notes and follow-up records";
   statefulActiveRun.riskTriggers = ["crm", "notes", "persistence"];

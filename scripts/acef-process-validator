@@ -1616,8 +1616,14 @@ function isFourActorV3EpicClose(activeRun) {
 
 function checkTypedActorSeparation(repoRoot, activeRun) {
   const actorFiles = jsonRecords(path.join(repoRoot, "docs", "ai", "actors"));
-  const actors = actorFiles.map(parseActorRecord).filter((actor) => normalizedScope(actor.story) === normalizedScope(activeRun.activeStory)
-    && (!isFourActorV3(activeRun) || (actor.runId === activeRun.runId && actor.fullFlowContract === activeRun.fullFlowContract)));
+  const actors = actorFiles.flatMap((filePath) => {
+    const candidate = JSON.parse(read(filePath));
+    if (normalizedScope(candidate.story) !== normalizedScope(activeRun.activeStory)) return [];
+    const actor = parseActorRecord(filePath);
+    return !isFourActorV3(activeRun) || (actor.runId === activeRun.runId && actor.fullFlowContract === activeRun.fullFlowContract)
+      ? [actor]
+      : [];
+  });
   const requiredPhases = isFull(activeRun)
     ? (isFourActorV3(activeRun)
       ? ["atdd", "development", "codereview", "patchassurance"]
@@ -1729,8 +1735,9 @@ function checkEvidenceManifests(repoRoot) {
   const failures = [];
   for (const filePath of files) {
     try {
+      const candidate = JSON.parse(read(filePath));
+      if (normalizedScope(candidate.story) !== normalizedScope(activeRun.activeStory)) continue;
       const evidence = parseEvidenceManifest(filePath);
-      if (normalizedScope(evidence.story) !== normalizedScope(activeRun.activeStory)) continue;
       records.push(evidence);
       failures.push(...validateEvidenceRecord(repoRoot, evidence));
     } catch (error) {
