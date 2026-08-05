@@ -9,6 +9,14 @@ or evidence contract. Do not use it to claim implementation status; link to the 
 
 ## Unreleased
 
+### Capsule supervisor controlled-canary authorization
+
+- Authorized `capsule-supervisor-v1` for at most two sequential, explicitly opted-in, new Full + Guarded runs after
+  review of the V3.34 live evidence and exact-transcript reanalysis. Existing runs remain immutable, 30 active minutes
+  is the fail-closed ceiling, and a stopped canary falls back only through a separate ordinary `four-actor-v3` run.
+- Kept capability maturity at `enforced`: the authorization neither rewrites the immutable V3.34 automated failure nor
+  makes the runtime a default or generally installed workflow.
+
 ### Shell-safe single integration action
 
 - The four-actor execution contract now emits a typed `run-integration` action containing the exact frozen argv, a

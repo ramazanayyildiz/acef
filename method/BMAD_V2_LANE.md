@@ -52,8 +52,11 @@ assurance layer. It preserves the four semantic roles while removing model work 
   against the same held-out HIGH defect. `method/model-routing-policy-v1.json` maps those abstract tiers to the active
   provider; another provider must add a complete mapping and earn its own calibration evidence.
 
-This runtime is `enforced` in the framework but remains unproven until its frozen rehearsal passes product, process,
-and cost gates. Existing runs cannot opt in after lifecycle evidence exists.
+This runtime is `enforced`, not `proven` or a default. V3.34 passed the live product, lifecycle, cost, blind-product,
+and exact-transcript reanalysis checks, while its immutable automated row remains failed under the frozen no-rewrite
+rule. An explicitly reviewed decision therefore permits at most two sequential controlled canaries under
+`docs/experiments/execution-assurance-v334/CONTROLLED_CANARY_DECISION.md`. Existing runs cannot opt in after lifecycle
+evidence exists.
 
 ## Dependency
 This lane is driven by **BMAD-METHOD** (https://github.com/bmad-code-org/BMAD-METHOD, MIT) — an installable agent

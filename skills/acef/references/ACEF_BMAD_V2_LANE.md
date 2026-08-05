@@ -46,7 +46,10 @@ assurance layer. It preserves the four semantic roles while removing model work 
   Review as `semantic-standard/medium` on the active OpenAI mapping. Other providers require a complete mapping and
   provider-specific calibration before they can certify work.
 
-Treat this runtime as `enforced`, not `proven`, until a separately frozen rehearsal passes.
+Treat this runtime as `enforced`, not `proven` or a default. V3.34 passed the live product, lifecycle, cost,
+blind-product, and exact-transcript reanalysis checks while its immutable automated row remains failed. The reviewed
+decision in `docs/experiments/execution-assurance-v334/CONTROLLED_CANARY_DECISION.md` permits at most two sequential,
+explicitly opted-in controlled canaries. Existing runs cannot opt in after lifecycle evidence exists.
 
 ## Dependency
 This lane is driven by **BMAD-METHOD** (https://github.com/bmad-code-org/BMAD-METHOD, MIT) — an installable agent
