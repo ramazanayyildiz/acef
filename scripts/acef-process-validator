@@ -3662,6 +3662,14 @@ function checkPrecommitGate(repoRoot) {
       terminalNonPassEpic = false;
     }
   }
+  const compatibilityTerminalPaths = compatibilityTerminalNonPassEpic
+    ? [
+      "docs/ai/ACEF_ACTIVE_RUN.json",
+      `docs/ai/gates/${execution.record.terminalGateId}.json`,
+    ]
+    : [];
+  const compatibilityTerminalRecordStaged = compatibilityTerminalPaths
+    .some((filePath) => stagedPaths.includes(filePath));
   const subChecks = execution.record && isHeavy(execution.record)
     ? terminalNonPassEpic
       ? compatibilityTerminalNonPassEpic
@@ -3671,18 +3679,26 @@ function checkPrecommitGate(repoRoot) {
     : ["run-authorization", "lean-evidence"];
   const failures = [];
   if (compatibilityTerminalNonPassEpic) {
-    const exactTerminalPaths = [
-      "docs/ai/ACEF_ACTIVE_RUN.json",
-      `docs/ai/gates/${execution.record.terminalGateId}.json`,
-    ];
-    const missing = exactTerminalPaths.filter((filePath) => !stagedPaths.includes(filePath));
-    const extra = stagedPaths.filter((filePath) => !exactTerminalPaths.includes(filePath));
-    if (missing.length || extra.length) {
-      failures.push(`terminal-record-scope: compatibility non-PASS close requires exactly ${exactTerminalPaths.join(", ")}; missing: ${missing.join(", ") || "none"}; extra: ${extra.join(", ") || "none"}`);
-    }
-    const unstaged = cp.spawnSync("git", ["diff", "--quiet", "--", ...exactTerminalPaths], { cwd: repoRoot });
-    if (unstaged.status !== 0) {
-      failures.push("terminal-record-integrity: staged compatibility terminal records differ from the working records that were validated");
+    if (compatibilityTerminalRecordStaged) {
+      const missing = compatibilityTerminalPaths.filter((filePath) => !stagedPaths.includes(filePath));
+      const extra = stagedPaths.filter((filePath) => !compatibilityTerminalPaths.includes(filePath));
+      if (missing.length || extra.length) {
+        failures.push(`terminal-record-scope: compatibility non-PASS close requires exactly ${compatibilityTerminalPaths.join(", ")}; missing: ${missing.join(", ") || "none"}; extra: ${extra.join(", ") || "none"}`);
+      }
+      const unstaged = cp.spawnSync("git", ["diff", "--quiet", "--", ...compatibilityTerminalPaths], { cwd: repoRoot });
+      if (unstaged.status !== 0) {
+        failures.push("terminal-record-integrity: staged compatibility terminal records differ from the working records that were validated");
+      }
+    } else {
+      const committed = compatibilityTerminalPaths.every((filePath) => cp.spawnSync(
+        "git", ["cat-file", "-e", `HEAD:${filePath}`], { cwd: repoRoot },
+      ).status === 0);
+      const unchanged = cp.spawnSync(
+        "git", ["diff", "--quiet", "HEAD", "--", ...compatibilityTerminalPaths], { cwd: repoRoot },
+      ).status === 0;
+      if (!committed || !unchanged) {
+        failures.push("terminal-record-integrity: compatibility terminal records must be committed unchanged before later commits can proceed");
+      }
     }
   }
   if (epicClosing && !terminalNonPassEpic) {
@@ -3711,7 +3727,12 @@ function checkPrecommitGate(repoRoot) {
   if (failures.length) {
     return result("precommit-gate", false, `${executionLabel} pre-commit bundle failed — ${failures.join("; ")}`);
   }
-  return result("precommit-gate", true, `${executionLabel} pre-commit bundle passed (${subChecks.join(", ")}); ${terminalNonPassEpic ? "terminal non-PASS disposition is recorded without promotion" : "PASS certification is required only for terminal closeout"}`);
+  const dispositionMessage = compatibilityTerminalNonPassEpic && !compatibilityTerminalRecordStaged
+    ? "committed compatibility terminal record is inert; this commit must follow its own workflow admission"
+    : terminalNonPassEpic
+      ? "terminal non-PASS disposition is recorded without promotion"
+      : "PASS certification is required only for terminal closeout";
+  return result("precommit-gate", true, `${executionLabel} pre-commit bundle passed (${subChecks.join(", ")}); ${dispositionMessage}`);
 }
 
 function capabilityChangePaths(repoRoot) {

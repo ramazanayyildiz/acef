@@ -1744,6 +1744,11 @@ try {
     /terminal-record-scope: compatibility non-PASS close requires exactly .*extra: legacy-terminal-dirty\.php/);
   run("git", ["reset", "-q", "--", "legacy-terminal-dirty.php"], { cwd: tmp });
   expectPass("precommit-gate", ["--repo", tmp, "--check", "precommit-gate"]);
+  run("git", ["commit", "-q", "-m", "fixture: commit compatibility terminal record"], { cwd: tmp });
+  run("git", ["add", "legacy-terminal-dirty.php"], { cwd: tmp });
+  expectPass("precommit-gate", ["--repo", tmp, "--check", "precommit-gate"]);
+  run("git", ["reset", "-q", "--", "legacy-terminal-dirty.php"], { cwd: tmp });
+  run("git", ["reset", "-q", "--soft", "HEAD^"], { cwd: tmp });
   run("git", ["reset", "-q", "--", "docs/ai/ACEF_ACTIVE_RUN.json", "docs/ai/gates/legacy-terminal-replan.json"], { cwd: tmp });
   fs.rmSync(legacyDirtyPath);
   fs.rmSync(legacyTerminalGatePath);

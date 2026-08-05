@@ -17,6 +17,9 @@ or evidence contract. Do not use it to claim implementation status; link to the 
 - Restricted that recovery commit to exactly `docs/ai/ACEF_ACTIVE_RUN.json` and its bound terminal gate. The gate must
   match the run's terminal disposition, active actor, and normalized scope; staged application or unrelated control
   files fail closed, while preserved unstaged recovery work no longer prevents closure.
+- Made the compatibility terminal record inert after both files are committed unchanged. Later commits are no longer
+  misclassified as repeated terminal-close attempts and must instead follow their own admission/workflow decision;
+  modifying either terminal record reactivates fail-closed integrity checks.
 
 ### Risk and execution-depth routing made mechanically independent
 
