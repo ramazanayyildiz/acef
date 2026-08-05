@@ -1,0 +1,47 @@
+{
+  "schema": "acef.execution-assurance-post-run-reanalysis.v1",
+  "experimentId": "acef-execution-assurance-v334-correction-proof",
+  "attemptRunId": "REHEARSAL-v334",
+  "immutableAttemptResult": "FAIL",
+  "immutableDerivedVerdict": "PRODUCT_PASS_PROCESS_FAIL",
+  "originalFailure": "acef_s1_middleware_correction_proof_atdd: child transcript must contain exactly one canonical runtime-test evidence-run command",
+  "repair": {
+    "class": "static-command-alias-transcript-attribution",
+    "acceptedShape": "one const cmd = String.raw literal without interpolation, reassignment, or assembly, passed to exactly one tools.exec_command via cmd or object shorthand",
+    "stillRejected": [
+      "interpolated template",
+      "mutable alias",
+      "unknown alias",
+      "multiple exec calls",
+      "dynamic assembly"
+    ]
+  },
+  "exactTranscriptReanalysis": {
+    "collaboration": "PASS",
+    "collaborationFailures": [],
+    "observedActorCount": 6,
+    "totalActorInvocations": 7,
+    "correctionBindings": 1,
+    "developerReactivations": 1,
+    "lifecycleIntegration": {
+      "result": "PASS",
+      "count": 1,
+      "exitCode": 0,
+      "commandSha256": "506fce1cb0b1bb7de868c1cf4192eb487eb6a1840f0569f822f518cda45a9df1"
+    },
+    "durableLifecycle": "PASS",
+    "budgets": "PASS",
+    "discovery": "PASS",
+    "scope": "PASS"
+  },
+  "blindJudge": {
+    "verdict": "PASS",
+    "productOutcomeComplete": true,
+    "scopeViolation": false,
+    "testWeakening": false,
+    "findingCount": 0
+  },
+  "promotionEligible": false,
+  "promotionReason": "The preregistered immutable automated row remains FAIL and is not rewritten after a scorer repair.",
+  "capabilityDisposition": "enforced-not-proven"
+}

@@ -8,3 +8,9 @@ integration display with one typed, shell-safe, exactly-once `run-integration` a
 Success requires an immutable automated PASS row, one integration invocation with a successful typed exit receipt,
 the same product and correction proof, collaboration PASS, a durably complete story gate before integration, Epic
 Process Judge PASS, and an external artifact-only blind Judge PASS. This is one measured attempt and is fail-closed.
+
+The measured attempt is immutable. The shell-safe integration repair passed live with exactly one quoted invocation
+and exit 0; product, correction, reviews, durable lifecycle, budgets, Epic Judge, and blind Judge also passed. The
+original row failed because the ATDD actor stored its exact evidence command in one non-interpolated immutable
+`String.raw` constant and used object shorthand, which the transcript extractor did not recognize. A bounded static
+parser repair makes exact-transcript collaboration reanalysis fully green. See `REHEARSAL_RESULT.md`.

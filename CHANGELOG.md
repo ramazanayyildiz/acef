@@ -22,6 +22,15 @@ or evidence contract. Do not use it to claim implementation status; link to the 
 - Regression coverage freezes the metacharacter-bearing argv, its safe command representation, the one-invocation
   contract, and removal of the unsafe display. Capability maturity remains `enforced` pending one live successor
   proof; V3.33 is not rerun or rewritten.
+- V3.34 live-proved the repair: the story-close package committed before one safely quoted integration invocation,
+  which exited zero without `sh -c` reconstruction or retry. The run completed in 22m10s, stayed within every hard
+  budget, and received a zero-finding artifact-only blind product PASS.
+- The immutable V3.34 row still reports `PRODUCT_PASS_PROCESS_FAIL` because its ATDD actor stored the exact long
+  evidence command in one non-interpolated immutable `String.raw` constant and used object shorthand `{cmd,...}`;
+  the transcript extractor previously recognized only inline string properties. The bounded extractor now accepts
+  only that statically provable literal alias and rejects interpolation, mutation, unknown aliases, dynamic assembly,
+  and duplicates. Exact-transcript collaboration reanalysis is fully green; maturity remains `enforced` under the
+  frozen no-rewrite promotion rule.
 
 ### Durable story-close transition enforcement
 

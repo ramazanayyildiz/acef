@@ -1535,6 +1535,20 @@ const atddEvidenceSession = JSON.stringify({ type: "response_item", payload: {
 } });
 assert.equal(v3AtddEvidenceCommandObserved(atddEvidenceSession, "acef_story_atdd", "story"), true,
   "one exact runtime-test evidence command is attributed to the ATDD child transcript");
+const staticRawAtddEvidenceSession = JSON.stringify({ type: "response_item", payload: {
+  type: "custom_tool_call", name: "exec", call_id: "atdd-evidence-static-raw",
+  input: `const cmd = String.raw\`${atddEvidenceCommand}\`;\nconst r = await tools.exec_command({\n  cmd,\n  workdir: "/tmp/rehearsal",\n});\ntext(r.output);`,
+} });
+assert.equal(v3AtddEvidenceCommandObserved(staticRawAtddEvidenceSession, "acef_story_atdd", "story"), true,
+  "one non-interpolated immutable String.raw alias remains a statically attributable literal evidence command");
+const interpolatedRawAtddEvidenceSession = staticRawAtddEvidenceSession.replace(
+  "node --test tests/story.test.js`", "node --test ${testPath}`",
+);
+assert.equal(v3AtddEvidenceCommandObserved(interpolatedRawAtddEvidenceSession, "acef_story_atdd", "story"), false,
+  "String.raw interpolation cannot masquerade as a literal evidence command");
+const mutableRawAtddEvidenceSession = staticRawAtddEvidenceSession.replace("const cmd =", "let cmd =");
+assert.equal(v3AtddEvidenceCommandObserved(mutableRawAtddEvidenceSession, "acef_story_atdd", "story"), false,
+  "a mutable command alias remains untrusted");
 const capsuleAtddEvidenceSession = atddEvidenceSession.replace("--story story --satisfies", "--story story --model gpt-5.6-sol --effort high --satisfies");
 assert.equal(v3AtddEvidenceCommandObserved(capsuleAtddEvidenceSession, "acef_story_atdd", "story"), true,
   "the capsule runtime model and effort receipt remains compatible with exact-one ATDD transcript binding");
