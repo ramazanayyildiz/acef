@@ -37,7 +37,9 @@ if (storageFixture.durableStateRequired !== true) {
 
 if (!stateControlPath("docs/ai/ACEF_DELIVERY_LEDGER.md")
   || !stateControlPath("docs/ai/ACEF_DELIVERY_LEDGER_P0.md")
-  || !stateControlPath("docs/ai/ACEF_ACTIVE_LEDGER")) {
+  || !stateControlPath("docs/ai/ACEF_ACTIVE_LEDGER")
+  || !stateControlPath("docs/ai/ACEF_INSTALLATION.json")
+  || !stateControlPath(".acef/bin/acef-process-validator.cjs")) {
   throw new Error("legacy and suffixed delivery ledger pointers are not consistently classified as control state");
 }
 if (stateChangingRiskSignals(
