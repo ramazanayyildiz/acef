@@ -3638,7 +3638,22 @@ function checkPrecommitGate(repoRoot) {
     && isFull(execution.record)
     && (execution.record.scopeUnit === "epic" || /^\s*epic\b/i.test(execution.record.activeStory || ""));
   let terminalNonPassEpic = false;
-  if (epicClosing && execution.record?.fullFlowContract === "four-actor-v3") {
+  let compatibilityTerminalNonPassEpic = false;
+  if (epicClosing && execution.record?.fullFlowContract !== "four-actor-v3"
+    && execution.record?.status === "complete"
+    && ["FAIL", "REPLAN", "BLOCKED"].includes(execution.record.terminalDisposition)
+    && execution.record.terminalGateId) {
+    try {
+      const terminalGate = parseGateVerdict(path.join(repoRoot, "docs", "ai", "gates", `${execution.record.terminalGateId}.json`));
+      terminalNonPassEpic = terminalGate.gateId === execution.record.terminalGateId
+        && terminalGate.verdict === execution.record.terminalDisposition
+        && terminalGate.decidedBy === execution.record.activeActorId
+        && normalizedScope(terminalGate.scope) === normalizedScope(execution.record.activeStory);
+      compatibilityTerminalNonPassEpic = terminalNonPassEpic;
+    } catch {
+      terminalNonPassEpic = false;
+    }
+  } else if (epicClosing && execution.record?.fullFlowContract === "four-actor-v3") {
     try {
       const terminalGate = latestGateForActiveRun(repoRoot, execution.record, { requirePass: false }).gate;
       terminalNonPassEpic = terminalGate?.gateType === "actor-decided-v1"
@@ -3649,11 +3664,28 @@ function checkPrecommitGate(repoRoot) {
   }
   const subChecks = execution.record && isHeavy(execution.record)
     ? terminalNonPassEpic
-      ? ["run-authorization", "review-circuit-breaker", "gate-transition"]
+      ? compatibilityTerminalNonPassEpic
+        ? []
+        : ["run-authorization", "review-circuit-breaker", "gate-transition"]
       : ["run-authorization", "review-circuit-breaker", ...(stagedGateTransition ? ["gate-transition"] : []), ...(closingPhase ? ["gate-decider", "gate-verdict", ...(epicClosing ? ["epic-process-judge"] : []), "lean-evidence"] : [])]
     : ["run-authorization", "lean-evidence"];
   const failures = [];
-  if (epicClosing) {
+  if (compatibilityTerminalNonPassEpic) {
+    const exactTerminalPaths = [
+      "docs/ai/ACEF_ACTIVE_RUN.json",
+      `docs/ai/gates/${execution.record.terminalGateId}.json`,
+    ];
+    const missing = exactTerminalPaths.filter((filePath) => !stagedPaths.includes(filePath));
+    const extra = stagedPaths.filter((filePath) => !exactTerminalPaths.includes(filePath));
+    if (missing.length || extra.length) {
+      failures.push(`terminal-record-scope: compatibility non-PASS close requires exactly ${exactTerminalPaths.join(", ")}; missing: ${missing.join(", ") || "none"}; extra: ${extra.join(", ") || "none"}`);
+    }
+    const unstaged = cp.spawnSync("git", ["diff", "--quiet", "--", ...exactTerminalPaths], { cwd: repoRoot });
+    if (unstaged.status !== 0) {
+      failures.push("terminal-record-integrity: staged compatibility terminal records differ from the working records that were validated");
+    }
+  }
+  if (epicClosing && !terminalNonPassEpic) {
     const dirtyApplicationPaths = workingApplicationChanges(repoRoot);
     if (dirtyApplicationPaths.length) {
       failures.push(`epic-close-scope: Epic closeout requires a clean application tree; only ACEF control artifacts may remain dirty: ${dirtyApplicationPaths.slice(0, 8).join(", ")}`);

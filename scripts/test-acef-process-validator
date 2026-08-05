@@ -1723,6 +1723,31 @@ try {
   run("git", ["reset", "-q", "--", "docs/ai/gates/epic-1.json"], { cwd: tmp });
   fs.writeFileSync(epicGatePath, JSON.stringify(passingEpicGate, null, 2));
 
+  const legacyTerminalGatePath = path.join(tmp, "docs", "ai", "gates", "legacy-terminal-replan.json");
+  fs.writeFileSync(legacyTerminalGatePath, JSON.stringify({
+    gateId: "legacy-terminal-replan", gateType: "actor-decided-v1", decisionMode: "actor",
+    scope: "Story 1.1", verdict: "REPLAN", decidedBy: "epic-1-judge",
+    repositoryCommit: head, repositoryTree: head, evidenceIds: [], createdAt: "2026-06-25T01:05:00.000Z",
+  }, null, 2));
+  fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_ACTIVE_RUN.json"), JSON.stringify({
+    schema: "acef.active-run.v2", runId: "RUN-legacy-terminal", repo: "fixture", workflowId: "full-bmad",
+    assuranceProfile: "guarded", scopeUnit: "epic", status: "complete", terminalDisposition: "REPLAN",
+    assuranceRationale: "Recovery closeout preserves a guarded compatibility run as terminal REPLAN.",
+    terminalGateId: "legacy-terminal-replan", activeStory: "Story 1.1", activePhase: "closeout",
+    activeActorId: "epic-1-judge", ledgerPath: "docs/ai/ACEF_demo_DELIVERY_AUDIT.md",
+  }, null, 2));
+  const legacyDirtyPath = path.join(tmp, "legacy-terminal-dirty.php");
+  fs.writeFileSync(legacyDirtyPath, "<?php // preserved dirty recovery state\n");
+  run("git", ["add", "docs/ai/ACEF_ACTIVE_RUN.json", "docs/ai/gates/legacy-terminal-replan.json"], { cwd: tmp });
+  run("git", ["add", "legacy-terminal-dirty.php"], { cwd: tmp });
+  expectFailMessage("precommit-gate", ["--repo", tmp, "--check", "precommit-gate"],
+    /terminal-record-scope: compatibility non-PASS close requires exactly .*extra: legacy-terminal-dirty\.php/);
+  run("git", ["reset", "-q", "--", "legacy-terminal-dirty.php"], { cwd: tmp });
+  expectPass("precommit-gate", ["--repo", tmp, "--check", "precommit-gate"]);
+  run("git", ["reset", "-q", "--", "docs/ai/ACEF_ACTIVE_RUN.json", "docs/ai/gates/legacy-terminal-replan.json"], { cwd: tmp });
+  fs.rmSync(legacyDirtyPath);
+  fs.rmSync(legacyTerminalGatePath);
+
   const noStoryJudgeLedger = path.join(tmp, "docs", "ai", "ACEF_no_story_judge_DELIVERY_AUDIT.md");
   fs.writeFileSync(noStoryJudgeLedger, fs.readFileSync(path.join(tmp, "docs", "ai", "ACEF_demo_DELIVERY_AUDIT.md"), "utf8")
     .replace(/^process_judge_report:.*\n/m, ""));

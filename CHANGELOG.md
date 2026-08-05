@@ -9,6 +9,15 @@ or evidence contract. Do not use it to claim implementation status; link to the 
 
 ## Unreleased
 
+### Compatibility Full runs can close with an exact non-PASS recovery record
+
+- Allowed a migrated compatibility Full run with terminal `FAIL`, `REPLAN`, or `BLOCKED` to persist its honest
+  disposition even when stale worker scope, prior review state, or a dirty application tree makes certification
+  impossible. This path is record-only and never promotes the run.
+- Restricted that recovery commit to exactly `docs/ai/ACEF_ACTIVE_RUN.json` and its bound terminal gate. The gate must
+  match the run's terminal disposition, active actor, and normalized scope; staged application or unrelated control
+  files fail closed, while preserved unstaged recovery work no longer prevents closure.
+
 ### Risk and execution-depth routing made mechanically independent
 
 - Corrected the brownfield router so billing, entitlement, auth, public-surface, provider, realtime, persistence, and
