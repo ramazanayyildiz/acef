@@ -67,6 +67,16 @@ try {
   if (!fs.existsSync(assuranceRequirements)) throw new Error("assurance requirements support library was not installed");
   if (!fs.existsSync(modelRouting)) throw new Error("model routing support library was not installed");
   if (!fs.existsSync(executionPolicy)) throw new Error("execution policy support library was not installed");
+  const installedExecutionPolicy = require(executionPolicy);
+  const bundledRepairFailures = installedExecutionPolicy.workflowSelectionFailures({
+    workflowId: "full-bmad",
+    assuranceProfile: "guarded",
+    scopeUnit: "story",
+    riskTriggers: ["bugfix", "broad-cross-surface", "shared-test-failures"],
+  });
+  if (!bundledRepairFailures.some((failure) => failure.includes("REPLAN/SPLIT"))) {
+    throw new Error("installed execution policy did not reject bundled independent defects");
+  }
   if (!fs.existsSync(installationHelper)) throw new Error("installation support library was not installed");
   if (!fs.existsSync(schema)) throw new Error("typed-state schemas were not installed");
   if (!fs.existsSync(activeRunV2Schema)) throw new Error("active-run v2 schema was not installed");

@@ -24,7 +24,7 @@ const {
   atddGreenTestContinuityFailure,
 } = require("./lib/acef-state-parser");
 const { validateDurableStoryClosePackage } = require("./lib/acef-story-close");
-const { riskRequiresGuarded } = require("./lib/acef-execution-policy");
+const { riskRequiresGuarded, workflowSelectionFailures } = require("./lib/acef-execution-policy");
 const { buildAssuranceRequirements } = require("./lib/acef-assurance-requirements");
 const { loadModelRoutingPolicy, resolveRoleRuntime } = require("./lib/acef-model-routing");
 
@@ -467,6 +467,13 @@ function writeActiveRun(opts) {
     contextPath: opts.context || (sameRun ? previous.contextPath : null),
     updatedAt: new Date().toISOString(),
   };
+  if (record.intakeDecision?.routingPolicyVersion === "two-axis-v1"
+    && (!sameRun || normalizedScope(record.activePhase) === "intake")) {
+    const routingFailures = workflowSelectionFailures(record);
+    if (routingFailures.length) {
+      throw new Error(`active-run routing rejected before bootstrap: ${routingFailures.join("; ")}`);
+    }
+  }
   atomicJson(target, record, { overwrite: true, validate: parseActiveRun });
   syncRuntimeContext(opts.repo, record);
   console.log(`WROTE active-run ${relative(opts.repo, target)}`);

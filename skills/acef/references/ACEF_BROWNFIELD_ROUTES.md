@@ -178,6 +178,11 @@ Minimum flow:
 
 Requirements/design/planning are normally skipped unless the fix reveals a larger feature or architecture change.
 
+An audit or reliability theme is not automatically one bug. Inventory root causes first. Multiple independent defects
+must be split into separate Route C units before workflow selection; do not promote the entire batch to Route B/Full.
+Only a coherent new contract or architecture change becomes its own planning-heavy unit. The typed state writer rejects
+two-axis intake marked as an unbounded/broad repair batch before it creates active-run state.
+
 A defect with a proven root cause, bounded patch, and no new contract uses ACEF Fix when ACEF admission is required.
 Money, entitlement, auth, realtime, persistence, or public-surface exposure adds Guarded assurance without converting
 that fix into Route B/Full. If the root cause is not yet bounded, investigate under Route C and re-route only after the

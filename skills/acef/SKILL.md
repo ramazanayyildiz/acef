@@ -62,6 +62,10 @@ deterministic closeout. ATDD is an optional third context. Do not schedule Proce
 Test Review, optional NFR, or repeated broad suites for this contract. Alert at 20 minutes; stop/replan at 30 minutes,
 on a second root cause/review cycle, or after any framework failure.
 
+Before active-run bootstrap, split independent defects and unrelated audit findings. A shared CI/release theme does not
+make them one Full story. Return `REPLAN/SPLIT`, then route each proven bounded defect separately; Full remains reserved
+for one coherent planning-heavy contract.
+
 New `direct` runs are retired because repeated real-task measurement remained slower and less reliable than both native
 and lightweight work. An existing `ACEF_DIRECT_RUN.json` is compatibility state only; use
 `.acef/bin/acef-state direct-run --help` to close or promote that existing record.

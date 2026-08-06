@@ -9,6 +9,15 @@ or evidence contract. Do not use it to claim implementation status; link to the 
 
 ## Unreleased
 
+### Bundled defects now split before active-run bootstrap
+
+- Added an aggregate-defect readiness rule: independent root causes, unrelated audit findings, and shared-suite repair
+  batches return `REPLAN/SPLIT` instead of being wrapped in one Full BMAD story.
+- Made the typed state writer execute two-axis workflow selection before it writes a new intake run. Invalid risk-only
+  Full routing and repair-batch aggregation now fail without leaving stale active-run artifacts.
+- Kept a deliberate exception for one cross-surface defect only when both `root-cause-proven` and `bounded-patch` are
+  recorded; that unit can use ACEF Fix + Guarded.
+
 ### Quick Fix now has one review and deterministic closeout
 
 - Added `single-review-v1` as the default contract for new ACEF Fix runs. Its normal topology is one Developer and one

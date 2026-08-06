@@ -29,6 +29,7 @@
     ],
     "workflow": [
       "scripts/lib/acef-execution-policy.js",
+      "scripts/lib/acef-execution-policy.js#aggregateDefectRequiresSplit",
       "scripts/lib/acef-execution-policy.js#workflowSelectionFailures",
       "scripts/lib/acef-state-parser.js#parseActiveRun",
       "scripts/lib/acef-state-parser.js#parseAtddCorrection",
@@ -69,6 +70,7 @@
     "Deterministic Stage 0 passed 6/6. Neither the first P0 pair nor the clean v2 candidate rerun produced an eligible process-and-product PASS. This capability remains enforced, not proven or installed.",
     "The clean v2 candidate rerun completed in 11,174.7 active seconds with a green integration command but correctly failed closeout. Its 25 expected and 26 observed actor invocations are retained as recovery evidence; the versioned v3 treatment must pass before controlled-canary promotion.",
     "New intake decisions carry routingPolicyVersion two-axis-v1. Under that policy, risk-only Full selection fails lane-selection; a proven bounded defect can use ACEF Fix + Guarded, while explicit planning/scope triggers still require Full. Existing intake records without the version retain compatibility behavior.",
+    "Two-axis intake marked as an independent/broad repair batch is rejected with REPLAN/SPLIT before active-run bootstrap unless one root-cause-proven bounded envelope is recorded. This depends on honest trigger classification; validator rechecks the stored decision at lane selection.",
     "A migrated compatibility Full run may record terminal FAIL, REPLAN, or BLOCKED without retroactively satisfying stale lifecycle state. This is not certification: the close commit is limited to the active-run record and its exactly bound terminal gate, and cannot include application changes. Once both records are committed unchanged, they are inert for later commits; tampering with either record fails closed."
   ],
   "evidence": [
@@ -80,7 +82,7 @@
     {
       "layer": "tests",
       "ref": "scripts/test-acef-process-validator",
-      "note": "Exercises validator and hook enforcement, including stock BMAD non-activation, two-axis lane-selection rejection of risk-only Full over-routing, exact record-only terminal REPLAN closure for a drifted compatibility Full run, rejection of staged application changes during close, and inert behavior after the terminal records are committed unchanged."
+      "note": "Exercises validator and hook enforcement, including stock BMAD non-activation, two-axis rejection of risk-only Full and bundled independent defects, exact record-only terminal REPLAN closure for a drifted compatibility Full run, rejection of staged application changes during close, and inert behavior after terminal records are committed unchanged."
     },
     {
       "layer": "tests",

@@ -74,6 +74,11 @@ details before producing a spec or plan. If unresolved questions remain, do not 
 
 Start with the smallest plausible route, then escalate when evidence requires it.
 
+Before choosing execution depth, inventory defect/root-cause units. Two or more independent root causes, unrelated
+audit findings, or shared-suite failures are `REPLAN/SPLIT`, not one Full story. Split first, then route each unit. A
+single defect that crosses surfaces may remain ACEF Fix only when `root-cause-proven` and `bounded-patch` are both true.
+Do not use Full BMAD as an umbrella for a repair batch.
+
 Admit a native task to Route A/B/C when it is irreversible, crosses more than one product surface or technical boundary,
 needs a new pattern, or touches persistence, auth/security/privacy, money, migration, provider integration,
 realtime/concurrency/state-machine, tracking/reporting/analytics, or multi-session/worker coordination.
@@ -113,6 +118,8 @@ Do not run yet:
 - Do not run all SDLC phases; run only what the route needs.
 - A reproduced defect with proven root cause, bounded patch, and no new contract may use ACEF Fix + Guarded even when
   it touches money, entitlement, auth, realtime, or a public surface. This is correct routing, not a non-BMAD exception.
+- Never aggregate CI/config/runtime/test audit findings merely because they share a release theme. Mark the intake with
+  the relevant aggregate-defect trigger and return `REPLAN/SPLIT` before writing active-run state.
 - NFR assessment is required only when the change adds or changes a non-functional contract or an acceptance criterion
   names one. Risky subject matter alone is not an NFR trigger.
 - During Fix/Standard work run focused verification. During Full stories run focused verification and run the broad

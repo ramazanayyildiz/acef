@@ -22,6 +22,10 @@ New ACEF Fix runs use `quickFixContract: single-review-v1`: one developer, one i
 and revert-proof evidence, then deterministic closeout. Guarded may strengthen evidence and scope controls, but it does
 not add Process Judge, Patch Assurance, Verify-Patch, Test Review, or a second review cycle to Quick Fix.
 
+Do not turn a batch of independent defects into one Full story. If intake contains multiple root causes or unrelated
+audit findings, return `REPLAN/SPLIT` before active-run bootstrap and route each proven bounded defect independently.
+Full is for one coherent planning-heavy contract, not a container for repair batches.
+
 Use typed active-run v2 fields `workflowId`, `assuranceProfile`, and `scopeUnit`. New Full runs also use
 `fullFlowContract: four-actor-v3`; an existing Full record without that field means compatibility
 `six-actor-v2`. A legacy active `lane: guarded` is ambiguous and must be explicitly migrated before writes are

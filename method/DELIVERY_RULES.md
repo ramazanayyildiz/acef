@@ -150,6 +150,10 @@ Risk alone never satisfies this promotion list. A reproduced, root-cause-proven,
 Guarded across multiple risky boundaries when it introduces no architecture, contract, or product-scope change. That
 selection is not an exception and does not require permission to skip BMAD.
 
+Multiple independent defects do not become Full merely because they share an audit, CI, or release theme. Readiness
+must inventory root causes and return `REPLAN/SPLIT` before active-run bootstrap. Route each bounded defect separately;
+create a Full unit only for a coherent planning-heavy contract that remains after the split.
+
 NFR work and broad regression are conditional controls, not lifecycle defaults. Create or refresh an NFR assessment
 only when the patch adds/changes a non-functional contract or an acceptance criterion names one. Use focused tests
 during Fix/Standard and during Full stories. Run a broad suite once at Full/epic close, or once for Fix/Standard only

@@ -2333,6 +2333,16 @@ try {
     /risk boundaries select Guarded assurance, not Full/);
   fs.writeFileSync(routingPath, JSON.stringify({
     ...billingDefectRun,
+    runId: "RUN-ci-repair-batch",
+    workflowId: "full-bmad",
+    activeStory: "CI reliability repair batch",
+    workflowRationale: "The work spans workflow triggers, browser exit semantics, static-analysis policy, and shared test failures.",
+    riskTriggers: ["bugfix", "broad-cross-surface", "shared-test-failures", "ci-gates"],
+  }, null, 2));
+  expectFailMessage("lane-selection", ["--repo", routingRepo, "--check", "lane-selection"],
+    /REPLAN\/SPLIT: independent or unbounded defect inventory/);
+  fs.writeFileSync(routingPath, JSON.stringify({
+    ...billingDefectRun,
     workflowId: "full-bmad",
     riskTriggers: [...billingDefectRun.riskTriggers, "new-contract"],
   }, null, 2));

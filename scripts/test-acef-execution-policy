@@ -83,6 +83,18 @@ assert.match(workflowSelectionFailures({
   ...provenBillingDefect,
   riskTriggers: ["bugfix", "billing"],
 }).join("\n"), /root-cause-proven/);
+const bundledAuditRepairs = {
+  workflowId: "full-bmad",
+  assuranceProfile: "guarded",
+  scopeUnit: "story",
+  riskTriggers: ["bugfix", "broad-cross-surface", "shared-test-failures", "ci-gates"],
+};
+assert.match(workflowSelectionFailures(bundledAuditRepairs).join("\n"), /REPLAN\/SPLIT.*repair batch/);
+assert.doesNotMatch(workflowSelectionFailures({
+  ...bundledAuditRepairs,
+  workflowId: "quick-fix",
+  riskTriggers: [...bundledAuditRepairs.riskTriggers, "root-cause-proven", "bounded-patch"],
+}).join("\n"), /REPLAN\/SPLIT/);
 
 const legacyGuarded = normalizeExecutionState({ lane: "guarded", activeEpic: null });
 assert.equal(legacyGuarded.executionMigrationRequired, true);

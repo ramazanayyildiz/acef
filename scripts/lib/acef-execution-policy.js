@@ -17,6 +17,16 @@ const PLANNING_DEPTH_TRIGGERS = Object.freeze(new Set([
   "requirements-ambiguous",
   "scope-expansion",
 ]));
+const AGGREGATE_DEFECT_TRIGGERS = Object.freeze(new Set([
+  "audit-finding-batch",
+  "broad-cross-surface",
+  "independent-failure-batch",
+  "multiple-defects",
+  "multiple-independent-failures",
+  "multiple-root-causes",
+  "repair-batch",
+  "shared-test-failures",
+]));
 
 function normalizedTrigger(value) {
   return String(value || "").trim().toLowerCase().replace(/[_ ]+/g, "-");
@@ -28,11 +38,23 @@ function planningRequiresFull(record = {}) {
   return (record.riskTriggers || []).some((trigger) => PLANNING_DEPTH_TRIGGERS.has(normalizedTrigger(trigger)));
 }
 
+function aggregateDefectRequiresSplit(record = {}) {
+  if (record.scopeUnit === "epic") return false;
+  const triggers = new Set((record.riskTriggers || []).map(normalizedTrigger));
+  const defect = ["bugfix", "bug-fix", "defect"].some((trigger) => triggers.has(trigger));
+  const aggregate = [...AGGREGATE_DEFECT_TRIGGERS].some((trigger) => triggers.has(trigger));
+  const oneProvenEnvelope = triggers.has("root-cause-proven") && triggers.has("bounded-patch");
+  return defect && aggregate && !oneProvenEnvelope;
+}
+
 function workflowSelectionFailures(record = {}) {
   const selected = workflowId(record);
   const triggers = new Set((record.riskTriggers || []).map(normalizedTrigger));
   const planningHeavy = planningRequiresFull(record);
   const failures = [];
+  if (aggregateDefectRequiresSplit(record)) {
+    failures.push("REPLAN/SPLIT: independent or unbounded defect inventory must be split before workflow selection; Full BMAD is not a container for a repair batch");
+  }
   if (selected === "full-bmad" && !planningHeavy) {
     failures.push("Full BMAD requires a planning/scope trigger; high-risk boundaries select Guarded assurance, not Full execution");
   }
@@ -174,12 +196,14 @@ function resolveControlBundle(manifest, workflow, assurance = "baseline") {
 }
 
 module.exports = {
+  AGGREGATE_DEFECT_TRIGGERS,
   ASSURANCE_PROFILES,
   GUARDED_RISK_PATTERN,
   PLANNING_DEPTH_TRIGGERS,
   SCOPE_UNITS,
   WORKFLOW_IDS,
   assuranceProfile,
+  aggregateDefectRequiresSplit,
   displayName,
   isFull,
   isGuarded,

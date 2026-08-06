@@ -356,6 +356,10 @@ ACEF Fix must promote to ACEF Full when reproduction is unclear, the patch expan
 creates a new pattern, or the after-patch evidence does not directly cover the reproduced failure. A high-risk surface
 adds Guarded assurance; it is not itself a planning-depth promotion.
 
+Promotion is not aggregation. When an intake bundles independent audit findings, multiple root causes, or unrelated
+suite failures, readiness returns `REPLAN/SPLIT` before active-run creation. Each resulting defect is routed on its own;
+Full is reserved for a coherent new contract/architecture/workflow, not used as a repair-batch container.
+
 Quick-fix scope is intentionally wider than one implementation file. The conductor records a computed envelope in
 `docs/ai/ACEF_LIGHTWEIGHT_RUN.json`: implementation paths, tests that exercise the touched symbols/routes, fixtures,
 snapshots, smoke/route files, and shared resources. The human approves this envelope once. Workers do not stop for a new
