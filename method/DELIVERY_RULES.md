@@ -154,6 +154,9 @@ Multiple independent defects do not become Full merely because they share an aud
 must inventory root causes and return `REPLAN/SPLIT` before active-run bootstrap. Splitting does not admit the children:
 re-run admission for every bounded work item, keep native-eligible items outside ACEF, and create a Full unit only for a
 coherent planning-heavy contract that remains after the split.
+New typed intake records reversibility plus technical-boundary and product-surface counts. When all three prove a
+reversible single-boundary/single-surface repair and no ACEF control trigger remains, bootstrap fails with
+`NATIVE_WORKFLOW`; importance or release-certification language alone does not admit the work.
 
 NFR work and broad regression are conditional controls, not lifecycle defaults. Create or refresh an NFR assessment
 only when the patch adds/changes a non-functional contract or an acceptance criterion names one. Use focused tests

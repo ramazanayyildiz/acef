@@ -2370,6 +2370,30 @@ try {
     intakeDecision: splitChildDecision,
   }, null, 2));
   expectPass("lane-selection", ["--repo", routingRepo, "--check", "lane-selection"]);
+  const nativeSplitDecision = {
+    ...splitChildDecision,
+    routingPolicyVersion: "two-axis-v3",
+    admissionRationale: "Release certification integrity was considered important.",
+    reversible: true,
+    technicalBoundaryCount: 1,
+    productSurfaceCount: 1,
+  };
+  fs.writeFileSync(routingPath, JSON.stringify({
+    ...billingDefectRun,
+    runId: "RUN-ci-trigger-split-child",
+    activeStory: "Repair one CI branch trigger",
+    intakeDecision: nativeSplitDecision,
+    riskTriggers: ["bugfix", "root-cause-proven", "bounded-patch", "release-certification-integrity"],
+  }, null, 2));
+  expectFailMessage("lane-selection", ["--repo", routingRepo, "--check", "lane-selection"], /NATIVE_WORKFLOW/);
+  fs.writeFileSync(routingPath, JSON.stringify({
+    ...billingDefectRun,
+    runId: "RUN-auth-split-child",
+    activeStory: "Repair one authorization boundary",
+    intakeDecision: { ...nativeSplitDecision, admissionRationale: "The bounded defect crosses authorization." },
+    riskTriggers: ["bugfix", "root-cause-proven", "bounded-patch", "authorization"],
+  }, null, 2));
+  expectPass("lane-selection", ["--repo", routingRepo, "--check", "lane-selection"]);
   fs.rmSync(routingRepo, { recursive: true, force: true });
 
   console.log("acef-process-validator tests passed");

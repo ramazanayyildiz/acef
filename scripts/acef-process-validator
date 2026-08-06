@@ -3545,8 +3545,8 @@ function checkLaneSelection(repoRoot) {
   if (guardedTrigger && !isGuarded(activeRun)) {
     failures.push(`risk trigger requires guarded assurance: ${guardedTrigger}`);
   }
-  if (["two-axis-v1", "two-axis-v2"].includes(activeRun.intakeDecision?.routingPolicyVersion)) {
-    if (activeRun.intakeDecision.routingPolicyVersion === "two-axis-v2") {
+  if (["two-axis-v1", "two-axis-v2", "two-axis-v3"].includes(activeRun.intakeDecision?.routingPolicyVersion)) {
+    if (["two-axis-v2", "two-axis-v3"].includes(activeRun.intakeDecision.routingPolicyVersion)) {
       const decision = activeRun.intakeDecision;
       if (decision.admissionDecision !== "acef") {
         failures.push("active ACEF run requires admissionDecision=acef; native work must not create run artifacts");
@@ -3557,6 +3557,12 @@ function checkLaneSelection(repoRoot) {
       if (decision.sourceDisposition === "split-child"
         && (!decision.parentRunId || decision.reAdmissionConfirmed !== true)) {
         failures.push("split child must be independently re-admitted with parentRunId and reAdmissionConfirmed=true");
+      }
+      if (decision.routingPolicyVersion === "two-axis-v3"
+        && (typeof decision.reversible !== "boolean"
+          || !Number.isInteger(decision.technicalBoundaryCount) || decision.technicalBoundaryCount < 1
+          || !Number.isInteger(decision.productSurfaceCount) || decision.productSurfaceCount < 1)) {
+        failures.push("two-axis-v3 admission requires reversible and positive technicalBoundaryCount/productSurfaceCount topology fields");
       }
     }
     failures.push(...workflowSelectionFailures({ ...activeRun, riskTriggers: allTriggers }));

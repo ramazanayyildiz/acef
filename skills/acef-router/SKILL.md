@@ -84,6 +84,10 @@ audit findings, or shared-suite failures are `REPLAN/SPLIT`, not one Full story.
 single defect that crosses surfaces may remain ACEF Fix only when `root-cause-proven` and `bounded-patch` are both true.
 Do not use Full BMAD as an umbrella for a repair batch.
 
+After splitting, perform admission again before choosing Fix/Standard/Full. Record reversibility, technical-boundary
+count, and product-surface count. A reversible `1/1` child without an ACEF control trigger is `NATIVE_WORKFLOW`, even
+when CI or release certification is important; do not create ACEF artifacts for it.
+
 Admit a native task to Route A/B/C when it is irreversible, crosses more than one product surface or technical boundary,
 needs a new pattern, or touches persistence, auth/security/privacy, money, migration, provider integration,
 realtime/concurrency/state-machine, tracking/reporting/analytics, or multi-session/worker coordination.

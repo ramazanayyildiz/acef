@@ -1,6 +1,6 @@
 {
   "capabilityId": "intake-decision-gate",
-  "requestedIntent": "Prevent ACEF agents from entering planning or execution before recording the route/intake decision, explicit ACEF admission, clarifying questions or inferred answers, approved interview brief, and execution approval; require every split child to return to admission instead of inheriting its parent run.",
+  "requestedIntent": "Prevent ACEF agents from entering planning or execution before recording the route/intake decision, explicit ACEF admission, admission topology, clarifying questions or inferred answers, approved interview brief, and execution approval; require every split child to return to admission instead of inheriting its parent run or automatically creating another ACEF lifecycle.",
   "status": "enforced",
   "requiredLayers": [
     "docs",
@@ -31,8 +31,8 @@
     ]
   },
   "limitations": [
-    "The gate enforces recorded intake, explicit ACEF admission, post-split re-admission, interview brief approval, and execution approval for newly written typed active runs; it does not prove that the human conversation actually happened outside recorded artifacts.",
-    "Existing two-axis-v1 records remain readable for compatibility; new state-writer records use two-axis-v2.",
+    "The gate enforces recorded intake, explicit ACEF admission, post-split re-admission, topology-based native rejection, interview brief approval, and execution approval for newly written typed active runs; it does not prove that the human conversation actually happened outside recorded artifacts.",
+    "Existing two-axis-v1/v2 records remain readable for compatibility; new state-writer records use two-axis-v3 with reversible, technicalBoundaryCount, and productSurfaceCount.",
     "Target repositories must refresh their ACEF installation before this gate is installed there."
   ],
   "evidence": [

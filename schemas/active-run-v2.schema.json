@@ -90,12 +90,15 @@
       "additionalProperties": false,
       "required": ["route", "confidence"],
       "properties": {
-        "routingPolicyVersion": { "type": "string", "enum": ["two-axis-v1", "two-axis-v2"] },
+        "routingPolicyVersion": { "type": "string", "enum": ["two-axis-v1", "two-axis-v2", "two-axis-v3"] },
         "route": { "type": "string", "minLength": 1 },
         "confidence": { "type": "string", "enum": ["low", "medium", "high"] },
         "admissionDecision": { "type": "string", "enum": ["acef"] },
         "admissionRationale": { "type": "string", "minLength": 1 },
         "sourceDisposition": { "type": "string", "enum": ["fresh", "split-child"] },
+        "reversible": { "type": "boolean" },
+        "technicalBoundaryCount": { "type": "integer", "minimum": 1 },
+        "productSurfaceCount": { "type": "integer", "minimum": 1 },
         "parentRunId": { "type": "string", "pattern": "^[A-Za-z0-9._-]+$" },
         "reAdmissionConfirmed": { "type": "boolean" },
         "clarifyingQuestions": {
@@ -122,6 +125,15 @@
           },
           "then": {
             "required": ["admissionDecision", "admissionRationale", "sourceDisposition"]
+          }
+        },
+        {
+          "if": {
+            "required": ["routingPolicyVersion"],
+            "properties": { "routingPolicyVersion": { "const": "two-axis-v3" } }
+          },
+          "then": {
+            "required": ["admissionDecision", "admissionRationale", "sourceDisposition", "reversible", "technicalBoundaryCount", "productSurfaceCount"]
           }
         },
         {

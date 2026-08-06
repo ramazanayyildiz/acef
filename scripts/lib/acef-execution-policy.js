@@ -27,6 +27,7 @@ const AGGREGATE_DEFECT_TRIGGERS = Object.freeze(new Set([
   "repair-batch",
   "shared-test-failures",
 ]));
+const ACEF_CONTROL_TRIGGER_PATTERN = /(?:^|[-_ ])(?:auth(?:entication|orization|orisation|z)?|permission|entitlement|tenant|credential|token|session|webhook|security|privacy|pii|personal[-_ ]?data|consent|retention|data[-_ ]?(?:delete|deletion)|billing|payment|money|accounting|financial|subscription|refund|persistence|database|migration|external[-_ ]?provider|provider[-_ ]?integration|realtime|concurrency|fencing|state[-_ ]?machine|tracking|reporting|analytics|new[-_ ]?pattern|multi[-_ ]?session|multi[-_ ]?worker|worker[-_ ]?coordination|irreversible|destructive)(?:$|[-_ ])/i;
 
 function normalizedTrigger(value) {
   return String(value || "").trim().toLowerCase().replace(/[_ ]+/g, "-");
@@ -47,11 +48,28 @@ function aggregateDefectRequiresSplit(record = {}) {
   return defect && aggregate && !oneProvenEnvelope;
 }
 
+function admissionControlTrigger(record = {}) {
+  return (record.riskTriggers || []).find((trigger) => ACEF_CONTROL_TRIGGER_PATTERN.test(normalizedTrigger(trigger))) || null;
+}
+
+function nativeWorkflowRequired(record = {}) {
+  const decision = record.intakeDecision || {};
+  if (decision.routingPolicyVersion !== "two-axis-v3") return false;
+  return decision.reversible === true
+    && decision.technicalBoundaryCount === 1
+    && decision.productSurfaceCount === 1
+    && !admissionControlTrigger(record)
+    && !planningRequiresFull(record);
+}
+
 function workflowSelectionFailures(record = {}) {
   const selected = workflowId(record);
   const triggers = new Set((record.riskTriggers || []).map(normalizedTrigger));
   const planningHeavy = planningRequiresFull(record);
   const failures = [];
+  if (nativeWorkflowRequired(record)) {
+    failures.push("NATIVE_WORKFLOW: reversible contained work with one technical boundary and one product surface does not qualify for ACEF; use focused verification and review without ACEF run artifacts");
+  }
   if (aggregateDefectRequiresSplit(record)) {
     failures.push("REPLAN/SPLIT: independent or unbounded defect inventory must be split before workflow selection; Full BMAD is not a container for a repair batch");
   }
@@ -196,6 +214,7 @@ function resolveControlBundle(manifest, workflow, assurance = "baseline") {
 }
 
 module.exports = {
+  ACEF_CONTROL_TRIGGER_PATTERN,
   AGGREGATE_DEFECT_TRIGGERS,
   ASSURANCE_PROFILES,
   GUARDED_RISK_PATTERN,
@@ -203,6 +222,7 @@ module.exports = {
   SCOPE_UNITS,
   WORKFLOW_IDS,
   assuranceProfile,
+  admissionControlTrigger,
   aggregateDefectRequiresSplit,
   displayName,
   isFull,
@@ -210,6 +230,7 @@ module.exports = {
   isHeavy,
   legacyWorkflowId,
   migrationRequired,
+  nativeWorkflowRequired,
   normalizeExecutionState,
   mergeDose,
   resolveControlBundle,

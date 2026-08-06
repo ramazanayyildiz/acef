@@ -347,6 +347,10 @@ child work item re-enters admission independently: native-eligible children use 
 ACEF run; only admitted children select Fix, Standard, or Full. Full is reserved for a coherent new
 contract/architecture/workflow, not used as a repair-batch container.
 
+New typed intake records `reversible`, `technicalBoundaryCount`, and `productSurfaceCount`. A reversible `1/1` child
+without an ACEF control trigger fails bootstrap with `NATIVE_WORKFLOW`; release importance alone is not an admission
+trigger and must not create a per-defect ACEF lifecycle.
+
 Quick-fix scope is intentionally wider than one implementation file. The conductor records a computed envelope in
 `docs/ai/ACEF_LIGHTWEIGHT_RUN.json`: implementation paths, tests that exercise the touched symbols/routes, fixtures,
 snapshots, smoke/route files, and shared resources. The human approves this envelope once. Workers do not stop for a new

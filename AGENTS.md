@@ -26,6 +26,10 @@ Do not turn a batch of independent defects into one Full story. If intake contai
 audit findings, return `REPLAN/SPLIT` before active-run bootstrap and route each proven bounded defect independently.
 Full is for one coherent planning-heavy contract, not a container for repair batches.
 
+Splitting is followed by admission, not automatic ACEF bootstrap. New intake must record reversibility, technical
+boundary count, and product-surface count. A reversible one-boundary/one-surface child without an ACEF control trigger
+uses the native repository workflow and must not create ACEF run, evidence, reviewer, or closeout artifacts.
+
 Use typed active-run v2 fields `workflowId`, `assuranceProfile`, and `scopeUnit`. New Full runs also use
 `fullFlowContract: four-actor-v3`; an existing Full record without that field means compatibility
 `six-actor-v2`. A legacy active `lane: guarded` is ambiguous and must be explicitly migrated before writes are

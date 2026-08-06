@@ -261,7 +261,7 @@ function parseActiveRun(filePath) {
     const decision = record.intakeDecision;
     requireFields(decision, ["route", "confidence"], "active run intakeDecision");
     if (decision.routingPolicyVersion !== undefined) {
-      requireEnum(decision, "routingPolicyVersion", ["two-axis-v1", "two-axis-v2"], "active run intakeDecision");
+      requireEnum(decision, "routingPolicyVersion", ["two-axis-v1", "two-axis-v2", "two-axis-v3"], "active run intakeDecision");
     }
     requireEnum(decision, "confidence", ["low", "medium", "high"], "active run intakeDecision");
     for (const field of ["clarifyingQuestions", "inferredAnswers", "unresolvedQuestions"]) {
@@ -272,7 +272,7 @@ function parseActiveRun(filePath) {
         throw new Error(`active run intakeDecision ${field} must be boolean`);
       }
     }
-    if (decision.routingPolicyVersion === "two-axis-v2") {
+    if (["two-axis-v2", "two-axis-v3"].includes(decision.routingPolicyVersion)) {
       requireFields(decision, ["admissionDecision", "admissionRationale", "sourceDisposition"], "active run intakeDecision");
       requireEnum(decision, "admissionDecision", ["acef"], "active run intakeDecision");
       requireEnum(decision, "sourceDisposition", ["fresh", "split-child"], "active run intakeDecision");
@@ -289,6 +289,15 @@ function parseActiveRun(filePath) {
         }
       } else if (decision.parentRunId !== undefined || decision.reAdmissionConfirmed !== undefined) {
         throw new Error("fresh active run must not inherit split parent admission state");
+      }
+      if (decision.routingPolicyVersion === "two-axis-v3") {
+        requireFields(decision, ["reversible", "technicalBoundaryCount", "productSurfaceCount"], "active run intakeDecision");
+        if (typeof decision.reversible !== "boolean") throw new Error("active run intakeDecision reversible must be boolean");
+        for (const field of ["technicalBoundaryCount", "productSurfaceCount"]) {
+          if (!Number.isInteger(decision[field]) || decision[field] < 1) {
+            throw new Error(`active run intakeDecision ${field} must be a positive integer`);
+          }
+        }
       }
     }
   }

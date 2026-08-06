@@ -77,6 +77,22 @@ try {
   if (!bundledRepairFailures.some((failure) => failure.includes("REPLAN/SPLIT"))) {
     throw new Error("installed execution policy did not reject bundled independent defects");
   }
+  const nativeChildFailures = installedExecutionPolicy.workflowSelectionFailures({
+    workflowId: "quick-fix",
+    assuranceProfile: "guarded",
+    scopeUnit: "work-item",
+    intakeDecision: {
+      routingPolicyVersion: "two-axis-v3",
+      admissionDecision: "acef",
+      reversible: true,
+      technicalBoundaryCount: 1,
+      productSurfaceCount: 1,
+    },
+    riskTriggers: ["bugfix", "root-cause-proven", "bounded-patch", "release-certification-integrity"],
+  });
+  if (!nativeChildFailures.some((failure) => failure.includes("NATIVE_WORKFLOW"))) {
+    throw new Error("installed execution policy did not reject native-eligible split child admission");
+  }
   if (!fs.existsSync(installationHelper)) throw new Error("installation support library was not installed");
   if (!fs.existsSync(schema)) throw new Error("typed-state schemas were not installed");
   if (!fs.existsSync(activeRunV2Schema)) throw new Error("active-run v2 schema was not installed");

@@ -15,6 +15,7 @@ const {
   isHeavy,
   normalizeExecutionState,
   planningRequiresFull,
+  nativeWorkflowRequired,
   resolveControlBundle,
   resolveControlDose,
   riskRequiresGuarded,
@@ -95,6 +96,26 @@ assert.doesNotMatch(workflowSelectionFailures({
   workflowId: "quick-fix",
   riskTriggers: [...bundledAuditRepairs.riskTriggers, "root-cause-proven", "bounded-patch"],
 }).join("\n"), /REPLAN\/SPLIT/);
+const containedCiRepair = {
+  workflowId: "quick-fix",
+  assuranceProfile: "guarded",
+  scopeUnit: "work-item",
+  intakeDecision: {
+    routingPolicyVersion: "two-axis-v3",
+    admissionDecision: "acef",
+    reversible: true,
+    technicalBoundaryCount: 1,
+    productSurfaceCount: 1,
+  },
+  riskTriggers: ["bugfix", "root-cause-proven", "bounded-patch", "release-certification-integrity"],
+};
+assert.equal(nativeWorkflowRequired(containedCiRepair), true);
+assert.match(workflowSelectionFailures(containedCiRepair).join("\n"), /NATIVE_WORKFLOW/);
+assert.equal(nativeWorkflowRequired({ ...containedCiRepair, riskTriggers: [...containedCiRepair.riskTriggers, "security"] }), false);
+assert.doesNotMatch(workflowSelectionFailures({
+  ...containedCiRepair,
+  riskTriggers: [...containedCiRepair.riskTriggers, "security"],
+}).join("\n"), /NATIVE_WORKFLOW/);
 
 const legacyGuarded = normalizeExecutionState({ lane: "guarded", activeEpic: null });
 assert.equal(legacyGuarded.executionMigrationRequired, true);

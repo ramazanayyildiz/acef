@@ -321,6 +321,11 @@ ACEF makes three separate decisions. Do not collapse them into one lane name:
 2. **Execution workflow:** planning depth and lifecycle weight.
 3. **Assurance profile:** risk controls added to the selected workflow.
 
+New typed intake makes admission topology explicit with `reversible`, `technicalBoundaryCount`, and
+`productSurfaceCount`. A reversible `1/1` task without an ACEF control trigger is rejected from ACEF as
+`NATIVE_WORKFLOW`, including after `REPLAN/SPLIT`; it receives focused native verification and review instead of a
+per-defect ACEF lifecycle.
+
 | Execution workflow | Stable ID | Use for | Base lifecycle |
 |---|---|---|---|
 | **ACEF Fix** | `quick-fix` | Narrow reproduced defects with clear before/after evidence. | Computed fix envelope, focused implementation, independent review, focused verification, closeout evidence. |

@@ -9,6 +9,14 @@ or evidence contract. Do not use it to claim implementation status; link to the 
 
 ## Unreleased
 
+### Split children now fail closed to the native workflow
+
+- Added typed admission topology to new intake: reversibility, technical-boundary count, and product-surface count.
+- Reject ACEF bootstrap with `NATIVE_WORKFLOW` when a split child is reversible, single-boundary, single-surface, and
+  has no persistence/security/money/provider/realtime/state-machine/analytics/new-pattern coordination trigger.
+- Kept `release-certification-integrity` and similar importance labels from acting as ACEF admission by themselves;
+  native work still uses focused verification and review without per-defect ACEF artifacts.
+
 ### Bundled defects now split before active-run bootstrap
 
 - Added an aggregate-defect readiness rule: independent root causes, unrelated audit findings, and shared-suite repair

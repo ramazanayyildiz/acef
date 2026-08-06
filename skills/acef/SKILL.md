@@ -66,6 +66,8 @@ Before active-run bootstrap, split independent defects and unrelated audit findi
 make them one Full story. `REPLAN/SPLIT` invalidates the parent admission decision: send every child work item back to
 ACEF admission independently. Native-eligible children stay outside ACEF and create no run artifacts; only admitted
 children proceed to Fix, Standard, or Full. Full remains reserved for one coherent planning-heavy contract.
+New typed intake records reversibility and technical/product topology; a reversible one-boundary/one-surface child
+without an ACEF control trigger is mechanically rejected as `NATIVE_WORKFLOW` before state is written.
 
 New `direct` runs are retired because repeated real-task measurement remained slower and less reliable than both native
 and lightweight work. An existing `ACEF_DIRECT_RUN.json` is compatibility state only; use
