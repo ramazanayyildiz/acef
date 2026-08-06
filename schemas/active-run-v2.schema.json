@@ -90,9 +90,14 @@
       "additionalProperties": false,
       "required": ["route", "confidence"],
       "properties": {
-        "routingPolicyVersion": { "type": "string", "enum": ["two-axis-v1"] },
+        "routingPolicyVersion": { "type": "string", "enum": ["two-axis-v1", "two-axis-v2"] },
         "route": { "type": "string", "minLength": 1 },
         "confidence": { "type": "string", "enum": ["low", "medium", "high"] },
+        "admissionDecision": { "type": "string", "enum": ["acef"] },
+        "admissionRationale": { "type": "string", "minLength": 1 },
+        "sourceDisposition": { "type": "string", "enum": ["fresh", "split-child"] },
+        "parentRunId": { "type": "string", "pattern": "^[A-Za-z0-9._-]+$" },
+        "reAdmissionConfirmed": { "type": "boolean" },
         "clarifyingQuestions": {
           "type": "array",
           "items": { "type": "string", "minLength": 1 }
@@ -108,7 +113,28 @@
         "briefApproved": { "type": "boolean" },
         "approvalRequired": { "type": "boolean" },
         "executionApproved": { "type": "boolean" }
-      }
+      },
+      "allOf": [
+        {
+          "if": {
+            "required": ["routingPolicyVersion"],
+            "properties": { "routingPolicyVersion": { "const": "two-axis-v2" } }
+          },
+          "then": {
+            "required": ["admissionDecision", "admissionRationale", "sourceDisposition"]
+          }
+        },
+        {
+          "if": {
+            "required": ["sourceDisposition"],
+            "properties": { "sourceDisposition": { "const": "split-child" } }
+          },
+          "then": {
+            "required": ["parentRunId", "reAdmissionConfirmed"],
+            "properties": { "reAdmissionConfirmed": { "const": true } }
+          }
+        }
+      ]
     },
     "riskTriggers": {
       "type": "array",

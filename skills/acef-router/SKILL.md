@@ -19,6 +19,10 @@ Use this skill as the front door for ACEF brownfield work.
 
 Route first. Execute later.
 
+Splitting is decomposition, not admission. After `REPLAN/SPLIT`, reassess every child from the native/ACEF boundary;
+never inherit the parent route, workflow, assurance profile, reviewer requirement, or run state. A native child creates
+no ACEF active run or evidence package.
+
 Route selection is not capability availability. A route says what the work needs; preflight proves whether the required
 lane/tools can actually run. The router must not claim BMAD, tests, CI, or release readiness as available unless the
 later preflight records resolved paths/commands and evidence.
@@ -50,7 +54,8 @@ details before producing a spec or plan. If unresolved questions remain, do not 
    - requirement clear or unclear?
    - platform if relevant?
    - likely risk: multi-repo, new pattern/contract, auth/payment/data/migration?
-2. If the work is a native contained task, return that decision and stop before ACEF artifacts or adapter work.
+2. If the work is a native contained task, return that decision and stop before ACEF artifacts or adapter work. Apply
+   this check again to every item produced by a split.
    Otherwise check whether a project adapter exists and is fresh.
 3. Choose one route:
    - Native/outside ACEF: reversible contained change with one technical boundary and one product surface

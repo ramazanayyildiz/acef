@@ -3545,7 +3545,20 @@ function checkLaneSelection(repoRoot) {
   if (guardedTrigger && !isGuarded(activeRun)) {
     failures.push(`risk trigger requires guarded assurance: ${guardedTrigger}`);
   }
-  if (activeRun.intakeDecision?.routingPolicyVersion === "two-axis-v1") {
+  if (["two-axis-v1", "two-axis-v2"].includes(activeRun.intakeDecision?.routingPolicyVersion)) {
+    if (activeRun.intakeDecision.routingPolicyVersion === "two-axis-v2") {
+      const decision = activeRun.intakeDecision;
+      if (decision.admissionDecision !== "acef") {
+        failures.push("active ACEF run requires admissionDecision=acef; native work must not create run artifacts");
+      }
+      if (!String(decision.admissionRationale || "").trim()) {
+        failures.push("active ACEF run requires an admissionRationale explaining why native workflow is insufficient");
+      }
+      if (decision.sourceDisposition === "split-child"
+        && (!decision.parentRunId || decision.reAdmissionConfirmed !== true)) {
+        failures.push("split child must be independently re-admitted with parentRunId and reAdmissionConfirmed=true");
+      }
+    }
     failures.push(...workflowSelectionFailures({ ...activeRun, riskTriggers: allTriggers }));
   } else {
     const fullTerms = /(new-pattern|new abstraction|shared abstraction|unclear repro|scope expansion|broad refactor|crm|notes?|workflow|reporting|dashboard|tracking)/i;

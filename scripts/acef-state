@@ -52,7 +52,7 @@ The existing direct record is the compact compatibility context. Do not inspect 
   console.log(`ACEF typed-state writer
 
 Usage:
-  acef-state active-run --repo <path> --run-id <id> --workflow-id quick-fix|lightweight|full-bmad [--full-flow-contract six-actor-v2|four-actor-v3] [--runtime-contract capsule-supervisor-v1] --assurance baseline|guarded --scope-unit work-item|story|epic [--expected-story <story>...] --status <status> --story <scope> --phase <phase> --ledger <path> [--route <route> --route-confidence low|medium|high] [--goal-description <text> --goal-user-facing true|false --goal-completion-mode backend-capability|product-workspace|internal] [options]
+  acef-state active-run --repo <path> --run-id <id> --workflow-id quick-fix|lightweight|full-bmad [--full-flow-contract six-actor-v2|four-actor-v3] [--runtime-contract capsule-supervisor-v1] --assurance baseline|guarded --scope-unit work-item|story|epic [--expected-story <story>...] --status <status> --story <scope> --phase <phase> --ledger <path> [--route <route> --route-confidence low|medium|high --admission-decision acef --admission-rationale <text> --source-disposition fresh|split-child] [--parent-run-id <id> --re-admission-confirmed true] [--goal-description <text> --goal-user-facing true|false --goal-completion-mode backend-capability|product-workspace|internal] [options]
   acef-state migrate-active-run --repo <path> --workflow-id quick-fix|lightweight|full-bmad [--assurance baseline|guarded] [--assurance-rationale <text>] [--assurance-approval <approval-id>]
   acef-state direct-run --repo <path> --run-id <id> --status active|complete|promoted --scope <scope> --acceptance <criterion>... --technical-boundary <kind> --reversible true [--changed-path <path>...] [--verification-command <command> --verification-exit-code <code>]... [options]
   acef-state actor --repo <path> --id <id> --story <scope> --phase <phase> --role <role> --client <client> --context-profile <profile> [options]
@@ -130,10 +130,37 @@ function parseBoolean(value, label) {
 
 function intakeDecision(opts) {
   if (!opts.route && !opts.routeConfidence && !opts.clarifyingQuestion.length && !opts.inferredAnswer.length && !opts.unresolvedQuestion.length) return null;
+  if (opts.admissionDecision !== "acef") {
+    throw new Error("active-run requires --admission-decision acef; native work must not create ACEF run artifacts");
+  }
+  if (!String(opts.admissionRationale || "").trim()) {
+    throw new Error("active-run requires --admission-rationale explaining why native workflow is insufficient");
+  }
+  if (!["fresh", "split-child"].includes(opts.sourceDisposition)) {
+    throw new Error("active-run requires --source-disposition fresh|split-child");
+  }
+  if (opts.sourceDisposition === "split-child") {
+    if (!String(opts.parentRunId || "").trim()) {
+      throw new Error("split-child admission requires --parent-run-id");
+    }
+    if (opts.reAdmissionConfirmed === undefined
+      || parseBoolean(opts.reAdmissionConfirmed, "--re-admission-confirmed") !== true) {
+      throw new Error("split-child admission requires --re-admission-confirmed true");
+    }
+  } else if (opts.parentRunId !== undefined || opts.reAdmissionConfirmed !== undefined) {
+    throw new Error("fresh admission must not inherit split parent state");
+  }
   const record = {
-    routingPolicyVersion: "two-axis-v1",
+    routingPolicyVersion: "two-axis-v2",
     route: opts.route || "",
     confidence: opts.routeConfidence || "medium",
+    admissionDecision: "acef",
+    admissionRationale: opts.admissionRationale,
+    sourceDisposition: opts.sourceDisposition,
+    ...(opts.sourceDisposition === "split-child" ? {
+      parentRunId: safeId(opts.parentRunId, "parent run id"),
+      reAdmissionConfirmed: true,
+    } : {}),
     clarifyingQuestions: opts.clarifyingQuestion,
     inferredAnswers: opts.inferredAnswer,
     unresolvedQuestions: opts.unresolvedQuestion,
@@ -467,7 +494,7 @@ function writeActiveRun(opts) {
     contextPath: opts.context || (sameRun ? previous.contextPath : null),
     updatedAt: new Date().toISOString(),
   };
-  if (record.intakeDecision?.routingPolicyVersion === "two-axis-v1"
+  if (["two-axis-v1", "two-axis-v2"].includes(record.intakeDecision?.routingPolicyVersion)
     && (!sameRun || normalizedScope(record.activePhase) === "intake")) {
     const routingFailures = workflowSelectionFailures(record);
     if (routingFailures.length) {

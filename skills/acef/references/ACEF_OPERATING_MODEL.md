@@ -342,8 +342,10 @@ ACEF Fix must promote to ACEF Full when reproduction is unclear, scope expands, 
 evidence does not cover the reproduced failure. High risk adds Guarded assurance rather than changing planning depth.
 
 Promotion is not aggregation. When an intake bundles independent audit findings, multiple root causes, or unrelated
-suite failures, readiness returns `REPLAN/SPLIT` before active-run creation. Each resulting defect is routed on its own;
-Full is reserved for a coherent new contract/architecture/workflow, not used as a repair-batch container.
+suite failures, readiness returns `REPLAN/SPLIT` before active-run creation. The parent admission is then void. Each
+child work item re-enters admission independently: native-eligible children use the repository workflow and create no
+ACEF run; only admitted children select Fix, Standard, or Full. Full is reserved for a coherent new
+contract/architecture/workflow, not used as a repair-batch container.
 
 Quick-fix scope is intentionally wider than one implementation file. The conductor records a computed envelope in
 `docs/ai/ACEF_LIGHTWEIGHT_RUN.json`: implementation paths, tests that exercise the touched symbols/routes, fixtures,

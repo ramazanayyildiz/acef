@@ -2347,6 +2347,29 @@ try {
     riskTriggers: [...billingDefectRun.riskTriggers, "new-contract"],
   }, null, 2));
   expectPass("lane-selection", ["--repo", routingRepo, "--check", "lane-selection"]);
+
+  const splitChildDecision = {
+    ...billingDefectRun.intakeDecision,
+    routingPolicyVersion: "two-axis-v2",
+    admissionDecision: "acef",
+    admissionRationale: "The bounded billing defect crosses a guarded authorization boundary.",
+    sourceDisposition: "split-child",
+    parentRunId: "RUN-ci-repair-batch",
+    reAdmissionConfirmed: true,
+  };
+  fs.writeFileSync(routingPath, JSON.stringify({
+    ...billingDefectRun,
+    runId: "RUN-billing-split-child",
+    intakeDecision: { ...splitChildDecision, reAdmissionConfirmed: false },
+  }, null, 2));
+  expectFailMessage("validator", ["--repo", routingRepo, "--check", "lane-selection"],
+    /reAdmissionConfirmed=true/);
+  fs.writeFileSync(routingPath, JSON.stringify({
+    ...billingDefectRun,
+    runId: "RUN-billing-split-child",
+    intakeDecision: splitChildDecision,
+  }, null, 2));
+  expectPass("lane-selection", ["--repo", routingRepo, "--check", "lane-selection"]);
   fs.rmSync(routingRepo, { recursive: true, force: true });
 
   console.log("acef-process-validator tests passed");

@@ -63,8 +63,9 @@ Test Review, optional NFR, or repeated broad suites for this contract. Alert at 
 on a second root cause/review cycle, or after any framework failure.
 
 Before active-run bootstrap, split independent defects and unrelated audit findings. A shared CI/release theme does not
-make them one Full story. Return `REPLAN/SPLIT`, then route each proven bounded defect separately; Full remains reserved
-for one coherent planning-heavy contract.
+make them one Full story. `REPLAN/SPLIT` invalidates the parent admission decision: send every child work item back to
+ACEF admission independently. Native-eligible children stay outside ACEF and create no run artifacts; only admitted
+children proceed to Fix, Standard, or Full. Full remains reserved for one coherent planning-heavy contract.
 
 New `direct` runs are retired because repeated real-task measurement remained slower and less reliable than both native
 and lightweight work. An existing `ACEF_DIRECT_RUN.json` is compatibility state only; use

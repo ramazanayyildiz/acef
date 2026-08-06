@@ -261,7 +261,7 @@ function parseActiveRun(filePath) {
     const decision = record.intakeDecision;
     requireFields(decision, ["route", "confidence"], "active run intakeDecision");
     if (decision.routingPolicyVersion !== undefined) {
-      requireEnum(decision, "routingPolicyVersion", ["two-axis-v1"], "active run intakeDecision");
+      requireEnum(decision, "routingPolicyVersion", ["two-axis-v1", "two-axis-v2"], "active run intakeDecision");
     }
     requireEnum(decision, "confidence", ["low", "medium", "high"], "active run intakeDecision");
     for (const field of ["clarifyingQuestions", "inferredAnswers", "unresolvedQuestions"]) {
@@ -270,6 +270,25 @@ function parseActiveRun(filePath) {
     for (const field of ["briefApproved", "approvalRequired", "executionApproved"]) {
       if (decision[field] !== undefined && typeof decision[field] !== "boolean") {
         throw new Error(`active run intakeDecision ${field} must be boolean`);
+      }
+    }
+    if (decision.routingPolicyVersion === "two-axis-v2") {
+      requireFields(decision, ["admissionDecision", "admissionRationale", "sourceDisposition"], "active run intakeDecision");
+      requireEnum(decision, "admissionDecision", ["acef"], "active run intakeDecision");
+      requireEnum(decision, "sourceDisposition", ["fresh", "split-child"], "active run intakeDecision");
+      if (typeof decision.admissionRationale !== "string" || !decision.admissionRationale.trim()) {
+        throw new Error("active run intakeDecision admissionRationale must explain why native workflow is insufficient");
+      }
+      if (decision.sourceDisposition === "split-child") {
+        requireFields(decision, ["parentRunId", "reAdmissionConfirmed"], "active run split-child intakeDecision");
+        if (!/^[A-Za-z0-9._-]+$/.test(decision.parentRunId)) {
+          throw new Error("active run split-child parentRunId must be a safe run id");
+        }
+        if (decision.reAdmissionConfirmed !== true) {
+          throw new Error("active run split-child must record reAdmissionConfirmed=true");
+        }
+      } else if (decision.parentRunId !== undefined || decision.reAdmissionConfirmed !== undefined) {
+        throw new Error("fresh active run must not inherit split parent admission state");
       }
     }
   }
