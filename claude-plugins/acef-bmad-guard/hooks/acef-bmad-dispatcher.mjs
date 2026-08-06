@@ -69,6 +69,7 @@ function candidatePaths(payload) {
     input?.filePath,
     input?.path,
     input?.cwd,
+    input?.workdir,
   ].filter(Boolean);
 }
 
@@ -99,7 +100,7 @@ if (!hookPath) {
   process.exit(0);
 }
 
-const result = spawnSync(process.execPath, [hookPath], {
+  const result = spawnSync(process.execPath, [hookPath], {
   input: raw,
   encoding: "utf8",
   env: process.env,

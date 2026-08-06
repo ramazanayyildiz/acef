@@ -8,6 +8,12 @@ Do not bootstrap ACEF for reversible, contained work with one technical boundary
 repository's native workflow, make targeted reads, implement the smallest patch, run focused verification, and report
 the result. Do not create ACEF run artifacts for that work.
 
+Native work uses the installed speed contract: no subagents; at most three distinct focused verification commands,
+two attempts per identical command, 180 seconds per focused command, and 10 active minutes. Run recognized tests or
+static analysis through `.acef/bin/acef-native-test -- <focused-command>`. Broad verification is implementation-time
+forbidden and may run once only as `.acef/bin/acef-native-test --closeout -- <broad-command>` on a clean worktree.
+When the requested patch is green, stop; record unrelated failures as follow-up work instead of investigating them.
+
 Start ACEF only when the request needs its controls: persistence/migration, security/privacy/permissions, money,
 provider integration, realtime, concurrency/fencing, state-machine behavior, tracking/reporting/analytics, a new
 pattern, multiple technical boundaries/product surfaces, irreversible effects, or multi-session/worker coordination.

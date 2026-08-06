@@ -1,0 +1,92 @@
+#!/usr/bin/env node
+"use strict";
+
+const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const os = require("node:os");
+const path = require("node:path");
+const cp = require("node:child_process");
+const {
+  NATIVE_ACTIVE_SECONDS,
+  NATIVE_CLOSEOUT_TIMEOUT_SECONDS,
+  NATIVE_FOCUSED_COMMAND_LIMIT,
+  NATIVE_FOCUSED_TIMEOUT_SECONDS,
+  NATIVE_REPEAT_LIMIT,
+  classifyNativeVerification,
+} = require("./lib/acef-native-speed");
+
+const wrapper = path.resolve(__dirname, "acef-native-test");
+
+assert.equal(NATIVE_FOCUSED_COMMAND_LIMIT, 3);
+assert.equal(NATIVE_REPEAT_LIMIT, 2);
+assert.equal(NATIVE_ACTIVE_SECONDS, 600);
+assert.equal(NATIVE_FOCUSED_TIMEOUT_SECONDS, 180);
+assert.equal(NATIVE_CLOSEOUT_TIMEOUT_SECONDS, 1800);
+assert.equal(classifyNativeVerification(["php", "artisan", "test", "--testsuite=Feature"]).kind, "broad");
+assert.equal(classifyNativeVerification(["php", "artisan", "test", "tests/Feature/OneTest.php"]).kind, "focused");
+assert.equal(classifyNativeVerification(["vendor/bin/phpstan", "analyse", "--configuration=phpstan.neon"]).kind, "broad");
+assert.equal(classifyNativeVerification(["vendor/bin/phpstan", "analyse", "app/Services/One.php"]).kind, "focused");
+
+function repoFixture() {
+  const repo = fs.mkdtempSync(path.join(os.tmpdir(), "acef-native-speed-"));
+  cp.execFileSync("git", ["init", "-q"], { cwd: repo });
+  cp.execFileSync("git", ["config", "user.email", "acef@example.invalid"], { cwd: repo });
+  cp.execFileSync("git", ["config", "user.name", "ACEF Test"], { cwd: repo });
+  fs.writeFileSync(path.join(repo, "README.md"), "fixture\n");
+  const bin = path.join(repo, "fake-bin");
+  fs.mkdirSync(bin);
+  const php = path.join(bin, "php");
+  fs.writeFileSync(php, "#!/usr/bin/env node\nprocess.exit(0);\n");
+  fs.chmodSync(php, 0o755);
+  cp.execFileSync("git", ["add", "README.md", "fake-bin/php"], { cwd: repo });
+  cp.execFileSync("git", ["commit", "-qm", "fixture"], { cwd: repo });
+  return { repo, env: { ...process.env, PATH: `${bin}${path.delimiter}${process.env.PATH}` } };
+}
+
+function run(fixture, args) {
+  return cp.spawnSync(process.execPath, [wrapper, ...args], {
+    cwd: fixture.repo,
+    env: fixture.env,
+    encoding: "utf8",
+  });
+}
+
+const repeated = repoFixture();
+try {
+  const command = ["--", "php", "artisan", "test", "--filter=FocusedCase"];
+  assert.equal(run(repeated, command).status, 0);
+  assert.equal(run(repeated, command).status, 0);
+  const third = run(repeated, command);
+  assert.equal(third.status, 2);
+  assert.match(third.stderr, /repeat budget exceeded/);
+} finally {
+  fs.rmSync(repeated.repo, { recursive: true, force: true });
+}
+
+const distinct = repoFixture();
+try {
+  for (const name of ["One", "Two", "Three"]) {
+    assert.equal(run(distinct, ["--", "php", "artisan", "test", `--filter=${name}`]).status, 0);
+  }
+  const fourth = run(distinct, ["--", "php", "artisan", "test", "--filter=Four"]);
+  assert.equal(fourth.status, 2);
+  assert.match(fourth.stderr, /focused-command budget exceeded/);
+} finally {
+  fs.rmSync(distinct.repo, { recursive: true, force: true });
+}
+
+const broad = repoFixture();
+try {
+  const args = ["--", "php", "artisan", "test", "--testsuite=Feature"];
+  const early = run(broad, args);
+  assert.equal(early.status, 2);
+  assert.match(early.stderr, /broad verification is forbidden/);
+  assert.equal(run(broad, ["--closeout", ...args]).status, 0);
+  const repeatedBroad = run(broad, ["--closeout", ...args]);
+  assert.equal(repeatedBroad.status, 2);
+  assert.match(repeatedBroad.stderr, /already ran once/);
+} finally {
+  fs.rmSync(broad.repo, { recursive: true, force: true });
+}
+
+console.log("acef native speed contract tests passed");

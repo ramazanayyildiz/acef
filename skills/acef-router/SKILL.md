@@ -88,6 +88,10 @@ After splitting, perform admission again before choosing Fix/Standard/Full. Reco
 count, and product-surface count. A reversible `1/1` child without an ACEF control trigger is `NATIVE_WORKFLOW`, even
 when CI or release certification is important; do not create ACEF artifacts for it.
 
+Native children use the installed speed contract rather than an ACEF lifecycle: no subagents, up to three focused
+verification commands with two attempts each, and no broad suite during implementation. Use
+`.acef/bin/acef-native-test`; stop at green and defer unrelated failures.
+
 Admit a native task to Route A/B/C when it is irreversible, crosses more than one product surface or technical boundary,
 needs a new pattern, or touches persistence, auth/security/privacy, money, migration, provider integration,
 realtime/concurrency/state-machine, tracking/reporting/analytics, or multi-session/worker coordination.

@@ -1,0 +1,56 @@
+{
+  "capabilityId": "native-execution-speed-contract",
+  "requestedIntent": "Keep reversible contained work fast after ACEF admission rejects it: mechanically bound focused verification, repeated commands, command runtime, broad-suite timing, subagent use, and scope expansion without creating per-task ACEF artifacts.",
+  "status": "enforced",
+  "requiredLayers": [
+    "docs",
+    "workflow",
+    "hook",
+    "installer",
+    "tests"
+  ],
+  "implementedLayers": {
+    "docs": [
+      "AGENTS.md#ACEF Admission",
+      "method/DELIVERY_RULES.md",
+      "method/OPERATING_MODEL.md",
+      "skills/acef/SKILL.md"
+    ],
+    "workflow": [
+      "scripts/acef-native-test",
+      "scripts/lib/acef-native-speed.js"
+    ],
+    "hook": [
+      "claude-plugins/acef-bmad-guard/hooks/acef-bmad-hard-wall.mjs"
+    ],
+    "installer": [
+      "scripts/install-acef-tools",
+      "scripts/install-acef-bmad-guard"
+    ],
+    "tests": [
+      "scripts/test-acef-native-test",
+      "scripts/test-acef-process-validator",
+      "scripts/test-install-acef-tools"
+    ]
+  },
+  "limitations": [
+    "The source capability is enforced. A target repository must refresh its ACEF installation, and the client must have the ACEF global dispatcher wired, before raw native commands are intercepted there.",
+    "The 10-minute budget measures elapsed verification time from the first wrapped command, not all agent reasoning or read-only inspection time. Scope expansion is bounded indirectly through command/subagent limits and the stop-at-green rule.",
+    "Broad closeout is intentionally allowed once on a clean worktree and may run for up to 30 minutes because it is a separate batch-level certification action, not native implementation feedback."
+  ],
+  "evidence": [
+    {
+      "layer": "workflow",
+      "ref": "scripts/test-acef-native-test"
+    },
+    {
+      "layer": "hook",
+      "ref": "scripts/test-acef-process-validator"
+    },
+    {
+      "layer": "installer",
+      "ref": "scripts/test-install-acef-tools"
+    }
+  ],
+  "createdAt": "2026-08-06"
+}

@@ -1,0 +1,98 @@
+#!/usr/bin/env node
+"use strict";
+
+const fs = require("node:fs");
+const path = require("node:path");
+const cp = require("node:child_process");
+const {
+  NATIVE_ACTIVE_SECONDS,
+  NATIVE_CLOSEOUT_TIMEOUT_SECONDS,
+  NATIVE_FOCUSED_TIMEOUT_SECONDS,
+  classifyNativeVerification,
+  freshNativeBudget,
+  nativeBudgetFailure,
+} = require("./lib/acef-native-speed");
+
+function fail(message, code = 2) {
+  process.stderr.write(`ACEF native speed contract: ${message}\n`);
+  process.exit(code);
+}
+
+function git(args, cwd) {
+  return cp.execFileSync("git", args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
+}
+
+function parseArgs(argv) {
+  let closeout = false;
+  const separator = argv.indexOf("--");
+  if (separator < 0) fail("usage: acef-native-test [--closeout] -- <test-command> [args...]");
+  for (const arg of argv.slice(0, separator)) {
+    if (arg === "--closeout") closeout = true;
+    else fail(`unknown option ${arg}`);
+  }
+  const command = argv.slice(separator + 1);
+  if (!command.length) fail("test command is required after --");
+  return { closeout, command };
+}
+
+function readState(filePath, repoRoot, head, branch) {
+  try {
+    const state = JSON.parse(fs.readFileSync(filePath, "utf8"));
+    if (state.schema === "acef.native-speed.v1" && state.repoRoot === repoRoot
+      && state.head === head && state.branch === branch) return state;
+  } catch {
+    // A missing/stale task budget starts fresh at the current branch+HEAD.
+  }
+  return freshNativeBudget(repoRoot, head, branch);
+}
+
+function writeState(filePath, state) {
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  const temp = `${filePath}.${process.pid}.tmp`;
+  fs.writeFileSync(temp, `${JSON.stringify(state, null, 2)}\n`);
+  fs.renameSync(temp, filePath);
+}
+
+const { closeout, command } = parseArgs(process.argv.slice(2));
+const cwd = process.cwd();
+let repoRoot;
+let head;
+let branch;
+let statePath;
+try {
+  repoRoot = git(["rev-parse", "--show-toplevel"], cwd);
+  head = git(["rev-parse", "HEAD"], repoRoot);
+  branch = git(["branch", "--show-current"], repoRoot) || "detached";
+  const gitPath = git(["rev-parse", "--git-path", "acef-native-speed/state.json"], repoRoot);
+  statePath = path.resolve(repoRoot, gitPath);
+} catch {
+  fail("must run inside a Git worktree");
+}
+
+const classification = classifyNativeVerification(command);
+const state = readState(statePath, repoRoot, head, branch);
+const cleanTree = closeout ? git(["status", "--porcelain"], repoRoot) === "" : false;
+const budgetFailure = nativeBudgetFailure(state, classification, { closeout, cleanTree });
+if (budgetFailure) fail(budgetFailure);
+
+if (classification.kind === "broad") state.broadSuiteCount += 1;
+else {
+  state.commands[classification.identity] = Number(state.commands[classification.identity] || 0) + 1;
+  if (!state.focusedCommands.includes(classification.identity)) state.focusedCommands.push(classification.identity);
+}
+writeState(statePath, state);
+
+const elapsedSeconds = Math.max(0, Math.floor((Date.now() - Date.parse(state.startedAt)) / 1000));
+const timeoutSeconds = classification.kind === "broad"
+  ? NATIVE_CLOSEOUT_TIMEOUT_SECONDS
+  : Math.max(1, Math.min(NATIVE_FOCUSED_TIMEOUT_SECONDS, NATIVE_ACTIVE_SECONDS - elapsedSeconds));
+const result = cp.spawnSync(command[0], command.slice(1), {
+  cwd: repoRoot,
+  env: process.env,
+  stdio: "inherit",
+  timeout: timeoutSeconds * 1000,
+  killSignal: "SIGTERM",
+});
+if (result.error?.code === "ETIMEDOUT") fail(`command timed out after ${timeoutSeconds}s; record the bottleneck and stop expanding scope`, 124);
+if (result.error) fail(`command failed to start: ${result.error.message}`, 126);
+process.exit(result.status === null ? 1 : result.status);

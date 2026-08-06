@@ -9,6 +9,15 @@ or evidence contract. Do not use it to claim implementation status; link to the 
 
 ## Unreleased
 
+### Native work now has a mechanical speed contract
+
+- Added the installed `acef-native-test` runner with a three-command focused envelope, two attempts per exact command,
+  180-second focused timeout, and 10-minute active verification budget.
+- Made the repo-local dispatcher block raw native test/static-analysis commands and native subagent spawning. Broad
+  verification is denied during implementation and allowed once only with `--closeout` on a clean worktree.
+- Stored counters under Git's uncommitted administration area rather than creating ACEF run/evidence artifacts, and
+  added hook, runner, installer, repetition, focused-count, and broad-closeout regression coverage.
+
 ### Split children now fail closed to the native workflow
 
 - Added typed admission topology to new intake: reversibility, technical-boundary count, and product-surface count.

@@ -32,6 +32,7 @@ try {
   const status = path.join(tmp, ".acef", "bin", "acef-status");
   const next = path.join(tmp, ".acef", "bin", "acef-next");
   const updater = path.join(tmp, ".acef", "bin", "update-acef-installation");
+  const nativeTest = path.join(tmp, ".acef", "bin", "acef-native-test");
   const workflowValidate = path.join(tmp, ".acef", "bin", "acef-workflow-validate");
   const parser = path.join(tmp, ".acef", "bin", "lib", "acef-state-parser.js");
   const authorization = path.join(tmp, ".acef", "bin", "lib", "acef-run-authorization.js");
@@ -61,6 +62,7 @@ try {
   if (!fs.existsSync(status)) throw new Error("status helper was not installed");
   if (!fs.existsSync(next)) throw new Error("next-action helper was not installed");
   if (!fs.existsSync(updater)) throw new Error("ACEF update helper was not installed");
+  if (!fs.existsSync(nativeTest)) throw new Error("native speed test wrapper was not installed");
   if (!fs.existsSync(workflowValidate)) throw new Error("workflow validator was not installed");
   if (!fs.existsSync(parser)) throw new Error("parser support library was not installed");
   if (!fs.existsSync(authorization)) throw new Error("run authorization support library was not installed");

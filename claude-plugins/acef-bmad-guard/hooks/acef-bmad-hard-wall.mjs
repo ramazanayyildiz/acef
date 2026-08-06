@@ -112,6 +112,37 @@ function findActiveRoot(paths) {
   return "";
 }
 
+function findInstalledRoot(paths) {
+  const home = process.env.HOME ? path.resolve(process.env.HOME) : "";
+  for (const candidate of paths.filter(Boolean)) {
+    for (const dirPath of ancestors(candidate)) {
+      if (home && path.resolve(dirPath) === home) continue;
+      if (exists(path.join(dirPath, ".acef", "hooks", "acef-bmad-hard-wall.mjs"))
+        || exists(path.join(dirPath, ".acef", "bin", "acef-native-test"))) return dirPath;
+    }
+  }
+  return "";
+}
+
+function actionableLane(repoRoot) {
+  const records = [
+    path.join(repoRoot, "docs", "ai", "ACEF_ACTIVE_RUN.json"),
+    path.join(repoRoot, "docs", "ai", "ACEF_LIGHTWEIGHT_RUN.json"),
+    path.join(repoRoot, "docs", "ai", "ACEF_DIRECT_RUN.json"),
+  ];
+  for (const filePath of records) {
+    if (!exists(filePath)) continue;
+    try {
+      const record = JSON.parse(fs.readFileSync(filePath, "utf8"));
+      if (record.status === "active") return true;
+    } catch {
+      return true;
+    }
+  }
+  return [".acef-lane", ".acef-lightweight-lane", ".acef-bmad-lane"]
+    .some((name) => exists(path.join(repoRoot, name)));
+}
+
 function isWorker(payload) {
   const agentId = (payload && (payload.agent_id || payload.agentId)) || "";
   const agentType = (payload && (payload.agent_type || payload.agentType)) || "";
@@ -335,6 +366,31 @@ function bashIsCommit(command) {
 function bashSpawnsAgent(command) {
   return /\b(claude|codex)\b.*\b(agent|subagent|task)\b/i.test(command || "")
     || /\b(spawn|dispatch|launch)\b.*\b(agent|subagent|worker)\b/i.test(command || "");
+}
+
+function nativeVerificationCommand(command) {
+  return /(?:^|[\s;&|])(?:php\s+artisan\s+test|(?:[^\s/]+\/)*(?:phpunit|pest|phpstan)(?:\.phar)?\b|composer\s+(?:test|tests|phpunit)\b|(?:npm|pnpm|yarn|bun)\s+(?:run\s+)?test(?::[^\s]+)?\b|(?:pytest|py\.test)\b|go\s+test\b|cargo\s+test\b|dotnet\s+test\b)/i.test(command || "");
+}
+
+function nativeWrapperCommand(command) {
+  const text = String(command || "").trim();
+  return /^(?:\.\/)?\.acef\/bin\/acef-native-test(?:\s+--closeout)?\s+--\s+\S+/.test(text)
+    && !/(?:&&|\|\||[;|\n])/.test(text);
+}
+
+function nativeSpeedRestricted(payload, toolName, input) {
+  if (/(?:^|\.)(?:Task|Agent|spawn_agent)$/i.test(toolName)) {
+    return "ACEF native speed contract: native work does not use subagents; finish the bounded patch in the current session.";
+  }
+  if (!isShellTool(toolName)) return "";
+  const command = shellCommand(input);
+  if (bashSpawnsAgent(command)) {
+    return "ACEF native speed contract: native work does not spawn or dispatch agents/subagents.";
+  }
+  if (nativeVerificationCommand(command) && !nativeWrapperCommand(command)) {
+    return "ACEF native speed contract: run tests through '.acef/bin/acef-native-test -- <focused-command>'. Raw test/static-analysis commands are blocked; broad verification requires one clean-tree '--closeout'.";
+  }
+  return "";
 }
 
 function parseTargetEpicNumber(command) {
@@ -1115,20 +1171,31 @@ function p1ConformanceRestricted(repoRoot) {
 
   const toolName = payload.tool_name || payload.toolName || payload.name || "";
   const input = payload.tool_input || payload.toolInput || payload.input || {};
-  const cwd = resolvePath(payload.cwd || input.cwd || process.env.CLAUDE_PROJECT_DIR || process.env.CODEX_PROJECT_DIR || process.env.OPENCODE_PROJECT_DIR || process.cwd());
+  const cwd = resolvePath(payload.cwd || input.cwd || input.workdir || process.env.CLAUDE_PROJECT_DIR || process.env.CODEX_PROJECT_DIR || process.env.OPENCODE_PROJECT_DIR || process.cwd());
   const filePath = toolFilePath(input, cwd);
   const patchPaths = patchTouchedPaths(input, cwd);
-  const repoRoot = findActiveRoot([
+  const rootCandidates = [
     filePath,
     ...patchPaths,
     cwd,
     process.env.CLAUDE_PROJECT_DIR ? resolvePath(process.env.CLAUDE_PROJECT_DIR) : "",
     process.env.CODEX_PROJECT_DIR ? resolvePath(process.env.CODEX_PROJECT_DIR) : "",
     process.env.OPENCODE_PROJECT_DIR ? resolvePath(process.env.OPENCODE_PROJECT_DIR) : "",
-  ]);
+  ];
+  const repoRoot = findActiveRoot(rootCandidates) || findInstalledRoot(rootCandidates);
 
   if (!repoRoot) {
     allow();
+    return;
+  }
+
+  if (!actionableLane(repoRoot)) {
+    const nativeReason = nativeSpeedRestricted(payload, toolName, input);
+    if (nativeReason) {
+      deny(nativeReason);
+      return;
+    }
+    allow("ACEF native speed contract: no active ACEF lifecycle; use a bounded patch, focused verification, and stop at the requested outcome.");
     return;
   }
 

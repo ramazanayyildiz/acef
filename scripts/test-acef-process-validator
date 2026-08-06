@@ -2225,6 +2225,28 @@ try {
   }, "allow");
   fs.rmSync(dispatcherNoHook, { recursive: true, force: true });
 
+  const dispatcherNative = fs.mkdtempSync(path.join(os.tmpdir(), "acef-dispatcher-native-"));
+  fs.mkdirSync(path.join(dispatcherNative, ".acef", "hooks"), { recursive: true });
+  fs.mkdirSync(path.join(dispatcherNative, ".acef", "bin"), { recursive: true });
+  fs.copyFileSync(bmadHook, path.join(dispatcherNative, ".acef", "hooks", "acef-bmad-hard-wall.mjs"));
+  fs.writeFileSync(path.join(dispatcherNative, ".acef", "bin", "acef-native-test"), "#!/bin/sh\nexit 0\n");
+  expectDispatcherDecision("native raw broad suite is denied", {
+    tool_name: "Bash",
+    cwd: dispatcherNative,
+    tool_input: { command: "php artisan test --testsuite=Feature" },
+  }, "deny");
+  expectDispatcherDecision("native focused wrapper is allowed", {
+    tool_name: "Bash",
+    cwd: dispatcherNative,
+    tool_input: { command: ".acef/bin/acef-native-test -- php artisan test --filter=OneTest" },
+  }, "allow");
+  expectDispatcherDecision("native subagent is denied", {
+    tool_name: "Agent",
+    cwd: dispatcherNative,
+    tool_input: {},
+  }, "deny");
+  fs.rmSync(dispatcherNative, { recursive: true, force: true });
+
   const dispatcherLocal = fs.mkdtempSync(path.join(os.tmpdir(), "acef-dispatcher-local-"));
   fs.mkdirSync(path.join(dispatcherLocal, ".acef", "hooks"), { recursive: true });
   fs.mkdirSync(path.join(dispatcherLocal, "src"), { recursive: true });
