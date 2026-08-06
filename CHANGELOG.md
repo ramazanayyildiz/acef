@@ -9,6 +9,19 @@ or evidence contract. Do not use it to claim implementation status; link to the 
 
 ## Unreleased
 
+### Quick Fix now has one review and deterministic closeout
+
+- Added `single-review-v1` as the default contract for new ACEF Fix runs. Its normal topology is one Developer and one
+  independent Code Reviewer, with an optional third ATDD context; Guarded assurance no longer implies a separate
+  Process Judge or the Full BMAD review stack.
+- Enforced one review cycle, four commits, five product files, 50 product-line churn, four evidence runs, zero in-run
+  framework failures, and a 30-minute hard stop. Closeout binds red, green, revert-proof, and conditional user-facing
+  product evidence to the reviewer PASS gate.
+- Made committed terminal runs inert for later commits so an old PASS cannot authorize new work or accept fresh actor,
+  gate, evidence, or report records. Compatibility Quick Fix records without the new contract remain readable.
+- Added regression coverage for the state default, parser contract, reviewer-only gate, hard time-box, budgeted closeout,
+  and completed-run isolation. Capability maturity is `enforced` until a live controlled canary proves the successor.
+
 ### Compatibility Full runs can close with an exact non-PASS recovery record
 
 - Allowed a migrated compatibility Full run with terminal `FAIL`, `REPLAN`, or `BLOCKED` to persist its honest

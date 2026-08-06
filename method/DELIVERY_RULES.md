@@ -109,6 +109,21 @@ ACEF Fix promotes to ACEF Full when the repro is unclear, scope expands, a new p
 does not cover the reproduced failure. High risk changes assurance to Guarded; it does not independently change
 planning depth.
 
+### Quick Fix single-review contract
+
+New ACEF Fix runs record `quickFixContract: single-review-v1`. The critical path is Developer → one independent Code
+Reviewer → deterministic closeout. ATDD may be a third context when a regression test must first be authored; otherwise
+red evidence may be produced by the developer. Process Judge, Patch Assurance, Verify-Patch, Test Review, optional NFR,
+and broad-suite repetition are not scheduled for this workflow. Guarded adds boundary/evidence controls without adding
+actors or review phases.
+
+The normal budget is three commits and the hard maximum is four; at most five product files, 50 changed product lines,
+four evidence runs, and one review cycle. Record a soft alert at 20 minutes. At 30 active minutes, or after a framework
+failure, the run must stop and replan rather than repair ACEF inside the product run. Replan sooner when a second root
+cause, new contract/migration/dependency, widened authorization, unresolved HIGH finding after one repair, second review
+cycle, or twice-flaky focused test appears. A user-facing fix also needs product-outcome evidence; backend-only work may
+close as development-done only.
+
 Quick-fix scope is an envelope, not a narrow file hallway. At dispatch, compute and record implementation paths, tests
 that import/exercise those symbols or hit the route/runtime path, fixtures/snapshots, route or smoke files, and shared
 resources such as seeds, migrations, settings groups, shared UI sections, or global fixtures. The human approves that
@@ -229,8 +244,9 @@ or scope grows, preserve the existing promotion rules: promote to full BMAD or r
   direct compatibility runs report only their compact task record, focused verification, and handoff. ACEF chat output remains: artifact path,
   verdict, key evidence path/command, and next allowed step. Raw output dumps and full artifact bodies are drift
   risks because they consume context and hide the next gate.
-- **Lean evidence contract** — story/epic close requires artifact paths for worker report, review report, Process Judge
-  report, worker-context budget fields (`worker_context: bounded`, `fork_context: false`, `raw_output_policy:
+- **Lean evidence contract** — story/epic close requires artifact paths for worker report, review report, and the
+  workflow's decision report (Quick Fix reuses its single reviewer report; other actor-decided gates use Process Judge),
+  plus worker-context budget fields (`worker_context: bounded`, `fork_context: false`, `raw_output_policy:
   artifact-only`), output-budget fields (`diff_policy: targeted`, `test_output_policy: summary-only`,
   `search_output_policy: summarized`), and a refreshed Session Handoff. Epic close also records
   `fresh_session_recommended: yes`; continuing the same bloated thread is optional, not the default. Run
@@ -239,8 +255,9 @@ or scope grows, preserve the existing promotion rules: promote to full BMAD or r
   patterns, golden neighbors, source reconciliation summary, shared risks, test strategy, fixtures, scope boundaries,
   exact commands, pitfalls, and per-story touched surfaces. Story workers consume the pack plus narrow story inputs; broad
   repo re-reading is blocked unless the story introduces a new/guarded/risky surface. Run `--check epic-context-pack`.
-- **Process Judge gates** — story/task close and epic close must prove the required steps, skills, and artifacts were
-  actually used before status changes to `done`.
+- **Decision gates** — story/task close and epic close must prove required steps, skills, and artifacts before `done`.
+  `single-review-v1` Quick Fix uses its independent reviewer gate plus deterministic closeout; Full epic close uses
+  Epic Process Judge, and compatibility contracts retain their specified Process Judge behavior.
 - **Non-recursive closeout** — freeze the mandatory story/actor/gate inventory before execution. Closeout may inspect
   existing evidence, but trace, statistics, coverage, documentation, test-quality, and audit views cannot add mandatory
   work items, enlarge a threshold denominator, spawn a second closeout chain, or make their own gate unreachable.

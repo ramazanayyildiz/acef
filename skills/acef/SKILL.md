@@ -57,6 +57,11 @@ additive overlay, never a fourth workflow and never a reason to repeat BMAD phas
 `workflowId`, `assuranceProfile`, and `scopeUnit`; an active legacy `lane: guarded` must be explicitly migrated before
 continuing.
 
+New `quick-fix` runs use `quickFixContract: single-review-v1`: Developer, one independent Code Reviewer, and
+deterministic closeout. ATDD is an optional third context. Do not schedule Process Judge, Patch Assurance, Verify-Patch,
+Test Review, optional NFR, or repeated broad suites for this contract. Alert at 20 minutes; stop/replan at 30 minutes,
+on a second root cause/review cycle, or after any framework failure.
+
 New `direct` runs are retired because repeated real-task measurement remained slower and less reliable than both native
 and lightweight work. An existing `ACEF_DIRECT_RUN.json` is compatibility state only; use
 `.acef/bin/acef-state direct-run --help` to close or promote that existing record.

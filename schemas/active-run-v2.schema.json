@@ -9,6 +9,10 @@
     "schema": { "type": "string", "const": "acef.active-run.v2" },
     "runId": { "type": "string", "minLength": 1 },
     "workflowId": { "type": "string", "enum": ["quick-fix", "lightweight", "full-bmad"] },
+    "quickFixContract": {
+      "type": "string",
+      "enum": ["single-review-v1"]
+    },
     "fullFlowContract": {
       "type": "string",
       "enum": ["six-actor-v2", "four-actor-v3"]
@@ -133,6 +137,12 @@
     "updatedAt": { "type": ["string", "null"] }
   },
   "allOf": [
+    {
+      "if": { "required": ["quickFixContract"] },
+      "then": {
+        "properties": { "workflowId": { "const": "quick-fix" } }
+      }
+    },
     {
       "if": { "properties": { "fullFlowContract": { "const": "four-actor-v3" } }, "required": ["fullFlowContract"] },
       "then": { "required": ["expectedStories"] }

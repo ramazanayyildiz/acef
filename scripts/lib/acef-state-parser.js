@@ -173,6 +173,12 @@ function parseActiveRun(filePath) {
   );
   if (v2) {
     requireEnum(record, "workflowId", WORKFLOW_IDS, "active run");
+    if (record.quickFixContract !== undefined) {
+      requireEnum(record, "quickFixContract", ["single-review-v1"], "active run");
+      if (record.workflowId !== "quick-fix") {
+        throw new Error("active run quickFixContract is only valid for quick-fix workflow");
+      }
+    }
     if (record.fullFlowContract !== undefined) {
       requireEnum(record, "fullFlowContract", ["six-actor-v2", "four-actor-v3"], "active run");
       if (record.workflowId !== "full-bmad") {
@@ -911,6 +917,10 @@ function parseLightweightRun(filePath) {
   if (v2) {
     requireEnum(record, "workflowId", ["quick-fix", "lightweight"], "lightweight run");
     requireEnum(record, "assuranceProfile", ASSURANCE_PROFILES, "lightweight run");
+    if (record.quickFixContract !== undefined) {
+      requireEnum(record, "quickFixContract", ["single-review-v1"], "lightweight run");
+      if (record.workflowId !== "quick-fix") throw new Error("lightweight run quickFixContract requires quick-fix workflow");
+    }
     if (record.lane !== undefined) throw new Error("lightweight run v2 must use workflowId, not lane");
   } else {
     requireEnum(record, "lane", ["quick-fix", "lightweight", "guarded"], "lightweight run");
@@ -993,12 +1003,45 @@ function parseLightweightRun(filePath) {
         if (item.matcherLoosening !== undefined && typeof item.matcherLoosening !== "boolean") throw new Error(`quick-fix testIntegrity[${index}].matcherLoosening must be boolean`);
       }
     }
+    if (record.quickFixContract === "single-review-v1") {
+      requireFields(record.quickFix, [
+        "baseCommit", "applicationCommit", "redEvidenceId", "greenEvidenceId", "revertProofEvidenceId",
+        "productVerification", "startedAt", "completedAt", "reviewCycle", "frameworkFailures",
+      ], "single-review quick-fix");
+      for (const field of ["baseCommit", "applicationCommit"]) {
+        if (typeof record.quickFix[field] !== "string" || !/^[a-f0-9]{40}$/.test(record.quickFix[field])) {
+          throw new Error(`single-review quick-fix ${field} must be a full git commit hash`);
+        }
+      }
+      for (const field of ["redEvidenceId", "greenEvidenceId", "revertProofEvidenceId", "productEvidenceId"]) {
+        if (record.quickFix[field] !== undefined
+          && (typeof record.quickFix[field] !== "string" || !/^[A-Za-z0-9._-]+$/.test(record.quickFix[field]))) {
+          throw new Error(`single-review quick-fix ${field} must be a safe evidence id`);
+        }
+      }
+      requireEnum(record.quickFix, "productVerification", ["PASS", "DEV_DONE_ONLY", "NOT_APPLICABLE"], "single-review quick-fix");
+      for (const field of ["startedAt", "completedAt"]) {
+        if (typeof record.quickFix[field] !== "string" || Number.isNaN(Date.parse(record.quickFix[field]))) {
+          throw new Error(`single-review quick-fix ${field} must be an ISO timestamp`);
+        }
+      }
+      if (!Number.isInteger(record.quickFix.reviewCycle) || record.quickFix.reviewCycle < 0 || record.quickFix.reviewCycle > 1) {
+        throw new Error("single-review quick-fix reviewCycle must be 0 or 1");
+      }
+      if (!Number.isInteger(record.quickFix.frameworkFailures) || record.quickFix.frameworkFailures < 0) {
+        throw new Error("single-review quick-fix frameworkFailures must be a non-negative integer");
+      }
+    }
   }
   const lightweightWorkflow = v2
     ? record.workflowId
     : record.lane === "guarded" ? "lightweight" : record.lane;
   if (lightweightWorkflow === "quick-fix" && record.status === "complete" && !record.quickFix) {
     throw new Error("complete quick-fix run requires quickFix evidence");
+  }
+  if (record.quickFixContract === "single-review-v1" && record.status === "complete"
+    && record.quickFix.productVerification === "PASS" && !record.quickFix.productEvidenceId) {
+    throw new Error("single-review quick-fix product PASS requires productEvidenceId");
   }
   if (v2) return { ...record, lane: record.workflowId };
   if (record.lane === "guarded") {

@@ -72,7 +72,7 @@ Checks:
   worker-scope       Require active worker identity and write scope to match the typed active run
   evidence-manifest  Validate typed evidence provenance, hashes, actor binding, and source freshness
   gate-verdict       Require the active scope to have a typed PASS verdict backed by successful surface evidence
-  gate-decider       Require legacy PASS gates to use an independent Process Judge and v3 story-close gates to be mechanically decided
+  gate-decider       Require the workflow's independent reviewer/judge or deterministic story-close decider
   epic-process-judge Require Full epic closeout to have an actor-decided independent Epic Process Judge PASS gate
   source-reconciliation For full BMAD, require every planning source to record use/conflict/resolution
   epic-context-pack  Require an epic-level context pack before story workers consume the epic
@@ -84,6 +84,7 @@ Checks:
   lane-closeout      Require the active lane's complete validator bundle before close
   direct-lifecycle   Require a reversible contained task, focused verification, handoff, and no promotion trigger
   lightweight-lifecycle Require the six-step lightweight lifecycle, promotion disposition, and surface evidence
+  quick-fix-closeout Enforce the single-review Quick Fix budgets, evidence, time-box, and deterministic closeout
   lean-evidence       Require story/epic close evidence to live in artifacts, not chat
   control-dosing      Validate the machine-readable lane/control dosing manifest
   capability-change   Require ACEF flow/gate/capability changes to declare documented/wired/enforced/proven layers
@@ -1612,6 +1613,11 @@ function isFourActorV3(activeRun) {
   return activeRun?.workflowId === "full-bmad" && activeRun?.fullFlowContract === "four-actor-v3";
 }
 
+function isSingleReviewQuickFix(activeRun) {
+  return activeRun?.workflowId === "quick-fix"
+    && activeRun?.quickFixContract === "single-review-v1";
+}
+
 function isFourActorV3EpicClose(activeRun) {
   return isFourActorV3(activeRun)
     && activeRun.scopeUnit === "epic"
@@ -1632,7 +1638,9 @@ function checkTypedActorSeparation(repoRoot, activeRun) {
     ? (isFourActorV3(activeRun)
       ? ["atdd", "development", "codereview", "patchassurance"]
       : ["atdd", "development", "codereview", "verifypatch", "testreview", "processjudge"])
-    : ["development", "processjudge"];
+    : isSingleReviewQuickFix(activeRun)
+      ? ["development", "codereview"]
+      : ["development", "processjudge"];
   const byPhase = new Map();
   for (const actor of actors) {
     const phase = canonicalPhase(actor.phase);
@@ -1654,12 +1662,21 @@ function checkTypedActorSeparation(repoRoot, activeRun) {
     if (commitError) failures.push(commitError);
   }
   if (failures.length) return result("actor-separation", false, failures.join("; "));
+  if (isSingleReviewQuickFix(activeRun)) {
+    const quickFixActors = actors.filter((actor) => ["atdd", "development", "codereview"].includes(canonicalPhase(actor.phase)));
+    const uniqueContexts = new Set(quickFixActors.map((actor) => actor.actorInstanceId));
+    if (uniqueContexts.size > 3) {
+      return result("actor-separation", false, `single-review-v1 permits at most three Quick Fix actor contexts, found ${uniqueContexts.size}`);
+    }
+  }
   return result(
     "actor-separation",
     true,
     isFull(activeRun)
       ? `${isFourActorV3(activeRun) ? "Four v3" : "Six v2"} typed Full BMAD phase actors are distinct for ${activeRun.activeStory}`
-      : `Guarded developer and Process Judge actors are distinct for ${activeRun.activeStory}`,
+      : isSingleReviewQuickFix(activeRun)
+        ? `Quick Fix developer and single independent reviewer are distinct for ${activeRun.activeStory}`
+        : `Guarded developer and Process Judge actors are distinct for ${activeRun.activeStory}`,
   );
 }
 
@@ -1781,6 +1798,37 @@ function latestGateForActiveRun(repoRoot, activeRun, { requirePass = true } = {}
 
 function gateDeciderIntegrityFailures(repoRoot, activeRun, gate) {
   const failures = [];
+  if (isSingleReviewQuickFix(activeRun)) {
+    if (gate.gateType !== "actor-decided-v1" || gate.decisionMode !== "actor") {
+      failures.push("single-review-v1 requires one actor-decided reviewer gate");
+      return failures;
+    }
+    try {
+      const runPath = path.join(repoRoot, "docs", "ai", "ACEF_LIGHTWEIGHT_RUN.json");
+      const run = parseLightweightRun(runPath);
+      if (run.runId !== activeRun.runId || run.quickFixContract !== activeRun.quickFixContract) {
+        failures.push("Quick Fix lifecycle run/contract mismatch");
+      }
+      if (gate.decidedBy !== run.reviewActorId) failures.push("Quick Fix gate must be decided by its single review actor");
+      const reviewer = actorRecordById(repoRoot, run.reviewActorId);
+      if (normalizedScope(reviewer.story) !== normalizedScope(activeRun.activeStory)) failures.push("Quick Fix reviewer story mismatch");
+      if (canonicalPhase(reviewer.phase) !== "codereview") failures.push("Quick Fix gate actor is not the code-review actor");
+      if (reviewer.actorInstanceId === run.implementationActorId) failures.push("Quick Fix reviewer cannot certify its own implementation");
+      if (reviewer.inputCommit !== run.quickFix.applicationCommit) failures.push("Quick Fix reviewer did not inspect the declared final application commit");
+      if (!reviewer.producedArtifactPath || !reviewer.producedArtifactHash) {
+        failures.push("Quick Fix reviewer must bind a durable review report");
+      } else {
+        const reportPath = resolvePath(reviewer.producedArtifactPath, repoRoot);
+        safeRelative(reportPath, repoRoot);
+        if (!exists(reportPath) || sha256File(reportPath) !== reviewer.producedArtifactHash) {
+          failures.push("Quick Fix review report hash mismatch");
+        }
+      }
+    } catch (error) {
+      failures.push(error.message);
+    }
+    return failures;
+  }
   if (isFourActorV3(activeRun) && activeRun.scopeUnit === "epic"
     && gate.gateType !== "actor-decided-v1") {
     failures.push("four-actor-v3 Epic scope requires an actor-decided Epic Process Judge gate");
@@ -2307,7 +2355,9 @@ function checkGateDecider(repoRoot) {
   }
   return failures.length
     ? result("gate-decider", false, failures.join("; "))
-    : result("gate-decider", true, gate.gateType === "deterministic-story-close-v3"
+    : result("gate-decider", true, isSingleReviewQuickFix(activeRun)
+      ? `${gate.gateId} PASS is decided by the single independent reviewer; closeout is deterministic`
+      : gate.gateType === "deterministic-story-close-v3"
       ? `${gate.gateId} PASS is mechanically decided; Process Judge is conditional`
       : `${gate.gateId} PASS is decided by an independent Process Judge`);
 }
@@ -2978,7 +3028,7 @@ function checkLeanEvidence(repoRoot, ledgerPath) {
       : null;
     const deterministicStoryDecider = latest?.gateType === "deterministic-story-close-v3"
       && latest.verdict === "PASS" && !latest.processJudge;
-    if (!deterministicStoryDecider) required.add("process_judge_report");
+    if (!deterministicStoryDecider && !isSingleReviewQuickFix(activeRun)) required.add("process_judge_report");
   }
 
   const missing = [...required].filter((field) => !hasMeaningfulValue(fields[field]));
@@ -3244,6 +3294,116 @@ function checkLightweightLifecycle(repoRoot) {
     return result("lightweight-lifecycle", true, `${run.runId} follows the compact lifecycle with independent review and ${run.promotion.decision}`);
   } catch (error) {
     return result("lightweight-lifecycle", false, error.message);
+  }
+}
+
+function checkQuickFixCloseout(repoRoot) {
+  const activeRun = typedActiveRun(repoRoot);
+  if (!isSingleReviewQuickFix(activeRun)) {
+    return result("quick-fix-closeout", true, "Active run does not use single-review-v1");
+  }
+  const failures = [];
+  try {
+    const run = parseLightweightRun(path.join(repoRoot, "docs", "ai", "ACEF_LIGHTWEIGHT_RUN.json"));
+    const quickFix = run.quickFix;
+    if (run.runId !== activeRun.runId || run.quickFixContract !== activeRun.quickFixContract) {
+      failures.push("active and lightweight Quick Fix run contracts do not match");
+    }
+    if (run.status !== "complete") failures.push("single-review Quick Fix lifecycle is not complete");
+    if (!gitIsAncestor(repoRoot, quickFix.baseCommit, quickFix.applicationCommit)) {
+      failures.push("Quick Fix baseCommit is not an ancestor of applicationCommit");
+    }
+    const commitCount = Number(cp.execFileSync(
+      "git", ["rev-list", "--count", `${quickFix.baseCommit}..${quickFix.applicationCommit}`],
+      { cwd: repoRoot, encoding: "utf8" },
+    ).trim());
+    if (commitCount > 4) failures.push(`Quick Fix commit budget exceeded: ${commitCount}/4`);
+
+    const implementationPaths = quickFix.envelope?.implementationPaths || [];
+    const envelopePaths = new Set([
+      ...implementationPaths,
+      ...(quickFix.envelope?.testPaths || []),
+      ...(quickFix.envelope?.fixturePaths || []),
+      ...(quickFix.envelope?.smokePaths || []),
+    ]);
+    const changedPaths = gitChangedFiles(repoRoot, quickFix.baseCommit, quickFix.applicationCommit)
+      .filter((filePath) => !stateControlPath(filePath));
+    const outsideEnvelope = changedPaths.filter((filePath) => !envelopePaths.has(filePath));
+    if (outsideEnvelope.length) failures.push(`Quick Fix changed path(s) outside envelope: ${outsideEnvelope.join(", ")}`);
+    const productPaths = changedPaths.filter((filePath) => !/(^|\/)(?:tests?|specs?|fixtures|snapshots?|__tests__)(\/|$)|\.(?:test|spec)\./i.test(filePath));
+    if (productPaths.length > 5) failures.push(`Quick Fix product-file budget exceeded: ${productPaths.length}/5`);
+    if (productPaths.length) {
+      const numstat = cp.execFileSync(
+        "git", ["diff", "--numstat", `${quickFix.baseCommit}..${quickFix.applicationCommit}`, "--", ...productPaths],
+        { cwd: repoRoot, encoding: "utf8" },
+      ).trim();
+      const churn = numstat ? numstat.split(/\r?\n/).reduce((total, line) => {
+        const [added, removed] = line.split("\t");
+        return total + (Number(added) || 0) + (Number(removed) || 0);
+      }, 0) : 0;
+      if (churn > 50) failures.push(`Quick Fix product-line budget exceeded: ${churn}/50`);
+    }
+
+    const elapsedMinutes = (Date.parse(quickFix.completedAt) - Date.parse(quickFix.startedAt)) / 60000;
+    if (elapsedMinutes < 0) failures.push("Quick Fix completedAt precedes startedAt");
+    if (elapsedMinutes > 30) failures.push(`Quick Fix hard time-box exceeded: ${elapsedMinutes.toFixed(1)}/30 minutes; REPLAN is required`);
+    if (quickFix.frameworkFailures !== 0) failures.push("Quick Fix cannot close after an in-run framework failure; restart or replan after framework repair");
+
+    const evidenceIds = [quickFix.redEvidenceId, quickFix.greenEvidenceId, quickFix.revertProofEvidenceId, quickFix.productEvidenceId].filter(Boolean);
+    if (new Set(evidenceIds).size !== evidenceIds.length || evidenceIds.length > 4) {
+      failures.push("Quick Fix permits at most four distinct evidence runs");
+    }
+    const scopePaths = [...implementationPaths, ...(quickFix.envelope?.testPaths || [])];
+    const red = evidenceRecordById(repoRoot, quickFix.redEvidenceId);
+    const green = evidenceRecordById(repoRoot, quickFix.greenEvidenceId);
+    const revertProof = evidenceRecordById(repoRoot, quickFix.revertProofEvidenceId);
+    failures.push(...validateEvidenceRecord(repoRoot, red));
+    failures.push(...validateEvidenceRecord(repoRoot, green, { requireFresh: true, scopePaths }));
+    failures.push(...validateEvidenceRecord(repoRoot, revertProof, { requireFresh: true, scopePaths }));
+    if (red.exitCode === 0) failures.push("Quick Fix red evidence must reproduce a failure");
+    if (green.exitCode !== 0) failures.push("Quick Fix green evidence must pass");
+    if (revertProof.exitCode !== 0 || !(revertProof.satisfies || []).includes("quick-fix-revert-proof")) {
+      failures.push("Quick Fix requires a successful revert-proof evidence run");
+    } else {
+      const rawPath = resolvePath(revertProof.rawArtifact.path, repoRoot);
+      if (!read(rawPath).includes("REVERT_PROOF_PASS")) failures.push("Quick Fix revert-proof artifact is missing REVERT_PROOF_PASS");
+    }
+    if (!gitIsAncestor(repoRoot, red.repositoryCommit, green.repositoryCommit)) failures.push("Quick Fix red evidence does not precede green evidence");
+    if (green.repositoryCommit !== quickFix.applicationCommit || revertProof.repositoryCommit !== quickFix.applicationCommit) {
+      failures.push("Quick Fix green and revert-proof evidence must bind the declared final application commit");
+    }
+
+    const userFacing = activeRun.activeGoal?.userFacing === true
+      || (run.surfaces || []).some((surface) => USER_VISIBLE_SURFACES.has(surface));
+    if (userFacing && quickFix.productVerification !== "PASS") {
+      failures.push("user-facing Quick Fix requires productVerification PASS");
+    }
+    if (quickFix.productVerification === "PASS") {
+      const product = evidenceRecordById(repoRoot, quickFix.productEvidenceId);
+      failures.push(...validateEvidenceRecord(repoRoot, product, { requireFresh: true, scopePaths }));
+      if (product.exitCode !== 0 || !(product.satisfies || []).includes("product-outcome")) {
+        failures.push("productVerification PASS requires successful product-outcome evidence");
+      }
+      if (product.repositoryCommit !== quickFix.applicationCommit) failures.push("product-outcome evidence must bind the declared final application commit");
+    }
+
+    const { gate, failures: gateFailures } = latestGateForActiveRun(repoRoot, activeRun);
+    failures.push(...gateFailures);
+    if (gate) {
+      failures.push(...gateDeciderIntegrityFailures(repoRoot, activeRun, gate));
+      if (gate.repositoryCommit !== quickFix.applicationCommit) failures.push("Quick Fix PASS gate must bind the declared final application commit");
+      const requiredGateEvidence = [quickFix.greenEvidenceId, quickFix.revertProofEvidenceId];
+      if (quickFix.productVerification === "PASS") requiredGateEvidence.push(quickFix.productEvidenceId);
+      const missingGateEvidence = requiredGateEvidence.filter((id) => !gate.evidenceIds.includes(id));
+      if (missingGateEvidence.length) failures.push(`Quick Fix gate is missing evidence: ${missingGateEvidence.join(", ")}`);
+      if (gate.evidenceIds.includes(quickFix.redEvidenceId)) failures.push("Quick Fix PASS gate must not treat failing red evidence as closeout evidence");
+    }
+
+    return failures.length
+      ? result("quick-fix-closeout", false, failures.join("; "))
+      : result("quick-fix-closeout", true, `single-review-v1 closed in ${elapsedMinutes.toFixed(1)} minutes with ${commitCount} commit(s), one review, and ${evidenceIds.length} evidence run(s)`);
+  } catch (error) {
+    return result("quick-fix-closeout", false, error.message);
   }
 }
 
@@ -3519,6 +3679,7 @@ function controlCheckForId(controlId, repoRoot, ledgerPath) {
     "runner-proof": { key: "evidence-manifest", run: () => checkEvidenceManifests(repoRoot) },
     "gate-verdict": { key: "gate-verdict", run: () => checkGateVerdict(repoRoot) },
     "gate-decider": { key: "gate-decider", run: () => checkGateDecider(repoRoot) },
+    "quick-fix-closeout": { key: "quick-fix-closeout", run: () => checkQuickFixCloseout(repoRoot) },
     "epic-process-judge": { key: "epic-process-judge", run: () => checkEpicProcessJudgeGate(repoRoot) },
     "lean-evidence": { key: "lean-evidence", run: () => checkLeanEvidence(repoRoot, ledgerPath) },
   };
@@ -3540,6 +3701,7 @@ function baseCloseoutChecks(execution, repoRoot, ledgerPath, adapterPath, regist
   if (execution.workflow === "quick-fix" || execution.workflow === "lightweight") {
     checks.push(() => checkLightweightLifecycle(repoRoot));
   }
+  if (isSingleReviewQuickFix(execution.record)) checks.push(() => checkQuickFixCloseout(repoRoot));
   if (execution.record && isHeavy(execution.record)) {
     checks.push(() => checkGoalCoverage(repoRoot));
     checks.push(() => checkReviewCircuitBreaker(repoRoot));
@@ -3653,6 +3815,35 @@ function checkPrecommitGate(repoRoot) {
     ? /^(?:closeout|complete|storyclose)$/i.test(canonicalPhase(execution.record.activePhase))
       || execution.record.status === "complete"
     : false);
+  if (execution.record?.status === "complete"
+    && execution.record.terminalDisposition
+    && execution.record.terminalGateId) {
+    const terminalPaths = [
+      "docs/ai/ACEF_ACTIVE_RUN.json",
+      `docs/ai/gates/${execution.record.terminalGateId}.json`,
+    ];
+    const terminalRecordStaged = terminalPaths.some((filePath) => stagedPaths.includes(filePath));
+    const committed = terminalPaths.every((filePath) => cp.spawnSync(
+      "git", ["cat-file", "-e", `HEAD:${filePath}`], { cwd: repoRoot },
+    ).status === 0);
+    const unchanged = cp.spawnSync(
+      "git", ["diff", "--quiet", "HEAD", "--", ...terminalPaths], { cwd: repoRoot },
+    ).status === 0;
+    if (!terminalRecordStaged && committed && unchanged) {
+      const staleRunArtifacts = stagedPaths.filter((filePath) => (
+        /^docs\/ai\/(?:actors|gates|evidence|reports|approvals|repairs|corrections|capsules|judges)\//.test(filePath)
+        || /^docs\/ai\/ACEF_(?:ACTIVE_RUN|ACTIVE_WORKER_SCOPE|LIGHTWEIGHT_RUN|CURRENT_CONTEXT|DELIVERY_LEDGER|[^/]+_DELIVERY_AUDIT)\b/.test(filePath)
+      ));
+      if (staleRunArtifacts.length) {
+        return result("precommit-gate", false, `completed run is inert and cannot authorize new run artifacts: ${staleRunArtifacts.slice(0, 8).join(", ")}`);
+      }
+      return result(
+        "precommit-gate",
+        true,
+        "completed run is inert; this commit is not authorized by the old terminal PASS and must satisfy native-workflow or new-run admission",
+      );
+    }
+  }
   const epicClosing = closingPhase && execution.record
     && isFull(execution.record)
     && (execution.record.scopeUnit === "epic" || /^\s*epic\b/i.test(execution.record.activeStory || ""));
@@ -3694,7 +3885,7 @@ function checkPrecommitGate(repoRoot) {
       ? compatibilityTerminalNonPassEpic
         ? []
         : ["run-authorization", "review-circuit-breaker", "gate-transition"]
-      : ["run-authorization", "review-circuit-breaker", ...(stagedGateTransition ? ["gate-transition"] : []), ...(closingPhase ? ["gate-decider", "gate-verdict", ...(epicClosing ? ["epic-process-judge"] : []), "lean-evidence"] : [])]
+      : ["run-authorization", "review-circuit-breaker", ...(stagedGateTransition ? ["gate-transition"] : []), ...(closingPhase ? ["gate-decider", "gate-verdict", ...(isSingleReviewQuickFix(execution.record) ? ["quick-fix-closeout"] : []), ...(epicClosing ? ["epic-process-judge"] : []), "lean-evidence"] : [])]
     : ["run-authorization", "lean-evidence"];
   const failures = [];
   if (compatibilityTerminalNonPassEpic) {
@@ -3735,6 +3926,8 @@ function checkPrecommitGate(repoRoot) {
           ? checkGateDecider(repoRoot)
           : name === "gate-transition"
             ? checkGateTransition(repoRoot)
+          : name === "quick-fix-closeout"
+            ? checkQuickFixCloseout(repoRoot)
           : name === "gate-verdict"
             ? checkGateVerdict(repoRoot)
             : name === "epic-process-judge"
@@ -3845,7 +4038,7 @@ function main() {
   const adapter = args.adapter || findAdapter(args.repo);
   const registry = findPatternRegistry(args.repo, adapter);
   const checks = args.check === "all"
-    ? ["clean-tree", "preflight", "claims", "adapter-freshness", "pattern-registry", "reuse-before-create", "do-not-copy", "partial-workshape", "finding-promotion", "graduation-reconciliation", "vertical-slice", "test-authenticity", "guarded-test-floor", "actor-separation", "worker-scope", "evidence-manifest", "gate-verdict", "gate-decider", "epic-process-judge", "source-reconciliation", "epic-context-pack", "current-context", "pr-review", "spec-readiness", "goal-coverage", "lane-selection", "lane-closeout", "direct-lifecycle", "lightweight-lifecycle", "lean-evidence", "control-dosing", "capability-change", "session-handoff", "seeded-epic-gates", "epic-boundary", "epic-transition-approval", "run-authorization", "review-circuit-breaker", "replan-counter"]
+    ? ["clean-tree", "preflight", "claims", "adapter-freshness", "pattern-registry", "reuse-before-create", "do-not-copy", "partial-workshape", "finding-promotion", "graduation-reconciliation", "vertical-slice", "test-authenticity", "guarded-test-floor", "actor-separation", "worker-scope", "evidence-manifest", "gate-verdict", "gate-decider", "epic-process-judge", "source-reconciliation", "epic-context-pack", "current-context", "pr-review", "spec-readiness", "goal-coverage", "lane-selection", "lane-closeout", "direct-lifecycle", "lightweight-lifecycle", "quick-fix-closeout", "lean-evidence", "control-dosing", "capability-change", "session-handoff", "seeded-epic-gates", "epic-boundary", "epic-transition-approval", "run-authorization", "review-circuit-breaker", "replan-counter"]
     : [args.check];
 
   const results = checks.map((check) => {
@@ -3876,6 +4069,7 @@ function main() {
     if (check === "lane-closeout") return checkLaneCloseout(args.repo, ledger, adapter, registry);
     if (check === "direct-lifecycle") return checkDirectLifecycle(args.repo);
     if (check === "lightweight-lifecycle") return checkLightweightLifecycle(args.repo);
+    if (check === "quick-fix-closeout") return checkQuickFixCloseout(args.repo);
     if (check === "lean-evidence") return checkLeanEvidence(args.repo, ledger);
     if (check === "control-dosing") return checkControlDosing(args.repo);
     if (check === "gate-decider") return checkGateDecider(args.repo);

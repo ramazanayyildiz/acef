@@ -1790,6 +1790,11 @@ try {
   run("git", ["commit", "-q", "-m", "fixture: commit compatibility terminal record"], { cwd: tmp });
   run("git", ["add", "legacy-terminal-dirty.php"], { cwd: tmp });
   expectPass("precommit-gate", ["--repo", tmp, "--check", "precommit-gate"]);
+  fs.writeFileSync(path.join(tmp, "docs", "ai", "actors", "stale-terminal-actor.json"), "{}\n");
+  run("git", ["add", "docs/ai/actors/stale-terminal-actor.json"], { cwd: tmp });
+  expectFailMessage("precommit-gate", ["--repo", tmp, "--check", "precommit-gate"], /completed run is inert/);
+  run("git", ["reset", "-q", "--", "docs/ai/actors/stale-terminal-actor.json"], { cwd: tmp });
+  fs.rmSync(path.join(tmp, "docs", "ai", "actors", "stale-terminal-actor.json"));
   run("git", ["reset", "-q", "--", "legacy-terminal-dirty.php"], { cwd: tmp });
   run("git", ["reset", "-q", "--soft", "HEAD^"], { cwd: tmp });
   run("git", ["reset", "-q", "--", "docs/ai/ACEF_ACTIVE_RUN.json", "docs/ai/gates/legacy-terminal-replan.json"], { cwd: tmp });

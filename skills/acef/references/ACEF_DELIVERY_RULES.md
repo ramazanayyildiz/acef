@@ -98,6 +98,18 @@ select Guarded assurance for high-risk boundaries. Direct has no human-risk-acce
 ACEF Fix promotes to ACEF Full when the repro is unclear, scope expands, a new pattern appears, or after-patch evidence
 does not cover the reproduced failure. High risk changes assurance to Guarded, not planning depth.
 
+### Quick Fix single-review contract
+
+New ACEF Fix runs record `quickFixContract: single-review-v1`. The critical path is Developer → one independent Code
+Reviewer → deterministic closeout. ATDD may be a third context when a regression test must first be authored; otherwise
+red evidence may be produced by the developer. Process Judge, Patch Assurance, Verify-Patch, Test Review, optional NFR,
+and broad-suite repetition are not scheduled. Guarded strengthens boundary/evidence controls without adding actors.
+
+The normal budget is three commits and the hard maximum is four; at most five product files, 50 changed product lines,
+four evidence runs, and one review cycle. Alert at 20 minutes and stop/replan at 30 active minutes or after a framework
+failure. Replan sooner for a second root cause, new contract/migration/dependency, widened authorization, unresolved HIGH
+after one repair, a second review cycle, or a twice-flaky focused test. User-facing fixes need product-outcome evidence.
+
 Quick-fix scope is an envelope, not a narrow file hallway. At dispatch, compute and record implementation paths, tests
 that import/exercise those symbols or hit the route/runtime path, fixtures/snapshots, route or smoke files, and shared
 resources such as seeds, migrations, settings groups, shared UI sections, or global fixtures. The human approves that
@@ -173,8 +185,9 @@ code-review/test-review/Judge inputs. The breaker does not grep prose or require
   direct compatibility runs report only their compact task record, focused verification, and handoff. ACEF chat output remains: artifact path,
   verdict, key evidence path/command, and next allowed step. Raw output dumps and full artifact bodies are drift
   risks because they consume context and hide the next gate.
-- **Lean evidence contract** — story/epic close requires artifact paths for worker report, review report, Process Judge
-  report, worker-context budget fields (`worker_context: bounded`, `fork_context: false`, `raw_output_policy:
+- **Lean evidence contract** — story/epic close requires artifact paths for worker report, review report, and the
+  workflow's decision report (Quick Fix reuses its single reviewer report; other actor-decided gates use Process Judge),
+  plus worker-context budget fields (`worker_context: bounded`, `fork_context: false`, `raw_output_policy:
   artifact-only`), output-budget fields (`diff_policy: targeted`, `test_output_policy: summary-only`,
   `search_output_policy: summarized`), and a refreshed Session Handoff. Epic close also records
   `fresh_session_recommended: yes`; continuing the same bloated thread is optional, not the default. Run
@@ -183,8 +196,9 @@ code-review/test-review/Judge inputs. The breaker does not grep prose or require
   patterns, golden neighbors, source reconciliation summary, shared risks, test strategy, fixtures, scope boundaries,
   exact commands, pitfalls, and per-story touched surfaces. Story workers consume the pack plus narrow story inputs; broad
   repo re-reading is blocked unless the story introduces a new/guarded/risky surface. Run `--check epic-context-pack`.
-- **Process Judge gates** — story/task close and epic close must prove the required steps, skills, and artifacts were
-  actually used before status changes to `done`.
+- **Decision gates** — story/task close and epic close must prove required steps, skills, and artifacts before `done`.
+  `single-review-v1` Quick Fix uses its independent reviewer gate plus deterministic closeout; Full epic close uses
+  Epic Process Judge, and compatibility contracts retain their specified Process Judge behavior.
 - **Seeded epic gates** — full BMAD epics/stories generation must seed `Epic N Process Judge [PENDING]` rows/artifacts
   before implementation starts. The final story in an epic points to that epic gate, and Epic N+1 cannot start until
   Epic N Process Judge is `PASS`.

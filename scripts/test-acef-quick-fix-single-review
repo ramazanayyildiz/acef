@@ -1,0 +1,135 @@
+#!/usr/bin/env node
+"use strict";
+
+const assert = require("node:assert/strict");
+const cp = require("node:child_process");
+const fs = require("node:fs");
+const os = require("node:os");
+const path = require("node:path");
+
+const acefRoot = path.resolve(__dirname, "..");
+const state = path.join(acefRoot, "scripts", "acef-state");
+const validator = path.join(acefRoot, "scripts", "acef-process-validator");
+const repo = fs.mkdtempSync(path.join(os.tmpdir(), "acef-single-review-"));
+
+function run(command, args, options = {}) {
+  return cp.execFileSync(command, args, { cwd: repo, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], ...options });
+}
+
+function stateRun(args) {
+  return run(process.execPath, [state, ...args]);
+}
+
+function write(relativePath, contents) {
+  const target = path.join(repo, relativePath);
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+  fs.writeFileSync(target, contents);
+}
+
+function readJson(relativePath) {
+  return JSON.parse(fs.readFileSync(path.join(repo, relativePath), "utf8"));
+}
+
+function validatorRun(check) {
+  return cp.spawnSync(process.execPath, [validator, "--repo", repo, "--check", check], { encoding: "utf8" });
+}
+
+try {
+  run("git", ["init", "-q"]);
+  run("git", ["config", "user.email", "acef@example.invalid"]);
+  run("git", ["config", "user.name", "ACEF Test"]);
+  write("app/fix.js", "module.exports = () => 'broken';\n");
+  write("tests/fix.test.js", "// baseline placeholder\n");
+  write("docs/ai/ACEF_quick_fix_DELIVERY_AUDIT.md", "# Quick Fix\n");
+  run("git", ["add", "."]);
+  run("git", ["commit", "-qm", "fixture baseline"]);
+  const baseCommit = run("git", ["rev-parse", "HEAD"]).trim();
+
+  stateRun(["active-run", "--repo", repo, "--run-id", "RUN-single-review", "--workflow-id", "quick-fix",
+    "--assurance", "guarded", "--scope-unit", "story", "--status", "active", "--story", "Bounded defect",
+    "--phase", "development", "--ledger", "docs/ai/ACEF_quick_fix_DELIVERY_AUDIT.md",
+    "--goal-description", "Repair the bounded backend defect", "--goal-user-facing", "false", "--goal-completion-mode", "backend-capability"]);
+  assert.equal(readJson("docs/ai/ACEF_ACTIVE_RUN.json").quickFixContract, "single-review-v1");
+
+  write("tests/fix.test.js", "const assert = require('node:assert/strict'); assert.equal(require('../app/fix')(), 'fixed');\n");
+  run("git", ["add", "tests/fix.test.js"]);
+  run("git", ["commit", "-qm", "test: reproduce bounded defect"]);
+  stateRun(["actor", "--repo", repo, "--id", "developer-1", "--story", "Bounded defect", "--phase", "development",
+    "--role", "developer", "--client", "codex", "--context-profile", "bounded"]);
+  const red = cp.spawnSync(process.execPath, [state, "evidence-run", "--repo", repo, "--id", "QF-red", "--kind", "runtime-test",
+    "--actor", "developer-1", "--story", "Bounded defect", "--satisfies", "regression-red", "--",
+    process.execPath, "tests/fix.test.js"], { cwd: repo, encoding: "utf8" });
+  assert.notEqual(red.status, 0, "red evidence unexpectedly passed");
+
+  write("app/fix.js", "module.exports = () => 'fixed';\n");
+  run("git", ["add", "app/fix.js"]);
+  run("git", ["commit", "-qm", "fix: repair bounded defect"]);
+  const applicationCommit = run("git", ["rev-parse", "HEAD"]).trim();
+  stateRun(["evidence-run", "--repo", repo, "--id", "QF-green", "--kind", "runtime-test", "--actor", "developer-1",
+    "--story", "Bounded defect", "--satisfies", "focused-green", "--", process.execPath, "tests/fix.test.js"]);
+  stateRun(["evidence-run", "--repo", repo, "--id", "QF-revert", "--kind", "runtime-test", "--actor", "developer-1",
+    "--story", "Bounded defect", "--satisfies", "quick-fix-revert-proof", "--", process.execPath, "-e",
+    "console.log('REVERT_PROOF_PASS')"]);
+
+  write("docs/ai/reports/quick-fix-review.md", "# Independent review\n\nVerdict: PASS\nNo unresolved findings.\n");
+  stateRun(["actor", "--repo", repo, "--id", "reviewer-1", "--story", "Bounded defect", "--phase", "code-review",
+    "--role", "code-review", "--client", "codex", "--context-profile", "bounded-review",
+    "--artifact-path", "docs/ai/reports/quick-fix-review.md"]);
+  stateRun(["gate", "--repo", repo, "--id", "QF-gate", "--scope", "Bounded defect", "--verdict", "PASS",
+    "--decided-by", "reviewer-1", "--evidence", "QF-green", "--evidence", "QF-revert"]);
+
+  const rawRed = readJson("docs/ai/evidence/QF-red.json").rawArtifact.path;
+  const rawGreen = readJson("docs/ai/evidence/QF-green.json").rawArtifact.path;
+  const rawRevert = readJson("docs/ai/evidence/QF-revert.json").rawArtifact.path;
+  const stepNames = ["preflight-current-context", "reuse-before-create", "implementation", "independent-review", "focused-verification", "closeout-evidence"];
+  const lifecycle = {
+    schema: "acef.lightweight-run.v2",
+    runId: "RUN-single-review",
+    workflowId: "quick-fix",
+    quickFixContract: "single-review-v1",
+    assuranceProfile: "guarded",
+    status: "complete",
+    implementationActorId: "developer-1",
+    reviewActorId: "reviewer-1",
+    steps: stepNames.map((name) => ({ name, status: "PASS", evidencePaths: [
+      name === "independent-review" ? "docs/ai/reports/quick-fix-review.md" : rawGreen,
+    ] })),
+    promotion: { decision: "stay-lightweight", triggers: [] },
+    surfaces: ["api"],
+    quickFix: {
+      intent: "Repair one proven bounded defect.",
+      scope: "One implementation file and one focused regression test.",
+      envelope: { source: "computed", implementationPaths: ["app/fix.js"], testPaths: ["tests/fix.test.js"], sharedResources: [] },
+      reproEvidencePath: rawRed,
+      beforePatchEvidencePath: rawRed,
+      afterPatchEvidencePath: rawGreen,
+      baseCommit,
+      applicationCommit,
+      redEvidenceId: "QF-red",
+      greenEvidenceId: "QF-green",
+      revertProofEvidenceId: "QF-revert",
+      productVerification: "NOT_APPLICABLE",
+      startedAt: "2026-08-06T10:00:00.000Z",
+      completedAt: "2026-08-06T10:12:00.000Z",
+      reviewCycle: 1,
+      frameworkFailures: 0,
+    },
+  };
+  write("docs/ai/ACEF_LIGHTWEIGHT_RUN.json", `${JSON.stringify(lifecycle, null, 2)}\n`);
+
+  for (const check of ["actor-separation", "gate-decider", "quick-fix-closeout"]) {
+    const result = validatorRun(check);
+    assert.equal(result.status, 0, `${check} failed:\n${result.stdout}${result.stderr}`);
+  }
+  assert.match(validatorRun("gate-decider").stdout, /single independent reviewer/);
+
+  lifecycle.quickFix.completedAt = "2026-08-06T10:31:00.000Z";
+  write("docs/ai/ACEF_LIGHTWEIGHT_RUN.json", `${JSON.stringify(lifecycle, null, 2)}\n`);
+  const overtime = validatorRun("quick-fix-closeout");
+  assert.notEqual(overtime.status, 0);
+  assert.match(overtime.stdout, /hard time-box exceeded/);
+
+  console.log("acef single-review Quick Fix tests passed");
+} finally {
+  fs.rmSync(repo, { recursive: true, force: true });
+}

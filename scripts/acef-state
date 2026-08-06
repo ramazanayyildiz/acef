@@ -401,6 +401,9 @@ function writeActiveRun(opts) {
   if (fullFlowContract && workflowId !== "full-bmad") {
     throw new Error("--full-flow-contract is only valid with --workflow-id full-bmad");
   }
+  const quickFixContract = workflowId === "quick-fix"
+    ? (sameRun ? previous.quickFixContract : "single-review-v1")
+    : undefined;
   const runtimeContract = sameRun ? (opts.runtimeContract || previousRuntimeContract) : opts.runtimeContract;
   if (runtimeContract && (workflowId !== "full-bmad" || fullFlowContract !== "four-actor-v3")) {
     throw new Error("--runtime-contract requires --workflow-id full-bmad --full-flow-contract four-actor-v3");
@@ -434,6 +437,7 @@ function writeActiveRun(opts) {
     runId: opts.runId,
     repo: path.basename(opts.repo),
     workflowId,
+    ...(quickFixContract ? { quickFixContract } : {}),
     ...(fullFlowContract ? { fullFlowContract } : {}),
     ...(runtimeContract ? { runtimeContract } : {}),
     assuranceProfile,

@@ -18,6 +18,10 @@ For admitted work, choose execution depth and assurance separately:
 - Baseline or Guarded assurance. Guarded is additive; it is not a fourth workflow and must not duplicate the selected
   workflow's lifecycle.
 
+New ACEF Fix runs use `quickFixContract: single-review-v1`: one developer, one independent reviewer, focused red/green
+and revert-proof evidence, then deterministic closeout. Guarded may strengthen evidence and scope controls, but it does
+not add Process Judge, Patch Assurance, Verify-Patch, Test Review, or a second review cycle to Quick Fix.
+
 Use typed active-run v2 fields `workflowId`, `assuranceProfile`, and `scopeUnit`. New Full runs also use
 `fullFlowContract: four-actor-v3`; an existing Full record without that field means compatibility
 `six-actor-v2`. A legacy active `lane: guarded` is ambiguous and must be explicitly migrated before writes are

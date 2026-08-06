@@ -428,6 +428,24 @@ try {
     throw new Error("non-Full guarded epic did not require typed human approval id");
   }
 
+  const quickFixTmp = fs.mkdtempSync(path.join(os.tmpdir(), "acef-state-quick-fix-"));
+  try {
+    cp.execFileSync("git", ["init", "-q"], { cwd: quickFixTmp });
+    cp.execFileSync("git", ["config", "user.email", "acef@example.invalid"], { cwd: quickFixTmp });
+    cp.execFileSync("git", ["config", "user.name", "ACEF Test"], { cwd: quickFixTmp });
+    cp.execFileSync("git", ["commit", "--allow-empty", "-qm", "quick-fix fixture"], { cwd: quickFixTmp });
+    cp.execFileSync(process.execPath, [state, "active-run", "--repo", quickFixTmp,
+      "--run-id", "RUN-quick-fix-v1", "--workflow-id", "quick-fix", "--assurance", "guarded",
+      "--status", "active", "--story", "Bounded defect", "--phase", "development",
+      "--ledger", "docs/ai/ACEF_quick_fix_DELIVERY_AUDIT.md"], { cwd: quickFixTmp });
+    const quickFixActive = JSON.parse(fs.readFileSync(path.join(quickFixTmp, "docs", "ai", "ACEF_ACTIVE_RUN.json"), "utf8"));
+    if (quickFixActive.quickFixContract !== "single-review-v1") {
+      throw new Error("new Quick Fix run did not default to single-review-v1");
+    }
+  } finally {
+    fs.rmSync(quickFixTmp, { recursive: true, force: true });
+  }
+
   const failed = cp.spawnSync(process.execPath, [state, "evidence-run", "--repo", tmp, "--id", "EV-fail", "--kind", "static-check", "--actor", "development", "--story", "Story 1.1", "--satisfies", "AC-fail", "--", process.execPath, "-e", "process.exit(7)"], { encoding: "utf8" });
   if (failed.status !== 7) throw new Error(`failed evidence did not preserve exit code: ${failed.status}`);
   if (readJson("docs/ai/evidence/EV-fail.json").exitCode !== 7) throw new Error("failed evidence manifest was not recorded");

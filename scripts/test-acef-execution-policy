@@ -125,6 +125,26 @@ try {
   assert.equal(parsedFix.workflowId, "quick-fix");
   assert.equal(parsedFix.assuranceProfile, "guarded");
   assert.equal(parsedFix.lane, "quick-fix");
+
+  v2Fix.quickFixContract = "single-review-v1";
+  Object.assign(v2Fix.quickFix, {
+    baseCommit: "a".repeat(40),
+    applicationCommit: "b".repeat(40),
+    redEvidenceId: "red-1",
+    greenEvidenceId: "green-1",
+    revertProofEvidenceId: "revert-1",
+    productVerification: "NOT_APPLICABLE",
+    startedAt: "2026-08-06T10:00:00.000Z",
+    completedAt: "2026-08-06T10:12:00.000Z",
+    reviewCycle: 1,
+    frameworkFailures: 0,
+  });
+  v2Fix.reviewActorId = "reviewer-1";
+  fs.writeFileSync(lightweightPath, JSON.stringify(v2Fix));
+  assert.equal(parseLightweightRun(lightweightPath).quickFixContract, "single-review-v1");
+  v2Fix.quickFix.reviewCycle = 2;
+  fs.writeFileSync(lightweightPath, JSON.stringify(v2Fix));
+  assert.throws(() => parseLightweightRun(lightweightPath), /reviewCycle must be 0 or 1/);
 } finally {
   fs.rmSync(tmp, { recursive: true, force: true });
 }

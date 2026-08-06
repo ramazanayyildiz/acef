@@ -18,6 +18,7 @@
     "schema": { "const": "acef.lightweight-run.v2" },
     "runId": { "type": "string", "minLength": 1 },
     "workflowId": { "enum": ["quick-fix", "lightweight"] },
+    "quickFixContract": { "const": "single-review-v1" },
     "assuranceProfile": { "enum": ["baseline", "guarded"] },
     "status": { "enum": ["active", "blocked", "complete"] },
     "implementationActorId": { "type": "string", "minLength": 1 },
@@ -54,8 +55,32 @@
     },
     "surfaces": { "type": "array", "items": { "type": "string" } },
     "surfaceEvidence": { "type": "array" },
-    "quickFix": { "type": "object" },
+    "quickFix": {
+      "type": "object",
+      "properties": {
+        "baseCommit": { "type": "string", "pattern": "^[a-f0-9]{40}$" },
+        "applicationCommit": { "type": "string", "pattern": "^[a-f0-9]{40}$" },
+        "redEvidenceId": { "type": "string", "pattern": "^[A-Za-z0-9._-]+$" },
+        "greenEvidenceId": { "type": "string", "pattern": "^[A-Za-z0-9._-]+$" },
+        "revertProofEvidenceId": { "type": "string", "pattern": "^[A-Za-z0-9._-]+$" },
+        "productEvidenceId": { "type": "string", "pattern": "^[A-Za-z0-9._-]+$" },
+        "productVerification": { "enum": ["PASS", "DEV_DONE_ONLY", "NOT_APPLICABLE"] },
+        "startedAt": { "type": "string", "format": "date-time" },
+        "completedAt": { "type": "string", "format": "date-time" },
+        "reviewCycle": { "type": "integer", "minimum": 0, "maximum": 1 },
+        "frameworkFailures": { "type": "integer", "minimum": 0 }
+      }
+    },
     "updatedAt": { "type": ["string", "null"] }
   },
-  "additionalProperties": false
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "if": { "required": ["quickFixContract"] },
+      "then": {
+        "properties": { "workflowId": { "const": "quick-fix" } },
+        "required": ["quickFix"]
+      }
+    }
+  ]
 }

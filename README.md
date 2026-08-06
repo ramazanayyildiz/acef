@@ -135,6 +135,8 @@ files the agent follows. No build, no npm, no services.
 3. **Use it** — open your own repo and run `/acef` (or just say "use acef"). It first decides whether ACEF controls are
    warranted, then selects ACEF Fix (`quick-fix`), ACEF Standard (`lightweight`), or ACEF Full (`full-bmad`), and
    independently selects Baseline or Guarded assurance per `method/DELIVERY_RULES.md`.
+   New Quick Fix runs use `single-review-v1`: one developer, one independent reviewer, focused evidence, and
+   deterministic closeout with a 30-minute hard stop. Guarded does not add the Full BMAD review stack.
    Reversible contained single-boundary/single-surface tasks stay outside ACEF: use targeted reads, the smallest native
    repo patch, and focused verification without ACEF artifacts. Admitted concrete work first creates a target-run
    ledger, sets `ACEF_ACTIVE_LEDGER` or

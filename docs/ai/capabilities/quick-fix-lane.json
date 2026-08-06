@@ -1,7 +1,7 @@
 {
   "capabilityId": "quick-fix-lane",
-  "requestedIntent": "Add a BMAD-aligned Quick Fix lane with ACEF mechanical controls for narrow bug fixes.",
-  "status": "proven",
+  "requestedIntent": "Keep ACEF Quick Fix fast by enforcing one independent review, deterministic closeout, hard budgets, and no duplicated Full BMAD review stack.",
+  "status": "enforced",
   "requiredLayers": [
     "docs",
     "workflow",
@@ -18,19 +18,28 @@
     "workflow": [
       "schemas/active-run-v2.schema.json",
       "schemas/lightweight-run-v2.schema.json",
+      "scripts/acef-state#writeActiveRun",
       "scripts/lib/acef-state-parser.js#parseActiveRun",
       "scripts/lib/acef-state-parser.js#parseLightweightRun"
     ],
     "validator": [
       "scripts/acef-process-validator#checkLightweightLifecycle",
+      "scripts/acef-process-validator#checkQuickFixCloseout",
+      "scripts/acef-process-validator#gateDeciderIntegrityFailures",
+      "scripts/acef-process-validator#checkPrecommitGate",
       "scripts/acef-process-validator#testEditIntegrityFailures"
     ],
     "tests": [
-      "scripts/test-acef-lightweight-lifecycle"
+      "scripts/test-acef-lightweight-lifecycle",
+      "scripts/test-acef-quick-fix-single-review",
+      "scripts/test-acef-process-validator",
+      "scripts/test-acef-state"
     ]
   },
   "limitations": [
-    "Quick Fix uses the compact lifecycle artifact docs/ai/ACEF_LIGHTWEIGHT_RUN.json.",
+    "New Quick Fix runs use quickFixContract single-review-v1; existing records without it remain compatibility state.",
+    "The successor contract is enforced and regression-tested but has not yet completed a live controlled canary, so the capability is not yet proven at this version.",
+    "The 20-minute alert is an operating rule; the 30-minute stop, actor/evidence/commit/file/line budgets, framework-failure stop, reviewer binding, and stale completed-run isolation are validator-enforced.",
     "The validator checks declared quick-fix evidence paths and touched-surface evidence, plus heuristic path-name inference for obvious hidden risk and surface expansion.",
     "The validator enforces changed test files against the quick-fix envelope and blocks obvious test-gutting patterns; symbol graph envelope derivation is still recorded by the conductor rather than fully inferred by the validator.",
     "Expanding or planning-heavy fixes promote to ACEF Full; high-risk fixes add Guarded assurance independently."
@@ -54,11 +63,11 @@
     },
     {
       "layer": "validator",
-      "ref": "scripts/acef-process-validator#testEditIntegrityFailures"
+      "ref": "scripts/acef-process-validator#checkQuickFixCloseout"
     },
     {
       "layer": "tests",
-      "ref": "scripts/test-acef-lightweight-lifecycle"
+      "ref": "scripts/test-acef-quick-fix-single-review"
     }
   ],
   "createdAt": "2026-06-25"

@@ -323,6 +323,13 @@ evidence manifests, an evidence-backed PASS gate, a boundary test floor, and the
 Guarded is not a fourth workflow. ACEF Fix + Guarded and ACEF Standard + Guarded keep their compact lifecycle.
 ACEF Full + Guarded runs one Full lifecycle with Guarded deltas; lifecycle phases are never repeated.
 
+New ACEF Fix records use `quickFixContract: single-review-v1`. They use two independent contexts by default: one
+developer and one Code Reviewer; an optional ATDD author makes three at most. The same reviewer may perform one delta
+recheck after one repair, but no second review cycle is created. Deterministic closeout validates focused red, green,
+revert-proof, and—when user-facing—product-outcome evidence. It enforces four commits maximum, five product files, 50
+product-line churn, four evidence runs, zero framework failures, and a 30-minute hard stop. Process Judge and the Full
+BMAD review stack are not part of this contract.
+
 The retired `direct` experiment remains readable only to close or promote existing compatibility records.
 
 An existing direct compatibility run must promote before continuing when it becomes irreversible, touches more than one inferred product
