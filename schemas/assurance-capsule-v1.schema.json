@@ -14,7 +14,7 @@
     "schema": { "type": "string", "const": "acef.assurance-capsule.v1" },
     "runId": { "type": "string", "minLength": 1 },
     "fullFlowContract": { "type": "string", "const": "four-actor-v3" },
-    "runtimeContract": { "type": "string", "const": "capsule-supervisor-v1" },
+    "runtimeContract": { "type": "string", "enum": ["capsule-supervisor-v1", "capsule-supervisor-v2"] },
     "story": { "type": "string", "minLength": 1 },
     "role": { "type": "string", "enum": ["code-review", "patch-assurance"] },
     "actorInstanceId": { "type": "string", "minLength": 1 },

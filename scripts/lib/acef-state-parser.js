@@ -85,6 +85,10 @@ function normalizedRecordScope(value) {
   return String(value || "").toLowerCase().replace(/[^a-z0-9]+/g, "");
 }
 
+function normalizedActorToken(value) {
+  return String(value || "").toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+}
+
 const TEST_RUNNER_COMMAND = /(?:^|\s)(?:(?:[^\s]+[\\/])?node(?:\.exe)?\s+--test\b|(?:npm|pnpm|yarn|bun)\s+(?:run\s+)?test\b|php\s+artisan\s+test\b|(?:vendor\/bin\/)?(?:phpunit|pest)\b|(?:python(?:3)?\s+-m\s+)?pytest\b|go\s+test\b|cargo\s+test\b|dotnet\s+test\b|(?:mvnw?|gradlew?)\s+[^\n]*(?:test|check)\b|rspec\b|(?:vitest|jest)\b)/i;
 const TEST_FAILURE_OUTPUT = /(?:\bFAIL(?:ED|URE|URES)?\b|\bnot ok\b|AssertionError|assertion failed|\btests? failed\b|\berror:\s|\bexpected\b[^\n]+\bactual\b|\bpanic:\s)/i;
 
@@ -186,7 +190,7 @@ function parseActiveRun(filePath) {
       }
     }
     if (record.runtimeContract !== undefined) {
-      requireEnum(record, "runtimeContract", ["capsule-supervisor-v1"], "active run");
+      requireEnum(record, "runtimeContract", ["capsule-supervisor-v1", "capsule-supervisor-v2"], "active run");
       if (record.workflowId !== "full-bmad" || record.fullFlowContract !== "four-actor-v3") {
         throw new Error("active run runtimeContract requires full-bmad/four-actor-v3");
       }
@@ -229,13 +233,15 @@ function parseActiveRun(filePath) {
     }
     if (record.status !== "complete") throw new Error("active run terminalGateId is valid only when status is complete");
   }
-  if (record.runtimeContract === "capsule-supervisor-v1" && record.status === "complete") {
+  if (["capsule-supervisor-v1", "capsule-supervisor-v2"].includes(record.runtimeContract) && record.status === "complete") {
     const expectedEpicScope = record.activeEpic || "Epic closeout";
+    const expectedActorId = record.runtimeContract === "capsule-supervisor-v2"
+      ? `acef_${normalizedActorToken(record.runId)}_epic_process_judge` : "acef_epic_process_judge";
     if (record.scopeUnit !== "epic"
       || normalizedRecordScope(record.activeStory) !== normalizedRecordScope(expectedEpicScope)
       || String(record.activePhase).toLowerCase() !== "closeout"
       || record.workerRole !== "epic-process-judge"
-      || record.activeActorId !== "acef_epic_process_judge") {
+      || record.activeActorId !== expectedActorId) {
       throw new Error("completed capsule-supervisor run must preserve the canonical Epic Process Judge closeout shape");
     }
     if (record.terminalDisposition === undefined) {
@@ -432,7 +438,7 @@ function parseAssuranceCapsule(filePath) {
   requireFields(record, fields.filter((field) => !["previousFindings", "repairReceipt"].includes(field)), "assurance capsule");
   if (record.schema !== "acef.assurance-capsule.v1"
     || record.fullFlowContract !== "four-actor-v3"
-    || record.runtimeContract !== "capsule-supervisor-v1") {
+    || !["capsule-supervisor-v1", "capsule-supervisor-v2"].includes(record.runtimeContract)) {
     throw new Error("assurance capsule schema/contract mismatch");
   }
   requireEnum(record, "role", ["code-review", "patch-assurance"], "assurance capsule");
@@ -479,6 +485,11 @@ function parseEvidenceManifest(filePath) {
   if (record.commandArgv !== undefined) requireStringArray(record, "commandArgv", "evidence manifest", { nonEmpty: true });
   if (!Number.isInteger(record.exitCode)) throw new Error("evidence manifest missing integer exitCode");
   requireStringArray(record, "satisfies", "evidence manifest", { nonEmpty: true });
+  if (record.reusedFromEvidenceId !== undefined
+    && (typeof record.reusedFromEvidenceId !== "string" || !record.reusedFromEvidenceId.trim()
+      || record.reusedFromEvidenceId === record.evidenceId)) {
+    throw new Error("evidence reusedFromEvidenceId must name a different non-empty evidence id");
+  }
   for (const field of ["dirtyApplicationPathsBefore", "dirtyApplicationPathsAfter"]) {
     if (record[field] !== undefined) requireStringArray(record, field, "evidence manifest");
   }

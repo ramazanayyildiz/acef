@@ -146,6 +146,7 @@ Run the built-in coverage first:
 node scripts/test-acef-state
 node scripts/test-acef-typed-state-validator
 node scripts/test-install-acef-tools
+node scripts/test-acef-capsule-supervisor-v2
 ```
 
 Then install into a disposable clone of a real ACEF project and repeat the record/validate loop. Do not write dogfood

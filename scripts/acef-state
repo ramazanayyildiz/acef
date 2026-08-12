@@ -52,7 +52,7 @@ The existing direct record is the compact compatibility context. Do not inspect 
   console.log(`ACEF typed-state writer
 
 Usage:
-  acef-state active-run --repo <path> --run-id <id> --workflow-id quick-fix|lightweight|full-bmad [--full-flow-contract six-actor-v2|four-actor-v3] [--runtime-contract capsule-supervisor-v1] --assurance baseline|guarded --scope-unit work-item|story|epic [--expected-story <story>...] --status <status> --story <scope> --phase <phase> --ledger <path> [--route <route> --route-confidence low|medium|high --admission-decision acef --admission-rationale <text> --source-disposition fresh|split-child --reversible true|false --technical-boundary-count <n> --product-surface-count <n>] [--parent-run-id <id> --re-admission-confirmed true] [--goal-description <text> --goal-user-facing true|false --goal-completion-mode backend-capability|product-workspace|internal] [options]
+  acef-state active-run --repo <path> --run-id <id> --workflow-id quick-fix|lightweight|full-bmad [--full-flow-contract six-actor-v2|four-actor-v3] [--runtime-contract capsule-supervisor-v1|capsule-supervisor-v2] --assurance baseline|guarded --scope-unit work-item|story|epic [--expected-story <story>...] --status <status> --story <scope> --phase <phase> --ledger <path> [--route <route> --route-confidence low|medium|high --admission-decision acef --admission-rationale <text> --source-disposition fresh|split-child --reversible true|false --technical-boundary-count <n> --product-surface-count <n>] [--parent-run-id <id> --re-admission-confirmed true] [--goal-description <text> --goal-user-facing true|false --goal-completion-mode backend-capability|product-workspace|internal] [options]
   acef-state migrate-active-run --repo <path> --workflow-id quick-fix|lightweight|full-bmad [--assurance baseline|guarded] [--assurance-rationale <text>] [--assurance-approval <approval-id>]
   acef-state direct-run --repo <path> --run-id <id> --status active|complete|promoted --scope <scope> --acceptance <criterion>... --technical-boundary <kind> --reversible true [--changed-path <path>...] [--verification-command <command> --verification-exit-code <code>]... [options]
   acef-state actor --repo <path> --id <id> --story <scope> --phase <phase> --role <role> --client <client> --context-profile <profile> [options]
@@ -291,6 +291,8 @@ function evidenceRunnerProof(record) {
     actorInstanceId: record.actorInstanceId,
     story: record.story,
     rawArtifact: record.rawArtifact,
+    ...(Object.prototype.hasOwnProperty.call(record, "reusedFromEvidenceId")
+      ? { reusedFromEvidenceId: record.reusedFromEvidenceId } : {}),
     ...(Object.prototype.hasOwnProperty.call(record, "discovery") ? { discovery: record.discovery } : {}),
     satisfies: record.satisfies,
   }));
@@ -333,7 +335,7 @@ function atomicJson(filePath, record, { overwrite = false, validate = null } = {
 }
 
 function syncRuntimeContext(repo, activeRun, workerScope = null) {
-  if (activeRun.runtimeContract !== "capsule-supervisor-v1" || !activeRun.contextPath) return;
+  if (!capsuleRuntime(activeRun) || !activeRun.contextPath) return;
   const matchingScope = workerScope
     && workerScope.runId === activeRun.runId
     && normalizedScope(workerScope.activeStory) === normalizedScope(activeRun.activeStory)
@@ -668,7 +670,7 @@ function writeActor(opts) {
   if (v3 && canonicalGatePhase(opts.phase) === "development" && !opts.sessionId) {
     throw new Error("four-actor-v3 Developer actor requires --session-id for repair continuity");
   }
-  if (activeRun?.runtimeContract === "capsule-supervisor-v1") {
+  if (capsuleRuntime(activeRun)) {
     const actorPhase = canonicalGatePhase(opts.phase);
     const routingRole = actorPhase === "atdd" ? "atdd"
       : actorPhase === "development" ? "development"
@@ -742,8 +744,8 @@ function writeWorkerScope(opts) {
 
 function writeContextSync(opts) {
   const activeRun = activeV3Run(opts.repo);
-  if (activeRun.runtimeContract !== "capsule-supervisor-v1") {
-    throw new Error("context-sync requires capsule-supervisor-v1");
+  if (!capsuleRuntime(activeRun)) {
+    throw new Error("context-sync requires a capsule-supervisor runtime");
   }
   const workerScopePath = activeRun.workerScopePath
     ? path.resolve(opts.repo, activeRun.workerScopePath)
@@ -816,19 +818,73 @@ function writeEvidence(opts) {
   if (!["runtime-test", "static-check", "manual-smoke", "build", "lint", "typecheck", "other"].includes(opts.kind)) {
     throw new Error("evidence manifest kind must be one of: runtime-test, static-check, manual-smoke, build, lint, typecheck, other");
   }
+  const activeRunPath = path.join(opts.repo, "docs", "ai", "ACEF_ACTIVE_RUN.json");
+  const activeRun = fs.existsSync(activeRunPath) ? parseActiveRun(activeRunPath) : null;
+  const runEvidencePrefix = activeRun?.runtimeContract === "capsule-supervisor-v2"
+    ? `${normalizedActorToken(activeRun.runId)}-` : "";
+  if (runEvidencePrefix && !opts.id.startsWith(runEvidencePrefix)) {
+    throw new Error(`capsule-supervisor-v2 evidence id must start with ${runEvidencePrefix}`);
+  }
   const rawPath = rawEvidencePath(opts.repo, opts.id);
   const target = evidencePath(opts.repo, opts.id);
+  const commandText = opts.commandArgv.map(quoteArg).join(" ");
+  const currentCommit = gitCommit(opts.repo);
+  const currentTree = gitTree(opts.repo);
+  const currentDirtyDigest = dirtyDigest(opts.repo);
+  const currentDirtyApplicationPaths = dirtyApplicationPaths(opts.repo);
+  const currentEnvironmentDigest = sha256(`${process.platform}\n${process.arch}\n${process.version}\n${os.release()}`);
+  const evidenceDir = path.join(opts.repo, "docs", "ai", "evidence");
+  const reusable = activeRun && fs.existsSync(evidenceDir)
+    ? fs.readdirSync(evidenceDir).filter((name) => name.endsWith(".json")).map((name) => {
+      try { return parseEvidenceManifest(path.join(evidenceDir, name)); } catch { return null; }
+    }).filter((record) => record && !record.reusedFromEvidenceId).find((record) => {
+      if (record.kind !== opts.kind || record.command !== commandText
+        || record.repositoryCommit !== currentCommit || record.repositoryTree !== currentTree
+        || JSON.stringify(record.dirtyApplicationPathsBefore || []) !== JSON.stringify(currentDirtyApplicationPaths)
+        || record.environmentDigest !== currentEnvironmentDigest
+        || normalizedScope(record.story) !== normalizedScope(opts.story)) return false;
+      if (opts.expectedTest.length
+        && (!record.discovery
+          || opts.expectedTest.some((identity) => !record.discovery.discoveredTests?.includes(identity)))) return false;
+      try {
+        const actor = parseActorRecord(actorPath(opts.repo, record.actorInstanceId));
+        return actor.runId === activeRun.runId;
+      } catch { return false; }
+    }) : null;
+  if (reusable) {
+    if (reusable.evidenceId === opts.id) {
+      console.log(`REUSED evidence ${relative(opts.repo, target)} source=${reusable.evidenceId} exit=${reusable.exitCode}`);
+      process.exitCode = reusable.exitCode;
+      return;
+    }
+    if (fs.existsSync(rawPath) || fs.existsSync(target)) {
+      throw new Error(`Refusing to overwrite immutable evidence ${opts.id}`);
+    }
+    const record = {
+      ...reusable,
+      evidenceId: opts.id,
+      satisfies: [...new Set([...reusable.satisfies, ...opts.satisfies])],
+      reusedFromEvidenceId: reusable.evidenceId,
+    };
+    record.runnerProof = {
+      schema: "acef-evidence-runner-proof-v1",
+      runner: "acef-state evidence-run",
+      sha256: evidenceRunnerProof(record),
+    };
+    atomicJson(target, record, { validate: parseEvidenceManifest });
+    console.log(`REUSED evidence ${relative(opts.repo, target)} source=${reusable.evidenceId} exit=${record.exitCode}`);
+    process.exitCode = record.exitCode;
+    return;
+  }
   if (fs.existsSync(rawPath) || fs.existsSync(target)) {
     throw new Error(`Refusing to overwrite immutable evidence ${opts.id}`);
   }
   const discovery = executeDiscoveryContract(opts);
   const beforeDirty = dirtyApplicationPaths(opts.repo);
-  const activeRunPath = path.join(opts.repo, "docs", "ai", "ACEF_ACTIVE_RUN.json");
-  const activeRun = fs.existsSync(activeRunPath) ? parseActiveRun(activeRunPath) : null;
   const actorFile = actorPath(opts.repo, opts.actor);
-  const canonicalAtddId = `acef_${String(opts.story).toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "")}_atdd`;
+  const canonicalAtddId = capsuleActorId(activeRun, "atdd", opts.story);
   const correctionDir = path.join(opts.repo, "docs", "ai", "corrections");
-  const correction = activeRun?.runtimeContract === "capsule-supervisor-v1"
+  const correction = capsuleRuntime(activeRun)
     && canonicalGatePhase(activeRun.activePhase) === "atddcorrection" && fs.existsSync(correctionDir)
     ? fs.readdirSync(correctionDir).filter((name) => name.endsWith(".json")).map((name) => {
       try { return parseAtddCorrection(path.join(correctionDir, name)); } catch { return null; }
@@ -850,7 +906,9 @@ function writeEvidence(opts) {
     try { redParent = runGit(opts.repo, ["rev-parse", `${redCommit}^`]); } catch {}
     const redPaths = redParent ? applicationChangedSince(opts.repo, redParent, redCommit) : [];
     if (!redParent || !redPaths.length || !redPaths.every(testPath)
-      || (correction && (opts.id !== `${normalizedActorToken(opts.story)}-red-correction1`
+      || (correction && (opts.id !== (activeRun.runtimeContract === "capsule-supervisor-v2"
+        ? `${normalizedActorToken(activeRun.runId)}-${normalizedActorToken(opts.story)}-red-correction1`
+        : `${normalizedActorToken(opts.story)}-red-correction1`)
         || redPaths.some((filePath) => !scopeAllows(correction.allowedPaths, filePath))))) {
       throw new Error("four-actor-v3 ATDD evidence requires HEAD to be a new test-only commit before actor creation");
     }
@@ -890,7 +948,6 @@ function writeEvidence(opts) {
     }
   }
 
-  const commandText = opts.commandArgv.map(quoteArg).join(" ");
   const startedAt = new Date().toISOString();
   const execution = cp.spawnSync(opts.commandArgv[0], opts.commandArgv.slice(1), {
     cwd: opts.repo,
@@ -924,12 +981,12 @@ function writeEvidence(opts) {
     exitCode,
     startedAt,
     finishedAt,
-    repositoryCommit: gitCommit(opts.repo),
-    repositoryTree: gitTree(opts.repo),
-    dirtyDigest: dirtyDigest(opts.repo),
+    repositoryCommit: currentCommit,
+    repositoryTree: currentTree,
+    dirtyDigest: currentDirtyDigest,
     dirtyApplicationPathsBefore: beforeDirty,
     dirtyApplicationPathsAfter: afterDirty,
-    environmentDigest: sha256(`${process.platform}\n${process.arch}\n${process.version}\n${os.release()}`),
+    environmentDigest: currentEnvironmentDigest,
     actorInstanceId: opts.actor,
     story: opts.story,
     rawArtifact: { path: relative(opts.repo, rawPath), sha256: sha256(fs.readFileSync(rawPath)) },
@@ -955,16 +1012,15 @@ function writeAtddCorrectionStart(opts) {
   required(opts, ["findingsSha256"]);
   if (!/^[a-f0-9]{64}$/.test(opts.findingsSha256)) throw new Error("--findings-sha256 must be lowercase SHA-256");
   const activeRun = activeV3Run(opts.repo);
-  if (activeRun.runtimeContract !== "capsule-supervisor-v1" || activeRun.scopeUnit !== "story"
+  if (!capsuleRuntime(activeRun) || activeRun.scopeUnit !== "story"
     || canonicalGatePhase(activeRun.activePhase) !== "development") {
     throw new Error("atdd-correction-start requires an active capsule-supervisor story in Development");
   }
   if (dirtyApplicationPaths(opts.repo).length) {
     throw new Error("post-red ATDD correction requires a clean application/test tree at the original red commit");
   }
-  const storyToken = String(activeRun.activeStory).toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
-  const sourceActorId = `acef_${storyToken}_atdd`;
-  const requestingActorId = `acef_${storyToken}_development`;
+  const sourceActorId = capsuleActorId(activeRun, "atdd");
+  const requestingActorId = capsuleActorId(activeRun, "development");
   const correctionActorId = `${sourceActorId}_correction1`;
   parseActorRecord(actorPath(opts.repo, sourceActorId));
   parseActorRecord(actorPath(opts.repo, requestingActorId));
@@ -1042,6 +1098,21 @@ function normalizedScope(value) {
 
 function normalizedActorToken(value) {
   return String(value || "").toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+}
+
+function capsuleRuntime(activeRun) {
+  return ["capsule-supervisor-v1", "capsule-supervisor-v2"].includes(activeRun?.runtimeContract);
+}
+
+function capsuleActorPrefix(activeRun, story = activeRun?.activeStory) {
+  const storyToken = normalizedActorToken(story);
+  return activeRun?.runtimeContract === "capsule-supervisor-v2"
+    ? `acef_${normalizedActorToken(activeRun.runId)}_${storyToken}`
+    : `acef_${storyToken}`;
+}
+
+function capsuleActorId(activeRun, role, story = activeRun?.activeStory) {
+  return `${capsuleActorPrefix(activeRun, story)}_${role}`;
 }
 
 function canonicalGatePhase(value) {
@@ -1137,7 +1208,7 @@ function assertAtddHarnessSafe(repo, testPaths, workerScope) {
 
 function writeAtddPrecheck(opts) {
   const activeRun = activeV3Run(opts.repo);
-  if (activeRun.runtimeContract !== "capsule-supervisor-v1" || activeRun.scopeUnit !== "story"
+  if (!capsuleRuntime(activeRun) || activeRun.scopeUnit !== "story"
     || !["atdd", "atddcorrection"].includes(canonicalGatePhase(activeRun.activePhase))) {
     throw new Error("atdd-precheck requires an active capsule-supervisor ATDD or ATDD-correction story");
   }
@@ -1155,7 +1226,7 @@ function writeAtddPrecheck(opts) {
 
 function writeReviewScope(opts) {
   const activeRun = activeV3Run(opts.repo);
-  if (activeRun.runtimeContract !== "capsule-supervisor-v1" || activeRun.scopeUnit !== "story"
+  if (!capsuleRuntime(activeRun) || activeRun.scopeUnit !== "story"
     || canonicalGatePhase(activeRun.activePhase) !== "codereview") {
     throw new Error("review-scope requires an active story code review under capsule-supervisor-v1");
   }
@@ -1283,7 +1354,7 @@ function boundReviewReport(repo, actor, expectedPhase, scope, activeRun) {
     || report.inputTree !== actor.inputTree) {
     throw new Error(`${expectedPhase} review report identity/scope/input binding mismatch`);
   }
-  if (activeRun.runtimeContract === "capsule-supervisor-v1") {
+  if (capsuleRuntime(activeRun)) {
     if (!report.capsulePath || !report.capsuleSha256) throw new Error(`${expectedPhase} review report is missing capsule binding`);
     const capsulePath = path.resolve(repo, report.capsulePath);
     const capsuleRelative = relative(repo, capsulePath).replaceAll(path.sep, "/");
@@ -1468,7 +1539,7 @@ function writeDeterministicStoryCloseGate(opts, activeRun) {
       failures.push(`closing evidence ${evidenceId} is failed, dirty, or stale for application tree ${applicationTree}`);
     }
   }
-  if (activeRun.runtimeContract === "capsule-supervisor-v1"
+  if (capsuleRuntime(activeRun)
     && (!green.discovery || !green.discovery.expectedTests?.length
       || green.discovery.expectedTests.some((test) => !green.discovery.discoveredTests?.includes(test)))) {
     runnerProof = false;
@@ -1786,7 +1857,7 @@ function activeV3Run(repo) {
 function writePhaseTransition(opts) {
   required(opts, ["phase"]);
   const activeRun = activeV3Run(opts.repo);
-  if (activeRun.runtimeContract !== "capsule-supervisor-v1" || activeRun.scopeUnit !== "story") {
+  if (!capsuleRuntime(activeRun) || activeRun.scopeUnit !== "story") {
     throw new Error("phase-transition requires an active capsule-supervisor story run");
   }
   const current = canonicalGatePhase(activeRun.activePhase);
@@ -1808,9 +1879,8 @@ function writePhaseTransition(opts) {
       || normalizedScope(workerScope.activeStory) !== normalizedScope(activeRun.activeStory)) {
       throw new Error("ATDD to Development worker scope does not match the active run/story");
     }
-    const storyToken = String(activeRun.activeStory).toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
     if (current === "atddcorrection") {
-      const correctionPath = path.join(opts.repo, "docs", "ai", "corrections", `acef_${storyToken}_atdd_correction1.json`);
+      const correctionPath = path.join(opts.repo, "docs", "ai", "corrections", `${capsuleActorId(activeRun, "atdd_correction1")}.json`);
       const correction = parseAtddCorrection(correctionPath);
       if (correction.schema !== "acef.atdd-correction.v2" || correction.runId !== activeRun.runId) {
         throw new Error("ATDD correction to Development requires the bound post-red correction record");
@@ -1820,7 +1890,7 @@ function writePhaseTransition(opts) {
     workerScopeTransition = {
       ...workerScope,
       phase: "development",
-      workerId: `acef_${storyToken}_development`,
+      workerId: capsuleActorId(activeRun, "development"),
       createdAt: new Date().toISOString(),
     };
   }
@@ -1837,7 +1907,7 @@ function writePhaseTransition(opts) {
 
 function writeStoryTransition(opts) {
   const activeRun = activeV3Run(opts.repo);
-  if (activeRun.runtimeContract !== "capsule-supervisor-v1" || activeRun.scopeUnit !== "story"
+  if (!capsuleRuntime(activeRun) || activeRun.scopeUnit !== "story"
     || canonicalGatePhase(activeRun.activePhase) !== "codereview") {
     throw new Error("story-transition requires an active capsule-supervisor story in code-review");
   }
@@ -1930,14 +2000,13 @@ function capsuleBlob(filePath, content) {
 function writeReviewCapsule(opts) {
   required(opts, ["id", "role", "actor", "baseCommit", "redEvidence", "greenEvidence"]);
   const activeRun = activeV3Run(opts.repo);
-  if (activeRun.runtimeContract !== "capsule-supervisor-v1"
+  if (!capsuleRuntime(activeRun)
     || activeRun.scopeUnit !== "story" || canonicalGatePhase(activeRun.activePhase) !== "codereview") {
     throw new Error("review-capsule requires an active story review under capsule-supervisor-v1");
   }
   if (!["code-review", "patch-assurance"].includes(opts.role)) throw new Error("--role must be code-review or patch-assurance");
-  const storyToken = String(activeRun.activeStory).toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
   const cycle = opts.reviewCycle === undefined ? 0 : Number(opts.reviewCycle);
-  const expectedActor = `acef_${storyToken}_${opts.role.replaceAll("-", "_")}${cycle ? `_retry${cycle}` : ""}`;
+  const expectedActor = `${capsuleActorPrefix(activeRun)}_${opts.role.replaceAll("-", "_")}${cycle ? `_retry${cycle}` : ""}`;
   if (opts.actor !== expectedActor || !Number.isInteger(cycle) || cycle < 0 || cycle > 2) {
     throw new Error("review-capsule actor/review-cycle does not match the canonical active-story identity");
   }
@@ -2061,7 +2130,7 @@ function boundCurrentCapsule(repo, activeRun, actor) {
 function showCapsule(opts) {
   required(opts, ["id"]);
   const activeRun = activeV3Run(opts.repo);
-  if (activeRun.runtimeContract !== "capsule-supervisor-v1" || activeRun.scopeUnit !== "story"
+  if (!capsuleRuntime(activeRun) || activeRun.scopeUnit !== "story"
     || canonicalGatePhase(activeRun.activePhase) !== "codereview") {
     throw new Error("capsule-show requires the active capsule-supervisor story review phase");
   }
@@ -2085,7 +2154,7 @@ function writeReviewCompletion(opts) {
   }
   const bytes = fs.readFileSync(artifactPath);
   const report = parseReviewReport(artifactPath);
-  const capsule = activeRun.runtimeContract === "capsule-supervisor-v1"
+  const capsule = capsuleRuntime(activeRun)
     ? boundCurrentCapsule(opts.repo, activeRun, opts.actor) : null;
   if (report.runId !== activeRun.runId || report.fullFlowContract !== activeRun.fullFlowContract
     || report.actorInstanceId !== opts.actor
@@ -2155,8 +2224,7 @@ function writeReviewResult(opts) {
   if (activeRun.scopeUnit !== "story" || canonicalGatePhase(activeRun.activePhase) !== "codereview") {
     throw new Error("review-result requires the active four-actor-v3 story review phase");
   }
-  const storyToken = String(activeRun.activeStory).toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
-  const actorPattern = new RegExp(`^acef_${storyToken}_(code_review|patch_assurance)(?:_retry[12])?$`);
+  const actorPattern = new RegExp(`^${capsuleActorPrefix(activeRun)}_(code_review|patch_assurance)(?:_retry[12])?$`);
   const actorMatch = String(opts.actor).match(actorPattern);
   if (!actorMatch) throw new Error("review-result actor must be the canonical active-story Code Review or Patch Assurance identity");
   const verdict = String(opts.verdict).toUpperCase();
@@ -2171,7 +2239,7 @@ function writeReviewResult(opts) {
   if (fs.existsSync(reportPath) || fs.existsSync(reviewerPath)) {
     throw new Error(`Refusing to overwrite immutable review result ${opts.actor}`);
   }
-  const capsule = activeRun.runtimeContract === "capsule-supervisor-v1"
+  const capsule = capsuleRuntime(activeRun)
     ? boundCurrentCapsule(opts.repo, activeRun, opts.actor) : null;
   const report = {
     schema: "acef.review-report.v3",
@@ -2247,7 +2315,7 @@ function writeEpicComplete(opts) {
   const activeRun = parseActiveRun(activeRunPath);
   const expectedEpicScope = activeRun.activeEpic || "Epic closeout";
   if (activeRun.status !== "active" || activeRun.workflowId !== "full-bmad"
-    || activeRun.fullFlowContract !== "four-actor-v3" || activeRun.runtimeContract !== "capsule-supervisor-v1"
+    || activeRun.fullFlowContract !== "four-actor-v3" || !capsuleRuntime(activeRun)
     || activeRun.scopeUnit !== "epic" || normalizedScope(activeRun.activeStory) !== normalizedScope(expectedEpicScope)) {
     throw new Error("epic-complete requires the active capsule-supervisor four-actor-v3 Epic closeout state");
   }
@@ -2259,7 +2327,8 @@ function writeEpicComplete(opts) {
     || gate.runId !== activeRun.runId || gate.fullFlowContract !== activeRun.fullFlowContract
     || JSON.stringify(gate.storyInventory) !== JSON.stringify(activeRun.expectedStories)
     || normalizedScope(gate.scope) !== normalizedScope(activeRun.activeStory)
-    || judge.actorInstanceId !== "acef_epic_process_judge"
+    || judge.actorInstanceId !== (activeRun.runtimeContract === "capsule-supervisor-v2"
+      ? `acef_${normalizedActorToken(activeRun.runId)}_epic_process_judge` : "acef_epic_process_judge")
     || judge.runId !== activeRun.runId || judge.fullFlowContract !== activeRun.fullFlowContract
     || normalizedScope(judge.story) !== normalizedScope(activeRun.activeStory)) {
     throw new Error("epic-complete gate/Judge does not bind the active run, contract, inventory, and Epic scope");

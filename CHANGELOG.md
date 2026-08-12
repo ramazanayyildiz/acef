@@ -9,6 +9,19 @@ or evidence contract. Do not use it to claim implementation status; link to the 
 
 ## Unreleased
 
+### Capsule supervisor v2 isolates runs and reuses exact evidence
+
+- Added `capsule-supervisor-v2` for new Full v3 runs. Actor, session, review, capsule, correction, Epic Judge, and
+  generated correction-evidence identities are now namespaced by `runId`; v1 remains compatibility-only for active
+  runs with existing lifecycle records.
+- Made ATDD dispatch reject a worker scope from another run, and bound supervisor evidence selection to actors from the
+  active run instead of accepting same-story records from historical runs.
+- Made `evidence-run` reuse an existing result when command argv, commit/tree, application dirtiness, environment,
+  story, kind, and run all match. It writes a new immutable evidence alias and does not rerun discovery, environment
+  setup, or the verification command.
+- Added a two-run/same-story regression proving distinct identities, stale-scope refusal, one physical test execution,
+  evidence aliasing, and fail-closed rejection of unqualified v2 evidence IDs.
+
 ### Native work now has a mechanical speed contract
 
 - Added the installed `acef-native-test` runner with a three-command focused envelope, two attempts per exact command,

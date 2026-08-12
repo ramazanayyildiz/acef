@@ -1,0 +1,126 @@
+#!/usr/bin/env node
+"use strict";
+
+const assert = require("node:assert/strict");
+const cp = require("node:child_process");
+const fs = require("node:fs");
+const os = require("node:os");
+const path = require("node:path");
+
+const root = path.resolve(__dirname, "..");
+const state = path.join(root, "scripts", "acef-state");
+const supervisor = path.join(root, "scripts", "acef-supervisor");
+const validator = path.join(root, "scripts", "acef-process-validator");
+const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "acef-capsule-v2-"));
+const marker = path.join(os.tmpdir(), `acef-evidence-reuse-${process.pid}.txt`);
+
+function run(command, args, options = {}) {
+  return cp.execFileSync(command, args, {
+    cwd: tmp,
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+    ...options,
+  });
+}
+
+function stateRun(args) {
+  return run(process.execPath, [state, ...args]);
+}
+
+function activeRun(runId, phase) {
+  stateRun([
+    "active-run", "--repo", tmp, "--run-id", runId,
+    "--workflow-id", "full-bmad", "--full-flow-contract", "four-actor-v3",
+    "--runtime-contract", "capsule-supervisor-v2", "--assurance", "guarded",
+    "--assurance-rationale", "realtime state transition", "--scope-unit", "story",
+    "--expected-story", "Shared Story", "--status", "active", "--story", "Shared Story",
+    "--phase", phase, "--ledger", "docs/ai/ACEF_DELIVERY_LEDGER.md",
+    "--context", "docs/ai/ACEF_CURRENT_CONTEXT.md",
+    "--worker-scope", "docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json",
+  ]);
+}
+
+function workerScope(runActor, phase) {
+  stateRun([
+    "worker-scope", "--repo", tmp, "--story", "Shared Story", "--phase", phase,
+    "--worker-id", runActor, "--allow", "app/**", "--allow", "tests/**",
+    "--surface", "internal",
+  ]);
+}
+
+try {
+  run("git", ["init", "-q"]);
+  run("git", ["config", "user.email", "acef@example.invalid"]);
+  run("git", ["config", "user.name", "ACEF Test"]);
+  fs.mkdirSync(path.join(tmp, "app"), { recursive: true });
+  fs.mkdirSync(path.join(tmp, "tests"), { recursive: true });
+  fs.mkdirSync(path.join(tmp, "docs", "ai"), { recursive: true });
+  fs.writeFileSync(path.join(tmp, "app", "demo.js"), "module.exports = true;\n");
+  fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_DELIVERY_LEDGER.md"), "# Ledger\n");
+  fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_CURRENT_CONTEXT.md"), "# Context\n");
+  run("git", ["add", "."]);
+  run("git", ["commit", "-qm", "fixture"]);
+
+  activeRun("RUN-one", "development");
+  workerScope("acef_run_one_shared_story_development", "development");
+  const firstDispatch = JSON.parse(run(process.execPath, [supervisor, "--repo", tmp]));
+  assert.equal(firstDispatch.action.actorInstanceId, "acef_run_one_shared_story_development");
+  assert.match(firstDispatch.action.registrationCommand, /--session-id \/root\/acef_run_one_shared_story_development/);
+  stateRun([
+    "actor", "--repo", tmp, "--id", firstDispatch.action.actorInstanceId,
+    "--story", "Shared Story", "--phase", "development", "--role", "developer",
+    "--client", "codex", "--session-id", `/root/${firstDispatch.action.actorInstanceId}`,
+    "--context-profile", "development", "--model", "gpt-5.6-sol", "--effort", "high",
+  ]);
+
+  activeRun("RUN-two", "atdd");
+  const staleScope = JSON.parse(run(process.execPath, [supervisor, "--repo", tmp]));
+  assert.equal(staleScope.action.type, "blocked");
+  assert.match(staleScope.action.reason, /refresh the typed worker scope/);
+  workerScope("acef_run_two_shared_story_atdd", "atdd");
+  const secondAtdd = JSON.parse(run(process.execPath, [supervisor, "--repo", tmp]));
+  assert.equal(secondAtdd.action.actorInstanceId, "acef_run_two_shared_story_atdd");
+  assert.notEqual(secondAtdd.action.actorInstanceId, firstDispatch.action.actorInstanceId);
+
+  activeRun("RUN-two", "development");
+  workerScope("acef_run_two_shared_story_development", "development");
+  const secondDispatch = JSON.parse(run(process.execPath, [supervisor, "--repo", tmp]));
+  assert.equal(secondDispatch.action.actorInstanceId, "acef_run_two_shared_story_development");
+  stateRun([
+    "actor", "--repo", tmp, "--id", secondDispatch.action.actorInstanceId,
+    "--story", "Shared Story", "--phase", "development", "--role", "developer",
+    "--client", "codex", "--session-id", `/root/${secondDispatch.action.actorInstanceId}`,
+    "--context-profile", "development", "--model", "gpt-5.6-sol", "--effort", "high",
+  ]);
+
+  const command = [process.execPath, "-e", `require('node:fs').appendFileSync(${JSON.stringify(marker)}, 'x')`];
+  stateRun([
+    "evidence-run", "--repo", tmp, "--id", "run_two-green-1", "--kind", "runtime-test",
+    "--actor", secondDispatch.action.actorInstanceId, "--story", "Shared Story",
+    "--satisfies", "shared-story-ac1", "--", ...command,
+  ]);
+  const reusedOutput = stateRun([
+    "evidence-run", "--repo", tmp, "--id", "run_two-green-2", "--kind", "runtime-test",
+    "--actor", secondDispatch.action.actorInstanceId, "--story", "Shared Story",
+    "--satisfies", "shared-story-ac2", "--", ...command,
+  ]);
+  assert.match(reusedOutput, /REUSED evidence/);
+  assert.equal(fs.readFileSync(marker, "utf8"), "x");
+  const alias = JSON.parse(fs.readFileSync(path.join(tmp, "docs", "ai", "evidence", "run_two-green-2.json"), "utf8"));
+  assert.equal(alias.reusedFromEvidenceId, "run_two-green-1");
+  assert.deepEqual(alias.satisfies.sort(), ["shared-story-ac1", "shared-story-ac2"]);
+  assert.match(run(process.execPath, [validator, "--repo", tmp, "--check", "evidence-manifest"]), /PASS evidence-manifest/);
+
+  const unqualified = cp.spawnSync(process.execPath, [
+    state, "evidence-run", "--repo", tmp, "--id", "green-3", "--kind", "runtime-test",
+    "--actor", secondDispatch.action.actorInstanceId, "--story", "Shared Story",
+    "--satisfies", "shared-story-ac3", "--", ...command,
+  ], { cwd: tmp, encoding: "utf8" });
+  assert.notEqual(unqualified.status, 0);
+  assert.match(`${unqualified.stdout}${unqualified.stderr}`, /evidence id must start with run_two-/);
+
+  console.log("acef capsule supervisor v2 isolation tests passed");
+} finally {
+  fs.rmSync(tmp, { recursive: true, force: true });
+  fs.rmSync(marker, { force: true });
+}

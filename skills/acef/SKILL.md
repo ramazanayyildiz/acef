@@ -140,6 +140,10 @@ A worker launched before this bootstrap is drift. Stop, record it, patch the amb
   focused argv. Run it once after the clean test-only commit; that command atomically creates the canonical ATDD actor
   record, so neither conductor nor child runs a separate actor command. Never invent evidence kinds, append path
   operands, reuse a failed evidence ID, pre-create the ATDD actor, or send `followup_task` to an ATDD identity.
+- New supervised Full runs use `capsule-supervisor-v2`. Its actor/session and generated evidence IDs include the
+  normalized `runId`; recovery keeps the story name unchanged and starts a new runId. Never create `r2`/`r3` story
+  aliases to escape stale actor files. When `evidence-run` reports `REUSED`, consume the alias it wrote instead of
+  executing the same command or rebuilding the same test environment.
 - Quarantine a failed story and its transitive dependants while continuing dependency-independent stories. Halt the
   whole run only for a declared dependency or shared safety invariant; quarantined work still fails product closeout.
 - After any bounded Developer repair, rerun Patch Assurance on the repaired final application/test tree. Rerun Code

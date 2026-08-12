@@ -24,8 +24,17 @@ terminal Epic Process Judge. The state writer rejects a frozen catalog story ope
 
 ### Optional capsule supervisor runtime
 
-`capsule-supervisor-v1` is an execution runtime for a new `full-bmad` / `four-actor-v3` run, not another workflow or
-assurance layer. It preserves the four semantic roles while removing model work from lifecycle bookkeeping:
+`capsule-supervisor-v2` is the execution runtime for new `full-bmad` / `four-actor-v3` runs. Existing
+`capsule-supervisor-v1` runs remain readable and finish under their original identity contract; do not migrate a run
+after lifecycle actors exist. The runtime is not another workflow or assurance layer. It preserves the four semantic
+roles while removing model work from lifecycle bookkeeping:
+
+- V2 namespaces every actor, harness session, review report, capsule, correction, and generated evidence identity by
+  `runId`. A recovery run keeps the same story identity and receives a new `runId`; suffixing the story with `r2`/`r3`
+  to escape immutable-record collisions is forbidden. A stale worker scope from another run blocks dispatch.
+- Exact test/static evidence on the same commit, tree, application dirtiness, environment, story, kind, and argv is
+  executed once. A later request writes an immutable alias to the original runner proof and raw artifact instead of
+  rebuilding the test environment or running the command again.
 
 - `acef-supervisor` reduces typed repository state to one next action. Mechanical scope/evidence/capsule/gate work uses
   no model.

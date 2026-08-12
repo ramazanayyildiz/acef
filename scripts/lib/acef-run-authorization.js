@@ -44,7 +44,8 @@ function normalizedScope(value) {
 }
 
 function completedCapsuleTerminalBlockers(repoRoot, activeRun, contextPath) {
-  if (activeRun?.runtimeContract !== "capsule-supervisor-v1" || activeRun.status !== "complete") return [];
+  if (!["capsule-supervisor-v1", "capsule-supervisor-v2"].includes(activeRun?.runtimeContract)
+    || activeRun.status !== "complete") return [];
   const blockers = [];
   const gatePath = path.join(repoRoot, "docs", "ai", "gates", `${activeRun.terminalGateId}.json`);
   const parsedGate = loadParsed(gatePath, parseGateVerdict, "invalid terminal Epic gate");

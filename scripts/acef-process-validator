@@ -279,6 +279,8 @@ function evidenceRunnerProof(record) {
     actorInstanceId: record.actorInstanceId,
     story: record.story,
     rawArtifact: record.rawArtifact,
+    ...(Object.prototype.hasOwnProperty.call(record, "reusedFromEvidenceId")
+      ? { reusedFromEvidenceId: record.reusedFromEvidenceId } : {}),
     ...(Object.prototype.hasOwnProperty.call(record, "discovery") ? { discovery: record.discovery } : {}),
     satisfies: record.satisfies,
   }));
@@ -621,6 +623,21 @@ function validateEvidenceRecord(repoRoot, evidence, { requireFresh = false, scop
     if (normalizedScope(actor.story) !== normalizedScope(evidence.story)) failures.push(`evidence ${evidence.evidenceId} actor story mismatch`);
   } catch (error) {
     failures.push(error.message);
+  }
+  if (evidence.reusedFromEvidenceId) {
+    try {
+      const source = evidenceRecordById(repoRoot, evidence.reusedFromEvidenceId);
+      if (source.reusedFromEvidenceId || source.command !== evidence.command
+        || JSON.stringify(source.commandArgv || []) !== JSON.stringify(evidence.commandArgv || [])
+        || source.exitCode !== evidence.exitCode || source.repositoryCommit !== evidence.repositoryCommit
+        || source.repositoryTree !== evidence.repositoryTree || source.environmentDigest !== evidence.environmentDigest
+        || source.rawArtifact.path !== evidence.rawArtifact.path
+        || source.rawArtifact.sha256 !== evidence.rawArtifact.sha256) {
+        failures.push(`evidence ${evidence.evidenceId} reuse alias does not exactly bind its original execution`);
+      }
+    } catch (error) {
+      failures.push(`evidence ${evidence.evidenceId} reuse source: ${error.message}`);
+    }
   }
   try {
     const rawPath = path.resolve(repoRoot, evidence.rawArtifact.path);
@@ -1954,7 +1971,7 @@ function boundReviewReportIntegrity(repoRoot, actor, reportPathValue, reportHash
       || report.inputTree !== actor.inputTree) {
       throw new Error(`${expectedPhase} review report identity/scope/input binding mismatch`);
     }
-    if (activeRun.runtimeContract === "capsule-supervisor-v1") {
+    if (["capsule-supervisor-v1", "capsule-supervisor-v2"].includes(activeRun.runtimeContract)) {
       if (!report.capsulePath || !report.capsuleSha256) throw new Error(`${expectedPhase} review report is missing capsule binding`);
       const capsulePath = resolvePath(report.capsulePath, repoRoot);
       const capsuleRelative = safeRelative(capsulePath, repoRoot).replaceAll(path.sep, "/");
@@ -2198,7 +2215,7 @@ function compiledAssuranceFailures(repoRoot, activeRun, gate, { requireSnapshot 
   if (!requirements) return failures;
   failures.push(...derivableRequirementFailures(activeRun, requirements, scopePaths));
   const activeScopePath = activeRun.workerScopePath
-    || (activeRun.runtimeContract === "capsule-supervisor-v1" ? "docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json" : null);
+    || (["capsule-supervisor-v1", "capsule-supervisor-v2"].includes(activeRun.runtimeContract) ? "docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json" : null);
   if (activeScopePath) {
     try {
       const currentScope = parseWorkerScope(resolvePath(activeScopePath, repoRoot));
@@ -2380,7 +2397,7 @@ function checkGateVerdict(repoRoot) {
   if (!activeRun) return result("gate-verdict", true, "No typed active run; legacy gate checks remain active");
   let activeScope = null;
   const activeScopePath = activeRun.workerScopePath
-    || (activeRun.runtimeContract === "capsule-supervisor-v1" ? "docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json" : null);
+    || (["capsule-supervisor-v1", "capsule-supervisor-v2"].includes(activeRun.runtimeContract) ? "docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json" : null);
   if (activeScopePath) {
     try {
       activeScope = parseWorkerScope(resolvePath(activeScopePath, repoRoot));
@@ -2954,7 +2971,7 @@ function controlDoseForExecution(controlDosing, controlId, execution) {
 function checkLeanEvidence(repoRoot, ledgerPath) {
   if (!ledgerPath || !exists(ledgerPath)) return result("lean-evidence", false, "Missing ledger path");
   const activeRun = typedActiveRun(repoRoot);
-  if (activeRun?.runtimeContract === "capsule-supervisor-v1" && isFourActorV3EpicClose(activeRun)) {
+  if (["capsule-supervisor-v1", "capsule-supervisor-v2"].includes(activeRun?.runtimeContract) && isFourActorV3EpicClose(activeRun)) {
     const latest = latestGateForActiveRun(repoRoot, activeRun, { requirePass: false }).gate;
     const storyGates = jsonRecords(path.join(repoRoot, "docs", "ai", "gates"))
       .map((filePath) => {
@@ -2975,7 +2992,7 @@ function checkLeanEvidence(repoRoot, ledgerPath) {
       return result("lean-evidence", true, "Epic Judge gate reuses every deterministic story-close package as the compiled Lean evidence view");
     }
   }
-  if (activeRun?.runtimeContract === "capsule-supervisor-v1" && activeRun.scopeUnit === "story") {
+  if (["capsule-supervisor-v1", "capsule-supervisor-v2"].includes(activeRun?.runtimeContract) && activeRun.scopeUnit === "story") {
     const latest = latestGateForActiveRun(repoRoot, activeRun, { requirePass: false }).gate;
     if (latest?.gateType === "deterministic-story-close-v3" && latest.verdict === "PASS") {
       const packagePaths = [latest.reportPaths?.codeReview, latest.reportPaths?.patchAssurance]

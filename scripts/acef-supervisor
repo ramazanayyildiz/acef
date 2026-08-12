@@ -87,6 +87,10 @@ function token(value) {
   return String(value || "").toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
 }
 
+function capsuleRuntime(run) {
+  return ["capsule-supervisor-v1", "capsule-supervisor-v2"].includes(run?.runtimeContract);
+}
+
 function quote(value) {
   return `'${String(value).replaceAll("'", `'\\''`)}'`;
 }
@@ -105,8 +109,8 @@ function build(repo) {
   if (!fs.existsSync(activeRunPath)) throw new Error("missing docs/ai/ACEF_ACTIVE_RUN.json");
   const run = parseActiveRun(activeRunPath);
   if (run.status !== "active" || run.workflowId !== "full-bmad"
-    || run.fullFlowContract !== "four-actor-v3" || run.runtimeContract !== "capsule-supervisor-v1") {
-    throw new Error("supervisor requires an active full-bmad/four-actor-v3/capsule-supervisor-v1 run");
+    || run.fullFlowContract !== "four-actor-v3" || !capsuleRuntime(run)) {
+    throw new Error("supervisor requires an active full-bmad/four-actor-v3/capsule-supervisor run");
   }
   const routingPolicy = loadModelRoutingPolicy(repo);
   const runtime = {
@@ -127,7 +131,8 @@ function build(repo) {
   const allEvidence = files(path.join(repo, "docs", "ai", "evidence"))
     .map((filePath) => readRecord(parseEvidenceManifest, filePath));
   const evidence = allEvidence
-    .filter((record) => token(record.story) === storyKey)
+    .filter((record) => token(record.story) === storyKey
+      && actors.some((actor) => actor.actorInstanceId === record.actorInstanceId))
     .sort((left, right) => String(left.finishedAt || left.startedAt || "").localeCompare(String(right.finishedAt || right.startedAt || ""))
       || left.evidenceId.localeCompare(right.evidenceId));
   const allGates = files(path.join(repo, "docs", "ai", "gates"))
@@ -155,7 +160,10 @@ function build(repo) {
   const workerScope = fs.existsSync(workerScopePath) ? readRecord(parseWorkerScope, workerScopePath) : null;
   const latestGate = gates.at(-1) || null;
   const reviewCycle = latestGate?.verdict === "REVISE" ? Number(latestGate.reviewCycle) + 1 : Number(latestGate?.reviewCycle || 0);
-  const actorId = (role, cycle = 0) => `acef_${storyKey}_${role}${cycle ? `_retry${cycle}` : ""}`;
+  const runKey = token(run.runId);
+  const actorPrefix = run.runtimeContract === "capsule-supervisor-v2"
+    ? `acef_${runKey}_${storyKey}` : `acef_${storyKey}`;
+  const actorId = (role, cycle = 0) => `${actorPrefix}_${role}${cycle ? `_retry${cycle}` : ""}`;
   const hasActor = (id) => actors.some((record) => record.actorInstanceId === id);
   const developerEvidence = evidence.filter((record) => record.actorInstanceId === actorId("development"));
   const latestDeveloperEvidence = developerEvidence.at(-1) || null;
@@ -170,7 +178,8 @@ function build(repo) {
       && contextContent.includes(`- Active phase: \`${run.activePhase}\``)
       && contextContent.includes(`- Scope unit: \`${run.scopeUnit}\``);
     const terminal = latestGate && ["PASS", "FAIL", "REPLAN", "BLOCKED"].includes(latestGate.verdict);
-    const judgeId = "acef_epic_process_judge";
+    const judgeId = run.runtimeContract === "capsule-supervisor-v2"
+      ? `acef_${runKey}_epic_process_judge` : "acef_epic_process_judge";
     const judgeExists = hasActor(judgeId);
     const storyPassGates = (run.expectedStories || []).map((expectedStory) => allGates
       .filter((record) => record.runId === run.runId && record.fullFlowContract === run.fullFlowContract
@@ -223,7 +232,8 @@ function build(repo) {
       reason: "readiness and reuse are deterministic conductor gates; enter the compiled actor lifecycle",
     };
   } else if (currentPhase === "atdd") {
-    const scopeReady = workerScope && token(workerScope.activeStory) === storyKey;
+    const scopeReady = workerScope && workerScope.runId === run.runId
+      && token(workerScope.activeStory) === storyKey;
     const red = evidence.find((record) => record.actorInstanceId === actorId("atdd") && record.exitCode !== 0);
     const frozenTestPaths = (workerScope?.allowedPaths || []).filter(isTestPath);
     action = !scopeReady
@@ -267,7 +277,8 @@ function build(repo) {
       if (!originalRed?.commandArgv?.length || !originalRed.discovery?.argv?.length) {
         action = { type: "replan", reason: "original red evidence lacks replayable command/discovery argv" };
       } else {
-        const replacementId = `${storyKey}-red-correction1`;
+        const replacementId = run.runtimeContract === "capsule-supervisor-v2"
+          ? `${runKey}-${storyKey}-red-correction1` : `${storyKey}-red-correction1`;
         const evidenceCommand = [
           ".acef/bin/acef-state", "evidence-run", "--repo", ".", "--id", replacementId,
           "--kind", "runtime-test", "--actor", activeCorrection.correctionActorId, "--story", story,
@@ -480,7 +491,9 @@ function build(repo) {
       }
     }
   } else if (currentPhase === "processjudge") {
-    action = { type: "dispatch", role: run.scopeUnit === "epic" ? "epic-judge" : "story-judge", actorInstanceId: run.scopeUnit === "epic" ? "acef_epic_process_judge" : actorId("process_judge"), runtime: runtime[run.scopeUnit === "epic" ? "epic-judge" : "story-judge"] };
+    action = { type: "dispatch", role: run.scopeUnit === "epic" ? "epic-judge" : "story-judge", actorInstanceId: run.scopeUnit === "epic"
+      ? (run.runtimeContract === "capsule-supervisor-v2" ? `acef_${runKey}_epic_process_judge` : "acef_epic_process_judge")
+      : actorId("process_judge"), runtime: runtime[run.scopeUnit === "epic" ? "epic-judge" : "story-judge"] };
   } else {
     action = { type: "blocked", reason: `unsupported active phase ${run.activePhase}` };
   }
