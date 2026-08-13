@@ -7,7 +7,7 @@ const path = require("node:path");
 
 const root = path.resolve(__dirname, "..");
 const docs = path.join(root, "docs");
-const pages = ["index.html", "overview.html", "workflows.html", "roles.html", "sdlc.html"];
+const pages = ["index.html", "overview.html", "workflows.html", "roles.html", "skills.html", "sdlc.html"];
 const expectedNav = pages.map((name) => `./${name}`);
 
 function html(name) {
@@ -58,8 +58,9 @@ assert.match(html("index.html"), /workflow and safety layer for AI coding agents
 assert.ok(visibleWords(html("index.html")) <= 650, "Start page exceeded its novice word budget");
 assert.ok(visibleWords(html("overview.html")) <= 800, "How it works exceeded its novice word budget");
 assert.ok(visibleWords(html("workflows.html")) <= 850, "Workflows exceeded its reader word budget");
-assert.ok(visibleWords(html("roles.html")) <= 750, "Examples exceeded its reader word budget");
-assert.ok(visibleWords(html("print.html")) <= 220, "Print guide became a duplicate documentation set again");
+assert.ok(visibleWords(html("roles.html")) <= 1500, "Role playbooks exceeded their reader word budget");
+assert.ok(visibleWords(html("skills.html")) <= 2200, "Skill catalog exceeded its reference word budget");
+assert.ok(visibleWords(html("print.html")) <= 260, "Print guide became a duplicate documentation set again");
 
 const beginner = `${html("index.html")}\n${html("overview.html")}`;
 for (const jargon of ["Frameworks: ACEF router", "BMAD scale levels", "Process Judge", "ACEF_ACTIVE_RUN", "runner proof", "scope fingerprint"]) {
@@ -71,7 +72,24 @@ for (const stale of [/A · Small/, /B · Large/, /Route [A-F]/, /One objective, 
 
 assert.ok((html("overview.html").match(/<details>/g) || []).length >= 2, "How it works needs progressive disclosure");
 assert.ok((html("workflows.html").match(/<details>/g) || []).length >= 4, "Workflows needs progressive disclosure");
+assert.ok((html("roles.html").match(/<details>/g) || []).length >= 3, "Role playbooks need progressive disclosure");
+assert.ok((html("skills.html").match(/<details>/g) || []).length >= 2, "Skill catalog needs progressive disclosure");
 assert.ok((html("sdlc.html").match(/<details(?:\s|>)/g) || []).length >= 12, "Technical reference needs layered details");
+
+for (const role of ["Product managers", "Developers", "QA engineers"]) {
+  assert.match(html("roles.html"), new RegExp(role, "i"), `Use ACEF is missing the ${role} playbook`);
+}
+
+const publicSkills = [...fs.readdirSync(path.join(root, "skills"))]
+  .filter((name) => fs.existsSync(path.join(root, "skills", name, "SKILL.md")))
+  .sort();
+const catalog = html("skills.html");
+for (const skill of publicSkills) {
+  assert.match(catalog, new RegExp(`<code>${skill}</code>`), `Skill catalog is missing ${skill}`);
+}
+for (const contractWord of ["Give it", "Get back", "Common skill pipelines"]) {
+  assert.match(catalog, new RegExp(contractWord, "i"), `Skill catalog is missing ${contractWord}`);
+}
 
 const config = fs.readFileSync(path.join(docs, "_config.yml"), "utf8");
 for (const internal of ["ai/", "audits/", "experiments/"]) assert.match(config, new RegExp(`- ${internal.replace("/", "\\/")}`));

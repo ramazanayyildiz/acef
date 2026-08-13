@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ACEF — Skills</title>
+    <meta name="description" content="The ACEF skill catalog: when each skill runs, who it helps, what it consumes, what it produces, and how skills form connected workflows." />
+    <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="./theme.css?v=3" />
+  </head>
+  <body>
+    <a class="skip-link" href="#content">Skip to content</a>
+    <a class="repo-link" href="https://github.com/ramazanayyildiz/acef" target="_blank" rel="noreferrer" aria-label="ACEF on GitHub">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 .5a12 12 0 0 0-3.79 23.39c.6.11.82-.26.82-.58v-2.23c-3.34.73-4.04-1.4-4.04-1.4-.55-1.4-1.34-1.78-1.34-1.78-1.1-.76.08-.75.08-.75 1.22.09 1.86 1.25 1.86 1.25 1.08 1.85 2.84 1.31 3.53 1 .11-.78.42-1.31.76-1.61-2.67-.3-5.48-1.34-5.48-5.97 0-1.32.47-2.4 1.24-3.25-.12-.3-.54-1.52.12-3.17 0 0 1.01-.32 3.31 1.24a11.42 11.42 0 0 1 6.03 0c2.3-1.56 3.31-1.24 3.31-1.24.66 1.65.24 2.87.12 3.17.77.85 1.24 1.93 1.24 3.25 0 4.64-2.81 5.66-5.49 5.96.43.37.81 1.1.81 2.22v3.29c0 .32.22.7.83.58A12 12 0 0 0 12 .5Z"/></svg><span>GitHub</span>
+    </a>
+    <div class="wrap">
+      <aside>
+        <div class="logo"><b>A</b><div><strong>ACEF</strong><small>Capability when needed</small></div></div>
+        <div class="pageswitch"><a href="./index.html">Start here</a><a href="./overview.html">How it works</a><a href="./workflows.html">Workflows</a><a href="./roles.html">Use ACEF</a><a class="active" aria-current="page" href="./skills.html">Skills</a><a href="./sdlc.html">Technical reference</a></div>
+        <nav aria-label="On this page"><div class="navlabel">On this page</div><a href="#mental-model">How skills work</a><a href="#core-skills">Core orchestration</a><a href="#product-skills">Product and planning</a><a href="#engineering-skills">Repository and delivery</a><a href="#test-skills">Testing and QA</a><a href="#pipelines">Connected pipelines</a></nav>
+      </aside>
+      <main id="content">
+        <nav class="mobile-nav" aria-label="Site navigation"><a href="./index.html">Start</a><a href="./overview.html">How it works</a><a href="./workflows.html">Workflows</a><a href="./roles.html">Use ACEF</a><a class="active" aria-current="page" href="./skills.html">Skills</a><a href="./sdlc.html">Reference</a></nav>
+
+        <header class="hero">
+          <p class="kicker">Capability catalog</p>
+          <h1>Skills are tools inside the workflow—not workflows themselves.</h1>
+          <p class="lede">You normally enter through the ACEF skill and describe an outcome. ACEF invokes a specialist skill only when its output is needed, then carries that output forward instead of recreating it.</p>
+        </header>
+
+        <section id="mental-model">
+          <span class="eyebrow">The mental model</span>
+          <h2>Workflow controls the journey. Skills perform bounded jobs.</h2>
+          <div class="skill-model">
+            <article><span>1</span><strong>Your request</strong><p>“Plan team billing,” “fix this bug,” or “build a regression pack.”</p></article>
+            <i aria-hidden="true">→</i>
+            <article><span>2</span><strong>ACEF routes it</strong><p>Chooses project-native, Fix, Standard, or Full plus normal or extra safeguards.</p></article>
+            <i aria-hidden="true">→</i>
+            <article><span>3</span><strong>Skills do the work</strong><p>Mapping, readiness, planning, review, testing, or release—only as needed.</p></article>
+            <i aria-hidden="true">→</i>
+            <article><span>4</span><strong>Evidence continues</strong><p>Each output becomes the next skill’s input; the lifecycle does not restart.</p></article>
+          </div>
+          <div class="callout warning"><strong>Do not run the whole catalog.</strong> A skill is selected because the current task needs its artifact. Using every skill would add cost without adding confidence.</div>
+        </section>
+
+        <section id="core-skills">
+          <span class="eyebrow">Single front door</span>
+          <h2>Core orchestration</h2>
+          <div class="skill-grid">
+            <article class="skill-card featured"><div><span class="skill-group">Everyone</span><code>acef</code></div><h3>Coordinate the complete request</h3><p>Use for ACEF-managed work. It reads the task, selects the workflow and safeguards, invokes only the required helper skills, and keeps the response lean.</p><dl><dt>Give it</dt><dd>Outcome, repository, constraints, and known risk.</dd><dt>Get back</dt><dd>Route decision, coordinated artifacts, evidence, verdict, and next step.</dd></dl></article>
+            <article class="skill-card"><div><span class="skill-group">Internal routing</span><code>acef-router</code></div><h3>Classify an unclear request</h3><p>Separates request type from execution workflow and identifies missing inputs before side effects begin.</p><dl><dt>Give it</dt><dd>A request plus available project context.</dd><dt>Get back</dt><dd>Route, minimum inputs, next artifact, and adapter need.</dd></dl></article>
+          </div>
+        </section>
+
+        <section id="product-skills">
+          <span class="eyebrow">Product and planning</span>
+          <h2>Turn intent into ready, coherent work</h2>
+          <p class="section-intro">These skills clarify what should be built. They do not all run for every feature.</p>
+          <div class="skill-grid">
+            <article class="skill-card"><div><span class="skill-group">PM · Product</span><code>storymap</code></div><h3>Map the user journey and delivery slices</h3><p>Use for a new product, epic, or feature—or to extract user activities from an existing codebase.</p><dl><dt>Give it</dt><dd>Product idea or repository evidence.</dd><dt>Get back</dt><dd>Users, activities, tasks, journeys, priorities, and release slices.</dd></dl></article>
+            <article class="skill-card"><div><span class="skill-group">PM · Product</span><code>spec-readiness</code></div><h3>Decide whether a brief is ready</h3><p>Use when intent, persona, scope, data ownership, acceptance, or risk may still be ambiguous.</p><dl><dt>Give it</dt><dd>Feature request, brief, or story.</dd><dt>Get back</dt><dd>A file-backed readiness verdict, blocking questions, and risk flags.</dd></dl></article>
+            <article class="skill-card"><div><span class="skill-group">PM · Architecture</span><code>acef-specify</code></div><h3>Prepare planning-heavy requirements</h3><p>Uses existing BMAD, Kiro, or manual artifacts when available; otherwise guides requirements, design, and story planning once.</p><dl><dt>Give it</dt><dd>Approved brief, repository context, and existing artifacts.</dd><dt>Get back</dt><dd>Traceable requirements, design decisions, and coherent stories or tasks.</dd></dl></article>
+          </div>
+        </section>
+
+        <section id="engineering-skills">
+          <span class="eyebrow">Repository and delivery</span>
+          <h2>Ground implementation and review in project evidence</h2>
+          <div class="skill-grid">
+            <article class="skill-card"><div><span class="skill-group">Developer · Read-only</span><code>acef-adapter</code></div><h3>Build ACEF’s living repository memory</h3><p>Captures stack, commands, architecture, proven patterns, risk surfaces, and freshness. Reuse it until the repository changes materially.</p><dl><dt>Give it</dt><dd>Repository path.</dd><dt>Get back</dt><dd>Project adapter with snapshot and living pattern knowledge.</dd></dl></article>
+            <article class="skill-card"><div><span class="skill-group">Developer · Discovery</span><code>map-codebase</code></div><h3>Generate a code-grounded map</h3><p>Scans stack, architecture, conventions, and concerns. ACEF can use this as the generic scan engine beneath its project adapter.</p><dl><dt>Give it</dt><dd>Repository or module path.</dd><dt>Get back</dt><dd>Codebase map and pattern registry.</dd></dl></article>
+            <article class="skill-card"><div><span class="skill-group">Reviewer · Report only</span><code>bug-hunter</code></div><h3>Find concrete behavioral defects</h3><p>Reviews an explicit diff or bounded paths. It reports evidence-backed defects but never edits or approves a gate.</p><dl><dt>Give it</dt><dd>Bounded diff, criteria, context, and scan budget.</dd><dt>Get back</dt><dd>File, line, severity, impact, confidence, and evidence.</dd></dl></article>
+            <article class="skill-card"><div><span class="skill-group">Reviewer · Report only</span><code>implementation-shape-review</code></div><h3>Find simplification opportunities</h3><p>Identifies repeated logic, heavy first-pass design, and project-shape mismatches without changing code.</p><dl><dt>Give it</dt><dd>Bounded change, acceptance, patterns, and evidence.</dd><dt>Get back</dt><dd>Prioritized implementation-shape candidates.</dd></dl></article>
+            <article class="skill-card"><div><span class="skill-group">Release owner</span><code>acef-release-adapter</code></div><h3>Prepare release and rollback evidence</h3><p>Reads the repository’s actual delivery setup and distinguishes deploy actions from real quality gates.</p><dl><dt>Give it</dt><dd>Change, target environment, risk, and project adapter.</dd><dt>Get back</dt><dd>Release readiness checklist, deploy path, approvals, and rollback path.</dd></dl></article>
+          </div>
+        </section>
+
+        <section id="test-skills">
+          <span class="eyebrow">Testing and QA</span>
+          <h2>Move from behavior to prioritized, executable evidence</h2>
+          <p class="section-intro">Pick the entry point that matches your situation. Planning skills do not write test code; generator skills do.</p>
+          <div class="skill-grid">
+            <article class="skill-card featured"><div><span class="skill-group">QA · Front door</span><code>test-strategy</code></div><h3>Choose the testing path</h3><p>Starts from one of three situations: no test suite, a coverage gap, or a new feature.</p><dl><dt>Give it</dt><dd>Scenario, target, current testing state, and constraints.</dd><dt>Get back</dt><dd>Recommended test levels, boundaries, and skill sequence.</dd></dl></article>
+            <article class="skill-card"><div><span class="skill-group">QA · Journey</span><code>test-user-flow-mapper</code></div><h3>Deepen critical user flows</h3><p>Maps ordered paths, actors, alternate states, error paths, and touched components before technical case planning.</p><dl><dt>Give it</dt><dd>Story map, routes, screens, source, or feature description.</dd><dt>Get back</dt><dd>Prioritized flow map.</dd></dl></article>
+            <article class="skill-card"><div><span class="skill-group">QA · Documentation</span><code>flow-document-composer</code></div><h3>Document a flow end to end</h3><p>Bridges discovery and test planning with a durable journey document readable by people and downstream skills.</p><dl><dt>Give it</dt><dd>Story map or flow map plus source evidence.</dd><dt>Get back</dt><dd>Technically anchored flow document.</dd></dl></article>
+            <article class="skill-card"><div><span class="skill-group">QA · Planning</span><code>test-case-planner</code></div><h3>Plan cases without writing code</h3><p>Covers unit, integration, data, validation, async, browser, user-flow, and manual cases in priority order.</p><dl><dt>Give it</dt><dd>Story map, flow map, flow document, feature, module, or source.</dd><dt>Get back</dt><dd>Human-readable prioritized test plan.</dd></dl></article>
+            <article class="skill-card"><div><span class="skill-group">QA · Analysis</span><code>test-risk-classifier</code></div><h3>Turn code risk into generation guidance</h3><p>Enumerates branches, side effects, dependencies, complexity, and preconditions before tests are generated.</p><dl><dt>Give it</dt><dd>Test plan plus target class or module.</dd><dt>Get back</dt><dd>Structured risk profile.</dd></dl></article>
+            <article class="skill-card"><div><span class="skill-group">Developer · Automation</span><code>test-generator</code></div><h3>Generate unit and integration test code</h3><p>Uses the risk profile and project framework patterns. Simple low-risk targets may use its bounded fast path.</p><dl><dt>Give it</dt><dd>Risk profile or eligible simple target.</dd><dt>Get back</dt><dd>Production-ready test classes and verification.</dd></dl></article>
+            <article class="skill-card"><div><span class="skill-group">QA · Browser automation</span><code>test-browser-generator</code></div><h3>Generate browser and end-to-end tests</h3><p>Targets UI interactions and real user journeys using the repository’s Dusk or Playwright setup.</p><dl><dt>Give it</dt><dd>Browser cases, risk profile, or described UI flow.</dd><dt>Get back</dt><dd>Executable browser test code and verification.</dd></dl></article>
+            <article class="skill-card"><div><span class="skill-group">QA · Existing suite</span><code>test-coverage-auditor</code></div><h3>Find the highest-value coverage gaps</h3><p>Quick Scan finds broad omissions; Deep Audit examines a bounded module method by method.</p><dl><dt>Give it</dt><dd>Source and existing test suite.</dd><dt>Get back</dt><dd>Prioritized coverage-gap report.</dd></dl></article>
+            <article class="skill-card"><div><span class="skill-group">QA · Deliverable</span><code>flow-suite-composer</code></div><h3>Compose an executable regression pack</h3><p>Assembles reviewed flow evidence and planned cases into a human-executable suite with automation targets.</p><dl><dt>Give it</dt><dd>Flow document, test plan, and optional risk classification.</dd><dt>Get back</dt><dd>Deliverable-grade flow test suite.</dd></dl></article>
+            <article class="skill-card"><div><span class="skill-group">Repository setup</span><code>acef-test-bootstrap</code></div><h3>Establish the first accepted test pattern</h3><p>Uses an existing framework when present. If none exists, it proposes options before adding dependencies.</p><dl><dt>Give it</dt><dd>Repository, target, test type, and framework status.</dd><dt>Get back</dt><dd>One small approved test pattern—not broad coverage.</dd></dl></article>
+            <article class="skill-card"><div><span class="skill-group">Convenience command</span><code>test-gen</code></div><h3>Request coverage-driven generation directly</h3><p>A compact entry point for “write tests” requests. It plans before generating and follows existing test conventions.</p><dl><dt>Give it</dt><dd>File or module target.</dd><dt>Get back</dt><dd>Test plan, generated tests, and coverage-oriented iteration.</dd></dl></article>
+          </div>
+        </section>
+
+        <section id="pipelines">
+          <span class="eyebrow">How outputs connect</span>
+          <h2>Common skill pipelines</h2>
+          <p class="section-intro">Arrows mean “the previous artifact becomes input.” A pipeline stops as soon as the requested deliverable is complete.</p>
+          <div class="pipeline-stack">
+            <article><span>Product discovery</span><p><code>storymap</code><b>→</b><code>spec-readiness</code><b>→</b><code>acef-specify</code><b>→</b>approved delivery units</p></article>
+            <article><span>New feature testing</span><p><code>test-strategy</code><b>→</b><code>test-user-flow-mapper</code><b>→</b><code>test-case-planner</code><b>→</b><code>test-risk-classifier</code><b>→</b><code>test-generator</code> or <code>test-browser-generator</code></p></article>
+            <article><span>QA regression pack</span><p><code>storymap</code> or flow map <b>→</b><code>flow-document-composer</code><b>→</b><code>test-case-planner</code><b>→</b><code>flow-suite-composer</code></p></article>
+            <article><span>Coverage repair</span><p><code>test-coverage-auditor</code><b>→</b><code>test-risk-classifier</code><b>→</b><code>test-generator</code></p></article>
+            <article><span>Repository onboarding</span><p><code>map-codebase</code><b>→</b><code>acef-adapter</code><b>→</b>reusable project context for later work</p></article>
+          </div>
+          <details>
+            <summary>Why some skills appear to overlap</summary>
+            <div class="details-body"><p><code>map-codebase</code> is the generic scanner; <code>acef-adapter</code> turns repository evidence into ACEF’s durable project memory. <code>test-gen</code> is a convenience entry point; <code>test-generator</code> is the structured generator used after risk classification. The orchestrator should choose one path and reuse outputs rather than invoking both as duplicate phases.</p></div>
+          </details>
+          <details>
+            <summary>Where the exact skill instructions live</summary>
+            <div class="details-body"><p>The repository’s <a href="https://github.com/ramazanayyildiz/acef/tree/main/skills"><code>skills/</code> directory</a> is the exact source. Each <code>SKILL.md</code> defines triggers, inputs, procedure, output contract, and boundaries. This page is the human-readable catalog; the files remain the executable instructions.</p></div>
+          </details>
+          <a class="next-link" href="./sdlc.html"><span><strong>Go deeper: Technical reference</strong>Read the exact workflow contracts, BMAD actor model, state, evidence, limits, and installation commands.</span><b aria-hidden="true">→</b></a>
+        </section>
+      </main>
+    </div>
+    <footer>ACEF · One front door, bounded skills, reusable evidence · <a href="https://github.com/ramazanayyildiz/acef">View the repository</a></footer>
+  </body>
+</html>

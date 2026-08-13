@@ -19,6 +19,11 @@ or evidence contract. Do not use it to claim implementation status; link to the 
   print-ready topic pages. Internal experiment and capability artifacts remain in Git but are excluded from Pages output.
 - Added a regression check for navigation parity, link/anchor validity, beginner word budgets, progressive disclosure,
   stale terminology, and accidental reintroduction of a second documentation set.
+- Added role-based usage playbooks for Product/PM, Development, and QA/testing, including what each role provides,
+  what ACEF returns, which decisions remain human-owned, example requests, and a shared evidence handoff.
+- Added a complete human-readable skill catalog covering every first-party `skills/*/SKILL.md`, its bounded purpose,
+  input/output contract, intended audience, and the product, engineering, testing, and release pipelines that connect
+  skill artifacts without restarting the lifecycle.
 
 ### Parent-objective supervision stops cross-run ceremony loops
 

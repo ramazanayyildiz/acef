@@ -192,6 +192,101 @@ section { scroll-margin-top: 16px; margin-top: 48px; padding-top: 34px; border-t
 .card.rose { border-top: 4px solid var(--rose); }
 .card.violet { border-top: 4px solid var(--violet); }
 
+.role-map {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+  margin-top: 22px;
+}
+.role-card {
+  position: relative;
+  min-height: 190px;
+  padding: 20px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--panel);
+  color: var(--ink);
+  text-decoration: none;
+  box-shadow: 0 3px 12px rgba(25, 41, 72, .04);
+}
+.role-card::after {
+  content: "";
+  position: absolute;
+  right: -28px;
+  bottom: -42px;
+  width: 110px;
+  height: 110px;
+  border: 20px solid rgba(53, 106, 230, .08);
+  border-radius: 50%;
+}
+.role-card:hover { color: var(--ink); transform: translateY(-2px); box-shadow: var(--shadow); }
+.role-card.product { border-top: 4px solid var(--violet); }
+.role-card.developer { border-top: 4px solid var(--blue); }
+.role-card.qa { border-top: 4px solid var(--teal); }
+.role-card span, .prompt-card span, .responsibility-grid span, .handoff-rail span, .pipeline-stack span {
+  display: block;
+  margin-bottom: 9px;
+  color: var(--muted);
+  font-size: .67rem;
+  font-weight: 800;
+  letter-spacing: .11em;
+  text-transform: uppercase;
+}
+.role-card strong { display: block; max-width: 13ch; margin-bottom: 10px; font-size: 1.16rem; line-height: 1.25; }
+.role-card small { display: block; position: relative; z-index: 1; color: #536074; font-size: .86rem; line-height: 1.55; }
+
+.playbook { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin: 22px 0; }
+.playbook article { position: relative; padding: 17px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); }
+.playbook b {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  margin-bottom: 12px;
+  border-radius: 50%;
+  background: #e8efff;
+  color: var(--blue-dark);
+  font-size: .72rem;
+}
+.playbook h3 { font-size: .94rem; }
+.playbook p { margin: 0; color: var(--muted); font-size: .82rem; }
+
+.responsibility-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin: 18px 0; }
+.responsibility-grid > div { padding: 16px; border-left: 3px solid #bdc9da; background: rgba(255, 255, 255, .55); }
+.responsibility-grid p { margin: 0; color: #465265; font-size: .86rem; }
+.prompt-card { margin: 20px 0; padding: 18px 20px; border: 1px solid #bdcae5; border-radius: 12px; background: #edf2ff; }
+.prompt-card p { margin: 0; color: #30476f; font-size: .95rem; }
+
+.handoff-rail { display: grid; grid-template-columns: 1fr auto 1fr auto 1fr; align-items: center; gap: 10px; margin: 22px 0; }
+.handoff-rail article { min-height: 150px; padding: 18px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); }
+.handoff-rail strong { display: block; margin-bottom: 7px; }
+.handoff-rail p { margin: 0; color: var(--muted); font-size: .83rem; }
+.handoff-rail i { color: #8794a7; font-size: 1.25rem; font-style: normal; }
+
+.skill-model { display: grid; grid-template-columns: 1fr auto 1fr auto 1fr auto 1fr; align-items: stretch; gap: 8px; margin: 22px 0; }
+.skill-model article { padding: 16px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); }
+.skill-model article > span { display: grid; place-items: center; width: 26px; height: 26px; margin-bottom: 11px; border-radius: 50%; background: var(--ink); color: white; font-size: .7rem; font-weight: 800; }
+.skill-model strong { display: block; margin-bottom: 5px; font-size: .9rem; }
+.skill-model p { margin: 0; color: var(--muted); font-size: .78rem; }
+.skill-model > i { display: grid; place-items: center; color: #8794a7; font-style: normal; }
+
+.skill-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.skill-card { min-width: 0; padding: 19px; border: 1px solid var(--line); border-radius: 13px; background: var(--panel); box-shadow: 0 2px 8px rgba(25, 41, 72, .035); }
+.skill-card.featured { border-color: #b9c8e8; background: linear-gradient(135deg, #fff 60%, #edf2ff); }
+.skill-card > div:first-child { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 13px; }
+.skill-card .skill-group { color: var(--teal); font-size: .66rem; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; }
+.skill-card h3 { font-size: 1.02rem; }
+.skill-card > p { margin: 0 0 16px; color: #465265; font-size: .88rem; }
+.skill-card dl { display: grid; grid-template-columns: 70px 1fr; gap: 7px 10px; margin: 0; padding-top: 13px; border-top: 1px solid var(--line); font-size: .79rem; }
+.skill-card dt { color: #344155; font-weight: 800; }
+.skill-card dd { margin: 0; color: var(--muted); }
+
+.pipeline-stack { display: grid; gap: 10px; margin: 20px 0; }
+.pipeline-stack article { padding: 15px 17px; border: 1px solid var(--line); border-radius: 11px; background: var(--panel); }
+.pipeline-stack p { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; margin: 0; color: #465265; font-size: .86rem; }
+.pipeline-stack b { color: #8895a8; font-weight: 500; }
+
 .journey { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0; margin-top: 22px; }
 .journey article { position: relative; padding: 20px 24px 20px 0; }
 .journey article:not(:last-child)::after {
@@ -309,13 +404,16 @@ footer { max-width: 1200px; margin: 0 auto; padding: 24px 44px; border-top: 1px 
 }
 
 @media (max-width: 680px) {
-  .grid, .grid.two, .journey, .process-dial { grid-template-columns: 1fr; }
+  .grid, .grid.two, .journey, .process-dial, .role-map, .playbook, .responsibility-grid, .skill-grid { grid-template-columns: 1fr; }
   .journey article { padding-right: 0; }
   .journey article:not(:last-child)::after { display: none; }
   .process-dial { gap: 12px; padding-top: 0; }
   .process-dial::before, .process-dial article::before { display: none; }
   .assurance { grid-template-columns: 1fr; }
   .assurance .plus { min-height: 20px; }
+  .handoff-rail, .skill-model { grid-template-columns: 1fr; }
+  .handoff-rail i, .skill-model > i { transform: rotate(90deg); }
+  .handoff-rail article { min-height: 0; }
   h1 { max-width: none; }
   table { display: block; width: 100%; overflow-x: auto; }
 }

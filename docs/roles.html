@@ -3,10 +3,10 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>ACEF — Examples</title>
-    <meta name="description" content="Concrete examples of how developers, product leads, architects, and QA engineers use ACEF." />
+    <title>ACEF — Use ACEF</title>
+    <meta name="description" content="Practical ACEF playbooks for product managers, developers, and QA or test engineers." />
     <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
-    <link rel="stylesheet" href="./theme.css?v=2" />
+    <link rel="stylesheet" href="./theme.css?v=3" />
   </head>
   <body>
     <a class="skip-link" href="#content">Skip to content</a>
@@ -15,69 +15,111 @@
     </a>
     <div class="wrap">
       <aside>
-        <div class="logo"><b>A</b><div><strong>ACEF</strong><small>Start with real work</small></div></div>
-        <div class="pageswitch"><a href="./index.html">Start here</a><a href="./overview.html">How it works</a><a href="./workflows.html">Workflows</a><a class="active" aria-current="page" href="./roles.html">Examples</a><a href="./sdlc.html">Technical reference</a></div>
-        <nav aria-label="On this page"><div class="navlabel">On this page</div><a href="#developer">Developer</a><a href="#product">Product or architecture</a><a href="#qa">QA and testing</a><a href="#request">A useful request</a></nav>
+        <div class="logo"><b>A</b><div><strong>ACEF</strong><small>Use it in your role</small></div></div>
+        <div class="pageswitch"><a href="./index.html">Start here</a><a href="./overview.html">How it works</a><a href="./workflows.html">Workflows</a><a class="active" aria-current="page" href="./roles.html">Use ACEF</a><a href="./skills.html">Skills</a><a href="./sdlc.html">Technical reference</a></div>
+        <nav aria-label="On this page"><div class="navlabel">Choose your role</div><a href="#choose-role">Quick choice</a><a href="#product">Product / PM</a><a href="#developer">Developer</a><a href="#qa">QA / tester</a><a href="#handoff">Working together</a></nav>
       </aside>
       <main id="content">
-        <nav class="mobile-nav" aria-label="Site navigation"><a href="./index.html">Start</a><a href="./overview.html">How it works</a><a href="./workflows.html">Workflows</a><a class="active" aria-current="page" href="./roles.html">Examples</a><a href="./sdlc.html">Reference</a></nav>
+        <nav class="mobile-nav" aria-label="Site navigation"><a href="./index.html">Start</a><a href="./overview.html">How it works</a><a href="./workflows.html">Workflows</a><a class="active" aria-current="page" href="./roles.html">Use ACEF</a><a href="./skills.html">Skills</a><a href="./sdlc.html">Reference</a></nav>
 
         <header class="hero">
-          <p class="kicker">Start with real work</p>
-          <h1>You describe the outcome. ACEF handles the route.</h1>
-          <p class="lede">Everyone talks to the same ACEF-enabled agent in plain language. Your role changes the questions you care about—not the system you have to learn.</p>
+          <p class="kicker">Practical playbooks</p>
+          <h1>Start with your responsibility—not a skill name.</h1>
+          <p class="lede">Tell ACEF what outcome you own. It selects the necessary workflow and skills, then returns the decisions and evidence your role needs.</p>
         </header>
 
-        <section id="developer">
-          <span class="eyebrow">For developers</span>
-          <h2>Build, repair, and test in the repository’s own style</h2>
-          <div class="grid two">
-            <article class="card accent"><h3>Add a feature</h3><p>ACEF finds the closest proven project pattern, maps the affected surface, and chooses a proportionate workflow.</p></article>
-            <article class="card rose"><h3>Fix a defect</h3><p>It reproduces the behavior, identifies the root cause, makes the smallest correct patch, and adds focused regression coverage.</p></article>
-            <article class="card teal"><h3>Add missing tests</h3><p>Tests use the project’s actual framework and commands. If the repository has no pattern, ACEF establishes one example before scaling.</p></article>
-            <article class="card violet"><h3>Review a change</h3><p>The review checks behavior, acceptance criteria, affected boundaries, and real verification—not formatting alone.</p></article>
+        <section id="choose-role">
+          <span class="eyebrow">Choose a starting point</span>
+          <h2>What are you trying to move forward?</h2>
+          <div class="role-map">
+            <a class="role-card product" href="#product"><span>Product / PM</span><strong>Shape the right work</strong><small>Clarify value, scope, acceptance, risk, and delivery slices.</small></a>
+            <a class="role-card developer" href="#developer"><span>Developer</span><strong>Change working software</strong><small>Build, repair, review, and verify in the repository’s own style.</small></a>
+            <a class="role-card qa" href="#qa"><span>QA / tester</span><strong>Turn behavior into evidence</strong><small>Map journeys, plan coverage, prioritize risk, and automate the right layer.</small></a>
           </div>
-          <div class="example"><div class="you"><b>Developer</b>The avatar disappears after editing a profile. It returns only after a second refresh.</div><div class="acef"><b>ACEF</b>I’ll reproduce both refresh states, trace where the image reference is lost, and run the smallest relevant tests. If this stays within one UI-state boundary, I’ll keep it in the project’s normal workflow.</div></div>
+          <div class="callout"><strong>You do not need to choose Native, Fix, Standard, Full, or Guarded.</strong> Describe the work and known constraints. ACEF explains its route before it acts.</div>
         </section>
 
         <section id="product">
-          <span class="eyebrow">For product leads and architects</span>
-          <h2>Frame scope, expose risk, and decide before cost multiplies</h2>
-          <div class="grid two">
-            <article class="card teal"><h3>Turn an idea into a clear brief</h3><p>Define the user, desired outcome, success criteria, constraints, and explicit non-goals.</p></article>
-            <article class="card violet"><h3>Plan a coherent change</h3><p>Map the user journey and technical boundaries, then split work that is too broad for one delivery unit.</p></article>
-            <article class="card amber"><h3>Get a risk read</h3><p>See which boundaries make the work risky and which extra safeguards those risks justify.</p></article>
-            <article class="card rose"><h3>Approve, pause, or stop</h3><p>Make the decisions that agents should not infer: scope expansion, irreversible actions, risk acceptance, and major transitions.</p></article>
+          <span class="eyebrow">Product managers and product owners</span>
+          <h2>Move from an idea to a coherent, approved delivery unit</h2>
+          <p class="section-intro">Use ACEF before implementation when the user, value, expected behavior, scope, or risk is still unclear.</p>
+          <div class="playbook" aria-label="Product workflow">
+            <article><b>1</b><h3>State the outcome</h3><p>Name the user, problem, desired result, constraints, and explicit non-goals.</p></article>
+            <article><b>2</b><h3>Explore the journey</h3><p>ACEF maps activities, edge cases, affected surfaces, and open product decisions.</p></article>
+            <article><b>3</b><h3>Check readiness</h3><p>Acceptance criteria and risks are tested for ambiguity before engineering begins.</p></article>
+            <article><b>4</b><h3>Approve the slices</h3><p>Large work is split into coherent units. You approve scope, trade-offs, and exclusions.</p></article>
           </div>
-          <div class="example"><div class="you"><b>Product lead</b>We need team billing in the dashboard. Tell me what this really includes before implementation.</div><div class="acef"><b>ACEF</b>The first pass spans subscription state, permissions, payment-provider behavior, and dashboard UI. I’ll map the end-to-end journey and propose smaller coherent delivery units before code starts.</div></div>
+          <div class="responsibility-grid">
+            <div><span>You bring</span><p>User problem, business goal, constraints, deadlines, known risks, and decisions already made.</p></div>
+            <div><span>ACEF returns</span><p>A readiness verdict, user journey or story map, acceptance criteria, risk flags, scope split, and next recommended action.</p></div>
+            <div><span>You decide</span><p>Scope expansion, priority, risk acceptance, irreversible actions, non-goals, and whether a proposed split still delivers value.</p></div>
+          </div>
+          <div class="prompt-card"><span>Example request</span><p>“We want team billing for account owners. Before implementation, map the complete user journey, identify product decisions and risks, write acceptance criteria, and split the work if one delivery unit crosses too many boundaries. Do not write code yet.”</p></div>
+          <details>
+            <summary>Useful product and planning skills</summary>
+            <div class="details-body"><p><code>spec-readiness</code> checks whether the brief is actionable. <code>storymap</code> maps activities and delivery slices. <code>acef-specify</code> prepares or imports detailed requirements and design for planning-heavy work. ACEF selects them as needed; see the <a href="./skills.html#product-skills">skill catalog</a>.</p></div>
+          </details>
+        </section>
+
+        <section id="developer">
+          <span class="eyebrow">Developers and technical leads</span>
+          <h2>Make the smallest correct change and prove the real result</h2>
+          <p class="section-intro">Use ACEF for implementation, defect repair, technical discovery, code review, test creation, and release preparation.</p>
+          <div class="playbook" aria-label="Developer workflow">
+            <article><b>1</b><h3>Describe the change</h3><p>Give the expected outcome, current behavior, reproduction, constraints, and affected area if known.</p></article>
+            <article><b>2</b><h3>Confirm the route</h3><p>ACEF reads the repository, finds proven patterns, and explains the workflow and safeguards.</p></article>
+            <article><b>3</b><h3>Build narrowly</h3><p>The agent implements within the agreed scope and runs focused checks while the patch is changing.</p></article>
+            <article><b>4</b><h3>Review and close</h3><p>The changed surface is verified, findings are bounded, and the result is reported with evidence.</p></article>
+          </div>
+          <div class="responsibility-grid">
+            <div><span>You bring</span><p>Desired behavior, a reproduction when available, technical constraints, forbidden areas, and relevant history that changes the decision.</p></div>
+            <div><span>ACEF returns</span><p>Route rationale, affected-surface map, implementation, focused tests, independent verdict when required, and explicit follow-up items.</p></div>
+            <div><span>You decide</span><p>Architecture trade-offs, dependency additions, compatibility breaks, destructive operations, and meaningful scope expansion.</p></div>
+          </div>
+          <div class="prompt-card"><span>Example request</span><p>“The avatar disappears after profile editing and returns after a second refresh. Reproduce both states, find the root cause, make the smallest project-native fix, add focused regression coverage, and commit when the relevant checks pass. Record unrelated failures without investigating them.”</p></div>
+          <details>
+            <summary>Useful engineering and review skills</summary>
+            <div class="details-body"><p><code>acef-adapter</code> and <code>map-codebase</code> ground work in repository evidence. <code>bug-hunter</code> and <code>implementation-shape-review</code> provide bounded, report-only review lenses. <code>acef-release-adapter</code> prepares release and rollback evidence. See the <a href="./skills.html#engineering-skills">full engineering catalog</a>.</p></div>
+          </details>
         </section>
 
         <section id="qa">
-          <span class="eyebrow">For QA and test engineers</span>
-          <h2>Turn expected behavior into evidence</h2>
-          <div class="grid two">
-            <article class="card teal"><h3>Extract test cases</h3><p>Convert user journeys into preconditions, actions, expected outcomes, and negative or edge cases.</p></article>
-            <article class="card accent"><h3>Automate a real path</h3><p>Use the project’s existing test stack and verify the reachable surface—not a substitute created only for the test.</p></article>
-            <article class="card amber"><h3>Prioritize by risk</h3><p>Spend deeper coverage on permissions, failures, sessions, concurrency, persistence, and other risky behavior.</p></article>
-            <article class="card violet"><h3>Batch manual findings safely</h3><p>Finish the checklist first, then group related non-critical findings instead of opening a new lifecycle for every small issue.</p></article>
+          <span class="eyebrow">QA engineers and testers</span>
+          <h2>Choose coverage from user risk, then automate at the right layer</h2>
+          <p class="section-intro">Start by saying whether this is a new feature, a coverage gap, a release regression pack, or a project with no accepted test pattern.</p>
+          <div class="playbook" aria-label="QA workflow">
+            <article><b>1</b><h3>Choose the scenario</h3><p>New project, new feature, known defect, coverage gap, or regression suite.</p></article>
+            <article><b>2</b><h3>Map behavior</h3><p>Turn the user journey into paths, preconditions, alternate states, failures, and expected outcomes.</p></article>
+            <article><b>3</b><h3>Classify risk</h3><p>Prioritize permissions, data, sessions, queues, providers, concurrency, and high-impact branches.</p></article>
+            <article><b>4</b><h3>Deliver evidence</h3><p>Create a test plan, executable suite, automation, or coverage audit using the project’s real stack.</p></article>
           </div>
-          <div class="example"><div class="you"><b>QA engineer</b>Turn the password-reset journey into test cases before we automate it.</div><div class="acef"><b>ACEF</b>I’ll map request, token delivery, successful reset, expired and reused tokens, unknown accounts, session behavior, and rate limits—then show the cases for review before generating automation.</div></div>
+          <div class="responsibility-grid">
+            <div><span>You bring</span><p>The target journey or release, personas, environments, known defects, supported platforms, and what is already covered.</p></div>
+            <div><span>ACEF returns</span><p>A flow map, prioritized cases, risk profile, manual checklist, automation mapping or test code, and a regression pack when requested.</p></div>
+            <div><span>You decide</span><p>Release-blocking severity, platform matrix, acceptable residual risk, manual versus automated coverage, and final exploratory scope.</p></div>
+          </div>
+          <div class="prompt-card"><span>Example request</span><p>“Build a regression plan for password reset. Cover request, delivery, successful reset, expired and reused tokens, unknown accounts, session behavior, rate limits, and mobile browser behavior. Show prioritized cases and the recommended automation layer before writing test code.”</p></div>
+          <details>
+            <summary>Which test pipeline should I use?</summary>
+            <div class="details-body"><ul class="clean"><li><strong>No test suite:</strong> start with <code>test-strategy</code>, map critical journeys, then establish one accepted pattern with <code>acef-test-bootstrap</code>.</li><li><strong>New feature:</strong> map or document its flow, plan cases, classify risk, then generate unit/integration or browser tests.</li><li><strong>Coverage gap:</strong> start with <code>test-coverage-auditor</code>, then classify and fill only the prioritized gaps.</li><li><strong>QA deliverable:</strong> use <code>flow-suite-composer</code> to assemble the reviewed plan into an executable regression pack.</li></ul><p>See the connected diagrams and every test skill on the <a href="./skills.html#test-skills">Skills page</a>.</p></div>
+          </details>
         </section>
 
-        <section id="request">
-          <span class="eyebrow">A useful starting brief</span>
-          <h2>Give context that changes the decision</h2>
-          <p class="section-intro">You do not need to fill out a form. These four facts simply help ACEF reach the right path faster.</p>
-          <div class="grid two">
-            <article class="card"><h3>Outcome</h3><p>What should a user or another system be able to do when the work is complete?</p></article>
-            <article class="card"><h3>Current behavior</h3><p>For a defect, what happens now and how can it be reproduced?</p></article>
-            <article class="card"><h3>Constraints</h3><p>What must remain unchanged? Are there deadlines, compatibility needs, or forbidden areas?</p></article>
-            <article class="card"><h3>Known risk</h3><p>Does this touch money, permissions, durable data, providers, realtime behavior, or irreversible effects?</p></article>
+        <section id="handoff">
+          <span class="eyebrow">One shared thread of intent</span>
+          <h2>Roles hand off evidence—not a blank conversation</h2>
+          <div class="handoff-rail" aria-label="Product to development to QA handoff">
+            <article><span>Product</span><strong>Approved behavior</strong><p>Journey, acceptance, scope, non-goals, risks.</p></article>
+            <i aria-hidden="true">→</i>
+            <article><span>Development</span><strong>Working change</strong><p>Implementation, focused proof, known follow-ups.</p></article>
+            <i aria-hidden="true">→</i>
+            <article><span>QA</span><strong>Release confidence</strong><p>Risk coverage, real-path evidence, residual risk.</p></article>
           </div>
-          <a class="next-link" href="./sdlc.html"><span><strong>Go deeper: Technical reference</strong>Read the exact workflow contracts, BMAD relationship, evidence model, objective limits, and installation commands.</span><b aria-hidden="true">→</b></a>
+          <p class="section-intro">ACEF keeps these artifacts connected so each role can challenge or refine the same outcome. A handoff should not force the next person—or the next agent session—to rediscover the entire project.</p>
+          <a class="next-link" href="./skills.html"><span><strong>Next: Explore the skill catalog</strong>See every ACEF skill, when it runs, what it consumes, what it produces, and how the pipelines connect.</span><b aria-hidden="true">→</b></a>
         </section>
       </main>
     </div>
-    <footer>ACEF · One front door, examples shaped to your role · <a href="https://github.com/ramazanayyildiz/acef">View the repository</a></footer>
+    <footer>ACEF · One front door, role-specific decisions and evidence · <a href="https://github.com/ramazanayyildiz/acef">View the repository</a></footer>
   </body>
 </html>
