@@ -6,7 +6,7 @@ const path = require("node:path");
 const defaultSourceRoot = path.resolve(__dirname, "..");
 
 function usage() {
-  console.log(`Usage: scripts/update-acef-installation --repo <path> [--review-lenses] [--all-core] [--global-dispatcher]
+  console.log(`Usage: scripts/update-acef-installation --repo <path> [--all-worktrees] [--review-lenses] [--all-core] [--global-dispatcher]
 
 Refreshes a target repo from this ACEF checkout:
   1. repo-local ACEF tools, schemas, workflows, and support libraries
@@ -23,6 +23,7 @@ function parseArgs(argv) {
     reviewLenses: false,
     allCore: false,
     globalDispatcher: false,
+    allWorktrees: false,
   };
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
@@ -34,6 +35,8 @@ function parseArgs(argv) {
       opts.allCore = true;
     } else if (arg === "--global-dispatcher") {
       opts.globalDispatcher = true;
+    } else if (arg === "--all-worktrees") {
+      opts.allWorktrees = true;
     } else if (arg === "-h" || arg === "--help") {
       usage();
       process.exit(0);
@@ -71,17 +74,36 @@ function run(sourceRoot, script, args) {
   process.stdout.write(output);
 }
 
-try {
-  const opts = parseArgs(process.argv.slice(2));
-  const sourceRoot = resolveSourceRoot(opts.repo);
-  run(sourceRoot, "install-acef-tools", ["--repo", opts.repo]);
-  const skillArgs = ["--repo", opts.repo];
+function targetWorktrees(repo, allWorktrees) {
+  if (!allWorktrees) return [repo];
+  const output = cp.execFileSync("git", ["-C", repo, "worktree", "list", "--porcelain"], {
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  const targets = output.split(/\r?\n/)
+    .filter((line) => line.startsWith("worktree "))
+    .map((line) => path.resolve(line.slice("worktree ".length)));
+  return [...new Set(targets)];
+}
+
+function updateTarget(sourceRoot, targetRepo, opts) {
+  run(sourceRoot, "install-acef-tools", ["--repo", targetRepo]);
+  const skillArgs = ["--repo", targetRepo];
   if (opts.reviewLenses) skillArgs.push("--review-lenses");
   if (opts.allCore) skillArgs.push("--all-core");
   run(sourceRoot, "install-acef-skills", skillArgs);
-  const guardArgs = ["--repo", opts.repo];
+  const guardArgs = ["--repo", targetRepo];
   if (opts.globalDispatcher) guardArgs.push("--global-dispatcher");
   run(sourceRoot, "install-acef-bmad-guard", guardArgs);
+  console.log(`UPDATED_WORKTREE ${targetRepo}`);
+}
+
+try {
+  const opts = parseArgs(process.argv.slice(2));
+  const sourceRoot = resolveSourceRoot(opts.repo);
+  for (const targetRepo of targetWorktrees(opts.repo, opts.allWorktrees)) {
+    updateTarget(sourceRoot, targetRepo, opts);
+  }
 } catch (error) {
   console.error(`update-acef-installation: ${error.message}`);
   process.exitCode = 1;

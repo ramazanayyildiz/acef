@@ -195,6 +195,15 @@ function parseActiveRun(filePath) {
         throw new Error("active run runtimeContract requires full-bmad/four-actor-v3");
       }
     }
+    if (record.objectiveContract !== undefined) {
+      requireEnum(record, "objectiveContract", ["objective-supervisor-v1"], "active run");
+      requireFields(record, ["objectiveId", "scopeFingerprint", "objectivePath"], "objective-supervised active run");
+      if (!/^[A-Za-z0-9._-]+$/.test(record.objectiveId)) throw new Error("active run objectiveId must be a safe typed id");
+      if (!/^[a-f0-9]{64}$/.test(record.scopeFingerprint)) throw new Error("active run scopeFingerprint must be sha256");
+      if (record.objectivePath !== `docs/ai/objectives/${record.objectiveId}.json`) throw new Error("active run objectivePath must match objectiveId");
+      if (record.objectiveDefectIds !== undefined) requireStringArray(record, "objectiveDefectIds", "active run");
+      if (record.replanCause !== undefined) requireEnum(record, "replanCause", ["new-root-cause", "scope-error", "evidence-invalid"], "active run");
+    }
     requireEnum(record, "assuranceProfile", ASSURANCE_PROFILES, "active run");
     requireEnum(record, "scopeUnit", SCOPE_UNITS, "active run");
     if (record.expectedStories !== undefined) {

@@ -426,6 +426,13 @@ epic cannot start until the prior epic gate is `PASS`.
 
 ACEF separates implementation review from process review:
 
+- **Parent-objective supervisor** binds every new installed run to a stable objective/scope fingerprint. It consolidates
+  at 5 runs, 3 replans, 6 review cycles, or 30 active control minutes without product progress, and refuses an eighth
+  run or fifth replan. Manual-QA findings enter one typed ledger instead of recursively opening review lifecycles.
+- **Worktree freshness handshake** refuses new admitted work when the installed runtime or its recorded ACEF source
+  digest changed. Refresh every linked worktree with
+  `scripts/update-acef-installation --repo /path/to/repo --all-worktrees`.
+
 - **Preflight artifact** (`docs/ai/ACEF_PREFLIGHT.md` by default) is required before admitted ACEF planning, implementation, test
   generation, release, or done-state changes. It records route/lane/track, required skills, resolved paths, adapter
   freshness, test setup, API/backend source of truth, risk gates, approvals, and a `PASS` / `FAIL` / `HALT` verdict.

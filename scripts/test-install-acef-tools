@@ -7,6 +7,7 @@ const cp = require("node:child_process");
 const repoRoot = path.resolve(__dirname, "..");
 const installer = path.join(repoRoot, "scripts", "install-acef-tools");
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "acef-tools-install-"));
+const linkedWorktree = `${tmp}-linked`;
 
 function run(command, args, options = {}) {
   const { allowFailure = false, ...execOptions } = options;
@@ -42,6 +43,7 @@ try {
   const installationHelper = path.join(tmp, ".acef", "bin", "lib", "acef-installation.js");
   const schema = path.join(tmp, ".acef", "schemas", "active-run.schema.json");
   const activeRunV2Schema = path.join(tmp, ".acef", "schemas", "active-run-v2.schema.json");
+  const objectiveSchema = path.join(tmp, ".acef", "schemas", "objective-supervision-v1.schema.json");
   const reviewReportV3Schema = path.join(tmp, ".acef", "schemas", "review-report-v3.schema.json");
   const developerRepairV3Schema = path.join(tmp, ".acef", "schemas", "developer-repair-v3.schema.json");
   const processJudgeDecisionV3Schema = path.join(tmp, ".acef", "schemas", "process-judge-decision-v3.schema.json");
@@ -98,6 +100,7 @@ try {
   if (!fs.existsSync(installationHelper)) throw new Error("installation support library was not installed");
   if (!fs.existsSync(schema)) throw new Error("typed-state schemas were not installed");
   if (!fs.existsSync(activeRunV2Schema)) throw new Error("active-run v2 schema was not installed");
+  if (!fs.existsSync(objectiveSchema)) throw new Error("objective supervision schema was not installed");
   const installedActiveRunV2Schema = JSON.parse(fs.readFileSync(activeRunV2Schema, "utf8"));
   if (JSON.stringify(installedActiveRunV2Schema.properties?.terminalDisposition?.enum)
     !== JSON.stringify(["PASS", "FAIL", "REPLAN", "BLOCKED"])) {
@@ -142,6 +145,12 @@ try {
   if (!installation.components.tools.tools.includes("update-acef-installation")) throw new Error("tools component missing updater");
   if (!installation.components.tools.controlDosing) throw new Error("tools component missing control-dosing manifest");
   if (!installation.components.tools.modelRoutingPolicy) throw new Error("tools component missing model-routing policy");
+  if (installation.components.tools.objectiveSupervisor !== "objective-supervisor-v1"
+    || installation.components.tools.freshnessContract !== "worktree-handshake-v1"
+    || !installation.components.tools.sourceRuntimeDigest
+    || !installation.components.tools.installedRuntimeDigest) {
+    throw new Error("tools component missing objective/freshness supervision contract");
+  }
 
   fs.mkdirSync(path.join(tmp, "docs", "ai"), { recursive: true });
   fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_demo_DELIVERY_AUDIT.md"), [
@@ -230,6 +239,8 @@ try {
   run(state, [
     "active-run", "--repo", tmp,
     "--run-id", "RUN-install-test",
+    "--objective-id", "OBJ-install-test",
+    "--objective-scope", "Validate the installed ACEF runtime",
     "--lane", "full-bmad",
     "--status", "active",
     "--story", "story 1.1",
@@ -264,6 +275,9 @@ try {
   if (!statusJson.readOrder.includes("docs/ai/ACEF_CURRENT_CONTEXT.md")) throw new Error("installed status helper did not include current-context read order");
   if (statusJson.installation.sourceCommit !== installation.acefVersion.sourceCommit) throw new Error("installed status helper did not report ACEF installation version");
   if (!statusJson.installation.components.includes("tools")) throw new Error("installed status helper missing installed components");
+  if (statusJson.objective?.objectiveId !== "OBJ-install-test" || statusJson.objective?.runCount !== 1) {
+    throw new Error("installed status helper did not expose parent-objective counters");
+  }
   fs.writeFileSync(installationManifest, "{}\n");
   const invalidStatus = run(status, ["--repo", tmp, "--format", "json"], { allowFailure: true });
   const invalidJson = JSON.parse(invalidStatus);
@@ -282,8 +296,19 @@ try {
   const refreshedInstallation = JSON.parse(fs.readFileSync(installationManifest, "utf8"));
   if (!refreshedInstallation.components?.bmadGuard) throw new Error("installed updater did not record guard component");
   if (!refreshedInstallation.components?.skills?.skills?.includes("bug-hunter")) throw new Error("installed updater did not record refreshed review lenses");
+  run("git", ["worktree", "add", "-q", "-b", `acef-install-linked-${process.pid}`, linkedWorktree, "HEAD"], { cwd: tmp });
+  const allWorktreeOutput = run(updater, ["--repo", tmp, "--all-worktrees"]);
+  if (!allWorktreeOutput.includes(`UPDATED_WORKTREE ${fs.realpathSync(tmp)}`)
+    || !allWorktreeOutput.includes(`UPDATED_WORKTREE ${fs.realpathSync(linkedWorktree)}`)) {
+    throw new Error(`installed updater did not enumerate every active git worktree:\n${allWorktreeOutput}`);
+  }
+  if (!fs.existsSync(path.join(linkedWorktree, "docs", "ai", "ACEF_INSTALLATION.json"))) {
+    throw new Error("linked worktree did not receive an ACEF installation/freshness stamp");
+  }
 
   console.log("install-acef-tools tests passed");
 } finally {
+  try { run("git", ["worktree", "remove", "--force", linkedWorktree], { cwd: tmp }); } catch {}
+  fs.rmSync(linkedWorktree, { recursive: true, force: true });
   fs.rmSync(tmp, { recursive: true, force: true });
 }

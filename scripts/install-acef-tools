@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 const fs = require("node:fs");
 const path = require("node:path");
-const { writeInstallationManifest } = require("./lib/acef-installation");
+const { installedRuntimeDigest, sourceRuntimeDigest, writeInstallationManifest } = require("./lib/acef-installation");
 
 const repoRoot = path.resolve(__dirname, "..");
 const tools = [
@@ -188,4 +188,8 @@ console.log(`Updated ACEF installation manifest: ${writeInstallationManifest(opt
   controlDosing: fs.existsSync(path.join(repoRoot, "method", "control-dosing.json")),
   modelRoutingPolicy: fs.existsSync(path.join(repoRoot, "method", "model-routing-policy-v1.json")),
   workflows: fs.existsSync(path.join(repoRoot, "workflows")),
+  objectiveSupervisor: "objective-supervisor-v1",
+  freshnessContract: "worktree-handshake-v1",
+  sourceRuntimeDigest: sourceRuntimeDigest(repoRoot),
+  installedRuntimeDigest: installedRuntimeDigest(opts.repo),
 })}`);

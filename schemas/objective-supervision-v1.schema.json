@@ -1,0 +1,105 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://acef.local/schemas/objective-supervision-v1.schema.json",
+  "title": "ACEF Objective Supervision v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema", "objectiveId", "objectiveScope", "scopeFingerprint", "status",
+    "thresholds", "runs", "runCount", "replanCount", "reviewCycleCount",
+    "defectLedger", "manualQa", "progress", "createdAt", "updatedAt"
+  ],
+  "properties": {
+    "schema": { "const": "acef.objective-supervision.v1" },
+    "objectiveId": { "type": "string", "pattern": "^[A-Za-z0-9._-]+$" },
+    "objectiveScope": { "type": "string", "minLength": 1 },
+    "scopeFingerprint": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "status": {
+      "enum": ["EXECUTING", "CONSOLIDATING", "SUSPENDED_OVER_BUDGET", "CLOSEOUT", "DONE"]
+    },
+    "thresholds": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["consolidateRuns", "consolidateReplans", "consolidateReviews", "suspendRuns", "suspendReplans", "maxRemediationCycles"],
+      "properties": {
+        "consolidateRuns": { "const": 5 },
+        "consolidateReplans": { "const": 3 },
+        "consolidateReviews": { "const": 6 },
+        "suspendRuns": { "const": 8 },
+        "suspendReplans": { "const": 5 },
+        "maxRemediationCycles": { "const": 2 }
+      }
+    },
+    "runs": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["runId", "openedAt"],
+        "properties": {
+          "runId": { "type": "string", "pattern": "^[A-Za-z0-9._-]+$" },
+          "openedAt": { "type": "string", "format": "date-time" },
+          "terminalDisposition": { "enum": ["PASS", "FAIL", "REPLAN", "BLOCKED"] },
+          "replanCause": { "enum": ["new-root-cause", "scope-error", "evidence-invalid"] },
+          "defectIds": {
+            "type": "array", "uniqueItems": true,
+            "items": { "type": "string", "pattern": "^[A-Za-z0-9._-]+$" }
+          }
+        }
+      }
+    },
+    "runCount": { "type": "integer", "minimum": 0 },
+    "replanCount": { "type": "integer", "minimum": 0 },
+    "reviewCycleCount": { "type": "integer", "minimum": 0 },
+    "defectLedger": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["defectId", "source", "class", "summary", "status", "discoveredInRun", "createdAt"],
+        "properties": {
+          "defectId": { "type": "string", "pattern": "^[A-Za-z0-9._-]+$" },
+          "source": { "enum": ["review", "manual-qa", "broad-suite"] },
+          "class": { "enum": ["security", "payments", "migration", "realtime", "concurrency", "state-machine", "correctness", "cosmetic", "flake", "legacy"] },
+          "summary": { "type": "string", "minLength": 1 },
+          "status": { "enum": ["open", "batched", "escalated", "fixed", "deferred", "legacy-quarantined"] },
+          "discoveredInRun": { "type": "string", "pattern": "^[A-Za-z0-9._-]+$" },
+          "batchKey": { "type": "string", "pattern": "^[A-Za-z0-9._-]+$" },
+          "rootCauseKey": { "type": "string", "pattern": "^[A-Za-z0-9._-]+$" },
+          "createdAt": { "type": "string", "format": "date-time" }
+        }
+      }
+    },
+    "manualQa": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status"],
+      "properties": {
+        "status": { "enum": ["idle", "running", "complete"] },
+        "startedAt": { "type": "string", "format": "date-time" },
+        "completedAt": { "type": "string", "format": "date-time" }
+      }
+    },
+    "progress": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["baseCommit", "lastObservedAt", "lastProductCommit", "lastProductProgressAt", "activeControlSeconds", "controlCommits", "productCommits"],
+      "properties": {
+        "baseCommit": { "type": "string", "minLength": 1 },
+        "lastObservedAt": { "type": "string", "format": "date-time" },
+        "lastProductCommit": { "type": "string", "minLength": 1 },
+        "lastProductProgressAt": { "type": "string", "format": "date-time" },
+        "activeControlSeconds": { "type": "integer", "minimum": 0 },
+        "controlCommits": { "type": "integer", "minimum": 0 },
+        "productCommits": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "warnings": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "createdAt": { "type": "string", "format": "date-time" },
+    "updatedAt": { "type": "string", "format": "date-time" }
+  }
+}

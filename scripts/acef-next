@@ -4,6 +4,8 @@ const path = require("node:path");
 const { parseWorkflow } = require("./lib/acef-state-parser");
 const { inspectRunAuthorization } = require("./lib/acef-run-authorization");
 const { displayName } = require("./lib/acef-execution-policy");
+const { installationFreshnessFailures } = require("./lib/acef-installation");
+const { loadObjective, objectiveFailures } = require("./lib/acef-objective-supervisor");
 
 function usage() {
   console.log(`Usage: acef-next --repo <path> [--role <role>] [--format json]
@@ -191,6 +193,9 @@ function buildNext(repo, roleOverride) {
 
   if (!fs.existsSync(path.join(repo, "AGENTS.md"))) blockers.push("missing AGENTS.md");
   if (workflow.error) blockers.push(`invalid workflow state: ${workflow.error}`);
+  blockers.push(...installationFreshnessFailures(repo));
+  if (activeRun.record) blockers.push(...objectiveFailures(repo, activeRun.record));
+  const objective = activeRun.record?.objectiveId ? loadObjective(repo, activeRun.record.objectiveId) : null;
 
   const base = {
     schema: "acef.next.v1",
@@ -198,6 +203,14 @@ function buildNext(repo, roleOverride) {
     status: blockers.length ? "blocked" : "ready",
     blockers,
     active_state: null,
+    objective: objective ? {
+      objective_id: objective.objectiveId,
+      status: objective.status,
+      run_count: objective.runCount,
+      replan_count: objective.replanCount,
+      review_cycle_count: objective.reviewCycleCount,
+      warnings: objective.warnings || [],
+    } : null,
     allowed: { can_write: false, paths: [], commands: [] },
     forbidden: {
       paths: ["docs/ai/ACEF_*"],

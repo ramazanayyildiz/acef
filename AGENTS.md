@@ -24,6 +24,17 @@ For admitted work, choose execution depth and assurance separately:
 - Baseline or Guarded assurance. Guarded is additive; it is not a fourth workflow and must not duplicate the selected
   workflow's lifecycle.
 
+Every new admitted run belongs to one stable parent objective. Pass `--objective-id` and `--objective-scope` when
+writing active-run state; changing a run or story label does not reset its cumulative run, replan, review, or active
+control-time budget. At five runs, three replans, six review cycles, or 30 active control minutes without a product/test
+commit, consolidate into the objective defect ledger. An attempted eighth run or a fifth replan suspends the objective
+until a human-approved scope split. Manual QA must finish before non-critical findings are explicitly batched; critical
+security, money, migration, realtime, concurrency, or state-machine findings remain independent Standard/Full + Guarded
+work. Same-run review remediation remains capped at two cycles.
+
+Before admitted work, installation freshness must pass. If the ACEF source runtime changed, refresh every linked target
+worktree with `scripts/update-acef-installation --repo <target> --all-worktrees`; never continue from stale copied tools.
+
 New ACEF Fix runs use `quickFixContract: single-review-v1`: one developer, one independent reviewer, focused red/green
 and revert-proof evidence, then deterministic closeout. Guarded may strengthen evidence and scope controls, but it does
 not add Process Judge, Patch Assurance, Verify-Patch, Test Review, or a second review cycle to Quick Fix.

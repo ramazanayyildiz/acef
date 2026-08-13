@@ -248,6 +248,17 @@ Rules:
 - Before close, represent those identities in `## Actor Separation` with `path#actor` provenance and run
   `.acef/bin/acef-process-validator --check actor-separation`.
 
+## Objective-level circuit breaker
+
+Full stories share the same parent-objective budget with Fix and Standard repairs discovered during delivery. Do not
+open a fresh Full lifecycle merely because a reviewer or manual-QA pass found another defect. Keep review repair inside
+the existing two-cycle `REMEDIATE` transition; route later findings through the objective defect ledger.
+
+The parent objective consolidates at 5 runs, 3 replans, 6 review cycles, or 30 active control minutes without a
+product/test commit, and refuses an eighth run or fifth replan. Manual QA finishes before its non-critical findings are
+batched. Security, payments, migration, realtime, concurrency, and state-machine defects remain fail-closed and use
+Standard-or-Full plus Guarded assurance without resetting the parent counters.
+
 ## Accelerated cadence (safe speed mode)
 
 ACEF may run faster without dropping the evidence chain, but only inside explicit dependency boundaries.

@@ -27,6 +27,15 @@ const { validateDurableStoryClosePackage } = require("./lib/acef-story-close");
 const { riskRequiresGuarded, workflowSelectionFailures } = require("./lib/acef-execution-policy");
 const { buildAssuranceRequirements } = require("./lib/acef-assurance-requirements");
 const { loadModelRoutingPolicy, resolveRoleRuntime } = require("./lib/acef-model-routing");
+const { installationFreshnessFailures, readInstallationManifest } = require("./lib/acef-installation");
+const {
+  fingerprintScope,
+  objectivePath,
+  recordDefect,
+  registerRun,
+  setManualQa,
+  transitionDefect,
+} = require("./lib/acef-objective-supervisor");
 
 function usage(command = "") {
   if (command === "direct-run") {
@@ -52,7 +61,10 @@ The existing direct record is the compact compatibility context. Do not inspect 
   console.log(`ACEF typed-state writer
 
 Usage:
-  acef-state active-run --repo <path> --run-id <id> --workflow-id quick-fix|lightweight|full-bmad [--full-flow-contract six-actor-v2|four-actor-v3] [--runtime-contract capsule-supervisor-v1|capsule-supervisor-v2] --assurance baseline|guarded --scope-unit work-item|story|epic [--expected-story <story>...] --status <status> --story <scope> --phase <phase> --ledger <path> [--route <route> --route-confidence low|medium|high --admission-decision acef --admission-rationale <text> --source-disposition fresh|split-child --reversible true|false --technical-boundary-count <n> --product-surface-count <n>] [--parent-run-id <id> --re-admission-confirmed true] [--goal-description <text> --goal-user-facing true|false --goal-completion-mode backend-capability|product-workspace|internal] [options]
+  acef-state active-run --repo <path> --run-id <id> --objective-id <id> --objective-scope <stable-parent-scope> --workflow-id quick-fix|lightweight|full-bmad [--objective-defect <id>...] [--replan-cause new-root-cause|scope-error|evidence-invalid] [options]
+  acef-state objective-qa --repo <path> --objective-id <id> --status running|complete
+  acef-state objective-defect --repo <path> --objective-id <id> --id <id> --source review|manual-qa|broad-suite --defect-class <class> --summary <text> --discovered-in-run <id> [--defect-status <status> --batch-key <key> --root-cause-key <key>]
+  acef-state objective-defect-transition --repo <path> --objective-id <id> --id <id> --defect-status batched|escalated|fixed|deferred|legacy-quarantined [--batch-key <key>]
   acef-state migrate-active-run --repo <path> --workflow-id quick-fix|lightweight|full-bmad [--assurance baseline|guarded] [--assurance-rationale <text>] [--assurance-approval <approval-id>]
   acef-state direct-run --repo <path> --run-id <id> --status active|complete|promoted --scope <scope> --acceptance <criterion>... --technical-boundary <kind> --reversible true [--changed-path <path>...] [--verification-command <command> --verification-exit-code <code>]... [options]
   acef-state actor --repo <path> --id <id> --story <scope> --phase <phase> --role <role> --client <client> --context-profile <profile> [options]
@@ -85,7 +97,7 @@ function durablePersistenceEvidenceText(text) {
 
 function parseArgs(argv) {
   const [command, ...rest] = argv;
-  const opts = { command, repo: process.cwd(), allow: [], satisfies: [], evidence: [], surface: [], surfaceEvidence: [], binding: [], bindingEvidence: [], riskTrigger: [], clarifyingQuestion: [], inferredAnswer: [], unresolvedQuestion: [], requiredSurface: [], coveredSurface: [], goalEvidence: [], goalMissing: [], acceptance: [], changedPath: [], verificationCommand: [], verificationExitCode: [], unresolvedRisk: [], unresolvedFinding: [], finding: [], findingId: [], findingSeverity: [], findingReason: [], promotionReason: [], expectedStory: [], expectedTest: [], testPath: [], commandArgv: [] };
+  const opts = { command, repo: process.cwd(), allow: [], satisfies: [], evidence: [], surface: [], surfaceEvidence: [], binding: [], bindingEvidence: [], riskTrigger: [], clarifyingQuestion: [], inferredAnswer: [], unresolvedQuestion: [], requiredSurface: [], coveredSurface: [], goalEvidence: [], goalMissing: [], acceptance: [], changedPath: [], verificationCommand: [], verificationExitCode: [], unresolvedRisk: [], unresolvedFinding: [], finding: [], findingId: [], findingSeverity: [], findingReason: [], promotionReason: [], expectedStory: [], expectedTest: [], testPath: [], objectiveDefect: [], commandArgv: [] };
   for (let index = 0; index < rest.length; index += 1) {
     const arg = rest[index];
     if (arg === "--help" || arg === "-h") {
@@ -105,7 +117,7 @@ function parseArgs(argv) {
     const value = rest[index + 1];
     if (value === undefined || value.startsWith("--")) throw new Error(`Missing value for ${arg}`);
     index += 1;
-    if (["allow", "satisfies", "evidence", "surface", "surfaceEvidence", "binding", "bindingEvidence", "riskTrigger", "clarifyingQuestion", "inferredAnswer", "unresolvedQuestion", "requiredSurface", "coveredSurface", "goalEvidence", "goalMissing", "acceptance", "changedPath", "verificationCommand", "verificationExitCode", "unresolvedRisk", "unresolvedFinding", "finding", "findingId", "findingSeverity", "findingReason", "promotionReason", "expectedStory", "expectedTest", "testPath"].includes(key)) opts[key].push(value);
+    if (["allow", "satisfies", "evidence", "surface", "surfaceEvidence", "binding", "bindingEvidence", "riskTrigger", "clarifyingQuestion", "inferredAnswer", "unresolvedQuestion", "requiredSurface", "coveredSurface", "goalEvidence", "goalMissing", "acceptance", "changedPath", "verificationCommand", "verificationExitCode", "unresolvedRisk", "unresolvedFinding", "finding", "findingId", "findingSeverity", "findingReason", "promotionReason", "expectedStory", "expectedTest", "testPath", "objectiveDefect"].includes(key)) opts[key].push(value);
     else opts[key] = value;
   }
   opts.repo = path.resolve(opts.repo);
@@ -409,6 +421,8 @@ function lifecycleRecordsExist(repo) {
 
 function writeActiveRun(opts) {
   required(opts, ["runId", "status", "story", "phase", "ledger"]);
+  const freshnessFailures = installationFreshnessFailures(opts.repo);
+  if (freshnessFailures.length) throw new Error(freshnessFailures.join("; "));
   if (opts.lane === "guarded") {
     throw new Error("lane guarded is legacy state; select --workflow-id quick-fix|lightweight|full-bmad and --assurance guarded");
   }
@@ -470,6 +484,26 @@ function writeActiveRun(opts) {
   if (assuranceProfile === "guarded" && scopeUnit === "epic" && workflowId !== "full-bmad" && !opts.assuranceApproval) {
     throw new Error("non-Full guarded epic requires --assurance-approval <typed approval id>");
   }
+  const installation = readInstallationManifest(opts.repo);
+  const objectiveRequired = installation?.components?.tools?.objectiveSupervisor === "objective-supervisor-v1";
+  const objectiveContract = sameRun
+    ? previous.objectiveContract
+    : ((objectiveRequired || opts.objectiveId || opts.objectiveScope) ? "objective-supervisor-v1" : undefined);
+  if (!sameRun && objectiveRequired) required(opts, ["objectiveId", "objectiveScope"]);
+  if (!sameRun && objectiveContract && (!opts.objectiveId || !opts.objectiveScope)) {
+    throw new Error("new objective-supervised run requires --objective-id and --objective-scope");
+  }
+  if (!sameRun && objectiveContract && previous && previous.status !== "complete") {
+    throw new Error(`cannot replace ${previous.status} run ${previous.runId}; close it before opening ${opts.runId}`);
+  }
+  const objectiveId = sameRun ? previous.objectiveId : opts.objectiveId;
+  const scopeFingerprint = sameRun ? previous.scopeFingerprint : (opts.objectiveScope ? fingerprintScope(opts.objectiveScope) : undefined);
+  const objectiveRelativePath = objectiveId
+    ? path.relative(opts.repo, objectivePath(opts.repo, objectiveId)).replaceAll(path.sep, "/")
+    : undefined;
+  const objectiveDefectIds = opts.objectiveDefect.length
+    ? [...new Set(opts.objectiveDefect)]
+    : (sameRun ? previous.objectiveDefectIds : undefined);
   const record = {
     schema: "acef.active-run.v2",
     runId: opts.runId,
@@ -478,6 +512,10 @@ function writeActiveRun(opts) {
     ...(quickFixContract ? { quickFixContract } : {}),
     ...(fullFlowContract ? { fullFlowContract } : {}),
     ...(runtimeContract ? { runtimeContract } : {}),
+    ...(objectiveContract ? { objectiveContract } : {}),
+    ...(objectiveId ? { objectiveId, scopeFingerprint, objectivePath: objectiveRelativePath } : {}),
+    ...(objectiveDefectIds?.length ? { objectiveDefectIds } : {}),
+    ...(opts.replanCause ? { replanCause: opts.replanCause } : (sameRun && previous.replanCause ? { replanCause: previous.replanCause } : {})),
     assuranceProfile,
     scopeUnit,
     ...(expectedStories ? { expectedStories } : {}),
@@ -485,6 +523,8 @@ function writeActiveRun(opts) {
     assuranceApprovalId: opts.assuranceApproval ? safeId(opts.assuranceApproval, "assurance approval id") : null,
     track: opts.track === "guarded" ? null : (opts.track || null),
     status: opts.status,
+    ...(opts.terminalDisposition ? { terminalDisposition: opts.terminalDisposition } : {}),
+    ...(opts.terminalGateId ? { terminalGateId: safeId(opts.terminalGateId, "terminal gate id") } : {}),
     activeEpic: opts.epic || (sameRun ? previous.activeEpic : null),
     activeStory: opts.story,
     activePhase: opts.phase,
@@ -512,9 +552,48 @@ function writeActiveRun(opts) {
       throw new Error(`active-run routing rejected before bootstrap: ${routingFailures.join("; ")}`);
     }
   }
+  if (!sameRun && objectiveContract) {
+    registerRun(opts.repo, {
+      objectiveId,
+      objectiveScope: opts.objectiveScope,
+      runId: opts.runId,
+      previousRun: previous?.objectiveId === objectiveId ? previous : null,
+      defectIds: objectiveDefectIds || [],
+      replanCause: opts.replanCause,
+      workflowId,
+      assuranceProfile,
+    });
+  }
   atomicJson(target, record, { overwrite: true, validate: parseActiveRun });
   syncRuntimeContext(opts.repo, record);
   console.log(`WROTE active-run ${relative(opts.repo, target)}`);
+}
+
+function writeObjectiveQa(opts) {
+  required(opts, ["objectiveId", "status"]);
+  setManualQa(opts.repo, opts.objectiveId, opts.status);
+  console.log(`WROTE objective-qa ${opts.objectiveId} status=${opts.status}`);
+}
+
+function writeObjectiveDefect(opts) {
+  required(opts, ["objectiveId", "id", "source", "defectClass", "summary", "discoveredInRun"]);
+  recordDefect(opts.repo, opts.objectiveId, {
+    defectId: opts.id,
+    source: opts.source,
+    class: opts.defectClass,
+    summary: opts.summary,
+    status: opts.defectStatus,
+    discoveredInRun: opts.discoveredInRun,
+    batchKey: opts.batchKey,
+    rootCauseKey: opts.rootCauseKey,
+  });
+  console.log(`WROTE objective-defect ${opts.id}`);
+}
+
+function writeObjectiveDefectTransition(opts) {
+  required(opts, ["objectiveId", "id", "defectStatus"]);
+  transitionDefect(opts.repo, opts.objectiveId, opts.id, opts.defectStatus, opts.batchKey);
+  console.log(`WROTE objective-defect-transition ${opts.id} status=${opts.defectStatus}`);
 }
 
 function migrateActiveRun(opts) {
@@ -2363,6 +2442,9 @@ function main() {
   if (!opts.command || opts.command === "help" || opts.command === "--help" || opts.help) return usage(opts.command);
   runGit(opts.repo, ["rev-parse", "--git-dir"]);
   if (opts.command === "active-run") return writeActiveRun(opts);
+  if (opts.command === "objective-qa") return writeObjectiveQa(opts);
+  if (opts.command === "objective-defect") return writeObjectiveDefect(opts);
+  if (opts.command === "objective-defect-transition") return writeObjectiveDefectTransition(opts);
   if (opts.command === "migrate-active-run") return migrateActiveRun(opts);
   if (opts.command === "direct-run") return writeDirectRun(opts);
   if (opts.command === "actor") return writeActor(opts);

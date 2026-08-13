@@ -28,6 +28,8 @@ const {
   atddTestSourceAuthenticityFailure,
   atddGreenTestContinuityFailure,
 } = require("./lib/acef-state-parser");
+const { installationFreshnessFailures, readInstallationManifest } = require("./lib/acef-installation");
+const { loadObjective, objectiveFailures } = require("./lib/acef-objective-supervisor");
 const { inspectRunAuthorization } = require("./lib/acef-run-authorization");
 const {
   buildAssuranceRequirements,
@@ -95,7 +97,34 @@ Checks:
   run-authorization   Require active run, ledger, context, and worker-scope run/story binding
   review-circuit-breaker Fail after two consecutive typed non-PASS review/judge verdicts for one scope
   replan-counter      Compatibility alias for the typed review circuit breaker
+  objective-supervision Enforce parent-objective run/replan/review budgets and defect-ledger routing
+  installation-freshness Refuse admitted work from stale or modified installed ACEF worktrees
 `);
+}
+
+function checkInstallationFreshness(repoRoot) {
+  const failures = installationFreshnessFailures(repoRoot);
+  return failures.length
+    ? result("installation-freshness", false, failures.join("; "))
+    : result("installation-freshness", true, "Installed ACEF runtime matches its worktree/source handshake");
+}
+
+function checkObjectiveSupervision(repoRoot) {
+  const activeRun = typedActiveRun(repoRoot);
+  if (!activeRun) return result("objective-supervision", true, "No typed active run");
+  const installation = readInstallationManifest(repoRoot);
+  const required = installation?.components?.tools?.objectiveSupervisor === "objective-supervisor-v1";
+  if (required && !activeRun.objectiveContract) {
+    const predatesInstall = Date.parse(activeRun.updatedAt || "") < Date.parse(installation.lastUpdatedAt || "");
+    if (!predatesInstall) return result("objective-supervision", false, "Installed objective-supervisor-v1 requires parent objective binding on every new run");
+    return result("objective-supervision", true, "Compatibility run predates objective-supervisor-v1 installation");
+  }
+  if (!activeRun.objectiveContract) return result("objective-supervision", true, "Compatibility run predates objective-supervisor-v1");
+  const failures = objectiveFailures(repoRoot, activeRun);
+  if (failures.length) return result("objective-supervision", false, failures.join("; "));
+  const objective = loadObjective(repoRoot, activeRun.objectiveId);
+  return result("objective-supervision", true,
+    `${objective.objectiveId} ${objective.status}: ${objective.runCount} run(s), ${objective.replanCount} replan(s), ${objective.reviewCycleCount} review cycle(s)`);
 }
 
 function parseArgs(argv) {
@@ -3730,6 +3759,8 @@ function baseCloseoutChecks(execution, repoRoot, ledgerPath, adapterPath, regist
     ];
   }
   const checks = [
+    () => checkInstallationFreshness(repoRoot),
+    () => checkObjectiveSupervision(repoRoot),
     () => checkRunAuthorization(repoRoot, { requireScopeRunId: true }),
     () => checkLaneSelection(repoRoot),
     () => checkSessionHandoff(repoRoot, ledgerPath, adapterPath, registryPath),
@@ -3824,6 +3855,9 @@ function checkPrecommitGate(repoRoot) {
   if (!exists(activeRunPath)) return result("precommit-gate", true, "No active ACEF run");
   const ledger = findLedger(repoRoot);
   const execution = inferActiveExecution(repoRoot, ledger);
+  for (const guard of [checkInstallationFreshness(repoRoot), checkObjectiveSupervision(repoRoot)]) {
+    if (!guard.ok) return result("precommit-gate", false, `${guard.name}: ${guard.message}`);
+  }
   let stagedCloseout = false;
   let stagedGateTransition = false;
   let stagedPaths = [];
@@ -4074,7 +4108,7 @@ function main() {
   const adapter = args.adapter || findAdapter(args.repo);
   const registry = findPatternRegistry(args.repo, adapter);
   const checks = args.check === "all"
-    ? ["clean-tree", "preflight", "claims", "adapter-freshness", "pattern-registry", "reuse-before-create", "do-not-copy", "partial-workshape", "finding-promotion", "graduation-reconciliation", "vertical-slice", "test-authenticity", "guarded-test-floor", "actor-separation", "worker-scope", "evidence-manifest", "gate-verdict", "gate-decider", "epic-process-judge", "source-reconciliation", "epic-context-pack", "current-context", "pr-review", "spec-readiness", "goal-coverage", "lane-selection", "lane-closeout", "direct-lifecycle", "lightweight-lifecycle", "quick-fix-closeout", "lean-evidence", "control-dosing", "capability-change", "session-handoff", "seeded-epic-gates", "epic-boundary", "epic-transition-approval", "run-authorization", "review-circuit-breaker", "replan-counter"]
+    ? ["clean-tree", "preflight", "claims", "adapter-freshness", "installation-freshness", "objective-supervision", "pattern-registry", "reuse-before-create", "do-not-copy", "partial-workshape", "finding-promotion", "graduation-reconciliation", "vertical-slice", "test-authenticity", "guarded-test-floor", "actor-separation", "worker-scope", "evidence-manifest", "gate-verdict", "gate-decider", "epic-process-judge", "source-reconciliation", "epic-context-pack", "current-context", "pr-review", "spec-readiness", "goal-coverage", "lane-selection", "lane-closeout", "direct-lifecycle", "lightweight-lifecycle", "quick-fix-closeout", "lean-evidence", "control-dosing", "capability-change", "session-handoff", "seeded-epic-gates", "epic-boundary", "epic-transition-approval", "run-authorization", "review-circuit-breaker", "replan-counter"]
     : [args.check];
 
   const results = checks.map((check) => {
@@ -4082,6 +4116,8 @@ function main() {
     if (check === "preflight") return checkPreflight(args.repo);
     if (check === "claims") return checkClaims(args.repo, ledger);
     if (check === "adapter-freshness") return checkAdapterFreshness(args.repo, adapter);
+    if (check === "installation-freshness") return checkInstallationFreshness(args.repo);
+    if (check === "objective-supervision") return checkObjectiveSupervision(args.repo);
     if (check === "pattern-registry") return checkPatternRegistry(registry);
     if (check === "reuse-before-create") return checkReuseBeforeCreate(ledger, registry);
     if (check === "do-not-copy") return checkDoNotCopy(ledger, registry);

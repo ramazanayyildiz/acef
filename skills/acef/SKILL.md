@@ -23,8 +23,8 @@ Evidence stays on disk; chat stays small.
 - In full-BMAD epics, create/use an Epic Context Pack before story workers so shared context is read once, not repeated
   every story.
 - Rebuild the current-context hot slice at every phase transition and validate it with `--check current-context`.
-- Never silently reduce a selected lane's controls to save context. The explicit `direct` lane is the exception contract,
-  not an improvised downgrade.
+- Never silently reduce a selected workflow's controls to save context. New `direct` runs are retired; use native
+  admission, ACEF Fix, Standard, or Full instead of an improvised downgrade.
 - In typed runs, use `.acef/bin/acef-state` for actor, worker-scope, evidence, gate, and approval records. JSON sidecars
   are machine truth; the Markdown ledger remains the human chronology.
 
@@ -72,6 +72,18 @@ children proceed to Fix, Standard, or Full. Full remains reserved for one cohere
 New typed intake records reversibility and technical/product topology; a reversible one-boundary/one-surface child
 without an ACEF control trigger is mechanically rejected as `NATIVE_WORKFLOW` before state is written.
 
+Bind every new admitted run to a stable parent objective using `--objective-id` and `--objective-scope`. The objective
+owns cumulative budgets across renamed stories and recovery runs: consolidate at five runs, three replans, six review
+cycles, or 30 active control minutes without a product/test commit; suspend before run eight or after five replans.
+During consolidation, admit only typed defect-ledger work. Complete the manual-QA checklist before explicitly batching
+same-key non-critical findings. Critical security, payments, migration, realtime, concurrency, and state-machine
+findings cannot be batched, deferred, or quarantined and require Standard/Full + Guarded. Same-run remediation still
+uses the existing maximum of two delta-review cycles; do not add reviewers or duplicate lifecycle phases.
+
+Run `.acef/bin/acef-process-validator --repo <target> --check installation-freshness` before admitted work. If it
+reports `INSTALL_STALE`, refresh the target and every linked worktree from the current ACEF source with
+`scripts/update-acef-installation --repo <target> --all-worktrees`; do not repair copied runtime files manually.
+
 New `direct` runs are retired because repeated real-task measurement remained slower and less reliable than both native
 and lightweight work. An existing `ACEF_DIRECT_RUN.json` is compatibility state only; use
 `.acef/bin/acef-state direct-run --help` to close or promote that existing record.
@@ -103,14 +115,16 @@ For every admitted ACEF lane, before any worker fan-out, source verification, de
 artifact, or implementation step:
 
 1. Resolve the target repo/workspace where run artifacts live.
-2. Create `docs/ai/` if missing.
-3. Create or update the delivery ledger.
-4. Set `docs/ai/ACEF_ACTIVE_LEDGER` or `ACEF_ACTIVE_LEDGER`.
-5. Add/update `## Session Handoff` with `last_passed_gate`, `active_lane`, `active_track`, `next_allowed_step`, and `ledger_path`.
-6. If the lane needs independent persona workers, record `## Delegation Authorization`: approved personas, one
+2. Pass the installation-freshness check.
+3. Choose/reuse the stable parent objective ID and scope; inspect its cumulative counters and defect ledger.
+4. Create `docs/ai/` if missing.
+5. Create or update the delivery ledger.
+6. Set `docs/ai/ACEF_ACTIVE_LEDGER` or `ACEF_ACTIVE_LEDGER`.
+7. Add/update `## Session Handoff` with `last_passed_gate`, `active_lane`, `active_track`, `next_allowed_step`, and `ledger_path`.
+8. If the lane needs independent persona workers, record `## Delegation Authorization`: approved personas, one
    story/phase per worker, no worker-spawned subagents, no worker ledger edits, active worker scope required, final
    report then STOP.
-7. Start the first step row before invoking workers/tools.
+9. Write active-run state with the parent objective binding, then start the first step row before invoking workers/tools.
 
 A worker launched before this bootstrap is drift. Stop, record it, patch the ambiguous rule if needed, and restart from bootstrap.
 

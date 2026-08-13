@@ -1,0 +1,75 @@
+{
+  "capabilityId": "objective-supervision-and-worktree-freshness",
+  "requestedIntent": "Prevent one delivery objective from resetting ceremony budgets through renamed runs, repeated replans, per-finding manual-QA lifecycles, or stale temporary-worktree installations while preserving fail-closed treatment of critical defects.",
+  "status": "enforced",
+  "requiredLayers": [
+    "docs",
+    "schema",
+    "cli",
+    "validator",
+    "workflow",
+    "tests",
+    "installer"
+  ],
+  "implementedLayers": {
+    "docs": [
+      "CHANGELOG.md#Parent-objective supervision stops cross-run ceremony loops",
+      "method/DELIVERY_RULES.md#Parent-objective supervision",
+      "method/BMAD_V2_LANE.md#Objective-level circuit breaker",
+      "AGENTS.md#ACEF Admission",
+      "skills/acef/SKILL.md#Admitted ACEF Start Sequence",
+      "README.md#Process gates",
+      "docs/sdlc.html#objective-supervision"
+    ],
+    "schema": [
+      "schemas/objective-supervision-v1.schema.json",
+      "schemas/active-run-v2.schema.json"
+    ],
+    "cli": [
+      "scripts/acef-state#writeActiveRun",
+      "scripts/acef-state#writeObjectiveQa",
+      "scripts/acef-state#writeObjectiveDefect",
+      "scripts/acef-state#writeObjectiveDefectTransition",
+      "scripts/update-acef-installation#targetWorktrees"
+    ],
+    "validator": [
+      "scripts/acef-process-validator#checkObjectiveSupervision",
+      "scripts/acef-process-validator#checkInstallationFreshness",
+      "scripts/acef-process-validator#checkPrecommitGate"
+    ],
+    "workflow": [
+      "scripts/lib/acef-objective-supervisor.js",
+      "scripts/acef-supervisor",
+      "scripts/lib/acef-installation.js"
+    ],
+    "tests": [
+      "scripts/test-acef-objective-supervisor",
+      "scripts/test-install-acef-tools",
+      "scripts/test-acef-capsule-supervisor-v2",
+      "scripts/test-acef-process-validator"
+    ],
+    "installer": [
+      "scripts/install-acef-tools",
+      "scripts/update-acef-installation"
+    ]
+  },
+  "limitations": [
+    "The source capability is enforced but remains unproven until a controlled real delivery shows fewer runs and replans without an increase in escaped defects.",
+    "The 15/30-minute progress watchdog counts bounded intervals between objective state observations and caps each idle gap at five minutes; it does not treat laptop sleep as active delivery time.",
+    "Existing active runs that predate installation remain compatibility-readable. The next new run must bind a parent objective and pass the worktree freshness handshake.",
+    "Thresholds are evidence-informed defaults from one pathological objective and require canary calibration before maturity can advance to proven."
+  ],
+  "evidence": [
+    {
+      "layer": "tests",
+      "ref": "scripts/test-acef-objective-supervisor",
+      "note": "Counterfactual lifecycle proves consolidation at run five, manual-QA completion and explicit batching before repair, critical concurrency escalation, refusal before run eight, suspension after five replans, source-worktree drift refusal, and installed-runtime tamper refusal."
+    },
+    {
+      "layer": "installer",
+      "ref": "scripts/test-install-acef-tools",
+      "note": "Proves schema/runtime installation metadata and refresh of both root and linked Git worktrees."
+    }
+  ],
+  "createdAt": "2026-08-13"
+}

@@ -25,6 +25,7 @@
         <nav>
           <a href="#shape"><span class="n">①</span> The shape</a>
           <a href="#delivery"><span class="n">②</span> Delivery model</a>
+          <a href="#objective-supervision"><span class="n">③</span> Objective limits</a>
           <a href="#phases"><span class="n">③</span> The 8 phases</a>
           <a href="#bmad"><span class="n">④</span> BMAD v2 in detail</a>
           <a href="#frameworks"><span class="n">⑤</span> Where each plugs in</a>
@@ -72,13 +73,28 @@
             <div class="card" style="border-left-color:var(--violet)"><h3>Epic Process Judge</h3><p>Before epic close, verify drift audit, trace, epic test-review, E2E/user-flow evidence, manual QA ledger, product-done audit, retrospective, and status close.</p></div>
             <div class="card" style="border-left-color:var(--blue)"><h3>Surface-realism</h3><p>When a story creates the first reusable UI/runtime pattern, it needs a round-trip proof through the real surface before other stories reuse it. UI epics need representative E2E at close.</p></div>
             <div class="card" style="border-left-color:var(--teal)"><h3>Test cases first</h3><p>For risky/large work, user flows become test cases before automation and before final story slicing.</p></div>
-            <div class="card" style="border-left-color:var(--amber)"><h3>Separation of powers</h3><p>ACEF Full uses six separate BMAD phase actors. Guarded Fix/Standard use distinct Developer and Process Judge actors plus an independent boundary test author. A worker cannot approve its own output.</p></div>
+            <div class="card" style="border-left-color:var(--amber)"><h3>Separation of powers</h3><p>New Full stories use distinct ATDD, Developer, Code Review, and Patch Assurance actors; Story Judge is conditional and Epic Judge remains independent. Fix uses one Developer and one reviewer. Guarded adds evidence strength, not duplicate reviews.</p></div>
             <div class="card" style="border-left-color:var(--green)"><h3>Typed gate evidence</h3><p><code>acef-state</code> records each actor and worker scope, captures command output with a hash, and requires Process Judge PASS to cite successful evidence. Epic transitions use an exact hashed human approval quote.</p></div>
             <div class="card" style="border-left-color:var(--blue)"><h3>Seeded epic gates</h3><p>Epics/stories generation creates every <code>Epic N Process Judge [PENDING]</code> row up front. The next epic cannot start until the prior epic gate is <code>PASS</code>.</p></div>
             <div class="card" style="border-left-color:var(--green)"><h3>Architecture conformance</h3><p>Before epics/stories, an independent Architect or Process Judge checks codemap use, golden-neighbor claims, source discrepancies, counts, and do-not-copy entries. Findings need a ledger disposition before stories start.</p></div>
             <div class="card" style="border-left-color:var(--teal)"><h3>Accelerated cadence</h3><p>Independent, non-overlapping stories may run in parallel, workers must return complete final reports inline, and low-risk work can use lighter review tiers. Guarded/security/routing/storage work keeps full separation.</p></div>
             <div class="card" style="border-left-color:var(--blue)"><h3>Lean runtime</h3><p>Evidence stays on disk. Chat reports path, verdict, key evidence, and next step; no full artifact or broad search dumps by default.</p></div>
           </div>
+        </section>
+
+        <section id="objective-supervision"><h2><span class="ic" style="background:#fdf3dd">⏱️</span>One objective, one cumulative budget</h2>
+          <p>Every new installed ACEF run belongs to a stable parent objective. Changing a run name or adding
+            <code>r2</code>/<code>recovery</code> does not reset its counters.</p>
+          <table>
+            <tr><th>Signal</th><th>Mechanical response</th></tr>
+            <tr><td>5 runs, 3 replans, 6 review cycles, or 30 active control minutes without product progress</td><td><code>CONSOLIDATING</code>: later runs must come from the typed defect ledger</td></tr>
+            <tr><td>Attempted 8th run or 5th replan</td><td><code>SUSPENDED_OVER_BUDGET</code>: stop and split with human approval</td></tr>
+            <tr><td>Manual QA findings</td><td>Finish the checklist, then batch non-critical findings once per surface/root cause</td></tr>
+            <tr><td>Security, payments, migration, realtime, concurrency, state-machine finding</td><td>Never defer/batch; use Standard or Full plus Guarded</td></tr>
+          </table>
+          <div class="callout blue"><span class="em">🔄</span><div><strong>Worktree freshness:</strong> new runs and
+            supervisor dispatch fail with <code>INSTALL_STALE</code> when a temporary worktree has old ACEF runtime
+            bytes. Refresh every linked worktree with <code>update-acef-installation --repo &lt;root&gt; --all-worktrees</code>.</div></div>
         </section>
 
         <section id="phases"><h2><span class="ic" style="background:#e3f7ec">🔢</span>The 8 phases</h2>
@@ -100,10 +116,10 @@
             capability preflight. The conductor and required BMAD skills/commands must resolve to real paths. If they
             do not, ACEF halts instead of running a BMAD-like generic-subagent imitation. Fallback to non-BMAD guarded
             work requires explicit human approval.</div></div>
-          <div class="callout blue"><span class="em">🧱</span><div><strong>Actor separation:</strong> a full BMAD story
-            is invalid unless its evidence records the ATDD actor, Developer actor, Code Review actor, Verify-Patch
-            actor, Test Review actor, and Process Judge actor. Generic subagents are not enough; each worker must be
-            bound to a valid persona. Guarded stories cannot use self-review.</div></div>
+          <div class="callout blue"><span class="em">🧱</span><div><strong>Actor separation:</strong> a new Full v3 story
+            records distinct ATDD, Developer, Code Review, and Patch Assurance actors. Story Process Judge appears only
+            for ambiguity, waiver, evidence conflict, or gate anomaly; Epic Process Judge remains independent.
+            Compatibility v2 runs retain six actors. Guarded cannot add duplicate review layers or permit self-review.</div></div>
           <div class="callout"><span class="em">🔒</span><div><strong>Optional hard wall:</strong> Claude Code, Codex, and OpenCode users can
             install <code>claude-plugins/acef-bmad-guard/</code> or run <code>scripts/install-acef-bmad-guard --repo /path/to/repo</code>.
             The full guard is repo-local under <code>.acef/hooks/</code>; Claude Code and Codex can use the optional

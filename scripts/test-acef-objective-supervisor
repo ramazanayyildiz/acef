@@ -1,0 +1,222 @@
+#!/usr/bin/env node
+"use strict";
+
+const assert = require("node:assert/strict");
+const cp = require("node:child_process");
+const fs = require("node:fs");
+const os = require("node:os");
+const path = require("node:path");
+
+const root = path.resolve(__dirname, "..");
+const installer = path.join(root, "scripts", "install-acef-tools");
+const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "acef-objective-supervisor-"));
+
+function run(command, args, options = {}) {
+  return cp.execFileSync(command, args, {
+    cwd: tmp,
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+    ...options,
+  });
+}
+
+function invoke(command, args) {
+  return cp.spawnSync(command, args, { cwd: tmp, encoding: "utf8" });
+}
+
+function output(result) {
+  return `${result.stdout || ""}${result.stderr || ""}`;
+}
+
+function state(args) {
+  return run(path.join(tmp, ".acef", "bin", "acef-state"), [args[0], "--repo", tmp, ...args.slice(1)]);
+}
+
+function active(runId, objectiveId, objectiveScope, extra = []) {
+  return state([
+    "active-run", "--run-id", runId, "--objective-id", objectiveId, "--objective-scope", objectiveScope,
+    "--workflow-id", "lightweight", "--assurance", "baseline", "--scope-unit", "work-item",
+    "--status", "active", "--story", "Bounded repair", "--phase", "development",
+    "--ledger", "docs/ai/ACEF_DELIVERY_LEDGER.md", ...extra,
+  ]);
+}
+
+function close(runId, disposition = "PASS") {
+  return state([
+    "active-run", "--run-id", runId, "--workflow-id", "lightweight", "--assurance", "baseline",
+    "--scope-unit", "work-item", "--status", "complete", "--terminal-disposition", disposition,
+    "--story", "Bounded repair", "--phase", "closeout", "--ledger", "docs/ai/ACEF_DELIVERY_LEDGER.md",
+  ]);
+}
+
+try {
+  run("git", ["init", "-q"]);
+  run("git", ["config", "user.email", "acef@example.invalid"]);
+  run("git", ["config", "user.name", "ACEF Test"]);
+  fs.mkdirSync(path.join(tmp, "docs", "ai"), { recursive: true });
+  fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_DELIVERY_LEDGER.md"), "# Objective test\n");
+  fs.writeFileSync(path.join(tmp, "app.js"), "module.exports = true;\n");
+  run("git", ["add", "."]);
+  run("git", ["commit", "-qm", "fixture"]);
+  run(process.execPath, [installer, "--repo", tmp]);
+
+  const installedState = path.join(tmp, ".acef", "bin", "acef-state");
+  const missingObjective = invoke(installedState, [
+    "active-run", "--repo", tmp, "--run-id", "NO-OBJECTIVE", "--workflow-id", "lightweight",
+    "--status", "active", "--story", "Repair", "--phase", "development", "--ledger", "docs/ai/ACEF_DELIVERY_LEDGER.md",
+  ]);
+  assert.notEqual(missingObjective.status, 0);
+  assert.match(output(missingObjective), /--objective-id, --objective-scope/);
+
+  active("RUN-1", "OBJ-1", "Deliver the bounded streaming objective");
+  let objective = JSON.parse(fs.readFileSync(path.join(tmp, "docs", "ai", "objectives", "OBJ-1.json"), "utf8"));
+  assert.equal(objective.runCount, 1);
+  assert.equal(objective.status, "EXECUTING");
+
+  const alias = invoke(installedState, [
+    "active-run", "--repo", tmp, "--run-id", "RUN-alias", "--objective-id", "OBJ-renamed",
+    "--objective-scope", "  DELIVER   the bounded streaming objective ", "--workflow-id", "lightweight",
+    "--status", "active", "--story", "Repair", "--phase", "development", "--ledger", "docs/ai/ACEF_DELIVERY_LEDGER.md",
+  ]);
+  assert.notEqual(alias.status, 0);
+  assert.match(output(alias), /cannot replace active run RUN-1/);
+
+  for (let number = 1; number <= 4; number += 1) {
+    close(`RUN-${number}`);
+    active(`RUN-${number + 1}`, "OBJ-1", "Deliver the bounded streaming objective");
+  }
+  objective = JSON.parse(fs.readFileSync(path.join(tmp, "docs", "ai", "objectives", "OBJ-1.json"), "utf8"));
+  assert.equal(objective.runCount, 5);
+  assert.equal(objective.status, "CONSOLIDATING");
+  close("RUN-5");
+
+  const unconsolidated = invoke(installedState, [
+    "active-run", "--repo", tmp, "--run-id", "RUN-6", "--objective-id", "OBJ-1",
+    "--objective-scope", "Deliver the bounded streaming objective", "--workflow-id", "lightweight",
+    "--status", "active", "--story", "Repair", "--phase", "development", "--ledger", "docs/ai/ACEF_DELIVERY_LEDGER.md",
+  ]);
+  assert.notEqual(unconsolidated.status, 0);
+  assert.match(output(unconsolidated), /permits only defect-ledger admissions/);
+
+  state(["objective-qa", "--objective-id", "OBJ-1", "--status", "running"]);
+  state([
+    "objective-defect", "--objective-id", "OBJ-1", "--id", "QA-1", "--source", "manual-qa",
+    "--defect-class", "cosmetic", "--summary", "Preview label alignment", "--discovered-in-run", "RUN-5",
+    "--batch-key", "preview-ui",
+  ]);
+  const midQa = invoke(installedState, [
+    "active-run", "--repo", tmp, "--run-id", "RUN-6", "--objective-id", "OBJ-1",
+    "--objective-scope", "Deliver the bounded streaming objective", "--objective-defect", "QA-1",
+    "--workflow-id", "quick-fix", "--status", "active", "--story", "Repair", "--phase", "development",
+    "--ledger", "docs/ai/ACEF_DELIVERY_LEDGER.md",
+  ]);
+  assert.notEqual(midQa.status, 0);
+  assert.match(output(midQa), /manual QA must complete/);
+  state(["objective-qa", "--objective-id", "OBJ-1", "--status", "complete"]);
+  const unbatchedQa = invoke(installedState, [
+    "active-run", "--repo", tmp, "--run-id", "RUN-6", "--objective-id", "OBJ-1",
+    "--objective-scope", "Deliver the bounded streaming objective", "--objective-defect", "QA-1",
+    "--workflow-id", "quick-fix", "--status", "active", "--story", "Repair", "--phase", "development",
+    "--ledger", "docs/ai/ACEF_DELIVERY_LEDGER.md",
+  ]);
+  assert.notEqual(unbatchedQa.status, 0);
+  assert.match(output(unbatchedQa), /must be explicitly batched/);
+  state([
+    "objective-defect-transition", "--objective-id", "OBJ-1", "--id", "QA-1",
+    "--defect-status", "batched", "--batch-key", "preview-ui",
+  ]);
+  active("RUN-6", "OBJ-1", "Deliver the bounded streaming objective", ["--objective-defect", "QA-1"]);
+  close("RUN-6");
+
+  state([
+    "objective-defect", "--objective-id", "OBJ-1", "--id", "RTC-1", "--source", "review",
+    "--defect-class", "concurrency", "--summary", "Publication fencing race", "--discovered-in-run", "RUN-6",
+    "--root-cause-key", "publication-fence",
+  ]);
+  const unsafeCritical = invoke(installedState, [
+    "active-run", "--repo", tmp, "--run-id", "RUN-7", "--objective-id", "OBJ-1",
+    "--objective-scope", "Deliver the bounded streaming objective", "--objective-defect", "RTC-1",
+    "--workflow-id", "quick-fix", "--assurance", "guarded", "--status", "active", "--story", "Repair",
+    "--phase", "development", "--ledger", "docs/ai/ACEF_DELIVERY_LEDGER.md",
+  ]);
+  assert.notEqual(unsafeCritical.status, 0);
+  assert.match(output(unsafeCritical), /require ACEF Standard or Full/);
+  active("RUN-7", "OBJ-1", "Deliver the bounded streaming objective", [
+    "--objective-defect", "RTC-1", "--assurance", "guarded", "--assurance-rationale", "concurrency boundary",
+  ]);
+  close("RUN-7");
+  const eighth = invoke(installedState, [
+    "active-run", "--repo", tmp, "--run-id", "RUN-8", "--objective-id", "OBJ-1",
+    "--objective-scope", "Deliver the bounded streaming objective", "--objective-defect", "RTC-1",
+    "--workflow-id", "lightweight", "--assurance", "guarded", "--assurance-rationale", "concurrency boundary",
+    "--status", "active", "--story", "Repair", "--phase", "development", "--ledger", "docs/ai/ACEF_DELIVERY_LEDGER.md",
+  ]);
+  assert.notEqual(eighth.status, 0);
+  assert.match(output(eighth), /8-run hard stop/);
+  const renamedObjective = invoke(installedState, [
+    "active-run", "--repo", tmp, "--run-id", "RUN-renamed", "--objective-id", "OBJ-renamed",
+    "--objective-scope", " deliver THE bounded streaming objective ", "--workflow-id", "lightweight",
+    "--assurance", "baseline", "--status", "active", "--story", "Repair", "--phase", "development",
+    "--ledger", "docs/ai/ACEF_DELIVERY_LEDGER.md",
+  ]);
+  assert.notEqual(renamedObjective.status, 0);
+  assert.match(output(renamedObjective), /scope fingerprint already belongs to unfinished objective OBJ-1/);
+
+  active("REPLAN-1", "OBJ-REPLAN", "Exercise the replan hard stop");
+  for (let number = 1; number <= 4; number += 1) {
+    close(`REPLAN-${number}`, "REPLAN");
+    const extra = ["--replan-cause", "new-root-cause"];
+    if (number >= 3) {
+      state([
+        "objective-defect", "--objective-id", "OBJ-REPLAN", "--id", `ROOT-${number}`,
+        "--source", "review", "--defect-class", "correctness", "--summary", `New root cause ${number}`,
+        "--discovered-in-run", `REPLAN-${number}`,
+      ]);
+      extra.push("--objective-defect", `ROOT-${number}`);
+    }
+    active(`REPLAN-${number + 1}`, "OBJ-REPLAN", "Exercise the replan hard stop", [
+      ...extra,
+    ]);
+  }
+  close("REPLAN-5", "REPLAN");
+  const sixthAfterFiveReplans = invoke(installedState, [
+    "active-run", "--repo", tmp, "--run-id", "REPLAN-6", "--objective-id", "OBJ-REPLAN",
+    "--objective-scope", "Exercise the replan hard stop", "--replan-cause", "new-root-cause",
+    "--workflow-id", "lightweight", "--status", "active", "--story", "Repair", "--phase", "development",
+    "--ledger", "docs/ai/ACEF_DELIVERY_LEDGER.md",
+  ]);
+  assert.notEqual(sixthAfterFiveReplans.status, 0);
+  assert.match(output(sixthAfterFiveReplans), /SUSPENDED_OVER_BUDGET/);
+  const replanObjective = JSON.parse(fs.readFileSync(path.join(tmp, "docs", "ai", "objectives", "OBJ-REPLAN.json"), "utf8"));
+  assert.equal(replanObjective.replanCount, 5);
+  assert.equal(replanObjective.status, "SUSPENDED_OVER_BUDGET");
+
+  const criticalDeferral = invoke(installedState, [
+    "objective-defect", "--repo", tmp, "--objective-id", "OBJ-1", "--id", "RTC-DEFER",
+    "--source", "review", "--defect-class", "realtime", "--summary", "Unsafe auth race",
+    "--discovered-in-run", "RUN-7", "--defect-status", "deferred",
+  ]);
+  assert.notEqual(criticalDeferral.status, 0);
+  assert.match(output(criticalDeferral), /cannot be deferred/);
+
+  const validator = path.join(tmp, ".acef", "bin", "acef-process-validator");
+  assert.match(run(validator, ["--repo", tmp, "--check", "installation-freshness"]), /PASS installation-freshness/);
+  const manifestPath = path.join(tmp, "docs", "ai", "ACEF_INSTALLATION.json");
+  const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+  const sourceDigest = manifest.components.tools.sourceRuntimeDigest;
+  manifest.components.tools.sourceRuntimeDigest = "0".repeat(64);
+  fs.writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+  const staleSource = invoke(validator, ["--repo", tmp, "--check", "installation-freshness"]);
+  assert.notEqual(staleSource.status, 0);
+  assert.match(output(staleSource), /INSTALL_STALE/);
+  manifest.components.tools.sourceRuntimeDigest = sourceDigest;
+  fs.writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+  fs.appendFileSync(path.join(tmp, ".acef", "bin", "acef-state.cjs"), "\n// tamper\n");
+  const stale = invoke(validator, ["--repo", tmp, "--check", "installation-freshness"]);
+  assert.notEqual(stale.status, 0);
+  assert.match(output(stale), /runtime hash differs/);
+
+  console.log("acef objective supervisor tests passed");
+} finally {
+  fs.rmSync(tmp, { recursive: true, force: true });
+}

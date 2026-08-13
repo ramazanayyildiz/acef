@@ -21,6 +21,22 @@
       "type": "string",
       "enum": ["capsule-supervisor-v1", "capsule-supervisor-v2"]
     },
+    "objectiveContract": {
+      "type": "string",
+      "enum": ["objective-supervisor-v1"]
+    },
+    "objectiveId": { "type": "string", "pattern": "^[A-Za-z0-9._-]+$" },
+    "scopeFingerprint": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "objectivePath": { "type": "string", "pattern": "^docs/ai/objectives/[A-Za-z0-9._-]+\\.json$" },
+    "objectiveDefectIds": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "type": "string", "pattern": "^[A-Za-z0-9._-]+$" }
+    },
+    "replanCause": {
+      "type": "string",
+      "enum": ["new-root-cause", "scope-error", "evidence-invalid"]
+    },
     "assuranceProfile": { "type": "string", "enum": ["baseline", "guarded"] },
     "scopeUnit": { "type": "string", "enum": ["work-item", "story", "epic"] },
     "expectedStories": {
@@ -175,6 +191,10 @@
     "updatedAt": { "type": ["string", "null"] }
   },
   "allOf": [
+    {
+      "if": { "required": ["objectiveContract"] },
+      "then": { "required": ["objectiveId", "scopeFingerprint", "objectivePath"] }
+    },
     {
       "if": { "required": ["quickFixContract"] },
       "then": {

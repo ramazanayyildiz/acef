@@ -3,6 +3,8 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { inspectRunAuthorization } = require("./lib/acef-run-authorization");
 const { displayName } = require("./lib/acef-execution-policy");
+const { installationFreshnessFailures } = require("./lib/acef-installation");
+const { loadObjective, objectiveFailures } = require("./lib/acef-objective-supervisor");
 
 function usage() {
   console.log(`Usage: acef-status --repo <path> [--format text|json]
@@ -80,6 +82,10 @@ function buildStatus(repo) {
   if (!fs.existsSync(path.join(repo, "AGENTS.md"))) blockers.push("missing AGENTS.md");
   if (!installation.exists) blockers.push("missing docs/ai/ACEF_INSTALLATION.json");
   if (installation.error) blockers.push(`invalid ACEF installation manifest: ${installation.error}`);
+  blockers.push(...installationFreshnessFailures(repo));
+  if (activeRun.record) blockers.push(...objectiveFailures(repo, activeRun.record));
+
+  const objective = activeRun.record?.objectiveId ? loadObjective(repo, activeRun.record.objectiveId) : null;
 
   const nextAllowedStep = activeRun.record?.nextAllowedStep || null;
   return {
@@ -115,6 +121,14 @@ function buildStatus(repo) {
       nextAllowedStep,
       ledgerPath,
       contextPath,
+    } : null,
+    objective: objective ? {
+      objectiveId: objective.objectiveId,
+      status: objective.status,
+      runCount: objective.runCount,
+      replanCount: objective.replanCount,
+      reviewCycleCount: objective.reviewCycleCount,
+      warnings: objective.warnings || [],
     } : null,
     directRun: authorization.directRun ? {
       runId: authorization.directRun.runId,
@@ -185,6 +199,13 @@ function printText(status) {
     console.log(`- scope: ${status.directRun.scope}`);
     console.log(`- technical boundary: ${status.directRun.technicalBoundary}`);
     console.log(`- promotion: ${status.directRun.promotionDecision}`);
+  }
+  if (status.objective) {
+    console.log("parent objective:");
+    console.log(`- id: ${status.objective.objectiveId}`);
+    console.log(`- status: ${status.objective.status}`);
+    console.log(`- counters: runs=${status.objective.runCount}, replans=${status.objective.replanCount}, reviews=${status.objective.reviewCycleCount}`);
+    for (const warning of status.objective.warnings) console.log(`- warning: ${warning}`);
   }
   if (status.installation) {
     console.log("ACEF installation:");

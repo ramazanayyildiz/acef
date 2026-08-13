@@ -9,6 +9,23 @@ or evidence contract. Do not use it to claim implementation status; link to the 
 
 ## Unreleased
 
+### Parent-objective supervision stops cross-run ceremony loops
+
+- Added `objective-supervisor-v1` for every new run in an updated target installation. Runs bind to a stable parent
+  objective and normalized scope fingerprint, so renaming a run, story, or objective cannot reset cumulative budgets.
+- Added objective-level consolidation at 5 runs, 3 replans, or 6 review cycles; a hard suspension prevents an eighth
+  run or a fifth replan. Same-run remediation remains capped at the existing two delta-review cycles.
+- Added a typed defect ledger and manual-QA state. A checklist finishes before repairs start; non-critical findings may
+  share one batch only by batch key, while security, payments, migration, realtime, concurrency, and state-machine
+  defects cannot be deferred/batched and require Standard-or-Full plus Guarded assurance.
+- Added 15-active-control-minute and 1.5 control/product-ratio warnings, with automatic consolidation after 30 active
+  control minutes without a product/test commit. Idle gaps are capped so machine sleep is not counted as active work.
+- Added `worktree-handshake-v1`: installed runtime bytes and the source runtime digest must match before new admitted
+  work or supervisor dispatch. `update-acef-installation --all-worktrees` refreshes every existing Git worktree,
+  including temporary worktrees that a root-only rollout previously missed.
+- Added counterfactual regression coverage proving consolidation, checklist batching, critical-defect escalation,
+  hard suspension before the eighth run, renamed-scope resistance, and stale/tampered installation refusal.
+
 ### Capsule supervisor v2 isolates runs and reuses exact evidence
 
 - Added `capsule-supervisor-v2` for new Full v3 runs. Actor, session, review, capsule, correction, Epic Judge, and

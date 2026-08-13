@@ -16,6 +16,8 @@ const {
 } = require("./lib/acef-state-parser");
 const { loadModelRoutingPolicy, resolveRoleRuntime } = require("./lib/acef-model-routing");
 const { validateDurableStoryClosePackage } = require("./lib/acef-story-close");
+const { installationFreshnessFailures } = require("./lib/acef-installation");
+const { objectiveFailures } = require("./lib/acef-objective-supervisor");
 
 function sha256(value) {
   return crypto.createHash("sha256").update(value).digest("hex");
@@ -105,9 +107,13 @@ function phase(value) {
 }
 
 function build(repo) {
+  const freshnessFailures = installationFreshnessFailures(repo);
+  if (freshnessFailures.length) throw new Error(freshnessFailures.join("; "));
   const activeRunPath = path.join(repo, "docs", "ai", "ACEF_ACTIVE_RUN.json");
   if (!fs.existsSync(activeRunPath)) throw new Error("missing docs/ai/ACEF_ACTIVE_RUN.json");
   const run = parseActiveRun(activeRunPath);
+  const parentFailures = objectiveFailures(repo, run);
+  if (parentFailures.length) throw new Error(parentFailures.join("; "));
   if (run.status !== "active" || run.workflowId !== "full-bmad"
     || run.fullFlowContract !== "four-actor-v3" || !capsuleRuntime(run)) {
     throw new Error("supervisor requires an active full-bmad/four-actor-v3/capsule-supervisor run");

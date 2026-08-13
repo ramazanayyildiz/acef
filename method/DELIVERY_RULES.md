@@ -189,6 +189,29 @@ result and the correction actor's real write calls. A second incomplete result i
 dependency edge or shared safety invariant makes continuation unsafe. Quarantine never converts the epic product gate
 to PASS: every mandatory story must still complete before product closeout.
 
+## Parent-objective supervision
+
+Every new run in an installation with `objective-supervisor-v1` binds to one stable `objectiveId` and normalized parent
+scope fingerprint. Run/story suffixes such as `r2` or `recovery` do not create a fresh budget. An unfinished objective
+with the same fingerprint blocks a renamed replacement.
+
+- At 5 runs, 3 terminal replans, 6 distinct review cycles, or 30 active control minutes without product/test progress,
+  the objective becomes `CONSOLIDATING`. Later runs must cite typed defect-ledger entries.
+- An eighth run or fifth replan is refused as `SUSPENDED_OVER_BUDGET`; continuing requires a human-approved scope split,
+  whose child has a genuinely different scope fingerprint.
+- Review findings stay in the current run's existing `REMEDIATE` loop. The original Developer patches, the necessary
+  reviewer verifies only the delta, and the third remediation attempt remains `REPLAN/SPLIT`.
+- Manual QA runs its checklist to completion before opening repair work. Non-critical findings with one batch key use
+  one Fix run. Security, payments, migration, realtime, concurrency, and state-machine findings escalate immediately,
+  cannot be deferred or hidden in a batch, and require Standard-or-Full plus Guarded assurance.
+- Fifteen active control minutes without a product/test commit and a control/product commit ratio above 1.5 are visible
+  warnings, not quality gates. The 30-minute consolidation transition is mechanical. Idle gaps are capped at five
+  minutes per observation so laptop sleep does not consume the active budget.
+
+Updated installations also use `worktree-handshake-v1`. Before active-run creation or supervisor dispatch, the installed
+runtime digest must match the worktree manifest and its recorded ACEF source runtime. `INSTALL_STALE` blocks writes;
+refresh the target and all linked worktrees with `update-acef-installation --repo <root> --all-worktrees`.
+
 ## PR review and lightweight review contract
 
 PR review is a first-class lightweight entry point, not a shortened full-BMAD imitation. Default input is bounded to
