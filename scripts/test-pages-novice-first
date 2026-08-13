@@ -1,0 +1,79 @@
+#!/usr/bin/env node
+"use strict";
+
+const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const path = require("node:path");
+
+const root = path.resolve(__dirname, "..");
+const docs = path.join(root, "docs");
+const pages = ["index.html", "overview.html", "workflows.html", "roles.html", "sdlc.html"];
+const expectedNav = pages.map((name) => `./${name}`);
+
+function html(name) {
+  return fs.readFileSync(path.join(docs, name), "utf8");
+}
+
+function ids(source) {
+  return [...source.matchAll(/\sid="([^"]+)"/g)].map((match) => match[1]);
+}
+
+function visibleWords(source) {
+  return source
+    .replace(/<head[\s\S]*?<\/head>/gi, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&(?:[a-z]+|#\d+);/gi, " ")
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean).length;
+}
+
+for (const name of [...pages, "print.html"]) {
+  const source = html(name);
+  const pageIds = ids(source);
+  assert.equal(new Set(pageIds).size, pageIds.length, `${name} has duplicate ids`);
+  assert.match(source, /class="skip-link"/, `${name} needs a keyboard skip link`);
+  assert.match(source, /class="mobile-nav"/, `${name} needs mobile navigation`);
+
+  for (const match of source.matchAll(/href="\.\/([^"#?]+\.html)(?:#([^"?]+))?"/g)) {
+    const [, target, fragment] = match;
+    const targetPath = path.join(docs, target);
+    assert.ok(fs.existsSync(targetPath), `${name} links to missing ${target}`);
+    if (fragment) assert.ok(ids(html(target)).includes(fragment), `${name} links to missing ${target}#${fragment}`);
+  }
+  for (const match of source.matchAll(/href="#([^"]+)"/g)) {
+    assert.ok(pageIds.includes(match[1]), `${name} links to missing #${match[1]}`);
+  }
+}
+
+for (const name of pages) {
+  const source = html(name);
+  const navBlock = source.match(/<div class="pageswitch">([\s\S]*?)<\/div>/)?.[1] || "";
+  const nav = [...navBlock.matchAll(/href="([^"]+)"/g)].map((match) => match[1]);
+  assert.deepEqual(nav, expectedNav, `${name} navigation order drifted`);
+  assert.equal((source.match(/aria-current="page"/g) || []).length, 2, `${name} must identify the active desktop and mobile link`);
+}
+
+assert.match(html("index.html"), /workflow and safety layer for AI coding agents/i);
+assert.ok(visibleWords(html("index.html")) <= 650, "Start page exceeded its novice word budget");
+assert.ok(visibleWords(html("overview.html")) <= 800, "How it works exceeded its novice word budget");
+assert.ok(visibleWords(html("workflows.html")) <= 850, "Workflows exceeded its reader word budget");
+assert.ok(visibleWords(html("roles.html")) <= 750, "Examples exceeded its reader word budget");
+assert.ok(visibleWords(html("print.html")) <= 220, "Print guide became a duplicate documentation set again");
+
+const beginner = `${html("index.html")}\n${html("overview.html")}`;
+for (const jargon of ["Frameworks: ACEF router", "BMAD scale levels", "Process Judge", "ACEF_ACTIVE_RUN", "runner proof", "scope fingerprint"]) {
+  assert.ok(!beginner.includes(jargon), `Beginner path exposes internal jargon: ${jargon}`);
+}
+for (const stale of [/A · Small/, /B · Large/, /Route [A-F]/, /One objective, one cumulative budget/]) {
+  assert.ok(!pages.map(html).join("\n").match(stale), `Public guide exposes stale model: ${stale}`);
+}
+
+assert.ok((html("overview.html").match(/<details>/g) || []).length >= 2, "How it works needs progressive disclosure");
+assert.ok((html("workflows.html").match(/<details>/g) || []).length >= 4, "Workflows needs progressive disclosure");
+assert.ok((html("sdlc.html").match(/<details(?:\s|>)/g) || []).length >= 12, "Technical reference needs layered details");
+
+const config = fs.readFileSync(path.join(docs, "_config.yml"), "utf8");
+for (const internal of ["ai/", "audits/", "experiments/"]) assert.match(config, new RegExp(`- ${internal.replace("/", "\\/")}`));
+
+console.log("ACEF novice-first Pages checks passed");

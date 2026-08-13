@@ -3,208 +3,210 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>ACEF — SDLC &amp; Frameworks</title>
-    <meta name="description" content="How ACEF maps the software lifecycle and where BMAD, Kiro, spec-kit, GSD, and OpenSpec plug in." />
-    <link rel="stylesheet" href="./theme.css" />
+    <title>ACEF — Technical reference</title>
+    <meta name="description" content="Technical reference for ACEF workflow contracts, assurance, BMAD, lifecycle actors, objective limits, evidence, repository adapters, and installation." />
+    <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="./theme.css?v=2" />
   </head>
   <body>
-    <a class="repo-link" href="https://github.com/ramazanayyildiz/acef" target="_blank" rel="noreferrer">
-      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 .5a12 12 0 0 0-3.79 23.39c.6.11.82-.26.82-.58v-2.23c-3.34.73-4.04-1.4-4.04-1.4-.55-1.4-1.34-1.78-1.34-1.78-1.1-.76.08-.75.08-.75 1.22.09 1.86 1.25 1.86 1.25 1.08 1.85 2.84 1.31 3.53 1 .11-.78.42-1.31.76-1.61-2.67-.3-5.48-1.34-5.48-5.97 0-1.32.47-2.4 1.24-3.25-.12-.3-.54-1.52.12-3.17 0 0 1.01-.32 3.31 1.24a11.42 11.42 0 0 1 6.03 0c2.3-1.56 3.31-1.24 3.31-1.24.66 1.65.24 2.87.12 3.17.77.85 1.24 1.93 1.24 3.25 0 4.64-2.81 5.66-5.49 5.96.43.37.81 1.1.81 2.22v3.29c0 .32.22.7.83.58A12 12 0 0 0 12 .5Z"/></svg>
-      <span>GitHub</span>
+    <a class="skip-link" href="#content">Skip to content</a>
+    <a class="repo-link" href="https://github.com/ramazanayyildiz/acef" target="_blank" rel="noreferrer" aria-label="ACEF on GitHub">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 .5a12 12 0 0 0-3.79 23.39c.6.11.82-.26.82-.58v-2.23c-3.34.73-4.04-1.4-4.04-1.4-.55-1.4-1.34-1.78-1.34-1.78-1.1-.76.08-.75.08-.75 1.22.09 1.86 1.25 1.86 1.25 1.08 1.85 2.84 1.31 3.53 1 .11-.78.42-1.31.76-1.61-2.67-.3-5.48-1.34-5.48-5.97 0-1.32.47-2.4 1.24-3.25-.12-.3-.54-1.52.12-3.17 0 0 1.01-.32 3.31 1.24a11.42 11.42 0 0 1 6.03 0c2.3-1.56 3.31-1.24 3.31-1.24.66 1.65.24 2.87.12 3.17.77.85 1.24 1.93 1.24 3.25 0 4.64-2.81 5.66-5.49 5.96.43.37.81 1.1.81 2.22v3.29c0 .32.22.7.83.58A12 12 0 0 0 12 .5Z"/></svg><span>GitHub</span>
     </a>
     <div class="wrap">
       <aside>
-        <div class="logo"><b>A</b><div>ACEF<br/><small>developer guide</small></div></div>
-        <div class="pageswitch">
-          <a href="./index.html">🏠 Start</a>
-          <a href="./overview.html">📘 Overview</a>
-          <a class="active" href="./sdlc.html">🔄 SDLC &amp; frameworks</a>
-          <a href="./roles.html">👥 Roles</a>
-        </div>
-        <div class="navlabel">On this page</div>
-        <nav>
-          <a href="#shape"><span class="n">①</span> The shape</a>
-          <a href="#delivery"><span class="n">②</span> Delivery model</a>
-          <a href="#objective-supervision"><span class="n">③</span> Objective limits</a>
-          <a href="#phases"><span class="n">③</span> The 8 phases</a>
-          <a href="#bmad"><span class="n">④</span> BMAD v2 in detail</a>
-          <a href="#frameworks"><span class="n">⑤</span> Where each plugs in</a>
-          <a href="#routes"><span class="n">⑥</span> Routes vs phases</a>
-          <a href="#route-drawings"><span class="n">⑦</span> Route drawings</a>
-        </nav>
+        <div class="logo"><b>A</b><div><strong>ACEF</strong><small>Exact contracts</small></div></div>
+        <div class="pageswitch"><a href="./index.html">Start here</a><a href="./overview.html">How it works</a><a href="./workflows.html">Workflows</a><a href="./roles.html">Examples</a><a class="active" aria-current="page" href="./sdlc.html">Technical reference</a></div>
+        <nav aria-label="On this page"><div class="navlabel">On this page</div><a href="#routing">Routing contracts</a><a href="#lifecycle">Lifecycle</a><a href="#bmad">ACEF Full and BMAD</a><a href="#objective-limits">Objective limits</a><a href="#evidence">Evidence and state</a><a href="#repository">Repository grounding</a><a href="#compatibility">Artifact compatibility</a><a href="#installation">Installation</a><a href="#truth">Source of truth</a></nav>
       </aside>
+      <main id="content">
+        <nav class="mobile-nav" aria-label="Site navigation"><a href="./index.html">Start</a><a href="./overview.html">How it works</a><a href="./workflows.html">Workflows</a><a href="./roles.html">Examples</a><a class="active" aria-current="page" href="./sdlc.html">Reference</a></nav>
 
-      <main>
-        <p class="kicker">The process</p>
-        <h1>SDLC &amp; Frameworks</h1>
-        <p class="lede">ACEF doesn't invent a new lifecycle. It overlays the normal SDLC, then <em>orchestrates</em>
-          the frameworks you already use — BMAD v2, Kiro, spec-kit, GSD, OpenSpec — through your project's real
-          adapter, running only the phases a given request needs.</p>
+        <header class="hero">
+          <p class="kicker">Advanced · exact contracts</p>
+          <h1>Technical reference</h1>
+          <p class="lede">This page names the internal contracts, thresholds, state records, and compatibility rules. If you are new to ACEF, start with <a href="./index.html">Start here</a> and <a href="./workflows.html">Workflows</a>.</p>
+        </header>
 
-        <section id="shape"><h2><span class="ic" style="background:#e8f0ff">🗺️</span>The shape</h2>
-          <p>This guide starts at the first brief. Once the work is framed, ACEF routes into the SDLC phases below and
-            only runs the parts that matter for that request.</p>
-          <div class="flow">
-            <span class="step">1 Brief / Route</span><span class="arrow">→</span>
-            <span class="step">2 Requirements</span><span class="arrow">→</span>
-            <span class="step">3 Design</span><span class="arrow">→</span>
-            <span class="step">4 Planning</span><span class="arrow">→</span>
-            <span class="step">5 Implement</span><span class="arrow">→</span>
-            <span class="step">6 Review/Test/CI</span><span class="arrow">→</span>
-            <span class="step">7 Release</span><span class="arrow">→</span>
-            <span class="step">8 Feedback</span>
+        <section id="routing">
+          <span class="eyebrow">Routing contracts</span>
+          <h2>Admission, execution, and assurance</h2>
+          <p class="section-intro">ACEF routing has three decisions. Historical A–F request categories may still appear in old research, but they are not the execution-workflow model.</p>
+          <table>
+            <thead><tr><th>Decision</th><th>Typed value</th><th>Contract</th></tr></thead>
+            <tbody>
+              <tr><td>Admission</td><td><code>NATIVE_WORKFLOW</code></td><td>Reversible, contained work with one technical boundary and one product surface; no ACEF run artifacts</td></tr>
+              <tr><td>Execution</td><td><code>quick-fix</code></td><td>ACEF Fix: focused red/green evidence, one developer, one independent reviewer, deterministic closeout</td></tr>
+              <tr><td>Execution</td><td><code>lightweight</code></td><td>ACEF Standard: scoped ordinary delivery with a compact traceable lifecycle</td></tr>
+              <tr><td>Execution</td><td><code>full-bmad</code></td><td>ACEF Full: one coherent planning-heavy contract using the BMAD v2 lifecycle</td></tr>
+              <tr><td>Assurance</td><td><code>baseline</code> / <code>guarded</code></td><td>Guarded is additive and cannot duplicate the selected execution lifecycle</td></tr>
+            </tbody>
+          </table>
+
+          <details>
+            <summary>Native execution speed contract</summary>
+            <div class="details-body"><p>Native work uses no subagents, at most three distinct focused verification commands, two attempts per identical command, 180 seconds per focused command, and ten active minutes. Recognized tests run through <code>.acef/bin/acef-native-test -- &lt;focused-command&gt;</code>. Broad verification is forbidden during implementation and may run once at closeout on a clean worktree.</p></div>
+          </details>
+          <details>
+            <summary>ACEF admission triggers</summary>
+            <div class="details-body"><p>Start ACEF when the work needs controls for persistence or migration, security/privacy/permissions, money, provider integration, realtime behavior, concurrency/fencing, state machines, tracking/reporting/analytics, a new pattern, multiple boundaries or surfaces, irreversible effects, or multi-session/worker coordination.</p></div>
+          </details>
+          <details>
+            <summary>ACEF Fix contract</summary>
+            <div class="details-body"><p>New Fix runs use <code>quickFixContract: single-review-v1</code>. The lifecycle is one developer, one independent reviewer, focused red/green and revert-proof evidence, then deterministic closeout. Guarded may strengthen evidence and scope controls; it does not add Process Judge, Patch Assurance, Verify-Patch, Test Review, or a second review cycle.</p></div>
+          </details>
+        </section>
+
+        <section id="lifecycle">
+          <span class="eyebrow">Lifecycle map</span>
+          <h2>Eight possible phases—not eight mandatory phases</h2>
+          <p class="section-intro">A workflow selects only the phases it needs. This phase map explains artifact ownership; it is not a checklist every task must execute.</p>
+          <table>
+            <thead><tr><th>Phase</th><th>Purpose</th><th>Typical output</th></tr></thead>
+            <tbody>
+              <tr><td>1 · Brief and route</td><td>Clarify the outcome, topology, reversibility, and risk</td><td>Intake decision</td></tr>
+              <tr><td>2 · Requirements</td><td>Define user-visible behavior and acceptance criteria</td><td>Requirements</td></tr>
+              <tr><td>3 · Design</td><td>Resolve architecture, data flow, contracts, and risks</td><td>Design</td></tr>
+              <tr><td>4 · Planning</td><td>Split coherent delivery units and trace them to requirements</td><td>Stories/tasks</td></tr>
+              <tr><td>5 · Implementation</td><td>Build against repository-grounded patterns</td><td>Product/test change</td></tr>
+              <tr><td>6 · Review and test</td><td>Verify acceptance, behavior, boundaries, and changed surfaces</td><td>Evidence and verdicts</td></tr>
+              <tr><td>7 · Release</td><td>Apply real CI/CD, rollout, and rollback contracts</td><td>Release evidence</td></tr>
+              <tr><td>8 · Feedback</td><td>Turn measured failure into a rule, test, or workflow correction</td><td>Retrospective/change</td></tr>
+            </tbody>
+          </table>
+          <p>Fix and native work usually use only framing, implementation, and focused verification. ACEF Full may use the full planning sequence. Release and feedback run only when the request includes them.</p>
+        </section>
+
+        <section id="bmad">
+          <span class="eyebrow">ACEF Full</span>
+          <h2>How BMAD v2 fits</h2>
+          <p class="section-intro">BMAD supplies the detailed planning and delivery lifecycle for ACEF Full. ACEF provides admission, risk assurance, repository grounding, runtime enforcement, evidence, and cumulative process limits around it.</p>
+          <div class="grid two">
+            <article class="card accent"><h3>Generate once</h3><p>If BMAD already produced requirements, architecture, or stories, ACEF imports and enriches them. It does not regenerate a second version of the same phase.</p></article>
+            <article class="card rose"><h3>One coherent contract</h3><p>Full is not a container for independent defects, unrelated audit findings, or an entire epic implemented as one story.</p></article>
           </div>
-          <div class="callout blue"><span class="em">ℹ️</span><div>Most requests touch only a few of these. A bug fix
-            skips 2–4 entirely; a small feature skips heavy requirements/design. The router decides which phases run.</div></div>
+          <details>
+            <summary>Full v3 actor separation</summary>
+            <div class="details-body"><p>New Full runs use <code>fullFlowContract: four-actor-v3</code>. Core story identities are ATDD, Development, Code Review, and report-only Patch Assurance. A Story Process Judge appears only for ambiguity, waiver, evidence conflict, or gate anomaly; the Epic Process Judge remains independent.</p><p>The conductor coordinates and owns transitions. It does not author implementation or approve its own work. A builder cannot be the only approver.</p></div>
+          </details>
+          <details>
+            <summary>Compatibility Full v2</summary>
+            <div class="details-body"><p>An existing Full active-run record without <code>fullFlowContract</code> remains compatibility <code>six-actor-v2</code>, retaining Verify-Patch, Test Review, and Story Process Judge. This compatibility behavior is not the default for new runs.</p></div>
+          </details>
+          <details>
+            <summary>BMAD availability</summary>
+            <div class="details-body"><p>ACEF calls work “BMAD” only when the real BMAD conductor and required skills resolve. Generic subagents imitating BMAD do not satisfy the contract. If the runtime is unavailable, ACEF stops rather than silently substituting a fake Full lifecycle.</p></div>
+          </details>
         </section>
 
-        <section id="delivery"><h2><span class="ic" style="background:#f0eaff">⚙️</span>Delivery model</h2>
-          <p>ACEF first decides native versus ACEF, then selects execution depth and risk assurance independently.</p>
+        <section id="objective-limits">
+          <span class="eyebrow">Objective supervisor</span>
+          <h2>Exact limits for repeated delivery attempts</h2>
+          <p class="section-intro">Every new admitted run binds to a stable parent objective. Its normalized scope fingerprint prevents renaming <code>r2</code>, <code>recovery</code>, or the story itself from resetting cumulative budgets.</p>
           <table>
-            <tr><th>Dimension</th><th>Choice</th><th>Meaning</th></tr>
-            <tr><td><strong>Admission</strong></td><td>Repository native</td><td>Reversible contained single-boundary/single-surface work; no ACEF artifacts</td></tr>
-            <tr><td><strong>Execution</strong></td><td>ACEF Fix</td><td>Narrow reproduced defects; compact before/after lifecycle</td></tr>
-            <tr><td><strong>Execution</strong></td><td>ACEF Standard</td><td>Scoped ordinary work; compact six-step lifecycle</td></tr>
-            <tr><td><strong>Execution</strong></td><td>ACEF Full (BMAD v2)</td><td>Planning-heavy stories and broad scope; one full BMAD lifecycle</td></tr>
-            <tr><td><strong>Assurance</strong></td><td>Baseline / Guarded</td><td>Guarded adds high-risk controls to the chosen execution workflow without repeating it</td></tr>
+            <thead><tr><th>Signal</th><th>Response</th></tr></thead>
+            <tbody>
+              <tr><td>5 runs, 3 replans, 6 review cycles, or 30 active control minutes without a product/test commit</td><td><code>CONSOLIDATING</code>: later admissions must reference the objective defect ledger</td></tr>
+              <tr><td>Attempted 8th run or 5th replan</td><td><code>SUSPENDED_OVER_BUDGET</code>: human-approved scope split required</td></tr>
+              <tr><td>Manual QA finding</td><td>Checklist must complete before non-critical findings are explicitly batched by a shared key</td></tr>
+              <tr><td>Security, payments, migration, realtime, concurrency, or state-machine defect</td><td>Cannot be batched, deferred, or legacy-quarantined; requires Standard/Full + Guarded</td></tr>
+            </tbody>
           </table>
-          <div class="grid">
-            <div class="card" style="border-left-color:var(--rose)"><h3>Preflight + Story Judge</h3><p>Admitted ACEF work requires <code>ACEF_PREFLIGHT.md</code> PASS before planning or implementation. Contained native work creates no ACEF artifacts.</p></div>
-            <div class="card" style="border-left-color:var(--violet)"><h3>Epic Process Judge</h3><p>Before epic close, verify drift audit, trace, epic test-review, E2E/user-flow evidence, manual QA ledger, product-done audit, retrospective, and status close.</p></div>
-            <div class="card" style="border-left-color:var(--blue)"><h3>Surface-realism</h3><p>When a story creates the first reusable UI/runtime pattern, it needs a round-trip proof through the real surface before other stories reuse it. UI epics need representative E2E at close.</p></div>
-            <div class="card" style="border-left-color:var(--teal)"><h3>Test cases first</h3><p>For risky/large work, user flows become test cases before automation and before final story slicing.</p></div>
-            <div class="card" style="border-left-color:var(--amber)"><h3>Separation of powers</h3><p>New Full stories use distinct ATDD, Developer, Code Review, and Patch Assurance actors; Story Judge is conditional and Epic Judge remains independent. Fix uses one Developer and one reviewer. Guarded adds evidence strength, not duplicate reviews.</p></div>
-            <div class="card" style="border-left-color:var(--green)"><h3>Typed gate evidence</h3><p><code>acef-state</code> records each actor and worker scope, captures command output with a hash, and requires Process Judge PASS to cite successful evidence. Epic transitions use an exact hashed human approval quote.</p></div>
-            <div class="card" style="border-left-color:var(--blue)"><h3>Seeded epic gates</h3><p>Epics/stories generation creates every <code>Epic N Process Judge [PENDING]</code> row up front. The next epic cannot start until the prior epic gate is <code>PASS</code>.</p></div>
-            <div class="card" style="border-left-color:var(--green)"><h3>Architecture conformance</h3><p>Before epics/stories, an independent Architect or Process Judge checks codemap use, golden-neighbor claims, source discrepancies, counts, and do-not-copy entries. Findings need a ledger disposition before stories start.</p></div>
-            <div class="card" style="border-left-color:var(--teal)"><h3>Accelerated cadence</h3><p>Independent, non-overlapping stories may run in parallel, workers must return complete final reports inline, and low-risk work can use lighter review tiers. Guarded/security/routing/storage work keeps full separation.</p></div>
-            <div class="card" style="border-left-color:var(--blue)"><h3>Lean runtime</h3><p>Evidence stays on disk. Chat reports path, verdict, key evidence, and next step; no full artifact or broad search dumps by default.</p></div>
-          </div>
+          <p>Same-run remediation retains the existing maximum of two delta-review cycles. The objective supervisor does not add reviewer roles or another lifecycle.</p>
+          <details>
+            <summary>Worktree freshness handshake</summary>
+            <div class="details-body"><p>Installed targets record source-runtime and installed-runtime digests. New active runs, supervisor dispatch, status, next-action, pre-commit, and validator checks fail when the installed bytes differ or the source runtime changed after installation.</p><pre><code>scripts/update-acef-installation --repo /path/to/target --all-worktrees
+.acef/bin/acef-process-validator --repo . --check installation-freshness</code></pre></div>
+          </details>
         </section>
 
-        <section id="objective-supervision"><h2><span class="ic" style="background:#fdf3dd">⏱️</span>One objective, one cumulative budget</h2>
-          <p>Every new installed ACEF run belongs to a stable parent objective. Changing a run name or adding
-            <code>r2</code>/<code>recovery</code> does not reset its counters.</p>
+        <section id="evidence">
+          <span class="eyebrow">Durable process state</span>
+          <h2>Evidence, actors, and authorization</h2>
+          <p class="section-intro">Markdown explains the chronology. Typed JSON state controls what may happen next and binds claims to actors, commands, Git state, output hashes, and approvals.</p>
+          <details open>
+            <summary>Core state records</summary>
+            <div class="details-body"><ul class="clean"><li><code>docs/ai/ACEF_ACTIVE_RUN.json</code>: workflow, assurance, scope, objective, phase, active actor, and next transition.</li><li><code>docs/ai/objectives/&lt;id&gt;.json</code>: cumulative attempts, replans, reviews, defects, manual QA, and progress counters.</li><li><code>docs/ai/ACEF_ACTIVE_LEDGER</code>: selects the delivery ledger when more than one exists.</li><li>Actor, worker-scope, evidence, report, approval, repair, and gate sidecars bind each lifecycle claim.</li></ul></div>
+          </details>
+          <details>
+            <summary>Fresh session commands</summary>
+            <div class="details-body"><p><code>acef-status</code> summarizes installation, active workflow, objective counters, blockers, and warnings. <code>acef-next</code> returns the next allowed action, write boundary, required evidence, forbidden actions, and stop condition. Agents should reconstruct from these typed views instead of broadly rereading old ledgers.</p></div>
+          </details>
+          <details>
+            <summary>Capability truth levels</summary>
+            <div class="details-body"><p>ACEF reports the smallest honest state: <code>documented-only</code>, <code>specified</code>, <code>wired</code>, <code>enforced</code>, <code>proven</code>, or <code>installed</code>. Documentation alone cannot be reported as implementation.</p></div>
+          </details>
+        </section>
+
+        <section id="repository">
+          <span class="eyebrow">Repository grounding</span>
+          <h2>Adapters, patterns, and surface proof</h2>
+          <details open>
+            <summary>Project adapter and code map</summary>
+            <div class="details-body"><p>The project adapter records stack facts, commands, test setup, CI/release behavior, architectural boundaries, relevant working examples, and known do-not-copy patterns. A code map supplies repository orientation. Both are evidence-backed and refreshed when covered source paths change materially.</p></div>
+          </details>
+          <details>
+            <summary>Reuse before create</summary>
+            <div class="details-body"><p>A “proven example” is grounded at the symbol and behavior level—not copied blindly at the file level. Signatures, return shapes, boundaries, and consumer expectations must match before reuse.</p></div>
+          </details>
+          <details>
+            <summary>Done = surface-proven</summary>
+            <div class="details-body"><p><code>acef-closeout-verify</code> derives required evidence from the adapter’s surface registry. Persistence requires a fresh read from another process; reachability is separate from isolated rendering; unknown surfaces fail closed; and a story cannot downgrade a surface owned by its goal. Browser, HTTP, queue, storage, mail, webhook, command, and library contracts require different evidence.</p></div>
+          </details>
+        </section>
+
+        <section id="compatibility">
+          <span class="eyebrow">External methods and artifacts</span>
+          <h2>Compatibility is import—not a second methodology</h2>
+          <p class="section-intro">ACEF can consume compatible artifacts when a project already uses another method. It does not require every framework below and does not claim an integration merely because a document shape is understood.</p>
           <table>
-            <tr><th>Signal</th><th>Mechanical response</th></tr>
-            <tr><td>5 runs, 3 replans, 6 review cycles, or 30 active control minutes without product progress</td><td><code>CONSOLIDATING</code>: later runs must come from the typed defect ledger</td></tr>
-            <tr><td>Attempted 8th run or 5th replan</td><td><code>SUSPENDED_OVER_BUDGET</code>: stop and split with human approval</td></tr>
-            <tr><td>Manual QA findings</td><td>Finish the checklist, then batch non-critical findings once per surface/root cause</td></tr>
-            <tr><td>Security, payments, migration, realtime, concurrency, state-machine finding</td><td>Never defer/batch; use Standard or Full plus Guarded</td></tr>
-          </table>
-          <div class="callout blue"><span class="em">🔄</span><div><strong>Worktree freshness:</strong> new runs and
-            supervisor dispatch fail with <code>INSTALL_STALE</code> when a temporary worktree has old ACEF runtime
-            bytes. Refresh every linked worktree with <code>update-acef-installation --repo &lt;root&gt; --all-worktrees</code>.</div></div>
-        </section>
-
-        <section id="phases"><h2><span class="ic" style="background:#e3f7ec">🔢</span>The 8 phases</h2>
-          <div class="phase"><div class="pname">1 · Brief &amp; Route<small>entry</small></div><div>Take the brief, classify it into a route, and detect risk. Greenfield vs brownfield is a deterministic check, not a question.<div class="ext">Frameworks: ACEF router · BMAD scale levels (idea)</div></div></div>
-          <div class="phase"><div class="pname">2 · Requirements<small>what to build</small></div><div>User-facing behavior + acceptance criteria, with traceable IDs. Imported if a tool already produced them.<div class="ext">Frameworks: BMAD PRD · Kiro requirements (EARS) · spec-kit FR/US/SC IDs</div></div></div>
-          <div class="phase"><div class="pname">3 · Design<small>how to build it</small></div><div>Architecture, data flow, contracts, affected modules, risks.<div class="ext">Frameworks: BMAD architecture · Kiro design</div></div></div>
-          <div class="phase"><div class="pname">4 · Planning<small>break it down</small></div><div>Story map → epics → user stories → tasks, each traced back to a requirement.<div class="ext">Frameworks: BMAD stories/tasks · storymap · OpenSpec deltas (brownfield)</div></div></div>
-          <div class="phase"><div class="pname">5 · Implement<small>build</small></div><div>Follow the repo's golden neighbor — but ground it at the symbol level, not the file level: diff the target's real signatures and return shapes against the neighbor's before reusing, so a verbatim copy can't ship a type error. Minimal, code-grounded change per task.<div class="ext">Frameworks: your project's own build skills, via the adapter</div></div></div>
-          <div class="phase"><div class="pname">6 · Review / Test / CI<small>verify</small></div><div>Review against the repo's standard; bootstrap a test pattern if none exists; run the gate.<div class="ext">Frameworks: your test stack (detected) · review skills</div></div></div>
-          <div class="phase"><div class="pname">7 · Release / CD<small>ship</small></div><div>Readiness checklist, staged rollout, rollback — from the repo's real workflows.<div class="ext">Frameworks: your CI/CD, surfaced via the release adapter</div></div></div>
-          <div class="phase"><div class="pname">8 · Feedback<small>learn</small></div><div>What went wrong / what to change → update the rule or checklist. No metric ceremony unless asked.<div class="ext">Frameworks: lessons / retro</div></div></div>
-        </section>
-
-        <section id="bmad"><h2><span class="ic" style="background:#f0eaff">🅱️</span>BMAD v2 in detail</h2>
-          <p>BMAD v2 is itself a full pipeline (Analysis → Planning → Solutioning → Implementation) with agent personas.
-            ACEF uses BMAD as the <strong>large-feature heavy lane</strong> and imports its output — it never regenerates
-            what BMAD already produced.</p>
-          <div class="callout"><span class="em">⚠️</span><div><strong>Real BMAD only:</strong> Route B starts with a
-            capability preflight. The conductor and required BMAD skills/commands must resolve to real paths. If they
-            do not, ACEF halts instead of running a BMAD-like generic-subagent imitation. Fallback to non-BMAD guarded
-            work requires explicit human approval.</div></div>
-          <div class="callout blue"><span class="em">🧱</span><div><strong>Actor separation:</strong> a new Full v3 story
-            records distinct ATDD, Developer, Code Review, and Patch Assurance actors. Story Process Judge appears only
-            for ambiguity, waiver, evidence conflict, or gate anomaly; Epic Process Judge remains independent.
-            Compatibility v2 runs retain six actors. Guarded cannot add duplicate review layers or permit self-review.</div></div>
-          <div class="callout"><span class="em">🔒</span><div><strong>Optional hard wall:</strong> Claude Code, Codex, and OpenCode users can
-            install <code>claude-plugins/acef-bmad-guard/</code> or run <code>scripts/install-acef-bmad-guard --repo /path/to/repo</code>.
-            The full guard is repo-local under <code>.acef/hooks/</code>; Claude Code and Codex can use the optional
-            <code>--global-dispatcher</code> shim to find that local hook.
-            When an ACEF lane marker is present, the hook blocks the dispatcher/conductor from writing BMAD artifacts or
-            implementation files while allowing dedicated persona workers. It also blocks Epic N+1 story-start commands
-            until Epic N Process Judge is <code>PASS</code>.</div></div>
-          <table>
-            <tr><th>BMAD produces</th><th>ACEF maps it to</th></tr>
-            <tr><td>PRD (functional / non-functional requirements)</td><td><code>requirements.md</code></td></tr>
-            <tr><td>Architecture document</td><td><code>design.md</code></td></tr>
-            <tr><td>Epics / stories / tasks</td><td><code>tasks.md</code></td></tr>
-            <tr><td>Readiness report</td><td>Definition-of-Ready evidence</td></tr>
-          </table>
-          <div class="callout"><span class="em">⚠️</span><div>BMAD also has its own brief/research/analysis phase, which
-            <em>overlaps</em> ACEF's front. Rule of thumb: <strong>generate once.</strong> If BMAD already made the spec,
-            ACEF imports + enriches it (risk, DoR, test cases, golden neighbor, traceability) — it does not run a second
-            pipeline. On small or quick work, BMAD is skipped entirely.</div></div>
-        </section>
-
-        <section id="frameworks"><h2><span class="ic" style="background:#e8f0ff">🔌</span>Where each framework plugs in</h2>
-          <p>ACEF orchestrates; it doesn't force you to use all of these. You use what your project already has, and
-            ACEF imports the output through the adapter into one canonical format.</p>
-          <table>
-            <tr><th>Framework</th><th>Plugs into</th><th>What ACEF takes</th></tr>
-            <tr><td><strong>BMAD v2</strong></td><td>Phases 2–4 (large feature)</td><td>PRD→requirements, architecture→design, stories→tasks; import, don't regenerate</td></tr>
-            <tr><td><strong>Kiro</strong></td><td>Phases 2–4 (spec format)</td><td>the 3-file <code>requirements/design/tasks</code> shape + EARS acceptance criteria</td></tr>
-            <tr><td><strong>GitHub spec-kit</strong></td><td>Phases 2–4 (traceability)</td><td><code>FR-###</code>/<code>US#</code>/<code>SC-###</code> IDs + tasks tagged to stories</td></tr>
-            <tr><td><strong>OpenSpec</strong></td><td>Phase 4 (brownfield currency)</td><td>ADDED/MODIFIED/REMOVED deltas that keep living specs current</td></tr>
-            <tr><td><strong>GSD</strong></td><td>Phase 1 / onboarding</td><td>orientation + codebase mapping</td></tr>
-          </table>
-          <p class="muted">The differentiator vs any single tool: ACEF binds all of them to <em>your</em> extracted
-            adapter (per-repo, evidence-based) and runs them behind one agent — no ceremony, no double work.</p>
-        </section>
-
-        <section id="routes"><h2><span class="ic" style="background:#e3f7ec">🚦</span>Routes vs phases</h2>
-          <p>A route is just a subset of phases. This is why "every job goes through all 8 phases" is false.</p>
-          <table>
-            <tr><th>Route</th><th>Phases it runs</th></tr>
-            <tr><td>A · Small feature</td><td>1 → 5 → 6 (skip 2–4)</td></tr>
-            <tr><td>B · Large feature</td><td>1 → 2 → 3 → 4 → 5 → 6</td></tr>
-            <tr><td>C · Bug fix</td><td>1 → 5 → 6 (root-cause first)</td></tr>
-            <tr><td>D · Test cases</td><td>2 (flows→AC) → 6</td></tr>
-            <tr><td>E · Test automation</td><td>6 (bootstrap first)</td></tr>
-            <tr><td>F · Unit / integration</td><td>6</td></tr>
+            <thead><tr><th>Source</th><th>Compatible artifact</th><th>ACEF use</th></tr></thead>
+            <tbody>
+              <tr><td>BMAD v2</td><td>PRD, architecture, stories/tasks, readiness</td><td>ACEF Full lifecycle and imported planning output</td></tr>
+              <tr><td>Kiro-style specs</td><td>Requirements, design, tasks; EARS acceptance language</td><td>Import into canonical requirement/design/task artifacts</td></tr>
+              <tr><td>GitHub spec-kit-style specs</td><td>Requirement, user-story, and success-criterion IDs</td><td>Preserve traceability identifiers</td></tr>
+              <tr><td>OpenSpec-style deltas</td><td>Added, modified, and removed behavior</td><td>Keep brownfield specifications current</td></tr>
+              <tr><td>GSD/codebase maps</td><td>Repository orientation</td><td>Seed or reconcile project context</td></tr>
+            </tbody>
           </table>
         </section>
 
-        <section id="route-drawings"><h2><span class="ic" style="background:#fdf3dd">🧩</span>Route drawings</h2>
-          <p>Same routes, but spelled out. Each card shows the shortest useful path for that job.</p>
-          <div class="route-grid">
-            <article class="route-card a">
-              <h3>A · Small feature</h3>
-              <div class="route-path"><span>Brief / route</span><i>→</i><span>Golden neighbor</span><i>→</i><span>Implement</span><i>→</i><span>Review</span></div>
-              <p>Use this when the change is small, local, and already matches an existing pattern.</p>
-            </article>
-            <article class="route-card b">
-              <h3>B · Large feature</h3>
-              <div class="route-path"><span>Brief / route</span><i>→</i><span>Requirements</span><i>→</i><span>Design</span><i>→</i><span>Planning</span><i>→</i><span>Implement</span><i>→</i><span>Review</span></div>
-              <p>Use this when scope is larger, a new contract appears, or multiple modules are affected.</p>
-            </article>
-            <article class="route-card c">
-              <h3>C · Bug fix</h3>
-              <div class="route-path"><span>Brief / route</span><i>→</i><span>Reproduce</span><i>→</i><span>Root cause</span><i>→</i><span>Fix</span><i>→</i><span>Review</span></div>
-              <p>Use this when the job is about restoring behavior, not adding a new feature shape.</p>
-            </article>
-            <article class="route-card d">
-              <h3>D · Test cases</h3>
-              <div class="route-path"><span>Brief / route</span><i>→</i><span>Flows</span><i>→</i><span>Acceptance criteria</span><i>→</i><span>Test cases</span><i>→</i><span>Review</span></div>
-              <p>Use this when the output is a test plan or structured cases before automation.</p>
-            </article>
-            <article class="route-card e">
-              <h3>E · Test automation</h3>
-              <div class="route-path"><span>Brief / route</span><i>→</i><span>Detect stack</span><i>→</i><span>Bootstrap 1 test</span><i>→</i><span>Approve pattern</span><i>→</i><span>Expand</span></div>
-              <p>Use this when the project needs the first real test pattern before broader automation can scale.</p>
-            </article>
-            <article class="route-card f">
-              <h3>F · Unit / integration</h3>
-              <div class="route-path"><span>Brief / route</span><i>→</i><span>Detect stack</span><i>→</i><span>Unit / integration</span><i>→</i><span>Run gate</span></div>
-              <p>Use this when the job is about test coverage in the project’s actual framework and command set.</p>
-            </article>
-          </div>
+        <section id="installation">
+          <span class="eyebrow">Installation</span>
+          <h2>Repo-local tools and guards</h2>
+          <details open>
+            <summary>Install or refresh ACEF in a target repository</summary>
+            <div class="details-body"><pre><code>scripts/update-acef-installation --repo /path/to/target
+
+# Refresh every linked worktree after ACEF runtime changes
+scripts/update-acef-installation --repo /path/to/target --all-worktrees</code></pre><p>The updater installs repo-local tools, schemas, workflows, skills, and the guard contract, then records the source and installed runtime digests.</p></div>
+          </details>
+          <details>
+            <summary>Claude Code, Codex, and OpenCode guard</summary>
+            <div class="details-body"><p><code>scripts/install-acef-bmad-guard --repo /path/to/target</code> installs repository-local hooks and the pre-commit gate. The optional <code>--global-dispatcher</code> installs a small machine-level dispatcher that forwards only to repositories with a local guard. Restart the agent harness after installation.</p></div>
+          </details>
+          <details>
+            <summary>Validate the installation</summary>
+            <div class="details-body"><pre><code>.acef/bin/acef-process-validator --repo . --check installation-freshness
+.acef/bin/acef-status --repo .
+.acef/bin/acef-next --repo .</code></pre></div>
+          </details>
+        </section>
+
+        <section id="truth">
+          <span class="eyebrow">Repository truth</span>
+          <h2>Where to verify a claim</h2>
+          <ul class="clean">
+            <li><a href="https://github.com/ramazanayyildiz/acef/blob/main/AGENTS.md">AGENTS.md</a> — short routing and enforcement entry point.</li>
+            <li><a href="https://github.com/ramazanayyildiz/acef/blob/main/method/DELIVERY_RULES.md">Delivery rules</a> — normative lifecycle rules.</li>
+            <li><a href="https://github.com/ramazanayyildiz/acef/blob/main/method/BMAD_V2_LANE.md">ACEF Full / BMAD v2 contract</a> — detailed Full workflow.</li>
+            <li><a href="https://github.com/ramazanayyildiz/acef/tree/main/docs/ai/capabilities">Capability records</a> — implemented layers, evidence, limitations, and maturity.</li>
+            <li><a href="https://github.com/ramazanayyildiz/acef/blob/main/CHANGELOG.md">Changelog</a> — human-readable framework history.</li>
+          </ul>
+          <div class="callout"><strong>Core rule:</strong> ACEF claims are not evidence. Repository files, validators, tests, installed hooks/tools, and runtime evidence are the evidence.</div>
         </section>
       </main>
     </div>
-    <footer>ACEF — Ayyildiz Context Engineering Framework · SDLC &amp; frameworks · <a href="https://github.com/ramazanayyildiz/acef">View on GitHub ↗</a></footer>
+    <footer>ACEF · Technical reference · <a href="./index.html">Return to Start here</a> · <a href="https://github.com/ramazanayyildiz/acef">View the repository</a></footer>
   </body>
 </html>

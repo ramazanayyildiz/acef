@@ -3,133 +3,100 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>ACEF — Start Here</title>
-    <meta name="description" content="ACEF start page: what it does, how to enter, and where to read the detailed guides." />
-    <link rel="stylesheet" href="./theme.css" />
+    <title>ACEF — Start here</title>
+    <meta name="description" content="ACEF helps AI coding agents make safe, project-native software changes without turning every task into a heavy process." />
+    <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="./theme.css?v=2" />
   </head>
   <body>
-    <a class="repo-link" href="https://github.com/ramazanayyildiz/acef" target="_blank" rel="noreferrer">
+    <a class="skip-link" href="#content">Skip to content</a>
+    <a class="repo-link" href="https://github.com/ramazanayyildiz/acef" target="_blank" rel="noreferrer" aria-label="ACEF on GitHub">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 .5a12 12 0 0 0-3.79 23.39c.6.11.82-.26.82-.58v-2.23c-3.34.73-4.04-1.4-4.04-1.4-.55-1.4-1.34-1.78-1.34-1.78-1.1-.76.08-.75.08-.75 1.22.09 1.86 1.25 1.86 1.25 1.08 1.85 2.84 1.31 3.53 1 .11-.78.42-1.31.76-1.61-2.67-.3-5.48-1.34-5.48-5.97 0-1.32.47-2.4 1.24-3.25-.12-.3-.54-1.52.12-3.17 0 0 1.01-.32 3.31 1.24a11.42 11.42 0 0 1 6.03 0c2.3-1.56 3.31-1.24 3.31-1.24.66 1.65.24 2.87.12 3.17.77.85 1.24 1.93 1.24 3.25 0 4.64-2.81 5.66-5.49 5.96.43.37.81 1.1.81 2.22v3.29c0 .32.22.7.83.58A12 12 0 0 0 12 .5Z"/></svg>
       <span>GitHub</span>
     </a>
+
     <div class="wrap">
       <aside>
-        <div class="logo"><b>A</b><div>ACEF<br/><small>start here</small></div></div>
+        <div class="logo"><b>A</b><div><strong>ACEF</strong><small>Start with the idea</small></div></div>
         <div class="pageswitch">
-          <a class="active" href="./index.html">🏠 Start</a>
-          <a href="./overview.html">📘 Overview</a>
-          <a href="./sdlc.html">🔄 SDLC &amp; frameworks</a>
-          <a href="./roles.html">👥 Roles</a>
+          <a class="active" aria-current="page" href="./index.html">Start here</a>
+          <a href="./overview.html">How it works</a>
+          <a href="./workflows.html">Workflows</a>
+          <a href="./roles.html">Examples</a>
+          <a href="./sdlc.html">Technical reference</a>
         </div>
-        <div class="navlabel">On this page</div>
-        <nav>
-          <a href="#what"><span class="n">①</span> What it does</a>
-          <a href="#use"><span class="n">②</span> How to start</a>
-          <a href="#pages"><span class="n">③</span> Where to read more</a>
+        <nav aria-label="On this page">
+          <div class="navlabel">On this page</div>
+          <a href="#why">Why ACEF exists</a>
+          <a href="#journey">What it does</a>
+          <a href="#start">How to use it</a>
+          <a href="#principles">Four promises</a>
         </nav>
       </aside>
 
-      <main>
-        <p class="kicker">Ayyildiz Context Engineering Framework</p>
-        <h1>ACEF</h1>
-        <p class="lede">ACEF gets real work done in the codebase you already have — new features, bug fixes, tests, and
-          the plan around them — built the way your project already works. You say what you want in plain language; you
-          get a change that fits your repo, not generic boilerplate.</p>
+      <main id="content">
+        <nav class="mobile-nav" aria-label="Site navigation">
+          <a class="active" aria-current="page" href="./index.html">Start</a><a href="./overview.html">How it works</a><a href="./workflows.html">Workflows</a><a href="./roles.html">Examples</a><a href="./sdlc.html">Reference</a>
+        </nav>
 
-        <section id="what">
-          <h2><span class="ic" style="background:#e8f0ff">🧭</span>What ACEF does</h2>
-          <div class="grid">
-            <div class="card" style="border-left-color:var(--amber)">
-              <h3>Plans and gates the work</h3>
-              <p>Turns a brief into a traceable plan, surfaces the risk, and holds a go/hold/kill gate before risky work merges — with a status view of what's in flight.</p>
-            </div>
-            <div class="card" style="border-left-color:var(--blue)">
-              <h3>Ships features</h3>
-              <p>In the pattern your repo already uses, like it was hand-written.</p>
-            </div>
-            <div class="card" style="border-left-color:var(--teal)">
-              <h3>Fixes bugs at the root</h3>
-              <p>In your code's own style, the smallest correct fix.</p>
-            </div>
-            <div class="card" style="border-left-color:var(--violet)">
-              <h3>Writes the tests you're missing</h3>
-              <p>In your project's real test setup — and turns product flows into test cases. Bootstraps the first test if there are none.</p>
-            </div>
+        <header class="hero">
+          <p class="kicker">A workflow and safety layer for AI coding agents</p>
+          <h1>Make the change. Keep it true to the project.</h1>
+          <p class="lede">ACEF helps an AI agent change an existing software project without ignoring how that project already works. You describe the result you want. ACEF studies the repository, chooses only the process the work needs, makes the change, and verifies the real result.</p>
+          <div class="hero-actions">
+            <a class="button" href="#start">See how to start</a>
+            <a class="button secondary" href="./overview.html">Understand the model</a>
+          </div>
+        </header>
+
+        <section id="why">
+          <span class="eyebrow">Why it exists</span>
+          <h2>AI agents are fast. Software work is not always simple.</h2>
+          <p class="section-intro">An agent can write plausible code quickly and still miss the project’s conventions, test the wrong thing, repeat reviews forever, or use a heavyweight process for a tiny fix. ACEF keeps the useful speed and adds structure only where it earns its cost.</p>
+          <div class="grid two">
+            <article class="card accent"><h3>Small work stays small</h3><p>A contained, reversible change uses the project’s normal workflow. It does not open a full ACEF lifecycle.</p></article>
+            <article class="card rose"><h3>Risk gets stronger checks</h3><p>Security, payments, migrations, realtime, concurrency, and other high-risk work receive added safeguards and independent review.</p></article>
           </div>
         </section>
 
-        <section id="use">
-          <h2><span class="ic" style="background:#f0eaff">💬</span>How to start</h2>
-          <div class="chat">
-            <div class="u"><div class="who">You</div>How big is this billing change, and what's the risk?</div>
-            <div class="a"><div class="who">ACEF</div>Large feature, high risk — it touches payment and spans the API and
-              dashboard. It needs a brief, a plan, and your go-ahead before the payment step merges.</div>
-          </div>
-          <div class="chat">
-            <div class="u"><div class="who">You</div>I want to add a new feature to this project.</div>
-            <div class="a"><div class="who">ACEF</div>I’ll check the repo, pick the right route, and use the project’s
-              own patterns.</div>
-          </div>
-          <div class="chat">
-            <div class="u"><div class="who">You</div>I need tests for this codebase.</div>
-            <div class="a"><div class="who">ACEF</div>I’ll inspect the current setup, then choose the smallest safe test
-              path for this repo.</div>
+        <section id="journey">
+          <span class="eyebrow">The whole idea</span>
+          <h2>Three things happen between your request and “done”</h2>
+          <div class="journey">
+            <article><span class="mark">1</span><h3>Understand</h3><p>ACEF learns the project’s structure, commands, tests, and proven code patterns.</p></article>
+            <article><span class="mark">2</span><h3>Choose</h3><p>It selects a lightweight or rigorous path based on the scope and risk of this specific task.</p></article>
+            <article><span class="mark">3</span><h3>Build and prove</h3><p>The agent makes the change and verifies it where a user or another system actually uses it.</p></article>
           </div>
         </section>
 
-        <section id="pages">
-          <h2><span class="ic" style="background:#e3f7ec">📚</span>Where to read more</h2>
-          <div class="routes">
-            <div class="route" style="--rc:var(--violet)">
-              <h3><a href="./overview.html">Overview</a></h3>
-              <p>The full picture: routes, onboarding a repo, how to ask, and ACEF's honest status.</p>
-            </div>
-            <div class="route" style="--rc:var(--blue)">
-              <h3><a href="./sdlc.html">SDLC &amp; frameworks</a></h3>
-              <p>How ACEF maps the lifecycle and where BMAD, Kiro, spec-kit, GSD, and OpenSpec fit.</p>
-            </div>
-            <div class="route" style="--rc:var(--teal)">
-              <h3><a href="./roles.html">Roles</a></h3>
-              <p>What a developer, PM, and QA/test engineer can do with ACEF.</p>
-            </div>
+        <section id="start">
+          <span class="eyebrow">How to use it</span>
+          <h2>Describe the outcome in plain language</h2>
+          <p class="section-intro">You do not need to choose a workflow, a review policy, or an internal framework. Start with the work and any constraint you already know.</p>
+          <div class="example">
+            <div class="you"><b>You</b>The avatar disappears after a user edits their profile. Find the cause and fix it.</div>
+            <div class="acef"><b>ACEF</b>I’ll reproduce the behavior, find the root cause, make the smallest project-native fix, and run the focused regression test.</div>
           </div>
+          <div class="example">
+            <div class="you"><b>You</b>Add team billing. Before implementation, tell me the scope and risk.</div>
+            <div class="acef"><b>ACEF</b>This touches money and multiple product surfaces, so it needs a clear plan and extra safeguards. I’ll map the user journey and split the work before code starts.</div>
+          </div>
+          <p class="muted">Using an agent that has the ACEF skill installed? Address ACEF in the same way you normally ask that agent to work in a repository.</p>
         </section>
 
-        <section>
-          <h2><span class="ic" style="background:#fdf3dd">✅</span>What to remember</h2>
-          <ul class="clean">
-            <li>ACEF isn't a second methodology — it adapts to the repo you already have.</li>
-            <li>Full BMAD work separates the conductor from worker personas, so the same actor cannot build and approve its own work.</li>
-            <li>Implementation workers are fenced to one active story/phase with narrow allowed paths, no ledger edits, no subagent spawning, and a bounded commit budget.</li>
-            <li>Stories that depend on third-party framework internals ground the real installed API before ATDD, so agents cannot fake green with shims or vendor overrides.</li>
-            <li>Runtime-wired work needs at least one real entrypoint smoke with content assertions, not just isolated helper tests or status-only routes.</li>
-            <li>Quick fixes, lightweight work, full BMAD, and guarded work have lane-specific closeout bundles; touched surfaces must be declared and proven at the runtime surface that changed.</li>
-            <li>Evidence artifacts now require runner-shaped command/exit metadata and runner proof, so plain prose logs cannot satisfy typed evidence or lightweight surface evidence.</li>
-            <li>Functional requirements close only when traced to an owning story and an exercised capability, not merely a supporting artifact.</li>
-            <li>Lean runtime is the default: evidence stays on disk; chat reports only artifact path, verdict, key evidence, and next step.</li>
-            <li>Story workers receive a maximum-150-line role-specific current-context slice instead of repeatedly reading the full ledger and planning set.</li>
-            <li>Fresh sessions start from <code>acef-status</code> and <code>acef-next</code>, so the current allowed action, write boundary, evidence requirements, and stop condition come from typed repo state.</li>
-            <li>Workflow definitions can be versioned as small YAML graphs and validated with <code>acef-workflow-validate</code>; nodes pass artifact paths instead of full chat history.</li>
-            <li><code>bug-hunter</code> is a measured, report-only JIT review lens for bounded PR/lightweight review; it is recommended when useful but kept out of the minimal default install.</li>
-            <li>Optional <code>acef-query</code> retrieval uses Context Mode when available and a deterministic file fallback otherwise; gates never depend on it.</li>
-            <li><code>acef-context-experiment</code> compares baseline, file fallback, and Context Mode retrieval before worker defaults are changed.</li>
-            <li>Future tools such as symbol indexes, graph memory, MCP runtimes, and eval frameworks require measured admission before adoption.</li>
-            <li><code>CHANGELOG.md</code> records the human-readable framework history; <code>docs/ai/capabilities/*.json</code> records what is documented, wired, enforced, proven, or installed.</li>
-            <li><code>capability-change</code> stops ACEF flow/gate/role changes from being reported as implemented when they only changed markdown.</li>
-            <li><code>intake-decision-gate</code> makes planning/execution runs record route, confidence, interview questions, approved brief, execution approval, and unresolved questions before dispatch.</li>
-            <li><code>evidence-runner-proof</code> is proven: typed evidence and lightweight surface evidence must carry runner proof, while signed evidence remains a future hardening step.</li>
-            <li>The front-door skill is compact and loads detailed ACEF reference files just-in-time.</li>
-            <li>Full BMAD epics seed their Process Judge gates up front; the next epic waits until the prior one is PASS.</li>
-            <li>Every active run starts with a delivery ledger, active ledger pointer, and Session Handoff before workers fan out.</li>
-            <li>Full BMAD records run-level delegation authorization for ACEF-required persona workers only, so independent reviewers can run without repeated prompts.</li>
-            <li>Claude Code, Codex, and OpenCode users can install the ACEF/BMAD guard to enforce these boundaries during ACEF/BMAD lanes. When the harness does not propagate worker identity (as with Claude Code subagents), the hard wall degrades from per-actor to scope-level enforcement: a guarded write is allowed only when the conductor-written worker scope is in an implementation phase and the path is in <code>allowedPaths</code>.</li>
-            <li>Codex users also run <code>scripts/acef-codex-guard</code> as the certification/pre-commit backstop for worker-scope checks.</li>
-            <li><code>scripts/install-acef-bmad-guard</code> now installs a git pre-commit gate (<code>acef-precommit-gate.sh</code>) that runs lean-evidence on active runs and also requires <code>gate-decider</code> for guarded/full-BMAD commits; full <code>gate-verdict</code> remains a closeout/CI gate.</li>
-            <li><code>acef-closeout-verify</code> is the per-surface "done" verifier: it derives required evidence from the adapter's surface registry and enforces fail-closed rules — cold-process fresh-read for persistence, reachability as separate evidence (isolated render is partial, not pass), fail-closed on unknown surfaces, and no story self-downgrade of a surface its goal owns. It is CI-gated and wired into <code>install-acef-tools</code>. The rule is recorded in <code>method/DELIVERY_RULES.md</code> as "Done = surface-proven."</li>
-          </ul>
+        <section id="principles">
+          <span class="eyebrow">What to remember</span>
+          <h2>Four promises, without the internal machinery</h2>
+          <div class="grid two">
+            <article class="card"><h3>Use the project’s own patterns</h3><p>ACEF follows proven examples already present in the repository instead of inventing a parallel architecture.</p></article>
+            <article class="card"><h3>Use only the process needed</h3><p>A tiny repair and a payment-state redesign should not pay the same planning and review cost.</p></article>
+            <article class="card"><h3>Prove the real result</h3><p>Code is not considered complete merely because it looks correct or an isolated helper test is green.</p></article>
+            <article class="card"><h3>Stop unproductive loops</h3><p>If repeated reviews and retries stop producing product progress, ACEF consolidates the findings, splits the scope, or asks for a decision.</p></article>
+          </div>
+          <a class="next-link" href="./overview.html"><span><strong>Next: How ACEF works</strong>Follow one request from repository understanding to real-world verification.</span><b aria-hidden="true">→</b></a>
         </section>
       </main>
     </div>
-    <footer>ACEF — Ayyildiz Context Engineering Framework · start page · <a href="https://github.com/ramazanayyildiz/acef">View on GitHub ↗</a></footer>
+    <footer>ACEF · Start with the idea, then go as deep as you need · <a href="https://github.com/ramazanayyildiz/acef">View the repository</a></footer>
   </body>
 </html>

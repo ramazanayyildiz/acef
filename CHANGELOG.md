@@ -9,6 +9,17 @@ or evidence contract. Do not use it to claim implementation status; link to the 
 
 ## Unreleased
 
+### Pages now teach ACEF before exposing its internals
+
+- Rebuilt the public documentation around progressive disclosure: Start here, How it works, Workflows, Examples, and
+  Technical reference. The first reading path explains the user outcome before naming runtime contracts.
+- Removed the stale A–F route model from beginner navigation and made the current two-decision model canonical:
+  project workflow / ACEF Fix / Standard / Full for delivery depth, then Baseline / Guarded for assurance.
+- Replaced the landing-page capability dump and duplicated print guide with four plain-language promises and canonical,
+  print-ready topic pages. Internal experiment and capability artifacts remain in Git but are excluded from Pages output.
+- Added a regression check for navigation parity, link/anchor validity, beginner word budgets, progressive disclosure,
+  stale terminology, and accidental reintroduction of a second documentation set.
+
 ### Parent-objective supervision stops cross-run ceremony loops
 
 - Added `objective-supervisor-v1` for every new run in an updated target installation. Runs bind to a stable parent

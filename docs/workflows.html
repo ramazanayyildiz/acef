@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ACEF — Workflows</title>
+    <meta name="description" content="How ACEF chooses between the project’s normal workflow, ACEF Fix, Standard, and Full, then adds normal or extra safeguards based on risk." />
+    <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="./theme.css?v=2" />
+  </head>
+  <body>
+    <a class="skip-link" href="#content">Skip to content</a>
+    <a class="repo-link" href="https://github.com/ramazanayyildiz/acef" target="_blank" rel="noreferrer" aria-label="ACEF on GitHub">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 .5a12 12 0 0 0-3.79 23.39c.6.11.82-.26.82-.58v-2.23c-3.34.73-4.04-1.4-4.04-1.4-.55-1.4-1.34-1.78-1.34-1.78-1.1-.76.08-.75.08-.75 1.22.09 1.86 1.25 1.86 1.25 1.08 1.85 2.84 1.31 3.53 1 .11-.78.42-1.31.76-1.61-2.67-.3-5.48-1.34-5.48-5.97 0-1.32.47-2.4 1.24-3.25-.12-.3-.54-1.52.12-3.17 0 0 1.01-.32 3.31 1.24a11.42 11.42 0 0 1 6.03 0c2.3-1.56 3.31-1.24 3.31-1.24.66 1.65.24 2.87.12 3.17.77.85 1.24 1.93 1.24 3.25 0 4.64-2.81 5.66-5.49 5.96.43.37.81 1.1.81 2.22v3.29c0 .32.22.7.83.58A12 12 0 0 0 12 .5Z"/></svg><span>GitHub</span>
+    </a>
+    <div class="wrap">
+      <aside>
+        <div class="logo"><b>A</b><div><strong>ACEF</strong><small>Match process to work</small></div></div>
+        <div class="pageswitch"><a href="./index.html">Start here</a><a href="./overview.html">How it works</a><a class="active" aria-current="page" href="./workflows.html">Workflows</a><a href="./roles.html">Examples</a><a href="./sdlc.html">Technical reference</a></div>
+        <nav aria-label="On this page"><div class="navlabel">On this page</div><a href="#decision">Two separate decisions</a><a href="#depth">Delivery depth</a><a href="#risk">Risk safeguards</a><a href="#examples">Examples</a><a href="#loops">Loop prevention</a></nav>
+      </aside>
+      <main id="content">
+        <nav class="mobile-nav" aria-label="Site navigation"><a href="./index.html">Start</a><a href="./overview.html">How it works</a><a class="active" aria-current="page" href="./workflows.html">Workflows</a><a href="./roles.html">Examples</a><a href="./sdlc.html">Reference</a></nav>
+
+        <header class="hero">
+          <p class="kicker">Match process to work</p>
+          <h1>More risk should mean more confidence—not repeated ceremony.</h1>
+          <p class="lede">ACEF chooses two things separately: how much delivery structure the work needs, and how much checking its risk requires.</p>
+        </header>
+
+        <section id="decision">
+          <span class="eyebrow">The decision model</span>
+          <h2>Scope chooses the workflow. Risk chooses the safeguards.</h2>
+          <div class="assurance">
+            <div class="option"><strong>1 · Delivery depth</strong><p>Is this a contained project-native task, a focused defect, a standard change, or planning-heavy work?</p></div>
+            <div class="plus" aria-hidden="true">+</div>
+            <div class="option"><strong>2 · Assurance level</strong><p>Are normal checks enough, or does a high-risk boundary require extra safeguards?</p></div>
+          </div>
+          <div class="callout"><strong>Guarded is not another workflow.</strong> It strengthens the selected workflow. It must not repeat planning, implementation, review, and closeout a second time.</div>
+        </section>
+
+        <section id="depth">
+          <span class="eyebrow">Decision 1</span>
+          <h2>Choose the delivery depth</h2>
+          <div class="process-dial">
+            <article><strong>Project’s normal workflow</strong><p>Contained, reversible work with one technical boundary and one product surface. No ACEF run artifacts.</p></article>
+            <article><strong>Focused fix <span class="muted">(ACEF Fix)</span></strong><p>A proven, bounded defect: reproduce, patch, focused test, one independent review, close.</p></article>
+            <article><strong>Standard delivery <span class="muted">(ACEF Standard)</span></strong><p>A scoped ordinary change that benefits from a short plan, implementation, verification, and review.</p></article>
+            <article><strong>Planned delivery <span class="muted">(ACEF Full)</span></strong><p>One coherent, broad or ambiguous contract that genuinely needs detailed planning and independent lifecycle roles.</p></article>
+          </div>
+
+          <details>
+            <summary>What qualifies for the project’s normal workflow?</summary>
+            <div class="details-body"><p>The work must be reversible, contained, and limited to one technical boundary and one product surface. Examples include a copy correction, a local layout adjustment, or a narrow bug with no security, persistence, provider, realtime, state-machine, analytics, or coordination trigger.</p><p>Focused tests are still required. “No ACEF run” does not mean “no verification.”</p></div>
+          </details>
+          <details>
+            <summary>Why ACEF Full is not a container for many small defects</summary>
+            <div class="details-body"><p>Several unrelated root causes do not become one coherent story merely because they were found in the same audit or CI run. ACEF splits them first, then admits each child independently. Many children will return to the project’s normal workflow or ACEF Fix.</p></div>
+          </details>
+        </section>
+
+        <section id="risk">
+          <span class="eyebrow">Decision 2</span>
+          <h2>Add safeguards only when the boundary needs them</h2>
+          <div class="grid two">
+            <article class="card teal"><h3>Normal checks <span class="muted">(Baseline)</span></h3><p>The evidence and independent review appropriate to the chosen workflow.</p></article>
+            <article class="card rose"><h3>Extra safeguards <span class="muted">(Guarded)</span></h3><p>Stronger scope control, boundary-focused evidence, and explicit approval where needed. It adds confidence, not a duplicate lifecycle.</p></article>
+          </div>
+          <p>Extra safeguards normally apply to security, privacy, permissions, payments, migrations, provider integrations, realtime behavior, concurrency, state machines, analytics, irreversible effects, and other shared safety boundaries.</p>
+          <details>
+            <summary>Can a small patch still need extra safeguards?</summary>
+            <div class="details-body"><p>Yes. Patch size and risk are different. A thirteen-line authorization or billing-state fix may use ACEF Fix with Guarded assurance: a compact lifecycle with stronger evidence. High risk does not automatically require ACEF Full.</p></div>
+          </details>
+        </section>
+
+        <section id="examples">
+          <span class="eyebrow">Put together</span>
+          <h2>What common decisions look like</h2>
+          <table>
+            <thead><tr><th>Work</th><th>Delivery path</th><th>Safeguards</th><th>Why</th></tr></thead>
+            <tbody>
+              <tr><td>Correct a label in one existing screen</td><td>Project workflow</td><td>Normal</td><td>Contained, reversible, one surface</td></tr>
+              <tr><td>Fix a reproduced authorization regression</td><td>ACEF Fix</td><td>Extra</td><td>Narrow defect, security boundary</td></tr>
+              <tr><td>Add a scoped internal reporting filter</td><td>ACEF Standard</td><td>Normal or extra, depending on data sensitivity</td><td>Ordinary change with a clear contract</td></tr>
+              <tr><td>Design a new payment lifecycle across API and dashboard</td><td>ACEF Full</td><td>Extra</td><td>Planning-heavy, money, multiple boundaries</td></tr>
+              <tr><td>Repair nine unrelated CI failures</td><td>Split, then re-admit each defect</td><td>Per defect</td><td>Shared discovery source is not a shared root cause</td></tr>
+            </tbody>
+          </table>
+        </section>
+
+        <section id="loops">
+          <span class="eyebrow">Built-in limit</span>
+          <h2>ACEF stops runaway review loops</h2>
+          <p class="section-intro">Renaming a run does not make it new work. ACEF tracks repeated attempts under the same underlying goal. When reviews and replans keep growing without product progress, it stops opening fresh process cycles and asks the team to consolidate the known problems or split the scope.</p>
+          <div class="grid two">
+            <article class="card amber"><h3>Consolidate</h3><p>Finish manual QA, gather non-critical findings into one shared list, and repair related items together where safe.</p></article>
+            <article class="card rose"><h3>Stop and split</h3><p>If the same objective keeps reopening or replanning, suspend it and require a human-approved scope split.</p></article>
+          </div>
+          <details>
+            <summary>Exact counters and state names</summary>
+            <div class="details-body"><p>ACEF enters consolidation at five runs, three replans, six review cycles, or 30 active control minutes without a product/test commit. It refuses an attempted eighth run or a fifth replan. Exact status constants, defect classes, and worktree freshness behavior are in the <a href="./sdlc.html#objective-limits">technical reference</a>.</p></div>
+          </details>
+          <a class="next-link" href="./roles.html"><span><strong>Next: See concrete examples</strong>Explore how developers, product leads, architects, and QA engineers ask ACEF to work.</span><b aria-hidden="true">→</b></a>
+        </section>
+      </main>
+    </div>
+    <footer>ACEF · Delivery depth and risk assurance are separate decisions · <a href="https://github.com/ramazanayyildiz/acef">View the repository</a></footer>
+  </body>
+</html>
