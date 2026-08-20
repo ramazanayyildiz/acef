@@ -97,6 +97,7 @@ try {
   const recoveryArgs = ["recover-active-run", "--repo", tmp, "--red-commit", redCommit, "--product-commit", productCommit,
     "--red-artifact", "_bmad-output/test-artifacts/story-4-1-red.md", "--reason", "Installed readiness controls postdate this committed RED/green lineage",
     "--", "node", "--test", "tests/recovery-green.test.js"];
+  write("docs/ai/runs/pre-upgrade-checkpoint.md", "# Staged recovery checkpoint\n");
   write("docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json", { ...scope, runId: "WRONG", phase: "development" });
   const mismatch = run(state, recoveryArgs);
   if (mismatch.status === 0 || !`${mismatch.stdout}${mismatch.stderr}`.includes("must match the active run")) throw new Error("recovery accepted a mismatched worker scope");

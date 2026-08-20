@@ -128,6 +128,7 @@ function isControlPath(filePath) {
     || /^_bmad(?:-output)?\//.test(normalized)
     || /^docs\/ai\/ACEF_[^/]+\.(?:json|md)$/.test(normalized)
     || normalized === "docs/ai/ACEF_ACTIVE_LEDGER"
+    || /^docs\/ai\//.test(normalized)
     || /^docs\/ai\/(?:actors|gates|evidence|reports|approvals|repairs|corrections|capsules|judges|objectives|recoveries)\//.test(normalized);
 }
 
