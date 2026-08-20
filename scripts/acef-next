@@ -4,7 +4,7 @@ const path = require("node:path");
 const { parseWorkflow } = require("./lib/acef-state-parser");
 const { inspectRunAuthorization } = require("./lib/acef-run-authorization");
 const { displayName } = require("./lib/acef-execution-policy");
-const { installationFreshnessFailures, readInstallationManifest } = require("./lib/acef-installation");
+const { installationFreshnessFailures } = require("./lib/acef-installation");
 const { loadObjective, objectiveFailures } = require("./lib/acef-objective-supervisor");
 const validatorModule = fs.existsSync(path.join(__dirname, "acef-process-validator.cjs"))
   ? "./acef-process-validator.cjs" : "./acef-process-validator";
@@ -127,10 +127,9 @@ function loadWorkflow(repo, activeRunRecord) {
 function dispatchReadinessResults(repo, activeRun) {
   if (!activeRun || activeRun.status !== "active"
     || activeRun.workflowId !== "full-bmad" || activeRun.fullFlowContract !== "four-actor-v3") return [];
-  if (readInstallationManifest(repo)?.components?.tools?.dispatchReadinessContract
-    !== "full-v3-dispatch-readiness-v1") return [];
-  const phase = String(activeRun.activePhase || "").toLowerCase();
-  if (!/(readiness|plan|atdd|develop|implement|code[-_ ]?review|verify|patch|test[-_ ]?review)/.test(phase)) return [];
+  if (activeRun.dispatchReadinessContract !== "full-v3-dispatch-readiness-v1") return [];
+  const phase = String(activeRun.activePhase || "").toLowerCase().replace(/[^a-z0-9]+/g, "");
+  if (!(phase.includes("readiness") || ["plan", "planning", "atdd"].includes(phase))) return [];
   try {
     return evaluateProcessChecks(repo, FULL_V3_DISPATCH_CHECKS);
   } catch (error) {

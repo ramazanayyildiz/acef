@@ -131,6 +131,15 @@ artifact, or implementation step:
     The installation-advertised runtime, every executable evidence/discovery command, bounded implementation paths,
     and test paths must be frozen before ATDD dispatch.
 
+### In-flight runtime recovery
+
+An installed dispatch contract is run-bound, not retroactive. If an older Full v3 story already has committed RED and
+product commits but its control-plane bindings drifted, do not restart readiness or ATDD. Run
+`acef-state recover-active-run` with those commits, the committed RED artifact, a reason, and one exact focused command
+from the frozen scope. Imported RED stays non-canonical and the run enters `recovery-review`; dispatch exactly one
+independent Recovery Judge and commit the exact recovered close package. `story-transition` then binds current
+readiness rules to the next story.
+
 A worker launched before this bootstrap is drift. Stop, record it, patch the ambiguous rule if needed, and restart from bootstrap.
 
 ## Helper Skills

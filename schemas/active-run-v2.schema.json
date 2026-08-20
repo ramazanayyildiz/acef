@@ -21,6 +21,10 @@
       "type": "string",
       "enum": ["capsule-supervisor-v1", "capsule-supervisor-v2"]
     },
+    "dispatchReadinessContract": {
+      "type": "string",
+      "enum": ["full-v3-dispatch-readiness-v1"]
+    },
     "objectiveContract": {
       "type": "string",
       "enum": ["objective-supervisor-v1"]
@@ -207,6 +211,16 @@
     },
     {
       "if": { "required": ["runtimeContract"] },
+      "then": {
+        "properties": {
+          "workflowId": { "const": "full-bmad" },
+          "fullFlowContract": { "const": "four-actor-v3" }
+        },
+        "required": ["fullFlowContract"]
+      }
+    },
+    {
+      "if": { "required": ["dispatchReadinessContract"] },
       "then": {
         "properties": {
           "workflowId": { "const": "full-bmad" },

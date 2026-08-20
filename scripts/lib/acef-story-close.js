@@ -3,7 +3,12 @@
 const cp = require("node:child_process");
 const fs = require("node:fs");
 const path = require("node:path");
-const { parseEvidenceManifest } = require("./acef-state-parser");
+const {
+  parseActiveRunRecovery,
+  parseActorRecord,
+  parseEvidenceManifest,
+  parseRecoveryReviewDecision,
+} = require("./acef-state-parser");
 
 function git(repo, args, { encoding = "utf8" } = {}) {
   return cp.spawnSync("git", args, {
@@ -22,6 +27,18 @@ function controlRelativePath(repo, filePath) {
 }
 
 function storyClosePackagePaths(repo, gate, gatePath) {
+  if (gate.gateType === "recovered-story-close-v1") {
+    const receiptPath = controlRelativePath(repo, gate.recoveryReceiptPath);
+    const receipt = parseActiveRunRecovery(path.join(repo, receiptPath));
+    return [...new Set([
+      controlRelativePath(repo, gatePath),
+      receiptPath,
+      controlRelativePath(repo, receipt.verification.rawArtifact.path),
+      controlRelativePath(repo, path.join("docs", "ai", "actors", `${gate.decidedBy}.json`)),
+      controlRelativePath(repo, gate.decisionPath),
+      ...(gate.statePaths || []).map((entry) => controlRelativePath(repo, entry)),
+    ])];
+  }
   const packagePaths = [controlRelativePath(repo, gatePath)];
   for (const actorId of Object.values(gate.actors || {})) {
     packagePaths.push(controlRelativePath(repo, path.join("docs", "ai", "actors", `${actorId}.json`)));
@@ -44,6 +61,17 @@ function storyClosePackagePaths(repo, gate, gatePath) {
 }
 
 function closeOwnedPaths(repo, gate, gatePath) {
+  if (gate.gateType === "recovered-story-close-v1") {
+    const receiptPath = controlRelativePath(repo, gate.recoveryReceiptPath);
+    const receipt = parseActiveRunRecovery(path.join(repo, receiptPath));
+    return [...new Set([
+      controlRelativePath(repo, gatePath),
+      receiptPath,
+      controlRelativePath(repo, receipt.verification.rawArtifact.path),
+      controlRelativePath(repo, path.join("docs", "ai", "actors", `${gate.decidedBy}.json`)),
+      controlRelativePath(repo, gate.decisionPath),
+    ])];
+  }
   const owned = [controlRelativePath(repo, gatePath)];
   for (const actorId of [gate.actors?.codeReview, gate.actors?.patchAssurance].filter(Boolean)) {
     owned.push(controlRelativePath(repo, path.join("docs", "ai", "actors", `${actorId}.json`)));
@@ -89,7 +117,9 @@ function validateDurableStoryClosePackage(repo, gate, gatePath) {
       || !Buffer.from(committed.stdout || []).equals(fs.readFileSync(absolutePath))) {
       failures.push(`${relativePath} differs from HEAD`);
     }
-    if (history(repo, relativePath).length !== 1) failures.push(`${relativePath} changed after immutable introduction`);
+    if (ownedPaths.includes(relativePath) && history(repo, relativePath).length !== 1) {
+      failures.push(`${relativePath} changed after immutable introduction`);
+    }
   }
 
   const gateRelativePath = controlRelativePath(repo, gatePath);
@@ -100,6 +130,34 @@ function validateDurableStoryClosePackage(repo, gate, gatePath) {
     failures.push("story PASS gate has not been introduced in exactly one commit");
   } else {
     [packageCommit] = gateIntroductionCommits;
+    if (gate.gateType === "recovered-story-close-v1") {
+      const head = git(repo, ["rev-parse", "HEAD"]);
+      if (head.status !== 0 || head.stdout.trim() !== packageCommit) {
+        failures.push("recovered story-close package commit must be HEAD during transition");
+      }
+      try {
+        const receiptPath = path.join(repo, gate.recoveryReceiptPath);
+        const receipt = parseActiveRunRecovery(receiptPath);
+        const decisionPath = path.join(repo, gate.decisionPath);
+        const decision = parseRecoveryReviewDecision(decisionPath);
+        const actor = parseActorRecord(path.join(repo, "docs", "ai", "actors", `${gate.decidedBy}.json`));
+        const digest = (value) => require("node:crypto").createHash("sha256").update(value).digest("hex");
+        const rawPath = path.join(repo, receipt.verification.rawArtifact.path);
+        if (digest(fs.readFileSync(receiptPath)) !== gate.recoveryReceiptSha256
+          || digest(fs.readFileSync(decisionPath)) !== gate.decisionSha256
+          || digest(fs.readFileSync(rawPath)) !== receipt.verification.rawArtifact.sha256
+          || decision.recoveryReceiptSha256 !== gate.recoveryReceiptSha256
+          || decision.rawArtifactSha256 !== receipt.verification.rawArtifact.sha256
+          || decision.verdict !== gate.verdict || decision.actorId !== gate.decidedBy
+          || actor.actorInstanceId !== gate.decidedBy || actor.sessionId !== decision.actorSessionId
+          || actor.inputCommit !== gate.applicationCommit || actor.inputTree !== gate.repositoryTree
+          || receipt.productCommit !== gate.applicationCommit || receipt.headCommit !== gate.applicationCommit) {
+          failures.push("recovered story-close receipt, raw proof, Judge decision, actor, or gate hash binding is invalid");
+        }
+      } catch (error) {
+        failures.push(`recovered story-close package parse failed: ${error.message}`);
+      }
+    }
     for (const relativePath of ownedPaths) {
       const introductions = history(repo, relativePath, "A");
       if (introductions.length !== 1 || introductions[0] !== packageCommit) {
@@ -107,7 +165,7 @@ function validateDurableStoryClosePackage(repo, gate, gatePath) {
       }
     }
     const introducedHere = packagePaths.filter((relativePath) => history(repo, relativePath, "A")[0] === packageCommit);
-    const allowed = new Set([...ownedPaths, ...introducedHere]);
+    const allowed = new Set(gate.gateType === "recovered-story-close-v1" ? packagePaths : [...ownedPaths, ...introducedHere]);
     const changed = git(repo, ["diff-tree", "--root", "--no-commit-id", "--name-only", "-r", packageCommit, "--"]);
     const changedPaths = changed.status === 0 ? changed.stdout.split(/\r?\n/).filter(Boolean) : [];
     if (!changedPaths.length || changedPaths.some((entry) => !allowed.has(entry))

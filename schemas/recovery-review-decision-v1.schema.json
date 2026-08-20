@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://acef.local/schemas/recovery-review-decision-v1.schema.json",
+  "title": "ACEF Recovery Review Decision v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema", "runId", "story", "actorId", "actorSessionId", "inputCommit", "inputTree",
+    "recoveryReceiptPath", "recoveryReceiptSha256", "rawArtifactSha256", "verdict", "findings", "createdAt"
+  ],
+  "properties": {
+    "schema": { "const": "acef.recovery-review-decision.v1" },
+    "runId": { "type": "string", "minLength": 1 },
+    "story": { "type": "string", "minLength": 1 },
+    "actorId": { "type": "string", "pattern": "^[A-Za-z0-9._-]+$" },
+    "actorSessionId": { "type": "string", "minLength": 1 },
+    "inputCommit": { "type": "string", "pattern": "^[a-f0-9]{40}$" },
+    "inputTree": { "type": "string", "pattern": "^[a-f0-9]{40}$" },
+    "recoveryReceiptPath": { "type": "string", "pattern": "^docs/ai/recoveries/[A-Za-z0-9._-]+\\.json$" },
+    "recoveryReceiptSha256": { "$ref": "#/$defs/sha256" },
+    "rawArtifactSha256": { "$ref": "#/$defs/sha256" },
+    "verdict": { "enum": ["PASS", "REPLAN"] },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["severity", "id", "reason"],
+        "properties": {
+          "severity": { "enum": ["LOW", "MEDIUM", "HIGH", "CRITICAL"] },
+          "id": { "type": "string", "minLength": 1 },
+          "reason": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "createdAt": { "type": "string", "format": "date-time" }
+  },
+  "$defs": {
+    "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+  }
+}

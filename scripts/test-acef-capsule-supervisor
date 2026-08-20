@@ -83,6 +83,61 @@ try {
     "--surface", "integration", "--surface", "internal", "--surface", "notification",
     "--pattern-use", "new-reusable-pattern", "--requires-round-trip", "true",
     "--binding", "internal>internal:demo:true"]);
+
+  const actorDir = path.join(tmp, "docs", "ai", "actors");
+  fs.mkdirSync(actorDir, { recursive: true });
+  fs.writeFileSync(path.join(actorDir, "legacy-other-story.json"), `${JSON.stringify({
+    story: "Retired Story",
+    phase: "atdd",
+  }, null, 2)}\n`);
+  fs.writeFileSync(path.join(actorDir, "other-run-current-story.json"), `${JSON.stringify({
+    runId: "RUN-retired",
+    story: "Story Capsule",
+    phase: "atdd",
+  }, null, 2)}\n`);
+  const unrelatedActors = JSON.parse(run(process.execPath, [supervisor, "--repo", tmp]));
+  const actorDiagnostic = unrelatedActors.diagnostics.find((entry) => entry.code === "ignored-unrelated-actor-records");
+  if (actorDiagnostic?.count !== 2
+    || !actorDiagnostic.samplePaths.includes("docs/ai/actors/legacy-other-story.json")
+    || !actorDiagnostic.samplePaths.includes("docs/ai/actors/other-run-current-story.json")) {
+    throw new Error("supervisor did not prefilter and diagnose unrelated legacy actor records");
+  }
+
+  const currentRunMalformedActor = path.join(actorDir, "current-run-malformed.json");
+  fs.writeFileSync(currentRunMalformedActor, `${JSON.stringify({
+    runId: "RUN-capsule",
+    story: "Different Story",
+    phase: "atdd",
+  }, null, 2)}\n`);
+  const currentRunMalformedCheck = cp.spawnSync(process.execPath, [supervisor, "--repo", tmp], { cwd: tmp, encoding: "utf8" });
+  if (currentRunMalformedCheck.status === 0
+    || !`${currentRunMalformedCheck.stdout}${currentRunMalformedCheck.stderr}`.includes("current-run-malformed.json")) {
+    throw new Error("supervisor did not fail closed for a malformed current-run actor candidate");
+  }
+  fs.rmSync(currentRunMalformedActor);
+
+  const invalidRunIdentityActor = path.join(actorDir, "invalid-run-identity.json");
+  fs.writeFileSync(invalidRunIdentityActor, `${JSON.stringify({
+    runId: "",
+    story: "Different Story",
+    phase: "atdd",
+  }, null, 2)}\n`);
+  const invalidRunIdentityCheck = cp.spawnSync(process.execPath, [supervisor, "--repo", tmp], { cwd: tmp, encoding: "utf8" });
+  if (invalidRunIdentityCheck.status === 0
+    || !`${invalidRunIdentityCheck.stdout}${invalidRunIdentityCheck.stderr}`.includes("invalid-run-identity.json")) {
+    throw new Error("supervisor treated a malformed run identity as an unrelated legacy actor");
+  }
+  fs.rmSync(invalidRunIdentityActor);
+
+  const unidentifiedMalformedActor = path.join(actorDir, "unidentified-malformed.json");
+  fs.writeFileSync(unidentifiedMalformedActor, "{not-json\n");
+  const unidentifiedMalformedCheck = cp.spawnSync(process.execPath, [supervisor, "--repo", tmp], { cwd: tmp, encoding: "utf8" });
+  if (unidentifiedMalformedCheck.status === 0
+    || !`${unidentifiedMalformedCheck.stdout}${unidentifiedMalformedCheck.stderr}`.includes("unidentified-malformed.json")) {
+    throw new Error("supervisor did not fail closed when malformed JSON could not identify an unrelated actor");
+  }
+  fs.rmSync(unidentifiedMalformedActor);
+
   const initialContext = fs.readFileSync(path.join(tmp, "docs", "ai", "ACEF_CURRENT_CONTEXT.md"), "utf8");
   if (!initialContext.includes("- Active story: `Story Capsule`")
     || !initialContext.includes("- Active phase: `atdd`")

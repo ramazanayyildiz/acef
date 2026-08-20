@@ -129,6 +129,9 @@ try {
     runtimeContract: "capsule-supervisor-v1",
     expectedStories: ["Story 1.1"],
     activePhase: "atdd",
+    workerRole: "test-author",
+    activeActorId: null,
+    nextAllowedStep: "write_failing_tests",
   };
   const capsuleAtddScope = {
     ...workerScope,
@@ -171,6 +174,98 @@ try {
   });
   if (!boundedImplementation.ok) {
     throw new Error(`capsule ATDD rejected a real implementation path: ${boundedImplementation.blockers.join("; ")}`);
+  }
+
+  const capsuleDevelopmentRun = {
+    ...capsuleAtddRun,
+    activePhase: "development",
+    workerRole: "developer",
+    activeActorId: null,
+    nextAllowedStep: "implement_to_green",
+    fullLedgerAccess: "denied",
+    maxLines: 120,
+  };
+  const capsuleDevelopmentScope = {
+    ...capsuleAtddScope,
+    phase: "development",
+    workerId: "acef_story_1_1_development",
+    allowedPaths: ["tests/StoryTest.js", "src/story.js"],
+  };
+  writeJson(activeRunPath, capsuleDevelopmentRun);
+  writeJson(workerScopePath, capsuleDevelopmentScope);
+  const developmentPreActor = inspectRunAuthorization(tmp, {
+    requireWorkerScope: true,
+    requireScopeRunId: true,
+  });
+  if (!developmentPreActor.ok) {
+    throw new Error(`capsule Development rejected its valid pre-actor state: ${developmentPreActor.blockers.join("; ")}`);
+  }
+
+  const staleAtddControlPlane = {
+    ...capsuleDevelopmentRun,
+    workerRole: "atdd",
+    activeActorId: "acef_story_1_1_atdd",
+    nextAllowedStep: "write_failing_tests",
+  };
+  writeJson(activeRunPath, staleAtddControlPlane);
+  writeJson(workerScopePath, { ...capsuleDevelopmentScope, workerId: "acef_story_1_1_atdd" });
+  const incoherentDevelopment = inspectRunAuthorization(tmp, {
+    requireWorkerScope: true,
+    requireScopeRunId: true,
+  });
+  for (const expected of [
+    "requires workerRole developer",
+    "requires nextAllowedStep implement_to_green",
+    "worker scope workerId acef_story_1_1_atdd does not match canonical development actor",
+    "activeActorId acef_story_1_1_atdd does not match canonical development actor",
+  ]) {
+    if (incoherentDevelopment.ok || !incoherentDevelopment.blockers.some((item) => item.includes(expected))) {
+      throw new Error(`capsule Development did not reject stale ATDD binding: ${expected}`);
+    }
+  }
+
+  const developerActorId = "acef_story_1_1_development";
+  writeJson(path.join(docsAi, "actors", `${developerActorId}.json`), {
+    actorInstanceId: developerActorId,
+    runId: capsuleDevelopmentRun.runId,
+    fullFlowContract: "four-actor-v3",
+    storyInventory: capsuleDevelopmentRun.expectedStories,
+    story: capsuleDevelopmentRun.activeStory,
+    phase: "development",
+    role: "developer",
+    client: "codex",
+    inputCommit: "fixture",
+    allowedContextProfile: "development",
+  });
+  writeJson(activeRunPath, { ...capsuleDevelopmentRun, activeActorId: developerActorId });
+  writeJson(workerScopePath, capsuleDevelopmentScope);
+  const developmentActor = inspectRunAuthorization(tmp, {
+    requireWorkerScope: true,
+    requireScopeRunId: true,
+  });
+  if (!developmentActor.ok) {
+    throw new Error(`capsule Development rejected its canonical actor: ${developmentActor.blockers.join("; ")}`);
+  }
+
+  writeJson(path.join(docsAi, "actors", `${developerActorId}.json`), {
+    actorInstanceId: developerActorId,
+    runId: capsuleDevelopmentRun.runId,
+    fullFlowContract: "four-actor-v3",
+    storyInventory: capsuleDevelopmentRun.expectedStories,
+    story: capsuleDevelopmentRun.activeStory,
+    phase: "atdd",
+    role: "test-author",
+    client: "codex",
+    inputCommit: "fixture",
+    allowedContextProfile: "atdd",
+  });
+  const wrongDeveloperActorRole = inspectRunAuthorization(tmp, {
+    requireWorkerScope: true,
+    requireScopeRunId: true,
+  });
+  if (wrongDeveloperActorRole.ok
+    || !wrongDeveloperActorRole.blockers.some((item) => item.includes("actor record does not match"))) {
+    throw new Error("capsule Development accepted a canonical actor id with stale ATDD role identity");
   }
   writeJson(activeRunPath, activeRun);
   writeJson(workerScopePath, workerScope);

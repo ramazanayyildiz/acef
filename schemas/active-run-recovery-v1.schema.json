@@ -1,0 +1,100 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://acef.local/schemas/active-run-recovery-v1.schema.json",
+  "title": "ACEF Active Run Recovery v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema", "recoveryId", "runId", "story", "classification", "disposition",
+    "canonicalEvidence", "requiresIndependentRecoveryReview", "reviewStatus", "reason",
+    "redCommit", "productCommit", "headCommit", "installation", "redArtifact",
+    "redTests", "changedRedTests", "outOfScopeRedTests", "productPaths", "productTestPaths", "outOfScopeProductTestPaths", "verification", "before", "after", "createdAt"
+  ],
+  "properties": {
+    "schema": { "const": "acef.active-run-recovery.v1" },
+    "recoveryId": { "type": "string", "pattern": "^[A-Za-z0-9._-]+$" },
+    "runId": { "type": "string", "minLength": 1 },
+    "story": { "type": "string", "minLength": 1 },
+    "classification": { "const": "imported-pre-upgrade-red" },
+    "disposition": { "const": "legacy-nonretroactive" },
+    "canonicalEvidence": { "const": false },
+    "requiresIndependentRecoveryReview": { "const": true },
+    "reviewStatus": { "const": "pending-review" },
+    "reason": { "type": "string", "minLength": 1 },
+    "redCommit": { "type": "string", "pattern": "^[a-f0-9]{40}$" },
+    "productCommit": { "type": "string", "pattern": "^[a-f0-9]{40}$" },
+    "headCommit": { "type": "string", "pattern": "^[a-f0-9]{40}$" },
+    "installation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sourceCommit", "dispatchReadinessContract"],
+      "properties": {
+        "sourceCommit": { "type": "string", "pattern": "^[a-f0-9]{40}$" },
+        "dispatchReadinessContract": { "const": "full-v3-dispatch-readiness-v1" }
+      }
+    },
+    "redArtifact": { "$ref": "#/$defs/pathHash" },
+    "redTests": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path", "redSha256", "productSha256", "preserved"],
+        "properties": {
+          "path": { "type": "string", "minLength": 1 },
+          "redSha256": { "$ref": "#/$defs/sha256" },
+          "productSha256": { "$ref": "#/$defs/sha256" },
+          "preserved": { "type": "boolean" }
+        }
+      }
+    },
+    "changedRedTests": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
+    "outOfScopeRedTests": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
+    "productPaths": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
+    "productTestPaths": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
+    "outOfScopeProductTestPaths": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
+    "verification": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["command", "commandArgv", "exitCode", "result", "repositoryCommit", "repositoryTree", "rawArtifact", "dirtyApplicationPathsBefore", "dirtyApplicationPathsAfter", "startedAt", "finishedAt"],
+      "properties": {
+        "command": { "type": "string", "minLength": 1 },
+        "commandArgv": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 } },
+        "exitCode": { "const": 0 },
+        "result": { "const": "PASS" },
+        "repositoryCommit": { "type": "string", "pattern": "^[a-f0-9]{40}$" },
+        "repositoryTree": { "type": "string", "pattern": "^[a-f0-9]{40}$" },
+        "rawArtifact": { "$ref": "#/$defs/pathHash" },
+        "dirtyApplicationPathsBefore": { "type": "array", "maxItems": 0 },
+        "dirtyApplicationPathsAfter": { "type": "array", "maxItems": 0 },
+        "startedAt": { "type": "string", "format": "date-time" },
+        "finishedAt": { "type": "string", "format": "date-time" }
+      }
+    },
+    "before": { "$ref": "#/$defs/stateHashes" },
+    "after": { "$ref": "#/$defs/stateHashes" },
+    "createdAt": { "type": "string", "format": "date-time" }
+  },
+  "$defs": {
+    "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "pathHash": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256"],
+      "properties": {
+        "path": { "type": "string", "minLength": 1 },
+        "sha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "stateHashes": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["activeRunSha256", "workerScopeSha256"],
+      "properties": {
+        "activeRunSha256": { "$ref": "#/$defs/sha256" },
+        "workerScopeSha256": { "$ref": "#/$defs/sha256" }
+      }
+    }
+  }
+}

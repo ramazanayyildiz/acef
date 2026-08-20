@@ -355,7 +355,7 @@ function stateControlPath(filePath) {
     || /^_bmad(?:-output)?\//.test(normalized)
     || /^docs\/ai\/ACEF_[^/]+\.(?:json|md)$/.test(normalized)
     || normalized === "docs/ai/ACEF_ACTIVE_LEDGER"
-    || /^docs\/ai\/(?:actors|gates|evidence|reports|approvals|repairs|corrections|capsules|judges|objectives)\//.test(normalized);
+    || /^docs\/ai\/(?:actors|gates|evidence|reports|approvals|repairs|corrections|capsules|judges|objectives|recoveries)\//.test(normalized);
 }
 
 function normalizedScopePaths(paths) {
@@ -3919,7 +3919,7 @@ function checkPrecommitGate(repoRoot) {
     ).status === 0;
     if (!terminalRecordStaged && committed && unchanged) {
       const staleRunArtifacts = stagedPaths.filter((filePath) => (
-        /^docs\/ai\/(?:actors|gates|evidence|reports|approvals|repairs|corrections|capsules|judges)\//.test(filePath)
+        /^docs\/ai\/(?:actors|gates|evidence|reports|approvals|repairs|corrections|capsules|judges|recoveries)\//.test(filePath)
         || /^docs\/ai\/ACEF_(?:ACTIVE_RUN|ACTIVE_WORKER_SCOPE|LIGHTWEIGHT_RUN|CURRENT_CONTEXT|DELIVERY_LEDGER|[^/]+_DELIVERY_AUDIT)\b/.test(filePath)
       ));
       if (staleRunArtifacts.length) {

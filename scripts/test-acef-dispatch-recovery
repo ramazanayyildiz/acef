@@ -1,0 +1,154 @@
+#!/usr/bin/env node
+const fs = require("node:fs");
+const os = require("node:os");
+const path = require("node:path");
+const cp = require("node:child_process");
+
+const root = path.resolve(__dirname, "..");
+const state = path.join(root, "scripts", "acef-state");
+const status = path.join(root, "scripts", "acef-status");
+const next = path.join(root, "scripts", "acef-next");
+const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "acef-dispatch-recovery-"));
+
+function run(command, args) {
+  return cp.spawnSync(command, args, { cwd: tmp, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+}
+function must(command, args) {
+  const result = run(command, args);
+  if (result.status !== 0) throw new Error(`${command} ${args.join(" ")} failed:\n${result.stdout}\n${result.stderr}`);
+  return result.stdout.trim();
+}
+function write(relativePath, value) {
+  const target = path.join(tmp, relativePath);
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+  fs.writeFileSync(target, typeof value === "string" ? value : `${JSON.stringify(value, null, 2)}\n`);
+}
+function read(relativePath) {
+  return JSON.parse(fs.readFileSync(path.join(tmp, relativePath), "utf8"));
+}
+
+try {
+  must("git", ["init", "-q"]);
+  must("git", ["config", "user.email", "acef@example.test"]);
+  must("git", ["config", "user.name", "ACEF Test"]);
+  write("AGENTS.md", "# Fixture\n");
+  write("app/Story.php", "<?php return 'old';\n");
+  write("tests/recovery-green.test.js", "const test = require('node:test'); const assert = require('node:assert/strict'); test('focused recovery green', () => assert.equal(2 + 2, 4));\n");
+  write(".acef/model-routing-policy.json", fs.readFileSync(path.join(root, "method", "model-routing-policy-v1.json"), "utf8"));
+  write("docs/ai/ACEF_run.md", "# Run\n");
+  write("docs/ai/ACEF_ACTIVE_LEDGER", "docs/ai/ACEF_run.md\n");
+  write("docs/ai/ACEF_CURRENT_CONTEXT.md", "# Existing context\n");
+  write("docs/ai/ACEF_INSTALLATION.json", {
+    schema: "acef.installation.v1",
+    installedAt: "2026-08-20T00:00:00.000Z",
+    acefVersion: { sourcePath: "/fake/acef", sourceCommit: "a".repeat(40), sourceShortCommit: "aaaaaaa", sourceBranch: "main", sourceTreeState: "clean" },
+    lastUpdatedAt: "2026-08-20T00:00:00.000Z",
+    updateCommand: "node /fake/acef/scripts/update-acef-installation --repo .",
+    components: { tools: { defaultRuntimeContract: "capsule-supervisor-v2", dispatchReadinessContract: "full-v3-dispatch-readiness-v1" } },
+  });
+  must("git", ["add", "."]);
+  must("git", ["commit", "-qm", "fixture"]);
+
+  must(state, ["active-run", "--repo", tmp, "--run-id", "RUN-recovery", "--workflow-id", "full-bmad",
+    "--scope-unit", "story", "--expected-story", "Story 4.1", "--expected-story", "Story 4.2", "--status", "active", "--story", "Story 4.1",
+    "--phase", "readiness", "--ledger", "docs/ai/ACEF_run.md", "--context", "docs/ai/ACEF_CURRENT_CONTEXT.md"]);
+  let active = read("docs/ai/ACEF_ACTIVE_RUN.json");
+  if (active.dispatchReadinessContract !== "full-v3-dispatch-readiness-v1") throw new Error("new Full v3 run did not bind installed dispatch contract");
+  const dispatchStatus = JSON.parse(run(status, ["--repo", tmp, "--format", "json"]).stdout);
+  const dispatchNext = JSON.parse(run(next, ["--repo", tmp]).stdout);
+  if (!dispatchStatus.dispatchReadiness.length || !dispatchNext.dispatch_readiness.length) throw new Error("bound new run did not enforce dispatch readiness");
+  const blockedTransition = run(state, ["phase-transition", "--repo", tmp, "--phase", "atdd"]);
+  if (blockedTransition.status === 0 || !`${blockedTransition.stdout}${blockedTransition.stderr}`.includes("readiness -> ATDD blocked")) {
+    throw new Error("bound new run bypassed readiness -> ATDD gates");
+  }
+
+  delete active.dispatchReadinessContract;
+  write("docs/ai/ACEF_ACTIVE_RUN.json", active);
+  write("docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json", {
+    runId: active.runId, activeStory: active.activeStory, phase: "readiness", workerId: "legacy-atdd",
+    allowedPaths: ["tests/Feature/StoryTest.php", "tests/recovery-green.test.js", "app/Story.php"], allowedCommands: ["node --test tests/recovery-green.test.js"],
+    baseRef: "HEAD", maxCommits: 1, canEditLedger: false, canSpawnAgents: false,
+  });
+  const legacyStatus = JSON.parse(run(status, ["--repo", tmp, "--format", "json"]).stdout);
+  if (legacyStatus.dispatchReadiness.length) throw new Error("installed contract was applied retroactively to an existing run");
+  must(state, ["phase-transition", "--repo", tmp, "--phase", "atdd"]);
+  if (read("docs/ai/ACEF_ACTIVE_RUN.json").dispatchReadinessContract !== undefined) throw new Error("legacy transition silently bound dispatch contract");
+
+  write("tests/Feature/StoryTest.php", "<?php function test_story(): void { self::assertSame('green', Story::value()); }\n");
+  write("_bmad-output/test-artifacts/story-4-1-red.md", "RED confirmed by the pre-upgrade run. FAILURES: 1.\n");
+  must("git", ["add", "tests/Feature/StoryTest.php", "_bmad-output/test-artifacts/story-4-1-red.md"]);
+  must("git", ["commit", "-qm", "test: imported red"]);
+  const redCommit = must("git", ["rev-parse", "HEAD"]);
+  write("app/Story.php", "<?php return 'green';\n");
+  write("tests/Feature/StoryTest.php", "<?php function test_story(): void { self::assertSame('green', Story::value()); self::assertNotNull(Story::value()); }\n");
+  must("git", ["add", "app/Story.php", "tests/Feature/StoryTest.php"]);
+  must("git", ["commit", "-qm", "feat: implement story"]);
+  const productCommit = must("git", ["rev-parse", "HEAD"]);
+
+  active = read("docs/ai/ACEF_ACTIVE_RUN.json");
+  write("docs/ai/ACEF_ACTIVE_RUN.json", {
+    ...active, activePhase: "development", workerRole: "atdd", activeActorId: "legacy-atdd",
+    nextAllowedStep: "write_failing_tests", fullLedgerAccess: null, maxLines: null,
+  });
+  const scope = read("docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json");
+  write("docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json", { ...scope, phase: "development", workerId: "legacy-atdd" });
+  const driftedNext = JSON.parse(run(next, ["--repo", tmp]).stdout);
+  if (!driftedNext.blockers.some((entry) => entry.includes("control-plane drift"))) throw new Error("contradictory Development state was write-authorized");
+  const recoveryArgs = ["recover-active-run", "--repo", tmp, "--red-commit", redCommit, "--product-commit", productCommit,
+    "--red-artifact", "_bmad-output/test-artifacts/story-4-1-red.md", "--reason", "Installed readiness controls postdate this committed RED/green lineage",
+    "--", "node", "--test", "tests/recovery-green.test.js"];
+  write("docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json", { ...scope, runId: "WRONG", phase: "development" });
+  const mismatch = run(state, recoveryArgs);
+  if (mismatch.status === 0 || !`${mismatch.stdout}${mismatch.stderr}`.includes("must match the active run")) throw new Error("recovery accepted a mismatched worker scope");
+  write("docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json", { ...scope, phase: "development", workerId: "legacy-atdd" });
+  must(state, recoveryArgs);
+  active = read("docs/ai/ACEF_ACTIVE_RUN.json");
+  const recoveredScope = read("docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json");
+  const receipt = read("docs/ai/recoveries/RUN-recovery-legacy-dispatch-recovery.json");
+  if (active.activePhase !== "recovery-review" || active.workerRole !== "process-judge" || active.activeActorId !== null
+    || active.fullLedgerAccess !== "denied" || active.maxLines !== 120 || active.dispatchReadinessContract !== undefined) {
+    throw new Error("recovery did not enter dedicated recovery review without binding the new contract");
+  }
+  if (recoveredScope.phase !== "recovery-review" || !recoveredScope.workerId.endsWith("_recovery_process_judge")) throw new Error("recovery did not create the dedicated review scope");
+  if (receipt.disposition !== "legacy-nonretroactive" || receipt.classification !== "imported-pre-upgrade-red"
+    || receipt.canonicalEvidence !== false || receipt.requiresIndependentRecoveryReview !== true
+    || receipt.reviewStatus !== "pending-review" || receipt.verification.result !== "PASS" || receipt.verification.exitCode !== 0
+    || !receipt.verification.rawArtifact.sha256
+    || !receipt.before.activeRunSha256 || !receipt.after.activeRunSha256 || !receipt.redTests.length
+    || receipt.redTests.some((entry) => !entry.redSha256 || !entry.productSha256)
+    || receipt.redTests.every((entry) => entry.preserved !== false)
+    || !receipt.changedRedTests.includes("tests/Feature/StoryTest.php")) {
+    throw new Error("recovery receipt lost provenance or review requirements");
+  }
+  const repeated = run(state, recoveryArgs);
+  if (repeated.status !== 0 || !`${repeated.stdout}${repeated.stderr}`.includes("UNCHANGED active-run recovery")) {
+    throw new Error("exact recovery retry was not idempotent");
+  }
+  if (!fs.readFileSync(path.join(tmp, "docs/ai/ACEF_CURRENT_CONTEXT.md"), "utf8").includes("- Role: `process-judge`")) throw new Error("recovery did not sync Current Context");
+  const recoverySupervisor = JSON.parse(must(path.join(root, "scripts", "acef-supervisor"), ["--repo", tmp]));
+  const judgeId = "acef_run_recovery_story_4_1_recovery_process_judge";
+  if (recoverySupervisor.action.role !== "recovery-review" || recoverySupervisor.action.actorInstanceId !== judgeId) {
+    throw new Error("supervisor did not dispatch exactly the recovery Process Judge");
+  }
+  const highPass = run(state, ["recovery-review", "--repo", tmp, "--actor", judgeId, "--session-id", `/root/${judgeId}`,
+    "--verdict", "PASS", "--finding", "HIGH:R1:critical recovery concern"]);
+  if (highPass.status === 0 || !`${highPass.stdout}${highPass.stderr}`.includes("cannot contain HIGH")) throw new Error("recovery PASS accepted HIGH finding");
+  must(state, ["recovery-review", "--repo", tmp, "--actor", judgeId, "--session-id", `/root/${judgeId}`, "--verdict", "PASS"]);
+  const closeAction = JSON.parse(must(path.join(root, "scripts", "acef-supervisor"), ["--repo", tmp])).action;
+  if (closeAction.type !== "commit-story-close" || !closeAction.packagePaths.length) throw new Error("supervisor did not produce recovered close package");
+  must("git", ["add", "-f", "--", ...closeAction.packagePaths]);
+  must("git", ["commit", "-qm", "chore: close recovered story", "--", ...closeAction.packagePaths]);
+  const transitionAction = JSON.parse(must(path.join(root, "scripts", "acef-supervisor"), ["--repo", tmp])).action;
+  if (transitionAction.type !== "transition" || transitionAction.command !== ".acef/bin/acef-state story-transition --repo .") {
+    throw new Error("durable recovered close did not authorize story transition");
+  }
+  must(state, ["story-transition", "--repo", tmp]);
+  active = read("docs/ai/ACEF_ACTIVE_RUN.json");
+  if (active.activeStory !== "Story 4.2" || active.activePhase !== "readiness"
+    || active.dispatchReadinessContract !== "full-v3-dispatch-readiness-v1") {
+    throw new Error("recovered story transition did not bind readiness for the next frozen story");
+  }
+  console.log("dispatch recovery tests passed");
+} finally {
+  fs.rmSync(tmp, { recursive: true, force: true });
+}

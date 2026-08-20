@@ -6,6 +6,8 @@ const crypto = require("node:crypto");
 const os = require("node:os");
 const {
   parseActiveRun,
+  parseActiveRunRecovery,
+  parseRecoveryReviewDecision,
   parseActorRecord,
   parseApproval,
   parseControlDosing,
@@ -70,6 +72,8 @@ Usage:
   acef-state objective-defect --repo <path> --objective-id <id> --id <id> --source review|manual-qa|broad-suite --defect-class <class> --summary <text> --discovered-in-run <id> [--defect-status <status> --batch-key <key> --root-cause-key <key>]
   acef-state objective-defect-transition --repo <path> --objective-id <id> --id <id> --defect-status batched|escalated|fixed|deferred|legacy-quarantined [--batch-key <key>]
   acef-state migrate-active-run --repo <path> --workflow-id quick-fix|lightweight|full-bmad [--assurance baseline|guarded] [--assurance-rationale <text>] [--assurance-approval <approval-id>]
+  acef-state recover-active-run --repo <path> --red-commit <sha> --product-commit <sha> --red-artifact <path> --reason <text> -- <exact-focused-command>
+  acef-state recovery-review --repo <path> --actor <canonical-id> --session-id <id> --verdict PASS|REPLAN [--finding SEVERITY:id:reason]...
   acef-state direct-run --repo <path> --run-id <id> --status active|complete|promoted --scope <scope> --acceptance <criterion>... --technical-boundary <kind> --reversible true [--changed-path <path>...] [--verification-command <command> --verification-exit-code <code>]... [options]
   acef-state actor --repo <path> --id <id> --story <scope> --phase <phase> --role <role> --client <client> --context-profile <profile> [options]
   acef-state worker-scope --repo <path> --story <scope> --phase <phase> --worker-id <id> --allow <glob>... [--allow-command <exact-command>...] [--surface <name>...] [--pattern-use <kind>] [--requires-round-trip true|false] [--binding <input>><output>:<field>[:defaultMaskingRisk]] [options]
@@ -330,7 +334,7 @@ function isControlPath(filePath) {
     || /^_bmad(?:-output)?\//.test(normalized)
     || /^docs\/ai\/ACEF_[^/]+\.(?:json|md)$/.test(normalized)
     || normalized === "docs/ai/ACEF_ACTIVE_LEDGER"
-    || /^docs\/ai\/(?:actors|gates|evidence|reports|approvals|repairs|corrections|capsules|judges|objectives)\//.test(normalized);
+    || /^docs\/ai\/(?:actors|gates|evidence|reports|approvals|repairs|corrections|capsules|judges|objectives|recoveries)\//.test(normalized);
 }
 
 function dirtyApplicationPaths(repo) {
@@ -506,6 +510,7 @@ function writeActiveRun(opts) {
     : undefined;
   const installation = readInstallationManifest(opts.repo);
   const installedRuntimeDefault = installation?.components?.tools?.defaultRuntimeContract;
+  const installedDispatchReadinessContract = installation?.components?.tools?.dispatchReadinessContract;
   const runtimeContract = sameRun
     ? (opts.runtimeContract || previousRuntimeContract)
     : (opts.runtimeContract || (workflowId === "full-bmad" && fullFlowContract === "four-actor-v3"
@@ -517,6 +522,11 @@ function writeActiveRun(opts) {
     && fullFlowContract === "four-actor-v3" && !runtimeContract) {
     throw new Error(`installed ${installedRuntimeDefault} requires a runtimeContract before Full v3 bootstrap`);
   }
+  const dispatchReadinessContract = sameRun
+    ? previous.dispatchReadinessContract
+    : (workflowId === "full-bmad" && fullFlowContract === "four-actor-v3"
+      && installedDispatchReadinessContract === "full-v3-dispatch-readiness-v1"
+      ? installedDispatchReadinessContract : undefined);
   const riskTriggers = opts.riskTrigger.length ? opts.riskTrigger : [];
   const assuranceProfile = opts.assurance || (riskRequiresGuarded(riskTriggers) ? "guarded" : "baseline");
   const scopeUnit = opts.scopeUnit || (opts.epic ? "epic" : "story");
@@ -575,6 +585,7 @@ function writeActiveRun(opts) {
     ...(quickFixContract ? { quickFixContract } : {}),
     ...(fullFlowContract ? { fullFlowContract } : {}),
     ...(runtimeContract ? { runtimeContract } : {}),
+    ...(dispatchReadinessContract ? { dispatchReadinessContract } : {}),
     ...(objectiveContract ? { objectiveContract } : {}),
     ...(objectiveId ? { objectiveId, scopeFingerprint, objectivePath: objectiveRelativePath } : {}),
     ...(objectiveDefectIds?.length ? { objectiveDefectIds } : {}),
@@ -730,6 +741,406 @@ function migrateActiveRun(opts) {
   syncRuntimeContext(opts.repo, record);
   persistObjectiveHeartbeat(opts.repo, record);
   console.log(`MIGRATED active-run ${relative(opts.repo, target)} workflow=${workflowId} assurance=${assuranceProfile}`);
+}
+
+function committedBlob(repo, commit, relativePath) {
+  try {
+    return cp.execFileSync("git", ["show", `${commit}:${relativePath}`], {
+      cwd: repo,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+  } catch {
+    throw new Error(`recovery artifact is not committed at ${commit}: ${relativePath}`);
+  }
+}
+
+function writeActiveRunRecovery(opts) {
+  required(opts, ["redCommit", "productCommit", "redArtifact", "reason"]);
+  if (!opts.commandArgv.length) throw new Error("recover-active-run requires one exact focused command after --");
+  if (!String(opts.reason).trim()) throw new Error("recover-active-run reason must be non-empty");
+  if (!/^[a-f0-9]{7,40}$/i.test(opts.redCommit) || !/^[a-f0-9]{7,40}$/i.test(opts.productCommit)) {
+    throw new Error("recover-active-run commit arguments must be hexadecimal commit ids");
+  }
+  const activePath = path.join(opts.repo, "docs", "ai", "ACEF_ACTIVE_RUN.json");
+  if (!fs.existsSync(activePath)) throw new Error("recover-active-run requires docs/ai/ACEF_ACTIVE_RUN.json");
+  const freshnessFailures = installationFreshnessFailures(opts.repo);
+  if (freshnessFailures.length) throw new Error(`recover-active-run installation freshness failed: ${freshnessFailures.join("; ")}`);
+  const activeRun = parseActiveRun(activePath);
+  const receiptPath = path.join(opts.repo, "docs", "ai", "recoveries", `${safeId(activeRun.runId, "run id")}-legacy-dispatch-recovery.json`);
+  if (fs.existsSync(receiptPath)) {
+    const existing = parseActiveRunRecovery(receiptPath);
+    const requestedRed = runGit(opts.repo, ["rev-parse", "--verify", `${opts.redCommit}^{commit}`]);
+    const requestedProduct = runGit(opts.repo, ["rev-parse", "--verify", `${opts.productCommit}^{commit}`]);
+    const requestedCommand = opts.commandArgv.map(quoteArg).join(" ");
+    const existingRaw = path.resolve(opts.repo, existing.verification.rawArtifact.path);
+    if (existing.runId === activeRun.runId && normalizedScope(existing.story) === normalizedScope(activeRun.activeStory)
+      && existing.redCommit === requestedRed && existing.productCommit === requestedProduct
+      && existing.redArtifact.path === String(opts.redArtifact).replaceAll(path.sep, "/")
+      && existing.reason === String(opts.reason).trim() && existing.verification.command === requestedCommand
+      && fs.existsSync(existingRaw) && sha256(fs.readFileSync(existingRaw)) === existing.verification.rawArtifact.sha256) {
+      console.log(`UNCHANGED active-run recovery ${relative(opts.repo, receiptPath)} status=${existing.reviewStatus}`);
+      return;
+    }
+    throw new Error(`Refusing to overwrite immutable recovery receipt: ${relative(opts.repo, receiptPath)}`);
+  }
+  if (activeRun.status !== "active" || activeRun.workflowId !== "full-bmad"
+    || activeRun.fullFlowContract !== "four-actor-v3" || !capsuleRuntime(activeRun)
+    || activeRun.scopeUnit !== "story" || activeRun.dispatchReadinessContract !== undefined) {
+    throw new Error("recover-active-run requires an active legacy-nonretroactive Full v3 capsule story without dispatchReadinessContract");
+  }
+  const installation = readInstallationManifest(opts.repo);
+  if (installation?.components?.tools?.dispatchReadinessContract !== "full-v3-dispatch-readiness-v1") {
+    throw new Error("recover-active-run requires an installation that advertises full-v3-dispatch-readiness-v1");
+  }
+  const phase = canonicalGatePhase(activeRun.activePhase);
+  if (phase !== "development") throw new Error(`recover-active-run has no unambiguous mapping for phase ${activeRun.activePhase}`);
+  const scopeCandidate = activeRun.workerScopePath
+    ? path.resolve(opts.repo, activeRun.workerScopePath)
+    : path.join(opts.repo, "docs", "ai", "ACEF_ACTIVE_WORKER_SCOPE.json");
+  if (!fs.existsSync(scopeCandidate)) throw new Error("recover-active-run requires the typed active worker scope");
+  const repoReal = fs.realpathSync(opts.repo);
+  const scopePath = fs.realpathSync(scopeCandidate);
+  const scopeRelative = path.relative(repoReal, scopePath);
+  if (!scopeRelative || scopeRelative.startsWith("..") || path.isAbsolute(scopeRelative)) {
+    throw new Error("recover-active-run worker scope path escapes the repository or resolves through an external symlink");
+  }
+  const workerScope = parseWorkerScope(scopePath);
+  if (workerScope.runId !== activeRun.runId
+    || normalizedScope(workerScope.activeStory) !== normalizedScope(activeRun.activeStory)
+    || canonicalGatePhase(workerScope.phase) !== phase) {
+    throw new Error("recover-active-run worker scope must match the active run, story, and canonical phase");
+  }
+  const redCommit = runGit(opts.repo, ["rev-parse", "--verify", `${opts.redCommit}^{commit}`]);
+  const productCommit = runGit(opts.repo, ["rev-parse", "--verify", `${opts.productCommit}^{commit}`]);
+  const headCommit = gitCommit(opts.repo);
+  if (!gitIsAncestor(opts.repo, redCommit, productCommit) || productCommit !== headCommit) {
+    throw new Error("recover-active-run requires redCommit -> productCommit and productCommit must equal HEAD");
+  }
+  let redParent;
+  try { redParent = runGit(opts.repo, ["rev-parse", `${redCommit}^`]); }
+  catch { throw new Error("recover-active-run red commit must have a parent"); }
+  const redPaths = runGit(opts.repo, ["diff", "--name-only", `${redParent}..${redCommit}`]).split(/\r?\n/).filter(Boolean);
+  const redTests = redPaths.filter(testPath);
+  if (!redTests.length || !redPaths.every((filePath) => testPath(filePath) || isControlPath(filePath))) {
+    throw new Error("recover-active-run red commit must contain tests and only test/control paths");
+  }
+  const redTestSources = redTests.map((filePath) => ({
+    filePath,
+    source: committedBlob(opts.repo, redCommit, filePath).toString("utf8"),
+  }));
+  const authenticityFailure = atddTestSourceAuthenticityFailure(redTestSources);
+  if (authenticityFailure) throw new Error(`recover-active-run ${authenticityFailure}`);
+  const redArtifact = String(opts.redArtifact).replaceAll(path.sep, "/");
+  if (!redArtifact || path.isAbsolute(redArtifact) || redArtifact.split("/").includes("..")
+    || !isControlPath(redArtifact) || !redPaths.includes(redArtifact)) {
+    throw new Error("recover-active-run red artifact must be a control path changed by the red commit");
+  }
+  const redArtifactBytes = committedBlob(opts.repo, redCommit, redArtifact);
+  const redArtifactText = redArtifactBytes.toString("utf8");
+  if (!/\bRED\b/i.test(redArtifactText) || !/\b(?:FAIL|FAILED|FAILURE|FAILURES)\b/i.test(redArtifactText)) {
+    throw new Error("recover-active-run red artifact must explicitly record a RED failure");
+  }
+  const productDelta = applicationChangedSince(opts.repo, redCommit, productCommit);
+  const productPaths = productDelta.filter((filePath) => !testPath(filePath));
+  const productTestPaths = productDelta.filter(testPath);
+  if (!productPaths.length) throw new Error("recover-active-run product commit must descend from RED with an implementation change");
+  const outsideImplementationScope = productPaths.filter((filePath) => !scopeAllows(workerScope.allowedPaths || [], filePath));
+  if (outsideImplementationScope.length) {
+    throw new Error(`recover-active-run implementation paths escape worker scope: ${outsideImplementationScope.join(", ")}`);
+  }
+  const outsideRedScope = redTests.filter((filePath) => !scopeAllows(workerScope.allowedPaths || [], filePath));
+  const outOfScopeProductTestPaths = productTestPaths.filter((filePath) => !scopeAllows(workerScope.allowedPaths || [], filePath));
+  const commandText = opts.commandArgv.map(quoteArg).join(" ");
+  if (!(workerScope.allowedCommands || []).includes(commandText)) {
+    throw new Error(`recover-active-run focused command is not exactly authorized by workerScope.allowedCommands: ${commandText}`);
+  }
+  const beforeDirty = dirtyApplicationPaths(opts.repo);
+  if (beforeDirty.length) throw new Error(`recover-active-run requires a clean application/test tree: ${beforeDirty.join(", ")}`);
+
+  const startedAt = new Date().toISOString();
+  const execution = cp.spawnSync(opts.commandArgv[0], opts.commandArgv.slice(1), {
+    cwd: opts.repo, encoding: "utf8", env: process.env, maxBuffer: 100 * 1024 * 1024,
+  });
+  const finishedAt = new Date().toISOString();
+  const exitCode = Number.isInteger(execution.status) ? execution.status : 1;
+  const afterDirty = dirtyApplicationPaths(opts.repo);
+  if (afterDirty.length) throw new Error(`recover-active-run focused command dirtied application/test paths: ${afterDirty.join(", ")}`);
+  if (exitCode !== 0) {
+    throw new Error(`recover-active-run focused command did not PASS (exit ${exitCode})`);
+  }
+  const recoveryId = `${activeRun.runId}-legacy-dispatch-recovery`;
+  const rawPath = path.join(opts.repo, "docs", "ai", "recoveries", `${safeId(recoveryId, "recovery id")}-focused-green.log`);
+  if (fs.existsSync(rawPath)) throw new Error(`Refusing to overwrite immutable recovery raw output: ${relative(opts.repo, rawPath)}`);
+  const raw = [
+    `command: ${commandText}`,
+    `started_at: ${startedAt}`,
+    `finished_at: ${finishedAt}`,
+    "exit_code: 0",
+    "result: PASS",
+    execution.signal ? `signal: ${execution.signal}` : "",
+    "", "--- stdout ---", execution.stdout || "", "--- stderr ---", execution.stderr || execution.error?.message || "",
+  ].filter((line) => line !== "").join("\n");
+  fs.mkdirSync(path.dirname(rawPath), { recursive: true });
+  fs.writeFileSync(rawPath, `${raw}\n`);
+  const beforeActive = fs.readFileSync(activePath);
+  const beforeScope = fs.readFileSync(scopePath);
+  const now = new Date().toISOString();
+  const { lane: _lane, executionMigrationRequired: _migration, ...storedRun } = activeRun;
+  const reviewerId = `${capsuleActorPrefix(activeRun)}_recovery_process_judge`;
+  const recoveredRun = {
+    ...storedRun,
+    activePhase: "recovery-review",
+    workerRole: "process-judge",
+    activeActorId: null,
+    nextAllowedStep: "dispatch the one canonical recovery Process Judge",
+    fullLedgerAccess: "denied",
+    maxLines: 120,
+    updatedAt: now,
+  };
+  const recoveredScope = {
+    ...workerScope,
+    phase: "recovery-review",
+    workerId: reviewerId,
+    allowedPaths: [...new Set([...redTests, ...productPaths, ...productTestPaths])].sort(),
+    allowedCommands: [
+      `.acef/bin/acef-state recovery-review --repo . --actor ${reviewerId} --session-id /root/${reviewerId} --verdict PASS`,
+      `.acef/bin/acef-state recovery-review --repo . --actor ${reviewerId} --session-id /root/${reviewerId} --verdict REPLAN`,
+    ],
+    canEditLedger: false,
+    canSpawnAgents: false,
+    createdAt: now,
+  };
+  const activeBytes = Buffer.from(`${JSON.stringify(recoveredRun, null, 2)}\n`);
+  const scopeBytes = Buffer.from(`${JSON.stringify(recoveredScope, null, 2)}\n`);
+  const redTestContinuity = redTests.map((filePath) => {
+    const redSha256 = sha256(committedBlob(opts.repo, redCommit, filePath));
+    const productSha256 = sha256(committedBlob(opts.repo, productCommit, filePath));
+    return { path: filePath, redSha256, productSha256, preserved: redSha256 === productSha256 };
+  });
+  // A pre-upgrade implementation may legitimately strengthen or correct its
+  // original RED test. Preserve both hashes and force the independent recovery
+  // review to decide whether that delta weakened the behavioral contract.
+  const changedRedTests = redTestContinuity.filter((entry) => !entry.preserved).map((entry) => entry.path);
+  const receipt = {
+    schema: "acef.active-run-recovery.v1",
+    recoveryId,
+    runId: activeRun.runId,
+    story: activeRun.activeStory,
+    classification: "imported-pre-upgrade-red",
+    disposition: "legacy-nonretroactive",
+    canonicalEvidence: false,
+    requiresIndependentRecoveryReview: true,
+    reviewStatus: "pending-review",
+    reason: String(opts.reason).trim(),
+    redCommit,
+    productCommit,
+    headCommit,
+    installation: {
+      sourceCommit: installation.acefVersion.sourceCommit,
+      dispatchReadinessContract: installation.components.tools.dispatchReadinessContract,
+    },
+    redArtifact: { path: redArtifact, sha256: sha256(redArtifactBytes) },
+    redTests: redTestContinuity,
+    changedRedTests,
+    outOfScopeRedTests: outsideRedScope,
+    productPaths,
+    productTestPaths,
+    outOfScopeProductTestPaths,
+    verification: {
+      command: commandText,
+      commandArgv: opts.commandArgv,
+      exitCode: 0,
+      result: "PASS",
+      repositoryCommit: headCommit,
+      repositoryTree: gitTree(opts.repo),
+      rawArtifact: { path: relative(opts.repo, rawPath), sha256: sha256(fs.readFileSync(rawPath)) },
+      dirtyApplicationPathsBefore: beforeDirty,
+      dirtyApplicationPathsAfter: afterDirty,
+      startedAt,
+      finishedAt,
+    },
+    before: { activeRunSha256: sha256(beforeActive), workerScopeSha256: sha256(beforeScope) },
+    after: { activeRunSha256: sha256(activeBytes), workerScopeSha256: sha256(scopeBytes) },
+    createdAt: now,
+  };
+  atomicJson(activePath, recoveredRun, { overwrite: true, validate: parseActiveRun });
+  atomicJson(scopePath, recoveredScope, { overwrite: true, validate: parseWorkerScope });
+  atomicJson(receiptPath, receipt, { validate: parseActiveRunRecovery });
+  syncRuntimeContext(opts.repo, recoveredRun, recoveredScope);
+  persistObjectiveHeartbeat(opts.repo, recoveredRun);
+  console.log(`RECOVERED active-run ${relative(opts.repo, activePath)} receipt=${relative(opts.repo, receiptPath)}`);
+}
+
+function parseRecoveryFindings(entries) {
+  return entries.map((entry) => {
+    const [rawSeverity, id, ...reasonParts] = String(entry).split(":");
+    const severity = String(rawSeverity || "").toUpperCase();
+    const reason = reasonParts.join(":").trim();
+    if (!["LOW", "MEDIUM", "HIGH", "CRITICAL"].includes(severity) || !id?.trim() || !reason) {
+      throw new Error("--finding must be LOW|MEDIUM|HIGH|CRITICAL:id:reason");
+    }
+    return { severity, id: id.trim(), reason };
+  });
+}
+
+function writeRecoveryReview(opts) {
+  required(opts, ["actor", "sessionId", "verdict"]);
+  if (!["PASS", "REPLAN"].includes(opts.verdict)) throw new Error("recovery-review verdict must be PASS or REPLAN");
+  const freshnessFailures = installationFreshnessFailures(opts.repo);
+  if (freshnessFailures.length) throw new Error(`recovery-review installation freshness failed: ${freshnessFailures.join("; ")}`);
+  const activePath = path.join(opts.repo, "docs", "ai", "ACEF_ACTIVE_RUN.json");
+  const activeRun = parseActiveRun(activePath);
+  if (activeRun.status !== "active" || activeRun.workflowId !== "full-bmad"
+    || activeRun.fullFlowContract !== "four-actor-v3" || !capsuleRuntime(activeRun)
+    || activeRun.scopeUnit !== "story" || canonicalGatePhase(activeRun.activePhase) !== "recoveryreview") {
+    throw new Error("recovery-review requires an active Full v3 story in recovery-review phase");
+  }
+  const actorId = `${capsuleActorPrefix(activeRun)}_recovery_process_judge`;
+  if (opts.actor !== actorId) throw new Error(`recovery-review actor must be the canonical id ${actorId}`);
+  const actorFile = actorPath(opts.repo, actorId);
+  if (fs.existsSync(actorFile)) throw new Error(`Refusing to overwrite immutable recovery Judge actor: ${relative(opts.repo, actorFile)}`);
+  const receiptPath = path.join(opts.repo, "docs", "ai", "recoveries", `${safeId(activeRun.runId, "run id")}-legacy-dispatch-recovery.json`);
+  const receipt = parseActiveRunRecovery(receiptPath);
+  const receiptBytes = fs.readFileSync(receiptPath);
+  const rawCandidate = path.resolve(opts.repo, receipt.verification.rawArtifact.path);
+  const reviewRepoReal = fs.realpathSync(opts.repo);
+  if (!fs.existsSync(rawCandidate)) throw new Error("recovery-review focused PASS raw artifact is missing");
+  const rawPath = fs.realpathSync(rawCandidate);
+  const rawRelative = path.relative(reviewRepoReal, rawPath);
+  if (!rawRelative || rawRelative.startsWith("..") || path.isAbsolute(rawRelative)) {
+    throw new Error("recovery-review raw artifact escapes the repository or resolves through an external symlink");
+  }
+  const headCommit = gitCommit(opts.repo);
+  const headTree = gitTree(opts.repo);
+  if (receipt.runId !== activeRun.runId || normalizedScope(receipt.story) !== normalizedScope(activeRun.activeStory)
+    || receipt.reviewStatus !== "pending-review" || receipt.productCommit !== headCommit || receipt.headCommit !== headCommit
+    || receipt.verification.repositoryCommit !== headCommit || receipt.verification.repositoryTree !== headTree) {
+    throw new Error("recovery-review receipt is stale or does not bind the active run/story/current HEAD");
+  }
+  if (sha256(fs.readFileSync(rawPath)) !== receipt.verification.rawArtifact.sha256
+    || receipt.verification.exitCode !== 0 || receipt.verification.result !== "PASS") {
+    throw new Error("recovery-review focused PASS raw artifact is missing or hash-invalid");
+  }
+  const rawText = fs.readFileSync(rawPath, "utf8");
+  if (!/\bexit_code:\s*0\b/i.test(rawText) || !/\bresult:\s*PASS\b/i.test(rawText)) {
+    throw new Error("recovery-review raw artifact does not record the focused PASS result");
+  }
+  const dirty = dirtyApplicationPaths(opts.repo);
+  if (dirty.length) throw new Error(`recovery-review requires a clean application/test tree: ${dirty.join(", ")}`);
+  const findings = parseRecoveryFindings(opts.finding);
+  if (opts.verdict === "PASS" && findings.some((finding) => ["HIGH", "CRITICAL"].includes(finding.severity))) {
+    throw new Error("recovery-review PASS cannot contain HIGH or CRITICAL findings");
+  }
+  const workerScopeCandidate = activeRun.workerScopePath
+    ? path.resolve(opts.repo, activeRun.workerScopePath)
+    : path.join(opts.repo, "docs", "ai", "ACEF_ACTIVE_WORKER_SCOPE.json");
+  if (!fs.existsSync(workerScopeCandidate)) throw new Error("recovery-review requires its typed worker scope");
+  const workerScopePath = fs.realpathSync(workerScopeCandidate);
+  const workerScopeRelative = path.relative(reviewRepoReal, workerScopePath);
+  if (!workerScopeRelative || workerScopeRelative.startsWith("..") || path.isAbsolute(workerScopeRelative)) {
+    throw new Error("recovery-review worker scope path escapes the repository or resolves through an external symlink");
+  }
+  const workerScope = parseWorkerScope(workerScopePath);
+  if (workerScope.runId !== activeRun.runId || normalizedScope(workerScope.activeStory) !== normalizedScope(activeRun.activeStory)
+    || canonicalGatePhase(workerScope.phase) !== "recoveryreview" || workerScope.workerId !== actorId) {
+    throw new Error("recovery-review requires the dedicated canonical recovery worker scope");
+  }
+  const scopePaths = [...new Set([
+    ...receipt.redTests.map((entry) => entry.path), ...receipt.productPaths, ...receipt.productTestPaths,
+  ])].sort();
+  const outsideImplementationScope = receipt.productPaths.filter((filePath) => !scopeAllows(workerScope.allowedPaths, filePath));
+  if (outsideImplementationScope.length) {
+    throw new Error(`recovery-review implementation paths escape worker scope: ${outsideImplementationScope.join(", ")}`);
+  }
+  const decisionId = `${actorId}-decision`;
+  const decisionPath = path.join(opts.repo, "docs", "ai", "judges", `${safeId(decisionId, "decision id")}.json`);
+  const gateId = `${normalizedActorToken(activeRun.activeStory)}-recovered-close`;
+  const gatePath = path.join(opts.repo, "docs", "ai", "gates", `${safeId(gateId, "gate id")}.json`);
+  if (fs.existsSync(decisionPath) || fs.existsSync(gatePath)) throw new Error("recovery-review decision/gate is immutable and already exists");
+  const now = new Date().toISOString();
+  const decision = {
+    schema: "acef.recovery-review-decision.v1",
+    runId: activeRun.runId,
+    story: activeRun.activeStory,
+    actorId,
+    actorSessionId: String(opts.sessionId),
+    inputCommit: headCommit,
+    inputTree: headTree,
+    recoveryReceiptPath: relative(opts.repo, receiptPath),
+    recoveryReceiptSha256: sha256(receiptBytes),
+    rawArtifactSha256: receipt.verification.rawArtifact.sha256,
+    verdict: opts.verdict,
+    findings,
+    createdAt: now,
+  };
+  atomicJson(decisionPath, decision, { validate: parseRecoveryReviewDecision });
+  const runtime = resolveRoleRuntime(loadModelRoutingPolicy(opts.repo).record, "process-judge");
+  const actor = {
+    actorInstanceId: actorId,
+    runId: activeRun.runId,
+    fullFlowContract: activeRun.fullFlowContract,
+    storyInventory: activeRun.expectedStories,
+    story: activeRun.activeStory,
+    phase: "recovery-review",
+    role: "process-judge",
+    client: "codex",
+    model: runtime.model,
+    reasoningEffort: runtime.reasoningEffort,
+    sessionId: String(opts.sessionId),
+    parentSessionId: null,
+    promptArtifactHash: sha256(receiptBytes),
+    inputCommit: headCommit,
+    inputTree: headTree,
+    allowedContextProfile: "recovery-process-judge",
+    producedArtifactHash: sha256(fs.readFileSync(decisionPath)),
+    producedArtifactPath: relative(opts.repo, decisionPath),
+    createdAt: now,
+  };
+  atomicJson(actorFile, actor, { validate: parseActorRecord });
+  const gate = {
+    gateId,
+    gateType: "recovered-story-close-v1",
+    decisionMode: "actor",
+    runId: activeRun.runId,
+    fullFlowContract: activeRun.fullFlowContract,
+    storyInventory: activeRun.expectedStories,
+    scope: activeRun.activeStory,
+    verdict: opts.verdict,
+    decidedBy: actorId,
+    repositoryCommit: headCommit,
+    repositoryTree: headTree,
+    applicationCommit: headCommit,
+    applicationTree: applicationTreeDigest(opts.repo, headCommit, scopePaths),
+    scopePaths,
+    validatorVersion: "recovered-story-close-v1",
+    evidenceIds: [receipt.recoveryId],
+    recoveryReceiptPath: relative(opts.repo, receiptPath),
+    recoveryReceiptSha256: sha256(receiptBytes),
+    decisionPath: relative(opts.repo, decisionPath),
+    decisionSha256: sha256(fs.readFileSync(decisionPath)),
+    statePaths: [
+      relative(opts.repo, activePath),
+      workerScopeRelative.replaceAll(path.sep, "/"),
+      relative(opts.repo, path.resolve(opts.repo, activeRun.contextPath || "docs/ai/ACEF_CURRENT_CONTEXT.md")),
+    ],
+    unresolvedFindings: findings,
+    createdAt: now,
+  };
+  atomicJson(gatePath, gate, { validate: parseGateVerdict });
+  const { lane: _lane, executionMigrationRequired: _migration, ...storedRun } = activeRun;
+  const reviewedRun = {
+    ...storedRun,
+    workerRole: "process-judge",
+    activeActorId: actorId,
+    nextAllowedStep: opts.verdict === "PASS"
+      ? "commit the exact recovered story-close control package"
+      : "replan the recovered story before further product writes",
+    updatedAt: now,
+  };
+  atomicJson(activePath, reviewedRun, { overwrite: true, validate: parseActiveRun });
+  syncRuntimeContext(opts.repo, reviewedRun, workerScope);
+  persistObjectiveHeartbeat(opts.repo, reviewedRun);
+  console.log(`WROTE recovery-review ${relative(opts.repo, decisionPath)} gate=${gateId} verdict=${opts.verdict}`);
 }
 
 function writeDirectRun(opts) {
@@ -1582,7 +1993,7 @@ function parseUnresolvedFindings(entries) {
   });
 }
 
-function priorDeterministicStoryGates(repo, scope, activeRun) {
+function priorDeterministicStoryGates(repo, scope, activeRun, includeRecovered = false) {
   const gateDir = path.join(repo, "docs", "ai", "gates");
   if (!fs.existsSync(gateDir)) return [];
   const records = [];
@@ -1594,7 +2005,8 @@ function priorDeterministicStoryGates(repo, scope, activeRun) {
     } catch (error) {
       throw new Error(`cannot compute deterministic repair cycle with invalid gate ${fileName}: ${error.message}`);
     }
-    if (gate.gateType !== "deterministic-story-close-v3" || gate.runId !== activeRun.runId
+    if (!(gate.gateType === "deterministic-story-close-v3"
+        || (includeRecovered && gate.gateType === "recovered-story-close-v1")) || gate.runId !== activeRun.runId
       || gate.fullFlowContract !== activeRun.fullFlowContract || normalizedScope(gate.scope) !== normalizedScope(scope)) continue;
     records.push({ gate, fileName });
   }
@@ -2048,7 +2460,8 @@ function writeLegacyGate(opts) {
   if (/^\s*story\b/i.test(opts.scope) && normalizedScope(judge.story) !== normalizedScope(opts.scope)) {
     throw new Error(`gate actor ${opts.decidedBy} belongs to ${judge.story}, not ${opts.scope}`);
   }
-  if (opts.verdict === "PASS" && !opts.evidence.length) throw new Error("PASS gate requires at least one --evidence id");
+  const v3EpicClose = activeRun?.fullFlowContract === "four-actor-v3" && activeRun.scopeUnit === "epic";
+  if (opts.verdict === "PASS" && !opts.evidence.length && !v3EpicClose) throw new Error("PASS gate requires at least one --evidence id");
   for (const evidenceId of opts.evidence) {
     const evidence = gateEvidence(opts.repo, evidenceId, opts.scope, { enforceScope: /^\s*story\b/i.test(opts.scope) });
     if (opts.verdict === "PASS" && evidence.exitCode !== 0) throw new Error(`PASS gate cannot cite failed evidence ${evidenceId}`);
@@ -2077,7 +2490,7 @@ function writeLegacyGate(opts) {
     if (fs.existsSync(gateDir)) {
       for (const fileName of fs.readdirSync(gateDir).filter((name) => name.endsWith(".json"))) {
         const candidate = parseGateVerdict(path.join(gateDir, fileName));
-        if (candidate.gateType === "deterministic-story-close-v3"
+        if (["deterministic-story-close-v3", "recovered-story-close-v1"].includes(candidate.gateType)
           && candidate.runId === activeRun.runId && candidate.fullFlowContract === activeRun.fullFlowContract) storyGates.push(candidate);
       }
     }
@@ -2101,13 +2514,14 @@ function writeLegacyGate(opts) {
         record.storyGateVerdicts[story] = "MISSING";
         continue;
       }
-      entries.sort((left, right) => left.reviewCycle - right.reviewCycle);
+      entries.sort((left, right) => Number(left.reviewCycle || 0) - Number(right.reviewCycle || 0));
       const passes = entries.filter((candidate) => candidate.verdict === "PASS");
       record.storyGateVerdicts[story] = entries.at(-1).verdict;
       if (opts.verdict === "PASS" && (passes.length !== 1 || entries.at(-1).verdict !== "PASS")) {
         throw new Error(`${story} must have exactly one terminal deterministic PASS before Epic close`);
       }
-      if (opts.verdict === "PASS" && !record.evidenceIds.includes(passes[0].greenEvidenceId)) {
+      if (opts.verdict === "PASS" && passes[0].gateType === "deterministic-story-close-v3"
+        && !record.evidenceIds.includes(passes[0].greenEvidenceId)) {
         throw new Error(`Epic close must aggregate ${passes[0].scope} green evidence ${passes[0].greenEvidenceId}`);
       }
     }
@@ -2141,9 +2555,8 @@ function writePhaseTransition(opts) {
     || (current === "atddcorrection" && requested === "development")
     || (current === "development" && requested === "codereview");
   if (!allowed) throw new Error(`invalid capsule-supervisor phase transition ${activeRun.activePhase} -> ${opts.phase}`);
-  const installation = readInstallationManifest(opts.repo);
   if (current === "readiness" && requested === "atdd"
-    && installation?.components?.tools?.dispatchReadinessContract === "full-v3-dispatch-readiness-v1") {
+    && activeRun.dispatchReadinessContract === "full-v3-dispatch-readiness-v1") {
     const failures = evaluateProcessChecks(opts.repo, FULL_V3_DISPATCH_CHECKS).filter((item) => !item.ok);
     if (failures.length) {
       throw new Error(`readiness -> ATDD blocked: ${failures.map((item) => `${item.name}: ${item.message}`).join("; ")}`);
@@ -2203,10 +2616,10 @@ function writePhaseTransition(opts) {
 function writeStoryTransition(opts) {
   const activeRun = activeV3Run(opts.repo);
   if (!capsuleRuntime(activeRun) || activeRun.scopeUnit !== "story"
-    || canonicalGatePhase(activeRun.activePhase) !== "codereview") {
-    throw new Error("story-transition requires an active capsule-supervisor story in code-review");
+    || !["codereview", "recoveryreview"].includes(canonicalGatePhase(activeRun.activePhase))) {
+    throw new Error("story-transition requires an active capsule-supervisor story in code-review or recovery-review");
   }
-  const gates = priorDeterministicStoryGates(opts.repo, activeRun.activeStory, activeRun);
+  const gates = priorDeterministicStoryGates(opts.repo, activeRun.activeStory, activeRun, true);
   const latestEntry = gates.at(-1);
   const latest = latestEntry?.gate;
   if (!latest || latest.verdict !== "PASS") {
@@ -2228,6 +2641,7 @@ function writeStoryTransition(opts) {
   const record = nextStory
     ? {
       ...storedRun,
+      dispatchReadinessContract: "full-v3-dispatch-readiness-v1",
       scopeUnit: "story",
       activeStory: nextStory,
       activePhase: "readiness",
@@ -2238,6 +2652,7 @@ function writeStoryTransition(opts) {
     }
     : {
       ...storedRun,
+      dispatchReadinessContract: "full-v3-dispatch-readiness-v1",
       scopeUnit: "epic",
       activeStory: activeRun.activeEpic || "Epic closeout",
       activePhase: "epic-process-judge",
@@ -2678,6 +3093,8 @@ function main() {
   if (opts.command === "objective-defect") return writeObjectiveDefect(opts);
   if (opts.command === "objective-defect-transition") return writeObjectiveDefectTransition(opts);
   if (opts.command === "migrate-active-run") return migrateActiveRun(opts);
+  if (opts.command === "recover-active-run") return writeActiveRunRecovery(opts);
+  if (opts.command === "recovery-review") return writeRecoveryReview(opts);
   if (opts.command === "direct-run") return writeDirectRun(opts);
   if (opts.command === "actor") return writeActor(opts);
   if (opts.command === "worker-scope") return writeWorkerScope(opts);

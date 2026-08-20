@@ -1,0 +1,25 @@
+{
+  "capabilityId": "inflight-full-v3-recovery",
+  "requestedIntent": "Recover a pre-contract Full v3 story whose product commit is safe but whose runtime state drifted, without replaying readiness or ATDD and without weakening future-story gates.",
+  "status": "enforced",
+  "requiredLayers": ["docs", "schema", "cli", "validator", "workflow", "tests", "installer"],
+  "implementedLayers": {
+    "docs": ["CHANGELOG.md#In-flight-Full-v3-runs-recover-without-replaying-BMAD", "AGENTS.md", "skills/acef/SKILL.md#In-flight-runtime-recovery", "method/BMAD_V2_LANE.md"],
+    "schema": ["schemas/active-run-v2.schema.json", "schemas/active-run-recovery-v1.schema.json", "schemas/recovery-review-decision-v1.schema.json"],
+    "cli": ["scripts/acef-state", "scripts/acef-status", "scripts/acef-next", "scripts/acef-supervisor"],
+    "validator": ["scripts/lib/acef-run-authorization.js", "scripts/lib/acef-story-close.js", "scripts/acef-process-validator"],
+    "workflow": ["scripts/acef-supervisor", "scripts/lib/acef-state-parser.js", "scripts/lib/acef-story-close.js"],
+    "tests": ["scripts/test-acef-dispatch-recovery", "scripts/test-acef-run-authorization", "scripts/test-acef-capsule-supervisor", "scripts/test-install-acef-tools"],
+    "installer": ["scripts/install-acef-tools", "scripts/update-acef-installation"]
+  },
+  "limitations": [
+    "Recovery is limited to an active pre-contract Full v3 story with committed RED-to-product lineage and one exact focused verification command.",
+    "Imported RED remains non-canonical and cannot satisfy an ordinary deterministic story-close gate.",
+    "The capability is enforced rather than proven until a controlled product recovery completes without an escaped defect."
+  ],
+  "evidence": [
+    {"layer": "tests", "ref": "scripts/test-acef-dispatch-recovery", "note": "Covers non-retroactive dispatch, focused recovery, independent PASS, exact close commit, and next-story readiness binding."},
+    {"layer": "tests", "ref": "scripts/test-acef-run-authorization", "note": "Covers fail-closed phase, role, actor, next-step, and worker-scope coherence."}
+  ],
+  "createdAt": "2026-08-20"
+}

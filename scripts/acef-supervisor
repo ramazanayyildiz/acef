@@ -5,6 +5,7 @@ const crypto = require("node:crypto");
 const cp = require("node:child_process");
 const {
   parseActiveRun,
+  parseActiveRunRecovery,
   parseActorRecord,
   parseEvidenceManifest,
   parseGateVerdict,
@@ -43,6 +44,34 @@ function files(dir) {
 function readRecord(parser, filePath) {
   try { return parser(filePath); }
   catch (error) { throw new Error(`${filePath}: ${error.message}`); }
+}
+
+function discoverCurrentRunActors(repo, dir, run, storyKey) {
+  const records = [];
+  const ignoredPaths = [];
+  for (const filePath of files(dir)) {
+    let raw;
+    try { raw = JSON.parse(fs.readFileSync(filePath, "utf8")); }
+    catch {
+      // An unreadable candidate cannot prove that it belongs to another run,
+      // so the strict parser below must fail closed with the canonical error.
+    }
+    const rawRecord = raw && typeof raw === "object" && !Array.isArray(raw) ? raw : null;
+    const hasRawRunId = rawRecord !== null && Object.hasOwn(rawRecord, "runId");
+    const rawRunId = typeof rawRecord?.runId === "string" && rawRecord.runId.trim()
+      ? rawRecord.runId : null;
+    const rawStoryKey = typeof rawRecord?.story === "string" && rawRecord.story.trim()
+      ? token(rawRecord.story) : null;
+    const differentRun = rawRunId !== null && rawRunId !== run.runId;
+    const unrelatedLegacyStory = !hasRawRunId && rawStoryKey !== null && rawStoryKey !== storyKey;
+    if (differentRun || unrelatedLegacyStory) {
+      ignoredPaths.push(path.relative(repo, filePath).replaceAll(path.sep, "/"));
+      continue;
+    }
+    const record = readRecord(parseActorRecord, filePath);
+    if (token(record.story) === storyKey && record.runId === run.runId) records.push(record);
+  }
+  return { records, ignoredPaths };
 }
 
 function readCapsule(filePath) {
@@ -131,9 +160,8 @@ function build(repo) {
   const storyKey = token(story);
   const headCommit = git(repo, ["rev-parse", "HEAD"]);
   const headTree = git(repo, ["rev-parse", "HEAD^{tree}"]);
-  const actors = files(path.join(repo, "docs", "ai", "actors"))
-    .map((filePath) => readRecord(parseActorRecord, filePath))
-    .filter((record) => token(record.story) === storyKey && record.runId === run.runId);
+  const actorDiscovery = discoverCurrentRunActors(path.resolve(repo), path.join(repo, "docs", "ai", "actors"), run, storyKey);
+  const actors = actorDiscovery.records;
   const allEvidence = files(path.join(repo, "docs", "ai", "evidence"))
     .map((filePath) => readRecord(parseEvidenceManifest, filePath));
   const evidence = allEvidence
@@ -189,7 +217,7 @@ function build(repo) {
     const judgeExists = hasActor(judgeId);
     const storyPassGates = (run.expectedStories || []).map((expectedStory) => allGates
       .filter((record) => record.runId === run.runId && record.fullFlowContract === run.fullFlowContract
-        && record.gateType === "deterministic-story-close-v3"
+        && ["deterministic-story-close-v3", "recovered-story-close-v1"].includes(record.gateType)
         && token(record.scope) === token(expectedStory) && record.verdict === "PASS")
       .sort((left, right) => Number(left.reviewCycle || 0) - Number(right.reviewCycle || 0)).at(-1))
       .filter(Boolean);
@@ -306,6 +334,63 @@ function build(repo) {
           correctionBindingSha256: sha256(fs.readFileSync(bindingPath)),
           reason: "fresh independent ATDD actor must repair only frozen tests and bind replacement behavioral red evidence",
         };
+      }
+    }
+  } else if (currentPhase === "recoveryreview") {
+    const judgeId = actorId("recovery_process_judge");
+    const recoveryGate = gates.find((record) => record.gateType === "recovered-story-close-v1") || null;
+    const receiptPath = path.join(repo, "docs", "ai", "recoveries", `${run.runId}-legacy-dispatch-recovery.json`);
+    if (!fs.existsSync(receiptPath)) {
+      action = { type: "blocked", reason: "recovery-review phase lacks its immutable pending-review receipt" };
+    } else if (!recoveryGate) {
+      const receipt = readRecord(parseActiveRunRecovery, receiptPath);
+      if (hasActor(judgeId)) {
+        action = { type: "replan", reason: "recovery Process Judge actor exists without its immutable decision/gate" };
+      } else {
+        const base = `.acef/bin/acef-state recovery-review --repo . --actor ${judgeId} --session-id /root/${judgeId}`;
+        action = {
+          type: "dispatch",
+          role: "recovery-review",
+          actorInstanceId: judgeId,
+          runtime: runtime["story-judge"],
+          recoveryReceipt: {
+            path: path.relative(repo, receiptPath).replaceAll(path.sep, "/"),
+            sha256: sha256(fs.readFileSync(receiptPath)),
+            changedRedTests: receipt.changedRedTests,
+            outOfScopeProductTestPaths: receipt.outOfScopeProductTestPaths,
+          },
+          decisionCommands: {
+            PASS: `${base} --verdict PASS`,
+            REPLAN: `${base} --verdict REPLAN`,
+          },
+          reason: "dispatch exactly one calibrated Process Judge over the hash-bound recovered RED/product/PASS package",
+        };
+      }
+    } else if (recoveryGate.verdict !== "PASS") {
+      action = { type: "replan", reason: "independent recovery Process Judge returned REPLAN" };
+    } else {
+      const gatePath = path.join(repo, "docs", "ai", "gates", `${recoveryGate.gateId}.json`);
+      const closePackage = validateDurableStoryClosePackage(repo, recoveryGate, gatePath);
+      if (closePackage.ok) {
+        action = {
+          type: "transition",
+          nextPhase: "next-story-or-epic-close",
+          command: ".acef/bin/acef-state story-transition --repo .",
+          storyCloseCommit: closePackage.packageCommit,
+          reason: "independent recovery PASS and its exact close package are durably committed",
+        };
+      } else if (!closePackage.gateCommitted) {
+        const pathspec = closePackage.packagePaths.map(quote).join(" ");
+        action = {
+          type: "commit-story-close",
+          gateId: recoveryGate.gateId,
+          packagePaths: closePackage.packagePaths,
+          stageCommand: `git add -f -- ${pathspec}`,
+          commitCommand: `git commit -m ${quote(`chore(acef): close recovered ${story}`)} -- ${pathspec}`,
+          reason: "commit the exact recovered receipt/raw/Judge/gate/state package before story transition",
+        };
+      } else {
+        action = { type: "replan", reason: `committed recovered story-close package is invalid: ${closePackage.failures.join("; ")}` };
       }
     }
   } else if (currentPhase === "development") {
@@ -513,6 +598,12 @@ function build(repo) {
     stateSha256: sha256(JSON.stringify(state)),
     state,
     action,
+    diagnostics: actorDiscovery.ignoredPaths.length ? [{
+      code: "ignored-unrelated-actor-records",
+      count: actorDiscovery.ignoredPaths.length,
+      samplePaths: actorDiscovery.ignoredPaths.slice(0, 5),
+      truncated: actorDiscovery.ignoredPaths.length > 5,
+    }] : [],
     modelPolicy: {
       active: routingPolicy.record.policyId,
       provider: routingPolicy.record.activeProvider,

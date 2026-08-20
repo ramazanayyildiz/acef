@@ -44,6 +44,12 @@ readiness session or repeat a full PRD/NFR inventory unless a named source confl
 independent judgment. Do not dispatch ATDD until status/next agree that every mandatory dispatch gate passes and the
 worker scope freezes every executable evidence/discovery command plus bounded test and implementation paths.
 
+Do not apply a newly installed dispatch-readiness contract retroactively to an in-flight Full v3 story. If a
+pre-contract story already has committed RED/product lineage but its phase, role, or worker state drifted, use the
+typed `acef-state recover-active-run ... -- <exact-focused-command>` path once. Imported RED remains non-canonical;
+one independent Recovery Judge and an exact recovered close commit are required. The next story then binds the current
+readiness contract. Never replay readiness/ATDD or invent provenance merely to modernize old state.
+
 Do not turn a batch of independent defects into one Full story. If intake contains multiple root causes or unrelated
 audit findings, return `REPLAN/SPLIT` before active-run bootstrap and route each proven bounded defect independently.
 Full is for one coherent planning-heavy contract, not a container for repair batches.

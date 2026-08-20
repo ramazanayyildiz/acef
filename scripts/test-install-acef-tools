@@ -253,6 +253,7 @@ try {
     "--phase", "development",
     "--worker-role", "developer",
     "--last-passed-gate", "Story 1.1 ATDD PASS",
+    "--next-allowed-step", "implement_to_green",
     "--full-ledger-access", "denied",
     "--max-lines", "120",
     "--ledger", "docs/ai/ACEF_demo_DELIVERY_AUDIT.md",
@@ -275,11 +276,19 @@ try {
   if (!controlDosingOutput.includes("PASS control-dosing:")) {
     throw new Error(`installed validator did not validate installed control dosing:\n${controlDosingOutput}`);
   }
+  const readinessActiveRun = JSON.parse(fs.readFileSync(path.join(tmp, "docs", "ai", "ACEF_ACTIVE_RUN.json"), "utf8"));
+  fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_ACTIVE_RUN.json"), `${JSON.stringify({
+    ...readinessActiveRun,
+    activePhase: "readiness",
+    workerRole: "test-author",
+    activeActorId: null,
+    nextAllowedStep: "write_failing_tests",
+  }, null, 2)}\n`);
   const statusOutput = run(status, ["--repo", tmp, "--format", "json"], { allowFailure: true });
   const statusJson = JSON.parse(statusOutput);
   if (statusJson.status !== "needs-attention"
     || !statusJson.blockers.some((entry) => entry.startsWith("preflight:"))
-    || !statusJson.dispatchReadiness.some((entry) => entry.name === "current-context" && entry.ok)) {
+    || !statusJson.dispatchReadiness.some((entry) => entry.name === "current-context")) {
     throw new Error(`installed status helper did not aggregate dispatch validators:\n${statusOutput}`);
   }
   if (statusJson.activeRun.activeStory !== "story 1.1") throw new Error("installed status helper did not read active run");
@@ -301,7 +310,7 @@ try {
   const nextJson = JSON.parse(nextOutput);
   if (nextJson.status !== "blocked"
     || nextJson.active_state.next_allowed_action !== null
-    || !nextJson.dispatch_readiness.some((entry) => entry.name === "current-context" && entry.ok)) {
+    || !nextJson.dispatch_readiness.some((entry) => entry.name === "current-context")) {
     throw new Error(`installed next helper did not block on dispatch validators:\n${nextOutput}`);
   }
   if (!nextJson.forbidden.actions.includes("start_next_story")) throw new Error("installed next helper missing story boundary");

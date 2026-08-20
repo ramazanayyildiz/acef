@@ -144,7 +144,8 @@ try {
     schema: "acef.installation.v1",
     components: { tools: { dispatchReadinessContract: "full-v3-dispatch-readiness-v1" } },
   }, null, 2)}\n`);
-  const readinessRun = { ...invalidCapsuleAtdd, runId: "RUN-next-readiness", activePhase: "readiness", workerRole: "test-author" };
+  const readinessRun = { ...invalidCapsuleAtdd, runId: "RUN-next-readiness", activePhase: "readiness", workerRole: "test-author",
+    dispatchReadinessContract: "full-v3-dispatch-readiness-v1" };
   fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_ACTIVE_RUN.json"), `${JSON.stringify(readinessRun, null, 2)}\n`);
   fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_ACTIVE_WORKER_SCOPE.json"), `${JSON.stringify({
     runId: readinessRun.runId, activeStory: "Story 2.2", phase: "readiness",

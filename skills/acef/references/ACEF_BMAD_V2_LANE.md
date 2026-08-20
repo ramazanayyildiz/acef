@@ -68,6 +68,12 @@ installation/objective freshness, preflight, intake/lane selection, spec readine
 reconciliation, Epic Context Pack, Current Context, and run authorization. `acef-status` and `acef-next` report the same
 bundle; they may not say `ready` while one of those gates fails.
 
+An installation upgrade must not impose a new dispatch-readiness contract on an in-flight story. A legacy Full v3
+story with committed RED/product lineage uses the one-time typed `recover-active-run` path: validate ancestry and
+scope, execute one exact focused GREEN command, then obtain one independent Recovery Judge decision. Imported RED
+remains non-canonical. Only a durably committed `recovered-story-close-v1` PASS may advance the run; the next story
+binds the current dispatch-readiness contract.
+
 Readiness is a conductor-owned delta gate, not a default fresh persona session. Reuse approved PRD, architecture,
 prototype, test design, and prior analysis by path/hash. Reinspect only the active story's changed or conflicting facts;
 do not regenerate those artifacts or enumerate the full unrelated FR/NFR corpus as `N/A`. A fresh readiness actor is

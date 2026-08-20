@@ -43,6 +43,140 @@ function normalizedScope(value) {
   return String(value || "").toLowerCase().replace(/[^a-z0-9]+/g, "");
 }
 
+function normalizedActorToken(value) {
+  return String(value || "").toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+}
+
+function canonicalCapsulePhase(value) {
+  const phase = normalizedScope(value);
+  const aliases = {
+    dev: "development",
+    developer: "development",
+    review: "codereview",
+    reviewer: "codereview",
+    codereviewer: "codereview",
+    testreview: "patchassurance",
+    testreviewer: "patchassurance",
+    verifypatch: "patchassurance",
+    verifier: "patchassurance",
+    storyprocessjudge: "processjudge",
+  };
+  return aliases[phase] || phase;
+}
+
+function capsuleActorId(activeRun, role) {
+  const story = normalizedActorToken(activeRun.activeStory);
+  const prefix = activeRun.runtimeContract === "capsule-supervisor-v2"
+    ? `acef_${normalizedActorToken(activeRun.runId)}_${story}`
+    : `acef_${story}`;
+  return `${prefix}_${role}`;
+}
+
+function capsuleControlPlaneBlockers(repoRoot, activeRun, workerScope) {
+  if (!activeRun || activeRun.status !== "active" || activeRun.workflowId !== "full-bmad"
+    || activeRun.fullFlowContract !== "four-actor-v3"
+    || !["capsule-supervisor-v1", "capsule-supervisor-v2"].includes(activeRun.runtimeContract)
+    || activeRun.scopeUnit !== "story") return [];
+
+  const phase = canonicalCapsulePhase(activeRun.activePhase);
+  const contracts = {
+    atdd: {
+      workerRole: "test-author",
+      nextAllowedStep: "write_failing_tests",
+      actorRole: "test-author",
+      actorPhase: "atdd",
+      actorId: capsuleActorId(activeRun, "atdd"),
+    },
+    development: {
+      workerRole: "developer",
+      nextAllowedStep: "implement_to_green",
+      fullLedgerAccess: "denied",
+      maxLines: 120,
+      actorRole: "developer",
+      actorPhase: "development",
+      actorId: capsuleActorId(activeRun, "development"),
+    },
+    atddcorrection: {
+      workerRole: "test-author",
+      nextAllowedStep: "commit the bounded ATDD correction transition, then follow the supervisor",
+      actorRole: "test-author",
+      actorPhase: "atdd",
+      actorId: capsuleActorId(activeRun, "atdd_correction1"),
+      workerPhase: "atddcorrection",
+    },
+    recoveryreview: {
+      workerRole: "process-judge",
+      nextAllowedSteps: [
+        "dispatch the one canonical recovery Process Judge",
+        "commit the exact recovered story-close control package",
+        "replan the recovered story before further product writes",
+      ],
+      fullLedgerAccess: "denied",
+      maxLines: 120,
+      actorRole: "process-judge",
+      actorPhase: "recoveryreview",
+      actorId: capsuleActorId(activeRun, "recovery_process_judge"),
+      workerPhase: "recoveryreview",
+    },
+  };
+  const contract = contracts[phase];
+  if (!contract) return [];
+
+  const failures = [];
+  if (activeRun.workerRole !== contract.workerRole) {
+    failures.push(`capsule-supervisor ${activeRun.activePhase} phase requires workerRole ${contract.workerRole}, got ${activeRun.workerRole ?? "null"}`);
+  }
+  const expectedNextSteps = contract.nextAllowedSteps || [contract.nextAllowedStep];
+  if (!expectedNextSteps.includes(activeRun.nextAllowedStep)) {
+    failures.push(`capsule-supervisor ${activeRun.activePhase} phase requires nextAllowedStep ${expectedNextSteps.join(" or ")}, got ${activeRun.nextAllowedStep ?? "null"}`);
+  }
+  if (contract.fullLedgerAccess !== undefined && activeRun.fullLedgerAccess !== contract.fullLedgerAccess) {
+    failures.push(`capsule-supervisor ${activeRun.activePhase} phase requires fullLedgerAccess ${contract.fullLedgerAccess}, got ${activeRun.fullLedgerAccess ?? "null"}`);
+  }
+  if (contract.maxLines !== undefined && activeRun.maxLines !== contract.maxLines) {
+    failures.push(`capsule-supervisor ${activeRun.activePhase} phase requires maxLines ${contract.maxLines}, got ${activeRun.maxLines ?? "null"}`);
+  }
+  if (!workerScope) {
+    failures.push(`capsule-supervisor ${activeRun.activePhase} phase requires its canonical worker scope`);
+  } else {
+    const expectedWorkerPhase = contract.workerPhase || contract.actorPhase;
+    if (canonicalCapsulePhase(workerScope.phase) !== expectedWorkerPhase) {
+      failures.push(`capsule-supervisor worker scope phase ${workerScope.phase} does not match canonical phase ${activeRun.activePhase}`);
+    }
+    if (workerScope.workerId !== contract.actorId) {
+      failures.push(`capsule-supervisor worker scope workerId ${workerScope.workerId} does not match canonical ${activeRun.activePhase} actor ${contract.actorId}`);
+    }
+  }
+
+  // A null actor is the valid pre-dispatch state. Once bound, it must be the
+  // one canonical identity for this run/story/phase and its typed actor record
+  // must agree with that identity.
+  if (activeRun.activeActorId !== null && activeRun.activeActorId !== undefined) {
+    if (activeRun.activeActorId !== contract.actorId) {
+      failures.push(`capsule-supervisor activeActorId ${activeRun.activeActorId} does not match canonical ${activeRun.activePhase} actor ${contract.actorId}`);
+    } else {
+      const actorPath = path.join(repoRoot, "docs", "ai", "actors", `${activeRun.activeActorId}.json`);
+      const parsedActor = loadParsed(actorPath, parseActorRecord, "invalid active capsule actor");
+      if (!parsedActor.exists) failures.push(`active capsule actor not found: docs/ai/actors/${activeRun.activeActorId}.json`);
+      if (parsedActor.error) failures.push(parsedActor.error);
+      if (parsedActor.record) {
+        const actor = parsedActor.record;
+        if (actor.actorInstanceId !== activeRun.activeActorId
+          || actor.runId !== activeRun.runId
+          || actor.fullFlowContract !== activeRun.fullFlowContract
+          || normalizedScope(actor.story) !== normalizedScope(activeRun.activeStory)
+          || canonicalCapsulePhase(actor.phase) !== contract.actorPhase
+          || actor.role !== contract.actorRole) {
+          failures.push(`active capsule actor record does not match the canonical ${activeRun.activePhase} role identity`);
+        }
+      }
+    }
+  }
+  return failures.length
+    ? [`capsule-supervisor control-plane drift: ${failures.join("; ")}; recover the active run before writes`]
+    : [];
+}
+
 function workerTestPath(filePath) {
   return /(^|\/)(__tests__|tests?|specs?)(\/|$)|(\.|-)(test|spec)\.[cm]?[jt]sx?$|Test\.(php|py|rb|cs)$/i.test(String(filePath || ""));
 }
@@ -56,7 +190,9 @@ function capsuleWorkerScopeBlockers(activeRun, workerScope) {
   if (!workerScope || !["capsule-supervisor-v1", "capsule-supervisor-v2"].includes(activeRun?.runtimeContract)
     || activeRun.scopeUnit !== "story" || activeRun.status !== "active") return [];
   const failures = [];
-  if (!Array.isArray(workerScope.allowedCommands) || !workerScope.allowedCommands.length) {
+  const recoveryReview = normalizedScope(activeRun.activePhase) === "recoveryreview"
+    && normalizedScope(workerScope.phase) === "recoveryreview";
+  if (!recoveryReview && (!Array.isArray(workerScope.allowedCommands) || !workerScope.allowedCommands.length)) {
     failures.push("capsule-supervisor story worker scope is missing exact allowedCommands; regenerate it with --allow-command");
   }
   if (normalizedScope(activeRun.activePhase) === "atdd" && normalizedScope(workerScope.phase) === "atdd") {
@@ -231,6 +367,7 @@ function inspectRunAuthorization(repo, options = {}) {
     }
     blockers.push(...capsuleWorkerScopeBlockers(activeRun, scope.record));
   }
+  blockers.push(...capsuleControlPlaneBlockers(repoRoot, activeRun, scope.record));
 
   return {
     ok: blockers.length === 0,
@@ -247,6 +384,7 @@ function inspectRunAuthorization(repo, options = {}) {
 }
 
 module.exports = {
+  capsuleControlPlaneBlockers,
   completedCapsuleTerminalBlockers,
   finalStoryScopeAtV3EpicClose,
   inspectRunAuthorization,

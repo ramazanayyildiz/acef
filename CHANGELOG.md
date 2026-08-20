@@ -9,6 +9,18 @@ or evidence contract. Do not use it to claim implementation status; link to the 
 
 ## Unreleased
 
+### In-flight Full v3 runs recover without replaying BMAD
+
+- Bound dispatch readiness to the run that started with the contract, so an ACEF upgrade no longer applies new
+  readiness gates retroactively to a story already in Development or review.
+- Added `recover-active-run`: it verifies committed RED/product ancestry, RED authenticity, frozen implementation
+  scope, a clean tree, and one exact focused GREEN command, while keeping imported RED explicitly non-canonical.
+- Added one independent Recovery Judge and `recovered-story-close-v1`; its receipt, GREEN output, actor, decision,
+  gate, and state must be introduced in one exact control-only close commit.
+- Story transition accepts that durable recovered PASS and binds current readiness controls to the next frozen story,
+  so the compatibility exception cannot leak forward.
+- Added fail-closed phase/role/actor/scope coherence and safe prefiltering of unrelated historical actor records.
+
 ### Full v3 startup now fails fast and hands RED directly to Development
 
 - Bound new Full v3 runs to the installation-advertised capsule runtime during their first state write, preventing a

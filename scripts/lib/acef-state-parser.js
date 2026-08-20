@@ -195,6 +195,12 @@ function parseActiveRun(filePath) {
         throw new Error("active run runtimeContract requires full-bmad/four-actor-v3");
       }
     }
+    if (record.dispatchReadinessContract !== undefined) {
+      requireEnum(record, "dispatchReadinessContract", ["full-v3-dispatch-readiness-v1"], "active run");
+      if (record.workflowId !== "full-bmad" || record.fullFlowContract !== "four-actor-v3") {
+        throw new Error("active run dispatchReadinessContract requires full-bmad/four-actor-v3");
+      }
+    }
     if (record.objectiveContract !== undefined) {
       requireEnum(record, "objectiveContract", ["objective-supervisor-v1"], "active run");
       requireFields(record, ["objectiveId", "scopeFingerprint", "objectivePath"], "objective-supervised active run");
@@ -351,6 +357,89 @@ function parseActiveRun(filePath) {
     }
   }
   return normalizeExecutionState(record);
+}
+
+function parseActiveRunRecovery(filePath) {
+  const record = readJson(filePath);
+  requireFields(record, [
+    "schema", "recoveryId", "runId", "story", "classification", "disposition",
+    "canonicalEvidence", "requiresIndependentRecoveryReview", "reviewStatus", "reason",
+    "redCommit", "productCommit", "headCommit", "installation", "redArtifact",
+    "redTests", "changedRedTests", "outOfScopeRedTests", "productPaths", "productTestPaths", "outOfScopeProductTestPaths", "verification", "before", "after", "createdAt",
+  ], "active run recovery");
+  if (record.schema !== "acef.active-run-recovery.v1") throw new Error("active run recovery schema must be acef.active-run-recovery.v1");
+  requireEnum(record, "classification", ["imported-pre-upgrade-red"], "active run recovery");
+  requireEnum(record, "disposition", ["legacy-nonretroactive"], "active run recovery");
+  requireEnum(record, "reviewStatus", ["pending-review"], "active run recovery");
+  if (record.canonicalEvidence !== false || record.requiresIndependentRecoveryReview !== true) {
+    throw new Error("active run recovery must remain non-canonical and independently reviewed");
+  }
+  for (const field of ["redCommit", "productCommit", "headCommit"]) {
+    if (typeof record[field] !== "string" || !/^[a-f0-9]{40}$/.test(record[field])) {
+      throw new Error(`active run recovery ${field} must be a full lowercase commit id`);
+    }
+  }
+  requireObject(record, "installation", "active run recovery");
+  requireFields(record.installation, ["sourceCommit", "dispatchReadinessContract"], "active run recovery installation");
+  requireObject(record, "redArtifact", "active run recovery");
+  requireFields(record.redArtifact, ["path", "sha256"], "active run recovery redArtifact");
+  if (!Array.isArray(record.redTests) || !record.redTests.length) throw new Error("active run recovery redTests must not be empty");
+  for (const [index, test] of record.redTests.entries()) {
+    requireFields(test, ["path", "redSha256", "productSha256", "preserved"], `active run recovery redTests[${index}]`);
+    if (typeof test.preserved !== "boolean") throw new Error(`active run recovery redTests[${index}].preserved must be boolean`);
+  }
+  requireStringArray(record, "changedRedTests", "active run recovery");
+  requireStringArray(record, "outOfScopeRedTests", "active run recovery");
+  requireStringArray(record, "productPaths", "active run recovery", { nonEmpty: true });
+  requireStringArray(record, "productTestPaths", "active run recovery");
+  requireStringArray(record, "outOfScopeProductTestPaths", "active run recovery");
+  requireObject(record, "verification", "active run recovery");
+  requireFields(record.verification, [
+    "command", "commandArgv", "exitCode", "result", "repositoryCommit", "repositoryTree",
+    "rawArtifact", "dirtyApplicationPathsBefore", "dirtyApplicationPathsAfter", "startedAt", "finishedAt",
+  ], "active run recovery verification");
+  requireStringArray(record.verification, "commandArgv", "active run recovery verification", { nonEmpty: true });
+  if (record.verification.exitCode !== 0 || record.verification.result !== "PASS") {
+    throw new Error("active run recovery verification must be a passing single execution");
+  }
+  requireStringArray(record.verification, "dirtyApplicationPathsBefore", "active run recovery verification");
+  requireStringArray(record.verification, "dirtyApplicationPathsAfter", "active run recovery verification");
+  if (record.verification.dirtyApplicationPathsBefore.length || record.verification.dirtyApplicationPathsAfter.length) {
+    throw new Error("active run recovery verification must have a clean application/test tree");
+  }
+  requireObject(record.verification, "rawArtifact", "active run recovery verification");
+  requireFields(record.verification.rawArtifact, ["path", "sha256"], "active run recovery verification rawArtifact");
+  for (const field of ["before", "after"]) {
+    requireObject(record, field, "active run recovery");
+    requireFields(record[field], ["activeRunSha256", "workerScopeSha256"], `active run recovery ${field}`);
+  }
+  return record;
+}
+
+function parseRecoveryReviewDecision(filePath) {
+  const record = readJson(filePath);
+  const fields = [
+    "schema", "runId", "story", "actorId", "actorSessionId", "inputCommit", "inputTree",
+    "recoveryReceiptPath", "recoveryReceiptSha256", "rawArtifactSha256", "verdict", "findings", "createdAt",
+  ];
+  rejectUnknownFields(record, fields, "recovery review decision");
+  requireFields(record, fields, "recovery review decision");
+  if (record.schema !== "acef.recovery-review-decision.v1") {
+    throw new Error("recovery review decision schema must be acef.recovery-review-decision.v1");
+  }
+  requireEnum(record, "verdict", ["PASS", "REPLAN"], "recovery review decision");
+  if (!Array.isArray(record.findings)) throw new Error("recovery review decision findings must be an array");
+  for (const [index, finding] of record.findings.entries()) {
+    requireFields(finding, ["severity", "id", "reason"], `recovery review decision findings[${index}]`);
+    requireEnum(finding, "severity", ["LOW", "MEDIUM", "HIGH", "CRITICAL"], `recovery review decision findings[${index}]`);
+  }
+  if (record.verdict === "PASS" && record.findings.some((finding) => ["HIGH", "CRITICAL"].includes(finding.severity))) {
+    throw new Error("recovery review PASS cannot contain HIGH or CRITICAL findings");
+  }
+  for (const field of ["recoveryReceiptSha256", "rawArtifactSha256"]) {
+    if (!/^[a-f0-9]{64}$/.test(record[field])) throw new Error(`recovery review decision ${field} must be sha256`);
+  }
+  return record;
 }
 
 function parseActorRecord(filePath) {
@@ -539,11 +628,14 @@ function parseGateVerdict(filePath) {
       validateBindingEntry(item, index, "gate verdict inputOutputEvidence", { requireEvidence: true });
     }
   }
-  if (record.verdict === "PASS" && (!Array.isArray(record.evidenceIds) || !record.evidenceIds.length)) {
+  const aggregateEpicPass = record.gateType === "actor-decided-v1"
+    && record.fullFlowContract === "four-actor-v3"
+    && record.storyGateVerdicts && typeof record.storyGateVerdicts === "object";
+  if (record.verdict === "PASS" && (!Array.isArray(record.evidenceIds) || !record.evidenceIds.length) && !aggregateEpicPass) {
     throw new Error("PASS gate verdict requires evidenceIds");
   }
   if (record.gateType !== undefined) {
-    requireEnum(record, "gateType", ["actor-decided-v1", "deterministic-story-close-v3"], "gate verdict");
+    requireEnum(record, "gateType", ["actor-decided-v1", "deterministic-story-close-v3", "recovered-story-close-v1"], "gate verdict");
   }
   if (record.fullFlowContract === "four-actor-v3") {
     requireFields(record, ["runId", "storyInventory"], "four-actor-v3 gate verdict");
@@ -675,6 +767,28 @@ function parseGateVerdict(filePath) {
       requireEnum(record.processJudge, "trigger", ["ambiguity", "waiver", "evidence-conflict", "gate-anomaly"], "deterministic story-close gate processJudge");
       requireEnum(record.processJudge, "verdict", ["ACKNOWLEDGE", "APPROVE_WAIVER"], "deterministic story-close gate processJudge");
       if (!/^[a-f0-9]{64}$/.test(record.processJudge.decisionSha256)) throw new Error("deterministic story-close gate Process Judge decisionSha256 must be sha256");
+    }
+  }
+  if (record.gateType === "recovered-story-close-v1") {
+    requireFields(record, [
+      "runId", "fullFlowContract", "repositoryTree", "applicationCommit", "applicationTree", "scopePaths",
+      "validatorVersion", "recoveryReceiptPath", "recoveryReceiptSha256", "decisionPath", "decisionSha256",
+      "statePaths",
+    ], "recovered story-close gate");
+    if (record.fullFlowContract !== "four-actor-v3" || record.decisionMode !== "actor"
+      || record.validatorVersion !== "recovered-story-close-v1") {
+      throw new Error("recovered story-close gate contract/decision mode/version mismatch");
+    }
+    requireStringArray(record, "scopePaths", "recovered story-close gate", { nonEmpty: true });
+    requireStringArray(record, "statePaths", "recovered story-close gate", { nonEmpty: true });
+    if (record.statePaths.some((entry) => path.isAbsolute(entry) || entry.split(/[\\/]/).includes("..") || !/^docs\/ai\//.test(entry))) {
+      throw new Error(`recovered story-close statePaths must stay inside docs/ai: ${record.statePaths.join(", ")}`);
+    }
+    for (const field of ["recoveryReceiptSha256", "decisionSha256"]) {
+      if (!/^[a-f0-9]{64}$/.test(record[field])) throw new Error(`recovered story-close gate ${field} must be sha256`);
+    }
+    if (record.verdict === "PASS" && record.unresolvedFindings?.some((finding) => ["HIGH", "CRITICAL"].includes(finding.severity))) {
+      throw new Error("recovered story-close PASS cannot contain HIGH or CRITICAL findings");
     }
   }
   return record;
@@ -1543,6 +1657,8 @@ function safeRelative(filePath, root) {
 
 module.exports = {
   parseActiveRun,
+  parseActiveRunRecovery,
+  parseRecoveryReviewDecision,
   parseActorRecord,
   parseReviewReport,
   parseDeveloperRepair,
