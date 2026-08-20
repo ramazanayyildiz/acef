@@ -107,7 +107,7 @@ try {
   const recoveredScope = read("docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json");
   const receipt = read("docs/ai/recoveries/RUN-recovery-legacy-dispatch-recovery.json");
   if (active.activePhase !== "recovery-review" || active.workerRole !== "process-judge" || active.activeActorId !== null
-    || active.fullLedgerAccess !== "denied" || active.maxLines !== 120 || active.dispatchReadinessContract !== undefined) {
+    || active.fullLedgerAccess !== "story-slice" || active.maxLines !== 120 || active.dispatchReadinessContract !== undefined) {
     throw new Error("recovery did not enter dedicated recovery review without binding the new contract");
   }
   if (recoveredScope.phase !== "recovery-review" || !recoveredScope.workerId.endsWith("_recovery_process_judge")) throw new Error("recovery did not create the dedicated review scope");

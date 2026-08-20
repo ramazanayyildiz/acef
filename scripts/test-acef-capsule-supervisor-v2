@@ -72,9 +72,31 @@ try {
 
   activeRun("RUN-one", "development");
   workerScope("acef_run_one_shared_story_development", "development");
+  const evidenceDir = path.join(tmp, "docs", "ai", "evidence");
+  fs.mkdirSync(evidenceDir, { recursive: true });
+  fs.writeFileSync(path.join(evidenceDir, "legacy-unscoped.json"), `${JSON.stringify({
+    evidenceId: "ev-retired-legacy-suite",
+    kind: "runtime-test",
+  }, null, 2)}\n`);
   const firstDispatch = JSON.parse(run(process.execPath, [supervisor, "--repo", tmp]));
   assert.equal(firstDispatch.action.actorInstanceId, "acef_run_one_shared_story_development");
   assert.match(firstDispatch.action.registrationCommand, /--session-id \/root\/acef_run_one_shared_story_development/);
+  const legacyEvidenceDiagnostic = firstDispatch.diagnostics.find((entry) => entry.code === "ignored-unrelated-evidence-records");
+  assert.equal(legacyEvidenceDiagnostic?.count, 1);
+  assert.ok(legacyEvidenceDiagnostic.samplePaths.includes("docs/ai/evidence/legacy-unscoped.json"));
+
+  const currentRunMalformedEvidence = path.join(evidenceDir, "current-run-malformed.json");
+  fs.writeFileSync(currentRunMalformedEvidence, `${JSON.stringify({
+    evidenceId: "run_one-malformed",
+    kind: "runtime-test",
+  }, null, 2)}\n`);
+  const malformedEvidenceCheck = cp.spawnSync(process.execPath, [supervisor, "--repo", tmp], {
+    cwd: tmp,
+    encoding: "utf8",
+  });
+  assert.notEqual(malformedEvidenceCheck.status, 0);
+  assert.match(`${malformedEvidenceCheck.stdout}${malformedEvidenceCheck.stderr}`, /current-run-malformed\.json/);
+  fs.rmSync(currentRunMalformedEvidence);
   stateRun([
     "actor", "--repo", tmp, "--id", firstDispatch.action.actorInstanceId,
     "--story", "Shared Story", "--phase", "development", "--role", "developer",

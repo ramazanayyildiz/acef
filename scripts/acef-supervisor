@@ -74,14 +74,27 @@ function discoverCurrentRunActors(repo, dir, run, storyKey) {
   return { records, ignoredPaths };
 }
 
-function discoverCurrentStoryEvidence(repo, dir, storyKey) {
+function discoverCurrentStoryEvidence(repo, dir, run, storyKey) {
   const records = [];
   const ignoredPaths = [];
   for (const filePath of files(dir)) {
     let raw;
-    try { raw = JSON.parse(fs.readFileSync(filePath, "utf8")); } catch {}
-    const rawStoryKey = raw && typeof raw.story === "string" && raw.story.trim() ? token(raw.story) : null;
-    if (rawStoryKey !== null && rawStoryKey !== storyKey) {
+    try { raw = JSON.parse(fs.readFileSync(filePath, "utf8")); }
+    catch {
+      // An unreadable record cannot prove that it is historical, so the
+      // strict parser below must fail closed with the canonical error.
+    }
+    const rawRecord = raw && typeof raw === "object" && !Array.isArray(raw) ? raw : null;
+    const rawStoryKey = typeof rawRecord?.story === "string" && rawRecord.story.trim()
+      ? token(rawRecord.story) : null;
+    const rawEvidenceId = typeof rawRecord?.evidenceId === "string" && rawRecord.evidenceId.trim()
+      ? rawRecord.evidenceId : null;
+    const v2RunPrefix = `${token(run.runId)}-`;
+    const unrelatedUnscopedV2Evidence = run.runtimeContract === "capsule-supervisor-v2"
+      && rawStoryKey === null
+      && rawEvidenceId !== null
+      && !rawEvidenceId.startsWith(v2RunPrefix);
+    if ((rawStoryKey !== null && rawStoryKey !== storyKey) || unrelatedUnscopedV2Evidence) {
       ignoredPaths.push(path.relative(repo, filePath).replaceAll(path.sep, "/"));
       continue;
     }
@@ -178,7 +191,7 @@ function build(repo) {
   const headTree = git(repo, ["rev-parse", "HEAD^{tree}"]);
   const actorDiscovery = discoverCurrentRunActors(path.resolve(repo), path.join(repo, "docs", "ai", "actors"), run, storyKey);
   const actors = actorDiscovery.records;
-  const evidenceDiscovery = discoverCurrentStoryEvidence(path.resolve(repo), path.join(repo, "docs", "ai", "evidence"), storyKey);
+  const evidenceDiscovery = discoverCurrentStoryEvidence(path.resolve(repo), path.join(repo, "docs", "ai", "evidence"), run, storyKey);
   const allEvidence = evidenceDiscovery.records;
   const evidence = allEvidence
     .filter((record) => token(record.story) === storyKey
