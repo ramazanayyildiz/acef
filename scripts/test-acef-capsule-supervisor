@@ -103,6 +103,18 @@ try {
     throw new Error("supervisor did not prefilter and diagnose unrelated legacy actor records");
   }
 
+  const evidenceDir = path.join(tmp, "docs", "ai", "evidence");
+  fs.mkdirSync(evidenceDir, { recursive: true });
+  fs.writeFileSync(path.join(evidenceDir, "legacy-other-story.json"), `${JSON.stringify({
+    evidenceId: "legacy-other-story", story: "Retired Story", actorInstanceId: "legacy",
+  }, null, 2)}\n`);
+  const unrelatedEvidence = JSON.parse(run(process.execPath, [supervisor, "--repo", tmp]));
+  const evidenceDiagnostic = unrelatedEvidence.diagnostics.find((entry) => entry.code === "ignored-unrelated-evidence-records");
+  if (evidenceDiagnostic?.count !== 1
+    || !evidenceDiagnostic.samplePaths.includes("docs/ai/evidence/legacy-other-story.json")) {
+    throw new Error("supervisor did not prefilter and diagnose unrelated legacy evidence records");
+  }
+
   const currentRunMalformedActor = path.join(actorDir, "current-run-malformed.json");
   fs.writeFileSync(currentRunMalformedActor, `${JSON.stringify({
     runId: "RUN-capsule",

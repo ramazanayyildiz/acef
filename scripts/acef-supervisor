@@ -74,6 +74,22 @@ function discoverCurrentRunActors(repo, dir, run, storyKey) {
   return { records, ignoredPaths };
 }
 
+function discoverCurrentStoryEvidence(repo, dir, storyKey) {
+  const records = [];
+  const ignoredPaths = [];
+  for (const filePath of files(dir)) {
+    let raw;
+    try { raw = JSON.parse(fs.readFileSync(filePath, "utf8")); } catch {}
+    const rawStoryKey = raw && typeof raw.story === "string" && raw.story.trim() ? token(raw.story) : null;
+    if (rawStoryKey !== null && rawStoryKey !== storyKey) {
+      ignoredPaths.push(path.relative(repo, filePath).replaceAll(path.sep, "/"));
+      continue;
+    }
+    records.push(readRecord(parseEvidenceManifest, filePath));
+  }
+  return { records, ignoredPaths };
+}
+
 function readCapsule(filePath) {
   const record = readRecord(parseAssuranceCapsule, filePath);
   const { integrity, ...payload } = record;
@@ -162,8 +178,8 @@ function build(repo) {
   const headTree = git(repo, ["rev-parse", "HEAD^{tree}"]);
   const actorDiscovery = discoverCurrentRunActors(path.resolve(repo), path.join(repo, "docs", "ai", "actors"), run, storyKey);
   const actors = actorDiscovery.records;
-  const allEvidence = files(path.join(repo, "docs", "ai", "evidence"))
-    .map((filePath) => readRecord(parseEvidenceManifest, filePath));
+  const evidenceDiscovery = discoverCurrentStoryEvidence(path.resolve(repo), path.join(repo, "docs", "ai", "evidence"), storyKey);
+  const allEvidence = evidenceDiscovery.records;
   const evidence = allEvidence
     .filter((record) => token(record.story) === storyKey
       && actors.some((actor) => actor.actorInstanceId === record.actorInstanceId))
@@ -598,12 +614,20 @@ function build(repo) {
     stateSha256: sha256(JSON.stringify(state)),
     state,
     action,
-    diagnostics: actorDiscovery.ignoredPaths.length ? [{
-      code: "ignored-unrelated-actor-records",
-      count: actorDiscovery.ignoredPaths.length,
-      samplePaths: actorDiscovery.ignoredPaths.slice(0, 5),
-      truncated: actorDiscovery.ignoredPaths.length > 5,
-    }] : [],
+    diagnostics: [
+      ...(actorDiscovery.ignoredPaths.length ? [{
+        code: "ignored-unrelated-actor-records",
+        count: actorDiscovery.ignoredPaths.length,
+        samplePaths: actorDiscovery.ignoredPaths.slice(0, 5),
+        truncated: actorDiscovery.ignoredPaths.length > 5,
+      }] : []),
+      ...(evidenceDiscovery.ignoredPaths.length ? [{
+        code: "ignored-unrelated-evidence-records",
+        count: evidenceDiscovery.ignoredPaths.length,
+        samplePaths: evidenceDiscovery.ignoredPaths.slice(0, 5),
+        truncated: evidenceDiscovery.ignoredPaths.length > 5,
+      }] : []),
+    ],
     modelPolicy: {
       active: routingPolicy.record.policyId,
       provider: routingPolicy.record.activeProvider,
