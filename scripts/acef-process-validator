@@ -31,6 +31,7 @@ const {
 const { installationFreshnessFailures, readInstallationManifest } = require("./lib/acef-installation");
 const { loadObjective, objectiveFailures } = require("./lib/acef-objective-supervisor");
 const { inspectRunAuthorization } = require("./lib/acef-run-authorization");
+const { recoveredStoryCloseBindingFailures } = require("./lib/acef-story-close");
 const {
   buildAssuranceRequirements,
   derivableRequirementFailures,
@@ -1900,6 +1901,16 @@ function gateDeciderIntegrityFailures(repoRoot, activeRun, gate) {
     return failures;
   }
   if (isFourActorV3(activeRun) && activeRun.scopeUnit !== "epic"
+    && gate.gateType === "recovered-story-close-v1") {
+    if (gate.decisionMode !== "actor") failures.push("recovered story close requires an actor-decided recovery Judge gate");
+    if (gate.runId !== activeRun.runId || gate.fullFlowContract !== activeRun.fullFlowContract
+      || normalizedScope(gate.scope) !== normalizedScope(activeRun.activeStory)) {
+      failures.push("recovered story-close run/contract/story mismatch");
+    }
+    failures.push(...recoveredStoryCloseBindingFailures(repoRoot, gate));
+    return failures;
+  }
+  if (isFourActorV3(activeRun) && activeRun.scopeUnit !== "epic"
     && gate.gateType !== "deterministic-story-close-v3") {
     failures.push("four-actor-v3 story PASS cannot use an actor-decided gate");
     return failures;
@@ -1963,7 +1974,7 @@ function gateDeciderIntegrityFailures(repoRoot, activeRun, gate) {
     for (const filePath of jsonRecords(path.join(repoRoot, "docs", "ai", "gates"))) {
       try {
         const candidate = parseGateVerdict(filePath);
-        if (candidate.gateType === "deterministic-story-close-v3"
+        if (["deterministic-story-close-v3", "recovered-story-close-v1"].includes(candidate.gateType)
           && candidate.runId === gate.runId && candidate.fullFlowContract === gate.fullFlowContract) storyGates.push(candidate);
       } catch {
         // Invalid gate artifacts are rejected by gate-verdict separately.
@@ -1989,8 +2000,13 @@ function gateDeciderIntegrityFailures(repoRoot, activeRun, gate) {
       const passes = ordered.filter((candidate) => candidate.verdict === "PASS");
       if (gate.verdict === "PASS" && (passes.length !== 1 || ordered.at(-1)?.verdict !== "PASS")) {
         failures.push(`${story} must have exactly one terminal deterministic PASS before Epic close`);
-      } else if (gate.verdict === "PASS" && !gate.evidenceIds?.includes(passes[0].greenEvidenceId)) {
-        failures.push(`Epic close does not aggregate ${passes[0].scope} green evidence ${passes[0].greenEvidenceId}`);
+      } else if (gate.verdict === "PASS") {
+        const storyEvidenceIds = passes[0].gateType === "recovered-story-close-v1"
+          ? passes[0].evidenceIds
+          : [passes[0].greenEvidenceId];
+        if (!storyEvidenceIds?.length || storyEvidenceIds.some((evidenceId) => !gate.evidenceIds?.includes(evidenceId))) {
+          failures.push(`Epic close does not aggregate ${passes[0].scope} story evidence`);
+        }
       }
     }
   }
@@ -2459,13 +2475,14 @@ function checkGateVerdict(repoRoot) {
   if (gate) {
     const epicAggregate = isFourActorV3EpicClose(activeRun)
       && gate.gateType === "actor-decided-v1";
+    const recoveredStoryClose = gate.gateType === "recovered-story-close-v1";
     failures.push(...gateDeciderIntegrityFailures(repoRoot, activeRun, gate));
     failures.push(...deterministicGateIntegrityFailures(repoRoot, activeRun, gate));
     const commitError = gate.gateType === "deterministic-story-close-v3"
       ? scopedCommitError(repoRoot, gate.repositoryCommit, `gate ${gate.gateId}`, gate.scopePaths)
       : recordCommitError(repoRoot, gate.repositoryCommit, `gate ${gate.gateId}`);
     if (commitError) failures.push(commitError);
-    for (const evidenceId of gate.evidenceIds || []) {
+    for (const evidenceId of recoveredStoryClose ? [] : (gate.evidenceIds || [])) {
       try {
         const evidence = evidenceRecordById(repoRoot, evidenceId);
         const expectedRed = gate.gateType === "deterministic-story-close-v3" && gate.redEvidenceId === evidenceId;
@@ -2484,7 +2501,7 @@ function checkGateVerdict(repoRoot) {
         failures.push(error.message);
       }
     }
-    const fullSurfaceValidation = isHeavy(activeRun) && !epicAggregate;
+    const fullSurfaceValidation = isHeavy(activeRun) && !epicAggregate && !recoveredStoryClose;
     if (fullSurfaceValidation && !activeScope?.surfaces?.length) {
       failures.push(`${displayName(activeRun)} PASS gate requires active worker scope surfaces`);
     }
@@ -2514,7 +2531,7 @@ function checkGateVerdict(repoRoot) {
         }
       }
     }
-    for (const surfaceEntry of gate.surfaceEvidence || []) {
+    for (const surfaceEntry of recoveredStoryClose ? [] : (gate.surfaceEvidence || [])) {
       try {
         const evidence = evidenceRecordById(repoRoot, surfaceEntry.evidenceId);
         if (evidence.exitCode !== 0) failures.push(`surface ${surfaceEntry.surface} cites failed evidence ${surfaceEntry.evidenceId}`);
@@ -2528,7 +2545,7 @@ function checkGateVerdict(repoRoot) {
         failures.push(error.message);
       }
     }
-    for (const bindingEntry of gate.inputOutputEvidence || []) {
+    for (const bindingEntry of recoveredStoryClose ? [] : (gate.inputOutputEvidence || [])) {
       const label = `${bindingEntry.inputSurface}>${bindingEntry.outputSurface}:${bindingEntry.field}`;
       try {
         const evidence = evidenceRecordById(repoRoot, bindingEntry.evidenceId);
@@ -2540,7 +2557,7 @@ function checkGateVerdict(repoRoot) {
         failures.push(error.message);
       }
     }
-    const scopeRequiresRoundTrip = !epicAggregate && activeScope
+    const scopeRequiresRoundTrip = !epicAggregate && !recoveredStoryClose && activeScope
       && (activeScope.requiresRoundTrip === true || activeScope.patternUse === "new-reusable-pattern");
     if (scopeRequiresRoundTrip) {
       const roundTripSurfaces = new Set((gate.surfaceEvidence || [])
@@ -2553,7 +2570,7 @@ function checkGateVerdict(repoRoot) {
         }
       }
     }
-    if (!epicAggregate && activeScope?.inputOutputBindings?.length) {
+    if (!epicAggregate && !recoveredStoryClose && activeScope?.inputOutputBindings?.length) {
       const bindingEvidence = gate.inputOutputEvidence || [];
       for (const binding of activeScope.inputOutputBindings) {
         const label = `${binding.inputSurface}>${binding.outputSurface}:${binding.field}`;
@@ -2572,7 +2589,7 @@ function checkGateVerdict(repoRoot) {
         }
       }
     }
-    if (requiresDurableStateEvidence) {
+    if (requiresDurableStateEvidence && !recoveredStoryClose) {
       const durableEvidenceIds = [...new Set([
         ...(gate.evidenceIds || []),
         ...(gate.surfaceEvidence || []).map((entry) => entry.evidenceId),
@@ -2595,7 +2612,7 @@ function checkGateVerdict(repoRoot) {
         .map((filePath) => {
           try { return parseGateVerdict(filePath); } catch { return null; }
         })
-        .filter((candidate) => candidate?.gateType === "deterministic-story-close-v3"
+        .filter((candidate) => ["deterministic-story-close-v3", "recovered-story-close-v1"].includes(candidate?.gateType)
           && candidate.runId === activeRun.runId
           && candidate.fullFlowContract === activeRun.fullFlowContract);
       for (const story of activeRun.expectedStories || []) {
@@ -2604,8 +2621,10 @@ function checkGateVerdict(repoRoot) {
         const passes = matching.filter((candidate) => candidate.verdict === "PASS");
         if (!terminal || terminal.verdict !== "PASS" || passes.length !== 1) continue;
         const storyRun = { ...activeRun, activeStory: story, scopeUnit: "story" };
-        failures.push(...deterministicGateIntegrityFailures(repoRoot, storyRun, terminal, { requireCompiledAssurance: true })
-          .map((failure) => `${story}: ${failure}`));
+        const storyFailures = terminal.gateType === "recovered-story-close-v1"
+          ? recoveredStoryCloseBindingFailures(repoRoot, terminal)
+          : deterministicGateIntegrityFailures(repoRoot, storyRun, terminal, { requireCompiledAssurance: true });
+        failures.push(...storyFailures.map((failure) => `${story}: ${failure}`));
         for (const surfaceEntry of terminal.surfaceEvidence || []) {
           if (!terminal.evidenceIds?.includes(surfaceEntry.evidenceId)) {
             failures.push(`${story}: surface ${surfaceEntry.surface} cites evidence outside its story gate`);

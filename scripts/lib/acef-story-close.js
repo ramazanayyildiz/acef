@@ -1,6 +1,7 @@
 "use strict";
 
 const cp = require("node:child_process");
+const crypto = require("node:crypto");
 const fs = require("node:fs");
 const path = require("node:path");
 const {
@@ -92,6 +93,41 @@ function history(repo, relativePath, diffFilter = "") {
   return result.status === 0 ? result.stdout.split(/\r?\n/).filter(Boolean) : [];
 }
 
+function recoveredStoryCloseBindingFailures(repo, gate) {
+  if (gate.gateType !== "recovered-story-close-v1") return [];
+  const failures = [];
+  try {
+    const receiptPath = path.join(repo, controlRelativePath(repo, gate.recoveryReceiptPath));
+    const receipt = parseActiveRunRecovery(receiptPath);
+    const decisionPath = path.join(repo, controlRelativePath(repo, gate.decisionPath));
+    const decision = parseRecoveryReviewDecision(decisionPath);
+    const actorPath = path.join(repo, controlRelativePath(repo,
+      path.join("docs", "ai", "actors", `${gate.decidedBy}.json`)));
+    const actor = parseActorRecord(actorPath);
+    const rawPath = path.join(repo, controlRelativePath(repo, receipt.verification.rawArtifact.path));
+    const digest = (value) => crypto.createHash("sha256").update(value).digest("hex");
+    if (digest(fs.readFileSync(receiptPath)) !== gate.recoveryReceiptSha256
+      || digest(fs.readFileSync(decisionPath)) !== gate.decisionSha256
+      || digest(fs.readFileSync(rawPath)) !== receipt.verification.rawArtifact.sha256
+      || decision.recoveryReceiptSha256 !== gate.recoveryReceiptSha256
+      || decision.rawArtifactSha256 !== receipt.verification.rawArtifact.sha256
+      || decision.runId !== gate.runId || decision.story !== gate.scope
+      || decision.verdict !== gate.verdict || decision.actorId !== gate.decidedBy
+      || actor.actorInstanceId !== gate.decidedBy || actor.sessionId !== decision.actorSessionId
+      || actor.runId !== gate.runId || actor.fullFlowContract !== gate.fullFlowContract
+      || actor.story !== gate.scope || actor.role !== "process-judge"
+      || actor.inputCommit !== gate.applicationCommit || actor.inputTree !== gate.repositoryTree
+      || receipt.runId !== gate.runId || receipt.story !== gate.scope
+      || receipt.productCommit !== gate.applicationCommit || receipt.headCommit !== gate.applicationCommit
+      || receipt.verification.result !== "PASS" || receipt.verification.exitCode !== 0) {
+      failures.push("recovered story-close receipt, raw proof, Judge decision, actor, or gate hash binding is invalid");
+    }
+  } catch (error) {
+    failures.push(`recovered story-close package parse failed: ${error.message}`);
+  }
+  return failures;
+}
+
 function validateDurableStoryClosePackage(repo, gate, gatePath) {
   let packagePaths;
   let ownedPaths;
@@ -135,28 +171,7 @@ function validateDurableStoryClosePackage(repo, gate, gatePath) {
       if (head.status !== 0 || head.stdout.trim() !== packageCommit) {
         failures.push("recovered story-close package commit must be HEAD during transition");
       }
-      try {
-        const receiptPath = path.join(repo, gate.recoveryReceiptPath);
-        const receipt = parseActiveRunRecovery(receiptPath);
-        const decisionPath = path.join(repo, gate.decisionPath);
-        const decision = parseRecoveryReviewDecision(decisionPath);
-        const actor = parseActorRecord(path.join(repo, "docs", "ai", "actors", `${gate.decidedBy}.json`));
-        const digest = (value) => require("node:crypto").createHash("sha256").update(value).digest("hex");
-        const rawPath = path.join(repo, receipt.verification.rawArtifact.path);
-        if (digest(fs.readFileSync(receiptPath)) !== gate.recoveryReceiptSha256
-          || digest(fs.readFileSync(decisionPath)) !== gate.decisionSha256
-          || digest(fs.readFileSync(rawPath)) !== receipt.verification.rawArtifact.sha256
-          || decision.recoveryReceiptSha256 !== gate.recoveryReceiptSha256
-          || decision.rawArtifactSha256 !== receipt.verification.rawArtifact.sha256
-          || decision.verdict !== gate.verdict || decision.actorId !== gate.decidedBy
-          || actor.actorInstanceId !== gate.decidedBy || actor.sessionId !== decision.actorSessionId
-          || actor.inputCommit !== gate.applicationCommit || actor.inputTree !== gate.repositoryTree
-          || receipt.productCommit !== gate.applicationCommit || receipt.headCommit !== gate.applicationCommit) {
-          failures.push("recovered story-close receipt, raw proof, Judge decision, actor, or gate hash binding is invalid");
-        }
-      } catch (error) {
-        failures.push(`recovered story-close package parse failed: ${error.message}`);
-      }
+      failures.push(...recoveredStoryCloseBindingFailures(repo, gate));
     }
     for (const relativePath of ownedPaths) {
       const introductions = history(repo, relativePath, "A");
@@ -177,6 +192,7 @@ function validateDurableStoryClosePackage(repo, gate, gatePath) {
 }
 
 module.exports = {
+  recoveredStoryCloseBindingFailures,
   storyClosePackagePaths,
   validateDurableStoryClosePackage,
 };

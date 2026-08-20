@@ -135,6 +135,10 @@ try {
     "--verdict", "PASS", "--finding", "HIGH:R1:critical recovery concern"]);
   if (highPass.status === 0 || !`${highPass.stdout}${highPass.stderr}`.includes("cannot contain HIGH")) throw new Error("recovery PASS accepted HIGH finding");
   must(state, ["recovery-review", "--repo", tmp, "--actor", judgeId, "--session-id", `/root/${judgeId}`, "--verdict", "PASS"]);
+  for (const check of ["gate-decider", "gate-verdict", "precommit-gate"]) {
+    const validation = must(path.join(root, "scripts", "acef-process-validator"), ["--repo", tmp, "--check", check]);
+    if (!validation.includes(`PASS ${check}`)) throw new Error(`recovered close did not pass ${check}: ${validation}`);
+  }
   const closeAction = JSON.parse(must(path.join(root, "scripts", "acef-supervisor"), ["--repo", tmp])).action;
   if (closeAction.type !== "commit-story-close" || !closeAction.packagePaths.length) throw new Error("supervisor did not produce recovered close package");
   must("git", ["add", "-f", "--", ...closeAction.packagePaths]);

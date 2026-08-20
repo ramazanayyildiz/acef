@@ -111,7 +111,7 @@ function capsuleControlPlaneBlockers(repoRoot, activeRun, workerScope) {
         "commit the exact recovered story-close control package",
         "replan the recovered story before further product writes",
       ],
-      fullLedgerAccess: "denied",
+      fullLedgerAccess: "story-slice",
       maxLines: 120,
       actorRole: "process-judge",
       actorPhase: "recoveryreview",
