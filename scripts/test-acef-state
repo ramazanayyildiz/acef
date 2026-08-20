@@ -8,6 +8,10 @@ const repoRoot = path.resolve(__dirname, "..");
 const state = path.join(repoRoot, "scripts", "acef-state");
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "acef-state-cli-"));
 
+function quoteArg(value) {
+  return /^[A-Za-z0-9_./:@%+=,-]+$/.test(value) ? value : `'${value.replaceAll("'", `'\\''`)}'`;
+}
+
 function run(command, args, options = {}) {
   return cp.execFileSync(command, args, {
     cwd: tmp,
@@ -78,17 +82,35 @@ try {
   runState(["worker-scope", "--repo", tmp, "--story", "Story 1.1", "--phase", "process-judge", "--worker-id", "process-judge", "--allow", "app/**", "--allow", "tests/**", "--surface", "ui", "--pattern-use", "new-reusable-pattern", "--requires-round-trip", "true", "--binding", "admin>ui:image:true"]);
   runState(["approval", "--repo", tmp, "--id", "APP-2", "--decision", "APPROVE", "--scope", "epic:2", "--target-epic", "2", "--quote", "Start Epic 2", "--source-channel", "test"]);
   runState(["evidence-run", "--repo", tmp, "--id", "EV-1", "--kind", "runtime-test", "--actor", "development", "--story", "Story 1.1", "--satisfies", "AC-1", "--", process.execPath, "-e", "console.log('real path ok')"]);
+  for (const relativePath of [
+    ".acef/runtime-note.json",
+    ".agents/skills/acef/runtime-note.md",
+    ".claude/skills/acef/runtime-note.md",
+    "_bmad/core/runtime-note.md",
+    "_bmad-output/planning-artifacts/runtime-note.md",
+    "docs/ai/objectives/runtime-note.json",
+  ]) {
+    fs.mkdirSync(path.dirname(path.join(tmp, relativePath)), { recursive: true });
+    fs.writeFileSync(path.join(tmp, relativePath), "control state\n");
+  }
+  fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_ACTIVE_LEDGER"), "docs/ai/ACEF_demo_DELIVERY_AUDIT.md\n");
   fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_DELIVERY_LEDGER.md"), "# Legacy active delivery ledger\n");
   fs.writeFileSync(path.join(tmp, "docs", "ai", "product-deliverable.md"), "not machine state\n");
   runState(["evidence-run", "--repo", tmp, "--id", "EV-docs-ai-dirty", "--kind", "static-check", "--actor", "development", "--story", "Story 1.1", "--satisfies", "docs-ai-allowlist", "--", process.execPath, "-e", "console.log('probe')"]);
-  if (readJson("docs/ai/evidence/EV-docs-ai-dirty.json").dirtyApplicationPathsBefore.includes("docs/ai/ACEF_DELIVERY_LEDGER.md")) {
+  const controlDirtEvidence = readJson("docs/ai/evidence/EV-docs-ai-dirty.json");
+  if (controlDirtEvidence.dirtyApplicationPathsBefore.includes("docs/ai/ACEF_DELIVERY_LEDGER.md")) {
     throw new Error("legacy unsuffixed delivery ledger was incorrectly classified as application dirt");
   }
-  if (!readJson("docs/ai/evidence/EV-docs-ai-dirty.json").dirtyApplicationPathsBefore.includes("docs/ai/product-deliverable.md")) {
+  if ([".acef/runtime-note.json", ".agents/skills/acef/runtime-note.md", ".claude/skills/acef/runtime-note.md", "_bmad/core/runtime-note.md", "_bmad-output/planning-artifacts/runtime-note.md", "docs/ai/objectives/runtime-note.json", "docs/ai/ACEF_ACTIVE_LEDGER"]
+    .some((relativePath) => controlDirtEvidence.dirtyApplicationPathsBefore.includes(relativePath))) {
+    throw new Error("installed ACEF, agent skill, BMAD planning, or objective state was incorrectly classified as application dirt");
+  }
+  if (!controlDirtEvidence.dirtyApplicationPathsBefore.includes("docs/ai/product-deliverable.md")) {
     throw new Error("arbitrary docs/ai deliverable was incorrectly exempted as machine control state");
   }
   fs.rmSync(path.join(tmp, "docs", "ai", "product-deliverable.md"));
   fs.rmSync(path.join(tmp, "docs", "ai", "ACEF_DELIVERY_LEDGER.md"));
+  fs.rmSync(path.join(tmp, "docs", "ai", "ACEF_ACTIVE_LEDGER"));
   runState(["gate", "--repo", tmp, "--id", "GATE-1", "--scope", "Story 1.1", "--verdict", "PASS", "--decided-by", "process-judge", "--evidence", "EV-1", "--surface-evidence", "ui:EV-1:true:true", "--binding-evidence", "admin>ui:image:EV-1:true:true"]);
 
   const activeRun = readJson("docs/ai/ACEF_ACTIVE_RUN.json");
@@ -155,7 +177,10 @@ try {
     throw new Error("new Full run did not default to four-actor-v3");
   }
   runState(["worker-scope", "--repo", tmp, "--story", "Story 3.1", "--phase", "atdd",
-    "--worker-id", "acef_story_3_1_atdd", "--allow", "app/**", "--allow", "tests/**"]);
+    "--worker-id", "acef_story_3_1_atdd", "--allow", "app/**", "--allow", "tests/**",
+    "--allow-command", `${process.execPath} --test tests/story-3-1-red.test.js`,
+    "--allow-command", `${process.execPath} --test tests/frozen-verification.test.js`,
+    "--allow-command", [process.execPath, "-e", "console.log('Tests\\\\Wrong::identity')"].map(quoteArg).join(" ")]);
   run("git", ["add", "docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json"]);
   run("git", ["commit", "-qm", "bind Story 3.1 worker scope"]);
   const v3AtddActor = "acef_story_3_1_atdd";

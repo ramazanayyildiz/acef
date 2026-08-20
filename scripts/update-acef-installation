@@ -2,6 +2,7 @@
 const cp = require("node:child_process");
 const fs = require("node:fs");
 const path = require("node:path");
+const { rewriteInstallationUpdateCommand } = require("./lib/acef-installation");
 
 const defaultSourceRoot = path.resolve(__dirname, "..");
 
@@ -95,6 +96,7 @@ function updateTarget(sourceRoot, targetRepo, opts) {
   const guardArgs = ["--repo", targetRepo];
   if (opts.globalDispatcher) guardArgs.push("--global-dispatcher");
   run(sourceRoot, "install-acef-bmad-guard", guardArgs);
+  rewriteInstallationUpdateCommand(targetRepo, sourceRoot, { allWorktrees: opts.allWorktrees });
   console.log(`UPDATED_WORKTREE ${targetRepo}`);
 }
 

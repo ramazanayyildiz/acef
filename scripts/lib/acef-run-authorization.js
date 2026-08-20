@@ -43,6 +43,34 @@ function normalizedScope(value) {
   return String(value || "").toLowerCase().replace(/[^a-z0-9]+/g, "");
 }
 
+function workerTestPath(filePath) {
+  return /(^|\/)(__tests__|tests?|specs?)(\/|$)|(\.|-)(test|spec)\.[cm]?[jt]sx?$|Test\.(php|py|rb|cs)$/i.test(String(filePath || ""));
+}
+
+function workerControlPath(filePath) {
+  const normalized = String(filePath || "").replaceAll("\\", "/");
+  return /^(?:\.acef|\.(?:agents|claude|cline|codex|cursor|gemini|goose|kiro|mymir|opencode|qoder|qwen|roo|windsurf)|_bmad(?:-output)?|docs)(?:\/|$)/.test(normalized);
+}
+
+function capsuleWorkerScopeBlockers(activeRun, workerScope) {
+  if (!workerScope || !["capsule-supervisor-v1", "capsule-supervisor-v2"].includes(activeRun?.runtimeContract)
+    || activeRun.scopeUnit !== "story" || activeRun.status !== "active") return [];
+  const failures = [];
+  if (!Array.isArray(workerScope.allowedCommands) || !workerScope.allowedCommands.length) {
+    failures.push("capsule-supervisor story worker scope is missing exact allowedCommands; regenerate it with --allow-command");
+  }
+  if (normalizedScope(activeRun.activePhase) === "atdd" && normalizedScope(workerScope.phase) === "atdd") {
+    const paths = workerScope.allowedPaths || [];
+    const hasTestPath = paths.some(workerTestPath);
+    const hasImplementationPath = paths.some((filePath) => !workerTestPath(filePath)
+      && !workerControlPath(filePath));
+    if (!hasTestPath || !hasImplementationPath) {
+      failures.push("capsule-supervisor ATDD worker scope requires a test path and a non-control implementation path");
+    }
+  }
+  return failures;
+}
+
 function completedCapsuleTerminalBlockers(repoRoot, activeRun, contextPath) {
   if (!["capsule-supervisor-v1", "capsule-supervisor-v2"].includes(activeRun?.runtimeContract)
     || activeRun.status !== "complete") return [];
@@ -201,6 +229,7 @@ function inspectRunAuthorization(repo, options = {}) {
     if (options.requireScopeRunId === true && !scope.record.runId) {
       blockers.push("worker scope is missing runId binding; regenerate it with acef-state worker-scope");
     }
+    blockers.push(...capsuleWorkerScopeBlockers(activeRun, scope.record));
   }
 
   return {

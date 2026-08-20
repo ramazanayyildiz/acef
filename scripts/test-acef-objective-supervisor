@@ -68,6 +68,27 @@ try {
   assert.notEqual(missingObjective.status, 0);
   assert.match(output(missingObjective), /--objective-id, --objective-scope/);
 
+  active("HEARTBEAT-1", "OBJ-HEARTBEAT", "Measure active control work without counting one unbounded wall-clock gap");
+  const heartbeatPath = path.join(tmp, "docs", "ai", "objectives", "OBJ-HEARTBEAT.json");
+  for (let index = 0; index < 3; index += 1) {
+    const heartbeat = JSON.parse(fs.readFileSync(heartbeatPath, "utf8"));
+    heartbeat.progress.lastObservedAt = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+    fs.writeFileSync(heartbeatPath, `${JSON.stringify(heartbeat, null, 2)}\n`);
+    active("HEARTBEAT-1", "OBJ-HEARTBEAT", "Measure active control work without counting one unbounded wall-clock gap");
+  }
+  const heartbeat = JSON.parse(fs.readFileSync(heartbeatPath, "utf8"));
+  assert.ok(heartbeat.progress.activeControlSeconds >= 900 && heartbeat.progress.activeControlSeconds <= 905);
+  assert.ok(heartbeat.warnings.includes("no product/test commit progress for 15 active control minutes"));
+  fs.mkdirSync(path.join(tmp, "_bmad-output", "planning-artifacts"), { recursive: true });
+  fs.writeFileSync(path.join(tmp, "_bmad-output", "planning-artifacts", "heartbeat.md"), "control-only checkpoint\n");
+  run("git", ["add", "_bmad-output/planning-artifacts/heartbeat.md"]);
+  run("git", ["commit", "-qm", "control-only checkpoint"]);
+  active("HEARTBEAT-1", "OBJ-HEARTBEAT", "Measure active control work without counting one unbounded wall-clock gap");
+  const afterControlCommit = JSON.parse(fs.readFileSync(heartbeatPath, "utf8"));
+  assert.equal(afterControlCommit.progress.controlCommits, 1);
+  assert.equal(afterControlCommit.progress.productCommits, 0);
+  close("HEARTBEAT-1");
+
   active("RUN-1", "OBJ-1", "Deliver the bounded streaming objective");
   let objective = JSON.parse(fs.readFileSync(path.join(tmp, "docs", "ai", "objectives", "OBJ-1.json"), "utf8"));
   assert.equal(objective.runCount, 1);

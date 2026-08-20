@@ -122,6 +122,59 @@ try {
   writeJson(activeRunPath, activeRun);
   writeJson(workerScopePath, workerScope);
 
+  const capsuleAtddRun = {
+    ...activeRun,
+    workflowId: "full-bmad",
+    fullFlowContract: "four-actor-v3",
+    runtimeContract: "capsule-supervisor-v1",
+    expectedStories: ["Story 1.1"],
+    activePhase: "atdd",
+  };
+  const capsuleAtddScope = {
+    ...workerScope,
+    phase: "atdd",
+    workerId: "acef_story_1_1_atdd",
+    allowedCommands: ["node --test tests/StoryTest.js"],
+  };
+  for (const controlPath of [
+    ".acef/bin/acef-state",
+    ".agents/skills/acef/SKILL.md",
+    ".claude/skills/acef/SKILL.md",
+    ".codex/skills/acef/SKILL.md",
+    ".opencode/plugins/acef.js",
+    "_bmad/core/workflow.xml",
+    "_bmad-output/planning-artifacts/story.md",
+    "docs/ai/ACEF_CURRENT_CONTEXT.md",
+  ]) {
+    writeJson(activeRunPath, capsuleAtddRun);
+    writeJson(workerScopePath, {
+      ...capsuleAtddScope,
+      allowedPaths: ["tests/StoryTest.js", controlPath],
+    });
+    const controlOnlyImplementation = inspectRunAuthorization(tmp, {
+      requireWorkerScope: true,
+      requireScopeRunId: true,
+    });
+    if (controlOnlyImplementation.ok
+      || !controlOnlyImplementation.blockers.some((item) => item.includes("non-control implementation path"))) {
+      throw new Error(`capsule ATDD accepted control path as implementation scope: ${controlPath}`);
+    }
+  }
+  writeJson(activeRunPath, capsuleAtddRun);
+  writeJson(workerScopePath, {
+    ...capsuleAtddScope,
+    allowedPaths: ["tests/StoryTest.js", "src/story.js"],
+  });
+  const boundedImplementation = inspectRunAuthorization(tmp, {
+    requireWorkerScope: true,
+    requireScopeRunId: true,
+  });
+  if (!boundedImplementation.ok) {
+    throw new Error(`capsule ATDD rejected a real implementation path: ${boundedImplementation.blockers.join("; ")}`);
+  }
+  writeJson(activeRunPath, activeRun);
+  writeJson(workerScopePath, workerScope);
+
   const durations = [];
   for (let index = 0; index < 500; index += 1) {
     const started = performance.now();

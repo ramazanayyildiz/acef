@@ -1,0 +1,78 @@
+{
+  "capabilityId": "full-v3-control-plane-coherence",
+  "requestedIntent": "Make new ACEF Full four-actor-v3 runs fail fast on incomplete startup state, give each worker one frozen command and bounded scope, preserve cumulative active-control time, and hand authentic ATDD RED evidence directly to Development without another conductor cycle.",
+  "status": "enforced",
+  "requiredLayers": [
+    "docs",
+    "schema",
+    "cli",
+    "validator",
+    "workflow",
+    "tests",
+    "installer"
+  ],
+  "implementedLayers": {
+    "docs": [
+      "CHANGELOG.md#Full-v3-startup-now-fails-fast-and-hands-RED-directly-to-Development",
+      "AGENTS.md#ACEF-Admission",
+      "method/BMAD_V2_LANE.md#Fail-fast-startup-and-reuse-contract",
+      "skills/acef/SKILL.md#Admitted-ACEF-Start-Sequence",
+      "skills/acef/references/ACEF_BMAD_V2_LANE.md#Fail-fast-startup-and-reuse-contract"
+    ],
+    "schema": [
+      "schemas/worker-scope.schema.json#allowedCommands"
+    ],
+    "cli": [
+      "scripts/acef-state",
+      "scripts/acef-status",
+      "scripts/acef-next"
+    ],
+    "validator": [
+      "scripts/acef-process-validator"
+    ],
+    "workflow": [
+      "scripts/lib/acef-objective-supervisor.js",
+      "scripts/lib/acef-run-authorization.js",
+      "scripts/lib/acef-state-parser.js"
+    ],
+    "tests": [
+      "scripts/test-acef-state",
+      "scripts/test-acef-next",
+      "scripts/test-acef-objective-supervisor",
+      "scripts/test-acef-run-authorization",
+      "scripts/test-acef-atdd-precheck",
+      "scripts/test-acef-capsule-supervisor",
+      "scripts/test-acef-capsule-supervisor-v2",
+      "scripts/test-acef-process-validator",
+      "scripts/test-install-acef-tools"
+    ],
+    "installer": [
+      "scripts/install-acef-tools",
+      "scripts/update-acef-installation",
+      "scripts/lib/acef-installation.js"
+    ]
+  },
+  "limitations": [
+    "Existing active runs remain compatibility-readable and may require one bounded recovery checkpoint before their next phase transition.",
+    "Delta-readiness scope is mechanically checked at dispatch boundaries, but the quality of a declared ambiguity still depends on the conductor and reviewer.",
+    "The capability is enforced rather than proven until controlled product canaries demonstrate lower time-to-first-product-commit without increased escaped defects."
+  ],
+  "evidence": [
+    {
+      "layer": "tests",
+      "ref": "scripts/test-acef-capsule-supervisor-v2",
+      "note": "Exercises Full v3 capsule startup, authentic RED handoff, phase progression, and terminal closeout compatibility."
+    },
+    {
+      "layer": "tests",
+      "ref": "scripts/test-acef-objective-supervisor",
+      "note": "Covers persisted objective heartbeats and bounded active-control accounting."
+    },
+    {
+      "layer": "installer",
+      "ref": "scripts/test-install-acef-tools",
+      "note": "Covers installed runtime defaults and flag-preserving refresh commands."
+    }
+  ],
+  "createdAt": "2026-08-20"
+}

@@ -5,6 +5,9 @@ const { inspectRunAuthorization } = require("./lib/acef-run-authorization");
 const { displayName } = require("./lib/acef-execution-policy");
 const { installationFreshnessFailures } = require("./lib/acef-installation");
 const { loadObjective, objectiveFailures } = require("./lib/acef-objective-supervisor");
+const validatorModule = fs.existsSync(path.join(__dirname, "acef-process-validator.cjs"))
+  ? "./acef-process-validator.cjs" : "./acef-process-validator";
+const { FULL_V3_DISPATCH_CHECKS, evaluateProcessChecks } = require(validatorModule);
 
 function usage() {
   console.log(`Usage: acef-status --repo <path> [--format text|json]
@@ -64,6 +67,20 @@ function loadInstallation(repo) {
   }
 }
 
+function dispatchReadinessResults(repo, activeRun) {
+  if (!activeRun || activeRun.status !== "active"
+    || activeRun.workflowId !== "full-bmad" || activeRun.fullFlowContract !== "four-actor-v3") return [];
+  if (loadInstallation(repo).record?.components?.tools?.dispatchReadinessContract
+    !== "full-v3-dispatch-readiness-v1") return [];
+  const phase = String(activeRun.activePhase || "").toLowerCase();
+  if (!/(readiness|plan|atdd|develop|implement|code[-_ ]?review|verify|patch|test[-_ ]?review)/.test(phase)) return [];
+  try {
+    return evaluateProcessChecks(repo, FULL_V3_DISPATCH_CHECKS);
+  } catch (error) {
+    return [{ name: "dispatch-readiness", ok: false, message: error.message }];
+  }
+}
+
 function buildStatus(repo) {
   const authorization = inspectRunAuthorization(repo, {
     allowDirect: true,
@@ -84,6 +101,10 @@ function buildStatus(repo) {
   if (installation.error) blockers.push(`invalid ACEF installation manifest: ${installation.error}`);
   blockers.push(...installationFreshnessFailures(repo));
   if (activeRun.record) blockers.push(...objectiveFailures(repo, activeRun.record));
+  const dispatchReadiness = dispatchReadinessResults(repo, activeRun.record);
+  for (const item of dispatchReadiness.filter((entry) => !entry.ok)) {
+    if (!blockers.includes(item.message)) blockers.push(`${item.name}: ${item.message}`);
+  }
 
   const objective = activeRun.record?.objectiveId ? loadObjective(repo, activeRun.record.objectiveId) : null;
 
@@ -130,6 +151,7 @@ function buildStatus(repo) {
       reviewCycleCount: objective.reviewCycleCount,
       warnings: objective.warnings || [],
     } : null,
+    dispatchReadiness,
     directRun: authorization.directRun ? {
       runId: authorization.directRun.runId,
       status: authorization.directRun.status,

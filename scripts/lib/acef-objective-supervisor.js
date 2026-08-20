@@ -122,7 +122,13 @@ function git(repo, args) {
 }
 
 function isControlPath(filePath) {
-  return /^docs\/ai\/(?:ACEF_|actors\/|gates\/|evidence\/|reports\/|approvals\/|repairs\/|corrections\/|capsules\/|judges\/|objectives\/)/.test(filePath);
+  const normalized = String(filePath || "").replaceAll(path.sep, "/");
+  return /^\.acef\//.test(normalized)
+    || /^\.(?:agents|claude|cline|codex|cursor|gemini|goose|kiro|mymir|opencode|qoder|qwen|roo|windsurf)\//.test(normalized)
+    || /^_bmad(?:-output)?\//.test(normalized)
+    || /^docs\/ai\/ACEF_[^/]+\.(?:json|md)$/.test(normalized)
+    || normalized === "docs/ai/ACEF_ACTIVE_LEDGER"
+    || /^docs\/ai\/(?:actors|gates|evidence|reports|approvals|repairs|corrections|capsules|judges|objectives)\//.test(normalized);
 }
 
 function reconcileProgress(repo, progress) {
@@ -186,6 +192,18 @@ function reconcileObjective(repo, record, previousRun = null) {
   next.status = deriveStatus(next);
   next.updatedAt = new Date().toISOString();
   return validateObjective(next);
+}
+
+function persistObjectiveHeartbeat(repo, activeRun) {
+  if (!activeRun?.objectiveContract || !activeRun.objectiveId) return null;
+  const record = loadObjective(repo, activeRun.objectiveId);
+  if (!record) throw new Error(`missing objective record ${activeRun.objectivePath}`);
+  if (record.scopeFingerprint !== activeRun.scopeFingerprint) {
+    throw new Error("active run objective fingerprint mismatch");
+  }
+  const reconciled = reconcileObjective(repo, record, activeRun.status === "complete" ? activeRun : null);
+  atomicWrite(objectivePath(repo, activeRun.objectiveId), reconciled);
+  return reconciled;
 }
 
 function findFingerprintCollision(repo, fingerprint, objectiveId) {
@@ -381,6 +399,7 @@ module.exports = {
   loadObjective,
   objectiveFailures,
   objectivePath,
+  persistObjectiveHeartbeat,
   reconcileObjective,
   recordDefect,
   registerRun,

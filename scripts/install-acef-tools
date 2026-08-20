@@ -188,6 +188,8 @@ console.log(`Updated ACEF installation manifest: ${writeInstallationManifest(opt
   controlDosing: fs.existsSync(path.join(repoRoot, "method", "control-dosing.json")),
   modelRoutingPolicy: fs.existsSync(path.join(repoRoot, "method", "model-routing-policy-v1.json")),
   workflows: fs.existsSync(path.join(repoRoot, "workflows")),
+  defaultRuntimeContract: "capsule-supervisor-v2",
+  dispatchReadinessContract: "full-v3-dispatch-readiness-v1",
   objectiveSupervisor: "objective-supervisor-v1",
   freshnessContract: "worktree-handshake-v1",
   sourceRuntimeDigest: sourceRuntimeDigest(repoRoot),

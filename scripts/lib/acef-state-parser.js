@@ -704,6 +704,12 @@ function validateWorkerScopeRecord(record) {
   if (record.allowedPaths.some((entry) => path.isAbsolute(entry) || entry.split(/[\\/]/).includes(".."))) {
     throw new Error("worker scope allowedPaths must be repo-relative and cannot contain ..");
   }
+  if (record.allowedCommands !== undefined) {
+    requireStringArray(record, "allowedCommands", "worker scope", { nonEmpty: true });
+    if (new Set(record.allowedCommands).size !== record.allowedCommands.length) {
+      throw new Error("worker scope allowedCommands must be unique");
+    }
+  }
   if (!Number.isInteger(record.maxCommits) || record.maxCommits < 1) {
     throw new Error("worker scope maxCommits must be a positive integer");
   }

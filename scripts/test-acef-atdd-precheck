@@ -32,9 +32,27 @@ try {
     "--expected-story", "Story Harness", "--status", "active", "--story", "Story Harness",
     "--phase", "atdd", "--ledger", "docs/ai/ACEF_DELIVERY_LEDGER.md",
     "--context", "docs/ai/ACEF_CURRENT_CONTEXT.md", "--worker-scope", "docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json"]);
+  const commandlessScope = cp.spawnSync(process.execPath, [state, "worker-scope", "--repo", tmp,
+    "--story", "Story Harness", "--phase", "atdd", "--worker-id", "acef_story_harness_atdd",
+    "--allow", "app/demo.php", "--allow", "tests/NestedArrowTest.php"], { cwd: tmp, encoding: "utf8" });
+  if (commandlessScope.status === 0
+    || !`${commandlessScope.stdout}${commandlessScope.stderr}`.includes("at least one exact --allow-command")) {
+    throw new Error("capsule ATDD accepted a worker scope without an exact command");
+  }
+  const testOnlyScope = cp.spawnSync(process.execPath, [state, "worker-scope", "--repo", tmp,
+    "--story", "Story Harness", "--phase", "atdd", "--worker-id", "acef_story_harness_atdd",
+    "--allow", "tests/NestedArrowTest.php", "--allow", "_bmad-output/test-artifacts/story-harness-atdd-checklist.md",
+    "--allow-command", "php artisan test tests/NestedArrowTest.php"],
+  { cwd: tmp, encoding: "utf8" });
+  if (testOnlyScope.status === 0
+    || !`${testOnlyScope.stdout}${testOnlyScope.stderr}`.includes("one non-control implementation path")) {
+    throw new Error("capsule ATDD accepted a test-only worker scope that cannot hand off to Development");
+  }
   run(process.execPath, [state, "worker-scope", "--repo", tmp, "--story", "Story Harness",
     "--phase", "atdd", "--worker-id", "acef_story_harness_atdd",
-    "--allow", "app/demo.php", "--allow", "tests/NestedArrowTest.php"]);
+    "--allow", "app/demo.php", "--allow", "tests/NestedArrowTest.php",
+    "--allow-command", "php artisan test tests/NestedArrowTest.php",
+    "--allow-command", `${process.execPath} -e 'process.exit(1)'`]);
 
   fs.writeFileSync(path.join(tmp, "tests", "NestedArrowTest.php"), [
     "<?php",

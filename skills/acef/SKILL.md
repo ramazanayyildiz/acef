@@ -124,7 +124,12 @@ artifact, or implementation step:
 8. If the lane needs independent persona workers, record `## Delegation Authorization`: approved personas, one
    story/phase per worker, no worker-spawned subagents, no worker ledger edits, active worker scope required, final
    report then STOP.
-9. Write active-run state with the parent objective binding, then start the first step row before invoking workers/tools.
+9. For Full v3, reuse existing approved planning sources and run readiness as a deterministic, story-scoped delta gate.
+   Do not spawn a fresh readiness worker or rescan the full PRD/NFR corpus unless a named conflict or ambiguity requires
+   independent judgment.
+10. Write active-run state with the parent objective binding, then start the first step row before invoking workers/tools.
+    The installation-advertised runtime, every executable evidence/discovery command, bounded implementation paths,
+    and test paths must be frozen before ATDD dispatch.
 
 A worker launched before this bootstrap is drift. Stop, record it, patch the ambiguous rule if needed, and restart from bootstrap.
 

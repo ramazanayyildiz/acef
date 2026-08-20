@@ -142,10 +142,15 @@ try {
   if (installation.schema !== "acef.installation.v1") throw new Error("installation manifest schema missing");
   if (!installation.acefVersion?.sourceCommit) throw new Error("installation manifest missing source commit");
   if (!installation.components?.tools) throw new Error("installation manifest missing tools component");
+  if (installation.updateCommand.includes("--all-worktrees")) {
+    throw new Error("ordinary single-target installation incorrectly persisted --all-worktrees");
+  }
   if (!installation.components.tools.tools.includes("update-acef-installation")) throw new Error("tools component missing updater");
   if (!installation.components.tools.controlDosing) throw new Error("tools component missing control-dosing manifest");
   if (!installation.components.tools.modelRoutingPolicy) throw new Error("tools component missing model-routing policy");
   if (installation.components.tools.objectiveSupervisor !== "objective-supervisor-v1"
+    || installation.components.tools.defaultRuntimeContract !== "capsule-supervisor-v2"
+    || installation.components.tools.dispatchReadinessContract !== "full-v3-dispatch-readiness-v1"
     || installation.components.tools.freshnessContract !== "worktree-handshake-v1"
     || !installation.components.tools.sourceRuntimeDigest
     || !installation.components.tools.installedRuntimeDigest) {
@@ -247,11 +252,16 @@ try {
     "--expected-story", "story 1.1",
     "--phase", "development",
     "--worker-role", "developer",
+    "--last-passed-gate", "Story 1.1 ATDD PASS",
     "--full-ledger-access", "denied",
     "--max-lines", "120",
     "--ledger", "docs/ai/ACEF_demo_DELIVERY_AUDIT.md",
     "--context", "docs/ai/ACEF_CURRENT_CONTEXT.md",
   ]);
+  const installedActiveRun = JSON.parse(fs.readFileSync(path.join(tmp, "docs", "ai", "ACEF_ACTIVE_RUN.json"), "utf8"));
+  if (installedActiveRun.runtimeContract !== "capsule-supervisor-v2") {
+    throw new Error(`new installed Full v3 run did not bind capsule-supervisor-v2: ${installedActiveRun.runtimeContract}`);
+  }
 
   const output = run(validator, [
     "--repo", tmp,
@@ -265,9 +275,13 @@ try {
   if (!controlDosingOutput.includes("PASS control-dosing:")) {
     throw new Error(`installed validator did not validate installed control dosing:\n${controlDosingOutput}`);
   }
-  const statusOutput = run(status, ["--repo", tmp, "--format", "json"]);
+  const statusOutput = run(status, ["--repo", tmp, "--format", "json"], { allowFailure: true });
   const statusJson = JSON.parse(statusOutput);
-  if (statusJson.status !== "ready") throw new Error(`installed status helper did not report ready:\n${statusOutput}`);
+  if (statusJson.status !== "needs-attention"
+    || !statusJson.blockers.some((entry) => entry.startsWith("preflight:"))
+    || !statusJson.dispatchReadiness.some((entry) => entry.name === "current-context" && entry.ok)) {
+    throw new Error(`installed status helper did not aggregate dispatch validators:\n${statusOutput}`);
+  }
   if (statusJson.activeRun.activeStory !== "story 1.1") throw new Error("installed status helper did not read active run");
   if (statusJson.activeRun.workflowId !== "full-bmad" || statusJson.activeRun.assuranceProfile !== "baseline") {
     throw new Error("installed status helper did not expose separate workflow and assurance state");
@@ -283,11 +297,36 @@ try {
   const invalidJson = JSON.parse(invalidStatus);
   if (invalidJson.status !== "needs-attention") throw new Error("installed status helper accepted an invalid ACEF installation manifest");
   fs.writeFileSync(installationManifest, `${JSON.stringify(installation, null, 2)}\n`);
-  const nextOutput = run(next, ["--repo", tmp, "--format", "json"]);
+  const nextOutput = run(next, ["--repo", tmp, "--format", "json"], { allowFailure: true });
   const nextJson = JSON.parse(nextOutput);
-  if (nextJson.status !== "ready") throw new Error(`installed next helper did not report ready:\n${nextOutput}`);
-  if (nextJson.active_state.next_allowed_action !== "implement_to_green") throw new Error("installed next helper did not derive development action");
+  if (nextJson.status !== "blocked"
+    || nextJson.active_state.next_allowed_action !== null
+    || !nextJson.dispatch_readiness.some((entry) => entry.name === "current-context" && entry.ok)) {
+    throw new Error(`installed next helper did not block on dispatch validators:\n${nextOutput}`);
+  }
   if (!nextJson.forbidden.actions.includes("start_next_story")) throw new Error("installed next helper missing story boundary");
+  run(state, [
+    "active-run", "--repo", tmp,
+    "--run-id", "RUN-install-test",
+    "--workflow-id", "full-bmad",
+    "--status", "active",
+    "--story", "story 1.1",
+    "--expected-story", "story 1.1",
+    "--phase", "readiness",
+    "--worker-role", "planner",
+    "--ledger", "docs/ai/ACEF_demo_DELIVERY_AUDIT.md",
+    "--context", "docs/ai/ACEF_CURRENT_CONTEXT.md",
+  ]);
+  const blockedTransition = cp.spawnSync(state, [
+    "phase-transition", "--repo", tmp, "--phase", "atdd",
+  ], { cwd: tmp, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+  if (blockedTransition.status === 0
+    || !`${blockedTransition.stdout}${blockedTransition.stderr}`.includes("readiness -> ATDD blocked: preflight:")) {
+    throw new Error("installed phase transition did not fail closed on mandatory dispatch readiness");
+  }
+  if (JSON.parse(fs.readFileSync(path.join(tmp, "docs", "ai", "ACEF_ACTIVE_RUN.json"), "utf8")).activePhase !== "readiness") {
+    throw new Error("blocked readiness transition mutated active phase");
+  }
   const workflowOutput = run(workflowValidate, ["--repo", tmp, "--workflow", ".acef/workflows/lightweight-review.yaml"]);
   if (!workflowOutput.includes("PASS workflow lightweight-review:")) throw new Error("installed workflow validator did not validate installed workflow");
   run(updater, ["--repo", tmp, "--review-lenses"]);
@@ -296,14 +335,32 @@ try {
   const refreshedInstallation = JSON.parse(fs.readFileSync(installationManifest, "utf8"));
   if (!refreshedInstallation.components?.bmadGuard) throw new Error("installed updater did not record guard component");
   if (!refreshedInstallation.components?.skills?.skills?.includes("bug-hunter")) throw new Error("installed updater did not record refreshed review lenses");
+  if (!refreshedInstallation.updateCommand.endsWith(" --review-lenses")) {
+    throw new Error(`installation updateCommand did not preserve review-lenses: ${refreshedInstallation.updateCommand}`);
+  }
   run("git", ["worktree", "add", "-q", "-b", `acef-install-linked-${process.pid}`, linkedWorktree, "HEAD"], { cwd: tmp });
-  const allWorktreeOutput = run(updater, ["--repo", tmp, "--all-worktrees"]);
+  const allWorktreeOutput = run(updater, ["--repo", tmp, "--all-worktrees", "--review-lenses", "--all-core"]);
   if (!allWorktreeOutput.includes(`UPDATED_WORKTREE ${fs.realpathSync(tmp)}`)
     || !allWorktreeOutput.includes(`UPDATED_WORKTREE ${fs.realpathSync(linkedWorktree)}`)) {
     throw new Error(`installed updater did not enumerate every active git worktree:\n${allWorktreeOutput}`);
   }
   if (!fs.existsSync(path.join(linkedWorktree, "docs", "ai", "ACEF_INSTALLATION.json"))) {
     throw new Error("linked worktree did not receive an ACEF installation/freshness stamp");
+  }
+  for (const target of [tmp, linkedWorktree]) {
+    const targetInstallation = JSON.parse(fs.readFileSync(path.join(target, "docs", "ai", "ACEF_INSTALLATION.json"), "utf8"));
+    for (const option of ["--all-worktrees", "--review-lenses", "--all-core"]) {
+      if (!targetInstallation.updateCommand.includes(option)) {
+        throw new Error(`linked updateCommand for ${target} did not preserve ${option}: ${targetInstallation.updateCommand}`);
+      }
+    }
+  }
+  run(updater, ["--repo", tmp, "--review-lenses", "--all-core"]);
+  const singleTargetInstallation = JSON.parse(fs.readFileSync(installationManifest, "utf8"));
+  if (singleTargetInstallation.updateCommand.includes("--all-worktrees")
+    || !singleTargetInstallation.updateCommand.includes("--review-lenses")
+    || !singleTargetInstallation.updateCommand.includes("--all-core")) {
+    throw new Error(`single-target updateCommand did not drop only invocation-level --all-worktrees: ${singleTargetInstallation.updateCommand}`);
   }
 
   console.log("install-acef-tools tests passed");

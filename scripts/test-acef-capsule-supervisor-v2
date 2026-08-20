@@ -13,6 +13,14 @@ const supervisor = path.join(root, "scripts", "acef-supervisor");
 const validator = path.join(root, "scripts", "acef-process-validator");
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "acef-capsule-v2-"));
 const marker = path.join(os.tmpdir(), `acef-evidence-reuse-${process.pid}.txt`);
+const alternateMarker = path.join(os.tmpdir(), `acef-evidence-alternate-${process.pid}.txt`);
+
+function quoteArg(value) {
+  return /^[A-Za-z0-9_./:@%+=,-]+$/.test(value) ? value : `'${value.replaceAll("'", `'\\''`)}'`;
+}
+
+const command = [process.execPath, "-e", `require('node:fs').appendFileSync(${JSON.stringify(marker)}, 'x')`];
+const frozenCommandText = command.map(quoteArg).join(" ");
 
 function run(command, args, options = {}) {
   return cp.execFileSync(command, args, {
@@ -44,6 +52,7 @@ function workerScope(runActor, phase) {
   stateRun([
     "worker-scope", "--repo", tmp, "--story", "Shared Story", "--phase", phase,
     "--worker-id", runActor, "--allow", "app/**", "--allow", "tests/**",
+    "--allow-command", frozenCommandText,
     "--surface", "internal",
   ]);
 }
@@ -93,7 +102,37 @@ try {
     "--context-profile", "development", "--model", "gpt-5.6-sol", "--effort", "high",
   ]);
 
-  const command = [process.execPath, "-e", `require('node:fs').appendFileSync(${JSON.stringify(marker)}, 'x')`];
+  workerScope(secondDispatch.action.actorInstanceId, "atdd");
+  const rejectedPhase = cp.spawnSync(process.execPath, [
+    state, "evidence-run", "--repo", tmp, "--id", "run_two-stale-phase", "--kind", "runtime-test",
+    "--actor", secondDispatch.action.actorInstanceId, "--story", "Shared Story",
+    "--satisfies", "shared-story-stale-phase", "--", ...command,
+  ], { cwd: tmp, encoding: "utf8" });
+  assert.notEqual(rejectedPhase.status, 0);
+  assert.match(`${rejectedPhase.stdout}${rejectedPhase.stderr}`, /worker scope phase atdd does not match active phase development/);
+  assert.equal(fs.existsSync(marker), false);
+  workerScope(secondDispatch.action.actorInstanceId, "development");
+
+  const rejectedSibling = cp.spawnSync(process.execPath, [
+    state, "evidence-run", "--repo", tmp, "--id", "run_two-sibling", "--kind", "runtime-test",
+    "--actor", "acef_run_two_shared_story_sibling", "--story", "Shared Story",
+    "--satisfies", "shared-story-sibling", "--", ...command,
+  ], { cwd: tmp, encoding: "utf8" });
+  assert.notEqual(rejectedSibling.status, 0);
+  assert.match(`${rejectedSibling.stdout}${rejectedSibling.stderr}`, /does not match active worker/);
+  assert.equal(fs.existsSync(marker), false);
+
+  const alternateCommand = [process.execPath, "-e", `require('node:fs').appendFileSync(${JSON.stringify(alternateMarker)}, 'y')`];
+  const rejectedAlternate = cp.spawnSync(process.execPath, [
+    state, "evidence-run", "--repo", tmp, "--id", "run_two-alternate", "--kind", "runtime-test",
+    "--actor", secondDispatch.action.actorInstanceId, "--story", "Shared Story",
+    "--satisfies", "shared-story-alternate", "--", ...alternateCommand,
+  ], { cwd: tmp, encoding: "utf8" });
+  assert.notEqual(rejectedAlternate.status, 0);
+  assert.match(`${rejectedAlternate.stdout}${rejectedAlternate.stderr}`, /commandText must exactly match workerScope\.allowedCommands/);
+  assert.equal(fs.existsSync(alternateMarker), false);
+  assert.equal(fs.existsSync(path.join(tmp, "docs", "ai", "evidence", "run_two-alternate.json")), false);
+
   stateRun([
     "evidence-run", "--repo", tmp, "--id", "run_two-green-1", "--kind", "runtime-test",
     "--actor", secondDispatch.action.actorInstanceId, "--story", "Shared Story",
@@ -123,4 +162,5 @@ try {
 } finally {
   fs.rmSync(tmp, { recursive: true, force: true });
   fs.rmSync(marker, { force: true });
+  fs.rmSync(alternateMarker, { force: true });
 }

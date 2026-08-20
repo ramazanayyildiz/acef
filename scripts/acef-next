@@ -4,8 +4,11 @@ const path = require("node:path");
 const { parseWorkflow } = require("./lib/acef-state-parser");
 const { inspectRunAuthorization } = require("./lib/acef-run-authorization");
 const { displayName } = require("./lib/acef-execution-policy");
-const { installationFreshnessFailures } = require("./lib/acef-installation");
+const { installationFreshnessFailures, readInstallationManifest } = require("./lib/acef-installation");
 const { loadObjective, objectiveFailures } = require("./lib/acef-objective-supervisor");
+const validatorModule = fs.existsSync(path.join(__dirname, "acef-process-validator.cjs"))
+  ? "./acef-process-validator.cjs" : "./acef-process-validator";
+const { FULL_V3_DISPATCH_CHECKS, evaluateProcessChecks } = require(validatorModule);
 
 function usage() {
   console.log(`Usage: acef-next --repo <path> [--role <role>] [--format json]
@@ -121,6 +124,20 @@ function loadWorkflow(repo, activeRunRecord) {
   }
 }
 
+function dispatchReadinessResults(repo, activeRun) {
+  if (!activeRun || activeRun.status !== "active"
+    || activeRun.workflowId !== "full-bmad" || activeRun.fullFlowContract !== "four-actor-v3") return [];
+  if (readInstallationManifest(repo)?.components?.tools?.dispatchReadinessContract
+    !== "full-v3-dispatch-readiness-v1") return [];
+  const phase = String(activeRun.activePhase || "").toLowerCase();
+  if (!/(readiness|plan|atdd|develop|implement|code[-_ ]?review|verify|patch|test[-_ ]?review)/.test(phase)) return [];
+  try {
+    return evaluateProcessChecks(repo, FULL_V3_DISPATCH_CHECKS);
+  } catch (error) {
+    return [{ name: "dispatch-readiness", ok: false, message: error.message }];
+  }
+}
+
 function buildDirectNext(repo, authorization) {
   const run = authorization.directRun;
   const active = authorization.ok && run?.status === "active";
@@ -195,6 +212,10 @@ function buildNext(repo, roleOverride) {
   if (workflow.error) blockers.push(`invalid workflow state: ${workflow.error}`);
   blockers.push(...installationFreshnessFailures(repo));
   if (activeRun.record) blockers.push(...objectiveFailures(repo, activeRun.record));
+  const dispatchReadiness = dispatchReadinessResults(repo, activeRun.record);
+  for (const item of dispatchReadiness.filter((entry) => !entry.ok)) {
+    if (!blockers.includes(item.message)) blockers.push(`${item.name}: ${item.message}`);
+  }
   const objective = activeRun.record?.objectiveId ? loadObjective(repo, activeRun.record.objectiveId) : null;
 
   const base = {
@@ -202,6 +223,7 @@ function buildNext(repo, roleOverride) {
     repo,
     status: blockers.length ? "blocked" : "ready",
     blockers,
+    dispatch_readiness: dispatchReadiness,
     active_state: null,
     objective: objective ? {
       objective_id: objective.objectiveId,
@@ -259,7 +281,7 @@ function buildNext(repo, roleOverride) {
   base.allowed = {
     can_write: !blockers.length && phaseCanWrite(activeRun, workerScope),
     paths: workerScope.record?.allowedPaths || [],
-    commands: [],
+    commands: workerScope.record?.allowedCommands || [],
   };
   base.evidence_required = blockers.length ? [] : evidenceFor(activeRun.record, roleOverride);
   base.stop_condition = blockers.length

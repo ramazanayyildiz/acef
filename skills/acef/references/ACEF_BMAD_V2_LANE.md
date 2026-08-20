@@ -60,6 +60,28 @@ blind-product, and exact-transcript reanalysis checks while its immutable automa
 decision in `docs/experiments/execution-assurance-v334/CONTROLLED_CANARY_DECISION.md` permits at most two sequential,
 explicitly opted-in controlled canaries. Existing runs cannot opt in after lifecycle evidence exists.
 
+### Fail-fast startup and reuse contract
+
+New supervised Full v3 runs freeze the installation-advertised runtime during the first active-run write. A missing
+runtime must never consume a later REPLAN. Before ATDD dispatch, the deterministic dispatch-readiness bundle must pass
+installation/objective freshness, preflight, intake/lane selection, spec readiness, reuse-before-create, source
+reconciliation, Epic Context Pack, Current Context, and run authorization. `acef-status` and `acef-next` report the same
+bundle; they may not say `ready` while one of those gates fails.
+
+Readiness is a conductor-owned delta gate, not a default fresh persona session. Reuse approved PRD, architecture,
+prototype, test design, and prior analysis by path/hash. Reinspect only the active story's changed or conflicting facts;
+do not regenerate those artifacts or enumerate the full unrelated FR/NFR corpus as `N/A`. A fresh readiness actor is
+allowed only for a named unresolved source conflict or product ambiguity.
+
+Each capsule-supervisor story scope freezes at least one exact focused command plus both its test path and bounded
+implementation path before ATDD. Evidence and discovery commands that do not exactly match that frozen list are
+rejected before execution. Canonical authentic RED evidence advances the typed run, role, worker scope, and Current
+Context to Development as one handoff, so an idle conductor cannot leave a completed RED at `write_failing_tests`.
+The next story returns to its deterministic readiness delta; it never jumps directly into ATDD. Every lifecycle
+mutation persists an objective heartbeat; bounded idle-gap accounting still excludes machine sleep.
+Freshness-verified installed ACEF/BMAD control files are control-plane dirt, not application dirt, and therefore
+cannot invalidate a clean test-only RED commit.
+
 ## Dependency
 This lane is driven by **BMAD-METHOD** (https://github.com/bmad-code-org/BMAD-METHOD, MIT) — an installable agent
 framework. ACEF does not bundle it; install it where you want the heavy lane. ACEF orchestrates it and normalizes its

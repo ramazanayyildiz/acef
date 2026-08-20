@@ -9,6 +9,25 @@ or evidence contract. Do not use it to claim implementation status; link to the 
 
 ## Unreleased
 
+### Full v3 startup now fails fast and hands RED directly to Development
+
+- Bound new Full v3 runs to the installation-advertised capsule runtime during their first state write, preventing a
+  missing runtime contract from consuming a later REPLAN.
+- Made status and next-action output consume the same deterministic dispatch-readiness checks used by validation, so a
+  run cannot report `ready` while mandatory preflight, source/context, intake, or authorization gates fail.
+- Added exact focused commands to typed worker scope, rejected unfrozen evidence and discovery commands before
+  execution, and made authentic canonical ATDD RED evidence advance the run, role, worker scope, and Current Context
+  to Development as one handoff.
+- Returned every next story to its deterministic readiness delta instead of jumping directly to ATDD, and persisted
+  objective heartbeats on every lifecycle mutation so the 15/30-minute circuit breaker observes active control work
+  while retaining the five-minute sleep/idle cap.
+- Classified freshness-verified installed runtime, skill, BMAD-output, and ACEF state files consistently as control
+  paths across evidence, validation, and objective supervision.
+- Made Full readiness reuse approved sources as a conductor-owned story delta; fresh readiness sessions and broad
+  unrelated FR/NFR inventories now require a named conflict or ambiguity.
+- Preserved installer flags such as `--all-worktrees`, `--review-lenses`, `--all-core`, and `--global-dispatcher` in the
+  recorded update command, and stopped negated text such as “no Epic 2 exists” from seeding a false Epic gate.
+
 ### Pages now teach ACEF before exposing its internals
 
 - Rebuilt the public documentation around progressive disclosure: Start here, How it works, Workflows, Examples, and

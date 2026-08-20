@@ -106,6 +106,36 @@ function installationFreshnessFailures(targetRepo) {
   return failures;
 }
 
+function shellQuote(value) {
+  const text = String(value);
+  return /^[A-Za-z0-9_./:@%+=,-]+$/.test(text) ? text : `'${text.replaceAll("'", `'\\''`)}'`;
+}
+
+function updateCommand(sourceRoot, targetRepo, components, invocation = {}) {
+  const argv = [
+    "node",
+    path.join(sourceRoot, "scripts", "update-acef-installation"),
+    "--repo",
+    targetRepo,
+  ];
+  if (invocation.allWorktrees === true) argv.push("--all-worktrees");
+  if (components?.skills?.reviewLenses === true) argv.push("--review-lenses");
+  if (components?.skills?.allCore === true) argv.push("--all-core");
+  if (components?.bmadGuard?.globalDispatcher === true) argv.push("--global-dispatcher");
+  return argv.map(shellQuote).join(" ");
+}
+
+function rewriteInstallationUpdateCommand(targetRepo, sourceRoot, invocation = {}) {
+  const filePath = manifestPath(targetRepo);
+  const manifest = readInstallationManifest(targetRepo);
+  if (!manifest || manifest.schema !== "acef.installation.v1") {
+    throw new Error(`cannot rewrite updateCommand without a valid ACEF installation manifest: ${filePath}`);
+  }
+  manifest.updateCommand = updateCommand(sourceRoot, targetRepo, manifest.components, invocation);
+  fs.writeFileSync(filePath, `${JSON.stringify(manifest, null, 2)}\n`);
+  return filePath;
+}
+
 function writeInstallationManifest(targetRepo, sourceRoot, componentName, componentDetails = {}) {
   const filePath = manifestPath(targetRepo);
   const now = new Date().toISOString();
@@ -115,7 +145,16 @@ function writeInstallationManifest(targetRepo, sourceRoot, componentName, compon
     components: {},
   };
   const source = sourceInfo(sourceRoot);
-  const command = `node ${path.join(sourceRoot, "scripts", "update-acef-installation")} --repo ${targetRepo}`;
+  const components = {
+    ...(existing.components || {}),
+    [componentName]: {
+      installedAt: now,
+      sourceCommit: source.sourceCommit,
+      sourceShortCommit: source.sourceShortCommit,
+      sourceTreeState: source.sourceTreeState,
+      ...componentDetails,
+    },
+  };
   const next = {
     ...existing,
     schema: "acef.installation.v1",
@@ -127,17 +166,8 @@ function writeInstallationManifest(targetRepo, sourceRoot, componentName, compon
       sourceTreeState: source.sourceTreeState,
     },
     lastUpdatedAt: now,
-    updateCommand: command,
-    components: {
-      ...(existing.components || {}),
-      [componentName]: {
-        installedAt: now,
-        sourceCommit: source.sourceCommit,
-        sourceShortCommit: source.sourceShortCommit,
-        sourceTreeState: source.sourceTreeState,
-        ...componentDetails,
-      },
-    },
+    updateCommand: updateCommand(sourceRoot, targetRepo, components),
+    components,
   };
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
   fs.writeFileSync(filePath, `${JSON.stringify(next, null, 2)}\n`);
@@ -149,6 +179,7 @@ module.exports = {
   installedRuntimeDigest,
   manifestPath,
   readInstallationManifest,
+  rewriteInstallationUpdateCommand,
   sourceRuntimeDigest,
   sourceInfo,
   writeInstallationManifest,

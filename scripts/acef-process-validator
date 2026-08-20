@@ -49,6 +49,19 @@ const {
   workflowId,
 } = require("./lib/acef-execution-policy");
 
+const FULL_V3_DISPATCH_CHECKS = Object.freeze([
+  "preflight",
+  "reuse-before-create",
+  "source-reconciliation",
+  "epic-context-pack",
+  "current-context",
+  "spec-readiness",
+  "lane-selection",
+  "run-authorization",
+  "objective-supervision",
+  "installation-freshness",
+]);
+
 function usage() {
   console.log(`ACEF process validator
 
@@ -338,10 +351,11 @@ function normalizedScope(value) {
 function stateControlPath(filePath) {
   const normalized = String(filePath || "").replaceAll(path.sep, "/");
   return /^\.acef\//.test(normalized)
-    || /^\.(?:codex|claude|opencode)\//.test(normalized)
-    || /^_bmad-output\//.test(normalized)
+    || /^\.(?:agents|claude|cline|codex|cursor|gemini|goose|kiro|mymir|opencode|qoder|qwen|roo|windsurf)\//.test(normalized)
+    || /^_bmad(?:-output)?\//.test(normalized)
     || /^docs\/ai\/ACEF_[^/]+\.(?:json|md)$/.test(normalized)
-    || /^docs\/ai\/(?:ACEF_(?:ACTIVE_RUN\.json|ACTIVE_WORKER_SCOPE\.json|ACTIVE_LEDGER|DIRECT_RUN\.json|CURRENT_CONTEXT\.md|INSTALLATION\.json|RUN_[^/]+\.md|DELIVERY_LEDGER(?:_[^/]+)?\.md|[^/]+_DELIVERY_AUDIT\.md)|actors\/|gates\/|evidence\/|reports\/|approvals\/|repairs\/|corrections\/|capsules\/|judges\/)/.test(normalized);
+    || normalized === "docs/ai/ACEF_ACTIVE_LEDGER"
+    || /^docs\/ai\/(?:actors|gates|evidence|reports|approvals|repairs|corrections|capsules|judges|objectives)\//.test(normalized);
 }
 
 function normalizedScopePaths(paths) {
@@ -913,8 +927,12 @@ function checkAdapterFreshness(repoRoot, adapterPath) {
 
 function mentionedEpics(text) {
   const epics = new Set();
-  for (const match of text.matchAll(/\b(?:Epic|E)\s*[-_ ]?(\d+)\b/gi)) {
-    epics.add(Number(match[1]));
+  for (const line of String(text || "").split(/\r?\n/)) {
+    for (const match of line.matchAll(/\b(?:Epic|E)\s*[-_ ]?(\d+)\b/gi)) {
+      const prefix = line.slice(Math.max(0, match.index - 40), match.index);
+      if (/(?:\bno\b|\bnot\b|\bwithout\b|\bdoes\s+not\b|\bdoesn't\b)\s*$/i.test(prefix)) continue;
+      epics.add(Number(match[1]));
+    }
   }
   return [...epics].filter(Boolean).sort((a, b) => a - b);
 }
@@ -4097,21 +4115,17 @@ function checkCapabilityChange(repoRoot) {
     : result("capability-change", true, `${capabilityFiles.length} capability change record(s) classify implemented layers`);
 }
 
-function main() {
-  const args = parseArgs(process.argv);
-  if (args.help) {
-    usage();
-    return;
-  }
-
+function evaluateProcessChecks(repoRoot, checks, options = {}) {
+  const args = {
+    repo: path.resolve(repoRoot),
+    ledger: options.ledger || null,
+    adapter: options.adapter || null,
+    targetEpic: options.targetEpic || null,
+  };
   const ledger = args.ledger || findLedger(args.repo);
   const adapter = args.adapter || findAdapter(args.repo);
   const registry = findPatternRegistry(args.repo, adapter);
-  const checks = args.check === "all"
-    ? ["clean-tree", "preflight", "claims", "adapter-freshness", "installation-freshness", "objective-supervision", "pattern-registry", "reuse-before-create", "do-not-copy", "partial-workshape", "finding-promotion", "graduation-reconciliation", "vertical-slice", "test-authenticity", "guarded-test-floor", "actor-separation", "worker-scope", "evidence-manifest", "gate-verdict", "gate-decider", "epic-process-judge", "source-reconciliation", "epic-context-pack", "current-context", "pr-review", "spec-readiness", "goal-coverage", "lane-selection", "lane-closeout", "direct-lifecycle", "lightweight-lifecycle", "quick-fix-closeout", "lean-evidence", "control-dosing", "capability-change", "session-handoff", "seeded-epic-gates", "epic-boundary", "epic-transition-approval", "run-authorization", "review-circuit-breaker", "replan-counter"]
-    : [args.check];
-
-  const results = checks.map((check) => {
+  return checks.map((check) => {
     if (check === "clean-tree") return checkCleanTree(args.repo);
     if (check === "preflight") return checkPreflight(args.repo);
     if (check === "claims") return checkClaims(args.repo, ledger);
@@ -4157,6 +4171,19 @@ function main() {
     if (check === "replan-counter") return checkReplanCounter(args.repo);
     return result(check, false, `Unknown check: ${check}`);
   });
+}
+
+function main() {
+  const args = parseArgs(process.argv);
+  if (args.help) {
+    usage();
+    return;
+  }
+
+  const checks = args.check === "all"
+    ? ["clean-tree", "preflight", "claims", "adapter-freshness", "installation-freshness", "objective-supervision", "pattern-registry", "reuse-before-create", "do-not-copy", "partial-workshape", "finding-promotion", "graduation-reconciliation", "vertical-slice", "test-authenticity", "guarded-test-floor", "actor-separation", "worker-scope", "evidence-manifest", "gate-verdict", "gate-decider", "epic-process-judge", "source-reconciliation", "epic-context-pack", "current-context", "pr-review", "spec-readiness", "goal-coverage", "lane-selection", "lane-closeout", "direct-lifecycle", "lightweight-lifecycle", "quick-fix-closeout", "lean-evidence", "control-dosing", "capability-change", "session-handoff", "seeded-epic-gates", "epic-boundary", "epic-transition-approval", "run-authorization", "review-circuit-breaker", "replan-counter"]
+    : [args.check];
+  const results = evaluateProcessChecks(args.repo, checks, args);
 
   for (const item of results) {
     console.log(`${item.ok ? "PASS" : "FAIL"} ${item.name}: ${item.message}`);
@@ -4174,4 +4201,4 @@ if (require.main === module) {
   }
 }
 
-module.exports = { stateChangingRiskSignals, stateControlPath };
+module.exports = { FULL_V3_DISPATCH_CHECKS, evaluateProcessChecks, stateChangingRiskSignals, stateControlPath };

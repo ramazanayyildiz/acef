@@ -28,9 +28,13 @@ const { riskRequiresGuarded, workflowSelectionFailures } = require("./lib/acef-e
 const { buildAssuranceRequirements } = require("./lib/acef-assurance-requirements");
 const { loadModelRoutingPolicy, resolveRoleRuntime } = require("./lib/acef-model-routing");
 const { installationFreshnessFailures, readInstallationManifest } = require("./lib/acef-installation");
+const validatorModule = fs.existsSync(path.join(__dirname, "acef-process-validator.cjs"))
+  ? "./acef-process-validator.cjs" : "./acef-process-validator";
+const { FULL_V3_DISPATCH_CHECKS, evaluateProcessChecks } = require(validatorModule);
 const {
   fingerprintScope,
   objectivePath,
+  persistObjectiveHeartbeat,
   recordDefect,
   registerRun,
   setManualQa,
@@ -55,7 +59,7 @@ The existing direct record is the compact compatibility context. Do not inspect 
     return;
   }
   if (command === "worker-scope") {
-    console.log("Usage: acef-state worker-scope --repo <path> --story <scope> --phase <phase> --worker-id <id> --allow <glob>... [options]\n\nThe active run must exist and be active; its runId is bound into the scope automatically.");
+    console.log("Usage: acef-state worker-scope --repo <path> --story <scope> --phase <phase> --worker-id <id> --allow <glob>... [--allow-command <exact-command>...] [options]\n\nThe active run must exist and be active; its runId is bound into the scope automatically. Capsule-supervisor story workers require at least one exact allowed command.");
     return;
   }
   console.log(`ACEF typed-state writer
@@ -68,7 +72,7 @@ Usage:
   acef-state migrate-active-run --repo <path> --workflow-id quick-fix|lightweight|full-bmad [--assurance baseline|guarded] [--assurance-rationale <text>] [--assurance-approval <approval-id>]
   acef-state direct-run --repo <path> --run-id <id> --status active|complete|promoted --scope <scope> --acceptance <criterion>... --technical-boundary <kind> --reversible true [--changed-path <path>...] [--verification-command <command> --verification-exit-code <code>]... [options]
   acef-state actor --repo <path> --id <id> --story <scope> --phase <phase> --role <role> --client <client> --context-profile <profile> [options]
-  acef-state worker-scope --repo <path> --story <scope> --phase <phase> --worker-id <id> --allow <glob>... [--surface <name>...] [--pattern-use <kind>] [--requires-round-trip true|false] [--binding <input>><output>:<field>[:defaultMaskingRisk]] [options]
+  acef-state worker-scope --repo <path> --story <scope> --phase <phase> --worker-id <id> --allow <glob>... [--allow-command <exact-command>...] [--surface <name>...] [--pattern-use <kind>] [--requires-round-trip true|false] [--binding <input>><output>:<field>[:defaultMaskingRisk]] [options]
   acef-state context-sync --repo <path>
   acef-state atdd-precheck --repo <path> --test-path <path>...
   acef-state atdd-correction-start --repo <path> --findings-sha256 <sha256>
@@ -97,7 +101,7 @@ function durablePersistenceEvidenceText(text) {
 
 function parseArgs(argv) {
   const [command, ...rest] = argv;
-  const opts = { command, repo: process.cwd(), allow: [], satisfies: [], evidence: [], surface: [], surfaceEvidence: [], binding: [], bindingEvidence: [], riskTrigger: [], clarifyingQuestion: [], inferredAnswer: [], unresolvedQuestion: [], requiredSurface: [], coveredSurface: [], goalEvidence: [], goalMissing: [], acceptance: [], changedPath: [], verificationCommand: [], verificationExitCode: [], unresolvedRisk: [], unresolvedFinding: [], finding: [], findingId: [], findingSeverity: [], findingReason: [], promotionReason: [], expectedStory: [], expectedTest: [], testPath: [], objectiveDefect: [], commandArgv: [] };
+  const opts = { command, repo: process.cwd(), allow: [], allowCommand: [], satisfies: [], evidence: [], surface: [], surfaceEvidence: [], binding: [], bindingEvidence: [], riskTrigger: [], clarifyingQuestion: [], inferredAnswer: [], unresolvedQuestion: [], requiredSurface: [], coveredSurface: [], goalEvidence: [], goalMissing: [], acceptance: [], changedPath: [], verificationCommand: [], verificationExitCode: [], unresolvedRisk: [], unresolvedFinding: [], finding: [], findingId: [], findingSeverity: [], findingReason: [], promotionReason: [], expectedStory: [], expectedTest: [], testPath: [], objectiveDefect: [], commandArgv: [] };
   for (let index = 0; index < rest.length; index += 1) {
     const arg = rest[index];
     if (arg === "--help" || arg === "-h") {
@@ -117,7 +121,7 @@ function parseArgs(argv) {
     const value = rest[index + 1];
     if (value === undefined || value.startsWith("--")) throw new Error(`Missing value for ${arg}`);
     index += 1;
-    if (["allow", "satisfies", "evidence", "surface", "surfaceEvidence", "binding", "bindingEvidence", "riskTrigger", "clarifyingQuestion", "inferredAnswer", "unresolvedQuestion", "requiredSurface", "coveredSurface", "goalEvidence", "goalMissing", "acceptance", "changedPath", "verificationCommand", "verificationExitCode", "unresolvedRisk", "unresolvedFinding", "finding", "findingId", "findingSeverity", "findingReason", "promotionReason", "expectedStory", "expectedTest", "testPath", "objectiveDefect"].includes(key)) opts[key].push(value);
+    if (["allow", "allowCommand", "satisfies", "evidence", "surface", "surfaceEvidence", "binding", "bindingEvidence", "riskTrigger", "clarifyingQuestion", "inferredAnswer", "unresolvedQuestion", "requiredSurface", "coveredSurface", "goalEvidence", "goalMissing", "acceptance", "changedPath", "verificationCommand", "verificationExitCode", "unresolvedRisk", "unresolvedFinding", "finding", "findingId", "findingSeverity", "findingReason", "promotionReason", "expectedStory", "expectedTest", "testPath", "objectiveDefect"].includes(key)) opts[key].push(value);
     else opts[key] = value;
   }
   opts.repo = path.resolve(opts.repo);
@@ -320,8 +324,13 @@ function dirtyDigest(repo) {
 }
 
 function isControlPath(filePath) {
-  const normalized = filePath.replaceAll(path.sep, "/");
-  return /^docs\/ai\/(?:ACEF_(?:ACTIVE_RUN\.json|ACTIVE_WORKER_SCOPE\.json|ACTIVE_LEDGER|DIRECT_RUN\.json|CURRENT_CONTEXT\.md|RUN_[^/]+\.md|DELIVERY_LEDGER(?:_[^/]+)?\.md|[^/]+_DELIVERY_AUDIT\.md)|actors\/|gates\/|evidence\/|reports\/|approvals\/|repairs\/|corrections\/|capsules\/|judges\/)/.test(normalized);
+  const normalized = String(filePath || "").replaceAll(path.sep, "/");
+  return /^\.acef\//.test(normalized)
+    || /^\.(?:agents|claude|cline|codex|cursor|gemini|goose|kiro|mymir|opencode|qoder|qwen|roo|windsurf)\//.test(normalized)
+    || /^_bmad(?:-output)?\//.test(normalized)
+    || /^docs\/ai\/ACEF_[^/]+\.(?:json|md)$/.test(normalized)
+    || normalized === "docs/ai/ACEF_ACTIVE_LEDGER"
+    || /^docs\/ai\/(?:actors|gates|evidence|reports|approvals|repairs|corrections|capsules|judges|objectives)\//.test(normalized);
 }
 
 function dirtyApplicationPaths(repo) {
@@ -352,10 +361,51 @@ function syncRuntimeContext(repo, activeRun, workerScope = null) {
     && workerScope.runId === activeRun.runId
     && normalizedScope(workerScope.activeStory) === normalizedScope(activeRun.activeStory)
     ? workerScope : null;
+  const lastPassedGate = activeRun.lastPassedGate || "not-yet-applicable";
+  const allowedPaths = matchingScope?.allowedPaths || [];
+  const allowedCommands = matchingScope?.allowedCommands || [];
   const lines = [
     "# ACEF Current Context",
     "",
+    `source_ledger: ${activeRun.ledgerPath}`,
+    `active_story: ${activeRun.activeStory}`,
+    `active_phase: ${activeRun.activePhase}`,
+    `last_passed_gate: ${lastPassedGate}`,
+    "",
+    "## Current Work",
     `- Run: \`${activeRun.runId}\``,
+    `- Story: \`${activeRun.activeStory}\``,
+    `- Phase: \`${activeRun.activePhase}\``,
+    "",
+    "## Gate State",
+    `- Last passed gate: \`${lastPassedGate}\``,
+    `- Next allowed step: ${activeRun.nextAllowedStep || "follow the typed supervisor action"}`,
+    "",
+    "## Allowed Scope",
+    ...(allowedPaths.length ? allowedPaths.map((entry) => `- \`${entry}\``) : ["- Conductor-owned control state only until a worker scope is bound."]),
+    "",
+    "## Relevant Acceptance Criteria",
+    "- Use only the active story artifact and its bound evidence requirements.",
+    "",
+    "## Required Commands",
+    ...(allowedCommands.length ? allowedCommands.map((entry) => `- \`${entry}\``) : ["- No worker command is authorized until an exact command is bound in worker scope."]),
+    "",
+    "## Deferred and Out of Scope",
+    "- Everything outside the typed active story and worker scope.",
+    "",
+    "## Known Pitfalls",
+    "- Stop fail-closed when active state, scope, or validator results disagree.",
+    "",
+    "## Artifact Paths",
+    `- Ledger: \`${activeRun.ledgerPath}\``,
+    `- Worker scope: \`${activeRun.workerScopePath || "docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json"}\``,
+    "",
+    "## Role Inputs",
+    `- Role: \`${activeRun.workerRole || "conductor"}\``,
+    `- Full ledger access: \`${activeRun.fullLedgerAccess || "denied"}\``,
+    `- Context line limit: \`${activeRun.maxLines || 120}\``,
+    "",
+    "## Runtime Binding",
     `- Contract: \`${activeRun.fullFlowContract}\``,
     `- Runtime: \`${activeRun.runtimeContract}\``,
     `- Assurance: \`${activeRun.assuranceProfile}\``,
@@ -363,12 +413,10 @@ function syncRuntimeContext(repo, activeRun, workerScope = null) {
     `- Active story: \`${activeRun.activeStory}\``,
     `- Active phase: \`${activeRun.activePhase}\``,
     ...(activeRun.terminalDisposition ? [`- Terminal disposition: \`${activeRun.terminalDisposition}\``] : []),
-    `- Next allowed step: ${activeRun.nextAllowedStep || "follow the typed supervisor action"}`,
   ];
   if (matchingScope) {
     lines.push(`- Worker: \`${matchingScope.workerId}\``);
     lines.push(`- Worker phase: \`${matchingScope.phase}\``);
-    for (const allowedPath of matchingScope.allowedPaths || []) lines.push(`- Allowed path: \`${allowedPath}\``);
     for (const surface of matchingScope.surfaces || []) lines.push(`- Surface: \`${surface}\``);
   }
   lines.push("- Stop rule: refuse writes outside typed scope; stop fail-closed when state and supervisor disagree.", "");
@@ -456,9 +504,18 @@ function writeActiveRun(opts) {
   const quickFixContract = workflowId === "quick-fix"
     ? (sameRun ? previous.quickFixContract : "single-review-v1")
     : undefined;
-  const runtimeContract = sameRun ? (opts.runtimeContract || previousRuntimeContract) : opts.runtimeContract;
+  const installation = readInstallationManifest(opts.repo);
+  const installedRuntimeDefault = installation?.components?.tools?.defaultRuntimeContract;
+  const runtimeContract = sameRun
+    ? (opts.runtimeContract || previousRuntimeContract)
+    : (opts.runtimeContract || (workflowId === "full-bmad" && fullFlowContract === "four-actor-v3"
+      ? installedRuntimeDefault : undefined));
   if (runtimeContract && (workflowId !== "full-bmad" || fullFlowContract !== "four-actor-v3")) {
     throw new Error("--runtime-contract requires --workflow-id full-bmad --full-flow-contract four-actor-v3");
+  }
+  if (!sameRun && installedRuntimeDefault && workflowId === "full-bmad"
+    && fullFlowContract === "four-actor-v3" && !runtimeContract) {
+    throw new Error(`installed ${installedRuntimeDefault} requires a runtimeContract before Full v3 bootstrap`);
   }
   const riskTriggers = opts.riskTrigger.length ? opts.riskTrigger : [];
   const assuranceProfile = opts.assurance || (riskRequiresGuarded(riskTriggers) ? "guarded" : "baseline");
@@ -484,7 +541,6 @@ function writeActiveRun(opts) {
   if (assuranceProfile === "guarded" && scopeUnit === "epic" && workflowId !== "full-bmad" && !opts.assuranceApproval) {
     throw new Error("non-Full guarded epic requires --assurance-approval <typed approval id>");
   }
-  const installation = readInstallationManifest(opts.repo);
   const objectiveRequired = installation?.components?.tools?.objectiveSupervisor === "objective-supervisor-v1";
   const objectiveContract = sameRun
     ? previous.objectiveContract
@@ -504,6 +560,13 @@ function writeActiveRun(opts) {
   const objectiveDefectIds = opts.objectiveDefect.length
     ? [...new Set(opts.objectiveDefect)]
     : (sameRun ? previous.objectiveDefectIds : undefined);
+  const workerRole = opts.workerRole || (sameRun ? previous.workerRole : null);
+  const defaultLedgerAccess = /epic[-_ ]?process[-_ ]?judge/i.test(workerRole || "")
+    ? "full"
+    : /process[-_ ]?judge/i.test(workerRole || "") ? "story-slice" : "denied";
+  const fullLedgerAccess = opts.fullLedgerAccess
+    || (sameRun && !opts.workerRole ? previous.fullLedgerAccess : null)
+    || (runtimeContract ? defaultLedgerAccess : null);
   const record = {
     schema: "acef.active-run.v2",
     runId: opts.runId,
@@ -530,7 +593,7 @@ function writeActiveRun(opts) {
     activePhase: opts.phase,
     activeGoal: activeGoal(opts) || (sameRun ? previous.activeGoal : null),
     goalCoverage: goalCoverage(opts) || (sameRun ? previous.goalCoverage : null),
-    workerRole: opts.workerRole || (sameRun ? previous.workerRole : null),
+    workerRole,
     activeActorId: opts.actor || (sameRun ? previous.activeActorId : null),
     workflowRationale: opts.workflowRationale || opts.laneRationale || (sameRun ? previous.workflowRationale : null),
     intakeDecision: intakeDecision(opts) || (sameRun ? previous.intakeDecision : null),
@@ -538,8 +601,9 @@ function writeActiveRun(opts) {
     workerScopePath: opts.workerScope || (sameRun ? previous.workerScopePath : null),
     workflowPath: opts.workflow || (sameRun ? previous.workflowPath : null),
     workflowNodeId: opts.workflowNode || (sameRun ? previous.workflowNodeId : null),
-    fullLedgerAccess: opts.fullLedgerAccess || (sameRun ? previous.fullLedgerAccess : null),
-    maxLines: opts.maxLines ? Number(opts.maxLines) : (sameRun ? previous.maxLines : null),
+    fullLedgerAccess,
+    maxLines: opts.maxLines ? Number(opts.maxLines) : (sameRun ? previous.maxLines : (runtimeContract ? 120 : null)),
+    lastPassedGate: opts.lastPassedGate || (sameRun ? previous.lastPassedGate : null),
     nextAllowedStep: opts.nextAllowedStep || (sameRun ? previous.nextAllowedStep : null),
     ledgerPath: opts.ledger,
     contextPath: opts.context || (sameRun ? previous.contextPath : null),
@@ -566,6 +630,7 @@ function writeActiveRun(opts) {
   }
   atomicJson(target, record, { overwrite: true, validate: parseActiveRun });
   syncRuntimeContext(opts.repo, record);
+  persistObjectiveHeartbeat(opts.repo, record);
   console.log(`WROTE active-run ${relative(opts.repo, target)}`);
 }
 
@@ -662,6 +727,8 @@ function migrateActiveRun(opts) {
     updatedAt: new Date().toISOString(),
   };
   atomicJson(target, record, { overwrite: true, validate: parseActiveRun });
+  syncRuntimeContext(opts.repo, record);
+  persistObjectiveHeartbeat(opts.repo, record);
   console.log(`MIGRATED active-run ${relative(opts.repo, target)} workflow=${workflowId} assurance=${assuranceProfile}`);
 }
 
@@ -785,6 +852,35 @@ function writeActor(opts) {
   };
   const target = actorPath(opts.repo, opts.id);
   atomicJson(target, record, { validate: parseActorRecord });
+  let heartbeatRun = activeRun;
+  if (v3 && activeRun.status === "active") {
+    const workerScopePath = activeRun.workerScopePath
+      ? path.resolve(opts.repo, activeRun.workerScopePath)
+      : path.join(opts.repo, "docs", "ai", "ACEF_ACTIVE_WORKER_SCOPE.json");
+    let workerScope = null;
+    try { workerScope = fs.existsSync(workerScopePath) ? parseWorkerScope(workerScopePath) : null; } catch {}
+    const actorMatchesWorker = activeRun.scopeUnit === "story" && workerScope
+      && workerScope.runId === activeRun.runId
+      && normalizedScope(workerScope.activeStory) === normalizedScope(activeRun.activeStory)
+      && workerScope.workerId === opts.id
+      && canonicalGatePhase(workerScope.phase) === canonicalGatePhase(opts.phase)
+      && canonicalGatePhase(activeRun.activePhase) === canonicalGatePhase(opts.phase);
+    const actorMatchesEpicJudge = activeRun.scopeUnit === "epic"
+      && ["processjudge", "epicprocessjudge"].includes(canonicalGatePhase(opts.phase))
+      && normalizedScope(opts.story) === normalizedScope(activeRun.activeStory);
+    if (actorMatchesWorker || actorMatchesEpicJudge) {
+      const { lane: _compatibilityLane, ...storedRun } = activeRun;
+      heartbeatRun = {
+        ...storedRun,
+        workerRole: actorMatchesEpicJudge ? "epic-process-judge" : opts.role,
+        activeActorId: opts.id,
+        updatedAt: new Date().toISOString(),
+      };
+      atomicJson(activeRunPath, heartbeatRun, { overwrite: true, validate: parseActiveRun });
+      syncRuntimeContext(opts.repo, heartbeatRun, actorMatchesWorker ? workerScope : null);
+    }
+  }
+  if (!opts.skipObjectiveHeartbeat) persistObjectiveHeartbeat(opts.repo, heartbeatRun);
   console.log(`WROTE actor ${relative(opts.repo, target)}`);
 }
 
@@ -798,6 +894,17 @@ function writeWorkerScope(opts) {
   if (String(activeRun.activeStory) !== String(opts.story)) {
     throw new Error(`worker-scope story ${opts.story} does not match active run story ${activeRun.activeStory}`);
   }
+  if (capsuleRuntime(activeRun) && activeRun.scopeUnit === "story" && !opts.allowCommand.length) {
+    throw new Error("capsule-supervisor story worker-scope requires at least one exact --allow-command");
+  }
+  if (capsuleRuntime(activeRun) && activeRun.scopeUnit === "story"
+    && canonicalGatePhase(opts.phase) === "atdd") {
+    const hasTestPath = opts.allow.some(testPath);
+    const hasImplementationPath = opts.allow.some(workerImplementationScopePath);
+    if (!hasTestPath || !hasImplementationPath) {
+      throw new Error("capsule-supervisor ATDD worker-scope requires at least one test path and one non-control implementation path for the atomic Development handoff");
+    }
+  }
   const requiresRoundTrip = opts.requiresRoundTrip === undefined ? undefined : parseBoolean(opts.requiresRoundTrip, "--requires-round-trip");
   const record = {
     runId: activeRun.runId,
@@ -805,6 +912,7 @@ function writeWorkerScope(opts) {
     phase: opts.phase,
     workerId: opts.workerId,
     allowedPaths: opts.allow,
+    ...(opts.allowCommand.length ? { allowedCommands: [...new Set(opts.allowCommand)] } : {}),
     surfaces: opts.surface.length ? opts.surface : undefined,
     patternUse: opts.patternUse || undefined,
     requiresRoundTrip,
@@ -818,6 +926,7 @@ function writeWorkerScope(opts) {
   const target = path.join(opts.repo, "docs", "ai", "ACEF_ACTIVE_WORKER_SCOPE.json");
   atomicJson(target, record, { overwrite: true, validate: parseWorkerScope });
   syncRuntimeContext(opts.repo, activeRun, record);
+  persistObjectiveHeartbeat(opts.repo, activeRun);
   console.log(`WROTE worker-scope ${relative(opts.repo, target)}`);
 }
 
@@ -831,6 +940,7 @@ function writeContextSync(opts) {
     : path.join(opts.repo, "docs", "ai", "ACEF_ACTIVE_WORKER_SCOPE.json");
   const workerScope = fs.existsSync(workerScopePath) ? parseWorkerScope(workerScopePath) : null;
   syncRuntimeContext(opts.repo, activeRun, workerScope);
+  persistObjectiveHeartbeat(opts.repo, activeRun);
   console.log(`WROTE current-context ${activeRun.contextPath}`);
 }
 
@@ -850,18 +960,25 @@ function writeApproval(opts) {
   };
   const target = path.join(opts.repo, "docs", "ai", "approvals", `${safeId(opts.id, "approval id")}.json`);
   atomicJson(target, record, { validate: parseApproval });
+  const activeRunPath = path.join(opts.repo, "docs", "ai", "ACEF_ACTIVE_RUN.json");
+  if (fs.existsSync(activeRunPath)) persistObjectiveHeartbeat(opts.repo, parseActiveRun(activeRunPath));
   console.log(`WROTE approval ${relative(opts.repo, target)}`);
 }
 
-function executeDiscoveryContract(opts) {
-  if (!opts.discoveryCommandJson) return null;
+function parseDiscoveryCommandArgv(value) {
   let discoveryArgv;
-  try { discoveryArgv = JSON.parse(opts.discoveryCommandJson); }
+  try { discoveryArgv = JSON.parse(value); }
   catch { throw new Error("--discovery-command-json must be a JSON argv array"); }
   if (!Array.isArray(discoveryArgv) || !discoveryArgv.length
     || discoveryArgv.some((entry) => typeof entry !== "string" || !entry)) {
     throw new Error("--discovery-command-json must be a non-empty JSON argv array of strings");
   }
+  return discoveryArgv;
+}
+
+function executeDiscoveryContract(opts, discoveryArgv = null) {
+  if (!opts.discoveryCommandJson) return null;
+  discoveryArgv = discoveryArgv || parseDiscoveryCommandArgv(opts.discoveryCommandJson);
   const discoveryExecution = cp.spawnSync(discoveryArgv[0], discoveryArgv.slice(1), {
     cwd: opts.repo, encoding: "utf8", env: process.env, maxBuffer: 100 * 1024 * 1024,
   });
@@ -882,6 +999,35 @@ function executeDiscoveryContract(opts) {
     discoveredTests,
     stdoutSha256: sha256(discoveryOutput),
   };
+}
+
+function assertFrozenEvidenceCommands(repo, activeRun, actor, story, commands) {
+  if (!capsuleRuntime(activeRun) || activeRun.status !== "active" || activeRun.scopeUnit !== "story") return;
+  if (normalizedScope(story) !== normalizedScope(activeRun.activeStory)) {
+    throw new Error(`capsule-supervisor evidence story ${story} does not match active story ${activeRun.activeStory}`);
+  }
+  const workerScopePath = activeRun.workerScopePath
+    ? path.resolve(repo, activeRun.workerScopePath)
+    : path.join(repo, "docs", "ai", "ACEF_ACTIVE_WORKER_SCOPE.json");
+  if (!fs.existsSync(workerScopePath)) {
+    throw new Error("capsule-supervisor evidence-run requires the active typed worker scope");
+  }
+  const workerScope = parseWorkerScope(workerScopePath);
+  if (workerScope.runId !== activeRun.runId
+    || normalizedScope(workerScope.activeStory) !== normalizedScope(activeRun.activeStory)) {
+    throw new Error("capsule-supervisor evidence-run worker scope does not match the active run/story");
+  }
+  if (canonicalGatePhase(workerScope.phase) !== canonicalGatePhase(activeRun.activePhase)) {
+    throw new Error(`capsule-supervisor evidence-run worker scope phase ${workerScope.phase} does not match active phase ${activeRun.activePhase}`);
+  }
+  if (workerScope.workerId !== actor) {
+    throw new Error(`capsule-supervisor evidence actor ${actor} does not match active worker ${workerScope.workerId}`);
+  }
+  for (const { label, commandText } of commands) {
+    if (!(workerScope.allowedCommands || []).includes(commandText)) {
+      throw new Error(`capsule-supervisor ${label} command is not authorized; commandText must exactly match workerScope.allowedCommands: ${commandText}`);
+    }
+  }
 }
 
 function writeEvidence(opts) {
@@ -907,6 +1053,12 @@ function writeEvidence(opts) {
   const rawPath = rawEvidencePath(opts.repo, opts.id);
   const target = evidencePath(opts.repo, opts.id);
   const commandText = opts.commandArgv.map(quoteArg).join(" ");
+  const discoveryArgv = opts.discoveryCommandJson
+    ? parseDiscoveryCommandArgv(opts.discoveryCommandJson) : null;
+  assertFrozenEvidenceCommands(opts.repo, activeRun, opts.actor, opts.story, [
+    { label: "evidence", commandText },
+    ...(discoveryArgv ? [{ label: "discovery", commandText: discoveryArgv.map(quoteArg).join(" ") }] : []),
+  ]);
   const currentCommit = gitCommit(opts.repo);
   const currentTree = gitTree(opts.repo);
   const currentDirtyDigest = dirtyDigest(opts.repo);
@@ -933,6 +1085,7 @@ function writeEvidence(opts) {
   if (reusable) {
     if (reusable.evidenceId === opts.id) {
       console.log(`REUSED evidence ${relative(opts.repo, target)} source=${reusable.evidenceId} exit=${reusable.exitCode}`);
+      advanceAtddRedEvidence(opts.repo, activeRun, reusable);
       process.exitCode = reusable.exitCode;
       return;
     }
@@ -952,13 +1105,15 @@ function writeEvidence(opts) {
     };
     atomicJson(target, record, { validate: parseEvidenceManifest });
     console.log(`REUSED evidence ${relative(opts.repo, target)} source=${reusable.evidenceId} exit=${record.exitCode}`);
+    const advanced = advanceAtddRedEvidence(opts.repo, activeRun, record);
+    if (!advanced) persistObjectiveHeartbeat(opts.repo, activeRun);
     process.exitCode = record.exitCode;
     return;
   }
   if (fs.existsSync(rawPath) || fs.existsSync(target)) {
     throw new Error(`Refusing to overwrite immutable evidence ${opts.id}`);
   }
-  const discovery = executeDiscoveryContract(opts);
+  const discovery = executeDiscoveryContract(opts, discoveryArgv);
   const beforeDirty = dirtyApplicationPaths(opts.repo);
   const actorFile = actorPath(opts.repo, opts.actor);
   const canonicalAtddId = capsuleActorId(activeRun, "atdd", opts.story);
@@ -1008,6 +1163,7 @@ function writeEvidence(opts) {
       inputTree: gitTreeAt(opts.repo, redParent),
       model: opts.model,
       effort: opts.effort,
+      skipObjectiveHeartbeat: true,
     });
   }
   const actor = parseActorRecord(actorFile);
@@ -1079,6 +1235,8 @@ function writeEvidence(opts) {
   };
   atomicJson(target, record, { validate: parseEvidenceManifest });
   console.log(`WROTE evidence ${relative(opts.repo, target)} exit=${exitCode} raw=${record.rawArtifact.path}`);
+  const advanced = v3Atdd && advanceAtddRedEvidence(opts.repo, activeRun, record, raw);
+  if (!advanced) persistObjectiveHeartbeat(opts.repo, activeRun);
   if (afterDirty.length) {
     console.error(`Evidence captured with dirty application paths: ${afterDirty.join(", ")}`);
   }
@@ -1168,6 +1326,7 @@ function writeAtddCorrectionStart(opts) {
   atomicJson(path.join(opts.repo, "docs", "ai", "ACEF_ACTIVE_RUN.json"), runRecord, { overwrite: true, validate: parseActiveRun });
   atomicJson(workerScopePath, restrictedScope, { overwrite: true, validate: parseWorkerScope });
   syncRuntimeContext(opts.repo, runRecord, restrictedScope);
+  persistObjectiveHeartbeat(opts.repo, runRecord);
   console.log(`WROTE atdd-correction-start ${relative(opts.repo, correctionPath)}`);
 }
 
@@ -1230,6 +1389,39 @@ function applicationChangedSince(repo, fromCommit, toCommit = "HEAD") {
 
 function testPath(filePath) {
   return /(^|\/)(__tests__|tests?|specs?)(\/|$)|(\.|-)(test|spec)\.[cm]?[jt]sx?$|Test\.(php|py|rb|cs)$/i.test(String(filePath || ""));
+}
+
+function workerImplementationScopePath(filePath) {
+  const normalized = String(filePath || "").replaceAll(path.sep, "/");
+  return !testPath(normalized) && !isControlPath(normalized)
+    && !/^(?:_bmad-output|docs|\.acef)(?:\/|$)/.test(normalized);
+}
+
+function advanceAtddRedEvidence(repo, activeRun, record, rawText = null) {
+  if (activeRun?.fullFlowContract !== "four-actor-v3" || !capsuleRuntime(activeRun)
+    || !["atdd", "atddcorrection"].includes(canonicalGatePhase(activeRun.activePhase))
+    || record.exitCode === 0) return false;
+  let actor;
+  try { actor = parseActorRecord(actorPath(repo, record.actorInstanceId)); } catch { return false; }
+  if (canonicalGatePhase(actor.phase) !== "atdd"
+    || normalizedScope(actor.story) !== normalizedScope(activeRun.activeStory)) return false;
+  let redParent = "";
+  try { redParent = runGit(repo, ["rev-parse", `${record.repositoryCommit}^`]); } catch {}
+  const redPaths = redParent ? applicationChangedSince(repo, redParent, record.repositoryCommit) : [];
+  const raw = rawText === null ? fs.readFileSync(path.resolve(repo, record.rawArtifact.path), "utf8") : rawText;
+  const redSources = redPaths.map((filePath) => ({
+    filePath,
+    source: runGit(repo, ["show", `${record.repositoryCommit}:${filePath}`]),
+  }));
+  const failure = atddRedExecutionFailure(record, raw, redPaths)
+    || atddTestSourceAuthenticityFailure(redSources);
+  if (failure) {
+    console.error(`ATDD red evidence did not advance phase: ${failure}`);
+    return false;
+  }
+  writePhaseTransition({ repo, phase: "development" });
+  console.log("WROTE atomic ATDD red-to-Development handoff");
+  return true;
 }
 
 function inferredSurfaces(paths) {
@@ -1332,6 +1524,7 @@ function writeReviewScope(opts) {
     return;
   }
   atomicJson(target, record, { overwrite: true, validate: parseWorkerScope });
+  persistObjectiveHeartbeat(opts.repo, activeRun);
   console.log(`WROTE review-scope ${relative(opts.repo, target)} surfaces=${surfaces.join(",")}`);
 }
 
@@ -1837,6 +2030,7 @@ function writeDeterministicStoryCloseGate(opts, activeRun) {
   };
   const target = path.join(opts.repo, "docs", "ai", "gates", `${safeId(opts.id, "gate id")}.json`);
   atomicJson(target, record, { validate: parseGateVerdict });
+  persistObjectiveHeartbeat(opts.repo, activeRun);
   console.log(`WROTE deterministic story-close gate ${relative(opts.repo, target)} verdict=${verdict}`);
 }
 
@@ -1920,6 +2114,7 @@ function writeLegacyGate(opts) {
   }
   const target = path.join(opts.repo, "docs", "ai", "gates", `${safeId(opts.id, "gate id")}.json`);
   atomicJson(target, record, { validate: parseGateVerdict });
+  if (activeRun) persistObjectiveHeartbeat(opts.repo, activeRun);
   console.log(`WROTE gate ${relative(opts.repo, target)} verdict=${opts.verdict}`);
 }
 
@@ -1946,6 +2141,14 @@ function writePhaseTransition(opts) {
     || (current === "atddcorrection" && requested === "development")
     || (current === "development" && requested === "codereview");
   if (!allowed) throw new Error(`invalid capsule-supervisor phase transition ${activeRun.activePhase} -> ${opts.phase}`);
+  const installation = readInstallationManifest(opts.repo);
+  if (current === "readiness" && requested === "atdd"
+    && installation?.components?.tools?.dispatchReadinessContract === "full-v3-dispatch-readiness-v1") {
+    const failures = evaluateProcessChecks(opts.repo, FULL_V3_DISPATCH_CHECKS).filter((item) => !item.ok);
+    if (failures.length) {
+      throw new Error(`readiness -> ATDD blocked: ${failures.map((item) => `${item.name}: ${item.message}`).join("; ")}`);
+    }
+  }
   let workerScopeTransition = null;
   let workerScopeTarget = null;
   if (["atdd", "atddcorrection"].includes(current) && requested === "development") {
@@ -1975,12 +2178,25 @@ function writePhaseTransition(opts) {
   }
   const target = path.join(opts.repo, "docs", "ai", "ACEF_ACTIVE_RUN.json");
   const { lane: _compatibilityLane, ...storedRun } = activeRun;
-  const record = { ...storedRun, activePhase: opts.phase, updatedAt: new Date().toISOString() };
+  const transitionBinding = requested === "atdd"
+    ? { workerRole: "test-author", activeActorId: null, nextAllowedStep: "write_failing_tests" }
+    : requested === "development"
+      ? { workerRole: "developer", activeActorId: null, nextAllowedStep: "implement_to_green" }
+      : requested === "codereview"
+        ? { workerRole: null, activeActorId: null, nextAllowedStep: "review_report_only" }
+        : {};
+  const record = {
+    ...storedRun,
+    activePhase: opts.phase,
+    ...transitionBinding,
+    updatedAt: new Date().toISOString(),
+  };
   atomicJson(target, record, { overwrite: true, validate: parseActiveRun });
   if (workerScopeTransition) {
     atomicJson(workerScopeTarget, workerScopeTransition, { overwrite: true, validate: parseWorkerScope });
   }
   syncRuntimeContext(opts.repo, record, workerScopeTransition);
+  persistObjectiveHeartbeat(opts.repo, record);
   console.log(`WROTE phase-transition ${activeRun.activePhase} -> ${opts.phase}`);
 }
 
@@ -2014,7 +2230,7 @@ function writeStoryTransition(opts) {
       ...storedRun,
       scopeUnit: "story",
       activeStory: nextStory,
-      activePhase: "atdd",
+      activePhase: "readiness",
       workerRole: null,
       activeActorId: null,
       nextAllowedStep: "refresh current context and worker scope for the frozen next story",
@@ -2032,6 +2248,7 @@ function writeStoryTransition(opts) {
     };
   atomicJson(target, record, { overwrite: true, validate: parseActiveRun });
   syncRuntimeContext(opts.repo, record);
+  persistObjectiveHeartbeat(opts.repo, record);
   console.log(nextStory
     ? `WROTE story-transition ${activeRun.activeStory} -> ${nextStory}`
     : `WROTE story-transition ${activeRun.activeStory} -> ${record.activeStory}`);
@@ -2068,6 +2285,7 @@ function writeDeveloperRepair(opts) {
   };
   const target = path.join(opts.repo, "docs", "ai", "repairs", `${safeId(opts.id, "repair id")}.json`);
   atomicJson(target, record, { validate: parseDeveloperRepair });
+  persistObjectiveHeartbeat(opts.repo, activeRun);
   console.log(`WROTE Developer repair ${relative(opts.repo, target)} cycle=${cycle}`);
 }
 
@@ -2166,11 +2384,14 @@ function writeReviewCapsule(opts) {
   const record = { ...payload, integrity: { algorithm: "sha256", payloadSha256: sha256(JSON.stringify(payload)) } };
   const target = path.join(opts.repo, "docs", "ai", "capsules", `${safeId(opts.id, "capsule id")}.json`);
   const serialized = `${JSON.stringify(record, null, 2)}\n`;
+  let created = false;
   if (fs.existsSync(target)) {
     if (fs.readFileSync(target, "utf8") !== serialized) throw new Error(`Refusing to replace non-identical capsule ${opts.id}`);
   } else {
     atomicJson(target, record, { validate: parseAssuranceCapsule });
+    created = true;
   }
+  if (created) persistObjectiveHeartbeat(opts.repo, activeRun);
   console.log(`WROTE review capsule ${relative(opts.repo, target)} sha256=${sha256(serialized)}`);
 }
 
@@ -2258,6 +2479,7 @@ function writeReviewCompletion(opts) {
     inputCommit: report.inputCommit,
     inputTree: report.inputTree,
     artifactPath: relativePath,
+    skipObjectiveHeartbeat: opts.skipObjectiveHeartbeat,
   });
   console.log(`REVIEW_REPORT_PATH=${relativePath}`);
   console.log(`REVIEW_REPORT_SHA256=${sha256(bytes)}`);
@@ -2335,7 +2557,15 @@ function writeReviewResult(opts) {
   };
   try {
     atomicJson(reportPath, report, { validate: parseReviewReport });
-    writeReviewCompletion({ repo: opts.repo, artifactPath: relative(opts.repo, reportPath), actor: opts.actor, model: opts.model, effort: opts.effort });
+    writeReviewCompletion({
+      repo: opts.repo,
+      artifactPath: relative(opts.repo, reportPath),
+      actor: opts.actor,
+      model: opts.model,
+      effort: opts.effort,
+      skipObjectiveHeartbeat: true,
+    });
+    persistObjectiveHeartbeat(opts.repo, activeRun);
   } catch (error) {
     if (!fs.existsSync(reviewerPath)) fs.rmSync(reportPath, { force: true });
     throw error;
@@ -2364,6 +2594,7 @@ function writeJudgeDecision(opts) {
   };
   const target = path.join(opts.repo, "docs", "ai", "judges", `${safeId(opts.id, "judge decision id")}.json`);
   atomicJson(target, record, { validate: parseProcessJudgeDecision });
+  persistObjectiveHeartbeat(opts.repo, activeRun);
   console.log(`WROTE Process Judge decision ${relative(opts.repo, target)} verdict=${record.verdict}`);
 }
 
@@ -2434,6 +2665,7 @@ function writeEpicComplete(opts) {
   };
   atomicJson(activeRunPath, completed, { overwrite: true, validate: parseActiveRun });
   syncRuntimeContext(opts.repo, completed);
+  persistObjectiveHeartbeat(opts.repo, completed);
   console.log(`WROTE epic-complete ${relative(opts.repo, activeRunPath)} gate=${gate.gateId} verdict=${gate.verdict}`);
 }
 

@@ -1828,6 +1828,9 @@ try {
   expectPass("session-handoff", ["--repo", tmp, "--check", "session-handoff", "--ledger", "docs/ai/ACEF_demo_DELIVERY_AUDIT.md"]);
   expectPass("claims", ["--repo", tmp, "--check", "claims", "--ledger", "docs/ai/ACEF_demo_DELIVERY_AUDIT.md"]);
   expectPass("seeded-epic-gates", ["--repo", tmp, "--check", "seeded-epic-gates", "--ledger", "docs/ai/ACEF_demo_DELIVERY_AUDIT.md"]);
+  const noFutureEpicLedger = path.join(tmp, "docs", "ai", "ACEF_no_future_epic_DELIVERY_AUDIT.md");
+  fs.writeFileSync(noFutureEpicLedger, "# Bounded objective\n\nNo Epic 2 exists in this scope.\n");
+  expectPass("seeded-epic-gates", ["--repo", tmp, "--check", "seeded-epic-gates", "--ledger", "docs/ai/ACEF_no_future_epic_DELIVERY_AUDIT.md"]);
   expectPass("epic-boundary", ["--repo", tmp, "--check", "epic-boundary", "--ledger", "docs/ai/ACEF_demo_DELIVERY_AUDIT.md", "--target-epic", "2"]);
   expectPass("epic-transition-approval", ["--repo", tmp, "--check", "epic-transition-approval", "--ledger", "docs/ai/ACEF_demo_DELIVERY_AUDIT.md", "--target-epic", "2"]);
   fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_generic_continue_DELIVERY_AUDIT.md"), [

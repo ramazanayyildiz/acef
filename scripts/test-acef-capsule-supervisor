@@ -10,7 +10,16 @@ const state = path.join(root, "scripts", "acef-state");
 const supervisor = path.join(root, "scripts", "acef-supervisor");
 const validator = path.join(root, "scripts", "acef-process-validator");
 const status = path.join(root, "scripts", "acef-status");
+const next = path.join(root, "scripts", "acef-next");
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "acef-capsule-supervisor-"));
+const unauthorizedDiscoveryMarker = path.join(os.tmpdir(), `acef-unauthorized-discovery-${process.pid}.txt`);
+
+function quoteArg(value) {
+  return /^[A-Za-z0-9_./:@%+=,-]+$/.test(value) ? value : `'${value.replaceAll("'", `'\\''`)}'`;
+}
+
+const demoDiscoveryCommand = [process.execPath, "-e", "console.log('demo contract')"].map(quoteArg).join(" ");
+const otherDiscoveryCommand = [process.execPath, "-e", "console.log('other test')"].map(quoteArg).join(" ");
 
 function run(command, args, options = {}) {
   return cp.execFileSync(command, args, { cwd: tmp, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], ...options });
@@ -28,6 +37,23 @@ function readJson(relativePath) {
   return JSON.parse(fs.readFileSync(path.join(tmp, relativePath), "utf8"));
 }
 
+const objectiveRelativePath = "docs/ai/objectives/OBJ-capsule.json";
+
+function armObjectiveHeartbeat() {
+  const objective = readJson(objectiveRelativePath);
+  const before = objective.progress.activeControlSeconds;
+  objective.progress.lastObservedAt = new Date(Date.now() - 10000).toISOString();
+  fs.writeFileSync(path.join(tmp, objectiveRelativePath), `${JSON.stringify(objective, null, 2)}\n`);
+  return before;
+}
+
+function assertObjectiveHeartbeat(before, label) {
+  const after = readJson(objectiveRelativePath).progress.activeControlSeconds;
+  if (after < before + 9 || after > before + 13) {
+    throw new Error(`${label} objective heartbeat was missing or double-counted: before=${before} after=${after}`);
+  }
+}
+
 try {
   git(["init", "-q"]);
   git(["config", "user.email", "acef@example.invalid"]);
@@ -35,6 +61,7 @@ try {
   fs.mkdirSync(path.join(tmp, "app"), { recursive: true });
   fs.mkdirSync(path.join(tmp, "tests"), { recursive: true });
   fs.mkdirSync(path.join(tmp, "docs", "ai"), { recursive: true });
+  fs.writeFileSync(path.join(tmp, "AGENTS.md"), "# Agent entry\n");
   fs.writeFileSync(path.join(tmp, "app", "demo.js"), "module.exports = false;\n");
   fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_CURRENT_CONTEXT.md"), "# Current Context\n- AC: demo becomes true\n- focused: node --test tests/demo.test.js\n");
   fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_capsule_DELIVERY_AUDIT.md"), "# Capsule audit\n");
@@ -42,6 +69,7 @@ try {
   const baseCommit = git(["rev-parse", "HEAD"]);
 
   stateRun(["active-run", "--repo", tmp, "--run-id", "RUN-capsule", "--workflow-id", "full-bmad",
+    "--objective-id", "OBJ-capsule", "--objective-scope", "Deliver the bounded capsule lifecycle",
     "--full-flow-contract", "four-actor-v3", "--runtime-contract", "capsule-supervisor-v1",
     "--assurance", "guarded", "--assurance-rationale", "auth state transition", "--scope-unit", "story",
     "--expected-story", "Story Capsule", "--status", "active", "--story", "Story Capsule", "--phase", "atdd",
@@ -49,13 +77,17 @@ try {
     "--worker-scope", "docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json"]);
   stateRun(["worker-scope", "--repo", tmp, "--story", "Story Capsule", "--phase", "atdd",
     "--worker-id", "acef_story_capsule_atdd", "--allow", "app/**", "--allow", "tests/**",
+    "--allow-command", `${process.execPath} --test tests/demo.test.js`,
+    "--allow-command", demoDiscoveryCommand,
+    "--allow-command", otherDiscoveryCommand,
     "--surface", "integration", "--surface", "internal", "--surface", "notification",
     "--pattern-use", "new-reusable-pattern", "--requires-round-trip", "true",
     "--binding", "internal>internal:demo:true"]);
   const initialContext = fs.readFileSync(path.join(tmp, "docs", "ai", "ACEF_CURRENT_CONTEXT.md"), "utf8");
   if (!initialContext.includes("- Active story: `Story Capsule`")
     || !initialContext.includes("- Active phase: `atdd`")
-    || !initialContext.includes("- Allowed path: `app/**`")) {
+    || !initialContext.includes("- `app/**`")
+    || !initialContext.includes(`- \`${process.execPath} --test tests/demo.test.js\``)) {
     throw new Error("typed bootstrap did not synchronize the bounded Current Context");
   }
 
@@ -83,6 +115,20 @@ try {
   }
   fs.rmSync(nestedArrowFixture);
   git(["add", "tests/demo.test.js"]); git(["commit", "-qm", "red test"]);
+  const unauthorizedDiscovery = cp.spawnSync(process.execPath, [state, "evidence-run", "--repo", tmp,
+    "--id", "capsule-unauthorized-discovery", "--kind", "runtime-test",
+    "--actor", "acef_story_capsule_atdd", "--story", "Story Capsule",
+    "--satisfies", "story-capsule-ac1",
+    "--discovery-command-json", JSON.stringify([process.execPath, "-e",
+      `require('node:fs').writeFileSync(${JSON.stringify(unauthorizedDiscoveryMarker)}, 'executed')`]),
+    "--expected-test", "demo contract",
+    "--", process.execPath, "--test", "tests/demo.test.js"], { cwd: tmp, encoding: "utf8" });
+  if (unauthorizedDiscovery.status === 0
+    || !`${unauthorizedDiscovery.stdout}${unauthorizedDiscovery.stderr}`.includes("discovery command is not authorized")
+    || fs.existsSync(unauthorizedDiscoveryMarker)
+    || fs.existsSync(path.join(tmp, "docs", "ai", "evidence", "capsule-unauthorized-discovery.json"))) {
+    throw new Error("unauthorized discovery command executed or left evidence state");
+  }
   const red = cp.spawnSync(process.execPath, [state, "evidence-run", "--repo", tmp, "--id", "capsule-red",
     "--kind", "runtime-test", "--actor", "acef_story_capsule_atdd", "--story", "Story Capsule",
     "--model", "gpt-5.6-sol", "--effort", "high", "--satisfies", "story-capsule-ac1",
@@ -93,10 +139,9 @@ try {
     throw new Error("red evidence was not captured");
   }
   const atddDone = JSON.parse(run(process.execPath, [supervisor, "--repo", tmp]));
-  if (atddDone.action.command !== ".acef/bin/acef-state phase-transition --repo . --phase development") {
-    throw new Error("supervisor did not provide the exact ATDD transition command");
+  if (atddDone.action.type !== "dispatch" || atddDone.action.role !== "development") {
+    throw new Error("red evidence did not atomically advance the supervisor to Development dispatch");
   }
-  stateRun(["phase-transition", "--repo", tmp, "--phase", "development"]);
   const developmentScope = readJson("docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json");
   if (developmentScope.phase !== "development" || developmentScope.workerId !== "acef_story_capsule_development") {
     throw new Error("ATDD transition did not atomically rebind the typed worker scope to Development");
@@ -105,6 +150,17 @@ try {
     .includes("- Active phase: `development`")) {
     throw new Error("phase transition left Current Context stale");
   }
+  const developmentRun = readJson("docs/ai/ACEF_ACTIVE_RUN.json");
+  if (developmentRun.workerRole !== "developer" || developmentRun.activeActorId !== null
+    || developmentRun.nextAllowedStep !== "implement_to_green") {
+    throw new Error("atomic RED handoff did not publish the Development role/action binding");
+  }
+  const developmentNext = JSON.parse(run(process.execPath, [next, "--repo", tmp]));
+  if (developmentNext.status !== "ready" || developmentNext.active_state.next_allowed_action !== "implement_to_green"
+    || developmentNext.allowed.can_write !== true
+    || developmentNext.allowed.commands[0] !== `${process.execPath} --test tests/demo.test.js`) {
+    throw new Error("acef-next did not expose the exact bounded Development action after RED");
+  }
   const developmentDispatch = JSON.parse(run(process.execPath, [supervisor, "--repo", tmp]));
   if (developmentDispatch.action.type !== "dispatch"
     || developmentDispatch.action.actorInstanceId !== "acef_story_capsule_development"
@@ -112,12 +168,16 @@ try {
     || !developmentDispatch.action.registrationCommand.includes("--model gpt-5.6-sol --effort high")) {
     throw new Error("supervisor did not compile the canonical Development registration before dispatch");
   }
+  const beforeDeveloperActor = armObjectiveHeartbeat();
   stateRun(["actor", "--repo", tmp, "--id", "acef_story_capsule_development", "--story", "Story Capsule",
     "--phase", "development", "--role", "developer", "--client", "codex", "--session-id", "/root/acef_story_capsule_development",
     "--context-profile", "development", "--model", "gpt-5.6-sol", "--effort", "high"]);
+  assertObjectiveHeartbeat(beforeDeveloperActor, "Developer actor registration");
 
   const correctionHash = "a".repeat(64);
+  const beforeCorrection = armObjectiveHeartbeat();
   stateRun(["atdd-correction-start", "--repo", tmp, "--findings-sha256", correctionHash]);
+  assertObjectiveHeartbeat(beforeCorrection, "ATDD correction transition");
   const correction = readJson("docs/ai/corrections/acef_story_capsule_atdd_correction1.json");
   const correctionScope = readJson("docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json");
   if (correction.schema !== "acef.atdd-correction.v2"
@@ -172,14 +232,9 @@ try {
     throw new Error("replacement red evidence was not captured by the fresh correction actor");
   }
   const correctionDone = JSON.parse(run(process.execPath, [supervisor, "--repo", tmp]));
-  if (correctionDone.action.type !== "transition" || correctionDone.action.nextPhase !== "development") {
-    throw new Error("supervisor did not resume Development after replacement red evidence");
-  }
-  stateRun(["phase-transition", "--repo", tmp, "--phase", "development"]);
-  const resumedDevelopment = JSON.parse(run(process.execPath, [supervisor, "--repo", tmp]));
-  if (resumedDevelopment.action.type !== "resume" || resumedDevelopment.action.role !== "development"
-    || resumedDevelopment.action.actorInstanceId !== "acef_story_capsule_development"
-    || resumedDevelopment.action.requiredFinalMarker !== "POST_RED_ATDD_CORRECTION=acef_story_capsule_atdd_correction1") {
+  if (correctionDone.action.type !== "resume" || correctionDone.action.role !== "development"
+    || correctionDone.action.actorInstanceId !== "acef_story_capsule_development"
+    || correctionDone.action.requiredFinalMarker !== "POST_RED_ATDD_CORRECTION=acef_story_capsule_atdd_correction1") {
     throw new Error("supervisor did not reactivate the original Developer with the correction marker");
   }
   fs.writeFileSync(path.join(tmp, "app", "demo.js"), "module.exports = 'almost';\n");
@@ -236,16 +291,16 @@ try {
     }
     stateRun(["capsule-show", "--repo", tmp, "--id", id]);
   }
-  const next = JSON.parse(run(process.execPath, [supervisor, "--repo", tmp]));
-  if (next.action.type !== "dispatch-parallel" || next.action.actors.length !== 2
-    || next.action.actors.some((actor) => actor.runtime.model !== "gpt-5.6-sol"
+  const reviewDispatch = JSON.parse(run(process.execPath, [supervisor, "--repo", tmp]));
+  if (reviewDispatch.action.type !== "dispatch-parallel" || reviewDispatch.action.actors.length !== 2
+    || reviewDispatch.action.actors.some((actor) => actor.runtime.model !== "gpt-5.6-sol"
       || actor.runtime.reasoningEffort !== (actor.role === "code-review" ? "medium" : "high")
       || !actor.capsule?.path.startsWith("docs/ai/capsules/") || !/^[a-f0-9]{64}$/.test(actor.capsule?.sha256 || "")
       || actor.capsule.showCommand !== `.acef/bin/acef-state capsule-show --repo . --id ${actor.capsule.id}`)) {
     throw new Error("supervisor did not emit the pinned parallel reviewer action");
   }
-  if (next.modelPolicy.provider !== "openai" || next.modelPolicy.roles["code-review"].reasoningTier !== "medium"
-    || !/^[a-f0-9]{64}$/.test(next.modelPolicy.policySha256 || "")) {
+  if (reviewDispatch.modelPolicy.provider !== "openai" || reviewDispatch.modelPolicy.roles["code-review"].reasoningTier !== "medium"
+    || !/^[a-f0-9]{64}$/.test(reviewDispatch.modelPolicy.policySha256 || "")) {
     throw new Error("supervisor did not expose the calibrated provider-neutral model policy");
   }
 
@@ -258,8 +313,10 @@ try {
     || fs.existsSync(path.join(tmp, "docs", "ai", "actors", "acef_story_capsule_code_review.json"))) {
     throw new Error("Code Review accepted or partially persisted a runtime outside the calibrated role floor");
   }
+  const beforeReviewResult = armObjectiveHeartbeat();
   stateRun(["review-result", "--repo", tmp, "--actor", "acef_story_capsule_code_review",
     "--model", "gpt-5.6-sol", "--effort", "medium", "--verdict", "PASS"]);
+  assertObjectiveHeartbeat(beforeReviewResult, "review result/completion");
   stateRun(["review-result", "--repo", tmp, "--actor", "acef_story_capsule_patch_assurance",
     "--model", "gpt-5.6-sol", "--effort", "high", "--verdict", "REVISE",
     "--finding-id", "PA-REPAIR", "--finding-severity", "HIGH",
@@ -276,6 +333,7 @@ try {
     || !gateAction.action.command.includes("--binding-evidence 'internal>internal:demo:capsule-green:true:true'")) {
     throw new Error("supervisor did not produce the exact deterministic story-gate command");
   }
+  const beforeStoryGate = armObjectiveHeartbeat();
   stateRun(["gate", "--repo", tmp, "--id", "capsule-revise-cycle0", "--scope", "Story Capsule",
     "--atdd-actor", "acef_story_capsule_atdd_correction1", "--development-actor", "acef_story_capsule_development",
     "--code-review-actor", "acef_story_capsule_code_review", "--patch-assurance-actor", "acef_story_capsule_patch_assurance",
@@ -285,6 +343,7 @@ try {
     "--surface-evidence", "internal:capsule-green:true:true",
     "--surface-evidence", "notification:capsule-green:true:true",
     "--binding-evidence", "internal>internal:demo:capsule-green:true:true"]);
+  assertObjectiveHeartbeat(beforeStoryGate, "deterministic story gate");
   if (readJson("docs/ai/gates/capsule-revise-cycle0.json").verdict !== "REVISE") {
     throw new Error("cycle 0 did not persist the typed reviewer REVISE");
   }
@@ -341,8 +400,32 @@ try {
   if (storyTransition.action.command !== ".acef/bin/acef-state story-transition --repo .") {
     throw new Error("supervisor did not provide the exact post-PASS story transition command");
   }
+  const finalStoryRun = readJson("docs/ai/ACEF_ACTIVE_RUN.json");
+  fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_ACTIVE_RUN.json"), `${JSON.stringify({
+    ...finalStoryRun,
+    expectedStories: ["Story Capsule", "Story Capsule Next"],
+  }, null, 2)}\n`);
+  const beforeStoryTransition = armObjectiveHeartbeat();
   stateRun(["story-transition", "--repo", tmp]);
-  const epicRun = readJson("docs/ai/ACEF_ACTIVE_RUN.json");
+  assertObjectiveHeartbeat(beforeStoryTransition, "story transition");
+  const nextStoryRun = readJson("docs/ai/ACEF_ACTIVE_RUN.json");
+  if (nextStoryRun.activeStory !== "Story Capsule Next" || nextStoryRun.activePhase !== "readiness"
+    || nextStoryRun.workerRole !== null || nextStoryRun.activeActorId !== null) {
+    throw new Error("story-transition did not restart the next frozen story at readiness");
+  }
+  // Restore the one-story terminal fixture so the remainder can exercise Epic closeout without duplicating a story lifecycle.
+  const epicRun = {
+    ...nextStoryRun,
+    expectedStories: ["Story Capsule"],
+    scopeUnit: "epic",
+    activeStory: "Epic closeout",
+    activePhase: "epic-process-judge",
+    workerRole: "epic-process-judge",
+    activeActorId: null,
+    nextAllowedStep: "run final integration verification, then dispatch the epic Process Judge",
+  };
+  fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_ACTIVE_RUN.json"), `${JSON.stringify(epicRun, null, 2)}\n`);
+  stateRun(["context-sync", "--repo", tmp]);
   if (epicRun.scopeUnit !== "epic" || epicRun.activePhase !== "epic-process-judge") {
     throw new Error("story-transition did not deterministically advance the final story to Epic closeout");
   }
@@ -364,13 +447,17 @@ try {
     || !epicDispatch.action.decisionCommands.REPLAN.includes("--verdict REPLAN")) {
     throw new Error("supervisor did not compile the one-shot Epic Judge registration and terminal commands");
   }
+  const beforeEpicActor = armObjectiveHeartbeat();
   stateRun(["actor", "--repo", tmp, "--id", "acef_epic_process_judge", "--story", "Epic closeout",
     "--phase", "epic-process-judge", "--role", "process-judge", "--client", "codex",
     "--session-id", "/root/acef_epic_process_judge", "--context-profile", "epic-process-judge",
     "--model", "gpt-5.6-sol", "--effort", "high"]);
+  assertObjectiveHeartbeat(beforeEpicActor, "Epic Judge actor registration");
   const epicGateId = epicDispatch.action.decisionCommands.PASS.match(/--id\s+(\S+)/)[1];
+  const beforeEpicGate = armObjectiveHeartbeat();
   stateRun(["gate", "--repo", tmp, "--id", epicGateId, "--scope", "Epic closeout", "--verdict", "PASS",
     "--decided-by", "acef_epic_process_judge", "--evidence", "capsule-green"]);
+  assertObjectiveHeartbeat(beforeEpicGate, "Epic terminal gate");
   const aggregateReplay = run(process.execPath, [validator, "--repo", tmp, "--check", "gate-verdict"]);
   if (!aggregateReplay.includes("PASS gate-verdict:")) {
     throw new Error("epic aggregate did not replay the committed story assurance package");
@@ -422,7 +509,9 @@ try {
     throw new Error("supervisor did not compile typed epic completion and the exact control-only commit");
   }
   const activeEpicBeforeCompletion = readJson("docs/ai/ACEF_ACTIVE_RUN.json");
+  const beforeEpicCompletion = armObjectiveHeartbeat();
   stateRun(["epic-complete", "--repo", tmp, "--gate-id", epicGateId]);
+  assertObjectiveHeartbeat(beforeEpicCompletion, "Epic completion");
   if (readJson("docs/ai/ACEF_ACTIVE_RUN.json").terminalDisposition !== "PASS") {
     throw new Error("epic-complete did not preserve the terminal PASS disposition");
   }
@@ -587,4 +676,5 @@ try {
   console.log("acef capsule supervisor tests passed");
 } finally {
   fs.rmSync(tmp, { recursive: true, force: true });
+  fs.rmSync(unauthorizedDiscoveryMarker, { force: true });
 }

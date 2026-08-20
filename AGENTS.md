@@ -39,6 +39,11 @@ New ACEF Fix runs use `quickFixContract: single-review-v1`: one developer, one i
 and revert-proof evidence, then deterministic closeout. Guarded may strengthen evidence and scope controls, but it does
 not add Process Judge, Patch Assurance, Verify-Patch, Test Review, or a second review cycle to Quick Fix.
 
+For new Full v3 work, readiness is a deterministic delta over existing approved sources. Do not create a fresh
+readiness session or repeat a full PRD/NFR inventory unless a named source conflict or product ambiguity requires
+independent judgment. Do not dispatch ATDD until status/next agree that every mandatory dispatch gate passes and the
+worker scope freezes every executable evidence/discovery command plus bounded test and implementation paths.
+
 Do not turn a batch of independent defects into one Full story. If intake contains multiple root causes or unrelated
 audit findings, return `REPLAN/SPLIT` before active-run bootstrap and route each proven bounded defect independently.
 Full is for one coherent planning-heavy contract, not a container for repair batches.

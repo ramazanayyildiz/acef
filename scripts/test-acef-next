@@ -97,6 +97,7 @@ try {
     "--worker-id", "dev-22",
     "--allow", "tests/Feature/Story22Test.php",
     "--allow", "app/Story22.php",
+    "--allow-command", "php artisan test tests/Feature/Story22Test.php",
     "--max-commits", "1",
   ]);
 
@@ -107,6 +108,9 @@ try {
   if (readyJson.active_state.story !== "Story 2.2") throw new Error("acef-next lost active story");
   if (readyJson.allowed.can_write !== true) throw new Error("acef-next should allow scoped dev writes");
   if (!readyJson.allowed.paths.includes("app/Story22.php")) throw new Error("acef-next lost worker allowed paths");
+  if (readyJson.allowed.commands[0] !== "php artisan test tests/Feature/Story22Test.php") {
+    throw new Error("acef-next lost the worker's exact allowed command");
+  }
   if (!readyJson.forbidden.actions.includes("start_next_story")) throw new Error("acef-next missing no-next-story boundary");
   if (!readyJson.forbidden.actions.includes("spawn_worker")) throw new Error("acef-next missing no-spawn boundary");
   if (!readyJson.evidence_required.includes("green_test_command")) throw new Error("acef-next missing dev evidence requirement");
@@ -116,6 +120,43 @@ try {
   if (!readyJson.context.inputs.includes("docs/ai/ACEF_CURRENT_CONTEXT.md")) throw new Error("acef-next lost workflow inputs");
   if (!readyJson.context.outputs.includes("docs/ai/reports/story-2-2-dev.md")) throw new Error("acef-next lost workflow outputs");
   if (readyJson.stop_condition !== "max_1_commit_then_report") throw new Error("acef-next lost worker stop condition");
+
+  const invalidCapsuleAtdd = {
+    schema: "acef.active-run.v2", runId: "RUN-invalid-atdd", repo: "next-fixture",
+    workflowId: "full-bmad", fullFlowContract: "four-actor-v3", runtimeContract: "capsule-supervisor-v1",
+    assuranceProfile: "baseline", scopeUnit: "story", expectedStories: ["Story 2.2"], status: "active",
+    activeStory: "Story 2.2", activePhase: "atdd", workerScopePath: "docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json",
+    ledgerPath: "docs/ai/ACEF_demo_DELIVERY_AUDIT.md", contextPath: "docs/ai/ACEF_CURRENT_CONTEXT.md",
+  };
+  fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_ACTIVE_RUN.json"), `${JSON.stringify(invalidCapsuleAtdd, null, 2)}\n`);
+  fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_ACTIVE_WORKER_SCOPE.json"), `${JSON.stringify({
+    runId: invalidCapsuleAtdd.runId, activeStory: "Story 2.2", phase: "atdd",
+    workerId: "acef_story_2_2_atdd", allowedPaths: ["tests/Feature/Story22Test.php"],
+    baseRef: "HEAD", maxCommits: 1, canEditLedger: false, canSpawnAgents: false,
+  }, null, 2)}\n`);
+  const invalidAtdd = JSON.parse(run(next, ["--repo", tmp]).stdout);
+  if (!invalidAtdd.blockers.some((entry) => entry.includes("missing exact allowedCommands"))
+    || !invalidAtdd.blockers.some((entry) => entry.includes("non-control implementation path"))) {
+    throw new Error("acef-next did not fail fast on an incomplete capsule ATDD worker scope");
+  }
+
+  fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_INSTALLATION.json"), `${JSON.stringify({
+    schema: "acef.installation.v1",
+    components: { tools: { dispatchReadinessContract: "full-v3-dispatch-readiness-v1" } },
+  }, null, 2)}\n`);
+  const readinessRun = { ...invalidCapsuleAtdd, runId: "RUN-next-readiness", activePhase: "readiness", workerRole: "test-author" };
+  fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_ACTIVE_RUN.json"), `${JSON.stringify(readinessRun, null, 2)}\n`);
+  fs.writeFileSync(path.join(tmp, "docs", "ai", "ACEF_ACTIVE_WORKER_SCOPE.json"), `${JSON.stringify({
+    runId: readinessRun.runId, activeStory: "Story 2.2", phase: "readiness",
+    workerId: "acef_story_2_2_atdd", allowedPaths: ["tests/Feature/Story22Test.php", "app/Story22.php"],
+    allowedCommands: ["php artisan test tests/Feature/Story22Test.php"],
+    baseRef: "HEAD", maxCommits: 1, canEditLedger: false, canSpawnAgents: false,
+  }, null, 2)}\n`);
+  const readinessNext = JSON.parse(run(next, ["--repo", tmp]).stdout);
+  if (!readinessNext.dispatch_readiness.length
+    || !readinessNext.dispatch_readiness.some((entry) => entry.name === "current-context")) {
+    throw new Error("acef-next did not expose mandatory dispatch gates during readiness");
+  }
 
   const epicCloseRun = {
     schema: "acef.active-run.v2",
