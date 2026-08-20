@@ -103,6 +103,35 @@ function discoverCurrentStoryEvidence(repo, dir, run, storyKey) {
   return { records, ignoredPaths };
 }
 
+function discoverCurrentRunRecords(repo, dir, run, storyKey, parser, { filterScope = true, decorate = null } = {}) {
+  const records = [];
+  const ignoredPaths = [];
+  for (const filePath of files(dir)) {
+    let raw;
+    try { raw = JSON.parse(fs.readFileSync(filePath, "utf8")); }
+    catch {
+      // Unreadable candidates remain subject to strict parsing below.
+    }
+    const rawRecord = raw && typeof raw === "object" && !Array.isArray(raw) ? raw : null;
+    const rawRunId = typeof rawRecord?.runId === "string" && rawRecord.runId.trim()
+      ? rawRecord.runId
+      : (typeof rawRecord?.run?.runId === "string" && rawRecord.run.runId.trim()
+        ? rawRecord.run.runId : null);
+    const rawScope = typeof rawRecord?.story === "string" && rawRecord.story.trim()
+      ? rawRecord.story
+      : (typeof rawRecord?.scope === "string" && rawRecord.scope.trim() ? rawRecord.scope : null);
+    const differentRun = rawRunId !== null && rawRunId !== run.runId;
+    const unrelatedScope = filterScope && rawScope !== null && token(rawScope) !== storyKey;
+    if (differentRun || unrelatedScope) {
+      ignoredPaths.push(path.relative(repo, filePath).replaceAll(path.sep, "/"));
+      continue;
+    }
+    const record = readRecord(parser, filePath);
+    records.push(decorate ? decorate(record, filePath) : record);
+  }
+  return { records, ignoredPaths };
+}
+
 function readCapsule(filePath) {
   const record = readRecord(parseAssuranceCapsule, filePath);
   const { integrity, ...payload } = record;
@@ -198,23 +227,27 @@ function build(repo) {
       && actors.some((actor) => actor.actorInstanceId === record.actorInstanceId))
     .sort((left, right) => String(left.finishedAt || left.startedAt || "").localeCompare(String(right.finishedAt || right.startedAt || ""))
       || left.evidenceId.localeCompare(right.evidenceId));
-  const allGates = files(path.join(repo, "docs", "ai", "gates"))
-    .map((filePath) => readRecord(parseGateVerdict, filePath));
+  const gateDiscovery = discoverCurrentRunRecords(path.resolve(repo), path.join(repo, "docs", "ai", "gates"), run, storyKey, parseGateVerdict, { filterScope: false });
+  const allGates = gateDiscovery.records;
   const gates = allGates
     .filter((record) => token(record.scope) === storyKey && record.runId === run.runId)
     .sort((left, right) => Number(left.reviewCycle || 0) - Number(right.reviewCycle || 0));
-  const reports = files(path.join(repo, "docs", "ai", "reports"))
-    .map((filePath) => readRecord(parseReviewReport, filePath))
+  const reportDiscovery = discoverCurrentRunRecords(path.resolve(repo), path.join(repo, "docs", "ai", "reports"), run, storyKey, parseReviewReport);
+  const reports = reportDiscovery.records
     .filter((record) => token(record.story) === storyKey && record.runId === run.runId);
-  const repairs = files(path.join(repo, "docs", "ai", "repairs"))
-    .map((filePath) => readRecord(parseDeveloperRepair, filePath))
+  const repairDiscovery = discoverCurrentRunRecords(path.resolve(repo), path.join(repo, "docs", "ai", "repairs"), run, storyKey, parseDeveloperRepair);
+  const repairs = repairDiscovery.records
     .filter((record) => token(record.story) === storyKey && record.runId === run.runId);
-  const corrections = files(path.join(repo, "docs", "ai", "corrections"))
-    .map((filePath) => ({ ...readRecord(parseAtddCorrection, filePath), supervisorFilePath: filePath }))
+  const correctionDiscovery = discoverCurrentRunRecords(path.resolve(repo), path.join(repo, "docs", "ai", "corrections"), run, storyKey, parseAtddCorrection, {
+    decorate: (record, filePath) => ({ ...record, supervisorFilePath: filePath }),
+  });
+  const corrections = correctionDiscovery.records
     .filter((record) => record.schema === "acef.atdd-correction.v2"
       && token(record.story) === storyKey && record.runId === run.runId);
-  const capsules = files(path.join(repo, "docs", "ai", "capsules"))
-    .map((filePath) => ({ ...readCapsule(filePath), supervisorFilePath: filePath }))
+  const capsuleDiscovery = discoverCurrentRunRecords(path.resolve(repo), path.join(repo, "docs", "ai", "capsules"), run, storyKey, readCapsule, {
+    decorate: (record, filePath) => ({ ...record, supervisorFilePath: filePath }),
+  });
+  const capsules = capsuleDiscovery.records
     .filter((record) => token(record.story) === storyKey && record.runId === run.runId);
   const currentPhase = phase(run.activePhase);
   const workerScopePath = run.workerScopePath
@@ -640,6 +673,16 @@ function build(repo) {
         samplePaths: evidenceDiscovery.ignoredPaths.slice(0, 5),
         truncated: evidenceDiscovery.ignoredPaths.length > 5,
       }] : []),
+      ...([gateDiscovery, reportDiscovery, repairDiscovery, correctionDiscovery, capsuleDiscovery]
+        .flatMap((discovery) => discovery.ignoredPaths).length ? [{
+          code: "ignored-unrelated-runtime-records",
+          count: [gateDiscovery, reportDiscovery, repairDiscovery, correctionDiscovery, capsuleDiscovery]
+            .flatMap((discovery) => discovery.ignoredPaths).length,
+          samplePaths: [gateDiscovery, reportDiscovery, repairDiscovery, correctionDiscovery, capsuleDiscovery]
+            .flatMap((discovery) => discovery.ignoredPaths).slice(0, 5),
+          truncated: [gateDiscovery, reportDiscovery, repairDiscovery, correctionDiscovery, capsuleDiscovery]
+            .flatMap((discovery) => discovery.ignoredPaths).length > 5,
+        }] : []),
     ],
     modelPolicy: {
       active: routingPolicy.record.policyId,

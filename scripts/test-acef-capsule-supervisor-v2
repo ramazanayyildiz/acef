@@ -78,12 +78,22 @@ try {
     evidenceId: "ev-retired-legacy-suite",
     kind: "runtime-test",
   }, null, 2)}\n`);
+  const reportDir = path.join(tmp, "docs", "ai", "reports");
+  fs.mkdirSync(reportDir, { recursive: true });
+  fs.writeFileSync(path.join(reportDir, "legacy-nested-run.json"), `${JSON.stringify({
+    schema: "acef.epic-process-judge-report.v1",
+    run: { runId: "RUN-retired" },
+    verdict: "REPLAN",
+  }, null, 2)}\n`);
   const firstDispatch = JSON.parse(run(process.execPath, [supervisor, "--repo", tmp]));
   assert.equal(firstDispatch.action.actorInstanceId, "acef_run_one_shared_story_development");
   assert.match(firstDispatch.action.registrationCommand, /--session-id \/root\/acef_run_one_shared_story_development/);
   const legacyEvidenceDiagnostic = firstDispatch.diagnostics.find((entry) => entry.code === "ignored-unrelated-evidence-records");
   assert.equal(legacyEvidenceDiagnostic?.count, 1);
   assert.ok(legacyEvidenceDiagnostic.samplePaths.includes("docs/ai/evidence/legacy-unscoped.json"));
+  const legacyRuntimeDiagnostic = firstDispatch.diagnostics.find((entry) => entry.code === "ignored-unrelated-runtime-records");
+  assert.equal(legacyRuntimeDiagnostic?.count, 1);
+  assert.ok(legacyRuntimeDiagnostic.samplePaths.includes("docs/ai/reports/legacy-nested-run.json"));
 
   const currentRunMalformedEvidence = path.join(evidenceDir, "current-run-malformed.json");
   fs.writeFileSync(currentRunMalformedEvidence, `${JSON.stringify({
@@ -97,6 +107,20 @@ try {
   assert.notEqual(malformedEvidenceCheck.status, 0);
   assert.match(`${malformedEvidenceCheck.stdout}${malformedEvidenceCheck.stderr}`, /current-run-malformed\.json/);
   fs.rmSync(currentRunMalformedEvidence);
+
+  const currentRunMalformedReport = path.join(reportDir, "current-run-malformed.json");
+  fs.writeFileSync(currentRunMalformedReport, `${JSON.stringify({
+    runId: "RUN-one",
+    story: "Shared Story",
+    verdict: "PASS",
+  }, null, 2)}\n`);
+  const malformedReportCheck = cp.spawnSync(process.execPath, [supervisor, "--repo", tmp], {
+    cwd: tmp,
+    encoding: "utf8",
+  });
+  assert.notEqual(malformedReportCheck.status, 0);
+  assert.match(`${malformedReportCheck.stdout}${malformedReportCheck.stderr}`, /current-run-malformed\.json/);
+  fs.rmSync(currentRunMalformedReport);
   stateRun([
     "actor", "--repo", tmp, "--id", firstDispatch.action.actorInstanceId,
     "--story", "Shared Story", "--phase", "development", "--role", "developer",
