@@ -378,6 +378,15 @@ try {
     || !singleTargetInstallation.updateCommand.includes("--all-core")) {
     throw new Error(`single-target updateCommand did not drop only invocation-level --all-worktrees: ${singleTargetInstallation.updateCommand}`);
   }
+  const activeRunPath = path.join(tmp, "docs", "ai", "ACEF_ACTIVE_RUN.json");
+  const malformedLegacyRun = { schema: "acef.active-run.v2", lane: "guarded" };
+  fs.writeFileSync(activeRunPath, `${JSON.stringify(malformedLegacyRun)}\n`);
+  const freshnessOnly = cp.spawnSync(validator, ["--repo", tmp, "--check", "installation-freshness"], {
+    cwd: tmp, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"],
+  });
+  if (freshnessOnly.status !== 0 || !freshnessOnly.stdout.includes("PASS installation-freshness")) {
+    throw new Error(`standalone installation freshness was coupled to malformed lifecycle state:\n${freshnessOnly.stdout}${freshnessOnly.stderr}`);
+  }
 
   console.log("install-acef-tools tests passed");
 } finally {

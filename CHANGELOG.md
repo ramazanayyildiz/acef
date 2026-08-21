@@ -19,6 +19,8 @@ or evidence contract. Do not use it to claim implementation status; link to the 
 - Made Full v3 reviewer dispatch slot-aware: parallel is preferred, while one available slot immediately selects
   sequential review of the exact same input tree without dropping Code Review or Patch Assurance.
 - Added a scoped formatter wrapper and restored `docs/ai/runs/` to the control-path contract used by recovery.
+- Decoupled the standalone installation-freshness probe from malformed legacy lifecycle state, so stale-install diagnosis
+  remains available precisely when an old active-run record needs repair.
 
 ### Full v3 repair and review now reuse one bounded work contract
 

@@ -4192,9 +4192,13 @@ function evaluateProcessChecks(repoRoot, checks, options = {}) {
     adapter: options.adapter || null,
     targetEpic: options.targetEpic || null,
   };
-  const ledger = args.ledger || findLedger(args.repo);
-  const adapter = args.adapter || findAdapter(args.repo);
-  const registry = findPatternRegistry(args.repo, adapter);
+  // Installation/capability probes must remain usable even when an unrelated legacy
+  // run record is malformed. Do not parse lifecycle state for these standalone checks.
+  const contextFree = new Set(["clean-tree", "installation-freshness", "capability-change"]);
+  const needsLifecycleContext = checks.some((check) => !contextFree.has(check));
+  const ledger = needsLifecycleContext ? (args.ledger || findLedger(args.repo)) : null;
+  const adapter = needsLifecycleContext ? (args.adapter || findAdapter(args.repo)) : null;
+  const registry = needsLifecycleContext ? findPatternRegistry(args.repo, adapter) : null;
   return checks.map((check) => {
     if (check === "clean-tree") return checkCleanTree(args.repo);
     if (check === "preflight") return checkPreflight(args.repo);
