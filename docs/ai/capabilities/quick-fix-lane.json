@@ -18,6 +18,7 @@
     "workflow": [
       "schemas/active-run-v2.schema.json",
       "schemas/lightweight-run-v2.schema.json",
+      "schemas/active-run-v2.schema.json#redOwnershipContract",
       "scripts/acef-state#writeActiveRun",
       "scripts/lib/acef-state-parser.js#parseActiveRun",
       "scripts/lib/acef-state-parser.js#parseLightweightRun"
@@ -38,6 +39,7 @@
   },
   "limitations": [
     "New Quick Fix runs use quickFixContract single-review-v1; existing records without it remain compatibility state.",
+    "New runs bind integrated-developer-v1 RED ownership; pre-contract in-flight runs are not reinterpreted.",
     "The successor contract is enforced and regression-tested but has not yet completed a live controlled canary, so the capability is not yet proven at this version.",
     "The 20-minute alert is an operating rule; the 30-minute stop, actor/evidence/commit/file/line budgets, framework-failure stop, reviewer binding, and stale completed-run isolation are validator-enforced.",
     "The validator checks declared quick-fix evidence paths and touched-surface evidence, plus heuristic path-name inference for obvious hidden risk and surface expansion.",

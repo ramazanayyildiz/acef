@@ -101,8 +101,8 @@ does not cover the reproduced failure. High risk changes assurance to Guarded, n
 ### Quick Fix single-review contract
 
 New ACEF Fix runs record `quickFixContract: single-review-v1`. The critical path is Developer → one independent Code
-Reviewer → deterministic closeout. ATDD may be a third context when a regression test must first be authored; otherwise
-red evidence may be produced by the developer. Process Judge, Patch Assurance, Verify-Patch, Test Review, optional NFR,
+Reviewer → deterministic closeout. The Developer owns focused RED→GREEN; a separate ATDD context is forbidden. ACEF
+Standard uses the same `integrated-developer-v1` RED ownership. Process Judge, Patch Assurance, Verify-Patch, Test Review, optional NFR,
 and broad-suite repetition are not scheduled. Guarded strengthens boundary/evidence controls without adding actors.
 
 The normal budget is three commits and the hard maximum is four; at most five product files, 50 changed product lines,

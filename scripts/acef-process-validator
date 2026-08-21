@@ -1731,11 +1731,17 @@ function checkTypedActorSeparation(repoRoot, activeRun) {
     if (commitError) failures.push(commitError);
   }
   if (failures.length) return result("actor-separation", false, failures.join("; "));
-  if (isSingleReviewQuickFix(activeRun)) {
+  if (isSingleReviewQuickFix(activeRun) && activeRun.redOwnershipContract === "integrated-developer-v1") {
     const quickFixActors = actors.filter((actor) => ["atdd", "development", "codereview"].includes(canonicalPhase(actor.phase)));
     const uniqueContexts = new Set(quickFixActors.map((actor) => actor.actorInstanceId));
-    if (uniqueContexts.size > 3) {
-      return result("actor-separation", false, `single-review-v1 permits at most three Quick Fix actor contexts, found ${uniqueContexts.size}`);
+    const developerId = byPhase.get("development").actorInstanceId;
+    const separateAtdd = quickFixActors.find((actor) => canonicalPhase(actor.phase) === "atdd"
+      && actor.actorInstanceId !== developerId);
+    if (separateAtdd) {
+      return result("actor-separation", false, "single-review-v1 requires Developer-owned RED; a separate ATDD context is forbidden");
+    }
+    if (uniqueContexts.size > 2) {
+      return result("actor-separation", false, `single-review-v1 permits only Developer and reviewer contexts, found ${uniqueContexts.size}`);
     }
   }
   return result(

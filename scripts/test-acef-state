@@ -6,6 +6,7 @@ const cp = require("node:child_process");
 
 const repoRoot = path.resolve(__dirname, "..");
 const state = path.join(repoRoot, "scripts", "acef-state");
+const worktreeTest = path.join(repoRoot, "scripts", "acef-worktree-test");
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "acef-state-cli-"));
 
 function quoteArg(value) {
@@ -82,6 +83,25 @@ try {
   runState(["worker-scope", "--repo", tmp, "--story", "Story 1.1", "--phase", "process-judge", "--worker-id", "process-judge", "--allow", "app/**", "--allow", "tests/**", "--surface", "ui", "--pattern-use", "new-reusable-pattern", "--requires-round-trip", "true", "--binding", "admin>ui:image:true"]);
   runState(["approval", "--repo", tmp, "--id", "APP-2", "--decision", "APPROVE", "--scope", "epic:2", "--target-epic", "2", "--quote", "Start Epic 2", "--source-channel", "test"]);
   runState(["evidence-run", "--repo", tmp, "--id", "EV-1", "--kind", "runtime-test", "--actor", "development", "--story", "Story 1.1", "--satisfies", "AC-1", "--", process.execPath, "-e", "console.log('real path ok')"]);
+  for (let attempt = 1; attempt <= 2; attempt += 1) {
+    const infrastructure = cp.spawnSync(process.execPath, [state, "evidence-run", "--repo", tmp,
+      "--id", "EV-infrastructure", "--kind", "runtime-test", "--actor", "development", "--story", "Story 1.1",
+      "--satisfies", "AC-infrastructure", "--", worktreeTest, "--work-unit", "../invalid", "--", process.execPath, "-e", "process.exit(0)"],
+    { cwd: tmp, encoding: "utf8" });
+    if (infrastructure.status !== 75 || fs.existsSync(path.join(tmp, "docs", "ai", "evidence", "EV-infrastructure.json"))) {
+      throw new Error("trusted infrastructure setup failure consumed canonical product evidence");
+    }
+    if (!fs.existsSync(path.join(tmp, "docs", "ai", "evidence", "infrastructure", `EV-infrastructure-attempt${attempt}.json`))) {
+      throw new Error("infrastructure setup failure did not write its bounded incident receipt");
+    }
+  }
+  const exhaustedInfrastructure = cp.spawnSync(process.execPath, [state, "evidence-run", "--repo", tmp,
+    "--id", "EV-infrastructure", "--kind", "runtime-test", "--actor", "development", "--story", "Story 1.1",
+    "--satisfies", "AC-infrastructure", "--", worktreeTest, "--work-unit", "../invalid", "--", process.execPath, "-e", "process.exit(0)"],
+  { cwd: tmp, encoding: "utf8" });
+  if (exhaustedInfrastructure.status === 0 || !`${exhaustedInfrastructure.stdout}${exhaustedInfrastructure.stderr}`.includes("retry budget exhausted")) {
+    throw new Error("infrastructure evidence retry budget was not enforced");
+  }
   for (const relativePath of [
     ".acef/runtime-note.json",
     ".agents/skills/acef/runtime-note.md",
@@ -175,6 +195,9 @@ try {
   runState(["active-run", "--repo", tmp, "--run-id", "RUN-v3", "--workflow-id", "full-bmad", "--expected-story", "Story 3.1", "--status", "active", "--story", "Story 3.1", "--phase", "atdd", "--ledger", "docs/ai/ACEF_demo_DELIVERY_AUDIT.md"]);
   if (readJson("docs/ai/ACEF_ACTIVE_RUN.json").fullFlowContract !== "four-actor-v3") {
     throw new Error("new Full run did not default to four-actor-v3");
+  }
+  if (readJson("docs/ai/ACEF_ACTIVE_RUN.json").redOwnershipContract !== "independent-test-author-v1") {
+    throw new Error("new Full v3 run did not retain independent Test Author RED");
   }
   runState(["worker-scope", "--repo", tmp, "--story", "Story 3.1", "--phase", "atdd",
     "--worker-id", "acef_story_3_1_atdd", "--allow", "app/**", "--allow", "tests/**",
@@ -499,6 +522,9 @@ try {
     const quickFixActive = JSON.parse(fs.readFileSync(path.join(quickFixTmp, "docs", "ai", "ACEF_ACTIVE_RUN.json"), "utf8"));
     if (quickFixActive.quickFixContract !== "single-review-v1") {
       throw new Error("new Quick Fix run did not default to single-review-v1");
+    }
+    if (quickFixActive.redOwnershipContract !== "integrated-developer-v1") {
+      throw new Error("new Quick Fix run did not bind Developer-owned RED");
     }
     if (quickFixActive.intakeDecision.parentRunId !== "RUN-bundled-defects"
       || quickFixActive.intakeDecision.reAdmissionConfirmed !== true) {

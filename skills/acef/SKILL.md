@@ -62,7 +62,8 @@ additive overlay, never a fourth workflow and never a reason to repeat BMAD phas
 continuing.
 
 New `quick-fix` runs use `quickFixContract: single-review-v1`: Developer, one independent Code Reviewer, and
-deterministic closeout. ATDD is an optional third context. Do not schedule Process Judge, Patch Assurance, Verify-Patch,
+deterministic closeout. The Developer owns focused RED→GREEN; a separate ATDD context is forbidden. New Standard runs
+use the same `redOwnershipContract: integrated-developer-v1`. Do not schedule Process Judge, Patch Assurance, Verify-Patch,
 Test Review, optional NFR, or repeated broad suites for this contract. Alert at 20 minutes; stop/replan at 30 minutes,
 on a second root cause/review cycle, or after any framework failure.
 
@@ -160,6 +161,9 @@ A worker launched before this bootstrap is drift. Stop, record it, patch the amb
 - Conductor coordinates; it does not perform lifecycle actor work in Full BMAD. New `four-actor-v3` runs separate ATDD,
   Development, Code Review, and report-only Patch Assurance plus any conditional Story Process Judge; existing
   `six-actor-v2` runs retain Verify-Patch, Test Review, and Story Process Judge.
+- Full v3 is the only current flow with `independent-test-author-v1`. Dispatch Code Review and Patch Assurance in
+  parallel when two slots are available; otherwise run them sequentially against the identical committed input tree
+  without waiting for capacity or dropping a reviewer.
 - Full-BMAD ATDD needs one genuine critical-path red plus a map of every criterion; regression-only criteria need not all
   be red before implementation. A `REVISE` gets one fresh report-only adjudication, then at most one findings-hash-bound,
   test-artifact-only correction. Before correction dispatch, persist and commit `docs/ai/corrections/<actor>.json` with the source
@@ -173,6 +177,11 @@ A worker launched before this bootstrap is drift. Stop, record it, patch the amb
   normalized `runId`; recovery keeps the story name unchanged and starts a new runId. Never create `r2`/`r3` story
   aliases to escape stale actor files. When `evidence-run` reports `REUSED`, consume the alias it wrote instead of
   executing the same command or rebuilding the same test environment.
+- For framework tests in linked worktrees, freeze the installed `acef-worktree-test` wrapper as the evidence command.
+  It isolates runtime names and rejects parent-checkout Composer/vendor leakage. Its typed setup exit 75 is recorded as
+  infrastructure and permits at most two retries without consuming the canonical product evidence ID.
+- Run formatters only through `acef-scoped-format --allow-path ... -- <formatter>` so a formatter cannot silently touch
+  a sibling worker's files.
 - Quarantine a failed story and its transitive dependants while continuing dependency-independent stories. Halt the
   whole run only for a declared dependency or shared safety invariant; quarantined work still fails product closeout.
 - After any bounded Developer repair, rerun Patch Assurance on the repaired final application/test tree. Rerun Code

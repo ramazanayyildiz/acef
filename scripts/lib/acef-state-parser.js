@@ -237,6 +237,17 @@ function parseActiveRun(filePath) {
   } else {
     requireEnum(record, "lane", ["quick-fix", "lightweight", "full-bmad", "guarded", "custom"], "active run");
   }
+  if (record.schema === "acef.active-run.v2" && record.redOwnershipContract !== undefined) {
+    requireEnum(record, "redOwnershipContract", ["integrated-developer-v1", "independent-test-author-v1"], "active run");
+    if (["quick-fix", "lightweight"].includes(record.workflowId)
+      && record.redOwnershipContract !== "integrated-developer-v1") {
+      throw new Error("Fix and Standard runs require integrated Developer-owned RED");
+    }
+    if (record.workflowId === "full-bmad" && record.fullFlowContract === "four-actor-v3"
+      && record.redOwnershipContract !== "independent-test-author-v1") {
+      throw new Error("Full v3 requires an independent Test Author RED");
+    }
+  }
   requireEnum(record, "status", ["active", "paused", "blocked", "complete"], "active run");
   if (record.terminalDisposition !== undefined) {
     requireEnum(record, "terminalDisposition", ["PASS", "FAIL", "REPLAN", "BLOCKED"], "active run");
@@ -1093,6 +1104,9 @@ function parseLightweightRun(filePath) {
   if (v2) {
     requireEnum(record, "workflowId", ["quick-fix", "lightweight"], "lightweight run");
     requireEnum(record, "assuranceProfile", ASSURANCE_PROFILES, "lightweight run");
+    if (record.redOwnershipContract !== undefined) {
+      requireEnum(record, "redOwnershipContract", ["integrated-developer-v1"], "lightweight run");
+    }
     if (record.quickFixContract !== undefined) {
       requireEnum(record, "quickFixContract", ["single-review-v1"], "lightweight run");
       if (record.workflowId !== "quick-fix") throw new Error("lightweight run quickFixContract requires quick-fix workflow");

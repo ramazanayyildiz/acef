@@ -1,0 +1,40 @@
+#!/usr/bin/env node
+"use strict";
+const fs = require("node:fs");
+const os = require("node:os");
+const path = require("node:path");
+const cp = require("node:child_process");
+const assert = require("node:assert/strict");
+
+const runner = path.resolve(__dirname, "acef-worktree-test");
+const repo = fs.mkdtempSync(path.join(os.tmpdir(), "acef-worktree-test-"));
+function run(args) { return cp.spawnSync(process.execPath, [runner, ...args], { cwd: repo, encoding: "utf8" }); }
+try {
+  cp.execFileSync("git", ["init", "-q"], { cwd: repo });
+  cp.execFileSync("git", ["config", "user.email", "acef@example.test"], { cwd: repo });
+  cp.execFileSync("git", ["config", "user.name", "ACEF"], { cwd: repo });
+  fs.writeFileSync(path.join(repo, "README.md"), "fixture\n");
+  cp.execFileSync("git", ["add", "."], { cwd: repo });
+  cp.execFileSync("git", ["commit", "-qm", "fixture"], { cwd: repo });
+
+  const probe = run(["--work-unit", "one", "--", process.execPath, "-e",
+    "if(!process.env.CACHE_PREFIX||!process.env.REDIS_PREFIX||!process.env.APP_PORT||!process.env.TMPDIR)process.exit(9)"]);
+  assert.equal(probe.status, 0, `${probe.stdout}${probe.stderr}`);
+  const runtimeRoot = path.resolve(repo, cp.execFileSync("git", ["rev-parse", "--git-path", "acef-runtime"], { cwd: repo, encoding: "utf8" }).trim());
+  const receipts = fs.readdirSync(runtimeRoot);
+  assert.equal(receipts.length, 1);
+  const receipt = JSON.parse(fs.readFileSync(path.join(runtimeRoot, receipts[0], "last-run.json"), "utf8"));
+  assert.equal(receipt.workUnit, "one");
+  assert.match(receipt.cachePrefix, /^acef_[a-f0-9]{12}$/);
+
+  const outside = fs.mkdtempSync(path.join(os.tmpdir(), "acef-external-vendor-"));
+  fs.symlinkSync(outside, path.join(repo, "vendor"));
+  const leaked = run(["--", process.execPath, "-e", "process.exit(0)"]);
+  assert.equal(leaked.status, 75);
+  assert.match(leaked.stderr, /ACEF_INFRASTRUCTURE_FAILURE vendor resolves outside/);
+  fs.rmSync(path.join(repo, "vendor"));
+  fs.rmSync(outside, { recursive: true, force: true });
+  console.log("acef worktree test isolation tests passed");
+} finally {
+  fs.rmSync(repo, { recursive: true, force: true });
+}

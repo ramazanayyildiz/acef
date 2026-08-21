@@ -286,7 +286,7 @@ the review surface; the Developer never self-merges.
 | Persona | Role |
 |---|---|
 | **Planner** | Writes the task spec, sets acceptance criteria + test plan, and records execution/assurance decisions. No production code. |
-| **Test Author** | Required by Guarded assurance at the risky boundary. Writes/names failing tests independently before/alongside the Developer. |
+| **Test Author** | Independent only in Full v3. Native/Fix/Standard keep focused RED with the same Developer. |
 | **Developer** | Implements exactly one task, runs tests/gates, writes a Developer Report. |
 | **Judge** | Fresh review (never self-approval). Returns exactly one of `MERGE` / `REVISE` / `REPLAN`. |
 | **Process Judge** | Verifies the required process was followed. It checks admission, workflow, assurance, skill paths, phase order, artifacts, and evidence before `done`. It does not review implementation quality. |

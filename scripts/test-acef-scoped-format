@@ -1,0 +1,29 @@
+#!/usr/bin/env node
+"use strict";
+const fs = require("node:fs");
+const os = require("node:os");
+const path = require("node:path");
+const cp = require("node:child_process");
+const assert = require("node:assert/strict");
+const runner = path.resolve(__dirname, "acef-scoped-format");
+const repo = fs.mkdtempSync(path.join(os.tmpdir(), "acef-scoped-format-"));
+try {
+  cp.execFileSync("git", ["init", "-q"], { cwd: repo });
+  cp.execFileSync("git", ["config", "user.email", "acef@example.test"], { cwd: repo });
+  cp.execFileSync("git", ["config", "user.name", "ACEF"], { cwd: repo });
+  fs.writeFileSync(path.join(repo, "a.txt"), "a\n");
+  fs.writeFileSync(path.join(repo, "b.txt"), "b\n");
+  fs.writeFileSync(path.join(repo, "formatter.js"), "require('fs').appendFileSync(process.argv[2], 'formatted\\n')\n");
+  fs.writeFileSync(path.join(repo, "bad-formatter.js"), "const f=require('fs');f.appendFileSync(process.argv[2], 'formatted\\n');f.appendFileSync('b.txt','bad\\n')\n");
+  cp.execFileSync("git", ["add", "."], { cwd: repo });
+  cp.execFileSync("git", ["commit", "-qm", "fixture"], { cwd: repo });
+  const good = cp.spawnSync(process.execPath, [runner, "--allow-path", "a.txt", "--", process.execPath, "formatter.js"], { cwd: repo, encoding: "utf8" });
+  assert.equal(good.status, 0, `${good.stdout}${good.stderr}`);
+  cp.execFileSync("git", ["checkout", "--", "a.txt"], { cwd: repo });
+  const bad = cp.spawnSync(process.execPath, [runner, "--allow-path", "a.txt", "--", process.execPath, "bad-formatter.js"], { cwd: repo, encoding: "utf8" });
+  assert.equal(bad.status, 1);
+  assert.match(bad.stderr, /outside its declared scope: b.txt/);
+  console.log("acef scoped formatter tests passed");
+} finally {
+  fs.rmSync(repo, { recursive: true, force: true });
+}

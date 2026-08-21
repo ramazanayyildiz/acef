@@ -335,7 +335,7 @@ function isControlPath(filePath) {
     || /^_bmad(?:-output)?\//.test(normalized)
     || /^docs\/ai\/ACEF_[^/]+\.(?:json|md)$/.test(normalized)
     || normalized === "docs/ai/ACEF_ACTIVE_LEDGER"
-    || /^docs\/ai\/(?:actors|gates|evidence|reports|approvals|repairs|corrections|capsules|judges|objectives|recoveries)\//.test(normalized);
+    || /^docs\/ai\/(?:actors|gates|evidence|reports|approvals|repairs|corrections|capsules|judges|objectives|recoveries|runs)\//.test(normalized);
 }
 
 function dirtyApplicationPaths(repo) {
@@ -509,6 +509,11 @@ function writeActiveRun(opts) {
   const quickFixContract = workflowId === "quick-fix"
     ? (sameRun ? previous.quickFixContract : "single-review-v1")
     : undefined;
+  const redOwnershipContract = sameRun
+    ? previous.redOwnershipContract
+    : (workflowId === "full-bmad"
+      ? (fullFlowContract === "four-actor-v3" ? "independent-test-author-v1" : undefined)
+      : "integrated-developer-v1");
   const installation = readInstallationManifest(opts.repo);
   const installedRuntimeDefault = installation?.components?.tools?.defaultRuntimeContract;
   const installedDispatchReadinessContract = installation?.components?.tools?.dispatchReadinessContract;
@@ -584,6 +589,7 @@ function writeActiveRun(opts) {
     repo: path.basename(opts.repo),
     workflowId,
     ...(quickFixContract ? { quickFixContract } : {}),
+    ...(redOwnershipContract ? { redOwnershipContract } : {}),
     ...(fullFlowContract ? { fullFlowContract } : {}),
     ...(runtimeContract ? { runtimeContract } : {}),
     ...(dispatchReadinessContract ? { dispatchReadinessContract } : {}),
@@ -1604,6 +1610,31 @@ function writeEvidence(opts) {
   });
   const finishedAt = new Date().toISOString();
   const exitCode = Number.isInteger(execution.status) ? execution.status : 1;
+  const trustedInfrastructureFailure = exitCode === 75
+    && /^(?:acef-worktree-test|acef-worktree-test\.cjs)$/.test(path.basename(opts.commandArgv[0]))
+    && `${execution.stdout || ""}\n${execution.stderr || ""}`.includes("ACEF_INFRASTRUCTURE_FAILURE");
+  if (trustedInfrastructureFailure) {
+    const incidentDir = path.join(opts.repo, "docs", "ai", "evidence", "infrastructure");
+    fs.mkdirSync(incidentDir, { recursive: true });
+    const priorAttempts = fs.readdirSync(incidentDir)
+      .filter((name) => name.startsWith(`${opts.id}-attempt`) && name.endsWith(".json")).length;
+    if (priorAttempts >= 2) throw new Error(`infrastructure retry budget exhausted for ${opts.id}`);
+    const incident = {
+      schema: "acef.infrastructure-test-failure.v1",
+      evidenceId: opts.id,
+      attempt: priorAttempts + 1,
+      command: commandText,
+      exitCode,
+      startedAt,
+      finishedAt,
+      repositoryCommit: currentCommit,
+      messageSha256: sha256(`${execution.stdout || ""}\n${execution.stderr || ""}`),
+    };
+    atomicJson(path.join(incidentDir, `${opts.id}-attempt${incident.attempt}.json`), incident);
+    console.error(`Infrastructure setup failed before product evidence; ${opts.id} remains reusable (attempt ${incident.attempt}/2)`);
+    process.exitCode = 75;
+    return;
+  }
   const raw = [
     `command: ${commandText}`,
     `started_at: ${startedAt}`,

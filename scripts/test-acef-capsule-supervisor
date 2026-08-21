@@ -364,6 +364,8 @@ try {
   }
   const reviewDispatch = JSON.parse(run(process.execPath, [supervisor, "--repo", tmp]));
   if (reviewDispatch.action.type !== "dispatch-parallel" || reviewDispatch.action.actors.length !== 2
+    || reviewDispatch.action.concurrency?.minimum !== 1
+    || reviewDispatch.action.concurrency?.fallback !== "sequential-same-input-tree"
     || reviewDispatch.action.actors.some((actor) => actor.runtime.model !== "gpt-5.6-sol"
       || actor.runtime.reasoningEffort !== (actor.role === "code-review" ? "medium" : "high")
       || !actor.capsule?.path.startsWith("docs/ai/capsules/") || !/^[a-f0-9]{64}$/.test(actor.capsule?.sha256 || "")

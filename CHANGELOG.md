@@ -9,6 +9,17 @@ or evidence contract. Do not use it to claim implementation status; link to the 
 
 ## Unreleased
 
+### Focused RED and worktree verification no longer multiply contexts
+
+- Bound new Native, Fix, and Standard work to Developer-owned focused RED→GREEN; Full v3 retains its independent Test
+  Author. The contract is versioned and non-retroactive, so installed upgrades do not reinterpret active runs.
+- Added a worktree test runner with work-unit-specific temp/cache/session/Redis/port/database names and fail-closed
+  detection of Composer/vendor paths resolving into a parent checkout. Trusted setup exit 75 records a bounded
+  infrastructure incident without consuming the canonical product evidence ID.
+- Made Full v3 reviewer dispatch slot-aware: parallel is preferred, while one available slot immediately selects
+  sequential review of the exact same input tree without dropping Code Review or Patch Assurance.
+- Added a scoped formatter wrapper and restored `docs/ai/runs/` to the control-path contract used by recovery.
+
 ### Full v3 repair and review now reuse one bounded work contract
 
 - Made the existing worker scope authoritative across Development, review, and bounded repair. A `REVISE` now returns

@@ -1,0 +1,42 @@
+#!/usr/bin/env node
+"use strict";
+const fs = require("node:fs");
+const path = require("node:path");
+const cp = require("node:child_process");
+
+function fail(message, code = 2) { process.stderr.write(`ACEF scoped format: ${message}\n`); process.exit(code); }
+function git(args, cwd) { return cp.execFileSync("git", args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim(); }
+const argv = process.argv.slice(2);
+const separator = argv.indexOf("--");
+if (separator < 0) fail("usage: acef-scoped-format --allow-path path [...] -- formatter [args...]");
+const allowed = [];
+for (let i = 0; i < separator; i += 1) {
+  if (argv[i] !== "--allow-path" || !argv[i + 1]) fail(`unknown option ${argv[i]}`);
+  const value = argv[++i].replaceAll("\\", "/");
+  if (path.isAbsolute(value) || value.split("/").includes("..")) fail(`unsafe path ${value}`);
+  allowed.push(value);
+}
+if (!allowed.length) fail("at least one --allow-path is required");
+const command = argv.slice(separator + 1);
+if (!command.length) fail("formatter command is required");
+const repo = git(["rev-parse", "--show-toplevel"], process.cwd());
+for (const relative of allowed) {
+  const absolute = path.resolve(repo, relative);
+  if (!absolute.startsWith(`${repo}${path.sep}`) || !fs.existsSync(absolute)) fail(`path does not exist: ${relative}`);
+}
+const scopePath = path.join(repo, "docs", "ai", "ACEF_ACTIVE_WORKER_SCOPE.json");
+if (fs.existsSync(scopePath)) {
+  const scope = JSON.parse(fs.readFileSync(scopePath, "utf8"));
+  const frozen = scope.allowedPaths || [];
+  const accepted = (candidate) => frozen.some((entry) => candidate === entry || candidate.startsWith(`${entry.replace(/\/$/, "")}/`));
+  const outside = allowed.filter((candidate) => !accepted(candidate));
+  if (outside.length) fail(`formatter paths are outside active worker scope: ${outside.join(", ")}`);
+}
+const result = cp.spawnSync(command[0], [...command.slice(1), ...allowed], { cwd: repo, env: process.env, stdio: "inherit" });
+if (result.error) fail(result.error.message, 126);
+const status = cp.execFileSync("git", ["status", "--porcelain=v1"], { cwd: repo, encoding: "utf8" });
+const changed = status.split(/\r?\n/).filter(Boolean).map((line) => line.slice(3).replaceAll("\\", "/"));
+const outside = changed.filter((candidate) => !allowed.some((entry) => candidate === entry || candidate.startsWith(`${entry.replace(/\/$/, "")}/`))
+  && !/^(?:\.acef|docs\/ai)\//.test(candidate));
+if (outside.length) fail(`formatter changed paths outside its declared scope: ${outside.join(", ")}`, 1);
+process.exit(Number.isInteger(result.status) ? result.status : 1);

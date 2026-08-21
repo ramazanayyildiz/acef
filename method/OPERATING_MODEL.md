@@ -294,7 +294,7 @@ the review surface; the Developer never self-merges.
 | Persona | Role |
 |---|---|
 | **Planner** | Writes the task spec, sets acceptance criteria + test plan, and records execution/assurance decisions. No production code. |
-| **Test Author** | Required by Guarded assurance at the risky boundary. Writes/names failing tests independently before/alongside the Developer. |
+| **Test Author** | Independent only in Full v3. Native/Fix/Standard keep focused RED with the same Developer. |
 | **Developer** | Implements exactly one task, runs tests/gates, writes a Developer Report. |
 | **Judge** | Fresh review (never self-approval). Returns exactly one of `MERGE` / `REVISE` / `REPLAN`. |
 | **Process Judge** | Verifies the required process was followed. It checks admission, workflow, assurance, skill paths, phase order, artifacts, and evidence before `done`. It does not review implementation quality. |
@@ -335,7 +335,7 @@ suites are denied, while one clean-tree `--closeout` broad run is available afte
 |---|---|---|---|
 | **ACEF Fix** | `quick-fix` | Narrow reproduced defects with clear before/after evidence. | Computed fix envelope, focused implementation, independent review, focused verification, closeout evidence. |
 | **ACEF Standard** | `lightweight` | Scoped ordinary features, config, docs, and contained non-defect work. | Compact six-step lifecycle with independent review and touched-surface validation. |
-| **ACEF Full (BMAD v2)** | `full-bmad` | Planning-heavy stories, broad features/refactors, new patterns, or unclear/coherent multi-boundary work. | New `four-actor-v3` runs use readiness, ATDD, development, parallel Code Review + report-only Patch Assurance, deterministic story close, and one Epic Process Judge. Existing `six-actor-v2` runs keep their frozen lifecycle. |
+| **ACEF Full (BMAD v2)** | `full-bmad` | Planning-heavy stories, broad features/refactors, new patterns, or unclear/coherent multi-boundary work. | New `four-actor-v3` runs use readiness, independent ATDD, development, Code Review + report-only Patch Assurance (parallel when capacity exists, otherwise sequential on the same tree), deterministic story close, and one Epic Process Judge. Existing `six-actor-v2` runs keep their frozen lifecycle. |
 
 | Assurance profile | Use for | Additive controls |
 |---|---|---|
@@ -346,8 +346,9 @@ Guarded is not a fourth workflow and does not silently turn ACEF Fix or ACEF Sta
 assurance controls. `full-bmad + guarded` runs one Full lifecycle with the Guarded deltas; it does not repeat readiness,
 ATDD, review, verification, or closeout.
 
-New ACEF Fix records use `quickFixContract: single-review-v1`. They use two independent execution contexts by default:
-one developer and one Code Reviewer. A separate ATDD context is optional, making three contexts at most. The reviewer
+New ACEF Fix records use `quickFixContract: single-review-v1` and `redOwnershipContract: integrated-developer-v1`.
+They use exactly two independent execution contexts: one Developer who owns RED→GREEN and one Code Reviewer. Standard
+uses the same RED ownership; only Full v3 uses `independent-test-author-v1`. The reviewer
 may perform one delta recheck after one repair, but there is still one review cycle and one reviewer gate. Deterministic
 closeout validates focused red, green, revert-proof, and—when user-facing—product-outcome evidence. It mechanically
 enforces four commits maximum, five product files, 50 product-line churn, four evidence runs, zero framework failures,

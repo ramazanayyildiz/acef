@@ -112,8 +112,8 @@ planning depth.
 ### Quick Fix single-review contract
 
 New ACEF Fix runs record `quickFixContract: single-review-v1`. The critical path is Developer → one independent Code
-Reviewer → deterministic closeout. ATDD may be a third context when a regression test must first be authored; otherwise
-red evidence may be produced by the developer. Process Judge, Patch Assurance, Verify-Patch, Test Review, optional NFR,
+Reviewer → deterministic closeout. The Developer owns the focused RED and continues to GREEN; a separate ATDD context
+is forbidden. ACEF Standard uses the same `integrated-developer-v1` RED ownership. Process Judge, Patch Assurance, Verify-Patch, Test Review, optional NFR,
 and broad-suite repetition are not scheduled for this workflow. Guarded adds boundary/evidence controls without adding
 actors or review phases.
 
@@ -186,6 +186,10 @@ findings and their hash. Because some runtimes encrypt delegated prompt text at 
 `docs/ai/corrections/<actor>.json` binding and commits it before dispatch: source/correction actor IDs, exact findings SHA-256,
 `scope: test-artifacts-only`, and explicit non-glob allowed paths. The oracle reconciles that record with the parent
 result and the correction actor's real write calls. A second incomplete result is `REPLAN/SPLIT`.
+
+The independent Test Author is deliberately retained only in Full v3. Code Review and Patch Assurance prefer parallel
+dispatch, but if only one worker slot is available they run sequentially over the identical committed input tree; the
+conductor neither waits for capacity nor drops a required reviewer.
 
 `REPLAN/SPLIT` quarantines the failed scope and its transitive dependants. Independent scopes continue unless a declared
 dependency edge or shared safety invariant makes continuation unsafe. Quarantine never converts the epic product gate

@@ -624,7 +624,15 @@ function build(repo) {
         action = {
           type: pending.length > 1 ? "dispatch-parallel" : "dispatch",
           reviewCycle,
-          ...(pending.length > 1 ? { actors: pending } : pending[0]),
+          ...(pending.length > 1 ? {
+            actors: pending,
+            concurrency: {
+              preferred: 2,
+              minimum: 1,
+              fallback: "sequential-same-input-tree",
+              rule: "Never wait for an extra slot and never drop a required reviewer; dispatch sequentially when only one worker slot is available.",
+            },
+          } : pending[0]),
         };
       } else {
         const red = activeRedEvidence;

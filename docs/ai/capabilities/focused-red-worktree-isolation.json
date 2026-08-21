@@ -1,0 +1,51 @@
+{
+  "capabilityId": "focused-red-worktree-isolation",
+  "requestedIntent": "Keep focused RED valuable without paying for repeated Test Author context in bounded work, and prevent linked-worktree test infrastructure from creating false product evidence.",
+  "status": "enforced",
+  "requiredLayers": ["docs", "workflow", "validator", "tests", "installer"],
+  "implementedLayers": {
+    "docs": [
+      "AGENTS.md#ACEF Admission",
+      "skills/acef/SKILL.md#Hard Boundaries",
+      "method/DELIVERY_RULES.md#Quick Fix single-review contract"
+    ],
+    "workflow": [
+      "schemas/active-run-v2.schema.json",
+      "schemas/lightweight-run-v2.schema.json",
+      "scripts/acef-state#writeActiveRun",
+      "scripts/acef-supervisor#review dispatch",
+      "scripts/acef-worktree-test",
+      "scripts/acef-scoped-format"
+    ],
+    "validator": [
+      "scripts/acef-process-validator#checkTypedActorSeparation",
+      "scripts/lib/acef-state-parser.js#parseActiveRun",
+      "scripts/lib/acef-state-parser.js#parseLightweightRun"
+    ],
+    "tests": [
+      "scripts/test-acef-worktree-test",
+      "scripts/test-acef-scoped-format",
+      "scripts/test-acef-quick-fix-single-review",
+      "scripts/test-acef-capsule-supervisor",
+      "scripts/test-acef-dispatch-recovery",
+      "scripts/test-install-acef-tools"
+    ],
+    "installer": ["scripts/install-acef-tools"]
+  },
+  "limitations": [
+    "The integrated RED default is supported by the preregistered ATDD-MIN-1 calibration; it remains enforced rather than proven until live product canaries reproduce the speed result without a quality regression.",
+    "The worktree runner isolates names and detects external Composer/vendor resolution. Target-specific services must still honor the emitted DB/cache/queue/port environment values.",
+    "Infrastructure retry is mechanically trusted only for the installed worktree runner's exit 75 marker and is capped at two attempts; ordinary failing tests remain immutable product evidence.",
+    "Existing in-flight runs without redOwnershipContract retain their original contract and are not reinterpreted after installation."
+  ],
+  "evidence": [
+    { "layer": "docs", "ref": "docs/experiments/atdd-min-1/RESULT.md" },
+    { "layer": "tests", "ref": "scripts/test-acef-worktree-test" },
+    { "layer": "tests", "ref": "scripts/test-acef-scoped-format" },
+    { "layer": "tests", "ref": "scripts/test-acef-quick-fix-single-review" },
+    { "layer": "tests", "ref": "scripts/test-acef-capsule-supervisor" },
+    { "layer": "tests", "ref": "scripts/test-acef-dispatch-recovery" },
+    { "layer": "tests", "ref": "scripts/test-install-acef-tools" }
+  ],
+  "createdAt": "2026-08-21"
+}

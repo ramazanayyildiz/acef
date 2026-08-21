@@ -1,0 +1,146 @@
+#!/usr/bin/env node
+"use strict";
+
+// Runs one focused test command with deterministic worktree-local runtime names.
+// Setup failures exit 75 and are infrastructure failures, not product RED.
+const fs = require("node:fs");
+const path = require("node:path");
+const cp = require("node:child_process");
+const crypto = require("node:crypto");
+
+function fail(message) {
+  process.stderr.write(`ACEF_INFRASTRUCTURE_FAILURE ${message}\n`);
+  process.exit(75);
+}
+function git(args, cwd) {
+  return cp.execFileSync("git", args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
+}
+function parse(argv) {
+  const separator = argv.indexOf("--");
+  if (separator < 0) fail("usage: acef-worktree-test [--work-unit id] -- command [args...]");
+  let workUnit = "focused";
+  for (let i = 0; i < separator; i += 1) {
+    if (argv[i] !== "--work-unit" || !argv[i + 1]) fail(`unknown option ${argv[i]}`);
+    workUnit = argv[++i];
+  }
+  if (!/^[A-Za-z0-9._-]+$/.test(workUnit)) fail("invalid --work-unit");
+  const command = argv.slice(separator + 1);
+  if (!command.length) fail("missing command");
+  return { workUnit, command };
+}
+function within(root, candidate) {
+  const relative = path.relative(root, candidate);
+  return relative === "" || (!relative.startsWith(`..${path.sep}`) && relative !== "..");
+}
+function xmlValues(text) {
+  const values = {};
+  for (const match of text.matchAll(/<(?:env|server)\s+[^>]*name=["']([^"']+)["'][^>]*value=["']([^"']*)["'][^>]*\/?\s*>/g)) {
+    values[match[1]] = match[2];
+  }
+  return values;
+}
+function replaceXmlValue(text, name, value) {
+  const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const expression = new RegExp(`(<(?:env|server)\\s+[^>]*name=["']${escaped}["'][^>]*value=["'])[^"']*(["'])`);
+  return expression.test(text) ? text.replace(expression, `$1${value}$2`) : text;
+}
+
+const { workUnit, command: originalCommand } = parse(process.argv.slice(2));
+let repo;
+try { repo = git(["rev-parse", "--show-toplevel"], process.cwd()); } catch { fail("not inside a Git worktree"); }
+const identity = crypto.createHash("sha256").update(`${repo}\0${workUnit}`).digest("hex").slice(0, 12);
+const gitRuntime = path.resolve(repo, git(["rev-parse", "--git-path", `acef-runtime/${identity}`], repo));
+fs.mkdirSync(gitRuntime, { recursive: true });
+const tmp = path.join(gitRuntime, "tmp");
+const cache = path.join(gitRuntime, "cache");
+fs.mkdirSync(tmp, { recursive: true });
+fs.mkdirSync(cache, { recursive: true });
+const portOffset = Number.parseInt(identity.slice(0, 4), 16) % 1000;
+const env = {
+  ...process.env,
+  ACEF_WORK_UNIT: workUnit,
+  TMPDIR: tmp,
+  XDG_CACHE_HOME: cache,
+  CACHE_PREFIX: `acef_${identity}`,
+  REDIS_PREFIX: `acef_${identity}:`,
+  SESSION_COOKIE: `acef_${identity}`,
+  APP_PORT: String(18000 + portOffset),
+  VITE_PORT: String(20000 + portOffset),
+  QUEUE_CONNECTION: process.env.QUEUE_CONNECTION || "sync",
+  QUEUE_PREFIX: `acef_${identity}`,
+};
+
+const vendor = path.join(repo, "vendor");
+if (fs.existsSync(vendor)) {
+  const realVendor = fs.realpathSync(vendor);
+  if (!within(repo, realVendor)) fail(`vendor resolves outside this worktree: ${realVendor}`);
+  const autoload = path.join(vendor, "autoload.php");
+  if (fs.existsSync(autoload) && !within(repo, fs.realpathSync(autoload))) fail("Composer autoload resolves outside this worktree");
+}
+
+let command = [...originalCommand];
+let temporaryConfig = "";
+const executable = path.basename(command[0]).toLowerCase();
+const phpTest = executable.includes("phpunit") || executable.includes("pest")
+  || (executable === "php" && command.some((arg) => /(?:artisan|phpunit|pest)$/.test(arg)));
+if (phpTest) {
+  let configIndex = command.findIndex((arg) => arg === "--configuration" || arg === "-c");
+  let config = configIndex >= 0 ? command[configIndex + 1] : ["phpunit.xml", "phpunit.xml.dist"].find((name) => fs.existsSync(path.join(repo, name)));
+  if (config) {
+    const sourceConfig = path.resolve(repo, config);
+    if (!within(repo, sourceConfig) || !fs.existsSync(sourceConfig)) fail(`PHPUnit configuration is unavailable: ${config}`);
+    let xml = fs.readFileSync(sourceConfig, "utf8");
+    const values = xmlValues(xml);
+    const baseDatabase = process.env.DB_DATABASE || values.DB_DATABASE;
+    if (baseDatabase && /\.sqlite$/i.test(baseDatabase)) {
+      const database = path.join(gitRuntime, "database.sqlite");
+      if (!fs.existsSync(database)) fs.writeFileSync(database, "");
+      xml = replaceXmlValue(xml, "DB_DATABASE", database);
+      env.DB_DATABASE = database;
+    } else if (baseDatabase && !/:memory:/.test(baseDatabase)) {
+      const database = `${baseDatabase.replace(/[^A-Za-z0-9_]/g, "_").slice(0, 48)}_a${identity}`.slice(0, 64);
+      xml = replaceXmlValue(xml, "DB_DATABASE", database);
+      env.DB_DATABASE = database;
+      const connection = process.env.DB_CONNECTION || values.DB_CONNECTION || "mysql";
+      if (["mysql", "mariadb"].includes(connection)) {
+        const host = process.env.DB_HOST || values.DB_HOST || "127.0.0.1";
+        const port = process.env.DB_PORT || values.DB_PORT || "3306";
+        const username = process.env.DB_USERNAME || values.DB_USERNAME || "root";
+        const password = process.env.DB_PASSWORD || values.DB_PASSWORD || "";
+        const create = cp.spawnSync("php", ["-r",
+          "$p=new PDO('mysql:host='.$argv[1].';port='.$argv[2],$argv[3],$argv[4],[PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION]);$p->exec('CREATE DATABASE IF NOT EXISTS `'.$argv[5].'`');",
+          host, String(port), username, password, database], { cwd: repo, encoding: "utf8" });
+        if (create.status !== 0) fail(`could not provision isolated database ${database}: ${create.stderr || create.error?.message || "unknown error"}`);
+      }
+    }
+    temporaryConfig = path.join(repo, `.phpunit.acef-${identity}.xml`);
+    fs.writeFileSync(temporaryConfig, xml);
+    if (configIndex >= 0) command[configIndex + 1] = temporaryConfig;
+    else command.push("--configuration", temporaryConfig);
+  }
+}
+
+const startedAt = new Date().toISOString();
+let result;
+try {
+  result = cp.spawnSync(command[0], command.slice(1), { cwd: repo, env, stdio: "inherit" });
+} finally {
+  if (temporaryConfig) fs.rmSync(temporaryConfig, { force: true });
+}
+const receipt = {
+  schema: "acef.worktree-test.v1",
+  workUnit,
+  repo,
+  identity,
+  command: originalCommand,
+  isolatedCommand: command,
+  cachePrefix: env.CACHE_PREFIX,
+  ports: { app: Number(env.APP_PORT), vite: Number(env.VITE_PORT) },
+  database: env.DB_DATABASE || null,
+  startedAt,
+  finishedAt: new Date().toISOString(),
+  exitCode: Number.isInteger(result.status) ? result.status : 1,
+};
+fs.writeFileSync(path.join(gitRuntime, "last-run.json"), `${JSON.stringify(receipt, null, 2)}\n`);
+if (result.error) fail(`test command failed to start: ${result.error.message}`);
+process.exit(receipt.exitCode);

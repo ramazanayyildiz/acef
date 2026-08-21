@@ -14,6 +14,10 @@ static analysis through `.acef/bin/acef-native-test -- <focused-command>`. Broad
 forbidden and may run once only as `.acef/bin/acef-native-test --closeout -- <broad-command>` on a clean worktree.
 Independently admitted children sharing one branch and HEAD use `--work-unit <stable-child-id>` so their verification
 budgets remain separate without creating ACEF run artifacts.
+When a regression test is useful, the same Developer writes the focused RED and continues to GREEN; Native, Fix, and
+Standard must not open a separate Test Author session. Run framework tests through
+`.acef/bin/acef-worktree-test --work-unit <id> -- <focused-command>` when a linked worktree can share Composer autoload,
+database, cache, queue, or ports. Infrastructure setup exit 75 does not consume canonical product evidence.
 When the requested patch is green, stop; record unrelated failures as follow-up work instead of investigating them.
 
 Start ACEF only when the request needs its controls: persistence/migration, security/privacy/permissions, money,
@@ -40,6 +44,8 @@ worktree with `scripts/update-acef-installation --repo <target> --all-worktrees`
 New ACEF Fix runs use `quickFixContract: single-review-v1`: one developer, one independent reviewer, focused red/green
 and revert-proof evidence, then deterministic closeout. Guarded may strengthen evidence and scope controls, but it does
 not add Process Judge, Patch Assurance, Verify-Patch, Test Review, or a second review cycle to Quick Fix.
+New Fix and Standard runs bind `redOwnershipContract: integrated-developer-v1`; Full v3 alone keeps
+`independent-test-author-v1`. This removes repeated test-design context without removing RED/GREEN or independent review.
 
 For Full v3, the typed worker scope is the canonical work contract through implementation and bounded repair. `REVISE`
 returns that same contract to the original Developer before repair; it does not create a repair phase or another
@@ -49,6 +55,8 @@ For new Full v3 work, readiness is a deterministic delta over existing approved 
 readiness session or repeat a full PRD/NFR inventory unless a named source conflict or product ambiguity requires
 independent judgment. Do not dispatch ATDD until status/next agree that every mandatory dispatch gate passes and the
 worker scope freezes every executable evidence/discovery command plus bounded test and implementation paths.
+Full v3 Code Review and Patch Assurance prefer parallel dispatch, but lack of a free worker slot must immediately fall
+back to sequential review of the same input tree. Never wait for capacity and never omit either required review.
 
 Do not apply a newly installed dispatch-readiness contract retroactively to an in-flight Full v3 story. If a
 pre-contract story already has committed RED/product lineage but its phase, role, or worker state drifted, use the
