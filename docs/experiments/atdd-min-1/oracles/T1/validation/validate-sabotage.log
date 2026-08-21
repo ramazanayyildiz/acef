@@ -1,0 +1,58 @@
+PHPUnit 11.5.55 by Sebastian Bergmann and contributors.
+
+Runtime:       PHP 8.4.19
+Configuration: /private/tmp/atdd-min-1/wt/oracleval-T1/.atdd-phpunit.xml
+Random Seed:   1787335521
+
+F.......FF                                                        10 / 10 (100%)
+
+Time: 00:15.484, Memory: 68.50 MB
+
+There were 3 failures:
+
+1) Tests\Feature\AtddOracle\OracleTest::endpoint_refuses_actor_without_the_event_create_capability
+An actor without the event-create capability must not be able to create an event through duplication.
+Failed asserting that 2 is identical to 1.
+
+/private/tmp/atdd-min-1/wt/oracleval-T1/tests/Feature/AtddOracle/OracleTest.php:67
+
+2) Tests\Feature\AtddOracle\OracleTest::action_model_hides_duplicate_from_actor_without_the_event_create_capability
+The duplicate action must not be offered to an actor without the event-create capability.
+Failed asserting that true is false.
+
+/private/tmp/atdd-min-1/wt/oracleval-T1/tests/Feature/AtddOracle/OracleTest.php:183
+
+3) Tests\Feature\AtddOracle\OracleTest::duplicate_of_a_cancelled_event_does_not_inherit_the_cancellation
+A duplicate must not inherit the cancellation of its source.
+Failed asserting that Illuminate\Support\Carbon Object #1138 (
+    'endOfTime' => false,
+    'startOfTime' => false,
+    'constructedObjectId' => '00000000000004720000000000000000',
+    'clock' => null,
+    'localMonthsOverflow' => null,
+    'localYearsOverflow' => null,
+    'localStrictModeEnabled' => null,
+    'localHumanDiffOptions' => null,
+    'localToStringFormat' => null,
+    'localSerializer' => null,
+    'localMacros' => null,
+    'localGenericMacros' => null,
+    'localFormatFunction' => null,
+    'localTranslator' => null,
+    'dumpProperties' => Array &0 [
+        0 => 'date',
+        1 => 'timezone_type',
+        2 => 'timezone',
+    ],
+    'dumpLocale' => null,
+    'dumpDateProperties' => null,
+    'date' => '2026-08-20 18:05:36.000000',
+    'timezone_type' => 3,
+    'timezone' => 'UTC',
+) is null.
+
+/private/tmp/atdd-min-1/wt/oracleval-T1/tests/Feature/AtddOracle/OracleTest.php:280
+
+FAILURES!
+Tests: 10, Assertions: 49, Failures: 3.
+

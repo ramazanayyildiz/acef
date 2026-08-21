@@ -1,0 +1,45 @@
+{
+  "task": "T5",
+  "assertions": [
+    {
+      "method": "organiser_mints_a_link_that_lets_an_unauthenticated_visitor_read_a_draft_landing_preview",
+      "severity": "S2",
+      "description": "An organiser holding the event-update capability can POST events.landing.share and the resulting link renders the DRAFT event's landing preview to an unauthenticated visitor (HTTP 200, event content present, visitor stays a guest, event state unchanged)."
+    },
+    {
+      "method": "share_link_with_altered_or_missing_signature_is_refused",
+      "severity": "S1",
+      "description": "A share link whose parameters were stripped, injected into, or altered is refused rather than served — the link must be tamper-evident, not merely a guessable permanent URL."
+    },
+    {
+      "method": "share_link_is_refused_once_its_lifetime_has_passed",
+      "severity": "S1",
+      "description": "A link that worked when minted stops serving the landing content long after issue (checked 400 days later), proving the link is genuinely time-limited rather than permanent."
+    },
+    {
+      "method": "share_link_minted_for_one_event_does_not_expose_another_event",
+      "severity": "S1",
+      "description": "A link issued for one event neither renders another event's content nor grants access when re-pointed at a second event or when a second event's link is grafted with the first link's credentials."
+    },
+    {
+      "method": "actors_without_the_event_update_capability_cannot_mint_a_share_link",
+      "severity": "S1",
+      "description": "Minting is refused for a team member that holds only the event-view capability, for an organiser of another workspace, and for an unauthenticated visitor — no usable link is produced by any of them."
+    },
+    {
+      "method": "shared_view_offers_no_registration_submission_and_no_authoring_control",
+      "severity": "S2",
+      "description": "The shared read-only rendering contains no write form targeting the public registration submission route and no target pointing at the authenticated landing editor, authenticated landing preview, or publish endpoint."
+    },
+    {
+      "method": "opening_the_share_link_neither_authenticates_the_visitor_nor_unlocks_the_authenticated_surfaces",
+      "severity": "S1",
+      "description": "After opening a valid share link the visitor is still a guest, and the authenticated landing editor and landing preview routes remain refused and render no event content for that visitor."
+    },
+    {
+      "method": "sharing_does_not_make_the_draft_event_readable_on_the_permanent_public_landing_route",
+      "severity": "S1",
+      "description": "With a share link live, the DRAFT event is still refused on the permanent public landing route and its landing content is not served there — the private-DRAFT invariant is not widened to enable sharing."
+    }
+  ]
+}

@@ -1,0 +1,40 @@
+{
+  "task": "T4",
+  "assertions": [
+    {
+      "method": "export_contains_only_the_requested_events_registrations",
+      "severity": "S1",
+      "description": "The CSV lists the requested event's registrations and contains no attendee row (name or email) belonging to a different event."
+    },
+    {
+      "method": "export_returns_registrations_for_an_event_in_another_workspace",
+      "severity": "S2",
+      "description": "A platform admin exporting an event owned by a workspace other than their own current workspace still receives that event's registration rows, instead of an empty file."
+    },
+    {
+      "method": "admin_area_user_without_global_event_capability_cannot_export",
+      "severity": "S1",
+      "description": "An authenticated user who reaches the platform-admin area (passes the admin-area check) but holds no global event-visibility capability is refused with 403 and receives no attendee data and no file download."
+    },
+    {
+      "method": "workspace_administrator_cannot_use_the_platform_export",
+      "severity": "S1",
+      "description": "A workspace-scoped administrator of the event's own workspace is refused the platform export and receives no attendee data, so the endpoint requires the global capability rather than any workspace-level role."
+    },
+    {
+      "method": "export_route_is_capability_gated_and_never_public",
+      "severity": "S1",
+      "description": "The export route has an entry in the route-permission configuration that is neither null nor public, and an anonymous visitor is refused with no CSV body."
+    },
+    {
+      "method": "pre_existing_admin_routes_are_not_widened",
+      "severity": "S1",
+      "description": "Adding the export leaves every other platform-admin permission entry requiring an explicit capability, and the pre-existing admin event routes still refuse an actor lacking the global event-visibility capability."
+    },
+    {
+      "method": "export_is_delivered_as_a_csv_download_named_after_the_event",
+      "severity": "S2",
+      "description": "The successful response is a non-empty CSV file download (attachment) whose filename identifies the exported event."
+    }
+  ]
+}

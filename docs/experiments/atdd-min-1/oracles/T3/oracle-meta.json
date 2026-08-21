@@ -1,0 +1,45 @@
+{
+  "task": "T3",
+  "assertions": [
+    {
+      "method": "current_page_is_programmatically_marked_in_both_navigation_variants",
+      "severity": "S2",
+      "description": "On two different primary pages in the same session, both the desktop nav and the mobile drawer must expose exactly one programmatically current item (aria-current), it must be the same item in both variants, and it must be the page actually being rendered. Catches current-state that exists only in the desktop variant, only in CSS, or that is baked into the per-user navigation cache and goes stale after the first page."
+    },
+    {
+      "method": "only_one_navigation_item_is_current_on_a_nested_section_page",
+      "severity": "S2",
+      "description": "On a nested section page (/events/contacts) the legacy prefix-based active state highlights more than one item; exactly one item may still be announced as the current page, and desktop and mobile must agree on which. Catches the shortcut of deriving aria-current straight from the styling active flag, which announces two current pages to assistive technology."
+    },
+    {
+      "method": "every_navigation_link_carries_a_variant_independent_scroll_key",
+      "severity": "S2",
+      "description": "Every primary navigation link must carry a scroll-restoration key (an attribute other than the pre-existing href/class/test-id) that is present on all items, identical for the desktop and mobile rendering of the same item, and distinct per item. Catches keys derived from the variant-suffixed test id or otherwise different between the two renderings, which makes desktop and mobile offsets uncorrelatable."
+    },
+    {
+      "method": "scroll_keys_are_stable_across_requests_and_across_pages",
+      "severity": "S2",
+      "description": "The per-item scroll key must be identical when the same page is requested twice and when the item is rendered on a different page. Catches keys derived from the current request (route, URL, per-render token), which would make a stored offset unresolvable on the way back."
+    },
+    {
+      "method": "authenticated_layout_emits_a_page_scoped_scroll_region_marker",
+      "severity": "S2",
+      "description": "The authenticated layout must emit a machine-readable marker that identifies the page being rendered: one single value per document, unchanged when the same page is re-requested, different when another page is rendered. Catches a constant/static region marker that satisfies a naive presence assertion but cannot tell Back/Forward which stored offset belongs to the incoming page."
+    },
+    {
+      "method": "existing_navigation_output_and_filtering_are_preserved",
+      "severity": "S2",
+      "description": "Existing behaviour must survive the new markup: desktop and mobile keep their distinct test ids and unchanged hrefs, the exclusion list still removes an item completely (link, key and destination), and badges still render — while the new per-item keys are present. Catches regressions where the added attributes are emitted before filtering or replace the existing addressable output."
+    },
+    {
+      "method": "navigation_markers_never_expose_destinations_the_viewer_cannot_reach",
+      "severity": "S1",
+      "description": "For a viewer whose capabilities exclude the events/audience/automations/reports items, those destinations must appear nowhere in the response — no link, no item key, no route name and no attribute value carrying their URLs — while the permitted items still carry the new keys and exactly one current item. Catches keys or a scroll manifest built from an unfiltered navigation source, which re-exposes destinations the authorization pipeline had removed."
+    },
+    {
+      "method": "scroll_restoration_markers_do_not_reflect_request_controlled_markup",
+      "severity": "S1",
+      "description": "With request-controlled input (query string and Referer) carrying an attribute-breakout payload, the rendered page must still emit the navigation keys and the page marker, and must not contain the injected markup. Catches a scroll-restoration contract that echoes request data unescaped into an attribute, turning the marker into reflected markup injection on an authenticated page."
+    }
+  ]
+}

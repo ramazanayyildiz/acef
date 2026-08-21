@@ -1,0 +1,55 @@
+{
+  "task": "T1",
+  "assertions": [
+    {
+      "method": "endpoint_refuses_actor_without_the_event_create_capability",
+      "severity": "S1",
+      "description": "A workspace member who can view events but does not hold the event-create capability POSTs to events.duplicate: the endpoint must refuse (non-2xx) and no event row may be created, regardless of whether the UI would have rendered the action. Catches a permissive route-permission entry (e.g. mapping the route to the view capability) or an endpoint that relies on the hidden button instead of enforcing create itself."
+    },
+    {
+      "method": "endpoint_refuses_actor_who_cannot_view_the_source_event",
+      "severity": "S1",
+      "description": "A same-workspace actor who still holds event-create but has lost view access to events (confirmed by a 403 on events.show for the source) must be refused by the duplicate endpoint, and no event row may be created. Catches an endpoint that checks only the create capability and lets workspace membership stand in for view authorization."
+    },
+    {
+      "method": "endpoint_refuses_actor_from_another_workspace",
+      "severity": "S1",
+      "description": "An admin of a different workspace (who holds event-create there) POSTs to duplicate an event owned by another workspace: the request must be refused, no event row created anywhere, and in particular no copy may land in the outsider's workspace. Catches a missing tenant-scope check when the source event is resolved without team scoping."
+    },
+    {
+      "method": "action_model_exposes_a_duplicate_entry_for_a_capable_actor",
+      "severity": "S2",
+      "description": "EventActionAvailability::for() must return a 'duplicate' entry shaped like the existing entries — an array with boolean 'visible' and 'enabled' keys — and both must be true for a workspace admin who holds the event-create capability and can view the event."
+    },
+    {
+      "method": "action_model_hides_duplicate_from_actor_without_the_event_create_capability",
+      "severity": "S1",
+      "description": "For an actor who can view events but lacks the event-create capability, the duplicate entry must still be present and report visible=false and enabled=false. Catches an action model keyed on the wrong capability (e.g. the update capability) that offers duplication to actors who may not create events."
+    },
+    {
+      "method": "action_model_hides_duplicate_from_actor_outside_the_events_workspace",
+      "severity": "S2",
+      "description": "For an actor whose create capability lives in a different workspace than the event being inspected, the duplicate entry must report visible=false and enabled=false. Catches an availability check that evaluates the capability against the actor's current workspace without binding it to the event's workspace."
+    },
+    {
+      "method": "duplicate_creates_exactly_one_draft_event_in_the_actors_current_workspace",
+      "severity": "S2",
+      "description": "A successful duplicate of a PUBLISHED event creates exactly one new event row, in DRAFT state, owned by the acting user's current workspace, with a uuid distinct from the source, and leaves the source event's state and title unchanged."
+    },
+    {
+      "method": "duplicate_of_a_finished_event_does_not_inherit_its_lifecycle_state",
+      "severity": "S1",
+      "description": "Duplicating an ENDED event must produce a DRAFT copy. Catches a copy path that carries the source lifecycle state into the new row, which would place an event in a lifecycle state it never legitimately entered and bypass the publish gates."
+    },
+    {
+      "method": "duplicate_of_a_cancelled_event_does_not_inherit_the_cancellation",
+      "severity": "S1",
+      "description": "Duplicating a cancelled event must produce a copy with no cancellation data (cancelled_at, cancelled_by and cancel_reason all null). Catches a blanket attribute copy (e.g. replicate()) that resets only the state and silently carries the cancellation flag into a brand-new draft."
+    },
+    {
+      "method": "duplicate_does_not_copy_registrations_from_the_source_event",
+      "severity": "S1",
+      "description": "When the source event has registrations, the duplicate must own none of them and the total registration count must be unchanged. Catches a duplication path that clones registrant records — attendee personal data — into a new event."
+    }
+  ]
+}

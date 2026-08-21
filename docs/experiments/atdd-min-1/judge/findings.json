@@ -1,0 +1,154 @@
+{
+  "artifacts": [
+    {
+      "artifact_id": "ART-01394e",
+      "findings": [
+        {
+          "dimension": "scope",
+          "severity": "minor",
+          "claim": "The overview controller eager-loads the landingPage relation that nothing on the page or in the action model ever reads, leaving an unused query behind.",
+          "evidence": "app/Modules/Events/Http/Controllers/EventOverviewController.php — `$event->load(['speakers', 'landingPage']);`. The new events::events.overview view reads only title, state, starts_at, timezone, registrant_capacity_limit, default_locale, speakers->count() and description, and EventActionAvailability::for() derives every entry from Gate checks plus state/cancelled_at, never from landingPage."
+        }
+      ]
+    },
+    {
+      "artifact_id": "ART-02fff7",
+      "findings": [
+        {
+          "dimension": "ac-gap",
+          "severity": "major",
+          "claim": "The layout's scroll-restoration region marker identifies the active navigation section rather than the page being rendered, so sibling pages under one nav item emit an identical marker and Back/Forward would restore another page's offset.",
+          "evidence": "app/Navigation/ScrollRestorationKey::forCurrentPage() returns `self::forItem($items[$index])` — the navigation item's own key — whenever any item is active, and resources/views/layouts/authenticated.blade.php emits it as `data-scroll-restore-region=\"{{ $scrollRestoreRegion }}\"`. Nav active state is prefix-matched (ActiveStateResolver::isRouteActive strips the terminal action segment), so events.index, events.show and every other events.* page all resolve to the item key 'tenant-events' and share one marker; the route-name fallback is only reached when no nav item is active."
+        },
+        {
+          "dimension": "test-gap",
+          "severity": "major",
+          "claim": "AC2's 'exactly one item is marked current' is only exercised on a request where a single navigation item is active anyway, so the single-selection logic the diff adds is never actually tested.",
+          "evidence": "tests/Feature/Navigation/MobileNavScrollStateTest::current_primary_nav_item_is_programmatically_marked_in_both_variants asserts assertCount(1, $currentDesktop) after GET route('user.dashboard'), and mobile_variant_preserves_exclusion_filtering_badges_and_existing_output supplies a hand-built item list with one `'active' => true`. No test renders a request where two items resolve active — which the prefix matching in ActiveStateResolver genuinely produces (on events.contacts.index both tenant-events and tenant-audience are active) — so removing `$currentIndex` from topbar-navigation.blade.php and marking each item from `$item['active']` would still pass."
+        }
+      ]
+    },
+    {
+      "artifact_id": "ART-03c646",
+      "findings": [
+        {
+          "dimension": "reuse",
+          "severity": "minor",
+          "claim": "The new export service re-implements the existing EventExportService CSV pipeline instead of reusing it, duplicating the streaming closure and the registrant-row assembly almost verbatim.",
+          "evidence": "app/Modules/SuperAdmin/Services/SuperAdminEventRegistrationExportService::response() reproduces EventExportService::response() line for line (response()->streamDownload with fopen('php://output','wb'), the fputcsv(..., escape: '\\\\') loop, fclose, and the same 'Content-Type' => 'text/csv; charset=UTF-8' header), and rows()/SuperAdminEventRepository::registrationsForEvent() reproduce EventExportService::registrantRows()'s query shape (where('event_id')->orderBy('created_at')->orderBy('id')) and its `(string) ($index + 1)` / `?->toIso8601String() ?? ''` row idiom."
+        },
+        {
+          "dimension": "test-gap",
+          "severity": "minor",
+          "claim": "AC6 requires that no pre-existing admin permission entry changed, but the test only spot-checks four of them, so a widened entry elsewhere in the admin map would go undetected.",
+          "evidence": "tests/Feature/SuperAdmin/AdminEventRegistrationExportTest::export_route_is_capability_gated_without_widening_existing_admin_routes asserts only admin.events.index, admin.events.show, admin.events.edit and admin.dashboard, while config/route_permissions.php declares roughly sixty admin.* entries."
+        }
+      ]
+    },
+    {
+      "artifact_id": "ART-046f1f",
+      "findings": [
+        {
+          "dimension": "test-gap",
+          "severity": "major",
+          "claim": "AC2's 'exactly one item is marked current' is only exercised against a fixture with a single active item, so the first-match-wins deduplication the diff adds is never tested.",
+          "evidence": "tests/Feature/Navigation/MobileNavScrollStateTest::navItems() returns three items of which only tenant-dashboard has `'active' => true`, and current_item_is_programmatically_current_in_both_variants asserts assertSame(['nav-dashboard'], $currentDesktop) against that fixture. The `foreach ... break` loop added to topbar-navigation.blade.php exists precisely for the multi-active case (ActiveStateResolver prefix-matching makes both tenant-events and tenant-audience active on events.contacts.index), and no test supplies two active items."
+        },
+        {
+          "dimension": "ac-gap",
+          "severity": "minor",
+          "claim": "Only the aria-current marker is deduplicated; the visual active styling is still driven by the raw per-item active flag, so on a request where two items resolve active the page presents two current items to sighted users and one to assistive technology.",
+          "evidence": "resources/views/components/topbar-navigation.blade.php — the diff adds `@if ($index === $currentIndex) aria-current=\"page\" @endif` but leaves `class=\"{{ $linkBase }} {{ ($item['active'] ?? false) ? $activeClasses : $inactiveClasses }}\"` unchanged, so $activeClasses is applied to every item whose 'active' flag is true."
+        }
+      ]
+    },
+    {
+      "artifact_id": "ART-05b83a",
+      "findings": [
+        {
+          "dimension": "invariant",
+          "severity": "minor",
+          "claim": "The registration pre-condition adds a new TeamScope bypass inside the EventService cluster for system-admin cross-team work, which the module's documented bypass discipline forbids and for which a bypass-owning repository method already exists.",
+          "evidence": "app/Modules/Events/Services/EventLifecycleService::hasRegistrations() calls `$event->registrations()->withoutGlobalScope(TeamScope::class)->exists()` with the comment 'a platform admin acting cross-team must see the same answer'. app/Modules/Events/CLAUDE.md rule 9 states: 'Do not call ->withoutGlobalScope(\\App\\Scopes\\TeamScope::class) inside EventService / SpeakerService / EventRepository for SYSTEM_ADMIN cross-team work — that is already handled at the scope layer by User::shouldBypassTeamScope()', and RegistrationRepositoryInterface::countRegistrantsForEvent() already provides exactly this scoped-by-event_id count with the bypass at the repository layer."
+        },
+        {
+          "dimension": "invariant",
+          "severity": "minor",
+          "claim": "The canonical transition table gains the PUBLISHED-to-DRAFT edge while the specification the enum names as its single source of truth is left stating that the edge does not exist.",
+          "evidence": "app/Modules/Events/Enums/EventState.php — the hunk adds `self::DRAFT` to PUBLISHED's transitionsTo() directly under the surviving docblock 'Canonical legal-transition table. Mirrors docs/specs/event-states.md.' (and the class docblock 'Single source of truth: docs/specs/event-states.md ... 20 legal edges'), but docs/specs/event-states.md is untouched and still records \"Phase 1: no 'unpublish' transition (PUBLISHED -> DRAFT). ... Unpublish deferred to Phase 2.\""
+        }
+      ]
+    },
+    {
+      "artifact_id": "ART-0608e7",
+      "findings": [
+        {
+          "dimension": "invariant",
+          "severity": "minor",
+          "claim": "The canonical transition table gains the PUBLISHED-to-DRAFT edge while the specification the enum names as its single source of truth is left stating that the edge does not exist.",
+          "evidence": "app/Modules/Events/Enums/EventState.php — the hunk adds `self::DRAFT` to PUBLISHED's transitionsTo() and extends the docblock that still reads 'Canonical legal-transition table. Mirrors docs/specs/event-states.md.' (class docblock: 'Single source of truth: docs/specs/event-states.md ... 20 legal edges'), but docs/specs/event-states.md is untouched and still records \"Phase 1: no 'unpublish' transition (PUBLISHED -> DRAFT). ... Unpublish deferred to Phase 2.\""
+        },
+        {
+          "dimension": "test-gap",
+          "severity": "minor",
+          "claim": "The three refusal tests never assert anything about the response, so a 500 or a success-shaped response would be indistinguishable from the refusal AC3, AC4 and AC5 require.",
+          "evidence": "tests/Feature/Events/AdminRevertToDraftTest — revert_is_refused_when_the_event_is_not_published, revert_is_refused_when_the_event_already_has_registrations and cancelled_event_cannot_be_reverted each call `$this->actingAs($superAdmin)->post(route('admin.events.revert-to-draft', ...), [...])` and discard the TestResponse, then only call assertNotReverted(), which checks persisted state and the absence of a transition audit row."
+        }
+      ]
+    },
+    {
+      "artifact_id": "ART-07719b",
+      "findings": [
+        {
+          "dimension": "test-gap",
+          "severity": "minor",
+          "claim": "AC6's no-registration-submission boundary is only asserted for the registration form; the second POST form the diff had to suppress on the shared page is never covered, so removing that guard would ship undetected.",
+          "evidence": "app/Modules/Events/Resources/views/components/landing-preview.blade.php wraps the `@include('events::public.partials.registration-lookup-form', ...)` in `@if($registrationSubmittable)`; that partial posts to events.public.registration.lookup.submit. tests/Feature/Events/LandingPreviewShareLinkTest::organiser_mints_share_link_and_guest_sees_read_only_draft_landing_preview asserts only assertDontSee(route('events.public.registration.store', ...)) and assertDontSee(route('events.landing.edit', ...)), so dropping the new @if would leave a live POST form on the unauthenticated share page with every test still green."
+        }
+      ]
+    },
+    {
+      "artifact_id": "ART-0813fa",
+      "findings": [
+        {
+          "dimension": "test-gap",
+          "severity": "minor",
+          "claim": "The source-view refusal required by AC4 is only tested with a cross-workspace actor, whose request is rejected by team-scoped route-model binding before the controller runs, so the service-layer view guard the diff adds is never exercised.",
+          "evidence": "tests/Feature/Events/EventDuplicateActionTest::actor_who_cannot_view_the_source_event_is_refused_and_creates_nothing accepts `[403, 404]` for an actor from a different workspace; Event extends TeamScopedModel, so `{event:uuid}` binding never resolves for that actor and `$this->authz->authorizeView($source, $actor)` in EventService::duplicate() is not reached by any test."
+        },
+        {
+          "dimension": "scope",
+          "severity": "minor",
+          "claim": "The new duplicate() method is inserted between createDraft()'s existing PHPDoc and its signature, orphaning that docblock onto a method that has no $metadata parameter.",
+          "evidence": "app/Modules/Events/Services/EventMetadataService.php — the hunk adds duplicate() immediately after the block ending '@param array<string, mixed> $metadata / Required keys: title, description, starts_at, ends_at, timezone. */', producing two stacked docblocks above `public function duplicate(Event $source, Team $team, User $actor)` and leaving createDraft() undocumented."
+        }
+      ]
+    },
+    {
+      "artifact_id": "ART-0944e2",
+      "findings": [
+        {
+          "dimension": "reuse",
+          "severity": "minor",
+          "claim": "The share view copies the public landing page's preview-data preparation block verbatim instead of reusing it, duplicating roughly twenty lines of view logic including the by-reference speaker photo-path rewrite.",
+          "evidence": "app/Modules/Events/Resources/views/public/landing-share.blade.php — the @php block computing $branding, $blocks, $agenda, $speakers, the `foreach ($speakers['items'] as &$_s) { ... Storage::disk('public')->url(...) } unset($_s);` loop, $template, $accent, $coverPath, $logoPath and $description is character-for-character the same as the corresponding block in app/Modules/Events/Resources/views/public/show.blade.php, which the same templates are rendered from."
+        }
+      ]
+    },
+    {
+      "artifact_id": "ART-109c0e",
+      "findings": []
+    },
+    {
+      "artifact_id": "ART-11f78d",
+      "findings": [
+        {
+          "dimension": "reuse",
+          "severity": "minor",
+          "claim": "The new export service re-implements the existing EventExportService CSV pipeline instead of reusing it, duplicating the streaming closure and the registrant-row assembly almost verbatim.",
+          "evidence": "app/Modules/SuperAdmin/Services/SuperAdminRegistrationExportService::response() reproduces EventExportService::response() line for line (response()->streamDownload with fopen('php://output','wb'), the fputcsv(..., escape: '\\\\') loop, fclose, and the same 'Content-Type' => 'text/csv; charset=UTF-8' header), and rows() reproduces EventExportService::registrantRows() — same `where('event_id')->orderBy('created_at')->orderBy('id')` query and the same column list plus an email column."
+        }
+      ]
+    }
+  ]
+}

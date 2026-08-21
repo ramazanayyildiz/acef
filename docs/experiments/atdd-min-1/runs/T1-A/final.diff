@@ -1,0 +1,502 @@
+diff --git a/app/Modules/Events/Http/Controllers/EventController.php b/app/Modules/Events/Http/Controllers/EventController.php
+index 99a87539..c6e7e4d6 100644
+--- a/app/Modules/Events/Http/Controllers/EventController.php
++++ b/app/Modules/Events/Http/Controllers/EventController.php
+@@ -202,6 +202,59 @@ public function update(UpdateEventRequest $request, Event $event): JsonResponse|
+         ]);
+     }
+ 
++    /**
++     * T1 — duplicate an event into a fresh DRAFT owned by the acting team.
++     *
++     * Thin controller: EventService::duplicate owns both guards (view access on
++     * the source + create capability on the acting team) so the endpoint refuses
++     * independently of whether the UI rendered the action.
++     */
++    public function duplicate(Request $request, Event $event): JsonResponse|RedirectResponse
++    {
++        /** @var User $user */
++        $user = authUser();
++
++        try {
++            $copy = $this->eventService->duplicate($event, $user);
++        } catch (AuthorizationException) {
++            if (! $request->expectsJson()) {
++                abort(403, __('events.errors.unauthorized'));
++            }
++
++            return response()->json([
++                'error' => ['code' => 'JKM-EVT-1010', 'message' => __('events.errors.unauthorized')],
++            ], 403);
++        } catch (EventCreditExhaustedException $exception) {
++            if (! $request->expectsJson()) {
++                return redirect()
++                    ->back()
++                    ->withErrors(['duplicate' => $exception->getMessage()])
++                    ->with('reference', $exception->errorCode());
++            }
++
++            return response()->json([
++                'error' => [
++                    'code' => $exception->errorCode(),
++                    'message' => $exception->getMessage(),
++                ],
++            ], $exception->httpStatus());
++        }
++
++        if (! $request->expectsJson()) {
++            return redirect()
++                ->route('events.show', $copy)
++                ->with('status', __('events.duplicate.success'));
++        }
++
++        return response()->json([
++            'data' => [
++                'uuid' => $copy->uuid,
++                'state' => $copy->state->value,
++                'title' => $copy->title,
++            ],
++        ], 201);
++    }
++
+     public function publish(Request $request, Event $event): JsonResponse|RedirectResponse
+     {
+         try {
+@@ -562,6 +615,7 @@ public function show(Request $request, Event $event): JsonResponse|View
+             'adminContext' => $adminContext,
+             'editAction' => $eventActions['edit'] ?? ['visible' => false, 'enabled' => false],
+             'publishAction' => $eventActions['publish'] ?? ['visible' => false, 'enabled' => false],
++            'duplicateAction' => $eventActions['duplicate'] ?? ['visible' => false, 'enabled' => false],
+             'prepareAction' => $eventActions['prepare'] ?? ['visible' => false, 'enabled' => false],
+             'cancelAction' => $eventActions['cancel'] ?? ['visible' => false, 'enabled' => false],
+             'landingAction' => $eventActions['manageLanding'] ?? ['visible' => false, 'enabled' => false],
+diff --git a/app/Modules/Events/Resources/views/events/show.blade.php b/app/Modules/Events/Resources/views/events/show.blade.php
+index b04fac63..140dd680 100644
+--- a/app/Modules/Events/Resources/views/events/show.blade.php
++++ b/app/Modules/Events/Resources/views/events/show.blade.php
+@@ -715,6 +715,19 @@ class="w-full justify-center"
+                         </x-btn.primary>
+                     @endif
+ 
++                    @if(! $adminContext && $duplicateAction['visible'])
++                        <form method="POST" action="{{ route('events.duplicate', $event->uuid) }}" class="w-full">
++                            @csrf
++                            <x-btn.outline
++                                type="submit"
++                                class="w-full justify-center"
++                                data-testid="event-duplicate-cta"
++                                :disabled="! $duplicateAction['enabled']">
++                                {{ __('events.list.actions.duplicate') }}
++                            </x-btn.outline>
++                        </form>
++                    @endif
++
+                     @if($cancelAction['visible'] && $cancelAction['enabled'])
+                         <x-btn.danger-outline type="button"
+                                 class="w-full justify-center"
+diff --git a/app/Modules/Events/Services/EventMetadataService.php b/app/Modules/Events/Services/EventMetadataService.php
+index e86d6442..1a6ba1e8 100644
+--- a/app/Modules/Events/Services/EventMetadataService.php
++++ b/app/Modules/Events/Services/EventMetadataService.php
+@@ -12,6 +12,7 @@
+ use App\Modules\Events\Enums\EventType;
+ use App\Modules\Events\Exceptions\EventStateLocked;
+ use App\Modules\Events\Models\Event;
++use Illuminate\Auth\Access\AuthorizationException;
+ use Illuminate\Support\Facades\DB;
+ use Illuminate\Support\Str;
+ use Platform\AuditLogging\Contracts\AuditLoggerInterface;
+@@ -90,6 +91,43 @@ public function createDraft(Team $team, User $actor, array $metadata): Event
+         });
+     }
+ 
++    /**
++     * T1 — duplicate an event into a fresh DRAFT owned by the actor's current team.
++     *
++     * Authorization is enforced here, not by the caller: the actor must be able
++     * to view the source event AND hold the create capability for the team the
++     * copy lands in (asserted by createDraft). Both guards run before any write,
++     * so a refused duplicate never leaves an event row behind.
++     *
++     * Only reusable metadata is carried over. Lifecycle state, publication and
++     * cancellation columns, registrations and other child records are NOT copied:
++     * the copy is created through the same createDraft path as a hand-made event,
++     * so it starts DRAFT, unbound to the source, and burns its own event credit.
++     *
++     * @throws AuthorizationException
++     */
++    public function duplicate(Event $source, User $actor): Event
++    {
++        $this->authz->authorizeView($source, $actor);
++
++        $team = $actor->currentTeam;
++
++        if ($team === null) {
++            throw new AuthorizationException('A team context is required to duplicate an event.');
++        }
++
++        return $this->createDraft($team, $actor, [
++            'title' => $source->title,
++            'description' => $source->description,
++            'type' => $source->type->value,
++            'starts_at' => $source->starts_at,
++            'ends_at' => $source->ends_at,
++            'timezone' => $source->timezone,
++            'registrant_capacity_limit' => $source->registrant_capacity_limit,
++            'default_locale' => $source->default_locale,
++        ]);
++    }
++
+     public function updateMetadata(Event $event, User $actor, array $changes): Event
+     {
+         $this->authorizeEventUpdate($event->team, $actor);
+diff --git a/app/Modules/Events/Services/EventService.php b/app/Modules/Events/Services/EventService.php
+index 35981472..6848168f 100644
+--- a/app/Modules/Events/Services/EventService.php
++++ b/app/Modules/Events/Services/EventService.php
+@@ -150,6 +150,17 @@ public function createDraft(Team $team, User $actor, array $metadata): Event
+         return $this->metadata->createDraft($team, $actor, $metadata);
+     }
+ 
++    /**
++     * T1 — create a fresh DRAFT copy of $source in the actor's current team.
++     *
++     * @throws AuthorizationException when the actor cannot view the source event
++     *                                or lacks the create capability in their current team.
++     */
++    public function duplicate(Event $source, User $actor): Event
++    {
++        return $this->metadata->duplicate($source, $actor);
++    }
++
+     /**
+      * Story 2-3b — Publish (DRAFT → PUBLISHED) with plan-gate triple-lock.
+      *
+diff --git a/app/Modules/Events/Support/EventActionAvailability.php b/app/Modules/Events/Support/EventActionAvailability.php
+index 17852d71..4e521d6f 100644
+--- a/app/Modules/Events/Support/EventActionAvailability.php
++++ b/app/Modules/Events/Support/EventActionAvailability.php
+@@ -24,6 +24,10 @@ public function for(User $actor, Event $event): array
+     {
+         $cancelled = $event->cancelled_at !== null;
+         $canUpdate = $this->allows($actor, $event, 'events.update.team', 'events.update.global');
++        // T1 — duplicating produces a NEW event, so it needs the create
++        // capability, plus visibility of the event being copied.
++        $canDuplicate = $this->allows($actor, $event, 'events.create.team', 'events.create.global')
++            && $this->allows($actor, $event, 'events.view.team', 'events.view.global');
+         $canPublish = $this->allows($actor, $event, 'events.publish.team', 'events.publish.global');
+         $canCancel = $this->allows($actor, $event, 'events.cancel.team', 'events.cancel.global');
+         $setupEditable = in_array($event->state, [EventState::DRAFT, EventState::PUBLISHED], strict: true);
+@@ -43,6 +47,10 @@ public function for(User $actor, Event $event): array
+                 'visible' => $canPublish && $event->state === EventState::DRAFT,
+                 'enabled' => $canPublish && ! $cancelled && $event->state === EventState::DRAFT,
+             ],
++            'duplicate' => [
++                'visible' => $canDuplicate,
++                'enabled' => $canDuplicate,
++            ],
+             'prepare' => [
+                 'visible' => false,
+                 'enabled' => false,
+diff --git a/app/Modules/Events/routes.php b/app/Modules/Events/routes.php
+index 22e3e096..eabd931a 100644
+--- a/app/Modules/Events/routes.php
++++ b/app/Modules/Events/routes.php
+@@ -159,6 +159,11 @@
+             ->name('ai.interest-signals');
+         Route::get('/{event:uuid}/ai/copy-suggestions', EventCopySuggestionsPage::class)
+             ->name('ai.copy-suggestions');
++        // T1 — duplicate an event into a fresh DRAFT owned by the acting team.
++        // Gated on the events.create.* capability pair (same requirement as
++        // events.store); EventService::duplicate re-authorizes view access on
++        // the source event, so a forged POST cannot ride a hidden UI button.
++        Route::post('/{event:uuid}/duplicate', [EventController::class, 'duplicate'])->name('duplicate');
+         Route::post('/{event:uuid}/publish', [EventController::class, 'publish'])->name('publish');
+         // Story 2-5 — cancel route was missing from routes.php; registered in Story 2-4 R1.
+         Route::post('/{event:uuid}/cancel', [EventController::class, 'cancel'])->name('cancel');
+diff --git a/config/route_permissions.php b/config/route_permissions.php
+index acd1388e..fe6cf3b8 100644
+--- a/config/route_permissions.php
++++ b/config/route_permissions.php
+@@ -119,6 +119,10 @@
+         'events.create' => 'events.create.team|events.create.global', // Story 2-4 R1 — placeholder GET for empty-state CTA
+         'events.store' => 'events.create.team|events.create.global',
+         'events.show' => 'events.view.team|events.view.global',
++        // T1 — duplicating an event IS creating one, so it carries the same
++        // capability requirement as events.store. The service additionally
++        // enforces view access on the source event (cross-workspace refusal).
++        'events.duplicate' => 'events.create.team|events.create.global',
+         'events.edit' => 'events.update.team|events.update.global', // S2-2-F1 — DRAFT-only metadata edit surface
+         'events.update' => 'events.update.team|events.update.global', // S2-2-F1 — DRAFT-only metadata edit surface
+         'events.landing.edit' => 'events.update.team|events.update.global', // Story 3-1
+diff --git a/lang/en/events.php b/lang/en/events.php
+index 265bd535..95a1ab8a 100644
+--- a/lang/en/events.php
++++ b/lang/en/events.php
+@@ -39,6 +39,7 @@
+         ],
+         'actions' => [
+             'edit' => 'Edit',
++            'duplicate' => 'Duplicate',
+             'publish' => 'Publish',
+             'prepare' => 'Prepare',
+             'cancel' => 'Cancel',
+@@ -892,6 +893,10 @@
+         ],
+     ],
+ 
++    'duplicate' => [
++        'success' => 'Draft copy created. Review the details before publishing.',
++    ],
++
+     'edit' => [
+         'title' => 'Edit event',
+         'heading' => 'Edit event details',
+diff --git a/lang/tr/events.php b/lang/tr/events.php
+index 62d82ef0..ae20efc0 100644
+--- a/lang/tr/events.php
++++ b/lang/tr/events.php
+@@ -39,6 +39,7 @@
+         ],
+         'actions' => [
+             'edit' => 'Düzenle',
++            'duplicate' => 'Kopyala',
+             'publish' => 'Yayınla',
+             'prepare' => 'Hazırla',
+             'cancel' => 'İptal Et',
+@@ -892,6 +893,10 @@
+         ],
+     ],
+ 
++    'duplicate' => [
++        'success' => 'Taslak kopya oluşturuldu. Yayınlamadan önce ayrıntıları gözden geçirin.',
++    ],
++
+     'edit' => [
+         'title' => 'Etkinliği düzenle',
+         'heading' => 'Etkinlik detaylarını düzenle',
+diff --git a/tests/Feature/Events/EventDuplicateActionTest.php b/tests/Feature/Events/EventDuplicateActionTest.php
+new file mode 100644
+index 00000000..261c50ce
+--- /dev/null
++++ b/tests/Feature/Events/EventDuplicateActionTest.php
+@@ -0,0 +1,219 @@
++<?php
++
++declare(strict_types=1);
++
++namespace Tests\Feature\Events;
++
++use App\Enums\PlanTier;
++use App\Enums\UserRole;
++use App\Models\User;
++use App\Modules\Events\Enums\EventState;
++use App\Modules\Events\Models\Event;
++use App\Modules\Events\Models\Registration;
++use App\Modules\Events\Support\EventActionAvailability;
++use Illuminate\Support\Facades\Cache;
++use Illuminate\Support\Facades\Hash;
++use Illuminate\Support\Facades\Route;
++use PHPUnit\Framework\Attributes\Group;
++use PHPUnit\Framework\Attributes\Test;
++use Tests\Feature\Billing\Support\BillingTestFixtures;
++use Tests\Feature\FeatureTestCase;
++
++/**
++ * Capsule T1 ATDD — Duplicate an event.
++ *
++ * Critical path only:
++ *   - AC1 named POST route on the Events module
++ *   - AC2/AC3 shared action model exposes `duplicate` gated on the create capability
++ *   - AC4 endpoint refuses independently of what the UI rendered, with no row written
++ *   - AC5/AC6 a successful duplicate is a fresh DRAFT copy in the acting team,
++ *     carrying no lifecycle, cancellation or registration state from the source
++ */
++#[Group('events')]
++class EventDuplicateActionTest extends FeatureTestCase
++{
++    use BillingTestFixtures;
++
++    protected function setUp(): void
++    {
++        parent::setUp();
++        Cache::flush();
++    }
++
++    // =========================================================================
++    // AC1 — route contract
++    // =========================================================================
++
++    #[Test]
++    public function duplicate_route_is_registered_by_name_on_the_events_module(): void
++    {
++        $route = Route::getRoutes()->getByName('events.duplicate');
++
++        $this->assertNotNull($route, 'Named route [events.duplicate] is not registered.');
++        $this->assertSame('events/{event:uuid}/duplicate', $route->uri());
++        $this->assertContains('POST', $route->methods());
++        $this->assertStringStartsWith(
++            'App\Modules\Events\\',
++            $route->getActionName(),
++            'events.duplicate must be handled by the Events module.',
++        );
++    }
++
++    // =========================================================================
++    // AC2 + AC3 — shared action model
++    // =========================================================================
++
++    #[Test]
++    public function action_model_exposes_duplicate_for_an_actor_with_the_create_capability(): void
++    {
++        [$admin] = $this->adminWithPlan(PlanTier::GROWTH);
++        $event = $this->eventFor($admin, EventState::DRAFT);
++
++        $availability = app(EventActionAvailability::class)->for($admin->fresh(), $event);
++
++        $this->assertArrayHasKey('duplicate', $availability);
++        $this->assertSame(
++            array_keys($availability['edit']),
++            array_keys($availability['duplicate']),
++            'duplicate entry must share the shape of the existing action entries.',
++        );
++        $this->assertTrue($availability['duplicate']['visible']);
++        $this->assertTrue($availability['duplicate']['enabled']);
++    }
++
++    #[Test]
++    public function action_model_hides_duplicate_from_an_actor_without_the_create_capability(): void
++    {
++        // billing-admin holds no events.* team capability.
++        [$admin, $team] = $this->adminWithPlan(PlanTier::GROWTH);
++        $event = $this->eventFor($admin, EventState::DRAFT);
++
++        $billingAdmin = User::factory()->create(['email_verified_at' => now()]);
++        $billingAdmin->teams()->attach($team, ['role' => UserRole::BILLING_ADMIN->value]);
++        $billingAdmin->forceFill(['current_team_id' => $team->id])->save();
++
++        $availability = app(EventActionAvailability::class)->for($billingAdmin->fresh(), $event);
++
++        $this->assertArrayHasKey('duplicate', $availability);
++        $this->assertFalse($availability['duplicate']['visible']);
++        $this->assertFalse($availability['duplicate']['enabled']);
++    }
++
++    // =========================================================================
++    // AC5 + AC6 — successful duplicate
++    // =========================================================================
++
++    #[Test]
++    public function duplicating_an_event_creates_one_fresh_draft_copy_in_the_acting_team(): void
++    {
++        [$admin] = $this->adminWithPlan(PlanTier::GROWTH);
++
++        $source = $this->eventFor($admin, EventState::PUBLISHED);
++        $source->forceFill([
++            'cancelled_at' => now(),
++            'cancelled_by' => $admin->id,
++            'cancel_reason' => 'Speaker dropped out',
++        ])->save();
++        $this->registrationFor($source);
++
++        $response = $this->actingAs($admin)
++            ->from(route('events.show', $source))
++            ->post('/events/'.$source->uuid.'/duplicate');
++
++        $response->assertSessionHasNoErrors();
++        $this->assertContains(
++            $response->status(),
++            [200, 201, 302],
++            'Duplicate should be accepted; got HTTP '.$response->status().'.',
++        );
++
++        $this->assertSame(2, Event::withoutGlobalScopes()->count(), 'Exactly one new event should exist.');
++
++        $copy = Event::withoutGlobalScopes()
++            ->whereKeyNot($source->getKey())
++            ->sole();
++
++        $this->assertNotSame($source->uuid, $copy->uuid);
++        $this->assertSame(EventState::DRAFT, $copy->state);
++        $this->assertSame($admin->fresh()->currentTeam->id, $copy->team_id);
++
++        // AC6 — no lifecycle / cancellation / registration carry-over.
++        $this->assertNull($copy->cancelled_at);
++        $this->assertNull($copy->cancelled_by);
++        $this->assertNull($copy->cancel_reason);
++        $this->assertSame(0, $copy->registrations()->withoutGlobalScopes()->count());
++        $this->assertSame(1, Registration::withoutGlobalScopes()->count());
++    }
++
++    // =========================================================================
++    // AC4 — endpoint stands on its own authorization
++    // =========================================================================
++
++    #[Test]
++    public function endpoint_refuses_an_actor_without_the_create_capability_and_writes_no_event(): void
++    {
++        [$admin, $team] = $this->adminWithPlan(PlanTier::GROWTH);
++        $source = $this->eventFor($admin, EventState::DRAFT);
++
++        $billingAdmin = User::factory()->create(['email_verified_at' => now()]);
++        $billingAdmin->teams()->attach($team, ['role' => UserRole::BILLING_ADMIN->value]);
++        $billingAdmin->forceFill(['current_team_id' => $team->id])->save();
++
++        $response = $this->actingAs($billingAdmin->fresh())
++            ->postJson('/events/'.$source->uuid.'/duplicate');
++
++        $response->assertStatus(403);
++        $this->assertSame(1, Event::withoutGlobalScopes()->count());
++    }
++
++    #[Test]
++    public function endpoint_refuses_an_actor_who_cannot_view_the_source_event_and_writes_no_event(): void
++    {
++        [$owner] = $this->adminWithPlan(PlanTier::GROWTH);
++        $source = $this->eventFor($owner, EventState::DRAFT);
++
++        // Admin of an unrelated workspace: holds events.create.team there,
++        // but has no visibility of this source event.
++        [$outsider] = $this->adminWithPlan(PlanTier::GROWTH);
++
++        $response = $this->actingAs($outsider->fresh())
++            ->postJson('/events/'.$source->uuid.'/duplicate');
++
++        $this->assertContains(
++            $response->status(),
++            [403, 404],
++            'Cross-workspace duplicate must be refused; got HTTP '.$response->status().'.',
++        );
++        $this->assertSame(1, Event::withoutGlobalScopes()->count());
++    }
++
++    // =========================================================================
++    // Fixtures
++    // =========================================================================
++
++    private function eventFor(User $admin, EventState $state): Event
++    {
++        return Event::factory()
++            ->inState($state)
++            ->for($admin->currentTeam)
++            ->create(['created_by' => $admin->id]);
++    }
++
++    private function registrationFor(Event $event): Registration
++    {
++        $email = 'registrant-'.$event->id.'@example.test';
++
++        $registration = new Registration;
++        $registration->forceFill([
++            'uuid' => sprintf('00000000-0000-4000-8000-%012x', $event->id),
++            'team_id' => $event->team_id,
++            'event_id' => $event->id,
++            'email' => $email,
++            'email_hash' => Hash::make($email),
++            'full_name' => 'Registered Attendee',
++        ]);
++        $registration->save();
++
++        return $registration;
++    }
++}

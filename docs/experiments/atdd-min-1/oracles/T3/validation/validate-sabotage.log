@@ -1,0 +1,33 @@
+PHPUnit 11.5.55 by Sebastian Bergmann and contributors.
+
+Runtime:       PHP 8.4.19
+Configuration: /private/tmp/atdd-min-1/wt/oracleval-T3/.atdd-phpunit.xml
+Random Seed:   1787335524
+
+F...F..F                                                            8 / 8 (100%)
+
+Time: 00:16.315, Memory: 68.50 MB
+
+There were 3 failures:
+
+1) Tests\Feature\AtddOracle\OracleTest::authenticated_layout_emits_a_page_scoped_scroll_region_marker
+The authenticated layout emits no machine-readable marker that identifies the page being rendered: nothing outside the navigation links keeps one single value per page, stays identical when the same page is requested again, and changes when a different page is rendered. Without it, Back/Forward cannot tell which stored scroll offset belongs to the incoming page.
+Failed asserting that an array is not empty.
+
+/private/tmp/atdd-min-1/wt/oracleval-T3/tests/Feature/AtddOracle/OracleTest.php:480
+
+2) Tests\Feature\AtddOracle\OracleTest::only_one_navigation_item_is_current_on_a_nested_section_page
+Exactly one desktop navigation item may be announced as current on http://localhost/events/contacts; got: ["nav-events","nav-audience"]
+Failed asserting that actual size 2 matches expected size 1.
+
+/private/tmp/atdd-min-1/wt/oracleval-T3/tests/Feature/AtddOracle/OracleTest.php:374
+
+3) Tests\Feature\AtddOracle\OracleTest::scroll_restoration_markers_do_not_reflect_request_controlled_markup
+Request-controlled input reached the rendered page unescaped, so the scroll-restoration markers can be used to inject markup into an authenticated page.
+Failed asserting that true is false.
+
+/private/tmp/atdd-min-1/wt/oracleval-T3/tests/Feature/AtddOracle/OracleTest.php:635
+
+FAILURES!
+Tests: 8, Assertions: 2641, Failures: 3.
+

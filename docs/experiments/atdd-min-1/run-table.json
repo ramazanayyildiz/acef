@@ -1,0 +1,1289 @@
+{
+  "experiment_id": "atdd-min-1",
+  "pinned_commit": "5d8cfaf23b521cb7245c61ea13014ba3b1e7d623",
+  "generated_at": "2026-08-21T19:08:11.940Z",
+  "tasks_total": 6,
+  "pairs_complete": 5,
+  "oracles_valid": 6,
+  "oracles_invalid": [],
+  "failure_decomposition": {
+    "agent": [
+      "T1-A"
+    ],
+    "oracle": [],
+    "infrastructure": [
+      "oracle-validation-shared-phpunit-database"
+    ]
+  },
+  "median_saving_pct": 27.1,
+  "b_faster_pairs": 5,
+  "s1_escapes": {
+    "A": 0,
+    "B": 0
+  },
+  "s2_escapes": {
+    "A": 0,
+    "B": 0
+  },
+  "b_only_s1_categories": [],
+  "tripwire_rule_1_triggered": false,
+  "tripwire_rule_1_categories": 0,
+  "judge_major": {
+    "A": 1,
+    "B": 2
+  },
+  "judge_minor": {
+    "A": 7,
+    "B": 4
+  },
+  "tasks": {
+    "T1": {
+      "task_id": "T1",
+      "category": 1,
+      "title": "Duplicate an event",
+      "oracle_valid": true,
+      "arm_order": [
+        "B",
+        "A"
+      ],
+      "A": {
+        "kind": "run",
+        "experiment_id": "atdd-min-1",
+        "task_id": "T1",
+        "category": 1,
+        "arm": "A",
+        "started_at": "2026-08-21T18:13:53.201Z",
+        "finished_at": "2026-08-21T18:26:46.699Z",
+        "sessions": [
+          {
+            "role": "test-author",
+            "exit": 0,
+            "wall_seconds": 206.1,
+            "verify_seconds": 9.2,
+            "verify_runs": 1,
+            "red_verify_runs": 1,
+            "tool_calls": 36,
+            "reads": 0,
+            "reread_paths": 0,
+            "input_tokens": 1831,
+            "cached_input_tokens": 1337170,
+            "output_tokens": 15161,
+            "transcript_sha256": "cdb301c996a73366cb96636066dbc38e4a3b49fd3dd9c51a4d01f4e90420ea82"
+          },
+          {
+            "role": "developer",
+            "exit": 0,
+            "wall_seconds": 535.3,
+            "verify_seconds": 64.6,
+            "verify_runs": 11,
+            "red_verify_runs": 2,
+            "tool_calls": 69,
+            "reads": 7,
+            "reread_paths": 0,
+            "input_tokens": 4510,
+            "cached_input_tokens": 4735398,
+            "output_tokens": 34646,
+            "transcript_sha256": "5213b01a2618ba894c05661be982a89611c3f1d9e142d54b8521a45241155107"
+          }
+        ],
+        "handoff_seconds": 0,
+        "wall_seconds": 741.4,
+        "verify_seconds": 73.8,
+        "active_seconds": 667.6,
+        "verify_runs": 12,
+        "harness_failure_reds": 0,
+        "time_to_red_commit_seconds": 222.8,
+        "time_to_first_product_commit_seconds": 743.8,
+        "red_commit": "46896482b8d4bdd3c535556acec429978803baf0",
+        "product_commit": "124ee2f18c7c8b7d9363645090101f94b5d40418",
+        "red_assertion_profile": {
+          "methods": 6,
+          "assertions": 26,
+          "skips": 0
+        },
+        "final_assertion_profile": {
+          "methods": 6,
+          "assertions": 26,
+          "skips": 0
+        },
+        "assertion_weakened": false,
+        "changed_paths": [
+          "app/Modules/Events/Http/Controllers/EventController.php",
+          "app/Modules/Events/Resources/views/events/show.blade.php",
+          "app/Modules/Events/Services/EventMetadataService.php",
+          "app/Modules/Events/Services/EventService.php",
+          "app/Modules/Events/Support/EventActionAvailability.php",
+          "app/Modules/Events/routes.php",
+          "config/route_permissions.php",
+          "lang/en/events.php",
+          "lang/tr/events.php",
+          "tests/Feature/Events/EventDuplicateActionTest.php"
+        ],
+        "scope_violations": [],
+        "final_verify_exit": 1,
+        "accepted_green": false,
+        "oracle": {
+          "oracle_available": false,
+          "escapes": [],
+          "s1": 0,
+          "s2": 0,
+          "skipped": "not accepted green"
+        },
+        "total_tool_calls": 105,
+        "total_reread_paths": 0,
+        "result": "fail",
+        "failure_class": "agent",
+        "session_signals": [
+          null,
+          null
+        ],
+        "worktree_kept": "/private/tmp/atdd-min-1/wt/T1-A"
+      },
+      "B": {
+        "kind": "run",
+        "experiment_id": "atdd-min-1",
+        "task_id": "T1",
+        "category": 1,
+        "arm": "B",
+        "started_at": "2026-08-21T18:06:21.906Z",
+        "finished_at": "2026-08-21T18:13:53.196Z",
+        "sessions": [
+          {
+            "role": "integrated-developer",
+            "exit": 0,
+            "wall_seconds": 414.1,
+            "verify_seconds": 17.4,
+            "verify_runs": 2,
+            "red_verify_runs": 1,
+            "tool_calls": 65,
+            "reads": 7,
+            "reread_paths": 0,
+            "input_tokens": 88,
+            "cached_input_tokens": 4612823,
+            "output_tokens": 31607,
+            "transcript_sha256": "4f69e61f541a1ff653a61b11513b2d5d86ac6b6f6883c511008125ee2e66576f"
+          }
+        ],
+        "handoff_seconds": 0,
+        "wall_seconds": 414.1,
+        "verify_seconds": 17.4,
+        "active_seconds": 396.7,
+        "verify_runs": 2,
+        "harness_failure_reds": 0,
+        "time_to_red_commit_seconds": 282.1,
+        "time_to_first_product_commit_seconds": 417.1,
+        "red_commit": "fd0f93e0f640a0b254c5ac6815837cbd7769629f",
+        "product_commit": "2bd1ba7ed34fabb0d8be2aa77f3a1877b6190e16",
+        "red_assertion_profile": {
+          "methods": 5,
+          "assertions": 26,
+          "skips": 0
+        },
+        "final_assertion_profile": {
+          "methods": 5,
+          "assertions": 26,
+          "skips": 0
+        },
+        "assertion_weakened": false,
+        "changed_paths": [
+          "app/Modules/Events/Http/Controllers/EventController.php",
+          "app/Modules/Events/Services/EventMetadataService.php",
+          "app/Modules/Events/Services/EventService.php",
+          "app/Modules/Events/Support/EventActionAvailability.php",
+          "app/Modules/Events/routes.php",
+          "config/route_permissions.php",
+          "tests/Feature/Events/EventDuplicateActionTest.php"
+        ],
+        "scope_violations": [],
+        "final_verify_exit": 0,
+        "accepted_green": true,
+        "oracle": {
+          "oracle_available": true,
+          "oracle_exit": 0,
+          "oracle_ran": true,
+          "escapes": [],
+          "s1": 0,
+          "s2": 0
+        },
+        "total_tool_calls": 65,
+        "total_reread_paths": 0,
+        "result": "pass",
+        "failure_class": null,
+        "session_signals": [
+          null
+        ],
+        "worktree_kept": "/private/tmp/atdd-min-1/wt/T1-B"
+      },
+      "judge_A": null,
+      "judge_B": {
+        "major": 0,
+        "minor": 2,
+        "items": [
+          {
+            "dimension": "test-gap",
+            "severity": "minor",
+            "claim": "The source-view refusal required by AC4 is only tested with a cross-workspace actor, whose request is rejected by team-scoped route-model binding before the controller runs, so the service-layer view guard the diff adds is never exercised.",
+            "evidence": "tests/Feature/Events/EventDuplicateActionTest::actor_who_cannot_view_the_source_event_is_refused_and_creates_nothing accepts `[403, 404]` for an actor from a different workspace; Event extends TeamScopedModel, so `{event:uuid}` binding never resolves for that actor and `$this->authz->authorizeView($source, $actor)` in EventService::duplicate() is not reached by any test."
+          },
+          {
+            "dimension": "scope",
+            "severity": "minor",
+            "claim": "The new duplicate() method is inserted between createDraft()'s existing PHPDoc and its signature, orphaning that docblock onto a method that has no $metadata parameter.",
+            "evidence": "app/Modules/Events/Services/EventMetadataService.php — the hunk adds duplicate() immediately after the block ending '@param array<string, mixed> $metadata / Required keys: title, description, starts_at, ends_at, timezone. */', producing two stacked docblocks above `public function duplicate(Event $source, Team $team, User $actor)` and leaving createDraft() undocumented."
+          }
+        ]
+      },
+      "paired_complete": false,
+      "saving_pct": 40.6
+    },
+    "T2": {
+      "task_id": "T2",
+      "category": 2,
+      "title": "Shared event page shell adopted by a new and an existing page",
+      "oracle_valid": true,
+      "arm_order": [
+        "A",
+        "B"
+      ],
+      "A": {
+        "kind": "run",
+        "experiment_id": "atdd-min-1",
+        "task_id": "T2",
+        "category": 2,
+        "arm": "A",
+        "started_at": "2026-08-21T18:06:21.906Z",
+        "finished_at": "2026-08-21T18:18:17.797Z",
+        "sessions": [
+          {
+            "role": "test-author",
+            "exit": 0,
+            "wall_seconds": 215.7,
+            "verify_seconds": 15.4,
+            "verify_runs": 2,
+            "red_verify_runs": 2,
+            "tool_calls": 38,
+            "reads": 0,
+            "reread_paths": 0,
+            "input_tokens": 666,
+            "cached_input_tokens": 1294858,
+            "output_tokens": 15226,
+            "transcript_sha256": "9fd9b78c73a6fb65e6ce26157f7cb58541742dce748aa3782895384ce620d7f2"
+          },
+          {
+            "role": "developer",
+            "exit": 0,
+            "wall_seconds": 465,
+            "verify_seconds": 68,
+            "verify_runs": 12,
+            "red_verify_runs": 0,
+            "tool_calls": 71,
+            "reads": 12,
+            "reread_paths": 1,
+            "input_tokens": 697,
+            "cached_input_tokens": 3792962,
+            "output_tokens": 32665,
+            "transcript_sha256": "2867aa5716bf999361939e7c38cab8aae0f19da9a17be283ceccfa23fbeee480"
+          }
+        ],
+        "handoff_seconds": 0,
+        "wall_seconds": 680.8,
+        "verify_seconds": 83.4,
+        "active_seconds": 597.4,
+        "verify_runs": 14,
+        "harness_failure_reds": 0,
+        "time_to_red_commit_seconds": 227.1,
+        "time_to_first_product_commit_seconds": 687.1,
+        "red_commit": "758449ffa145b4a59874df30e6b74570d6cac46c",
+        "product_commit": "dd72e337924e0e309424e1c1c87226fa7f8d57a8",
+        "red_assertion_profile": {
+          "methods": 5,
+          "assertions": 26,
+          "skips": 0
+        },
+        "final_assertion_profile": {
+          "methods": 5,
+          "assertions": 26,
+          "skips": 0
+        },
+        "assertion_weakened": false,
+        "changed_paths": [
+          "app/Modules/Events/Http/Controllers/EventOverviewController.php",
+          "app/Modules/Events/Resources/views/components/page-shell.blade.php",
+          "app/Modules/Events/Resources/views/events/overview.blade.php",
+          "app/Modules/Events/Resources/views/livewire/landing-preview.blade.php",
+          "app/Modules/Events/routes.php",
+          "config/route_permissions.php",
+          "lang/en/events.php",
+          "lang/tr/events.php",
+          "tests/Feature/Events/EventPageShellAdoptionTest.php"
+        ],
+        "scope_violations": [],
+        "final_verify_exit": 0,
+        "accepted_green": true,
+        "oracle": {
+          "oracle_available": true,
+          "oracle_exit": 0,
+          "oracle_ran": true,
+          "escapes": [],
+          "s1": 0,
+          "s2": 0
+        },
+        "total_tool_calls": 109,
+        "total_reread_paths": 1,
+        "result": "pass",
+        "failure_class": null,
+        "session_signals": [
+          null,
+          null
+        ],
+        "worktree_kept": "/private/tmp/atdd-min-1/wt/T2-A"
+      },
+      "B": {
+        "kind": "run",
+        "experiment_id": "atdd-min-1",
+        "task_id": "T2",
+        "category": 2,
+        "arm": "B",
+        "started_at": "2026-08-21T18:18:17.801Z",
+        "finished_at": "2026-08-21T18:26:56.940Z",
+        "sessions": [
+          {
+            "role": "integrated-developer",
+            "exit": 0,
+            "wall_seconds": 481.6,
+            "verify_seconds": 46.1,
+            "verify_runs": 6,
+            "red_verify_runs": 1,
+            "tool_calls": 57,
+            "reads": 4,
+            "reread_paths": 0,
+            "input_tokens": 988,
+            "cached_input_tokens": 3137731,
+            "output_tokens": 33409,
+            "transcript_sha256": "cc03431e2c32b315d71c500f270fc0725adaec4b337e48491823355e7218f592"
+          }
+        ],
+        "handoff_seconds": 0,
+        "wall_seconds": 481.6,
+        "verify_seconds": 46.1,
+        "active_seconds": 435.5,
+        "verify_runs": 6,
+        "harness_failure_reds": 0,
+        "time_to_red_commit_seconds": 233.2,
+        "time_to_first_product_commit_seconds": 478.2,
+        "red_commit": "62b2bbe0d3c7b4c739a5134df2091274858c660b",
+        "product_commit": "1ecf2c2886b7864360892100fcbc1a665e57dd61",
+        "red_assertion_profile": {
+          "methods": 5,
+          "assertions": 22,
+          "skips": 0
+        },
+        "final_assertion_profile": {
+          "methods": 5,
+          "assertions": 22,
+          "skips": 0
+        },
+        "assertion_weakened": false,
+        "changed_paths": [
+          "app/Modules/Events/Http/Controllers/EventController.php",
+          "app/Modules/Events/Resources/views/components/page-shell-action.blade.php",
+          "app/Modules/Events/Resources/views/components/page-shell.blade.php",
+          "app/Modules/Events/Resources/views/events/overview.blade.php",
+          "app/Modules/Events/Resources/views/livewire/landing-preview.blade.php",
+          "app/Modules/Events/routes.php",
+          "config/route_permissions.php",
+          "tests/Feature/Events/EventPageShellAdoptionTest.php"
+        ],
+        "scope_violations": [],
+        "final_verify_exit": 0,
+        "accepted_green": true,
+        "oracle": {
+          "oracle_available": true,
+          "oracle_exit": 0,
+          "oracle_ran": true,
+          "escapes": [],
+          "s1": 0,
+          "s2": 0
+        },
+        "total_tool_calls": 57,
+        "total_reread_paths": 0,
+        "result": "pass",
+        "failure_class": null,
+        "session_signals": [
+          null
+        ],
+        "worktree_kept": "/private/tmp/atdd-min-1/wt/T2-B"
+      },
+      "judge_A": {
+        "major": 0,
+        "minor": 1,
+        "items": [
+          {
+            "dimension": "scope",
+            "severity": "minor",
+            "claim": "The overview controller eager-loads the landingPage relation that nothing on the page or in the action model ever reads, leaving an unused query behind.",
+            "evidence": "app/Modules/Events/Http/Controllers/EventOverviewController.php — `$event->load(['speakers', 'landingPage']);`. The new events::events.overview view reads only title, state, starts_at, timezone, registrant_capacity_limit, default_locale, speakers->count() and description, and EventActionAvailability::for() derives every entry from Gate checks plus state/cancelled_at, never from landingPage."
+          }
+        ]
+      },
+      "judge_B": {
+        "major": 0,
+        "minor": 0,
+        "items": []
+      },
+      "paired_complete": true,
+      "saving_pct": 27.1
+    },
+    "T3": {
+      "task_id": "T3",
+      "category": 3,
+      "title": "Mobile primary navigation active state and scroll restoration contract",
+      "oracle_valid": true,
+      "arm_order": [
+        "B",
+        "A"
+      ],
+      "A": {
+        "kind": "run",
+        "experiment_id": "atdd-min-1",
+        "task_id": "T3",
+        "category": 3,
+        "arm": "A",
+        "started_at": "2026-08-21T18:12:21.317Z",
+        "finished_at": "2026-08-21T18:19:55.102Z",
+        "sessions": [
+          {
+            "role": "test-author",
+            "exit": 0,
+            "wall_seconds": 166.9,
+            "verify_seconds": 8.8,
+            "verify_runs": 1,
+            "red_verify_runs": 1,
+            "tool_calls": 21,
+            "reads": 0,
+            "reread_paths": 0,
+            "input_tokens": 30,
+            "cached_input_tokens": 777133,
+            "output_tokens": 12380,
+            "transcript_sha256": "d2ee7b2da259f461fc27c873e36e3d319d74e40eb02075fc2aedd21f8b53d874"
+          },
+          {
+            "role": "developer",
+            "exit": 0,
+            "wall_seconds": 241.6,
+            "verify_seconds": 22.8,
+            "verify_runs": 3,
+            "red_verify_runs": 1,
+            "tool_calls": 29,
+            "reads": 5,
+            "reread_paths": 0,
+            "input_tokens": 3698,
+            "cached_input_tokens": 1202310,
+            "output_tokens": 16212,
+            "transcript_sha256": "32f95281e8d76eeee568137c8ba614369ac4e75e8385bd387413af8c92129ea2"
+          }
+        ],
+        "handoff_seconds": 0,
+        "wall_seconds": 408.4,
+        "verify_seconds": 31.6,
+        "active_seconds": 376.8,
+        "verify_runs": 4,
+        "harness_failure_reds": 0,
+        "time_to_red_commit_seconds": 189.7,
+        "time_to_first_product_commit_seconds": 425.7,
+        "red_commit": "c9f5e2e7fd0a67290a17a0f4fb1b859c646b50a1",
+        "product_commit": "3b76db4dfff955dfedeb4585c8becf0d6cc1131e",
+        "red_assertion_profile": {
+          "methods": 4,
+          "assertions": 22,
+          "skips": 0
+        },
+        "final_assertion_profile": {
+          "methods": 4,
+          "assertions": 22,
+          "skips": 0
+        },
+        "assertion_weakened": false,
+        "changed_paths": [
+          "app/Navigation/ScrollRestoration.php",
+          "resources/views/components/topbar-navigation.blade.php",
+          "resources/views/layouts/authenticated.blade.php",
+          "tests/Feature/Navigation/MobileNavScrollStateTest.php"
+        ],
+        "scope_violations": [],
+        "final_verify_exit": 0,
+        "accepted_green": true,
+        "oracle": {
+          "oracle_available": true,
+          "oracle_exit": 0,
+          "oracle_ran": true,
+          "escapes": [],
+          "s1": 0,
+          "s2": 0
+        },
+        "total_tool_calls": 50,
+        "total_reread_paths": 0,
+        "result": "pass",
+        "failure_class": null,
+        "session_signals": [
+          null,
+          null
+        ],
+        "worktree_kept": "/private/tmp/atdd-min-1/wt/T3-A"
+      },
+      "B": {
+        "kind": "run",
+        "experiment_id": "atdd-min-1",
+        "task_id": "T3",
+        "category": 3,
+        "arm": "B",
+        "started_at": "2026-08-21T18:06:21.906Z",
+        "finished_at": "2026-08-21T18:12:21.311Z",
+        "sessions": [
+          {
+            "role": "integrated-developer",
+            "exit": 0,
+            "wall_seconds": 321.5,
+            "verify_seconds": 24.6,
+            "verify_runs": 3,
+            "red_verify_runs": 1,
+            "tool_calls": 36,
+            "reads": 0,
+            "reread_paths": 0,
+            "input_tokens": 47,
+            "cached_input_tokens": 1570303,
+            "output_tokens": 24635,
+            "transcript_sha256": "0107bc792ad91f1985c7afc82c93a5e8b839b9cf8fe273cb27936ebc4fa9135e"
+          }
+        ],
+        "handoff_seconds": 0,
+        "wall_seconds": 321.5,
+        "verify_seconds": 24.6,
+        "active_seconds": 296.9,
+        "verify_runs": 3,
+        "harness_failure_reds": 0,
+        "time_to_red_commit_seconds": 236.1,
+        "time_to_first_product_commit_seconds": 331.1,
+        "red_commit": "7a1b3d96f5366fa2c7c24054425098d424cb7bb2",
+        "product_commit": "52dcf2bcf53df79733feb2a539acc97ca0b9a875",
+        "red_assertion_profile": {
+          "methods": 3,
+          "assertions": 25,
+          "skips": 0
+        },
+        "final_assertion_profile": {
+          "methods": 3,
+          "assertions": 25,
+          "skips": 0
+        },
+        "assertion_weakened": false,
+        "changed_paths": [
+          "app/Navigation/ScrollRestorationKey.php",
+          "resources/views/components/topbar-navigation.blade.php",
+          "resources/views/layouts/authenticated.blade.php",
+          "tests/Feature/Navigation/MobileNavScrollStateTest.php"
+        ],
+        "scope_violations": [],
+        "final_verify_exit": 0,
+        "accepted_green": true,
+        "oracle": {
+          "oracle_available": true,
+          "oracle_exit": 0,
+          "oracle_ran": true,
+          "escapes": [],
+          "s1": 0,
+          "s2": 0
+        },
+        "total_tool_calls": 36,
+        "total_reread_paths": 0,
+        "result": "pass",
+        "failure_class": null,
+        "session_signals": [
+          null
+        ],
+        "worktree_kept": "/private/tmp/atdd-min-1/wt/T3-B"
+      },
+      "judge_A": {
+        "major": 1,
+        "minor": 1,
+        "items": [
+          {
+            "dimension": "test-gap",
+            "severity": "major",
+            "claim": "AC2's 'exactly one item is marked current' is only exercised against a fixture with a single active item, so the first-match-wins deduplication the diff adds is never tested.",
+            "evidence": "tests/Feature/Navigation/MobileNavScrollStateTest::navItems() returns three items of which only tenant-dashboard has `'active' => true`, and current_item_is_programmatically_current_in_both_variants asserts assertSame(['nav-dashboard'], $currentDesktop) against that fixture. The `foreach ... break` loop added to topbar-navigation.blade.php exists precisely for the multi-active case (ActiveStateResolver prefix-matching makes both tenant-events and tenant-audience active on events.contacts.index), and no test supplies two active items."
+          },
+          {
+            "dimension": "ac-gap",
+            "severity": "minor",
+            "claim": "Only the aria-current marker is deduplicated; the visual active styling is still driven by the raw per-item active flag, so on a request where two items resolve active the page presents two current items to sighted users and one to assistive technology.",
+            "evidence": "resources/views/components/topbar-navigation.blade.php — the diff adds `@if ($index === $currentIndex) aria-current=\"page\" @endif` but leaves `class=\"{{ $linkBase }} {{ ($item['active'] ?? false) ? $activeClasses : $inactiveClasses }}\"` unchanged, so $activeClasses is applied to every item whose 'active' flag is true."
+          }
+        ]
+      },
+      "judge_B": {
+        "major": 2,
+        "minor": 0,
+        "items": [
+          {
+            "dimension": "ac-gap",
+            "severity": "major",
+            "claim": "The layout's scroll-restoration region marker identifies the active navigation section rather than the page being rendered, so sibling pages under one nav item emit an identical marker and Back/Forward would restore another page's offset.",
+            "evidence": "app/Navigation/ScrollRestorationKey::forCurrentPage() returns `self::forItem($items[$index])` — the navigation item's own key — whenever any item is active, and resources/views/layouts/authenticated.blade.php emits it as `data-scroll-restore-region=\"{{ $scrollRestoreRegion }}\"`. Nav active state is prefix-matched (ActiveStateResolver::isRouteActive strips the terminal action segment), so events.index, events.show and every other events.* page all resolve to the item key 'tenant-events' and share one marker; the route-name fallback is only reached when no nav item is active."
+          },
+          {
+            "dimension": "test-gap",
+            "severity": "major",
+            "claim": "AC2's 'exactly one item is marked current' is only exercised on a request where a single navigation item is active anyway, so the single-selection logic the diff adds is never actually tested.",
+            "evidence": "tests/Feature/Navigation/MobileNavScrollStateTest::current_primary_nav_item_is_programmatically_marked_in_both_variants asserts assertCount(1, $currentDesktop) after GET route('user.dashboard'), and mobile_variant_preserves_exclusion_filtering_badges_and_existing_output supplies a hand-built item list with one `'active' => true`. No test renders a request where two items resolve active — which the prefix matching in ActiveStateResolver genuinely produces (on events.contacts.index both tenant-events and tenant-audience are active) — so removing `$currentIndex` from topbar-navigation.blade.php and marking each item from `$item['active']` would still pass."
+          }
+        ]
+      },
+      "paired_complete": true,
+      "saving_pct": 21.2
+    },
+    "T4": {
+      "task_id": "T4",
+      "category": 4,
+      "title": "Platform-admin export of an event's registration list",
+      "oracle_valid": true,
+      "arm_order": [
+        "A",
+        "B"
+      ],
+      "A": {
+        "kind": "run",
+        "experiment_id": "atdd-min-1",
+        "task_id": "T4",
+        "category": 4,
+        "arm": "A",
+        "started_at": "2026-08-21T18:06:21.906Z",
+        "finished_at": "2026-08-21T18:15:49.763Z",
+        "sessions": [
+          {
+            "role": "test-author",
+            "exit": 0,
+            "wall_seconds": 196.9,
+            "verify_seconds": 8.3,
+            "verify_runs": 1,
+            "red_verify_runs": 1,
+            "tool_calls": 32,
+            "reads": 0,
+            "reread_paths": 0,
+            "input_tokens": 35,
+            "cached_input_tokens": 1005277,
+            "output_tokens": 14184,
+            "transcript_sha256": "40ba2b05effebac624b6599d35b6fef1eb8a79a93072112ac15c544fcf399180"
+          },
+          {
+            "role": "developer",
+            "exit": 0,
+            "wall_seconds": 338.1,
+            "verify_seconds": 29.5,
+            "verify_runs": 5,
+            "red_verify_runs": 1,
+            "tool_calls": 59,
+            "reads": 9,
+            "reread_paths": 0,
+            "input_tokens": 3212,
+            "cached_input_tokens": 4062682,
+            "output_tokens": 24288,
+            "transcript_sha256": "1e7598fb86f2fc2fd7304c713f757aa7df94cb42e764ff31e63beff95ea3323a"
+          }
+        ],
+        "handoff_seconds": 0,
+        "wall_seconds": 534.9,
+        "verify_seconds": 37.8,
+        "active_seconds": 497.1,
+        "verify_runs": 6,
+        "harness_failure_reds": 0,
+        "time_to_red_commit_seconds": 207.1,
+        "time_to_first_product_commit_seconds": 539.1,
+        "red_commit": "7d508f08c16a841fe98babe690e2d71bad9fe10b",
+        "product_commit": "43601447eeece374972027663ff4239b5896c354",
+        "red_assertion_profile": {
+          "methods": 3,
+          "assertions": 16,
+          "skips": 0
+        },
+        "final_assertion_profile": {
+          "methods": 3,
+          "assertions": 16,
+          "skips": 0
+        },
+        "assertion_weakened": false,
+        "changed_paths": [
+          "app/Modules/SuperAdmin/Contracts/Repositories/SuperAdminEventRepositoryInterface.php",
+          "app/Modules/SuperAdmin/Http/Controllers/EventRegistrationExportController.php",
+          "app/Modules/SuperAdmin/Repositories/SuperAdminEventRepository.php",
+          "app/Modules/SuperAdmin/Routes/web.php",
+          "app/Modules/SuperAdmin/Services/SuperAdminEventRegistrationExportService.php",
+          "config/route_permissions.php",
+          "lang/vendor/super-admin/en/super-admin.php",
+          "lang/vendor/super-admin/tr/super-admin.php",
+          "tests/Feature/SuperAdmin/AdminEventRegistrationExportTest.php"
+        ],
+        "scope_violations": [],
+        "final_verify_exit": 0,
+        "accepted_green": true,
+        "oracle": {
+          "oracle_available": true,
+          "oracle_exit": 0,
+          "oracle_ran": true,
+          "escapes": [],
+          "s1": 0,
+          "s2": 0
+        },
+        "total_tool_calls": 91,
+        "total_reread_paths": 0,
+        "result": "pass",
+        "failure_class": null,
+        "session_signals": [
+          null,
+          null
+        ],
+        "worktree_kept": "/private/tmp/atdd-min-1/wt/T4-A"
+      },
+      "B": {
+        "kind": "run",
+        "experiment_id": "atdd-min-1",
+        "task_id": "T4",
+        "category": 4,
+        "arm": "B",
+        "started_at": "2026-08-21T18:15:49.769Z",
+        "finished_at": "2026-08-21T18:22:16.475Z",
+        "sessions": [
+          {
+            "role": "integrated-developer",
+            "exit": 0,
+            "wall_seconds": 350.8,
+            "verify_seconds": 19.1,
+            "verify_runs": 3,
+            "red_verify_runs": 1,
+            "tool_calls": 56,
+            "reads": 5,
+            "reread_paths": 0,
+            "input_tokens": 70,
+            "cached_input_tokens": 3277129,
+            "output_tokens": 26681,
+            "transcript_sha256": "46563772891600dc2d7c832239af7d00d7f2cdd97108d2dd2f04887e4f51db0b"
+          }
+        ],
+        "handoff_seconds": 0,
+        "wall_seconds": 350.8,
+        "verify_seconds": 19.1,
+        "active_seconds": 331.7,
+        "verify_runs": 3,
+        "harness_failure_reds": 0,
+        "time_to_red_commit_seconds": 247.2,
+        "time_to_first_product_commit_seconds": 359.2,
+        "red_commit": "b39b19ec631564c1c92187f63cfe689a4388d9f8",
+        "product_commit": "43b9bb6eeffc75a3c6c8e69c3d977e642bc2de98",
+        "red_assertion_profile": {
+          "methods": 3,
+          "assertions": 20,
+          "skips": 0
+        },
+        "final_assertion_profile": {
+          "methods": 3,
+          "assertions": 20,
+          "skips": 0
+        },
+        "assertion_weakened": false,
+        "changed_paths": [
+          "app/Modules/SuperAdmin/Http/Controllers/EventRegistrationExportController.php",
+          "app/Modules/SuperAdmin/Routes/web.php",
+          "app/Modules/SuperAdmin/Services/SuperAdminRegistrationExportService.php",
+          "config/route_permissions.php",
+          "lang/en/events.php",
+          "lang/tr/events.php",
+          "tests/Feature/SuperAdmin/AdminEventRegistrationExportTest.php"
+        ],
+        "scope_violations": [],
+        "final_verify_exit": 0,
+        "accepted_green": true,
+        "oracle": {
+          "oracle_available": true,
+          "oracle_exit": 0,
+          "oracle_ran": true,
+          "escapes": [],
+          "s1": 0,
+          "s2": 0
+        },
+        "total_tool_calls": 56,
+        "total_reread_paths": 0,
+        "result": "pass",
+        "failure_class": null,
+        "session_signals": [
+          null
+        ],
+        "worktree_kept": "/private/tmp/atdd-min-1/wt/T4-B"
+      },
+      "judge_A": {
+        "major": 0,
+        "minor": 2,
+        "items": [
+          {
+            "dimension": "reuse",
+            "severity": "minor",
+            "claim": "The new export service re-implements the existing EventExportService CSV pipeline instead of reusing it, duplicating the streaming closure and the registrant-row assembly almost verbatim.",
+            "evidence": "app/Modules/SuperAdmin/Services/SuperAdminEventRegistrationExportService::response() reproduces EventExportService::response() line for line (response()->streamDownload with fopen('php://output','wb'), the fputcsv(..., escape: '\\\\') loop, fclose, and the same 'Content-Type' => 'text/csv; charset=UTF-8' header), and rows()/SuperAdminEventRepository::registrationsForEvent() reproduce EventExportService::registrantRows()'s query shape (where('event_id')->orderBy('created_at')->orderBy('id')) and its `(string) ($index + 1)` / `?->toIso8601String() ?? ''` row idiom."
+          },
+          {
+            "dimension": "test-gap",
+            "severity": "minor",
+            "claim": "AC6 requires that no pre-existing admin permission entry changed, but the test only spot-checks four of them, so a widened entry elsewhere in the admin map would go undetected.",
+            "evidence": "tests/Feature/SuperAdmin/AdminEventRegistrationExportTest::export_route_is_capability_gated_without_widening_existing_admin_routes asserts only admin.events.index, admin.events.show, admin.events.edit and admin.dashboard, while config/route_permissions.php declares roughly sixty admin.* entries."
+          }
+        ]
+      },
+      "judge_B": {
+        "major": 0,
+        "minor": 1,
+        "items": [
+          {
+            "dimension": "reuse",
+            "severity": "minor",
+            "claim": "The new export service re-implements the existing EventExportService CSV pipeline instead of reusing it, duplicating the streaming closure and the registrant-row assembly almost verbatim.",
+            "evidence": "app/Modules/SuperAdmin/Services/SuperAdminRegistrationExportService::response() reproduces EventExportService::response() line for line (response()->streamDownload with fopen('php://output','wb'), the fputcsv(..., escape: '\\\\') loop, fclose, and the same 'Content-Type' => 'text/csv; charset=UTF-8' header), and rows() reproduces EventExportService::registrantRows() — same `where('event_id')->orderBy('created_at')->orderBy('id')` query and the same column list plus an email column."
+          }
+        ]
+      },
+      "paired_complete": true,
+      "saving_pct": 33.3
+    },
+    "T5": {
+      "task_id": "T5",
+      "category": 5,
+      "title": "Shareable landing-preview link for unauthenticated reviewers",
+      "oracle_valid": true,
+      "arm_order": [
+        "A",
+        "B"
+      ],
+      "A": {
+        "kind": "run",
+        "experiment_id": "atdd-min-1",
+        "task_id": "T5",
+        "category": 5,
+        "arm": "A",
+        "started_at": "2026-08-21T18:19:55.170Z",
+        "finished_at": "2026-08-21T18:32:04.829Z",
+        "sessions": [
+          {
+            "role": "test-author",
+            "exit": 0,
+            "wall_seconds": 226.7,
+            "verify_seconds": 9.5,
+            "verify_runs": 1,
+            "red_verify_runs": 1,
+            "tool_calls": 24,
+            "reads": 0,
+            "reread_paths": 0,
+            "input_tokens": 65,
+            "cached_input_tokens": 819936,
+            "output_tokens": 16272,
+            "transcript_sha256": "ed4f17f0df2f7e98d6c735c5c58cea2ce36db72b8230c488eb2cfbf86ffa87be"
+          },
+          {
+            "role": "developer",
+            "exit": 0,
+            "wall_seconds": 461.5,
+            "verify_seconds": 30.8,
+            "verify_runs": 5,
+            "red_verify_runs": 1,
+            "tool_calls": 67,
+            "reads": 14,
+            "reread_paths": 1,
+            "input_tokens": 4526,
+            "cached_input_tokens": 4898764,
+            "output_tokens": 31428,
+            "transcript_sha256": "e9038420cba9abb8db3e3479c5a82630c459184349f573725566cf2312264e03"
+          }
+        ],
+        "handoff_seconds": 0,
+        "wall_seconds": 688.2,
+        "verify_seconds": 40.3,
+        "active_seconds": 647.9,
+        "verify_runs": 6,
+        "harness_failure_reds": 0,
+        "time_to_red_commit_seconds": 243.8,
+        "time_to_first_product_commit_seconds": 697.8,
+        "red_commit": "316bfae7b3cb23fa3e134244c1cccad945df9791",
+        "product_commit": "aa53124a4b12444f26b021422c33e6d305c57ef8",
+        "red_assertion_profile": {
+          "methods": 6,
+          "assertions": 21,
+          "skips": 0
+        },
+        "final_assertion_profile": {
+          "methods": 6,
+          "assertions": 21,
+          "skips": 0
+        },
+        "assertion_weakened": false,
+        "changed_paths": [
+          "app/Modules/Events/Http/Controllers/LandingShareController.php",
+          "app/Modules/Events/Resources/views/public/landing-share.blade.php",
+          "app/Modules/Events/Services/LandingShareLinkService.php",
+          "app/Modules/Events/routes.php",
+          "config/route_permissions.php",
+          "lang/en/events.php",
+          "lang/tr/events.php",
+          "tests/Feature/Events/LandingPreviewShareLinkTest.php"
+        ],
+        "scope_violations": [],
+        "final_verify_exit": 0,
+        "accepted_green": true,
+        "oracle": {
+          "oracle_available": true,
+          "oracle_exit": 0,
+          "oracle_ran": true,
+          "escapes": [],
+          "s1": 0,
+          "s2": 0
+        },
+        "total_tool_calls": 91,
+        "total_reread_paths": 1,
+        "result": "pass",
+        "failure_class": null,
+        "session_signals": [
+          null,
+          null
+        ],
+        "worktree_kept": "/private/tmp/atdd-min-1/wt/T5-A"
+      },
+      "B": {
+        "kind": "run",
+        "experiment_id": "atdd-min-1",
+        "task_id": "T5",
+        "category": 5,
+        "arm": "B",
+        "started_at": "2026-08-21T18:32:04.836Z",
+        "finished_at": "2026-08-21T18:40:43.757Z",
+        "sessions": [
+          {
+            "role": "integrated-developer",
+            "exit": 0,
+            "wall_seconds": 481.7,
+            "verify_seconds": 41.2,
+            "verify_runs": 4,
+            "red_verify_runs": 2,
+            "tool_calls": 66,
+            "reads": 2,
+            "reread_paths": 0,
+            "input_tokens": 102,
+            "cached_input_tokens": 4743170,
+            "output_tokens": 33083,
+            "transcript_sha256": "6f3a83b24fc5df6162c0cc48b9eb8edd8a1b3b8b440f3203a926bb22a5e9ad9c"
+          }
+        ],
+        "handoff_seconds": 0,
+        "wall_seconds": 481.7,
+        "verify_seconds": 41.2,
+        "active_seconds": 440.5,
+        "verify_runs": 4,
+        "harness_failure_reds": 0,
+        "time_to_red_commit_seconds": 238.2,
+        "time_to_first_product_commit_seconds": 488.2,
+        "red_commit": "f4e20e27da706022e3951c918903202c1ebce452",
+        "product_commit": "edf0d5d4bb586903b9c7110582a4e93747c73d04",
+        "red_assertion_profile": {
+          "methods": 5,
+          "assertions": 19,
+          "skips": 0
+        },
+        "final_assertion_profile": {
+          "methods": 5,
+          "assertions": 19,
+          "skips": 0
+        },
+        "assertion_weakened": false,
+        "changed_paths": [
+          "app/Modules/Events/Http/Controllers/LandingPreviewShareController.php",
+          "app/Modules/Events/Resources/views/components/landing-preview.blade.php",
+          "app/Modules/Events/Resources/views/components/landing-preview/bold.blade.php",
+          "app/Modules/Events/Resources/views/components/landing-preview/classic.blade.php",
+          "app/Modules/Events/Resources/views/components/landing-preview/modern.blade.php",
+          "app/Modules/Events/Resources/views/public/landing-share.blade.php",
+          "app/Modules/Events/Resources/views/public/partials/registration-form.blade.php",
+          "app/Modules/Events/Services/EventService.php",
+          "app/Modules/Events/Services/LandingPreviewShareService.php",
+          "app/Modules/Events/routes.php",
+          "config/route_permissions.php",
+          "tests/Feature/Events/LandingPreviewShareLinkTest.php"
+        ],
+        "scope_violations": [],
+        "final_verify_exit": 0,
+        "accepted_green": true,
+        "oracle": {
+          "oracle_available": true,
+          "oracle_exit": 0,
+          "oracle_ran": true,
+          "escapes": [],
+          "s1": 0,
+          "s2": 0
+        },
+        "total_tool_calls": 66,
+        "total_reread_paths": 0,
+        "result": "pass",
+        "failure_class": null,
+        "session_signals": [
+          null
+        ],
+        "worktree_kept": "/private/tmp/atdd-min-1/wt/T5-B"
+      },
+      "judge_A": {
+        "major": 0,
+        "minor": 1,
+        "items": [
+          {
+            "dimension": "reuse",
+            "severity": "minor",
+            "claim": "The share view copies the public landing page's preview-data preparation block verbatim instead of reusing it, duplicating roughly twenty lines of view logic including the by-reference speaker photo-path rewrite.",
+            "evidence": "app/Modules/Events/Resources/views/public/landing-share.blade.php — the @php block computing $branding, $blocks, $agenda, $speakers, the `foreach ($speakers['items'] as &$_s) { ... Storage::disk('public')->url(...) } unset($_s);` loop, $template, $accent, $coverPath, $logoPath and $description is character-for-character the same as the corresponding block in app/Modules/Events/Resources/views/public/show.blade.php, which the same templates are rendered from."
+          }
+        ]
+      },
+      "judge_B": {
+        "major": 0,
+        "minor": 1,
+        "items": [
+          {
+            "dimension": "test-gap",
+            "severity": "minor",
+            "claim": "AC6's no-registration-submission boundary is only asserted for the registration form; the second POST form the diff had to suppress on the shared page is never covered, so removing that guard would ship undetected.",
+            "evidence": "app/Modules/Events/Resources/views/components/landing-preview.blade.php wraps the `@include('events::public.partials.registration-lookup-form', ...)` in `@if($registrationSubmittable)`; that partial posts to events.public.registration.lookup.submit. tests/Feature/Events/LandingPreviewShareLinkTest::organiser_mints_share_link_and_guest_sees_read_only_draft_landing_preview asserts only assertDontSee(route('events.public.registration.store', ...)) and assertDontSee(route('events.landing.edit', ...)), so dropping the new @if would leave a live POST form on the unauthenticated share page with every test still green."
+          }
+        ]
+      },
+      "paired_complete": true,
+      "saving_pct": 32
+    },
+    "T6": {
+      "task_id": "T6",
+      "category": 6,
+      "title": "Platform-admin revert of a published event back to draft",
+      "oracle_valid": true,
+      "arm_order": [
+        "B",
+        "A"
+      ],
+      "A": {
+        "kind": "run",
+        "experiment_id": "atdd-min-1",
+        "task_id": "T6",
+        "category": 6,
+        "arm": "A",
+        "started_at": "2026-08-21T18:32:46.071Z",
+        "finished_at": "2026-08-21T18:45:21.719Z",
+        "sessions": [
+          {
+            "role": "test-author",
+            "exit": 0,
+            "wall_seconds": 222,
+            "verify_seconds": 8.4,
+            "verify_runs": 1,
+            "red_verify_runs": 1,
+            "tool_calls": 38,
+            "reads": 0,
+            "reread_paths": 0,
+            "input_tokens": 42,
+            "cached_input_tokens": 1316794,
+            "output_tokens": 16810,
+            "transcript_sha256": "16e600aff6fc5b84c869bae563e37d2acc41a65532bbe8130c14fa5376bfa408"
+          },
+          {
+            "role": "developer",
+            "exit": 0,
+            "wall_seconds": 500.4,
+            "verify_seconds": 47.8,
+            "verify_runs": 5,
+            "red_verify_runs": 0,
+            "tool_calls": 72,
+            "reads": 10,
+            "reread_paths": 1,
+            "input_tokens": 4548,
+            "cached_input_tokens": 7243928,
+            "output_tokens": 33654,
+            "transcript_sha256": "0e9a86b568956a99efc64f0a288e7fd5f03a2d6ad97b7f34da01898e72b98146"
+          }
+        ],
+        "handoff_seconds": 0,
+        "wall_seconds": 722.4,
+        "verify_seconds": 56.199999999999996,
+        "active_seconds": 666.2,
+        "verify_runs": 6,
+        "harness_failure_reds": 0,
+        "time_to_red_commit_seconds": 232.9,
+        "time_to_first_product_commit_seconds": 725.9,
+        "red_commit": "b60c398265d2ba9dd96850f7e81514ce30fe4a86",
+        "product_commit": "6c5b01024db69bbd7ba468be84e37ee02875b9df",
+        "red_assertion_profile": {
+          "methods": 6,
+          "assertions": 20,
+          "skips": 0
+        },
+        "final_assertion_profile": {
+          "methods": 6,
+          "assertions": 20,
+          "skips": 0
+        },
+        "assertion_weakened": false,
+        "changed_paths": [
+          "app/Modules/Events/CLAUDE.md",
+          "app/Modules/Events/Enums/EventState.php",
+          "app/Modules/Events/Exceptions/EventHasRegistrations.php",
+          "app/Modules/Events/Http/Controllers/EventController.php",
+          "app/Modules/Events/Services/EventAuthorizationService.php",
+          "app/Modules/Events/Services/EventModerationService.php",
+          "app/Modules/Events/Services/EventService.php",
+          "app/Modules/Events/Services/EventStateMachineService.php",
+          "app/Modules/SuperAdmin/Routes/web.php",
+          "config/route_permissions.php",
+          "lang/en/events.php",
+          "lang/tr/events.php",
+          "tests/Feature/Events/AdminRevertToDraftTest.php"
+        ],
+        "scope_violations": [],
+        "final_verify_exit": 0,
+        "accepted_green": true,
+        "oracle": {
+          "oracle_available": true,
+          "oracle_exit": 0,
+          "oracle_ran": true,
+          "escapes": [],
+          "s1": 0,
+          "s2": 0
+        },
+        "total_tool_calls": 110,
+        "total_reread_paths": 1,
+        "result": "pass",
+        "failure_class": null,
+        "session_signals": [
+          null,
+          null
+        ],
+        "worktree_kept": "/private/tmp/atdd-min-1/wt/T6-A"
+      },
+      "B": {
+        "kind": "run",
+        "experiment_id": "atdd-min-1",
+        "task_id": "T6",
+        "category": 6,
+        "arm": "B",
+        "started_at": "2026-08-21T18:22:16.528Z",
+        "finished_at": "2026-08-21T18:32:46.064Z",
+        "sessions": [
+          {
+            "role": "integrated-developer",
+            "exit": 0,
+            "wall_seconds": 593.1,
+            "verify_seconds": 48.6,
+            "verify_runs": 8,
+            "red_verify_runs": 1,
+            "tool_calls": 99,
+            "reads": 1,
+            "reread_paths": 0,
+            "input_tokens": 3224,
+            "cached_input_tokens": 7716535,
+            "output_tokens": 39077,
+            "transcript_sha256": "3abc240fd4849742205a7ad7c04bafa85fef797c4ece57ccbc078cd946b5bb42"
+          }
+        ],
+        "handoff_seconds": 0,
+        "wall_seconds": 593.1,
+        "verify_seconds": 48.6,
+        "active_seconds": 544.5,
+        "verify_runs": 8,
+        "harness_failure_reds": 0,
+        "time_to_red_commit_seconds": 396.5,
+        "time_to_first_product_commit_seconds": 594.5,
+        "red_commit": "3d4a7c081ceb50f87f339b470ab8ad86112b4a68",
+        "product_commit": "826872305e610135f60bdbdb7f8cd9a202f4b374",
+        "red_assertion_profile": {
+          "methods": 6,
+          "assertions": 18,
+          "skips": 0
+        },
+        "final_assertion_profile": {
+          "methods": 6,
+          "assertions": 18,
+          "skips": 0
+        },
+        "assertion_weakened": false,
+        "changed_paths": [
+          "app/Modules/Events/CLAUDE.md",
+          "app/Modules/Events/Enums/EventState.php",
+          "app/Modules/Events/Exceptions/EventHasRegistrations.php",
+          "app/Modules/Events/Http/Controllers/EventController.php",
+          "app/Modules/Events/Services/EventAuthorizationService.php",
+          "app/Modules/Events/Services/EventLifecycleService.php",
+          "app/Modules/Events/Services/EventService.php",
+          "app/Modules/SuperAdmin/Routes/web.php",
+          "config/route_permissions.php",
+          "lang/en/events.php",
+          "lang/tr/events.php",
+          "tests/Feature/Events/AdminRevertToDraftTest.php"
+        ],
+        "scope_violations": [],
+        "final_verify_exit": 0,
+        "accepted_green": true,
+        "oracle": {
+          "oracle_available": true,
+          "oracle_exit": 0,
+          "oracle_ran": true,
+          "escapes": [],
+          "s1": 0,
+          "s2": 0
+        },
+        "total_tool_calls": 99,
+        "total_reread_paths": 0,
+        "result": "pass",
+        "failure_class": null,
+        "session_signals": [
+          null
+        ],
+        "worktree_kept": "/private/tmp/atdd-min-1/wt/T6-B"
+      },
+      "judge_A": {
+        "major": 0,
+        "minor": 2,
+        "items": [
+          {
+            "dimension": "invariant",
+            "severity": "minor",
+            "claim": "The canonical transition table gains the PUBLISHED-to-DRAFT edge while the specification the enum names as its single source of truth is left stating that the edge does not exist.",
+            "evidence": "app/Modules/Events/Enums/EventState.php — the hunk adds `self::DRAFT` to PUBLISHED's transitionsTo() and extends the docblock that still reads 'Canonical legal-transition table. Mirrors docs/specs/event-states.md.' (class docblock: 'Single source of truth: docs/specs/event-states.md ... 20 legal edges'), but docs/specs/event-states.md is untouched and still records \"Phase 1: no 'unpublish' transition (PUBLISHED -> DRAFT). ... Unpublish deferred to Phase 2.\""
+          },
+          {
+            "dimension": "test-gap",
+            "severity": "minor",
+            "claim": "The three refusal tests never assert anything about the response, so a 500 or a success-shaped response would be indistinguishable from the refusal AC3, AC4 and AC5 require.",
+            "evidence": "tests/Feature/Events/AdminRevertToDraftTest — revert_is_refused_when_the_event_is_not_published, revert_is_refused_when_the_event_already_has_registrations and cancelled_event_cannot_be_reverted each call `$this->actingAs($superAdmin)->post(route('admin.events.revert-to-draft', ...), [...])` and discard the TestResponse, then only call assertNotReverted(), which checks persisted state and the absence of a transition audit row."
+          }
+        ]
+      },
+      "judge_B": {
+        "major": 0,
+        "minor": 2,
+        "items": [
+          {
+            "dimension": "invariant",
+            "severity": "minor",
+            "claim": "The registration pre-condition adds a new TeamScope bypass inside the EventService cluster for system-admin cross-team work, which the module's documented bypass discipline forbids and for which a bypass-owning repository method already exists.",
+            "evidence": "app/Modules/Events/Services/EventLifecycleService::hasRegistrations() calls `$event->registrations()->withoutGlobalScope(TeamScope::class)->exists()` with the comment 'a platform admin acting cross-team must see the same answer'. app/Modules/Events/CLAUDE.md rule 9 states: 'Do not call ->withoutGlobalScope(\\App\\Scopes\\TeamScope::class) inside EventService / SpeakerService / EventRepository for SYSTEM_ADMIN cross-team work — that is already handled at the scope layer by User::shouldBypassTeamScope()', and RegistrationRepositoryInterface::countRegistrantsForEvent() already provides exactly this scoped-by-event_id count with the bypass at the repository layer."
+          },
+          {
+            "dimension": "invariant",
+            "severity": "minor",
+            "claim": "The canonical transition table gains the PUBLISHED-to-DRAFT edge while the specification the enum names as its single source of truth is left stating that the edge does not exist.",
+            "evidence": "app/Modules/Events/Enums/EventState.php — the hunk adds `self::DRAFT` to PUBLISHED's transitionsTo() directly under the surviving docblock 'Canonical legal-transition table. Mirrors docs/specs/event-states.md.' (and the class docblock 'Single source of truth: docs/specs/event-states.md ... 20 legal edges'), but docs/specs/event-states.md is untouched and still records \"Phase 1: no 'unpublish' transition (PUBLISHED -> DRAFT). ... Unpublish deferred to Phase 2.\""
+          }
+        ]
+      },
+      "paired_complete": true,
+      "saving_pct": 18.3
+    }
+  }
+}

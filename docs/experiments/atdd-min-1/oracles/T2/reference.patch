@@ -1,0 +1,497 @@
+diff --git a/app/Modules/Events/EventsServiceProvider.php b/app/Modules/Events/EventsServiceProvider.php
+index 697438c4..69e5d0eb 100644
+--- a/app/Modules/Events/EventsServiceProvider.php
++++ b/app/Modules/Events/EventsServiceProvider.php
+@@ -26,6 +26,7 @@
+ use App\Modules\Events\Livewire\ContactsManager;
+ use App\Modules\Events\Livewire\EventCustomDomainSetup;
+ use App\Modules\Events\Livewire\EventList;
++use App\Modules\Events\Livewire\EventOverview;
+ use App\Modules\Events\Livewire\LandingPreview;
+ use App\Modules\Events\Livewire\LandingSetup;
+ use App\Modules\Events\Livewire\PrepareChecklist;
+@@ -139,6 +140,7 @@ private function registerLivewireComponents(): void
+         Livewire::component('app.modules.events.livewire.form-config', RegistrationFormConfig::class);
+         Livewire::component('app.modules.events.livewire.registration-form-config', RegistrationFormConfig::class);
+         Livewire::component('app.modules.events.livewire.landing-preview', LandingPreview::class);
++        Livewire::component('app.modules.events.livewire.event-overview', EventOverview::class);
+         Livewire::component('app.modules.events.livewire.prepare-checklist', PrepareChecklist::class);
+         Livewire::component('app.modules.events.livewire.contact-form-modal', ContactFormModal::class);
+         Livewire::component('events-contact-form-modal', ContactFormModal::class);
+diff --git a/app/Modules/Events/Livewire/EventOverview.php b/app/Modules/Events/Livewire/EventOverview.php
+new file mode 100644
+index 00000000..fd5b6b68
+--- /dev/null
++++ b/app/Modules/Events/Livewire/EventOverview.php
+@@ -0,0 +1,50 @@
++<?php
++
++declare(strict_types=1);
++
++namespace App\Modules\Events\Livewire;
++
++use App\Modules\Events\Models\Event;
++use App\Modules\Events\Services\EventService;
++use App\Modules\Events\Support\EventActionAvailability;
++use Livewire\Attributes\Locked;
++use Livewire\Component;
++
++/**
++ * Read-only event overview surface.
++ *
++ * Renders through the shared event page shell. Access uses the same view
++ * guard as the other event settings surfaces (EventService::authorizeViewAccess),
++ * so the capability check does not live in the view layer.
++ */
++class EventOverview extends Component
++{
++    #[Locked]
++    public int $eventId;
++
++    protected EventService $eventService;
++
++    public function boot(EventService $eventService): void
++    {
++        $this->eventService = $eventService;
++    }
++
++    public function mount(Event $event): void
++    {
++        $this->eventService->authorizeViewAccess($event, authUser());
++
++        $this->eventId = $event->getKey();
++    }
++
++    public function render(EventActionAvailability $actionAvailability): mixed
++    {
++        $event = $this->eventService->getById($this->eventId);
++
++        return view('events::livewire.event-overview', [
++            'event' => $event,
++            'eventActions' => $actionAvailability->for(authUser(), $event),
++        ])
++            ->extends('layouts.authenticated')
++            ->section('content');
++    }
++}
+diff --git a/app/Modules/Events/Resources/views/components/page-shell.blade.php b/app/Modules/Events/Resources/views/components/page-shell.blade.php
+new file mode 100644
+index 00000000..7ee260d0
+--- /dev/null
++++ b/app/Modules/Events/Resources/views/components/page-shell.blade.php
+@@ -0,0 +1,31 @@
++{{--
++    Shared page shell for event settings surfaces.
++
++    Renders the page title, the existing event settings tab strip and an
++    actions region. Action visibility is delegated to the shared action model
++    (EventActionAvailability) that every caller passes in via :actions, so no
++    page re-implements its own capability/state conditionals.
++--}}
++@props([
++    'event',
++    'title',
++    'active' => 'general',
++    'actions' => [],
++])
++
++<div {{ $attributes->merge(['class' => 'flex h-full flex-col bg-[#F3F0F0]']) }}>
++    <div class="shrink-0 bg-[#F3F0F0]">
++        <x-events::settings-tabs :event="$event" :active="$active" :actions="$actions" />
++    </div>
++
++    <div class="min-h-0 flex-1 overflow-y-auto p-6">
++        <div class="mx-auto mb-5 flex w-full max-w-[1100px] flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
++            <h1 class="text-[22px] font-bold text-jako-heading" data-testid="event-page-shell-title">{{ $title }}</h1>
++            <div class="flex flex-wrap items-center gap-3" data-testid="event-page-shell-actions">
++                {{ $pageActions ?? '' }}
++            </div>
++        </div>
++
++        {{ $slot }}
++    </div>
++</div>
+diff --git a/app/Modules/Events/Resources/views/livewire/event-overview.blade.php b/app/Modules/Events/Resources/views/livewire/event-overview.blade.php
+new file mode 100644
+index 00000000..2b1a9700
+--- /dev/null
++++ b/app/Modules/Events/Resources/views/livewire/event-overview.blade.php
+@@ -0,0 +1,45 @@
++@section('title', __('events.overview.title'))
++
++<x-events::page-shell
++    :event="$event"
++    active="overview"
++    :actions="$eventActions"
++    :title="__('events.overview.title')"
++    data-testid="event-overview-page"
++>
++    <div class="mx-auto w-full max-w-[1100px] rounded-[8px] bg-white p-6" data-testid="event-overview-summary">
++        <div class="flex flex-wrap items-center gap-3">
++            <h2 class="text-[18px] font-semibold text-jako-heading" data-testid="event-overview-event-title">{{ $event->title }}</h2>
++            <x-events::state-badge :state="$event->state" />
++        </div>
++
++        @if($event->description)
++            <p class="mt-3 text-[14px] leading-relaxed text-[#4F4F4F]" data-testid="event-overview-description">{{ $event->description }}</p>
++        @endif
++
++        <dl class="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2">
++            <div>
++                <dt class="text-[12px] uppercase tracking-wide text-[#828282]">{{ __('events.show.schedule') }}</dt>
++                <dd class="text-[14px] text-jako-heading" data-testid="event-overview-starts-at">
++                    <x-events::event-time :instant="$event->starts_at" :eventTimezone="$event->timezone" format="Y-m-d H:i T" />
++                </dd>
++            </div>
++            <div>
++                <dt class="text-[12px] uppercase tracking-wide text-[#828282]">{{ __('events.show.ends_at') }}</dt>
++                <dd class="text-[14px] text-jako-heading" data-testid="event-overview-ends-at">
++                    <x-events::event-time :instant="$event->ends_at" :eventTimezone="$event->timezone" format="Y-m-d H:i T" />
++                </dd>
++            </div>
++            <div>
++                <dt class="text-[12px] uppercase tracking-wide text-[#828282]">{{ __('events.show.timezone') }}</dt>
++                <dd class="text-[14px] text-jako-heading" data-testid="event-overview-timezone">{{ $event->timezone }}</dd>
++            </div>
++            <div>
++                <dt class="text-[12px] uppercase tracking-wide text-[#828282]">{{ __('events.show.uuid') }}</dt>
++                <dd class="text-[14px] text-jako-heading" data-testid="event-overview-uuid">{{ $event->uuid }}</dd>
++            </div>
++        </dl>
++
++        <p class="mt-6 text-[12px] text-[#828282]" data-testid="event-overview-readonly-note">{{ __('events.overview.read_only_note') }}</p>
++    </div>
++</x-events::page-shell>
+diff --git a/app/Modules/Events/Resources/views/livewire/landing-preview.blade.php b/app/Modules/Events/Resources/views/livewire/landing-preview.blade.php
+index 400444c6..b4e282f6 100644
+--- a/app/Modules/Events/Resources/views/livewire/landing-preview.blade.php
++++ b/app/Modules/Events/Resources/views/livewire/landing-preview.blade.php
+@@ -1,84 +1,81 @@
+ @section('title', __('events.landing.preview.title'))
+ 
+-<div class="events-landing-preview flex h-full flex-col bg-[#F3F0F0]" data-testid="landing-preview-page">
+-    @php
+-        $publishAudit = $publishReady['audit'] ?? null;
+-        $publishAuditStatus = is_array($publishAudit) ? ($publishAudit['status'] ?? null) : null;
+-        $publishAuditMessage = is_array($publishAudit) ? ($publishAudit['message'] ?? null) : null;
+-        $publishCtaLabel = match ($publishAuditStatus) {
+-            'pre_review' => __('events.publish.actions.send_to_review'),
+-            'pending', 'manual_review' => __('events.publish.actions.review_pending'),
+-            'needs_changes' => __('events.publish.actions.changes_required'),
+-            'blocked' => __('events.publish.actions.review_blocked'),
+-            default => __('events.publish.actions.publish'),
+-        };
+-        $publishAuditAlertType = match ($publishAuditStatus) {
+-            'approved' => 'success',
+-            'blocked' => 'error',
+-            'needs_changes' => 'warning',
+-            default => 'info',
+-        };
+-    @endphp
++@php
++    $publishAudit = $publishReady['audit'] ?? null;
++    $publishAuditStatus = is_array($publishAudit) ? ($publishAudit['status'] ?? null) : null;
++    $publishAuditMessage = is_array($publishAudit) ? ($publishAudit['message'] ?? null) : null;
++    $publishCtaLabel = match ($publishAuditStatus) {
++        'pre_review' => __('events.publish.actions.send_to_review'),
++        'pending', 'manual_review' => __('events.publish.actions.review_pending'),
++        'needs_changes' => __('events.publish.actions.changes_required'),
++        'blocked' => __('events.publish.actions.review_blocked'),
++        default => __('events.publish.actions.publish'),
++    };
++    $publishAuditAlertType = match ($publishAuditStatus) {
++        'approved' => 'success',
++        'blocked' => 'error',
++        'needs_changes' => 'warning',
++        default => 'info',
++    };
++@endphp
+ 
+-    <div class="shrink-0 bg-[#F3F0F0]">
+-        <x-events::settings-tabs :event="$event" active="preview" :actions="$eventActions" />
+-    </div>
+-
+-    <div class="min-h-0 flex-1 overflow-y-auto p-6">
+-        {{-- Header --}}
+-        <div class="mx-auto mb-5 flex w-full max-w-[1100px] flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+-            <h1 class="text-[22px] font-bold text-jako-heading">{{ __('events.landing.preview.title') }}</h1>
+-            <div class="flex flex-wrap items-center gap-3">
+-                @if($eventActions['manageLanding']['visible'] ?? false)
+-                    <x-btn.outline
+-                        :href="route('events.landing.edit', $event->uuid)"
+-                        data-testid="landing-preview-edit-action"
+-                    >
+-                        {{ __('events.show.links.landing') }}
+-                    </x-btn.outline>
+-                @endif
+-
+-                @if($eventActions['publish']['visible'] ?? false)
+-                    @if($publishReady['attemptable'] ?? ($publishReady['allowed'] ?? false))
+-                        <form method="POST" action="{{ route('events.publish', $event->uuid) }}">
+-                            @csrf
+-                            <x-btn.primary type="submit" data-testid="landing-preview-publish-action">
+-                                {{ $publishCtaLabel }}
+-                            </x-btn.primary>
+-                        </form>
+-                    @else
+-                        <x-btn.primary
+-                            type="button"
+-                            disabled
+-                            aria-disabled="true"
+-                            title="{{ $publishReady['reason'] ?? __('events.publish.unavailable.unavailable') }}"
+-                            data-testid="landing-preview-publish-action"
+-                        >
+-                            {{ $publishCtaLabel }}
+-                        </x-btn.primary>
+-                    @endif
+-                @endif
+-            </div>
+-        </div>
+-
+-        @if($publishAuditStatus && $publishAuditMessage)
+-            <x-alert
+-                :type="$publishAuditAlertType"
+-                class="mx-auto mb-5 w-full max-w-[1100px]"
+-                data-testid="landing-preview-publish-audit-status"
+-                data-status="{{ $publishAuditStatus }}"
++<x-events::page-shell
++    :event="$event"
++    active="preview"
++    :actions="$eventActions"
++    :title="__('events.landing.preview.title')"
++    class="events-landing-preview"
++    data-testid="landing-preview-page"
++>
++    <x-slot:pageActions>
++        @if($eventActions['manageLanding']['visible'] ?? false)
++            <x-btn.outline
++                :href="route('events.landing.edit', $event->uuid)"
++                data-testid="landing-preview-edit-action"
+             >
+-                {{ $publishAuditMessage }}
+-            </x-alert>
++                {{ __('events.show.links.landing') }}
++            </x-btn.outline>
+         @endif
+ 
+-        {{-- Preview canvas --}}
+-        <div class="mx-auto w-full max-w-[1100px] rounded-[8px] bg-white p-6">
+-            @include('events::components.landing-preview', [
+-                'event' => $event,
+-                'previewData' => $previewData,
+-                'rootTestId' => 'landing-preview-page',
+-            ])
+-        </div>
++        @if($eventActions['publish']['visible'] ?? false)
++            @if($publishReady['attemptable'] ?? ($publishReady['allowed'] ?? false))
++                <form method="POST" action="{{ route('events.publish', $event->uuid) }}">
++                    @csrf
++                    <x-btn.primary type="submit" data-testid="landing-preview-publish-action">
++                        {{ $publishCtaLabel }}
++                    </x-btn.primary>
++                </form>
++            @else
++                <x-btn.primary
++                    type="button"
++                    disabled
++                    aria-disabled="true"
++                    title="{{ $publishReady['reason'] ?? __('events.publish.unavailable.unavailable') }}"
++                    data-testid="landing-preview-publish-action"
++                >
++                    {{ $publishCtaLabel }}
++                </x-btn.primary>
++            @endif
++        @endif
++    </x-slot:pageActions>
++
++    @if($publishAuditStatus && $publishAuditMessage)
++        <x-alert
++            :type="$publishAuditAlertType"
++            class="mx-auto mb-5 w-full max-w-[1100px]"
++            data-testid="landing-preview-publish-audit-status"
++            data-status="{{ $publishAuditStatus }}"
++        >
++            {{ $publishAuditMessage }}
++        </x-alert>
++    @endif
++
++    {{-- Preview canvas --}}
++    <div class="mx-auto w-full max-w-[1100px] rounded-[8px] bg-white p-6">
++        @include('events::components.landing-preview', [
++            'event' => $event,
++            'previewData' => $previewData,
++            'rootTestId' => 'landing-preview-page',
++        ])
+     </div>
+-</div>
++</x-events::page-shell>
+diff --git a/app/Modules/Events/routes.php b/app/Modules/Events/routes.php
+index 22e3e096..7b7f3e72 100644
+--- a/app/Modules/Events/routes.php
++++ b/app/Modules/Events/routes.php
+@@ -25,6 +25,7 @@
+ use App\Modules\Events\Livewire\AutomationDeliveryLogs;
+ use App\Modules\Events\Livewire\EventCustomDomainSetup;
+ use App\Modules\Events\Livewire\EventList;
++use App\Modules\Events\Livewire\EventOverview;
+ use App\Modules\Events\Livewire\LandingPreview;
+ use App\Modules\Events\Livewire\LandingSetup;
+ use App\Modules\Events\Livewire\RegistrationFormConfig;
+@@ -115,6 +116,8 @@
+         // non-DRAFT states.
+         Route::get('/{event:uuid}/edit', [EventController::class, 'edit'])->name('edit');
+         Route::patch('/{event:uuid}', [EventController::class, 'update'])->name('update');
++        // Read-only overview surface — renders through the shared event page shell.
++        Route::get('/{event:uuid}/overview', EventOverview::class)->name('overview');
+         Route::get('/{event:uuid}/landing', LandingSetup::class)->name('landing.edit');
+         Route::get('/{event:uuid}/landing/preview', LandingPreview::class)->name('landing.preview');
+         Route::get('/{event:uuid}/form-config', RegistrationFormConfig::class)->name('form-config.edit');
+diff --git a/config/route_permissions.php b/config/route_permissions.php
+index acd1388e..ae6ee909 100644
+--- a/config/route_permissions.php
++++ b/config/route_permissions.php
+@@ -121,6 +121,7 @@
+         'events.show' => 'events.view.team|events.view.global',
+         'events.edit' => 'events.update.team|events.update.global', // S2-2-F1 — DRAFT-only metadata edit surface
+         'events.update' => 'events.update.team|events.update.global', // S2-2-F1 — DRAFT-only metadata edit surface
++        'events.overview' => 'events.view.team|events.view.global', // Read-only event overview surface
+         'events.landing.edit' => 'events.update.team|events.update.global', // Story 3-1
+         'events.landing.preview' => 'events.update.team|events.update.global', // Story 3-2
+         'events.form-config.edit' => 'events.update.team|events.update.global', // Story 3-3
+diff --git a/lang/en/events.php b/lang/en/events.php
+index 265bd535..62a9bbb1 100644
+--- a/lang/en/events.php
++++ b/lang/en/events.php
+@@ -61,6 +61,11 @@
+         ],
+     ],
+ 
++    'overview' => [
++        'title' => 'Event Overview',
++        'read_only_note' => 'This page is read-only. Use the settings tabs above to make changes.',
++    ],
++
+     'show' => [
+         'settings_title' => 'Event Settings',
+         'settings' => [
+diff --git a/lang/tr/events.php b/lang/tr/events.php
+index 62d82ef0..d81f4b0a 100644
+--- a/lang/tr/events.php
++++ b/lang/tr/events.php
+@@ -61,6 +61,11 @@
+         ],
+     ],
+ 
++    'overview' => [
++        'title' => 'Etkinlik Genel Bakışı',
++        'read_only_note' => 'Bu sayfa salt okunurdur. Değişiklik yapmak için yukarıdaki ayar sekmelerini kullanın.',
++    ],
++
+     'show' => [
+         'settings_title' => 'Etkinlik Ayarları',
+         'settings' => [
+diff --git a/tests/Feature/Events/EventPageShellAdoptionTest.php b/tests/Feature/Events/EventPageShellAdoptionTest.php
+new file mode 100644
+index 00000000..61ff67ff
+--- /dev/null
++++ b/tests/Feature/Events/EventPageShellAdoptionTest.php
+@@ -0,0 +1,99 @@
++<?php
++
++declare(strict_types=1);
++
++namespace Tests\Feature\Events;
++
++use App\Enums\UserRole;
++use App\Models\Team;
++use App\Models\User;
++use App\Modules\Events\Enums\EventState;
++use App\Modules\Events\Models\Event;
++use App\Modules\Events\Models\LandingPage;
++use PHPUnit\Framework\Attributes\Group;
++use PHPUnit\Framework\Attributes\Test;
++use Tests\Feature\FeatureTestCase;
++
++/**
++ * Shared event page shell — adopted by the new Event Overview page and by the
++ * retrofitted Landing Preview page.
++ */
++#[Group('events')]
++class EventPageShellAdoptionTest extends FeatureTestCase
++{
++    /**
++     * @return array{0: User, 1: Team, 2: Event}
++     */
++    private function organizerWithEvent(EventState $state = EventState::DRAFT): array
++    {
++        $admin = User::factory()->create(['email_verified_at' => now()]);
++        $team = Team::factory()->create(['user_id' => $admin->id]);
++        $admin->teams()->attach($team, ['role' => UserRole::ADMIN->value]);
++        $admin->forceFill(['current_team_id' => $team->id])->save();
++
++        $event = Event::factory()
++            ->inState($state)
++            ->for($team)
++            ->create(['created_by' => $admin->id]);
++
++        return [$admin->fresh(), $team->fresh(), $event->fresh()];
++    }
++
++    #[Test]
++    public function overview_page_renders_through_the_shared_shell(): void
++    {
++        [$admin, , $event] = $this->organizerWithEvent();
++
++        $response = $this->actingAs($admin)->get(route('events.overview', $event->uuid));
++
++        $response->assertOk();
++        $response->assertSee($event->title, false);
++        $response->assertSee('event-settings-tabs', false);
++        $response->assertSee('event-page-shell-title', false);
++        $response->assertSee('event-page-shell-actions', false);
++    }
++
++    #[Test]
++    public function landing_preview_page_renders_through_the_same_shared_shell(): void
++    {
++        [$admin, , $event] = $this->organizerWithEvent();
++
++        LandingPage::factory()
++            ->for($event)
++            ->state(['team_id' => $event->team_id, 'template' => 'classic'])
++            ->create();
++
++        $response = $this->actingAs($admin)->get('/events/'.$event->uuid.'/landing/preview');
++
++        $response->assertOk();
++        $response->assertSee('landing-preview-page', false);
++        $response->assertSee('event-settings-tabs', false);
++        $response->assertSee('event-page-shell-title', false);
++        $response->assertSee('event-page-shell-actions', false);
++    }
++
++    #[Test]
++    public function overview_page_is_read_only(): void
++    {
++        [$admin, , $event] = $this->organizerWithEvent();
++
++        $response = $this->actingAs($admin)->get(route('events.overview', $event->uuid));
++
++        $response->assertOk();
++        $response->assertDontSee('/events/'.$event->uuid.'/publish', false);
++        $response->assertDontSee('/events/'.$event->uuid.'/cancel', false);
++    }
++
++    #[Test]
++    public function overview_page_refuses_an_actor_from_another_workspace(): void
++    {
++        [, , $event] = $this->organizerWithEvent();
++        [$outsider] = $this->organizerWithEvent();
++
++        $status = $this->actingAs($outsider)
++            ->get('/events/'.$event->uuid.'/overview')
++            ->status();
++
++        $this->assertContains($status, [403, 404]);
++    }
++}

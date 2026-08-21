@@ -1,0 +1,513 @@
+diff --git a/app/Modules/Events/CLAUDE.md b/app/Modules/Events/CLAUDE.md
+index ba971748..c1e7fd82 100644
+--- a/app/Modules/Events/CLAUDE.md
++++ b/app/Modules/Events/CLAUDE.md
+@@ -50,3 +50,4 @@ ## Error codes
+ | JKM-EVT-1005 | PriorStateUnresolvable | 409 |
+ | JKM-EVT-1010 | Capability missing on create | 403 |
+ | JKM-EVT-1011 | Validation error | 422 |
++| JKM-EVT-1013 | EventHasRegistrations | 409 |
+diff --git a/app/Modules/Events/Enums/EventState.php b/app/Modules/Events/Enums/EventState.php
+index ceb72aaa..3e15883c 100644
+--- a/app/Modules/Events/Enums/EventState.php
++++ b/app/Modules/Events/Enums/EventState.php
+@@ -34,7 +34,11 @@ public function transitionsTo(): array
+     {
+         return match ($this) {
+             self::DRAFT => [self::PUBLISHED, self::SUSPENDED, self::FAILED],
+-            self::PUBLISHED => [self::PREPARING, self::SUSPENDED, self::FAILED],
++            // T6 — PUBLISHED→DRAFT is the platform-admin revert edge. It is the
++            // only backward edge in the table and is additionally narrowed by
++            // EventLifecycleService::revertToDraft() (PUBLISHED source only,
++            // zero registrations, cancellation still wins).
++            self::PUBLISHED => [self::PREPARING, self::SUSPENDED, self::FAILED, self::DRAFT],
+             self::PREPARING => [self::READY, self::FAILED, self::SUSPENDED],
+             self::READY => [self::LIVE, self::FAILED, self::SUSPENDED],
+             self::LIVE => [self::ENDED, self::FAILED, self::SUSPENDED, self::READY],
+diff --git a/app/Modules/Events/Exceptions/EventHasRegistrations.php b/app/Modules/Events/Exceptions/EventHasRegistrations.php
+new file mode 100644
+index 00000000..cd052b57
+--- /dev/null
++++ b/app/Modules/Events/Exceptions/EventHasRegistrations.php
+@@ -0,0 +1,37 @@
++<?php
++
++declare(strict_types=1);
++
++namespace App\Modules\Events\Exceptions;
++
++use App\Modules\Events\Models\Event;
++
++/**
++ * T6 — a lifecycle move was refused because the event already has registrants.
++ *
++ * Reverting a published event to DRAFT would hide a landing page people have
++ * already signed up through, so the revert is only offered while the audience
++ * is still empty.
++ */
++class EventHasRegistrations extends EventDomainException
++{
++    public function __construct(public readonly Event $event)
++    {
++        parent::__construct("Event {$event->getKey()} has registrations and cannot be reverted");
++    }
++
++    public static function for(Event $event): self
++    {
++        return new self($event);
++    }
++
++    public function errorCode(): string
++    {
++        return 'JKM-EVT-1013';
++    }
++
++    public function httpStatus(): int
++    {
++        return 409;
++    }
++}
+diff --git a/app/Modules/Events/Http/Controllers/EventController.php b/app/Modules/Events/Http/Controllers/EventController.php
+index 99a87539..77f36fb8 100644
+--- a/app/Modules/Events/Http/Controllers/EventController.php
++++ b/app/Modules/Events/Http/Controllers/EventController.php
+@@ -410,6 +410,25 @@ public function forceEnd(Request $request, Event $event): JsonResponse|RedirectR
+         ]);
+     }
+ 
++    public function revertToDraft(Request $request, Event $event): JsonResponse|RedirectResponse
++    {
++        try {
++            $result = $this->eventService->revertToDraft($event, authUser());
++        } catch (EventDomainException $e) {
++            return $this->domainErrorResponse($request, $e, 'moderation');
++        }
++
++        if (! $request->expectsJson()) {
++            return redirect()
++                ->back()
++                ->with('status', __('events.show.moderation.messages.reverted_to_draft'));
++        }
++
++        return response()->json([
++            'data' => ['uuid' => $result->uuid, 'state' => $result->state->value],
++        ]);
++    }
++
+     public function lockPublishing(Request $request, Event $event): RedirectResponse
+     {
+         $payload = $request->validate(['reason' => ['required', 'string', 'max:500']]);
+diff --git a/app/Modules/Events/Services/EventAuthorizationService.php b/app/Modules/Events/Services/EventAuthorizationService.php
+index 8066001f..87bab975 100644
+--- a/app/Modules/Events/Services/EventAuthorizationService.php
++++ b/app/Modules/Events/Services/EventAuthorizationService.php
+@@ -252,6 +252,21 @@ public function authorizePublish(Event $event, User $actor): void
+         Gate::forUser($actor)->authorize('events.publish.team');
+     }
+ 
++    /**
++     * Assert actor may revert a published event back to DRAFT (T6).
++     *
++     * Deliberately global-only: reverting is a platform-support action, not a
++     * workspace one, so there is no `.team` counterpart to fall through to.
++     *
++     * global cap: events.publish.global
++     *
++     * @throws AuthorizationException
++     */
++    public function authorizeRevertToDraft(Event $event, User $actor): void
++    {
++        Gate::forUser($actor)->authorize('events.publish.global');
++    }
++
+     public function canPublish(Event $event, User $actor): bool
+     {
+         $gate = Gate::forUser($actor);
+diff --git a/app/Modules/Events/Services/EventLifecycleService.php b/app/Modules/Events/Services/EventLifecycleService.php
+index 68d5f295..e43a6661 100644
+--- a/app/Modules/Events/Services/EventLifecycleService.php
++++ b/app/Modules/Events/Services/EventLifecycleService.php
+@@ -14,6 +14,7 @@
+ use App\Modules\Events\Enums\EventOperationalLockKey;
+ use App\Modules\Events\Enums\EventState;
+ use App\Modules\Events\Events\EventCancelled;
++use App\Modules\Events\Exceptions\EventHasRegistrations;
+ use App\Modules\Events\Exceptions\EventOperationalLockActive;
+ use App\Modules\Events\Exceptions\EventStateLocked;
+ use App\Modules\Events\Exceptions\IllegalStateTransition;
+@@ -245,6 +246,52 @@ public function publishReadiness(Event $event, ?User $actor): array
+         ];
+     }
+ 
++    /**
++     * T6 — Revert a published event back to DRAFT (platform-admin support action).
++     *
++     * Mirrors publish()'s phase-2 shape: authorize outside every transaction,
++     * then take the event row lock and re-read the gates before handing the
++     * write to EventStateMachineService, which stays the sole state writer and
++     * owns the cancellation re-check plus the transition audit row.
++     *
++     * Narrower than the PUBLISHED→DRAFT edge it rides on:
++     *   - the source state must be exactly PUBLISHED (a DRAFT source would
++     *     otherwise land on transition()'s same-state no-op and read as success);
++     *   - the event must have no registrations — publishing is what makes the
++     *     landing page reachable, so an audience means the publish is no longer
++     *     a mistake that can be quietly undone.
++     */
++    public function revertToDraft(Event $event, User $actor): Event
++    {
++        $this->authz->authorizeRevertToDraft($event, $actor);
++
++        return DB::transaction(function () use ($event, $actor): Event {
++            $fresh = $this->events->lockEventForServiceWrite($event->getKey());
++
++            if ($fresh->state !== EventState::PUBLISHED) {
++                throw IllegalStateTransition::between($fresh->state, EventState::DRAFT);
++            }
++
++            if ($this->hasRegistrations($fresh)) {
++                throw EventHasRegistrations::for($fresh);
++            }
++
++            return $this->stateMachine->transition($fresh, EventState::DRAFT, $actor, 'admin.revert_to_draft');
++        }, attempts: 1);
++    }
++
++    /**
++     * Registration presence is a state guard, not a read for the current
++     * tenant, so it deliberately ignores TeamScope: a platform admin acting
++     * cross-team must see the same answer the owning workspace would.
++     */
++    private function hasRegistrations(Event $event): bool
++    {
++        return $event->registrations()
++            ->withoutGlobalScope(TeamScope::class)
++            ->exists();
++    }
++
+     private function auditStatusMessage(AiAuditOrganizerStatus $status): string
+     {
+         return __("events.publish.audit_status.{$status->value}");
+diff --git a/app/Modules/Events/Services/EventService.php b/app/Modules/Events/Services/EventService.php
+index 35981472..506021f7 100644
+--- a/app/Modules/Events/Services/EventService.php
++++ b/app/Modules/Events/Services/EventService.php
+@@ -172,6 +172,14 @@ public function publishReadiness(Event $event, ?User $actor): array
+         return $this->lifecycle->publishReadiness($event, $actor);
+     }
+ 
++    /**
++     * T6 — Platform-admin revert of a published event back to DRAFT.
++     */
++    public function revertToDraft(Event $event, User $actor): Event
++    {
++        return $this->lifecycle->revertToDraft($event, $actor);
++    }
++
+     /** @param  array<string, mixed>  $payload */
+     public function upsertLandingSetup(Event $event, User $actor, array $payload): LandingPage
+     {
+diff --git a/app/Modules/SuperAdmin/Routes/web.php b/app/Modules/SuperAdmin/Routes/web.php
+index dc79560f..fdda5d33 100644
+--- a/app/Modules/SuperAdmin/Routes/web.php
++++ b/app/Modules/SuperAdmin/Routes/web.php
+@@ -60,6 +60,7 @@
+             ->name('events.automations.detail');
+         Route::get('/events/{event:uuid}/prepare', [EventController::class, 'prepareRedirect'])->whereUuid('event')->name('events.prepare');
+         Route::post('/events/{event:uuid}/publish', [EventController::class, 'publish'])->whereUuid('event')->name('events.publish');
++        Route::post('/events/{event:uuid}/revert-to-draft', [EventController::class, 'revertToDraft'])->whereUuid('event')->name('events.revert-to-draft');
+         Route::post('/events/{event:uuid}/cancel', [EventController::class, 'cancel'])->whereUuid('event')->name('events.cancel');
+         Route::post('/events/{event:uuid}/suspend', [EventController::class, 'suspend'])->whereUuid('event')->name('events.suspend');
+         Route::post('/events/{event:uuid}/reactivate', [EventController::class, 'reactivate'])->whereUuid('event')->name('events.reactivate');
+diff --git a/config/route_permissions.php b/config/route_permissions.php
+index acd1388e..9ede1716 100644
+--- a/config/route_permissions.php
++++ b/config/route_permissions.php
+@@ -53,6 +53,7 @@
+         'admin.events.automations.update' => 'automations.manage.global',
+         'admin.events.prepare' => 'events.update.global',
+         'admin.events.publish' => 'events.publish.global',
++        'admin.events.revert-to-draft' => 'events.publish.global', // T6 — un-publish is publish authority, platform scope only
+         'admin.events.cancel' => 'events.cancel.global',
+         'admin.events.suspend' => 'events.suspend.global',
+         'admin.events.reactivate' => 'events.suspend.global',
+diff --git a/lang/en/events.php b/lang/en/events.php
+index 265bd535..fa41b0b2 100644
+--- a/lang/en/events.php
++++ b/lang/en/events.php
+@@ -310,6 +310,7 @@
+                 'suspended' => 'Event suspended.',
+                 'reactivated' => 'Event reactivated.',
+                 'force_ended' => 'Event force-ended.',
++                'reverted_to_draft' => 'Event reverted to draft.',
+             ],
+         ],
+     ],
+diff --git a/lang/tr/events.php b/lang/tr/events.php
+index 62d82ef0..2257b470 100644
+--- a/lang/tr/events.php
++++ b/lang/tr/events.php
+@@ -310,6 +310,7 @@
+                 'suspended' => 'Etkinlik askiya alindi.',
+                 'reactivated' => 'Etkinlik yeniden etkinlestirildi.',
+                 'force_ended' => 'Etkinlik zorla bitirildi.',
++                'reverted_to_draft' => 'Etkinlik taslaga geri alindi.',
+             ],
+         ],
+     ],
+diff --git a/tests/Feature/Events/AdminRevertToDraftTest.php b/tests/Feature/Events/AdminRevertToDraftTest.php
+new file mode 100644
+index 00000000..fca0b343
+--- /dev/null
++++ b/tests/Feature/Events/AdminRevertToDraftTest.php
+@@ -0,0 +1,250 @@
++<?php
++
++declare(strict_types=1);
++
++namespace Tests\Feature\Events;
++
++use App\Enums\UserRole;
++use App\Models\Team;
++use App\Models\User;
++use App\Modules\Events\Enums\EventState;
++use App\Modules\Events\Enums\RegistrationSource;
++use App\Modules\Events\Models\Event;
++use App\Modules\Events\Models\Registration;
++use Illuminate\Testing\TestResponse;
++use PHPUnit\Framework\Attributes\DataProvider;
++use PHPUnit\Framework\Attributes\Group;
++use PHPUnit\Framework\Attributes\Test;
++use Spatie\Activitylog\Models\Activity;
++use Tests\Feature\FeatureTestCase;
++use Tests\Feature\SuperAdmin\Support\InteractsWithSuperAdmin;
++
++/**
++ * Capsule T6 ATDD — platform-admin revert of a PUBLISHED event back to DRAFT.
++ *
++ * Asserts the observable contract only: HTTP outcome, persisted state, the
++ * audit row the guarded transition path writes, and the canonical
++ * legal-transition table the rest of the domain reads.
++ */
++#[Group('events')]
++class AdminRevertToDraftTest extends FeatureTestCase
++{
++    use InteractsWithSuperAdmin;
++
++    // ---------------------------------------------------------------------
++    // AC1 + AC2 — the action exists, is capability-gated, and goes through
++    // the guarded transition path (audit record included).
++    // ---------------------------------------------------------------------
++
++    #[Test]
++    public function platform_admin_reverts_published_event_to_draft_and_records_the_transition(): void
++    {
++        $workspace = $this->createWorkspace();
++        $event = $this->eventFor($workspace, EventState::PUBLISHED);
++        $platformAdmin = $this->createPlatformSuperAdmin($workspace);
++
++        $this->actingAs($platformAdmin)
++            ->postJson(route('admin.events.revert-to-draft', $event->uuid))
++            ->assertOk()
++            ->assertJsonPath('data.state', EventState::DRAFT->value);
++
++        $this->assertSame(EventState::DRAFT, $event->refresh()->state);
++
++        $activity = Activity::query()
++            ->where('log_name', 'event.transitioned')
++            ->where('subject_type', Event::class)
++            ->where('subject_id', $event->id)
++            ->latest('id')
++            ->firstOrFail();
++
++        $this->assertSame($platformAdmin->id, (int) $activity->causer_id);
++        $this->assertSame(EventState::PUBLISHED->value, data_get($activity->properties, 'from'));
++        $this->assertSame(EventState::DRAFT->value, data_get($activity->properties, 'to'));
++    }
++
++    #[Test]
++    public function revert_route_is_capability_gated_through_route_permission_config(): void
++    {
++        $this->assertArrayHasKey(
++            'admin.events.revert-to-draft',
++            config('route_permissions.routes'),
++            'The revert route must be declared in the route-permission configuration.',
++        );
++
++        $workspace = $this->createWorkspace();
++        $event = $this->eventFor($workspace, EventState::PUBLISHED);
++        $workspaceAdmin = $this->createWorkspaceMember($workspace, UserRole::ADMIN);
++
++        $this->actingAs($workspaceAdmin)
++            ->postJson(route('admin.events.revert-to-draft', $event->uuid))
++            ->assertForbidden();
++
++        $this->assertSame(EventState::PUBLISHED, $event->refresh()->state);
++    }
++
++    // ---------------------------------------------------------------------
++    // AC3 — only a PUBLISHED event may be reverted.
++    // ---------------------------------------------------------------------
++
++    /** @return iterable<string, array{0: EventState}> */
++    public static function nonPublishedStateProvider(): iterable
++    {
++        yield 'draft' => [EventState::DRAFT];
++        yield 'preparing' => [EventState::PREPARING];
++    }
++
++    #[Test]
++    #[DataProvider('nonPublishedStateProvider')]
++    public function revert_is_refused_when_the_event_is_not_published(EventState $state): void
++    {
++        $workspace = $this->createWorkspace();
++        $event = $this->eventFor($workspace, $state);
++        $platformAdmin = $this->createPlatformSuperAdmin($workspace);
++
++        $response = $this->actingAs($platformAdmin)
++            ->postJson(route('admin.events.revert-to-draft', $event->uuid));
++
++        $this->assertRefused($response, $event, $state);
++    }
++
++    // ---------------------------------------------------------------------
++    // AC4 — registrations block the revert.
++    // ---------------------------------------------------------------------
++
++    #[Test]
++    public function revert_is_refused_when_the_event_has_registrations(): void
++    {
++        $workspace = $this->createWorkspace();
++        $event = $this->eventFor($workspace, EventState::PUBLISHED);
++        $this->registerAttendee($event);
++        $platformAdmin = $this->createPlatformSuperAdmin($workspace);
++
++        $response = $this->actingAs($platformAdmin)
++            ->postJson(route('admin.events.revert-to-draft', $event->uuid));
++
++        $this->assertRefused($response, $event, EventState::PUBLISHED);
++    }
++
++    // ---------------------------------------------------------------------
++    // AC5 — cancellation keeps winning over lifecycle moves.
++    // ---------------------------------------------------------------------
++
++    #[Test]
++    public function revert_is_refused_for_a_cancelled_event(): void
++    {
++        $workspace = $this->createWorkspace();
++        $event = $this->eventFor($workspace, EventState::PUBLISHED, cancelled: true);
++        $platformAdmin = $this->createPlatformSuperAdmin($workspace);
++
++        $response = $this->actingAs($platformAdmin)
++            ->postJson(route('admin.events.revert-to-draft', $event->uuid));
++
++        $this->assertRefused($response, $event, EventState::PUBLISHED);
++        $this->assertNotNull($event->refresh()->cancelled_at);
++    }
++
++    // ---------------------------------------------------------------------
++    // AC6 — the canonical table gains exactly one edge and nothing else, and
++    // the state-derived rules other code reads keep their answers.
++    // ---------------------------------------------------------------------
++
++    #[Test]
++    public function canonical_transition_table_gains_only_the_published_to_draft_edge(): void
++    {
++        $expected = [
++            'draft' => [EventState::PUBLISHED, EventState::SUSPENDED, EventState::FAILED],
++            // PUBLISHED -> DRAFT is the single edge this capsule introduces.
++            'published' => [EventState::PREPARING, EventState::SUSPENDED, EventState::FAILED, EventState::DRAFT],
++            'preparing' => [EventState::READY, EventState::FAILED, EventState::SUSPENDED],
++            'ready' => [EventState::LIVE, EventState::FAILED, EventState::SUSPENDED],
++            'live' => [EventState::ENDED, EventState::FAILED, EventState::SUSPENDED, EventState::READY],
++            'ended' => [EventState::FAILED, EventState::SUSPENDED],
++            'failed' => [EventState::PREPARING, EventState::SUSPENDED],
++            'suspended' => [],
++        ];
++
++        foreach (EventState::cases() as $from) {
++            foreach (EventState::cases() as $to) {
++                $legal = in_array($to, $expected[$from->value], strict: true);
++
++                $this->assertSame(
++                    $legal,
++                    $from->canTransitionTo($to),
++                    "Edge {$from->value} -> {$to->value} must be ".($legal ? 'legal' : 'illegal').'.',
++                );
++            }
++        }
++
++        foreach (EventState::cases() as $state) {
++            $this->assertSame(
++                $state !== EventState::DRAFT,
++                $state->isMetadataLocked(),
++                "isMetadataLocked() changed for {$state->value}.",
++            );
++
++            $this->assertSame(
++                in_array($state, [
++                    EventState::DRAFT,
++                    EventState::ENDED,
++                    EventState::FAILED,
++                    EventState::SUSPENDED,
++                ], strict: true),
++                $state->blocksRegistration(),
++                "blocksRegistration() changed for {$state->value}.",
++            );
++        }
++    }
++
++    // ---------------------------------------------------------------------
++    // Helpers
++    // ---------------------------------------------------------------------
++
++    private function eventFor(Team $workspace, EventState $state, bool $cancelled = false): Event
++    {
++        /** @var User $owner */
++        $owner = $workspace->owner;
++
++        $factory = Event::factory()->inState($state)->for($workspace);
++
++        if ($cancelled) {
++            $factory = $factory->cancelled();
++        }
++
++        return $factory->create(['created_by' => $owner->id]);
++    }
++
++    private function registerAttendee(Event $event): Registration
++    {
++        $email = 'registrant@example.test';
++
++        return Registration::unguarded(fn (): Registration => Registration::query()->create([
++            'team_id' => $event->team_id,
++            'event_id' => $event->id,
++            'email' => $email,
++            'email_hash' => hash('sha256', $email),
++            'source' => RegistrationSource::DIRECT->value,
++            'full_name' => 'Existing Registrant',
++            'consent_accepted_at' => now(),
++        ]));
++    }
++
++    /**
++     * A refusal is observable as a client error that leaves the stored
++     * lifecycle state untouched.
++     */
++    private function assertRefused(TestResponse $response, Event $event, EventState $expected): void
++    {
++        $status = $response->status();
++
++        $this->assertTrue(
++            $status >= 400 && $status < 500,
++            "Expected the revert to be refused with a client error, got HTTP {$status}.",
++        );
++
++        $this->assertSame(
++            $expected,
++            $event->refresh()->state,
++            'A refused revert must leave the event state unchanged.',
++        );
++    }
++}

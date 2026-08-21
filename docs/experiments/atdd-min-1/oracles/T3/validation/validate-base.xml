@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites>
+  <testsuite name="CLI Arguments" tests="8" assertions="178" errors="0" failures="8" skipped="0" time="8.647761">
+    <testsuite name="Tests\Feature\AtddOracle\OracleTest" file="/private/tmp/atdd-min-1/wt/oracleval-T3/tests/Feature/AtddOracle/OracleTest.php" tests="8" assertions="178" errors="0" failures="8" skipped="0" time="8.647761">
+      <testcase name="only_one_navigation_item_is_current_on_a_nested_section_page" file="/private/tmp/atdd-min-1/wt/oracleval-T3/tests/Feature/AtddOracle/OracleTest.php" line="353" class="Tests\Feature\AtddOracle\OracleTest" classname="Tests.Feature.AtddOracle.OracleTest" assertions="21" time="6.105434">
+        <failure type="PHPUnit\Framework\ExpectationFailedException">Tests\Feature\AtddOracle\OracleTest::only_one_navigation_item_is_current_on_a_nested_section_page
+Exactly one desktop navigation item may be announced as current on http://localhost/events/contacts; got: []
+Failed asserting that actual size 0 matches expected size 1.
+
+/private/tmp/atdd-min-1/wt/oracleval-T3/tests/Feature/AtddOracle/OracleTest.php:374</failure>
+      </testcase>
+      <testcase name="current_page_is_programmatically_marked_in_both_navigation_variants" file="/private/tmp/atdd-min-1/wt/oracleval-T3/tests/Feature/AtddOracle/OracleTest.php" line="311" class="Tests\Feature\AtddOracle\OracleTest" classname="Tests.Feature.AtddOracle.OracleTest" assertions="20" time="0.344712">
+        <failure type="PHPUnit\Framework\ExpectationFailedException">Tests\Feature\AtddOracle\OracleTest::current_page_is_programmatically_marked_in_both_navigation_variants
+The desktop primary navigation must expose exactly one programmatically current item on http://localhost/dashboard; got: []
+Failed asserting that actual size 0 matches expected size 1.
+
+/private/tmp/atdd-min-1/wt/oracleval-T3/tests/Feature/AtddOracle/OracleTest.php:324</failure>
+      </testcase>
+      <testcase name="scroll_keys_are_stable_across_requests_and_across_pages" file="/private/tmp/atdd-min-1/wt/oracleval-T3/tests/Feature/AtddOracle/OracleTest.php" line="418" class="Tests\Feature\AtddOracle\OracleTest" classname="Tests.Feature.AtddOracle.OracleTest" assertions="52" time="0.455040">
+        <failure type="PHPUnit\Framework\ExpectationFailedException">Tests\Feature\AtddOracle\OracleTest::scroll_keys_are_stable_across_requests_and_across_pages
+The primary navigation exposes no per-item scroll-restoration key at all.
+Failed asserting that an array is not empty.
+
+/private/tmp/atdd-min-1/wt/oracleval-T3/tests/Feature/AtddOracle/OracleTest.php:426</failure>
+      </testcase>
+      <testcase name="every_navigation_link_carries_a_variant_independent_scroll_key" file="/private/tmp/atdd-min-1/wt/oracleval-T3/tests/Feature/AtddOracle/OracleTest.php" line="394" class="Tests\Feature\AtddOracle\OracleTest" classname="Tests.Feature.AtddOracle.OracleTest" assertions="20" time="0.324601">
+        <failure type="PHPUnit\Framework\ExpectationFailedException">Tests\Feature\AtddOracle\OracleTest::every_navigation_link_carries_a_variant_independent_scroll_key
+No primary navigation link exposes a scroll-restoration key that is present on every item, identical for the desktop and mobile rendering of the same item, and distinct per item. Rendered desktop link attributes: {"nav-dashboard":["href","data-testid","class"],"nav-events":["href","data-testid","class"],"nav-audience":["href","data-testid","class"],"nav-automations":["href","data-testid","class"],"nav-reports":["href","data-testid","class"],"nav-billing":["href","data-testid","class"],"nav-help":["href","data-testid","class"],"nav-helpdesk":["href","data-testid","class"]}
+Failed asserting that an array is not empty.
+
+/private/tmp/atdd-min-1/wt/oracleval-T3/tests/Feature/AtddOracle/OracleTest.php:408</failure>
+      </testcase>
+      <testcase name="navigation_markers_never_expose_destinations_the_viewer_cannot_reach" file="/private/tmp/atdd-min-1/wt/oracleval-T3/tests/Feature/AtddOracle/OracleTest.php" line="559" class="Tests\Feature\AtddOracle\OracleTest" classname="Tests.Feature.AtddOracle.OracleTest" assertions="9" time="0.374046">
+        <failure type="PHPUnit\Framework\ExpectationFailedException">Tests\Feature\AtddOracle\OracleTest::navigation_markers_never_expose_destinations_the_viewer_cannot_reach
+The primary navigation exposes no per-item scroll-restoration key for this viewer.
+Failed asserting that an array is not empty.
+
+/private/tmp/atdd-min-1/wt/oracleval-T3/tests/Feature/AtddOracle/OracleTest.php:570</failure>
+      </testcase>
+      <testcase name="authenticated_layout_emits_a_page_scoped_scroll_region_marker" file="/private/tmp/atdd-min-1/wt/oracleval-T3/tests/Feature/AtddOracle/OracleTest.php" line="458" class="Tests\Feature\AtddOracle\OracleTest" classname="Tests.Feature.AtddOracle.OracleTest" assertions="4" time="0.412327">
+        <failure type="PHPUnit\Framework\ExpectationFailedException">Tests\Feature\AtddOracle\OracleTest::authenticated_layout_emits_a_page_scoped_scroll_region_marker
+The authenticated layout emits no machine-readable marker that identifies the page being rendered: nothing outside the navigation links keeps one single value per page, stays identical when the same page is requested again, and changes when a different page is rendered. Without it, Back/Forward cannot tell which stored scroll offset belongs to the incoming page.
+Failed asserting that an array is not empty.
+
+/private/tmp/atdd-min-1/wt/oracleval-T3/tests/Feature/AtddOracle/OracleTest.php:480</failure>
+      </testcase>
+      <testcase name="existing_navigation_output_and_filtering_are_preserved" file="/private/tmp/atdd-min-1/wt/oracleval-T3/tests/Feature/AtddOracle/OracleTest.php" line="490" class="Tests\Feature\AtddOracle\OracleTest" classname="Tests.Feature.AtddOracle.OracleTest" assertions="34" time="0.315395">
+        <failure type="PHPUnit\Framework\ExpectationFailedException">Tests\Feature\AtddOracle\OracleTest::existing_navigation_output_and_filtering_are_preserved
+The primary navigation exposes no per-item scroll-restoration key.
+Failed asserting that an array is not empty.
+
+/private/tmp/atdd-min-1/wt/oracleval-T3/tests/Feature/AtddOracle/OracleTest.php:509</failure>
+      </testcase>
+      <testcase name="scroll_restoration_markers_do_not_reflect_request_controlled_markup" file="/private/tmp/atdd-min-1/wt/oracleval-T3/tests/Feature/AtddOracle/OracleTest.php" line="614" class="Tests\Feature\AtddOracle\OracleTest" classname="Tests.Feature.AtddOracle.OracleTest" assertions="18" time="0.316205">
+        <failure type="PHPUnit\Framework\ExpectationFailedException">Tests\Feature\AtddOracle\OracleTest::scroll_restoration_markers_do_not_reflect_request_controlled_markup
+The primary navigation exposes no per-item scroll-restoration key.
+Failed asserting that an array is not empty.
+
+/private/tmp/atdd-min-1/wt/oracleval-T3/tests/Feature/AtddOracle/OracleTest.php:626</failure>
+      </testcase>
+    </testsuite>
+  </testsuite>
+</testsuites>

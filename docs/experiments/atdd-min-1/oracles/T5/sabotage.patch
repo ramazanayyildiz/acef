@@ -1,0 +1,257 @@
+diff --git a/app/Modules/Events/Http/Controllers/LandingShareController.php b/app/Modules/Events/Http/Controllers/LandingShareController.php
+new file mode 100644
+index 00000000..cd89cec4
+--- /dev/null
++++ b/app/Modules/Events/Http/Controllers/LandingShareController.php
+@@ -0,0 +1,67 @@
++<?php
++
++declare(strict_types=1);
++
++namespace App\Modules\Events\Http\Controllers;
++
++use App\Modules\Events\Models\Event;
++use App\Modules\Events\Models\LandingPage;
++use App\Modules\Events\Services\LandingShareLinkService;
++use App\Modules\Events\Support\LandingPreviewPayload;
++use App\Modules\Events\Support\LocaleResolver;
++use Illuminate\Http\RedirectResponse;
++use Illuminate\Routing\Controller;
++use Symfony\Component\HttpFoundation\Response;
++
++/**
++ * T5 — organiser mints a review link; an unauthenticated reviewer opens a
++ * read-only rendering of the landing preview.
++ */
++class LandingShareController extends Controller
++{
++    public function __construct(
++        private readonly LandingShareLinkService $shareLinks,
++    ) {}
++
++    /**
++     * Mint a time-limited review link for this event's landing preview.
++     */
++    public function store(Event $event): RedirectResponse
++    {
++        $actor = authUser();
++
++        abort_if($actor === null, 403);
++
++        $link = $this->shareLinks->mintFor($event, $actor);
++
++        return back()
++            ->with('landing_share_link', $link)
++            ->with('status', __('events.landing.share.minted'));
++    }
++
++    /**
++     * Serve the read-only landing preview behind a valid share link.
++     *
++     * The signed-URL guard runs as route middleware, so by the time this
++     * method executes the link has been proven unaltered and unexpired.
++     */
++    public function show(string $eventUuid): Response
++    {
++        $event = $this->shareLinks->findSharedEvent($eventUuid);
++
++        if (! $event instanceof Event) {
++            abort(404);
++        }
++
++        app()->setLocale(LocaleResolver::resolve($event->default_locale));
++
++        $landing = $event->landingPage;
++
++        return response()->view('events::public.landing-share', [
++            'event' => $event,
++            'previewData' => $landing instanceof LandingPage
++                ? $landing->previewPayload($event)
++                : LandingPreviewPayload::build($event, []),
++        ])->header('X-Robots-Tag', 'noindex, nofollow');
++    }
++}
+diff --git a/app/Modules/Events/Resources/views/public/landing-share.blade.php b/app/Modules/Events/Resources/views/public/landing-share.blade.php
+new file mode 100644
+index 00000000..e187d474
+--- /dev/null
++++ b/app/Modules/Events/Resources/views/public/landing-share.blade.php
+@@ -0,0 +1,27 @@
++@extends('layouts.public')
++
++@section('title', $event->title)
++@section('meta_description', $event->description ?: __('common.meta.description'))
++@section('robots', 'noindex, nofollow')
++
++@section('content')
++    <div class="min-h-screen bg-[#F3F0F0] py-8" style="font-family: 'Poppins', sans-serif;" data-testid="landing-share-page">
++        <div class="mx-auto w-full max-w-[1100px] px-4">
++            <div
++                class="mb-5 rounded-[8px] border border-[#D7DEE3] bg-white px-4 py-3 text-[13px] text-[#4F5B62]"
++                data-testid="landing-share-notice"
++            >
++                {{ __('events.landing.share.viewer_notice') }}
++            </div>
++
++            {{-- Same read-only canvas the organiser sees on the landing preview page. --}}
++            <div class="rounded-[8px] bg-white p-6">
++                @include('events::components.landing-preview', [
++                    'event' => $event,
++                    'previewData' => $previewData,
++                    'rootTestId' => 'landing-share-preview',
++                ])
++            </div>
++        </div>
++    </div>
++@endsection
+diff --git a/app/Modules/Events/Services/LandingShareLinkService.php b/app/Modules/Events/Services/LandingShareLinkService.php
+new file mode 100644
+index 00000000..ed2e2134
+--- /dev/null
++++ b/app/Modules/Events/Services/LandingShareLinkService.php
+@@ -0,0 +1,60 @@
++<?php
++
++declare(strict_types=1);
++
++namespace App\Modules\Events\Services;
++
++use App\Models\User;
++use App\Modules\Events\Models\Event;
++use Illuminate\Auth\Access\AuthorizationException;
++use Illuminate\Support\Facades\URL;
++
++/**
++ * T5 — shareable landing-preview links.
++ *
++ * The link is a framework temporary signed URL: time-limited and
++ * tamper-evident without any new column or bespoke token format.
++ */
++final class LandingShareLinkService
++{
++    /**
++     * How long a freshly minted review link stays usable.
++     */
++    public const LINK_LIFETIME_HOURS = 72;
++
++    public function __construct(
++        private readonly EventService $events,
++    ) {}
++
++    /**
++     * Mint a read-only review link for the event's landing preview.
++     *
++     * The "Share for review" button only renders on the landing preview page,
++     * which organisers reach through the event-update gate, so seeing the
++     * event is enough here.
++     *
++     * @throws AuthorizationException
++     */
++    public function mintFor(Event $event, User $actor): string
++    {
++        $this->events->authorizeViewAccess($event, $actor);
++
++        return URL::temporarySignedRoute(
++            'events.public.landing-share',
++            now()->addHours(self::LINK_LIFETIME_HOURS),
++            ['eventUuid' => $event->uuid],
++        );
++    }
++
++    /**
++     * Resolve the event behind an already-verified share link.
++     *
++     * The signature guard runs in the route middleware, ahead of this call —
++     * see the TeamScope bypass convention for visitor surfaces with no tenant
++     * context.
++     */
++    public function findSharedEvent(string $eventUuid): ?Event
++    {
++        return $this->events->findPublicLandingEvent($eventUuid);
++    }
++}
+diff --git a/app/Modules/Events/routes.php b/app/Modules/Events/routes.php
+index 22e3e096..26cc0644 100644
+--- a/app/Modules/Events/routes.php
++++ b/app/Modules/Events/routes.php
+@@ -18,6 +18,7 @@
+ use App\Modules\Events\Http\Controllers\CrossEventReportController;
+ use App\Modules\Events\Http\Controllers\EventController;
+ use App\Modules\Events\Http\Controllers\EventExportController;
++use App\Modules\Events\Http\Controllers\LandingShareController;
+ use App\Modules\Events\Http\Controllers\PublicLandingController;
+ use App\Modules\Events\Http\Controllers\PublicRegistrationController;
+ use App\Modules\Events\Http\Controllers\PublicSitemapController;
+@@ -47,6 +48,11 @@
+         Route::get('/webinars/{eventUuid}', [PublicLandingController::class, 'show'])
+             ->whereUuid('eventUuid')
+             ->name('events.public.show');
++        // T5 — read-only landing review link, guarded by the signed-URL middleware.
++        Route::get('/webinars/{eventUuid}/landing-review', [LandingShareController::class, 'show'])
++            ->whereUuid('eventUuid')
++            ->middleware('signed')
++            ->name('events.public.landing-share');
+         Route::post('/webinars/{eventUuid}/register', [PublicRegistrationController::class, 'store'])
+             ->whereUuid('eventUuid')
+             ->name('events.public.registration.store');
+@@ -117,6 +123,8 @@
+         Route::patch('/{event:uuid}', [EventController::class, 'update'])->name('update');
+         Route::get('/{event:uuid}/landing', LandingSetup::class)->name('landing.edit');
+         Route::get('/{event:uuid}/landing/preview', LandingPreview::class)->name('landing.preview');
++        // T5 — mint a time-limited read-only review link for the landing preview.
++        Route::post('/{event:uuid}/landing/share', [LandingShareController::class, 'store'])->name('landing.share');
+         Route::get('/{event:uuid}/form-config', RegistrationFormConfig::class)->name('form-config.edit');
+         Route::get('/{event:uuid}/custom-domain', EventCustomDomainSetup::class)->name('custom-domain.edit');
+         Route::get('/{event:uuid}/automations', [AutomationConfigurationController::class, 'show'])->name('automations.show');
+diff --git a/config/route_permissions.php b/config/route_permissions.php
+index acd1388e..37d8bc98 100644
+--- a/config/route_permissions.php
++++ b/config/route_permissions.php
+@@ -123,6 +123,7 @@
+         'events.update' => 'events.update.team|events.update.global', // S2-2-F1 — DRAFT-only metadata edit surface
+         'events.landing.edit' => 'events.update.team|events.update.global', // Story 3-1
+         'events.landing.preview' => 'events.update.team|events.update.global', // Story 3-2
++        'events.landing.share' => 'events.view.team|events.view.global', // T5 — share a read-only landing review link
+         'events.form-config.edit' => 'events.update.team|events.update.global', // Story 3-3
+         'events.custom-domain.edit' => 'events.update.team|events.update.global', // E-DOM S1
+         'events.automations.show' => 'automations.view.team|automations.view.global', // Story 12-3 read-only Co-host context
+@@ -216,6 +217,7 @@
+         'public.root' => '__public__',
+         'events.public.sitemap' => '__public__',
+         'events.public.show' => '__public__',
++        'events.public.landing-share' => '__public__', // T5 — signed, time-limited read-only landing review link
+         'events.public.replay-view' => '__public__',
+         'events.engagement.viewer-auth' => '__public__',
+         'public.livewire.update' => '__public__', // Story 6-4 — scoped public engagement Livewire submit endpoint (component-allowlisted, signed-token verified)
+diff --git a/lang/en/events.php b/lang/en/events.php
+index 265bd535..67d77238 100644
+--- a/lang/en/events.php
++++ b/lang/en/events.php
+@@ -1023,6 +1023,11 @@
+                 'live' => 'Live',
+             ],
+         ],
++        'share' => [
++            'action' => 'Create review link',
++            'minted' => 'Review link created. It expires in 72 hours.',
++            'viewer_notice' => 'Read-only preview of an unpublished event page. Registration is not open yet.',
++        ],
+         'template_selection' => [
+             'title' => 'Choose a Template',
+             'body' => 'Select a template to customize for your event landing page.',
+diff --git a/lang/tr/events.php b/lang/tr/events.php
+index 62d82ef0..d08ea95d 100644
+--- a/lang/tr/events.php
++++ b/lang/tr/events.php
+@@ -1023,6 +1023,11 @@
+                 'live' => 'Canlı',
+             ],
+         ],
++        'share' => [
++            'action' => 'İnceleme bağlantısı oluştur',
++            'minted' => 'İnceleme bağlantısı oluşturuldu. 72 saat içinde geçerliliğini yitirir.',
++            'viewer_notice' => 'Yayınlanmamış bir etkinlik sayfasının salt okunur önizlemesi. Kayıt henüz açık değil.',
++        ],
+         'template_selection' => [
+             'title' => 'Sablon Sec',
+             'body' => 'Etkinlik sayfaniz icin ozellestireceginiz sablonu secin.',

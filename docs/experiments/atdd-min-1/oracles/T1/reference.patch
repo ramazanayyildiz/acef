@@ -1,0 +1,269 @@
+diff --git a/app/Modules/Events/Http/Controllers/EventController.php b/app/Modules/Events/Http/Controllers/EventController.php
+index 99a87539..f5f7006e 100644
+--- a/app/Modules/Events/Http/Controllers/EventController.php
++++ b/app/Modules/Events/Http/Controllers/EventController.php
+@@ -298,6 +298,55 @@ public function publish(Request $request, Event $event): JsonResponse|RedirectRe
+         return response()->json($payload, 200);
+     }
+ 
++    /**
++     * Duplicate an event into the acting user's current workspace.
++     *
++     * Thin controller: EventService::duplicate re-checks view access on the
++     * source and the create capability on the target workspace, so a hidden or
++     * forged CTA cannot widen access.
++     */
++    public function duplicate(Request $request, Event $event): JsonResponse|RedirectResponse
++    {
++        /** @var User $user */
++        $user = authUser();
++
++        try {
++            $copy = $this->eventService->duplicate($event, $user);
++        } catch (AuthorizationException) {
++            if (! $request->expectsJson()) {
++                abort(403, __('events.errors.unauthorized'));
++            }
++
++            return response()->json([
++                'error' => ['code' => 'JKM-EVT-1010', 'message' => __('events.errors.unauthorized')],
++            ], 403);
++        } catch (EventCreditExhaustedException $exception) {
++            if (! $request->expectsJson()) {
++                return redirect()
++                    ->back()
++                    ->withErrors(['duplicate' => $exception->getMessage()]);
++            }
++
++            return response()->json([
++                'error' => ['code' => $exception->errorCode(), 'message' => $exception->getMessage()],
++            ], $exception->httpStatus());
++        }
++
++        if (! $request->expectsJson()) {
++            return redirect()
++                ->route('events.show', $copy)
++                ->with('status', __('events.duplicate.success'));
++        }
++
++        return response()->json([
++            'data' => [
++                'uuid' => $copy->uuid,
++                'state' => $copy->state->value,
++                'title' => $copy->title,
++            ],
++        ], 201);
++    }
++
+     /**
+      * Story 2-5 — Cancel an event. Route was missing from routes.php; registered in Story 2-4 R1.
+      * Thin controller: validation + service delegation.
+@@ -564,6 +613,7 @@ public function show(Request $request, Event $event): JsonResponse|View
+             'publishAction' => $eventActions['publish'] ?? ['visible' => false, 'enabled' => false],
+             'prepareAction' => $eventActions['prepare'] ?? ['visible' => false, 'enabled' => false],
+             'cancelAction' => $eventActions['cancel'] ?? ['visible' => false, 'enabled' => false],
++            'duplicateAction' => $eventActions['duplicate'] ?? ['visible' => false, 'enabled' => false],
+             'landingAction' => $eventActions['manageLanding'] ?? ['visible' => false, 'enabled' => false],
+             'registrationFormAction' => $eventActions['manageRegistrationForm'] ?? ['visible' => false, 'enabled' => false],
+             'automationAction' => $eventActions['manageAutomations'] ?? ['visible' => false, 'enabled' => false],
+diff --git a/app/Modules/Events/Resources/views/events/show.blade.php b/app/Modules/Events/Resources/views/events/show.blade.php
+index b04fac63..167bd526 100644
+--- a/app/Modules/Events/Resources/views/events/show.blade.php
++++ b/app/Modules/Events/Resources/views/events/show.blade.php
+@@ -715,6 +715,19 @@ class="w-full justify-center"
+                         </x-btn.primary>
+                     @endif
+ 
++                    @if(! $adminContext && $duplicateAction['visible'] && $duplicateAction['enabled'])
++                        <form method="POST" action="{{ route('events.duplicate', $event->uuid) }}" class="w-full">
++                            @csrf
++                            <x-btn.outline
++                                type="submit"
++                                class="w-full justify-center"
++                                data-testid="event-duplicate-cta"
++                                :aria-label="__('events.list.actions.duplicate')">
++                                {{ __('events.list.actions.duplicate') }}
++                            </x-btn.outline>
++                        </form>
++                    @endif
++
+                     @if($cancelAction['visible'] && $cancelAction['enabled'])
+                         <x-btn.danger-outline type="button"
+                                 class="w-full justify-center"
+diff --git a/app/Modules/Events/Services/EventMetadataService.php b/app/Modules/Events/Services/EventMetadataService.php
+index e86d6442..623048b7 100644
+--- a/app/Modules/Events/Services/EventMetadataService.php
++++ b/app/Modules/Events/Services/EventMetadataService.php
+@@ -12,6 +12,7 @@
+ use App\Modules\Events\Enums\EventType;
+ use App\Modules\Events\Exceptions\EventStateLocked;
+ use App\Modules\Events\Models\Event;
++use Illuminate\Auth\Access\AuthorizationException;
+ use Illuminate\Support\Facades\DB;
+ use Illuminate\Support\Str;
+ use Platform\AuditLogging\Contracts\AuditLoggerInterface;
+@@ -90,6 +91,39 @@ public function createDraft(Team $team, User $actor, array $metadata): Event
+         });
+     }
+ 
++    /**
++     * Clone an existing event as a fresh DRAFT in the actor's current team.
++     *
++     * Authorization is enforced here, not in the UI: the actor must be able to
++     * view the source event AND hold the create capability for the target team.
++     * Only organiser-authored metadata is carried over — the copy is built by
++     * createDraft(), so lifecycle state, cancellation and registrations of the
++     * source can never leak into it.
++     *
++     * @throws \Illuminate\Auth\Access\AuthorizationException
++     */
++    public function duplicate(Event $source, User $actor): Event
++    {
++        $this->authz->authorizeView($source, $actor);
++
++        $target = $actor->currentTeam;
++
++        if ($target === null) {
++            throw new AuthorizationException('An active workspace is required to duplicate an event.');
++        }
++
++        return $this->createDraft($target, $actor, [
++            'title' => Str::limit(__('events.duplicate.copy_title', ['title' => $source->title]), 250, ''),
++            'description' => $source->description,
++            'type' => $source->type->value,
++            'starts_at' => $source->starts_at,
++            'ends_at' => $source->ends_at,
++            'timezone' => $source->timezone,
++            'registrant_capacity_limit' => $source->registrant_capacity_limit,
++            'default_locale' => $source->default_locale,
++        ]);
++    }
++
+     public function updateMetadata(Event $event, User $actor, array $changes): Event
+     {
+         $this->authorizeEventUpdate($event->team, $actor);
+diff --git a/app/Modules/Events/Services/EventService.php b/app/Modules/Events/Services/EventService.php
+index 35981472..d1b861cc 100644
+--- a/app/Modules/Events/Services/EventService.php
++++ b/app/Modules/Events/Services/EventService.php
+@@ -150,6 +150,16 @@ public function createDraft(Team $team, User $actor, array $metadata): Event
+         return $this->metadata->createDraft($team, $actor, $metadata);
+     }
+ 
++    /**
++     * Duplicate an existing event as a fresh DRAFT in the actor's current team.
++     *
++     * @throws AuthorizationException
++     */
++    public function duplicate(Event $source, User $actor): Event
++    {
++        return $this->metadata->duplicate($source, $actor);
++    }
++
+     /**
+      * Story 2-3b — Publish (DRAFT → PUBLISHED) with plan-gate triple-lock.
+      *
+diff --git a/app/Modules/Events/Support/EventActionAvailability.php b/app/Modules/Events/Support/EventActionAvailability.php
+index 17852d71..51e7aa1a 100644
+--- a/app/Modules/Events/Support/EventActionAvailability.php
++++ b/app/Modules/Events/Support/EventActionAvailability.php
+@@ -33,6 +33,10 @@ public function for(User $actor, Event $event): array
+             'automations.view.team',
+             'automations.view.global',
+         );
++        // Duplication produces a NEW event, so it is gated by the create
++        // capability — plus view access to the event being copied.
++        $canDuplicate = $this->allows($actor, $event, 'events.create.team', 'events.create.global')
++            && $this->allows($actor, $event, 'events.view.team', 'events.view.global');
+ 
+         return [
+             'edit' => [
+@@ -47,6 +51,10 @@ public function for(User $actor, Event $event): array
+                 'visible' => false,
+                 'enabled' => false,
+             ],
++            'duplicate' => [
++                'visible' => $canDuplicate,
++                'enabled' => $canDuplicate,
++            ],
+             'cancel' => [
+                 'visible' => $canCancel,
+                 'enabled' => $canCancel && ! $cancelled && ! in_array($event->state, [
+diff --git a/app/Modules/Events/routes.php b/app/Modules/Events/routes.php
+index 22e3e096..364ddb3a 100644
+--- a/app/Modules/Events/routes.php
++++ b/app/Modules/Events/routes.php
+@@ -162,6 +162,11 @@
+         Route::post('/{event:uuid}/publish', [EventController::class, 'publish'])->name('publish');
+         // Story 2-5 — cancel route was missing from routes.php; registered in Story 2-4 R1.
+         Route::post('/{event:uuid}/cancel', [EventController::class, 'cancel'])->name('cancel');
++        // Duplicate — clone an existing event as a fresh DRAFT in the acting
++        // user's current workspace. Capability + view access are re-checked in
++        // EventMetadataService::duplicate, so the endpoint never depends on the
++        // CTA being hidden.
++        Route::post('/{event:uuid}/duplicate', [EventController::class, 'duplicate'])->name('duplicate');
+         Route::post('/{event:uuid}/suspend', [EventController::class, 'suspend'])->name('suspend');
+         Route::post('/{event:uuid}/reactivate', [EventController::class, 'reactivate'])->name('reactivate');
+         Route::post('/{event:uuid}/force-end', [EventController::class, 'forceEnd'])->name('force-end');
+diff --git a/config/route_permissions.php b/config/route_permissions.php
+index acd1388e..70166fe1 100644
+--- a/config/route_permissions.php
++++ b/config/route_permissions.php
+@@ -147,6 +147,9 @@
+         // mixing role + plan expressions.
+         'events.publish' => 'events.publish.team|events.publish.global',
+         'events.cancel' => 'events.cancel.team|events.cancel.global',  // Story 2-5 R1
++        // Duplication creates a new event, so it requires the create capability
++        // — the same requirement the endpoint itself enforces.
++        'events.duplicate' => 'events.create.team|events.create.global',
+         'events.suspend' => 'events.suspend.global',
+         'events.reactivate' => 'events.suspend.global',
+         'events.force-end' => 'events.force_end.global',
+diff --git a/lang/en/events.php b/lang/en/events.php
+index 265bd535..23c03fae 100644
+--- a/lang/en/events.php
++++ b/lang/en/events.php
+@@ -44,6 +44,7 @@
+             'cancel' => 'Cancel',
+             'cancel_event' => 'Cancel event',
+             'control_room' => 'Control Room',
++            'duplicate' => 'Duplicate',
+             'cancel_confirm' => 'Cancel this event? Registrants will be notified.',
+             'cancel_event_confirm' => 'This cancels the entire event, not only broadcast preparation. Registrants will be notified.',
+             'cancel_reason_label' => 'Reason for cancellation',
+@@ -892,6 +893,11 @@
+         ],
+     ],
+ 
++    'duplicate' => [
++        'copy_title' => ':title (copy)',
++        'success' => 'Event duplicated. The copy is a draft you can edit.',
++    ],
++
+     'edit' => [
+         'title' => 'Edit event',
+         'heading' => 'Edit event details',
+diff --git a/lang/tr/events.php b/lang/tr/events.php
+index 62d82ef0..84d9b513 100644
+--- a/lang/tr/events.php
++++ b/lang/tr/events.php
+@@ -44,6 +44,7 @@
+             'cancel' => 'İptal Et',
+             'cancel_event' => 'Etkinliği iptal et',
+             'control_room' => 'Kontrol Odası',
++            'duplicate' => 'Kopyala',
+             'cancel_confirm' => 'Bu etkinliği iptal etmek istiyor musunuz? Kayıt olanlara bildirim gönderilecek.',
+             'cancel_event_confirm' => 'Bu işlem yalnızca yayın hazırlığını değil, etkinliğin tamamını iptal eder. Kayıt olanlara bildirim gönderilir.',
+             'cancel_reason_label' => 'İptal nedeni',
+@@ -892,6 +893,11 @@
+         ],
+     ],
+ 
++    'duplicate' => [
++        'copy_title' => ':title (kopya)',
++        'success' => 'Etkinlik kopyalandı. Kopya, düzenleyebileceğiniz bir taslaktır.',
++    ],
++
+     'edit' => [
+         'title' => 'Etkinliği düzenle',
+         'heading' => 'Etkinlik detaylarını düzenle',

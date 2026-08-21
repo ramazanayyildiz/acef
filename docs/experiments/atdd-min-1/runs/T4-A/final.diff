@@ -1,0 +1,501 @@
+diff --git a/app/Modules/SuperAdmin/Contracts/Repositories/SuperAdminEventRepositoryInterface.php b/app/Modules/SuperAdmin/Contracts/Repositories/SuperAdminEventRepositoryInterface.php
+index dc4f2596..454fd07e 100644
+--- a/app/Modules/SuperAdmin/Contracts/Repositories/SuperAdminEventRepositoryInterface.php
++++ b/app/Modules/SuperAdmin/Contracts/Repositories/SuperAdminEventRepositoryInterface.php
+@@ -5,7 +5,9 @@
+ namespace App\Modules\SuperAdmin\Contracts\Repositories;
+ 
+ use App\Modules\Events\Models\Event;
++use App\Modules\Events\Models\Registration;
+ use Illuminate\Contracts\Pagination\LengthAwarePaginator;
++use Illuminate\Database\Eloquent\Collection;
+ 
+ interface SuperAdminEventRepositoryInterface
+ {
+@@ -14,6 +16,13 @@ interface SuperAdminEventRepositoryInterface
+      */
+     public function paginateEvents(string $search, string $state, ?int $teamId, int $perPage): LengthAwarePaginator;
+ 
++    /**
++     * Registrations belonging to a single event, oldest first.
++     *
++     * @return Collection<int, Registration>
++     */
++    public function registrationsForEvent(Event $event): Collection;
++
+     /**
+      * @return array<int, array{id: int, name: string}>
+      */
+diff --git a/app/Modules/SuperAdmin/Http/Controllers/EventRegistrationExportController.php b/app/Modules/SuperAdmin/Http/Controllers/EventRegistrationExportController.php
+new file mode 100644
+index 00000000..7e13743b
+--- /dev/null
++++ b/app/Modules/SuperAdmin/Http/Controllers/EventRegistrationExportController.php
+@@ -0,0 +1,32 @@
++<?php
++
++declare(strict_types=1);
++
++namespace App\Modules\SuperAdmin\Http\Controllers;
++
++use App\Models\User;
++use App\Modules\Events\Models\Event;
++use App\Modules\SuperAdmin\Services\SuperAdminEventRegistrationExportService;
++use Illuminate\Routing\Controller;
++use Symfony\Component\HttpFoundation\StreamedResponse;
++
++/**
++ * Capsule T4 — GET /admin/events/{event}/registrations/export.
++ *
++ * Thin by design: the capability guard and the CSV assembly both live in
++ * SuperAdminEventRegistrationExportService.
++ */
++class EventRegistrationExportController extends Controller
++{
++    public function __construct(
++        private readonly SuperAdminEventRegistrationExportService $exports,
++    ) {}
++
++    public function __invoke(Event $event): StreamedResponse
++    {
++        $actor = authUser();
++        abort_if(! $actor instanceof User, 403);
++
++        return $this->exports->response($event, $actor);
++    }
++}
+diff --git a/app/Modules/SuperAdmin/Repositories/SuperAdminEventRepository.php b/app/Modules/SuperAdmin/Repositories/SuperAdminEventRepository.php
+index 2646a090..5eef57a8 100644
+--- a/app/Modules/SuperAdmin/Repositories/SuperAdminEventRepository.php
++++ b/app/Modules/SuperAdmin/Repositories/SuperAdminEventRepository.php
+@@ -6,9 +6,11 @@
+ 
+ use App\Models\Team;
+ use App\Modules\Events\Models\Event;
++use App\Modules\Events\Models\Registration;
+ use App\Modules\SuperAdmin\Contracts\Repositories\SuperAdminEventRepositoryInterface;
+ use Illuminate\Contracts\Pagination\LengthAwarePaginator;
+ use Illuminate\Database\Eloquent\Builder;
++use Illuminate\Database\Eloquent\Collection;
+ 
+ class SuperAdminEventRepository implements SuperAdminEventRepositoryInterface
+ {
+@@ -33,6 +35,23 @@ public function paginateEvents(string $search, string $state, ?int $teamId, int
+             ->paginate($perPage);
+     }
+ 
++    /**
++     * Registrations belonging to a single event, oldest first.
++     *
++     * Scoped by event_id alone: the export must never reach beyond the event it
++     * was asked for, even though a SYSTEM_ADMIN actor bypasses TeamScope.
++     *
++     * @return Collection<int, Registration>
++     */
++    public function registrationsForEvent(Event $event): Collection
++    {
++        return Registration::query()
++            ->where('event_id', $event->getKey())
++            ->orderBy('created_at')
++            ->orderBy('id')
++            ->get();
++    }
++
+     /**
+      * @return array<int, array{id: int, name: string}>
+      */
+diff --git a/app/Modules/SuperAdmin/Routes/web.php b/app/Modules/SuperAdmin/Routes/web.php
+index dc79560f..e4fbd7c4 100644
+--- a/app/Modules/SuperAdmin/Routes/web.php
++++ b/app/Modules/SuperAdmin/Routes/web.php
+@@ -8,6 +8,7 @@
+ use App\Modules\Events\Livewire\LandingPreview;
+ use App\Modules\Events\Livewire\LandingSetup;
+ use App\Modules\Events\Livewire\RegistrationFormConfig;
++use App\Modules\SuperAdmin\Http\Controllers\EventRegistrationExportController;
+ use App\Modules\SuperAdmin\Http\Controllers\RoleActionController;
+ use App\Modules\SuperAdmin\Http\Controllers\UserActionController;
+ use App\Modules\SuperAdmin\Http\Controllers\WorkspaceActionController;
+@@ -44,6 +45,13 @@
+             ->whereUuid('event')
+             ->name('events.show');
+         Route::get('/events/{event:uuid}/edit', [EventController::class, 'edit'])->whereUuid('event')->name('events.edit');
++        // Capsule T4 — registration list export for delivery-complaint support work.
++        // Attendee personal data, so it is gated on events.view.global (the same
++        // global capability the endpoint itself re-checks), never on admin-area
++        // membership. See config/route_permissions.php.
++        Route::get('/events/{event:uuid}/registrations/export', EventRegistrationExportController::class)
++            ->whereUuid('event')
++            ->name('events.registrations.export');
+         Route::patch('/events/{event:uuid}', [EventController::class, 'update'])->whereUuid('event')->name('events.update');
+         Route::get('/events/{event:uuid}/landing', LandingSetup::class)->whereUuid('event')->name('events.landing.edit');
+         Route::get('/events/{event:uuid}/landing/preview', LandingPreview::class)->whereUuid('event')->name('events.landing.preview');
+diff --git a/app/Modules/SuperAdmin/Services/SuperAdminEventRegistrationExportService.php b/app/Modules/SuperAdmin/Services/SuperAdminEventRegistrationExportService.php
+new file mode 100644
+index 00000000..4f72bffd
+--- /dev/null
++++ b/app/Modules/SuperAdmin/Services/SuperAdminEventRegistrationExportService.php
+@@ -0,0 +1,123 @@
++<?php
++
++declare(strict_types=1);
++
++namespace App\Modules\SuperAdmin\Services;
++
++use App\Models\User;
++use App\Modules\Events\Models\Event;
++use App\Modules\Events\Models\Registration;
++use App\Modules\SuperAdmin\Contracts\Repositories\SuperAdminEventRepositoryInterface;
++use Illuminate\Auth\Access\AuthorizationException;
++use Illuminate\Support\Facades\Gate;
++use Symfony\Component\HttpFoundation\StreamedResponse;
++
++/**
++ * Capsule T4 — platform-admin export of a single event's registration list.
++ *
++ * Support staff pull this list when investigating a delivery complaint, so the
++ * rows carry attendee personal data. Two consequences shape this service:
++ *
++ *   1. Authorization is explicit and narrow. The capability checked here is the
++ *      same `events.view.global` mapped to `admin.events.registrations.export`
++ *      in config/route_permissions.php — reaching the admin area is not enough.
++ *      The re-check is deliberate defence in depth: the route middleware is the
++ *      first gate, this guard is the one that travels with the data.
++ *   2. The query is bound to the requested event only, never to whatever the
++ *      actor's TeamScope bypass would otherwise expose.
++ */
++class SuperAdminEventRegistrationExportService
++{
++    /**
++     * The single capability that unlocks attendee personal data platform-wide.
++     * Keep identical to the `admin.events.registrations.export` entry in
++     * config/route_permissions.php.
++     */
++    public const CAPABILITY = 'events.view.global';
++
++    public function __construct(
++        private readonly SuperAdminEventRepositoryInterface $events,
++    ) {}
++
++    /**
++     * @throws AuthorizationException
++     */
++    public function response(Event $event, User $actor): StreamedResponse
++    {
++        $this->authorize($actor);
++
++        $rows = $this->rows($event);
++
++        return response()->streamDownload(function () use ($rows): void {
++            $handle = fopen('php://output', 'wb');
++            if ($handle === false) {
++                return;
++            }
++
++            foreach ($rows as $row) {
++                fputcsv($handle, $row, escape: '\\');
++            }
++
++            fclose($handle);
++        }, $this->filename($event), [
++            'Content-Type' => 'text/csv; charset=UTF-8',
++        ]);
++    }
++
++    /**
++     * @throws AuthorizationException
++     */
++    private function authorize(User $actor): void
++    {
++        if (! Gate::forUser($actor)->allows(self::CAPABILITY)) {
++            throw new AuthorizationException(
++                'Exporting an event registration list requires '.self::CAPABILITY.'.'
++            );
++        }
++    }
++
++    /**
++     * Header row plus one row per registration of this event.
++     *
++     * @return list<list<string>>
++     */
++    private function rows(Event $event): array
++    {
++        $rows = [$this->headers()];
++
++        foreach ($this->events->registrationsForEvent($event) as $index => $registration) {
++            /** @var Registration $registration */
++            $rows[] = [
++                (string) ($index + 1),
++                (string) $registration->full_name,
++                (string) $registration->email,
++                (string) $registration->source,
++                $registration->created_at->toIso8601String(),
++                $registration->confirmation_sent_at?->toIso8601String() ?? '',
++                $registration->last_confirmation_sent_at?->toIso8601String() ?? '',
++                $registration->attended_at?->toIso8601String() ?? '',
++            ];
++        }
++
++        return $rows;
++    }
++
++    /**
++     * @return list<string>
++     */
++    private function headers(): array
++    {
++        $headers = __('super-admin::super-admin.registration_export.headers');
++
++        return is_array($headers) ? array_values(array_map('strval', $headers)) : [];
++    }
++
++    /**
++     * The uuid keeps the download traceable to the exact event it was pulled
++     * for — the title alone is neither unique nor stable across workspaces.
++     */
++    private function filename(Event $event): string
++    {
++        return sprintf('event-%s-registrations.csv', $event->uuid);
++    }
++}
+diff --git a/config/route_permissions.php b/config/route_permissions.php
+index acd1388e..e9fe3114 100644
+--- a/config/route_permissions.php
++++ b/config/route_permissions.php
+@@ -42,6 +42,10 @@
+         'admin.operations.kill-switches' => 'system_admin_access',
+         'admin.privacy.erasure' => 'system_admin_access',
+         'admin.events.show' => 'events.view.global',
++        // Capsule T4 — attendee personal data leaves the platform here, so the gate is
++        // the explicit global event-visibility capability the endpoint re-checks itself,
++        // not generic admin-area membership.
++        'admin.events.registrations.export' => 'events.view.global',
+         'admin.events.edit' => 'events.update.global',
+         'admin.events.update' => 'events.update.global',
+         'admin.events.landing.edit' => 'events.update.global',
+diff --git a/lang/vendor/super-admin/en/super-admin.php b/lang/vendor/super-admin/en/super-admin.php
+index 7e668d19..40db037f 100644
+--- a/lang/vendor/super-admin/en/super-admin.php
++++ b/lang/vendor/super-admin/en/super-admin.php
+@@ -74,6 +74,20 @@
+             'view' => 'View',
+         ],
+     ],
++    // Kept beside `events` rather than inside it: the SuperAdmin Events catalog
++    // is pinned to a canonical key set by EventsTranslationParityTest.
++    'registration_export' => [
++        'headers' => [
++            'row' => 'Row',
++            'name' => 'Name',
++            'email' => 'Email',
++            'source' => 'Source',
++            'registered_at' => 'Registered at',
++            'confirmation_sent_at' => 'Confirmation sent at',
++            'last_confirmation_sent_at' => 'Last confirmation sent at',
++            'attended_at' => 'Attended at',
++        ],
++    ],
+     'workspaces' => [
+         'subtitle' => 'Platform-level view of every workspace, including suspended and deleted records.',
+         'columns' => [
+diff --git a/lang/vendor/super-admin/tr/super-admin.php b/lang/vendor/super-admin/tr/super-admin.php
+index c54f5a99..4e0067d1 100644
+--- a/lang/vendor/super-admin/tr/super-admin.php
++++ b/lang/vendor/super-admin/tr/super-admin.php
+@@ -74,6 +74,20 @@
+             'view' => 'Görüntüle',
+         ],
+     ],
++    // `events` yerine onun yanında tutuluyor: SuperAdmin Etkinlik kataloğunun
++    // anahtar kümesi EventsTranslationParityTest tarafından sabitlenmiştir.
++    'registration_export' => [
++        'headers' => [
++            'row' => 'Sıra',
++            'name' => 'Ad Soyad',
++            'email' => 'E-posta',
++            'source' => 'Kaynak',
++            'registered_at' => 'Kayıt tarihi',
++            'confirmation_sent_at' => 'Onay gönderim tarihi',
++            'last_confirmation_sent_at' => 'Son onay gönderim tarihi',
++            'attended_at' => 'Katılım tarihi',
++        ],
++    ],
+     'workspaces' => [
+         'subtitle' => 'Askıya alınmış ve silinmiş kayıtlar dahil tüm çalışma alanlarının platform düzeyindeki görünümü.',
+         'columns' => [
+diff --git a/tests/Feature/SuperAdmin/AdminEventRegistrationExportTest.php b/tests/Feature/SuperAdmin/AdminEventRegistrationExportTest.php
+new file mode 100644
+index 00000000..2a45efca
+--- /dev/null
++++ b/tests/Feature/SuperAdmin/AdminEventRegistrationExportTest.php
+@@ -0,0 +1,169 @@
++<?php
++
++declare(strict_types=1);
++
++namespace Tests\Feature\SuperAdmin;
++
++use App\Models\Role;
++use App\Models\User;
++use App\Modules\Events\Models\Event;
++use App\Modules\Events\Models\Registration;
++use Illuminate\Support\Facades\Route;
++use Illuminate\Testing\TestResponse;
++use PHPUnit\Framework\Attributes\Test;
++use PHPUnit\Framework\Attributes\TestDox;
++use Symfony\Component\HttpFoundation\BinaryFileResponse;
++use Symfony\Component\HttpFoundation\StreamedResponse;
++use Tests\Feature\FeatureTestCase;
++use Tests\Feature\SuperAdmin\Support\InteractsWithSuperAdmin;
++
++/**
++ * Capsule T4 — platform-admin export of a single event's registration list.
++ *
++ * The rows carry attendee personal data, so the endpoint must be gated by the
++ * same global capability that already governs platform-wide event visibility
++ * (events.view.global) rather than by generic admin-area membership.
++ */
++class AdminEventRegistrationExportTest extends FeatureTestCase
++{
++    use InteractsWithSuperAdmin;
++
++    private const EXPORT_ROUTE = 'admin.events.registrations.export';
++
++    // -------------------------------------------------------------------------
++    // AC1 / AC4 / AC5 — CSV download scoped to the requested event
++    // -------------------------------------------------------------------------
++
++    #[Test]
++    #[TestDox('T4-EXPORT-01 [P0] Given a platform admin when they export an event then only that event\'s registrations are streamed as a CSV download')]
++    public function platform_admin_exports_only_the_requested_events_registrations(): void
++    {
++        $workspace = $this->createWorkspace();
++        $otherWorkspace = $this->createWorkspace();
++
++        $event = Event::factory()->for($workspace)->create(['title' => 'Delivery Complaint Event']);
++        $otherEvent = Event::factory()->for($otherWorkspace)->create(['title' => 'Unrelated Event']);
++
++        $this->registerAttendee($event, 'first.attendee@example.test');
++        $this->registerAttendee($event, 'second.attendee@example.test');
++        $this->registerAttendee($otherEvent, 'other.event.attendee@example.test');
++
++        $admin = $this->createPlatformSuperAdmin($workspace);
++
++        $response = $this->actingAs($admin)->get($this->exportUrl($event));
++
++        $response->assertOk();
++
++        // AC5 — delivered as a CSV download naming the event it belongs to.
++        $this->assertStringContainsString('text/csv', (string) $response->headers->get('Content-Type'));
++        $disposition = (string) $response->headers->get('Content-Disposition');
++        $this->assertStringContainsString('attachment', $disposition);
++        $this->assertStringContainsString($event->uuid, $disposition);
++
++        // AC4 — the requested event's registrations, and nothing from another event.
++        $body = $this->bodyOf($response);
++        $this->assertStringContainsString('first.attendee@example.test', $body);
++        $this->assertStringContainsString('second.attendee@example.test', $body);
++        $this->assertStringNotContainsString('other.event.attendee@example.test', $body);
++    }
++
++    // -------------------------------------------------------------------------
++    // AC3 — admin-area access alone does not unlock attendee personal data
++    // -------------------------------------------------------------------------
++
++    #[Test]
++    #[TestDox('T4-EXPORT-02 [P0] Given an admin-area user without global event visibility when they request the export then they are refused and receive no registration data')]
++    public function admin_area_user_without_global_event_visibility_is_refused(): void
++    {
++        $workspace = $this->createWorkspace();
++        $event = Event::factory()->for($workspace)->create(['title' => 'Delivery Complaint Event']);
++        $this->registerAttendee($event, 'protected.attendee@example.test');
++
++        // Reaches the admin area (system-admin flagged role) but was never
++        // granted the global event-visibility capability.
++        $role = Role::query()->create([
++            'name' => 'Support Desk Without Event Visibility',
++            'key' => 't4-support-desk-no-event-visibility',
++            'description' => 'Test-only system role that reaches the admin area but cannot view events platform-wide.',
++            'is_system_role' => false,
++            'is_system_admin' => true,
++        ]);
++
++        $supportUser = User::factory()->create([
++            'email_verified_at' => now(),
++            'current_team_id' => $workspace->id,
++        ]);
++        $workspace->users()->attach($supportUser, ['role' => $role->key]);
++        $supportUser = $supportUser->fresh(['currentTeam']);
++
++        // Precondition: this actor genuinely reaches the platform-admin area.
++        $this->actingAs($supportUser)->get(route('admin.dashboard'))->assertOk();
++
++        $response = $this->actingAs($supportUser)->get($this->exportUrl($event));
++
++        $response->assertForbidden();
++        $this->assertStringNotContainsString('protected.attendee@example.test', $this->bodyOf($response));
++    }
++
++    // -------------------------------------------------------------------------
++    // AC2 / AC6 — config gating agrees with the endpoint, neighbours untouched
++    // -------------------------------------------------------------------------
++
++    #[Test]
++    #[TestDox('T4-EXPORT-03 [P0] Given the route-permission config when the export route is added then it requires global event visibility and pre-existing admin event entries are unchanged')]
++    public function export_route_is_capability_gated_without_widening_existing_admin_routes(): void
++    {
++        /** @var array<string, string|null> $permissions */
++        $permissions = config('route_permissions.routes');
++
++        $this->assertSame(
++            'events.view.global',
++            $permissions[self::EXPORT_ROUTE] ?? null,
++            'The export route must be gated by the global event-visibility capability it enforces.',
++        );
++
++        // AC6 — the neighbouring admin event entries keep their original gates.
++        $this->assertSame('events.view.global', $permissions['admin.events.index'] ?? null);
++        $this->assertSame('events.view.global', $permissions['admin.events.show'] ?? null);
++        $this->assertSame('events.update.global', $permissions['admin.events.edit'] ?? null);
++        $this->assertSame('system_admin_access', $permissions['admin.dashboard'] ?? null);
++    }
++
++    // -------------------------------------------------------------------------
++    // Helpers
++    // -------------------------------------------------------------------------
++
++    private function exportUrl(Event $event): string
++    {
++        $this->assertTrue(
++            Route::has(self::EXPORT_ROUTE),
++            'Named route ['.self::EXPORT_ROUTE.'] does not exist.',
++        );
++
++        return route(self::EXPORT_ROUTE, $event->uuid);
++    }
++
++    private function registerAttendee(Event $event, string $email): Registration
++    {
++        return Registration::unguarded(fn (): Registration => Registration::query()->create([
++            'team_id' => $event->team_id,
++            'event_id' => $event->id,
++            'email' => $email,
++            'email_hash' => hash('sha256', $email),
++            'source' => 'direct',
++            'full_name' => 'Attendee '.substr(md5($email), 0, 6),
++            'consent_accepted_at' => now(),
++        ]));
++    }
++
++    private function bodyOf(TestResponse $response): string
++    {
++        $base = $response->baseResponse;
++
++        if ($base instanceof StreamedResponse || $base instanceof BinaryFileResponse) {
++            return $response->streamedContent();
++        }
++
++        return (string) $base->getContent();
++    }
++}

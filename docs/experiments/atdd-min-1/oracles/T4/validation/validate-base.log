@@ -1,0 +1,71 @@
+PHPUnit 11.5.55 by Sebastian Bergmann and contributors.
+
+Runtime:       PHP 8.4.19
+Configuration: /private/tmp/atdd-min-1/wt/oracleval-T4/.atdd-phpunit.xml
+Random Seed:   1787335503
+
+EFEEEFE                                                             7 / 7 (100%)
+
+Time: 00:08, Memory: 66.50 MB
+
+There were 5 errors:
+
+1) Tests\Feature\AtddOracle\OracleTest::export_returns_registrations_for_an_event_in_another_workspace
+Symfony\Component\Routing\Exception\RouteNotFoundException: Route [admin.events.registrations.export] not defined.
+
+/private/tmp/atdd-min-1/wt/oracleval-T4/vendor/laravel/framework/src/Illuminate/Routing/UrlGenerator.php:528
+/private/tmp/atdd-min-1/wt/oracleval-T4/vendor/laravel/framework/src/Illuminate/Foundation/helpers.php:870
+/private/tmp/atdd-min-1/wt/oracleval-T4/tests/Feature/AtddOracle/OracleTest.php:304
+/private/tmp/atdd-min-1/wt/oracleval-T4/tests/Feature/AtddOracle/OracleTest.php:87
+
+2) Tests\Feature\AtddOracle\OracleTest::export_is_delivered_as_a_csv_download_named_after_the_event
+Symfony\Component\Routing\Exception\RouteNotFoundException: Route [admin.events.registrations.export] not defined.
+
+/private/tmp/atdd-min-1/wt/oracleval-T4/vendor/laravel/framework/src/Illuminate/Routing/UrlGenerator.php:528
+/private/tmp/atdd-min-1/wt/oracleval-T4/vendor/laravel/framework/src/Illuminate/Foundation/helpers.php:870
+/private/tmp/atdd-min-1/wt/oracleval-T4/tests/Feature/AtddOracle/OracleTest.php:304
+/private/tmp/atdd-min-1/wt/oracleval-T4/tests/Feature/AtddOracle/OracleTest.php:243
+
+3) Tests\Feature\AtddOracle\OracleTest::export_contains_only_the_requested_events_registrations
+Symfony\Component\Routing\Exception\RouteNotFoundException: Route [admin.events.registrations.export] not defined.
+
+/private/tmp/atdd-min-1/wt/oracleval-T4/vendor/laravel/framework/src/Illuminate/Routing/UrlGenerator.php:528
+/private/tmp/atdd-min-1/wt/oracleval-T4/vendor/laravel/framework/src/Illuminate/Foundation/helpers.php:870
+/private/tmp/atdd-min-1/wt/oracleval-T4/tests/Feature/AtddOracle/OracleTest.php:304
+/private/tmp/atdd-min-1/wt/oracleval-T4/tests/Feature/AtddOracle/OracleTest.php:59
+
+4) Tests\Feature\AtddOracle\OracleTest::admin_area_user_without_global_event_capability_cannot_export
+Symfony\Component\Routing\Exception\RouteNotFoundException: Route [admin.events.registrations.export] not defined.
+
+/private/tmp/atdd-min-1/wt/oracleval-T4/vendor/laravel/framework/src/Illuminate/Routing/UrlGenerator.php:528
+/private/tmp/atdd-min-1/wt/oracleval-T4/vendor/laravel/framework/src/Illuminate/Foundation/helpers.php:870
+/private/tmp/atdd-min-1/wt/oracleval-T4/tests/Feature/AtddOracle/OracleTest.php:304
+/private/tmp/atdd-min-1/wt/oracleval-T4/tests/Feature/AtddOracle/OracleTest.php:122
+
+5) Tests\Feature\AtddOracle\OracleTest::workspace_administrator_cannot_use_the_platform_export
+Symfony\Component\Routing\Exception\RouteNotFoundException: Route [admin.events.registrations.export] not defined.
+
+/private/tmp/atdd-min-1/wt/oracleval-T4/vendor/laravel/framework/src/Illuminate/Routing/UrlGenerator.php:528
+/private/tmp/atdd-min-1/wt/oracleval-T4/vendor/laravel/framework/src/Illuminate/Foundation/helpers.php:870
+/private/tmp/atdd-min-1/wt/oracleval-T4/tests/Feature/AtddOracle/OracleTest.php:304
+/private/tmp/atdd-min-1/wt/oracleval-T4/tests/Feature/AtddOracle/OracleTest.php:142
+
+--
+
+There were 2 failures:
+
+1) Tests\Feature\AtddOracle\OracleTest::pre_existing_admin_routes_are_not_widened
+Anchor: the export route must be mapped before its blast radius can be judged.
+Failed asserting that an array has the key 'admin.events.registrations.export'.
+
+/private/tmp/atdd-min-1/wt/oracleval-T4/tests/Feature/AtddOracle/OracleTest.php:195
+
+2) Tests\Feature\AtddOracle\OracleTest::export_route_is_capability_gated_and_never_public
+The export route must be gated through the route-permission configuration.
+Failed asserting that an array has the key 'admin.events.registrations.export'.
+
+/private/tmp/atdd-min-1/wt/oracleval-T4/tests/Feature/AtddOracle/OracleTest.php:162
+
+ERRORS!
+Tests: 7, Assertions: 6, Errors: 5, Failures: 2.
+

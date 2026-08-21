@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites>
+  <testsuite name="CLI Arguments" tests="7" assertions="6" errors="5" failures="2" skipped="0" time="7.989868">
+    <testsuite name="Tests\Feature\AtddOracle\OracleTest" file="/private/tmp/atdd-min-1/wt/oracleval-T4/tests/Feature/AtddOracle/OracleTest.php" tests="7" assertions="6" errors="5" failures="2" skipped="0" time="7.989868">
+      <testcase name="export_returns_registrations_for_an_event_in_another_workspace" file="/private/tmp/atdd-min-1/wt/oracleval-T4/tests/Feature/AtddOracle/OracleTest.php" line="78" class="Tests\Feature\AtddOracle\OracleTest" classname="Tests.Feature.AtddOracle.OracleTest" assertions="0" time="6.159944">
+        <error type="Symfony\Component\Routing\Exception\RouteNotFoundException">Tests\Feature\AtddOracle\OracleTest::export_returns_registrations_for_an_event_in_another_workspace
+Symfony\Component\Routing\Exception\RouteNotFoundException: Route [admin.events.registrations.export] not defined.
+
+/private/tmp/atdd-min-1/wt/oracleval-T4/vendor/laravel/framework/src/Illuminate/Routing/UrlGenerator.php:528
+/private/tmp/atdd-min-1/wt/oracleval-T4/vendor/laravel/framework/src/Illuminate/Foundation/helpers.php:870
+/private/tmp/atdd-min-1/wt/oracleval-T4/tests/Feature/AtddOracle/OracleTest.php:304
+/private/tmp/atdd-min-1/wt/oracleval-T4/tests/Feature/AtddOracle/OracleTest.php:87</error>
+      </testcase>
+      <testcase name="pre_existing_admin_routes_are_not_widened" file="/private/tmp/atdd-min-1/wt/oracleval-T4/tests/Feature/AtddOracle/OracleTest.php" line="193" class="Tests\Feature\AtddOracle\OracleTest" classname="Tests.Feature.AtddOracle.OracleTest" assertions="2" time="0.292239">
+        <failure type="PHPUnit\Framework\ExpectationFailedException">Tests\Feature\AtddOracle\OracleTest::pre_existing_admin_routes_are_not_widened
+Anchor: the export route must be mapped before its blast radius can be judged.
+Failed asserting that an array has the key 'admin.events.registrations.export'.
+
+/private/tmp/atdd-min-1/wt/oracleval-T4/tests/Feature/AtddOracle/OracleTest.php:195</failure>
+      </testcase>
+      <testcase name="export_is_delivered_as_a_csv_download_named_after_the_event" file="/private/tmp/atdd-min-1/wt/oracleval-T4/tests/Feature/AtddOracle/OracleTest.php" line="236" class="Tests\Feature\AtddOracle\OracleTest" classname="Tests.Feature.AtddOracle.OracleTest" assertions="0" time="0.242166">
+        <error type="Symfony\Component\Routing\Exception\RouteNotFoundException">Tests\Feature\AtddOracle\OracleTest::export_is_delivered_as_a_csv_download_named_after_the_event
+Symfony\Component\Routing\Exception\RouteNotFoundException: Route [admin.events.registrations.export] not defined.
+
+/private/tmp/atdd-min-1/wt/oracleval-T4/vendor/laravel/framework/src/Illuminate/Routing/UrlGenerator.php:528
+/private/tmp/atdd-min-1/wt/oracleval-T4/vendor/laravel/framework/src/Illuminate/Foundation/helpers.php:870
+/private/tmp/atdd-min-1/wt/oracleval-T4/tests/Feature/AtddOracle/OracleTest.php:304
+/private/tmp/atdd-min-1/wt/oracleval-T4/tests/Feature/AtddOracle/OracleTest.php:243</error>
+      </testcase>
+      <testcase name="export_contains_only_the_requested_events_registrations" file="/private/tmp/atdd-min-1/wt/oracleval-T4/tests/Feature/AtddOracle/OracleTest.php" line="46" class="Tests\Feature\AtddOracle\OracleTest" classname="Tests.Feature.AtddOracle.OracleTest" assertions="0" time="0.251682">
+        <error type="Symfony\Component\Routing\Exception\RouteNotFoundException">Tests\Feature\AtddOracle\OracleTest::export_contains_only_the_requested_events_registrations
+Symfony\Component\Routing\Exception\RouteNotFoundException: Route [admin.events.registrations.export] not defined.
+
+/private/tmp/atdd-min-1/wt/oracleval-T4/vendor/laravel/framework/src/Illuminate/Routing/UrlGenerator.php:528
+/private/tmp/atdd-min-1/wt/oracleval-T4/vendor/laravel/framework/src/Illuminate/Foundation/helpers.php:870
+/private/tmp/atdd-min-1/wt/oracleval-T4/tests/Feature/AtddOracle/OracleTest.php:304
+/private/tmp/atdd-min-1/wt/oracleval-T4/tests/Feature/AtddOracle/OracleTest.php:59</error>
+      </testcase>
+      <testcase name="admin_area_user_without_global_event_capability_cannot_export" file="/private/tmp/atdd-min-1/wt/oracleval-T4/tests/Feature/AtddOracle/OracleTest.php" line="105" class="Tests\Feature\AtddOracle\OracleTest" classname="Tests.Feature.AtddOracle.OracleTest" assertions="2" time="0.508585">
+        <error type="Symfony\Component\Routing\Exception\RouteNotFoundException">Tests\Feature\AtddOracle\OracleTest::admin_area_user_without_global_event_capability_cannot_export
+Symfony\Component\Routing\Exception\RouteNotFoundException: Route [admin.events.registrations.export] not defined.
+
+/private/tmp/atdd-min-1/wt/oracleval-T4/vendor/laravel/framework/src/Illuminate/Routing/UrlGenerator.php:528
+/private/tmp/atdd-min-1/wt/oracleval-T4/vendor/laravel/framework/src/Illuminate/Foundation/helpers.php:870
+/private/tmp/atdd-min-1/wt/oracleval-T4/tests/Feature/AtddOracle/OracleTest.php:304
+/private/tmp/atdd-min-1/wt/oracleval-T4/tests/Feature/AtddOracle/OracleTest.php:122</error>
+      </testcase>
+      <testcase name="export_route_is_capability_gated_and_never_public" file="/private/tmp/atdd-min-1/wt/oracleval-T4/tests/Feature/AtddOracle/OracleTest.php" line="154" class="Tests\Feature\AtddOracle\OracleTest" classname="Tests.Feature.AtddOracle.OracleTest" assertions="2" time="0.270967">
+        <failure type="PHPUnit\Framework\ExpectationFailedException">Tests\Feature\AtddOracle\OracleTest::export_route_is_capability_gated_and_never_public
+The export route must be gated through the route-permission configuration.
+Failed asserting that an array has the key 'admin.events.registrations.export'.
+
+/private/tmp/atdd-min-1/wt/oracleval-T4/tests/Feature/AtddOracle/OracleTest.php:162</failure>
+      </testcase>
+      <testcase name="workspace_administrator_cannot_use_the_platform_export" file="/private/tmp/atdd-min-1/wt/oracleval-T4/tests/Feature/AtddOracle/OracleTest.php" line="134" class="Tests\Feature\AtddOracle\OracleTest" classname="Tests.Feature.AtddOracle.OracleTest" assertions="0" time="0.264285">
+        <error type="Symfony\Component\Routing\Exception\RouteNotFoundException">Tests\Feature\AtddOracle\OracleTest::workspace_administrator_cannot_use_the_platform_export
+Symfony\Component\Routing\Exception\RouteNotFoundException: Route [admin.events.registrations.export] not defined.
+
+/private/tmp/atdd-min-1/wt/oracleval-T4/vendor/laravel/framework/src/Illuminate/Routing/UrlGenerator.php:528
+/private/tmp/atdd-min-1/wt/oracleval-T4/vendor/laravel/framework/src/Illuminate/Foundation/helpers.php:870
+/private/tmp/atdd-min-1/wt/oracleval-T4/tests/Feature/AtddOracle/OracleTest.php:304
+/private/tmp/atdd-min-1/wt/oracleval-T4/tests/Feature/AtddOracle/OracleTest.php:142</error>
+      </testcase>
+    </testsuite>
+  </testsuite>
+</testsuites>

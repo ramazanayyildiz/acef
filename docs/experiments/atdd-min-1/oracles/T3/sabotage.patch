@@ -1,0 +1,31 @@
+diff --git a/resources/views/components/topbar-navigation.blade.php b/resources/views/components/topbar-navigation.blade.php
+index 238db7c7..f0d67921 100644
+--- a/resources/views/components/topbar-navigation.blade.php
++++ b/resources/views/components/topbar-navigation.blade.php
+@@ -14,6 +14,8 @@
+     <a
+         href="{{ route($item['route']) }}"
+         data-testid="{{ ($item['data_testid'] ?? ('nav-' . ($item['key'] ?? ''))) . $testidSuffix }}"
++        data-scroll-key="{{ $item['key'] ?? $item['route'] }}"
++        aria-current="{{ ($item['active'] ?? false) ? 'page' : 'false' }}"
+         class="{{ $linkBase }} {{ ($item['active'] ?? false) ? $activeClasses : $inactiveClasses }}"
+     >
+         {{ $item['label'] }}
+diff --git a/resources/views/layouts/authenticated.blade.php b/resources/views/layouts/authenticated.blade.php
+index 6605bd98..8926e648 100644
+--- a/resources/views/layouts/authenticated.blade.php
++++ b/resources/views/layouts/authenticated.blade.php
+@@ -68,8 +68,11 @@
+         <x-billing::grace-banner :subscription="$subscription" data-testid="billing.grace-banner" />
+     @endisset
+ 
+-    {{-- Page Body --}}
+-    <div class="flex-1 min-h-0">
++    {{-- Page Body — scroll restoration region. The front end stores the offset
++         for this region and restores it on Back/Forward. --}}
++    <div class="flex-1 min-h-0"
++         data-scroll-region="main"
++         data-scroll-return-to="{!! request()->headers->get('referer', '') !!}">
+         @yield('content')
+     </div>
+ </div>

@@ -1,0 +1,373 @@
+diff --git a/app/Navigation/ScrollRestoration.php b/app/Navigation/ScrollRestoration.php
+new file mode 100644
+index 00000000..31f8863d
+--- /dev/null
++++ b/app/Navigation/ScrollRestoration.php
+@@ -0,0 +1,71 @@
++<?php
++
++declare(strict_types=1);
++
++namespace App\Navigation;
++
++use Illuminate\Http\Request;
++
++/**
++ * Server-rendered half of the scroll-restoration contract.
++ *
++ * The front end remembers the offset of the region it is leaving
++ * (`data-scroll-region`) and restores it when the same page is rendered again
++ * on Back/Forward. Primary nav links carry the key of the item they belong to
++ * (`data-scroll-key`) so that bookkeeping does not depend on which rendering
++ * variant — desktop bar or mobile drawer — the user actually clicked.
++ *
++ * Both keys are pure functions of what they describe: the same item, and the
++ * same page, always produce the same string.
++ */
++final class ScrollRestoration
++{
++    /**
++     * Key for a navigation item, identical in every rendering variant.
++     *
++     * Derived only from identifiers that do not move between requests — never
++     * from the label, which is translated and would change with the locale.
++     *
++     * @param  array<string, mixed>  $item
++     */
++    public static function itemKey(array $item): string
++    {
++        $source = $item['key'] ?? $item['route'] ?? $item['data_testid'] ?? null;
++
++        return 'nav:' . (self::normalize((string) $source) ?: 'unknown');
++    }
++
++    /**
++     * Marker for the page currently being rendered.
++     *
++     * Route parameters are part of the page identity (/events/1 and /events/2
++     * are different pages); the query string is not, so one page keeps a single
++     * offset across filter and sort changes.
++     */
++    public static function regionKey(?Request $request = null): string
++    {
++        $request ??= request();
++        $route = $request?->route();
++        $name = $route?->getName();
++
++        if ($name === null || $name === '') {
++            return 'page:' . (self::normalize(trim((string) $request?->path(), '/')) ?: 'root');
++        }
++
++        $parameters = array_map(
++            static fn ($value): string => self::normalize((string) $value),
++            array_values(array_filter($route->originalParameters(), 'is_scalar')),
++        );
++
++        return 'page:' . implode(':', [self::normalize($name), ...$parameters]);
++    }
++
++    /**
++     * Reduce a raw identifier to characters that are safe and predictable in an
++     * HTML attribute and in client-side storage keys.
++     */
++    private static function normalize(string $value): string
++    {
++        return trim((string) preg_replace('/[^A-Za-z0-9._\/-]+/', '-', $value), '-');
++    }
++}
+diff --git a/resources/views/components/topbar-navigation.blade.php b/resources/views/components/topbar-navigation.blade.php
+index 238db7c7..093cfce5 100644
+--- a/resources/views/components/topbar-navigation.blade.php
++++ b/resources/views/components/topbar-navigation.blade.php
+@@ -6,14 +6,29 @@
+     $activeClasses = $isDesktop ? 'font-semibold text-white' : 'font-semibold text-white bg-white/10';
+     $inactiveClasses = $isDesktop ? 'text-white/80 hover:text-white' : 'text-white/80';
+     $testidSuffix = $isDesktop ? '' : '-mobile';
++
++    // The current item belongs to the request, not to the rendered subset: it is
++    // picked before `$except` filtering so both variants announce the same item,
++    // and only the first match wins so a prefix-matched active state can never
++    // announce two current pages.
++    $currentIndex = null;
++
++    foreach ($items as $index => $item) {
++        if (!empty($item['route']) && !empty($item['active'])) {
++            $currentIndex = $index;
++            break;
++        }
++    }
+ @endphp
+ 
+-@foreach ($items as $item)
++@foreach ($items as $index => $item)
+     @continue(empty($item['route']))
+     @continue(in_array($item['key'] ?? null, $except, true))
+     <a
+         href="{{ route($item['route']) }}"
+         data-testid="{{ ($item['data_testid'] ?? ('nav-' . ($item['key'] ?? ''))) . $testidSuffix }}"
++        data-scroll-key="{{ \App\Navigation\ScrollRestoration::itemKey($item) }}"
++        @if ($index === $currentIndex) aria-current="page" @endif
+         class="{{ $linkBase }} {{ ($item['active'] ?? false) ? $activeClasses : $inactiveClasses }}"
+     >
+         {{ $item['label'] }}
+diff --git a/resources/views/layouts/authenticated.blade.php b/resources/views/layouts/authenticated.blade.php
+index 6605bd98..1cd315a2 100644
+--- a/resources/views/layouts/authenticated.blade.php
++++ b/resources/views/layouts/authenticated.blade.php
+@@ -68,8 +68,9 @@
+         <x-billing::grace-banner :subscription="$subscription" data-testid="billing.grace-banner" />
+     @endisset
+ 
+-    {{-- Page Body --}}
+-    <div class="flex-1 min-h-0">
++    {{-- Page Body — the scroll region marker identifies the page being rendered
++         so Back/Forward can restore the offset stored for that page. --}}
++    <div class="flex-1 min-h-0" data-scroll-region="{{ \App\Navigation\ScrollRestoration::regionKey() }}">
+         @yield('content')
+     </div>
+ </div>
+diff --git a/tests/Feature/Navigation/MobileNavScrollStateTest.php b/tests/Feature/Navigation/MobileNavScrollStateTest.php
+new file mode 100644
+index 00000000..53df7b4f
+--- /dev/null
++++ b/tests/Feature/Navigation/MobileNavScrollStateTest.php
+@@ -0,0 +1,239 @@
++<?php
++
++declare(strict_types=1);
++
++namespace Tests\Feature\Navigation;
++
++use App\Enums\UserRole;
++use App\Models\Team;
++use App\Models\User;
++use Illuminate\Support\Facades\View;
++use PHPUnit\Framework\Attributes\Test;
++use Tests\Feature\FeatureTestCase;
++
++/**
++ * Capsule T3 — mobile primary navigation active state + scroll restoration contract.
++ *
++ * The rendered contract under test:
++ *   - a current primary nav link is programmatically current (aria-current="page"),
++ *     in the mobile variant as well as the desktop one, and exactly once per variant;
++ *   - every primary nav link carries a stable, item-derived scroll-restoration key
++ *     (data-scroll-key) that is identical for the desktop and mobile rendering of
++ *     the same item;
++ *   - the authenticated layout emits a scroll-restoration region marker
++ *     (data-scroll-region) identifying the page being rendered;
++ *   - existing filtering / badge / href / test-id behaviour is unchanged.
++ */
++class MobileNavScrollStateTest extends FeatureTestCase
++{
++    /**
++     * @return array<int, array<string, mixed>>
++     */
++    private function navItems(): array
++    {
++        return [
++            [
++                'key' => 'tenant-dashboard',
++                'label' => 'Dashboard',
++                'route' => 'user.dashboard',
++                'data_testid' => 'nav-dashboard',
++                'active' => true,
++            ],
++            [
++                'key' => 'tenant-events',
++                'label' => 'Events',
++                'route' => 'events.index',
++                'data_testid' => 'nav-events',
++                'active' => false,
++                'badge' => 7,
++            ],
++            [
++                'key' => 'tenant-billing',
++                'label' => 'Billing',
++                'route' => 'billing.index',
++                'data_testid' => 'nav-billing',
++                'active' => false,
++            ],
++        ];
++    }
++
++    /**
++     * @param  array<int, array<string, mixed>>  $items
++     * @param  array<int, string>  $except
++     */
++    private function renderNav(string $variant, array $items, array $except = []): string
++    {
++        return View::make('components.topbar-navigation', [
++            'items' => $items,
++            'variant' => $variant,
++            'except' => $except,
++        ])->render();
++    }
++
++    /**
++     * Parse the rendered anchors into testid => attribute map so assertions read
++     * the contract, not the markup ordering or class strings.
++     *
++     * @return array<string, array<string, string|null>>
++     */
++    private function links(string $html): array
++    {
++        preg_match_all('/<a\b[^>]*>/s', $html, $matches);
++
++        $links = [];
++
++        foreach ($matches[0] as $tag) {
++            $attribute = static function (string $name) use ($tag): ?string {
++                return preg_match('/\b' . preg_quote($name, '/') . '="([^"]*)"/', $tag, $found)
++                    ? $found[1]
++                    : null;
++            };
++
++            $testid = $attribute('data-testid');
++
++            if ($testid === null) {
++                continue;
++            }
++
++            $links[$testid] = [
++                'href' => $attribute('href'),
++                'aria-current' => $attribute('aria-current'),
++                'data-scroll-key' => $attribute('data-scroll-key'),
++            ];
++        }
++
++        return $links;
++    }
++
++    #[Test]
++    public function current_item_is_programmatically_current_in_both_variants(): void
++    {
++        $items = $this->navItems();
++
++        $desktop = $this->links($this->renderNav('desktop', $items));
++        $mobile = $this->links($this->renderNav('mobile', $items));
++
++        $this->assertCount(3, $desktop);
++        $this->assertCount(3, $mobile);
++
++        // AC1 — current-ness is exposed programmatically, in both variants.
++        $this->assertSame('page', $desktop['nav-dashboard']['aria-current']);
++        $this->assertSame('page', $mobile['nav-dashboard-mobile']['aria-current']);
++
++        // AC2 — exactly one current item per variant, and it is the same item.
++        $currentDesktop = array_keys(array_filter(
++            $desktop,
++            static fn (array $link): bool => $link['aria-current'] === 'page',
++        ));
++        $currentMobile = array_keys(array_filter(
++            $mobile,
++            static fn (array $link): bool => $link['aria-current'] === 'page',
++        ));
++
++        $this->assertSame(['nav-dashboard'], $currentDesktop);
++        $this->assertSame(['nav-dashboard-mobile'], $currentMobile);
++    }
++
++    #[Test]
++    public function every_link_carries_a_stable_item_derived_scroll_key_shared_by_both_variants(): void
++    {
++        $items = $this->navItems();
++
++        $desktop = $this->links($this->renderNav('desktop', $items));
++        $mobile = $this->links($this->renderNav('mobile', $items));
++        $desktopAgain = $this->links($this->renderNav('desktop', $items));
++
++        $keys = [];
++
++        foreach ($items as $item) {
++            $testid = $item['data_testid'];
++            $desktopKey = $desktop[$testid]['data-scroll-key'] ?? null;
++            $mobileKey = $mobile[$testid . '-mobile']['data-scroll-key'] ?? null;
++
++            $this->assertNotNull($desktopKey, "Desktop link {$testid} must expose a scroll-restoration key.");
++            $this->assertNotSame('', $desktopKey, "Desktop link {$testid} scroll key must not be empty.");
++
++            // AC4 — same item ⇒ same key across variants.
++            $this->assertSame($desktopKey, $mobileKey, "Scroll key for {$testid} must match across variants.");
++
++            // AC4 — stable across requests (re-render yields the same key).
++            $this->assertSame($desktopKey, $desktopAgain[$testid]['data-scroll-key'] ?? null);
++
++            $keys[] = $desktopKey;
++        }
++
++        // AC4 — derived from the navigation item, so distinct items get distinct keys.
++        $this->assertSame($keys, array_values(array_unique($keys)));
++    }
++
++    #[Test]
++    public function existing_filtering_badge_href_and_testid_behaviour_is_preserved(): void
++    {
++        $items = $this->navItems();
++
++        $desktopHtml = $this->renderNav('desktop', $items);
++        $mobileHtml = $this->renderNav('mobile', $items, ['tenant-billing']);
++
++        $desktop = $this->links($desktopHtml);
++        $mobile = $this->links($mobileHtml);
++
++        // AC6 — hrefs unchanged.
++        $this->assertSame(route('user.dashboard'), $desktop['nav-dashboard']['href']);
++        $this->assertSame(route('events.index'), $desktop['nav-events']['href']);
++
++        // AC6 — badge still rendered.
++        $this->assertStringContainsString('7', $desktopHtml);
++        $this->assertMatchesRegularExpression('/<span[^>]*>\s*7\s*<\/span>/', $desktopHtml);
++
++        // AC6 — exclusion list still filters, AC3 — mobile keeps its distinct test ids.
++        $this->assertArrayNotHasKey('nav-billing-mobile', $mobile);
++        $this->assertSame(
++            ['nav-dashboard-mobile', 'nav-events-mobile'],
++            array_keys($mobile),
++        );
++        $this->assertSame(
++            [],
++            array_intersect(array_keys($desktop), array_keys($mobile)),
++        );
++    }
++
++    #[Test]
++    public function authenticated_layout_emits_a_scroll_restoration_region_marker_for_the_page(): void
++    {
++        $user = $this->verifiedUser();
++        $team = Team::factory()->create(['user_id' => $user->id, 'personal_team' => false]);
++        $team->users()->syncWithoutDetaching([
++            $user->getKey() => ['role' => UserRole::ADMIN->value],
++        ]);
++        $user->switchTeam($team);
++
++        $marker = function (User $user, string $routeName): string {
++            $response = $this->actingAs($user)->get(route($routeName));
++            $response->assertOk();
++
++            $matched = preg_match(
++                '/data-scroll-region="([^"]+)"/',
++                $response->getContent(),
++                $found,
++            );
++
++            $this->assertSame(
++                1,
++                $matched,
++                "The authenticated layout must emit a scroll-restoration region marker on {$routeName}.",
++            );
++
++            return $found[1];
++        };
++
++        $personal = $marker($user, 'account.personal');
++        $personalAgain = $marker($user, 'account.personal');
++        $security = $marker($user, 'account.security');
++
++        // AC5 — stable for the same page so Back/Forward can restore its offset…
++        $this->assertSame($personal, $personalAgain);
++
++        // …and it identifies the page being rendered, so a different page differs.
++        $this->assertNotSame($personal, $security);
++    }
++}

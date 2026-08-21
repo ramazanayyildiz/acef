@@ -1,0 +1,12 @@
+[
+  {
+    "id": "oracle-validation-shared-phpunit-database",
+    "stage": "oracle-mutation-validation",
+    "affected_attempt": 1,
+    "cause": "The target phpunit.xml server entry overrode ATDD_TEST_DB, so concurrent worktrees used jakomeet_testing and collided during migrate:fresh.",
+    "effect": "All six frozen oracles were falsely reported as failing on their reference implementations.",
+    "repair": "Generate a worktree-local PHPUnit configuration bound to a unique freshly recreated database.",
+    "artifact_changes_after_freeze": false,
+    "rerun": "The unchanged six oracle packages all passed base/reference/sabotage mutation validation."
+  }
+]

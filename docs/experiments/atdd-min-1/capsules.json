@@ -1,0 +1,181 @@
+{
+  "experiment_id": "atdd-min-1",
+  "frozen_at_commit": "e9c0d31",
+  "target": {
+    "repo": "/Users/ramazanayyildiz/CODE/OPA/jakomeet",
+    "pinned_commit": "5d8cfaf23b521cb7245c61ea13014ba3b1e7d623",
+    "stack": "php-laravel"
+  },
+  "notes": [
+    "Every capsule was verified absent at the pinned commit before oracle authoring began.",
+    "No capsule requires a Dusk journey: all six acceptance surfaces are server-rendered or service-level, so the protocol's conditional 'one minimal Dusk journey' clause is not triggered. This is recorded as a boundary on external validity, not a protocol deviation.",
+    "Verification is always invoked through ./.atdd-verify, which wraps `php artisan test --without-tty` and records command runtime to a ledger outside the repository."
+  ],
+  "capsules": [
+    {
+      "id": "T1",
+      "category": 1,
+      "category_label": "UI-only shortcut versus a directly authorized admin/publish action",
+      "title": "Duplicate an event",
+      "story": "Workspace organisers repeatedly rebuild near-identical webinars by hand. Add a 'Duplicate' action to the event surface that creates a new DRAFT copy of an existing event in the acting user's current team. The action must appear in the shared event action model alongside edit/publish/cancel, and the duplicate endpoint must stand on its own authorization rather than relying on the button being hidden.",
+      "acceptance_criteria": [
+        "A named POST route `events.duplicate` exists at /events/{event:uuid}/duplicate and is handled by the Events module.",
+        "EventActionAvailability::for() returns a `duplicate` entry with `visible` and `enabled` booleans, consistent with the existing entries' shape.",
+        "The duplicate action is visible/enabled only for an actor holding the event-create capability (team or global scope) who can also view the source event.",
+        "The endpoint itself refuses an actor who lacks the create capability, and refuses an actor who cannot view the source event, independently of what the UI rendered. A refusal must not create any event row.",
+        "A successful duplicate creates exactly one new event, in DRAFT state, owned by the acting user's current team, with a distinct uuid from the source.",
+        "The duplicate must not copy lifecycle state, publication timestamps, cancellation, or registrations from the source event."
+      ],
+      "target_test_paths": ["tests/Feature/Events/EventDuplicateActionTest.php"],
+      "allowed_paths": [
+        "app/Modules/Events/",
+        "config/route_permissions.php",
+        "lang/",
+        "tests/Feature/Events/EventDuplicateActionTest.php"
+      ],
+      "verify": ["./.atdd-verify", "tests/Feature/Events/EventDuplicateActionTest.php"],
+      "faq": {
+        "question": "Which capability should govern duplication, and does the route need a config entry?",
+        "answer": "Reuse the existing event-create capability pair rather than inventing a new capability name. RouteCapabilityMiddleware is applied globally and fails closed, so every named web route needs an entry in config/route_permissions.php; choose the entry that expresses the same requirement the endpoint enforces."
+      }
+    },
+    {
+      "id": "T2",
+      "category": 2,
+      "category_label": "Shared Event Center shell adoption across a new and an existing page",
+      "title": "Shared event page shell adopted by a new and an existing page",
+      "story": "Event settings pages each re-implement their own header: a title, the settings tab strip, and a row of action buttons. Extract that into one shared shell component for the Events module, then prove it is genuinely shared by adopting it on a brand-new read-only 'Event Overview' page and by retrofitting the existing Landing Preview page onto the same shell.",
+      "acceptance_criteria": [
+        "A single shared shell component exists in the Events module and renders: a page title, the existing settings tab strip for the event, and an actions region.",
+        "A new authenticated page is reachable at a named route `events.overview` (GET /events/{event:uuid}/overview) and renders through the shared shell.",
+        "The existing Landing Preview page renders through the same shared shell component rather than its own duplicated header markup.",
+        "Both pages pass the event's action availability into the shell so action visibility stays driven by the existing shared action model, not by per-page conditionals.",
+        "The Event Overview page is read-only: it exposes no form submission and no state-changing control.",
+        "Access to the Event Overview page requires the same view authorization already used by other event settings surfaces; an actor who cannot view the event is refused."
+      ],
+      "target_test_paths": ["tests/Feature/Events/EventPageShellAdoptionTest.php"],
+      "allowed_paths": [
+        "app/Modules/Events/",
+        "config/route_permissions.php",
+        "lang/",
+        "tests/Feature/Events/EventPageShellAdoptionTest.php"
+      ],
+      "verify": ["./.atdd-verify", "tests/Feature/Events/EventPageShellAdoptionTest.php"],
+      "faq": {
+        "question": "How much of the Landing Preview page must change?",
+        "answer": "Only its header region needs to move onto the shared shell; the preview body, publish-audit banner, and existing test ids on that page must keep working. Adopting the shell must not remove behaviour that other pages or tests already depend on."
+      }
+    },
+    {
+      "id": "T3",
+      "category": 3,
+      "category_label": "Mobile navigation plus browser Back/Forward and scroll-state preservation",
+      "title": "Mobile primary navigation active state and scroll restoration contract",
+      "story": "The primary navigation marks the current item with styling only, so on mobile the current page is not announced to assistive technology, and moving between primary pages drops the user's scroll position when they use browser Back. Make the current item programmatically determinable in both variants and emit the scroll-restoration contract the front end needs to restore position across Back/Forward.",
+      "acceptance_criteria": [
+        "Every primary navigation link exposes its current-ness programmatically, not by CSS class alone, so assistive technology announces the current page. This applies to the mobile variant as well as the desktop variant.",
+        "Exactly one item is marked current for a given request, and it is the same item in the desktop and mobile renderings of that request.",
+        "The mobile variant keeps its existing distinct test ids; desktop and mobile items must remain separately addressable.",
+        "Each primary navigation link carries a stable scroll-restoration key derived from the navigation item, identical for the desktop and mobile rendering of the same item and stable across requests.",
+        "The authenticated layout emits a scroll-restoration region marker identifying the page being rendered, so Back/Forward navigation can restore the prior scroll offset for the page being returned to.",
+        "Existing navigation behaviour is preserved: item filtering via the exclusion list, badge rendering, and the existing href/test-id output must continue to work unchanged."
+      ],
+      "target_test_paths": ["tests/Feature/Navigation/MobileNavScrollStateTest.php"],
+      "allowed_paths": [
+        "resources/views/components/topbar-navigation.blade.php",
+        "resources/views/layouts/authenticated.blade.php",
+        "app/",
+        "lang/",
+        "tests/Feature/Navigation/MobileNavScrollStateTest.php"
+      ],
+      "verify": ["./.atdd-verify", "tests/Feature/Navigation/MobileNavScrollStateTest.php"],
+      "faq": {
+        "question": "Should the scroll restoration be implemented in JavaScript?",
+        "answer": "No. The capsule is scoped to the server-rendered contract: the markers and keys the client would consume. Do not add or modify build-step JavaScript; assert the contract in the rendered HTML."
+      }
+    },
+    {
+      "id": "T4",
+      "category": 4,
+      "category_label": "Publish/admin route and capability authorization",
+      "title": "Platform-admin export of an event's registration list",
+      "story": "Platform support staff need to pull the registration list for a single event when investigating a delivery complaint. Add a platform-admin export endpoint that streams that event's registrations as CSV. Registration rows carry attendee personal data, so the endpoint's authorization must be explicit and narrow rather than inheriting whatever the admin area happens to allow.",
+      "acceptance_criteria": [
+        "A named GET route `admin.events.registrations.export` exists under the platform-admin routes and returns a CSV response for a single event.",
+        "The route is capability-gated through the existing route-permission configuration, using a global-scope capability that already governs platform-wide event visibility.",
+        "An authenticated user who reaches the admin area but lacks that global capability is refused and receives no CSV body.",
+        "The exported CSV contains only registrations belonging to the requested event; registrations of any other event must not appear.",
+        "The response is delivered as a CSV download with a filename that identifies the event.",
+        "The export must not widen access for any pre-existing admin route: the permission entries for routes other than the new one are unchanged."
+      ],
+      "target_test_paths": ["tests/Feature/SuperAdmin/AdminEventRegistrationExportTest.php"],
+      "allowed_paths": [
+        "app/Modules/SuperAdmin/",
+        "app/Modules/Events/",
+        "config/route_permissions.php",
+        "lang/",
+        "tests/Feature/SuperAdmin/AdminEventRegistrationExportTest.php"
+      ],
+      "verify": ["./.atdd-verify", "tests/Feature/SuperAdmin/AdminEventRegistrationExportTest.php"],
+      "faq": {
+        "question": "Is 'system_admin_access' an acceptable permission entry for this route?",
+        "answer": "Only if it genuinely expresses the requirement you enforce. The existing admin event routes are mapped to explicit global capabilities; pick the entry that matches what the endpoint itself checks, and make sure the endpoint and the config agree."
+      }
+    },
+    {
+      "id": "T5",
+      "category": 5,
+      "category_label": "Landing Preview authentication, scroll behavior, and token/security handling",
+      "title": "Shareable landing-preview link for unauthenticated reviewers",
+      "story": "Organisers want to send a colleague or client a link to a DRAFT event's landing page for review before publishing. A DRAFT landing page is private today. Add a share link that lets an unauthenticated reviewer see a read-only rendering of the landing preview, without opening the private authenticated surfaces and without becoming a permanent public URL.",
+      "acceptance_criteria": [
+        "A named POST route `events.landing.share` lets an organiser holding the event-update capability mint a share link for that event's landing preview.",
+        "A named GET route `events.public.landing-share` serves that link to unauthenticated visitors and renders a read-only landing preview of the event, including for an event still in DRAFT.",
+        "The link is time-limited and tamper-evident: a link whose parameters have been altered, and a link past its expiry, are both refused rather than served.",
+        "A share link issued for one event must not grant access to any other event.",
+        "An actor who lacks the event-update capability cannot mint a share link.",
+        "The shared read-only view exposes no registration submission and no authoring or edit control, and reaching the shared view must not authenticate the visitor or grant access to the authenticated landing editor."
+      ],
+      "target_test_paths": ["tests/Feature/Events/LandingPreviewShareLinkTest.php"],
+      "allowed_paths": [
+        "app/Modules/Events/",
+        "config/route_permissions.php",
+        "lang/",
+        "tests/Feature/Events/LandingPreviewShareLinkTest.php"
+      ],
+      "verify": ["./.atdd-verify", "tests/Feature/Events/LandingPreviewShareLinkTest.php"],
+      "faq": {
+        "question": "Should the share token be stored on the events table?",
+        "answer": "No new migration is in scope. Use the framework's existing signed-URL mechanism for time-limited, tamper-evident links rather than adding a database column or inventing a token format."
+      }
+    },
+    {
+      "id": "T6",
+      "category": 6,
+      "category_label": "Preservation probe covering money or a state-machine invariant",
+      "title": "Platform-admin revert of a published event back to draft",
+      "story": "Support gets occasional requests to pull a webinar back to draft when an organiser published it by mistake and nobody has registered yet. Add a platform-admin action that reverts a PUBLISHED event to DRAFT. The event lifecycle is a canonical state machine with a documented legal-transition table and a guarded transition path that takes a row lock, re-checks cancellation, and writes an audit record; this change must extend that machine rather than route around it.",
+      "acceptance_criteria": [
+        "A named POST route `admin.events.revert-to-draft` exists under the platform-admin event routes and is capability-gated through the existing route-permission configuration.",
+        "Reverting a PUBLISHED event with no registrations moves it to DRAFT and records the change through the same guarded transition path the other lifecycle actions use, including its audit record.",
+        "A revert attempt on an event that is not PUBLISHED is refused and leaves the event's state unchanged.",
+        "A revert attempt on an event that already has registrations is refused and leaves the event's state unchanged.",
+        "A cancelled event cannot be reverted: cancellation continues to win over forward and backward lifecycle moves.",
+        "No previously illegal lifecycle edge becomes legal as a side effect. Apart from the single PUBLISHED-to-DRAFT edge this story introduces, the canonical legal-transition table for every state is unchanged, and the state-derived rules that other code reads from it keep their existing answers."
+      ],
+      "target_test_paths": ["tests/Feature/Events/AdminRevertToDraftTest.php"],
+      "allowed_paths": [
+        "app/Modules/Events/",
+        "app/Modules/SuperAdmin/",
+        "config/route_permissions.php",
+        "lang/",
+        "tests/Feature/Events/AdminRevertToDraftTest.php"
+      ],
+      "verify": ["./.atdd-verify", "tests/Feature/Events/AdminRevertToDraftTest.php"],
+      "faq": {
+        "question": "Can I set the event's state directly instead of going through the transition service?",
+        "answer": "No. The guarded transition path exists because it takes the row lock, re-checks cancellation, and writes the audit row; a direct state write silently skips all three. Extend the state machine and go through the existing path."
+      }
+    }
+  ]
+}

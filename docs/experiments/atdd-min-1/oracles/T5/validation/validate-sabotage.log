@@ -1,0 +1,27 @@
+PHPUnit 11.5.55 by Sebastian Bergmann and contributors.
+
+Runtime:       PHP 8.4.19
+Configuration: /private/tmp/atdd-min-1/wt/oracleval-T5/.atdd-phpunit.xml
+Random Seed:   1787335560
+
+..F..F..                                                            8 / 8 (100%)
+
+Time: 00:06.935, Memory: 68.50 MB
+
+There were 2 failures:
+
+1) Tests\Feature\AtddOracle\OracleTest::shared_view_offers_no_registration_submission_and_no_authoring_control
+The shared read-only view submits registrations: a "post" form targets "http://localhost/webinars/3db2eecb-b78d-4619-aade-a5e585a41d0c/register".
+Failed asserting that true is false.
+
+/private/tmp/atdd-min-1/wt/oracleval-T5/tests/Feature/AtddOracle/OracleTest.php:237
+
+2) Tests\Feature\AtddOracle\OracleTest::actors_without_the_event_update_capability_cannot_mint_a_share_link
+A team member without the event-update capability was able to mint a landing-preview share link.
+Failed asserting that 'http://localhost/webinars/3435a33f-e1c3-4359-b5e7-1aea568c8e02/landing-review?expires=1787594766&signature=8557aecda87f1cdd9793186c55d016b614d40702622d4ad597832468b8de8140' is null.
+
+/private/tmp/atdd-min-1/wt/oracleval-T5/tests/Feature/AtddOracle/OracleTest.php:201
+
+FAILURES!
+Tests: 8, Assertions: 53, Failures: 2.
+

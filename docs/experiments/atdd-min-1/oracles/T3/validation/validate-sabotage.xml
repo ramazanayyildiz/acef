@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites>
+  <testsuite name="CLI Arguments" tests="8" assertions="2641" errors="0" failures="3" skipped="0" time="16.309051">
+    <testsuite name="Tests\Feature\AtddOracle\OracleTest" file="/private/tmp/atdd-min-1/wt/oracleval-T3/tests/Feature/AtddOracle/OracleTest.php" tests="8" assertions="2641" errors="0" failures="3" skipped="0" time="16.309051">
+      <testcase name="authenticated_layout_emits_a_page_scoped_scroll_region_marker" file="/private/tmp/atdd-min-1/wt/oracleval-T3/tests/Feature/AtddOracle/OracleTest.php" line="458" class="Tests\Feature\AtddOracle\OracleTest" classname="Tests.Feature.AtddOracle.OracleTest" assertions="4" time="14.256340">
+        <failure type="PHPUnit\Framework\ExpectationFailedException">Tests\Feature\AtddOracle\OracleTest::authenticated_layout_emits_a_page_scoped_scroll_region_marker
+The authenticated layout emits no machine-readable marker that identifies the page being rendered: nothing outside the navigation links keeps one single value per page, stays identical when the same page is requested again, and changes when a different page is rendered. Without it, Back/Forward cannot tell which stored scroll offset belongs to the incoming page.
+Failed asserting that an array is not empty.
+
+/private/tmp/atdd-min-1/wt/oracleval-T3/tests/Feature/AtddOracle/OracleTest.php:480</failure>
+      </testcase>
+      <testcase name="existing_navigation_output_and_filtering_are_preserved" file="/private/tmp/atdd-min-1/wt/oracleval-T3/tests/Feature/AtddOracle/OracleTest.php" line="490" class="Tests\Feature\AtddOracle\OracleTest" classname="Tests.Feature.AtddOracle.OracleTest" assertions="42" time="0.293615"/>
+      <testcase name="scroll_keys_are_stable_across_requests_and_across_pages" file="/private/tmp/atdd-min-1/wt/oracleval-T3/tests/Feature/AtddOracle/OracleTest.php" line="418" class="Tests\Feature\AtddOracle\OracleTest" classname="Tests.Feature.AtddOracle.OracleTest" assertions="53" time="0.271024"/>
+      <testcase name="current_page_is_programmatically_marked_in_both_navigation_variants" file="/private/tmp/atdd-min-1/wt/oracleval-T3/tests/Feature/AtddOracle/OracleTest.php" line="311" class="Tests\Feature\AtddOracle\OracleTest" classname="Tests.Feature.AtddOracle.OracleTest" assertions="46" time="0.274345"/>
+      <testcase name="only_one_navigation_item_is_current_on_a_nested_section_page" file="/private/tmp/atdd-min-1/wt/oracleval-T3/tests/Feature/AtddOracle/OracleTest.php" line="353" class="Tests\Feature\AtddOracle\OracleTest" classname="Tests.Feature.AtddOracle.OracleTest" assertions="21" time="0.288397">
+        <failure type="PHPUnit\Framework\ExpectationFailedException">Tests\Feature\AtddOracle\OracleTest::only_one_navigation_item_is_current_on_a_nested_section_page
+Exactly one desktop navigation item may be announced as current on http://localhost/events/contacts; got: ["nav-events","nav-audience"]
+Failed asserting that actual size 2 matches expected size 1.
+
+/private/tmp/atdd-min-1/wt/oracleval-T3/tests/Feature/AtddOracle/OracleTest.php:374</failure>
+      </testcase>
+      <testcase name="every_navigation_link_carries_a_variant_independent_scroll_key" file="/private/tmp/atdd-min-1/wt/oracleval-T3/tests/Feature/AtddOracle/OracleTest.php" line="394" class="Tests\Feature\AtddOracle\OracleTest" classname="Tests.Feature.AtddOracle.OracleTest" assertions="20" time="0.290722"/>
+      <testcase name="navigation_markers_never_expose_destinations_the_viewer_cannot_reach" file="/private/tmp/atdd-min-1/wt/oracleval-T3/tests/Feature/AtddOracle/OracleTest.php" line="559" class="Tests\Feature\AtddOracle\OracleTest" classname="Tests.Feature.AtddOracle.OracleTest" assertions="2435" time="0.314553"/>
+      <testcase name="scroll_restoration_markers_do_not_reflect_request_controlled_markup" file="/private/tmp/atdd-min-1/wt/oracleval-T3/tests/Feature/AtddOracle/OracleTest.php" line="614" class="Tests\Feature\AtddOracle\OracleTest" classname="Tests.Feature.AtddOracle.OracleTest" assertions="20" time="0.320054">
+        <failure type="PHPUnit\Framework\ExpectationFailedException">Tests\Feature\AtddOracle\OracleTest::scroll_restoration_markers_do_not_reflect_request_controlled_markup
+Request-controlled input reached the rendered page unescaped, so the scroll-restoration markers can be used to inject markup into an authenticated page.
+Failed asserting that true is false.
+
+/private/tmp/atdd-min-1/wt/oracleval-T3/tests/Feature/AtddOracle/OracleTest.php:635</failure>
+      </testcase>
+    </testsuite>
+  </testsuite>
+</testsuites>

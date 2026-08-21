@@ -1,0 +1,1104 @@
+#!/usr/bin/env node
+"use strict";
+
+/**
+ * ACEF ATDD-MIN-1 experiment harness (bounded, experiment-specific).
+ *
+ * Executes the frozen protocol in docs/experiments/atdd-min-1/PROTOCOL.md:
+ * paired A/B runs of "separate minimal ATDD" (arm A) versus "integrated RED"
+ * (arm B) against JakoMeet at one pinned commit.
+ *
+ * Reuses the existing ACEF epic-benchmark instrument design: detached git
+ * worktrees of the target repo, linkDependencies() for vendor/env wiring, and
+ * append-only JSONL result rows. Nothing here mutates the target repository's
+ * working tree, branches, or installation — every executor writes only inside a
+ * disposable worktree under /private/tmp.
+ *
+ * Isolation contract:
+ *   - Executors run as separate `claude --print` processes and never receive
+ *     hidden-oracle paths or contents. Oracles live in the ACEF repo, which is
+ *     not on the executor's allowed directory list.
+ *   - Oracles are applied only after an executor process has exited.
+ */
+
+const fs = require("fs");
+const path = require("path");
+const crypto = require("crypto");
+const cp = require("child_process");
+
+const { execute, must, write, appendResult, commitAll, linkDependencies, hash } = require("./acef-empirical-validation");
+
+const ACEF_ROOT = path.resolve(__dirname, "..");
+const EXP_DIR = path.join(ACEF_ROOT, "docs", "experiments", "atdd-min-1");
+const CAPSULES = JSON.parse(fs.readFileSync(path.join(EXP_DIR, "capsules.json"), "utf8"));
+const SOURCE = CAPSULES.target.repo;
+const PIN = CAPSULES.target.pinned_commit;
+
+const WORKSPACE = "/private/tmp/atdd-min-1";
+const WT_ROOT = path.join(WORKSPACE, "wt");
+const NOHOOKS = path.join(WORKSPACE, "nohooks");
+const RESULTS = path.join(EXP_DIR, "results.jsonl");
+const ORACLE_DIR = path.join(EXP_DIR, "oracles");
+const RUNS_DIR = path.join(EXP_DIR, "runs");
+
+const VERIFY_WRAPPER = `#!/usr/bin/env bash
+# ATDD-MIN-1 verification wrapper. Runs the capsule's focused verification and
+# records wall-clock command runtime to a ledger outside the repository, so
+# active agent time can be separated from test-command runtime symmetrically
+# across both arms.
+set -uo pipefail
+
+LEDGER="\${ATDD_VERIFY_LEDGER:-/dev/null}"
+export DB_CONNECTION=mysql
+export DB_HOST=127.0.0.1
+export DB_PORT=3306
+export DB_USERNAME=root
+export DB_DATABASE="\${ATDD_TEST_DB:-jakomeet_testing}"
+unset DB_PASSWORD
+
+start=$(python3 -c 'import time;print(time.time())')
+vendor/bin/phpunit --configuration=.atdd-phpunit.xml "$@"
+status=$?
+end=$(python3 -c 'import time;print(time.time())')
+
+python3 - "$LEDGER" "$start" "$end" "$status" "$*" <<'PY'
+import json, sys
+ledger, start, end, status, argv = sys.argv[1], float(sys.argv[2]), float(sys.argv[3]), int(sys.argv[4]), sys.argv[5]
+if ledger != "/dev/null":
+    with open(ledger, "a") as fh:
+        fh.write(json.dumps({"start": start, "end": end, "seconds": round(end - start, 3), "status": status, "args": argv}) + "\\n")
+PY
+
+exit $status
+`;
+
+// ---------------------------------------------------------------------------
+// small helpers
+// ---------------------------------------------------------------------------
+
+function capsule(taskId) {
+  const found = CAPSULES.capsules.find((c) => c.id === taskId);
+  if (!found) throw new Error(`unknown task ${taskId}`);
+  return found;
+}
+
+function allTaskIds() {
+  return CAPSULES.capsules.map((c) => c.id);
+}
+
+function wtPath(id) {
+  return path.join(WT_ROOT, id);
+}
+
+function dbName(id) {
+  return `jakomeet_testing_atdd_${id.replace(/[^a-z0-9]+/gi, "_").toLowerCase()}`;
+}
+
+function mysql(sql) {
+  const res = execute("mysql", ["-h", "127.0.0.1", "-P", "3306", "-u", "root", "-e", sql], { timeout: 60 * 1000 });
+  if (res.status !== 0) throw new Error(`mysql failed: ${res.stderr.trim()}`);
+  return res.stdout;
+}
+
+/** Deterministic PRNG seeded from the preregistration commit, so arm order is
+ *  reproducible and cannot be cherry-picked after the fact. */
+function seededRandom(seedText) {
+  let h = crypto.createHash("sha256").update(seedText).digest();
+  let i = 0;
+  return () => {
+    if (i >= h.length - 4) { h = crypto.createHash("sha256").update(h).digest(); i = 0; }
+    const v = h.readUInt32BE(i); i += 4;
+    return v / 0x100000000;
+  };
+}
+
+function readResults() {
+  if (!fs.existsSync(RESULTS)) return [];
+  return fs.readFileSync(RESULTS, "utf8").split(/\r?\n/).filter(Boolean).map((l) => {
+    try { return JSON.parse(l); } catch { return null; }
+  }).filter(Boolean);
+}
+
+function isDone(taskId, arm) {
+  return readResults().some((r) => r.task_id === taskId && r.arm === arm && r.kind === "run");
+}
+
+// ---------------------------------------------------------------------------
+// worktree lifecycle
+// ---------------------------------------------------------------------------
+
+function sleepSync(ms) {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
+/** Serialises `git worktree add/remove` across forked children: they all mutate
+ *  the same source-repo worktree metadata and otherwise race on its lock. */
+function withRepoLock(fn) {
+  fs.mkdirSync(WORKSPACE, { recursive: true });
+  const lock = path.join(WORKSPACE, "repo.lock");
+  const deadline = Date.now() + 15 * 60 * 1000;
+  for (;;) {
+    let fd;
+    try {
+      fd = fs.openSync(lock, "wx");
+    } catch (error) {
+      if (error.code !== "EEXIST") throw error;
+      if (Date.now() > deadline) { fs.rmSync(lock, { force: true }); continue; }
+      sleepSync(500);
+      continue;
+    }
+    try { return fn(); } finally { fs.closeSync(fd); fs.rmSync(lock, { force: true }); }
+  }
+}
+
+/** Git identity and hook suppression are supplied through the environment.
+ *  Using `git config` inside a linked worktree would write to the SOURCE repo's
+ *  shared .git/config, which the experiment is forbidden from mutating. */
+function applyGitEnv() {
+  fs.mkdirSync(NOHOOKS, { recursive: true });
+  process.env.GIT_AUTHOR_NAME = "ACEF ATDD MIN";
+  process.env.GIT_AUTHOR_EMAIL = "acef-atdd-min@example.invalid";
+  process.env.GIT_COMMITTER_NAME = "ACEF ATDD MIN";
+  process.env.GIT_COMMITTER_EMAIL = "acef-atdd-min@example.invalid";
+  // Target-repo commit hooks are the experimenter's noise here, not the actor's
+  // behaviour under test; neutralising them symmetrically keeps a blocked hook
+  // from being scored as an agent failure.
+  process.env.GIT_CONFIG_COUNT = "1";
+  process.env.GIT_CONFIG_KEY_0 = "core.hooksPath";
+  process.env.GIT_CONFIG_VALUE_0 = NOHOOKS;
+}
+
+function prepare(id) {
+  const wt = wtPath(id);
+  withRepoLock(() => {
+    execute("git", ["-C", SOURCE, "worktree", "remove", "--force", wt]);
+    fs.rmSync(wt, { recursive: true, force: true });
+    fs.mkdirSync(WT_ROOT, { recursive: true });
+    must("git", ["-C", SOURCE, "worktree", "add", "--detach", wt, PIN]);
+  });
+
+  for (const dir of ["storage/framework/views", "storage/framework/cache/data", "storage/framework/sessions",
+    "storage/framework/testing", "storage/logs", "bootstrap/cache", "database"]) {
+    fs.mkdirSync(path.join(wt, dir), { recursive: true });
+  }
+  linkDependencies(wt, { id, stack: CAPSULES.target.stack, source: SOURCE });
+
+  const db = dbName(id);
+  const wrapper = path.join(wt, ".atdd-verify");
+  fs.writeFileSync(wrapper, VERIFY_WRAPPER);
+  fs.chmodSync(wrapper, 0o755);
+
+  const phpunitSource = fs.readFileSync(path.join(wt, "phpunit.xml"), "utf8");
+  const phpunitIsolated = phpunitSource.replace(
+    /(<server name="DB_DATABASE" value=")[^"]+("\s*\/>)/,
+    `$1${db}$2`,
+  );
+  if (phpunitIsolated === phpunitSource) {
+    throw new Error(`${id}: phpunit DB_DATABASE entry was not found`);
+  }
+  fs.writeFileSync(path.join(wt, ".atdd-phpunit.xml"), phpunitIsolated);
+
+  // Every prepared worktree receives a fresh database. CREATE IF NOT EXISTS is
+  // insufficient on retries because a killed/concurrent migration can leave a
+  // partially-created schema that makes the next oracle result meaningless.
+  mysql(`DROP DATABASE IF EXISTS \`${db}\`; CREATE DATABASE \`${db}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;`);
+
+  const base = commitAll(wt, "chore: atdd-min-1 harness checkpoint", { noVerify: true });
+  return { worktree: wt, db, base };
+}
+
+function teardown(id) {
+  const wt = wtPath(id);
+  withRepoLock(() => {
+    execute("git", ["-C", SOURCE, "worktree", "remove", "--force", wt]);
+    fs.rmSync(wt, { recursive: true, force: true });
+  });
+}
+
+// ---------------------------------------------------------------------------
+// session launcher
+// ---------------------------------------------------------------------------
+
+/**
+ * Launch one fresh isolated Opus session at max effort.
+ * Personal user settings and MCP servers are excluded so every session starts
+ * from the same baseline; the target repo's own CLAUDE.md/AGENTS.md are kept
+ * because they are part of the pinned commit and identical across both arms.
+ */
+function launchSession({ cwd, prompt, rawPath, ledger, db, timeoutMs, extraDirs = [] }) {
+  fs.mkdirSync(path.dirname(rawPath), { recursive: true });
+  const env = {
+    ...process.env,
+    ATDD_VERIFY_LEDGER: ledger,
+    ATDD_TEST_DB: db,
+    CLAUDE_CODE_MAX_OUTPUT_TOKENS: process.env.CLAUDE_CODE_MAX_OUTPUT_TOKENS || "",
+  };
+  // Flag order matters: --disallowed-tools and --add-dir are variadic and would
+  // otherwise swallow the positional prompt. Every variadic option is placed
+  // before a single-value option (--model), so the prompt stays positional.
+  const args = [
+    "--disallowed-tools", "Task,Agent",
+    "--add-dir", cwd, ...extraDirs,
+    "--print",
+    "--output-format", "stream-json",
+    "--verbose",
+    "--dangerously-skip-permissions",
+    "--strict-mcp-config",
+    "--setting-sources", "project",
+    "--effort", "max",
+    "--model", "opus",
+  ];
+  const startedAt = Date.now();
+  const res = execute("claude", [...args, prompt], { cwd, env, timeout: timeoutMs });
+  const wallMs = Date.now() - startedAt;
+  write(rawPath, res.stdout);
+  write(`${rawPath}.stderr`, res.stderr);
+  return { ...res, wallMs, ...parseSession(rawPath), transcriptHash: hash(res.stdout) };
+}
+
+function parseSession(rawPath) {
+  const out = { tool_calls: 0, reads: 0, reread_paths: 0, input_tokens: 0, cached_input_tokens: 0, output_tokens: 0, result_text: "", num_turns: 0 };
+  if (!fs.existsSync(rawPath)) return out;
+  const seenReads = new Map();
+  for (const line of fs.readFileSync(rawPath, "utf8").split(/\r?\n/)) {
+    if (!line.trim()) continue;
+    let row; try { row = JSON.parse(line); } catch { continue; }
+    if (row.type === "assistant" && row.message && Array.isArray(row.message.content)) {
+      for (const block of row.message.content) {
+        if (block.type !== "tool_use") continue;
+        out.tool_calls += 1;
+        if (block.name === "Read") {
+          out.reads += 1;
+          const p = block.input && block.input.file_path;
+          if (p) seenReads.set(p, (seenReads.get(p) || 0) + 1);
+        }
+      }
+    }
+    if (row.type === "result") {
+      out.result_text = typeof row.result === "string" ? row.result : "";
+      out.num_turns = row.num_turns || 0;
+      const u = row.usage || {};
+      out.input_tokens = u.input_tokens || 0;
+      out.cached_input_tokens = (u.cache_read_input_tokens || 0) + (u.cache_creation_input_tokens || 0);
+      out.output_tokens = u.output_tokens || 0;
+    }
+  }
+  out.reread_paths = [...seenReads.values()].filter((n) => n > 1).length;
+  return out;
+}
+
+function ledgerSeconds(ledger, sinceMs) {
+  if (!fs.existsSync(ledger)) return { seconds: 0, runs: 0, red_runs: 0 };
+  let seconds = 0, runs = 0, red = 0;
+  for (const line of fs.readFileSync(ledger, "utf8").split(/\r?\n/)) {
+    if (!line.trim()) continue;
+    let row; try { row = JSON.parse(line); } catch { continue; }
+    if (sinceMs && row.start * 1000 < sinceMs) continue;
+    seconds += row.seconds; runs += 1;
+    if (row.status !== 0) red += 1;
+  }
+  return { seconds: Math.round(seconds * 10) / 10, runs, red_runs: red };
+}
+
+// ---------------------------------------------------------------------------
+// prompts
+// ---------------------------------------------------------------------------
+
+function capsuleBlock(c) {
+  return [
+    `## Capsule ${c.id} — ${c.title}`,
+    "",
+    "### Story",
+    c.story,
+    "",
+    "### Acceptance criteria",
+    ...c.acceptance_criteria.map((a, i) => `${i + 1}. ${a}`),
+    "",
+    "### Target test path",
+    ...c.target_test_paths.map((p) => `- ${p}`),
+    "",
+    "### Allowed paths (you may not create or modify anything outside these)",
+    ...c.allowed_paths.map((p) => `- ${p}`),
+    "",
+    "### Focused verification (run it exactly this way)",
+    "```",
+    c.verify.join(" "),
+    "```",
+    "",
+    "### FAQ (this is the only clarification available; do not ask for more)",
+    `Q: ${c.faq.question}`,
+    `A: ${c.faq.answer}`,
+  ].join("\n");
+}
+
+const COMMON_RULES = [
+  "House rules for this session:",
+  "- You are working in a disposable git worktree of a Laravel application. Work only inside it.",
+  "- Verification MUST be invoked as `./.atdd-verify <path>` from the worktree root. Never call `php artisan test` or phpunit directly — the wrapper wires the isolated test database.",
+  "- Do not install dependencies, edit composer.json/package.json, run migrations by hand, or change phpunit.xml.",
+  "- Do not modify any test other than the capsule's target test path.",
+  "- Do not spawn subagents or delegate.",
+  "- Do not push. Commit only as instructed below.",
+  "- `.atdd-verify` is harness scaffolding: never edit, move, or commit changes to it.",
+].join("\n");
+
+function testAuthorPrompt(c) {
+  return [
+    "You are a Test Author. Your entire job in this session is to produce one authentic failing acceptance test (a RED) for the capsule below. You will hand it off to a different developer who will implement against it.",
+    "",
+    capsuleBlock(c),
+    "",
+    COMMON_RULES,
+    "",
+    "Your task, in order:",
+    "1. Write exactly ONE focused Feature test at the capsule's target test path. Keep it minimal and critical-path: cover the acceptance criteria that matter, not every permutation.",
+    "2. Assert observable behaviour (HTTP status, persisted state, rendered contract, refusals), not implementation details or literal copy strings.",
+    "3. Run the focused verification once via `./.atdd-verify` and confirm the test fails for the right reason — a genuine missing-behaviour failure, not a syntax error, missing import, or harness error. If it fails for the wrong reason, fix the test and re-run.",
+    "4. Make exactly ONE commit containing only the test file. Message: `test: RED for " + c.id + "`.",
+    "5. Stop. Do NOT write any production code. Do NOT create a test-design document. Do NOT read PRD, NFR, story, or architecture documents.",
+    "",
+    "Your active working budget for this session is about ten minutes; time spent waiting for the verification command does not count against it. Prefer a tight, correct RED over an exhaustive one.",
+    "",
+    "Final response: state RED=YES or RED=NO, the test path, the number of test methods you wrote, and the reason the test currently fails.",
+  ].join("\n");
+}
+
+function developerFromHandoffPrompt(c) {
+  return [
+    "You are a Developer. A Test Author has already written a failing acceptance test (a RED) for the capsule below and committed it. It is the most recent commit in this worktree. Implement the production code that makes it pass.",
+    "",
+    capsuleBlock(c),
+    "",
+    COMMON_RULES,
+    "",
+    "Your task, in order:",
+    "1. Read the existing failing test to understand the contract you must satisfy.",
+    "2. Implement the smallest correct production change that satisfies the capsule's acceptance criteria and makes the test pass.",
+    "3. Run the focused verification via `./.atdd-verify` until it is green.",
+    "4. Commit your production change. Message: `feat: implement " + c.id + "`.",
+    "",
+    "You must NOT weaken, delete, skip, or narrow any assertion in the handed-off test in order to reach green. If you believe the test is wrong, leave it alone and say so in your final response.",
+    "",
+    "Final response: state RESULT=PASS or RESULT=FAIL, the changed paths, the verification result, and any unresolved risk.",
+  ].join("\n");
+}
+
+function integratedPrompt(c) {
+  return [
+    "You are a Developer working a single continuous session. You will write your own failing acceptance test (a RED) first, then implement against it, with no handoff to anyone.",
+    "",
+    capsuleBlock(c),
+    "",
+    COMMON_RULES,
+    "",
+    "Your task, in order:",
+    "1. Write exactly ONE focused Feature test at the capsule's target test path. Keep it minimal and critical-path: cover the acceptance criteria that matter, not every permutation.",
+    "2. Assert observable behaviour (HTTP status, persisted state, rendered contract, refusals), not implementation details or literal copy strings.",
+    "3. Run the focused verification once via `./.atdd-verify` and confirm the test fails for the right reason — a genuine missing-behaviour failure, not a syntax error, missing import, or harness error. If it fails for the wrong reason, fix the test and re-run.",
+    "4. Make exactly ONE commit containing only the test file. Message: `test: RED for " + c.id + "`.",
+    "5. Then implement the smallest correct production change that satisfies the capsule's acceptance criteria and makes the test pass.",
+    "6. Run the focused verification via `./.atdd-verify` until it is green.",
+    "7. Commit your production change. Message: `feat: implement " + c.id + "`.",
+    "",
+    "Your active working budget for steps 1-4 (the RED segment) is about ten minutes; time spent waiting for the verification command does not count against it. Prefer a tight, correct RED over an exhaustive one.",
+    "",
+    "Once the RED is committed you must NOT weaken, delete, skip, or narrow any of its assertions in order to reach green. If you conclude the test was wrong, leave it alone and say so in your final response.",
+    "",
+    "Do NOT create a test-design document. Do NOT read PRD, NFR, story, or architecture documents.",
+    "",
+    "Final response: state RESULT=PASS or RESULT=FAIL, the changed paths, the verification result, and any unresolved risk.",
+  ].join("\n");
+}
+
+// ---------------------------------------------------------------------------
+// hidden oracle authoring
+// ---------------------------------------------------------------------------
+
+function oracleAuthorPrompt(c, outDir) {
+  return [
+    "You are authoring a HIDDEN ORACLE for a controlled software-engineering experiment. Other agents will later implement the capsule below without ever seeing your work. Your oracle is the independent check on whether their implementation is actually correct.",
+    "",
+    capsuleBlock(c),
+    "",
+    "## What you must produce",
+    `Write your four deliverables to ${outDir} (this directory already exists and is outside the worktree):`,
+    "",
+    "1. `OracleTest.php` — a PHPUnit test file with namespace `Tests\\Feature\\AtddOracle`, class `OracleTest`, extending `Tests\\Feature\\FeatureTestCase`. It is placed at `tests/Feature/AtddOracle/OracleTest.php` when it runs.",
+    "2. `reference.patch` — a git diff implementing the capsule CORRECTLY.",
+    "3. `sabotage.patch` — a git diff implementing the capsule as a plausible SHORTCUT: the kind of implementation that satisfies the visible acceptance test while leaving a real defect (authorization enforced only in the UI layer, a missing scope check, a permissive route-permission entry, an invariant quietly widened, a guarded path bypassed).",
+    "4. `oracle-meta.json` — `{\"task\":\"" + c.id + "\",\"assertions\":[{\"method\":\"<php test method name>\",\"severity\":\"S1\"|\"S2\",\"description\":\"...\"}]}` with one entry per test method in your oracle. Severity S1 = security, authorization, or data-integrity defect. S2 = functional defect.",
+    "",
+    "## Oracle design rules (these matter more than speed)",
+    "- Assert BEHAVIOUR, never literal copy, CSS classes, internal class names, or file layout. Implementers will legitimately choose different names and structures.",
+    "- Bind only to the seams the capsule names explicitly: named routes, persisted state, HTTP status, and the existing services/enums already present in the codebase.",
+    "- Every test method must be independently meaningful and must map to exactly one meta entry.",
+    "- Cover the shortcut risks, not just the happy path. The happy path is already covered by the implementer's own visible test; your value is in what they would miss.",
+    "- Do not reference the experiment, the arms, or the fact that an oracle exists.",
+    "",
+    "## Required validation loop — do all of it in this worktree",
+    "1. Place your oracle at `tests/Feature/AtddOracle/OracleTest.php` and run `./.atdd-verify tests/Feature/AtddOracle`. On the untouched base it MUST fail (the capability does not exist yet).",
+    "2. Implement the capsule correctly. Run the oracle again: it MUST now pass, every method. Save that implementation as `reference.patch` via `git diff -- . ':(exclude)tests/Feature/AtddOracle'`.",
+    "3. Reset the worktree to base (`git checkout -- .` and remove untracked implementation files, but KEEP your oracle file). Now implement the SHORTCUT variant. Run the oracle again: it MUST fail, and it must fail on the assertions that encode the shortcut's defect. Save it as `sabotage.patch` the same way.",
+    "4. Reset again. Copy the final oracle, both patches, and the meta file to the output directory.",
+    "",
+    "An oracle that passes on the base commit, or passes on the sabotage variant, or fails on the reference implementation, is a broken oracle and will be discarded. Iterate until all three conditions hold.",
+    "",
+    COMMON_RULES.replace("- Do not modify any test other than the capsule's target test path.", "- Your oracle lives at tests/Feature/AtddOracle/OracleTest.php. Do not modify any other existing test."),
+    "",
+    "Final response: state ORACLE=READY or ORACLE=FAILED, the number of test methods, their severities, and one line each on what the reference and sabotage variants do.",
+  ].join("\n");
+}
+
+function authorOracle(taskId) {
+  const c = capsule(taskId);
+  const id = `oracle-${taskId}`;
+  const outDir = path.join(ORACLE_DIR, taskId);
+  fs.mkdirSync(outDir, { recursive: true });
+  const startedAt = new Date().toISOString();
+  const { worktree: wt, db } = prepare(id);
+  const rawPath = path.join(outDir, "authoring-session.jsonl");
+  const session = launchSession({
+    cwd: wt, prompt: oracleAuthorPrompt(c, outDir), rawPath,
+    ledger: path.join(outDir, "authoring-verify-ledger.jsonl"), db, timeoutMs: 90 * 60 * 1000,
+    extraDirs: [outDir],
+  });
+  const produced = ["OracleTest.php", "reference.patch", "sabotage.patch", "oracle-meta.json"]
+    .filter((f) => fs.existsSync(path.join(outDir, f)));
+  const row = {
+    kind: "oracle-authoring", experiment_id: CAPSULES.experiment_id, task_id: taskId,
+    started_at: startedAt, finished_at: new Date().toISOString(),
+    exit: session.status, wall_seconds: Math.round(session.wallMs / 100) / 10,
+    tool_calls: session.tool_calls, output_tokens: session.output_tokens,
+    result_text: session.result_text.slice(0, 2000),
+    produced, complete: produced.length === 4,
+    worktree_kept: wt,
+  };
+  appendResult(RESULTS, row);
+  return row;
+}
+
+// ---------------------------------------------------------------------------
+// independent oracle mutation validation
+// ---------------------------------------------------------------------------
+
+function runOracleIn(wt, db, label, outDir) {
+  const junit = path.join(outDir, `validate-${label}.xml`);
+  const res = execute("./.atdd-verify", [ORACLE_REL, "--log-junit", junit], {
+    cwd: wt, env: { ...process.env, ATDD_TEST_DB: db, ATDD_VERIFY_LEDGER: "/dev/null" }, timeout: 20 * 60 * 1000,
+  });
+  write(path.join(outDir, `validate-${label}.log`), res.stdout + "\n" + res.stderr);
+  return { exit: res.status, failures: parseJunitFailures(junit), ran: fs.existsSync(junit) };
+}
+
+function resetWorktree(wt, base) {
+  must("git", ["reset", "--hard", base], { cwd: wt });
+  execute("git", ["clean", "-fd", "--", "app", "config", "resources", "routes", "lang", "packages", "database"], { cwd: wt });
+}
+
+/** Validates each oracle independently of the authoring agent's own claims. */
+function validateOracle(taskId) {
+  const dir = path.join(ORACLE_DIR, taskId);
+  const outDir = path.join(dir, "validation");
+  fs.mkdirSync(outDir, { recursive: true });
+  const required = ["OracleTest.php", "reference.patch", "sabotage.patch", "oracle-meta.json"];
+  const missing = required.filter((f) => !fs.existsSync(path.join(dir, f)));
+  if (missing.length) {
+    const row = { kind: "oracle-validation", task_id: taskId, valid: false, failure_class: "oracle",
+      error: `missing artifacts: ${missing.join(", ")}`, finished_at: new Date().toISOString() };
+    appendResult(RESULTS, row); return row;
+  }
+
+  const id = `oracleval-${taskId}`;
+  const { worktree: wt, db, base } = prepare(id);
+  const dest = path.join(wt, ORACLE_REL);
+  fs.mkdirSync(dest, { recursive: true });
+  fs.copyFileSync(path.join(dir, "OracleTest.php"), path.join(dest, "OracleTest.php"));
+
+  const onBase = runOracleIn(wt, db, "base", outDir);
+
+  const applyRef = execute("git", ["apply", "--reject", path.join(dir, "reference.patch")], { cwd: wt });
+  const onReference = applyRef.status === 0
+    ? runOracleIn(wt, db, "reference", outDir)
+    : { exit: null, failures: [], ran: false, apply_error: applyRef.stderr.slice(0, 500) };
+
+  resetWorktree(wt, base);
+  fs.mkdirSync(dest, { recursive: true });
+  fs.copyFileSync(path.join(dir, "OracleTest.php"), path.join(dest, "OracleTest.php"));
+  const applySab = execute("git", ["apply", "--reject", path.join(dir, "sabotage.patch")], { cwd: wt });
+  const onSabotage = applySab.status === 0
+    ? runOracleIn(wt, db, "sabotage", outDir)
+    : { exit: null, failures: [], ran: false, apply_error: applySab.stderr.slice(0, 500) };
+
+  const failsOnBase = onBase.exit !== 0;
+  const passesOnReference = onReference.exit === 0;
+  const failsOnSabotage = onSabotage.exit !== 0;
+  const valid = failsOnBase && passesOnReference && failsOnSabotage;
+
+  const row = {
+    kind: "oracle-validation", experiment_id: CAPSULES.experiment_id, task_id: taskId,
+    finished_at: new Date().toISOString(),
+    fails_on_base: failsOnBase, passes_on_reference: passesOnReference, fails_on_sabotage: failsOnSabotage,
+    base_failures: onBase.failures, reference_failures: onReference.failures, sabotage_failures: onSabotage.failures,
+    reference_apply_error: onReference.apply_error || null, sabotage_apply_error: onSabotage.apply_error || null,
+    valid, failure_class: valid ? null : "oracle",
+    worktree_kept: wt,
+  };
+  appendResult(RESULTS, row);
+  return row;
+}
+
+// ---------------------------------------------------------------------------
+// diagnostics
+// ---------------------------------------------------------------------------
+
+function fileAtRef(wt, ref, relPath) {
+  const res = execute("git", ["show", `${ref}:${relPath}`], { cwd: wt });
+  return res.status === 0 ? res.stdout : null;
+}
+
+/** Mechanical assertion-weakening detector: compares the target test between
+ *  the RED commit and the accepted-green tree. Counting is deliberately crude
+ *  and mechanical — the model judge never decides this. */
+function assertionProfile(text) {
+  if (!text) return { methods: 0, assertions: 0, skips: 0 };
+  return {
+    methods: (text.match(/function\s+test[A-Za-z0-9_]*\s*\(|#\[Test\]/g) || []).length,
+    assertions: (text.match(/->assert[A-Za-z0-9_]*\(|\$this->assert[A-Za-z0-9_]*\(|expect\(/g) || []).length,
+    skips: (text.match(/markTestSkipped|markTestIncomplete|->skip\(/g) || []).length,
+  };
+}
+
+function findCommit(wt, subjectFragment) {
+  const res = execute("git", ["log", "--format=%H%x09%ct%x09%s"], { cwd: wt });
+  if (res.status !== 0) return null;
+  for (const line of res.stdout.split(/\r?\n/)) {
+    const [sha, ct, ...rest] = line.split("\t");
+    if (!sha) continue;
+    if (rest.join("\t").includes(subjectFragment)) return { sha, committedAt: Number(ct) * 1000 };
+  }
+  return null;
+}
+
+function changedPathsSince(wt, baseRef) {
+  const committed = execute("git", ["diff", "--name-only", `${baseRef}..HEAD`], { cwd: wt });
+  const status = execute("git", ["status", "--porcelain=v1", "--untracked-files=all"], { cwd: wt });
+  const set = new Set();
+  if (committed.status === 0) committed.stdout.split(/\r?\n/).filter(Boolean).forEach((p) => set.add(p));
+  if (status.status === 0) {
+    status.stdout.split(/\r?\n/).filter(Boolean).forEach((l) => set.add(l.slice(3).trim()));
+  }
+  return [...set].filter((p) => p && p !== ".atdd-verify");
+}
+
+function isAllowedPath(p, allowed) {
+  return allowed.some((a) => (a.endsWith("/") ? p.startsWith(a) : p === a));
+}
+
+// ---------------------------------------------------------------------------
+// oracle scoring
+// ---------------------------------------------------------------------------
+
+const ORACLE_REL = "tests/Feature/AtddOracle";
+
+function scoreOracle(wt, taskId, db, outDir) {
+  const dir = path.join(ORACLE_DIR, taskId);
+  const testSrc = path.join(dir, "OracleTest.php");
+  const metaPath = path.join(dir, "oracle-meta.json");
+  if (!fs.existsSync(testSrc) || !fs.existsSync(metaPath)) {
+    return { oracle_available: false, escapes: [], s1: 0, s2: 0 };
+  }
+  const meta = JSON.parse(fs.readFileSync(metaPath, "utf8"));
+  const dest = path.join(wt, ORACLE_REL);
+  fs.mkdirSync(dest, { recursive: true });
+  fs.copyFileSync(testSrc, path.join(dest, "OracleTest.php"));
+  const junit = path.join(outDir, `oracle-${taskId}.xml`);
+  fs.mkdirSync(outDir, { recursive: true });
+  const res = execute("./.atdd-verify", [ORACLE_REL, "--log-junit", junit], {
+    cwd: wt,
+    env: { ...process.env, ATDD_TEST_DB: db, ATDD_VERIFY_LEDGER: "/dev/null" },
+    timeout: 15 * 60 * 1000,
+  });
+  write(path.join(outDir, `oracle-${taskId}.log`), res.stdout + "\n" + res.stderr);
+  fs.rmSync(dest, { recursive: true, force: true });
+
+  const failed = parseJunitFailures(junit);
+  const bySeverity = { S1: 0, S2: 0 };
+  const escapes = [];
+  // PHPUnit reports method names in snake_case with the `test` prefix stripped,
+  // so match on a normalised form rather than requiring an exact string.
+  const norm = (s) => String(s).toLowerCase().replace(/^test_?/, "").replace(/[^a-z0-9]/g, "");
+  for (const name of failed) {
+    const entry = (meta.assertions || []).find((a) =>
+      norm(name) === norm(a.method) || norm(name).includes(norm(a.method)) || norm(a.method).includes(norm(name)));
+    const severity = entry ? entry.severity : "S2";
+    bySeverity[severity] = (bySeverity[severity] || 0) + 1;
+    escapes.push({ method: name, severity, description: entry ? entry.description : "unclassified oracle assertion" });
+  }
+  return {
+    oracle_available: true,
+    oracle_exit: res.status,
+    oracle_ran: fs.existsSync(junit),
+    escapes,
+    s1: bySeverity.S1,
+    s2: bySeverity.S2,
+  };
+}
+
+function parseJunitFailures(junitPath) {
+  if (!fs.existsSync(junitPath)) return [];
+  const xml = fs.readFileSync(junitPath, "utf8");
+  const failures = [];
+  const caseRe = /<testcase\b([^>]*)(\/>|>([\s\S]*?)<\/testcase>)/g;
+  let m;
+  while ((m = caseRe.exec(xml)) !== null) {
+    const attrs = m[1];
+    const body = m[3] || "";
+    const nameMatch = /name="([^"]+)"/.exec(attrs);
+    if (!nameMatch) continue;
+    if (/<(failure|error)\b/.test(body)) failures.push(nameMatch[1]);
+  }
+  return failures;
+}
+
+// ---------------------------------------------------------------------------
+// run one arm
+// ---------------------------------------------------------------------------
+
+function runArm(taskId, arm) {
+  const c = capsule(taskId);
+  const id = `${taskId}-${arm}`;
+  const outDir = path.join(RUNS_DIR, id);
+  fs.mkdirSync(outDir, { recursive: true });
+  const ledger = path.join(outDir, "verify-ledger.jsonl");
+  fs.rmSync(ledger, { force: true });
+
+  const startedAt = new Date().toISOString();
+  const t0 = Date.now();
+  let prep;
+  try {
+    prep = prepare(id);
+  } catch (error) {
+    return { kind: "run", task_id: taskId, arm, result: "invalid", failure_class: "infrastructure",
+      error: `prepare failed: ${error.message}`, started_at: startedAt, finished_at: new Date().toISOString() };
+  }
+  const { worktree: wt, db, base } = prep;
+
+  const sessions = [];
+  let handoffMs = 0;
+  try {
+    if (arm === "A") {
+      const s1 = launchSession({
+        cwd: wt, prompt: testAuthorPrompt(c), rawPath: path.join(outDir, "session-1.jsonl"),
+        ledger, db, timeoutMs: 30 * 60 * 1000,
+      });
+      const s1Verify = ledgerSeconds(ledger, t0);
+      sessions.push({ role: "test-author", ...s1, verify: s1Verify });
+      // Arm A's handoff cost is not hidden. Two components make it up: the
+      // harness gap between the sessions (measured here, and near zero because
+      // the harness does no work between them), and the second session's cold
+      // start plus re-orientation onto the handed-off RED — which is inside
+      // s2's own wall time and therefore already inside arm A's active total.
+      const handoffStart = Date.now();
+      const midMark = Date.now();
+      handoffMs = midMark - handoffStart;
+      const s2 = launchSession({
+        cwd: wt, prompt: developerFromHandoffPrompt(c), rawPath: path.join(outDir, "session-2.jsonl"),
+        ledger, db, timeoutMs: 45 * 60 * 1000,
+      });
+      const s2Verify = ledgerSeconds(ledger, midMark);
+      sessions.push({ role: "developer", ...s2, verify: s2Verify });
+    } else {
+      const s1 = launchSession({
+        cwd: wt, prompt: integratedPrompt(c), rawPath: path.join(outDir, "session-1.jsonl"),
+        ledger, db, timeoutMs: 60 * 60 * 1000,
+      });
+      sessions.push({ role: "integrated-developer", ...s1, verify: ledgerSeconds(ledger, t0) });
+    }
+  } catch (error) {
+    return { kind: "run", task_id: taskId, arm, result: "invalid", failure_class: "infrastructure",
+      error: `session launch failed: ${error.message}`, started_at: startedAt, finished_at: new Date().toISOString() };
+  }
+
+  // ---- mechanical outcomes ------------------------------------------------
+  const finalVerify = execute("./.atdd-verify", c.verify.slice(1), {
+    cwd: wt, env: { ...process.env, ATDD_TEST_DB: db, ATDD_VERIFY_LEDGER: "/dev/null" }, timeout: 15 * 60 * 1000,
+  });
+  write(path.join(outDir, "final-verify.log"), finalVerify.stdout + "\n" + finalVerify.stderr);
+
+  const redCommit = findCommit(wt, `RED for ${taskId}`);
+  const productCommit = findCommit(wt, `implement ${taskId}`);
+  const targetTest = c.target_test_paths[0];
+  const redText = redCommit ? fileAtRef(wt, redCommit.sha, targetTest) : null;
+  const finalText = fs.existsSync(path.join(wt, targetTest)) ? fs.readFileSync(path.join(wt, targetTest), "utf8") : null;
+  const redProfile = assertionProfile(redText);
+  const finalProfile = assertionProfile(finalText);
+  const weakened = Boolean(redText) && (
+    finalProfile.methods < redProfile.methods ||
+    finalProfile.assertions < redProfile.assertions ||
+    finalProfile.skips > redProfile.skips
+  );
+
+  const changed = changedPathsSince(wt, base);
+  const scopeViolations = changed.filter((p) => !isAllowedPath(p, c.allowed_paths));
+
+  const wallMs = sessions.reduce((a, s) => a + s.wallMs, 0) + handoffMs;
+  const verifySeconds = sessions.reduce((a, s) => a + s.verify.seconds, 0);
+  const activeSeconds = Math.round((wallMs / 1000 - verifySeconds) * 10) / 10;
+
+  const totalLedger = ledgerSeconds(ledger, t0);
+  const acceptedGreen = finalVerify.status === 0 && !scopeViolations.length;
+
+  // Save the final diff for blinded judging.
+  const diff = execute("git", ["diff", `${base}..HEAD`], { cwd: wt });
+  write(path.join(outDir, "final.diff"), diff.stdout);
+  if (finalText) write(path.join(outDir, "final-test.php"), finalText);
+  if (redText) write(path.join(outDir, "red-test.php"), redText);
+
+  const oracle = acceptedGreen ? scoreOracle(wt, taskId, db, outDir) : { oracle_available: false, escapes: [], s1: 0, s2: 0, skipped: "not accepted green" };
+
+  const row = {
+    kind: "run",
+    experiment_id: CAPSULES.experiment_id,
+    task_id: taskId,
+    category: c.category,
+    arm,
+    started_at: startedAt,
+    finished_at: new Date().toISOString(),
+    sessions: sessions.map((s) => ({
+      role: s.role, exit: s.status, wall_seconds: Math.round(s.wallMs / 100) / 10,
+      verify_seconds: s.verify.seconds, verify_runs: s.verify.runs, red_verify_runs: s.verify.red_runs,
+      tool_calls: s.tool_calls, reads: s.reads, reread_paths: s.reread_paths,
+      input_tokens: s.input_tokens, cached_input_tokens: s.cached_input_tokens, output_tokens: s.output_tokens,
+      transcript_sha256: s.transcriptHash,
+    })),
+    handoff_seconds: Math.round(handoffMs / 100) / 10,
+    wall_seconds: Math.round(wallMs / 100) / 10,
+    verify_seconds: verifySeconds,
+    active_seconds: activeSeconds,
+    verify_runs: totalLedger.runs,
+    harness_failure_reds: 0,
+    time_to_red_commit_seconds: redCommit ? Math.round((redCommit.committedAt - t0) / 100) / 10 : null,
+    time_to_first_product_commit_seconds: productCommit ? Math.round((productCommit.committedAt - t0) / 100) / 10 : null,
+    red_commit: redCommit ? redCommit.sha : null,
+    product_commit: productCommit ? productCommit.sha : null,
+    red_assertion_profile: redProfile,
+    final_assertion_profile: finalProfile,
+    assertion_weakened: weakened,
+    changed_paths: changed,
+    scope_violations: scopeViolations,
+    final_verify_exit: finalVerify.status,
+    accepted_green: acceptedGreen,
+    oracle,
+    total_tool_calls: sessions.reduce((a, s) => a + s.tool_calls, 0),
+    total_reread_paths: sessions.reduce((a, s) => a + s.reread_paths, 0),
+    result: acceptedGreen ? "pass" : "fail",
+    // Decomposition the protocol requires: a session killed by the harness
+    // timeout, or one that died on a transport/tooling error, is an
+    // infrastructure failure and must not be charged to the agent.
+    failure_class: acceptedGreen ? null
+      : (sessions.some((s) => s.signal) ? "infrastructure"
+        : sessions.some((s) => s.status !== 0) ? "infrastructure" : "agent"),
+    session_signals: sessions.map((s) => s.signal || null),
+    worktree_kept: wt,
+  };
+  appendResult(RESULTS, row);
+  return row;
+}
+
+// ---------------------------------------------------------------------------
+// blinding + judging
+// ---------------------------------------------------------------------------
+
+const JUDGE_DIR = path.join(EXP_DIR, "judge");
+
+/** Strips anything that could reveal the arm, actor, run identity, or harness. */
+function sanitize(text) {
+  if (!text) return "";
+  return text
+    .replace(/\/private\/tmp\/atdd-min-1\/wt\/[A-Za-z0-9_-]+/g, "<REPO>")
+    .replace(/atdd-min-1/gi, "<EXPERIMENT>")
+    .replace(/\.atdd-verify/g, "<VERIFY>")
+    .replace(/ATDD_[A-Z_]+/g, "<ENV>")
+    .replace(/\bacef[-_a-z0-9]*/gi, "<TOOL>")
+    .replace(/\b(arm[- ]?[AB]|test author|integrated red|handoff)\b/gi, "<REDACTED>")
+    .replace(/AtddOracle|OracleTest/g, "<REDACTED>");
+}
+
+function buildJudgeBundle() {
+  const runs = readResults().filter((r) => r.kind === "run" && r.accepted_green);
+  fs.rmSync(JUDGE_DIR, { recursive: true, force: true });
+  fs.mkdirSync(path.join(JUDGE_DIR, "bundle"), { recursive: true });
+
+  // Opaque, order-randomised artifact ids seeded from the preregistration commit.
+  const rnd = seededRandom(`${CAPSULES.experiment_id}:${CAPSULES.frozen_at_commit}:judge`);
+  const shuffled = runs.map((r) => ({ r, k: rnd() })).sort((a, b) => a.k - b.k).map((x) => x.r);
+
+  const keys = [];
+  shuffled.forEach((r, i) => {
+    const artifactId = `ART-${String(i + 1).padStart(2, "0")}${crypto.createHash("sha1")
+      .update(`${r.task_id}${r.arm}${CAPSULES.frozen_at_commit}`).digest("hex").slice(0, 4)}`;
+    const dir = path.join(JUDGE_DIR, "bundle", artifactId);
+    fs.mkdirSync(dir, { recursive: true });
+    const runDir = path.join(RUNS_DIR, `${r.task_id}-${r.arm}`);
+    const c = capsule(r.task_id);
+    write(path.join(dir, "capsule.md"), [
+      `# Capsule — ${c.title}`, "", "## Story", c.story, "",
+      "## Acceptance criteria", ...c.acceptance_criteria.map((a, n) => `${n + 1}. ${a}`),
+    ].join("\n"));
+    write(path.join(dir, "production.diff"), sanitize(
+      fs.existsSync(path.join(runDir, "final.diff")) ? fs.readFileSync(path.join(runDir, "final.diff"), "utf8") : ""));
+    write(path.join(dir, "acceptance-test.php"), sanitize(
+      fs.existsSync(path.join(runDir, "final-test.php")) ? fs.readFileSync(path.join(runDir, "final-test.php"), "utf8") : ""));
+    keys.push({ artifact_id: artifactId, task_id: r.task_id, arm: r.arm });
+  });
+  write(path.join(JUDGE_DIR, "keys.json"), JSON.stringify(keys, null, 2));
+  return keys;
+}
+
+function judgePrompt(bundleDir, outPath) {
+  return [
+    "You are reviewing a set of independent code-change artifacts. Each artifact is one implementation of one capsule: a story with acceptance criteria, the production diff that implements it, and the acceptance test that accompanies it.",
+    "",
+    `The frozen judging rubric is at ${path.join(EXP_DIR, "JUDGE_RUBRIC.md")}. Read it first and follow it exactly.`,
+    `The artifacts are in ${bundleDir}. Each subdirectory is one artifact: capsule.md, production.diff, acceptance-test.php.`,
+    "",
+    "Read every artifact directory. Judge each artifact independently and on its own merits. You have no information about how any artifact was produced, and you must not speculate about it.",
+    "",
+    `Write your result as a single JSON object to ${outPath}, exactly matching the rubric's output contract. Every artifact directory present in the bundle must appear exactly once in your output.`,
+    "",
+    "Final response: state JUDGED=<number of artifacts> and the total count of major and minor findings.",
+  ].join("\n");
+}
+
+function runJudge() {
+  const keys = buildJudgeBundle();
+  if (!keys.length) return { kind: "judging", judged: 0, error: "no accepted-green runs to judge" };
+  const bundleDir = path.join(JUDGE_DIR, "bundle");
+  const outPath = path.join(JUDGE_DIR, "findings.json");
+  const startedAt = new Date().toISOString();
+  const session = launchSession({
+    cwd: JUDGE_DIR, prompt: judgePrompt(bundleDir, outPath),
+    rawPath: path.join(JUDGE_DIR, "judge-session.jsonl"),
+    ledger: "/dev/null", db: dbName("judge"), timeoutMs: 90 * 60 * 1000,
+    extraDirs: [EXP_DIR],
+  });
+  const row = {
+    kind: "judging", experiment_id: CAPSULES.experiment_id, started_at: startedAt,
+    finished_at: new Date().toISOString(), exit: session.status,
+    wall_seconds: Math.round(session.wallMs / 100) / 10, artifacts: keys.length,
+    produced: fs.existsSync(outPath), result_text: session.result_text.slice(0, 1000),
+  };
+  appendResult(RESULTS, row);
+  return row;
+}
+
+// ---------------------------------------------------------------------------
+// report
+// ---------------------------------------------------------------------------
+
+function median(values) {
+  if (!values.length) return null;
+  const s = [...values].sort((a, b) => a - b);
+  const m = Math.floor(s.length / 2);
+  return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
+}
+
+function buildReport() {
+  const rows = readResults();
+  const runs = rows.filter((r) => r.kind === "run");
+  const validations = rows.filter((r) => r.kind === "oracle-validation");
+  const latestValidationByTask = new Map();
+  for (const validation of validations) latestValidationByTask.set(validation.task_id, validation);
+  const latestValidations = [...latestValidationByTask.values()];
+  const incidentPath = path.join(EXP_DIR, "infrastructure-incidents.json");
+  const infrastructureIncidents = fs.existsSync(incidentPath)
+    ? JSON.parse(fs.readFileSync(incidentPath, "utf8")) : [];
+  const findings = fs.existsSync(path.join(JUDGE_DIR, "findings.json"))
+    ? JSON.parse(fs.readFileSync(path.join(JUDGE_DIR, "findings.json"), "utf8")) : null;
+  const keys = fs.existsSync(path.join(JUDGE_DIR, "keys.json"))
+    ? JSON.parse(fs.readFileSync(path.join(JUDGE_DIR, "keys.json"), "utf8")) : [];
+
+  const byTask = {};
+  for (const t of allTaskIds()) {
+    const a = runs.find((r) => r.task_id === t && r.arm === "A");
+    const b = runs.find((r) => r.task_id === t && r.arm === "B");
+    const validation = latestValidationByTask.get(t);
+    const findingsFor = (arm) => {
+      const key = keys.find((k) => k.task_id === t && k.arm === arm);
+      if (!key || !findings) return null;
+      const entry = (findings.artifacts || []).find((x) => x.artifact_id === key.artifact_id);
+      if (!entry) return null;
+      return {
+        major: (entry.findings || []).filter((f) => f.severity === "major").length,
+        minor: (entry.findings || []).filter((f) => f.severity === "minor").length,
+        items: entry.findings || [],
+      };
+    };
+    byTask[t] = {
+      task_id: t, category: capsule(t).category, title: capsule(t).title,
+      oracle_valid: validation ? validation.valid : null,
+      arm_order: armOrderFor(t),
+      A: a || null, B: b || null,
+      judge_A: findingsFor("A"), judge_B: findingsFor("B"),
+      paired_complete: Boolean(a && b && a.accepted_green && b.accepted_green && validation && validation.valid),
+      saving_pct: a && b && a.active_seconds > 0
+        ? Math.round(((a.active_seconds - b.active_seconds) / a.active_seconds) * 1000) / 10 : null,
+    };
+  }
+
+  const pairs = Object.values(byTask).filter((p) => p.paired_complete);
+  const savings = pairs.map((p) => p.saving_pct).filter((v) => v !== null);
+  const bFaster = pairs.filter((p) => p.B.active_seconds < p.A.active_seconds).length;
+
+  // Decision-rule inputs. B-only test weakening counts as an S2 escape (rule 2).
+  const s1BOnly = pairs.filter((p) => p.B.oracle.s1 > 0 && p.A.oracle.s1 === 0);
+  const s2Of = (p, arm) => p[arm].oracle.s2 + (arm === "B" && p.B.assertion_weakened && !p.A.assertion_weakened ? 1 : 0);
+
+  const summary = {
+    experiment_id: CAPSULES.experiment_id,
+    pinned_commit: PIN,
+    generated_at: rows.map((row) => row.finished_at).filter(Boolean).sort().at(-1) || CAPSULES.frozen_at,
+    tasks_total: allTaskIds().length,
+    pairs_complete: pairs.length,
+    oracles_valid: latestValidations.filter((v) => v.valid).length,
+    oracles_invalid: latestValidations.filter((v) => !v.valid).map((v) => ({ task: v.task_id, error: v.error || "mutation validation failed" })),
+    failure_decomposition: {
+      agent: runs.filter((r) => r.failure_class === "agent").map((r) => `${r.task_id}-${r.arm}`),
+      oracle: latestValidations.filter((v) => !v.valid).map((v) => v.task_id),
+      infrastructure: [
+        ...runs.filter((r) => r.failure_class === "infrastructure").map((r) => `${r.task_id}-${r.arm}`),
+        ...infrastructureIncidents.map((incident) => incident.id),
+      ],
+    },
+    median_saving_pct: median(savings),
+    b_faster_pairs: bFaster,
+    s1_escapes: { A: pairs.reduce((a, p) => a + p.A.oracle.s1, 0), B: pairs.reduce((a, p) => a + p.B.oracle.s1, 0) },
+    s2_escapes: { A: pairs.reduce((a, p) => a + s2Of(p, "A"), 0), B: pairs.reduce((a, p) => a + s2Of(p, "B"), 0) },
+    b_only_s1_categories: s1BOnly.map((p) => p.category),
+    tripwire_rule_1_triggered: s1BOnly.length > 0,
+    tripwire_rule_1_categories: s1BOnly.length,
+    judge_major: { A: pairs.reduce((a, p) => a + (p.judge_A ? p.judge_A.major : 0), 0), B: pairs.reduce((a, p) => a + (p.judge_B ? p.judge_B.major : 0), 0) },
+    judge_minor: { A: pairs.reduce((a, p) => a + (p.judge_A ? p.judge_A.minor : 0), 0), B: pairs.reduce((a, p) => a + (p.judge_B ? p.judge_B.minor : 0), 0) },
+    tasks: byTask,
+  };
+
+  write(path.join(EXP_DIR, "run-table.json"), JSON.stringify(summary, null, 2));
+  console.log(JSON.stringify({
+    pairs_complete: summary.pairs_complete, median_saving_pct: summary.median_saving_pct,
+    b_faster_pairs: summary.b_faster_pairs, s1: summary.s1_escapes, s2: summary.s2_escapes,
+    tripwire: summary.tripwire_rule_1_triggered, oracles_invalid: summary.oracles_invalid.length,
+  }, null, 2));
+  return summary;
+}
+
+// ---------------------------------------------------------------------------
+// CLI
+// ---------------------------------------------------------------------------
+
+function argOf(flag, fallback) {
+  const i = process.argv.indexOf(flag);
+  return i > -1 && process.argv[i + 1] ? process.argv[i + 1] : fallback;
+}
+
+/** Fork this same script as child processes with a fixed concurrency cap.
+ *  The protocol allows at most four concurrent sessions; each child runs at
+ *  most one session at a time, so the cap is the session cap. */
+function runBatch(jobs, concurrency) {
+  return new Promise((resolve) => {
+    const results = [];
+    let idx = 0, active = 0;
+    const pump = () => {
+      if (idx >= jobs.length && active === 0) return resolve(results);
+      while (active < concurrency && idx < jobs.length) {
+        const job = jobs[idx++];
+        active += 1;
+        const started = Date.now();
+        console.log(`[start] ${job.join(" ")}`);
+        const child = cp.spawn(process.execPath, [__filename, ...job], { stdio: ["ignore", "pipe", "pipe"] });
+        let out = "";
+        child.stdout.on("data", (d) => { out += d.toString(); });
+        child.stderr.on("data", (d) => { out += d.toString(); });
+        child.on("close", (code) => {
+          const secs = Math.round((Date.now() - started) / 1000);
+          console.log(`[done ${secs}s exit=${code}] ${job.join(" ")}\n${out.trim()}`);
+          results.push({ job, code, out });
+          active -= 1;
+          pump();
+        });
+      }
+    };
+    pump();
+  });
+}
+
+function armOrderFor(taskId) {
+  const rnd = seededRandom(`${CAPSULES.experiment_id}:${CAPSULES.frozen_at_commit}:${taskId}`);
+  return rnd() < 0.5 ? ["A", "B"] : ["B", "A"];
+}
+
+async function main() {
+  const cmd = process.argv[2];
+  fs.mkdirSync(EXP_DIR, { recursive: true });
+  applyGitEnv();
+
+  if (cmd === "session-smoke") {
+    // Proves the launcher's flag order, model/effort selection, and stream
+    // parsing before any measured run is spent.
+    const cwd = argOf("--cwd", path.join(WORKSPACE, "probe"));
+    const out = launchSession({
+      cwd, prompt: "Reply with exactly the text OK-ATDD-SMOKE and nothing else. Do not use any tools.",
+      rawPath: path.join(WORKSPACE, "smoke", "session.jsonl"),
+      ledger: "/dev/null", db: dbName("probe"), timeoutMs: 5 * 60 * 1000,
+    });
+    console.log(JSON.stringify({
+      exit: out.status, wall_seconds: Math.round(out.wallMs / 100) / 10, result: out.result_text.slice(0, 80),
+      tool_calls: out.tool_calls, input_tokens: out.input_tokens, output_tokens: out.output_tokens,
+      stderr: out.stderr.slice(0, 300),
+    }, null, 2));
+  } else if (cmd === "prepare") {
+    console.log(JSON.stringify(prepare(argOf("--id", "probe")), null, 2));
+  } else if (cmd === "teardown") {
+    teardown(argOf("--id", "probe"));
+  } else if (cmd === "arm-order") {
+    console.log(JSON.stringify(Object.fromEntries(allTaskIds().map((t) => [t, armOrderFor(t)])), null, 2));
+  } else if (cmd === "run-arm") {
+    const row = runArm(argOf("--task"), argOf("--arm"));
+    console.log(`${row.task_id} ${row.arm} ${row.result} active=${row.active_seconds}s verify=${row.verify_seconds}s`);
+  } else if (cmd === "run-task") {
+    const taskId = argOf("--task");
+    for (const arm of armOrderFor(taskId)) {
+      if (isDone(taskId, arm)) { console.log(`skip ${taskId} ${arm} (already scored)`); continue; }
+      const row = runArm(taskId, arm);
+      console.log(`${row.task_id} ${row.arm} ${row.result} active=${row.active_seconds}s verify=${row.verify_seconds}s`);
+    }
+  } else if (cmd === "author-all") {
+    const tasks = (argOf("--tasks", allTaskIds().join(","))).split(",");
+    await runBatch(tasks.map((t) => ["author-oracle", "--task", t]), Number(argOf("--concurrency", "4")));
+  } else if (cmd === "validate-all") {
+    const tasks = (argOf("--tasks", allTaskIds().join(","))).split(",");
+    await runBatch(tasks.map((t) => ["validate-oracle", "--task", t]), Number(argOf("--concurrency", "4")));
+  } else if (cmd === "run-all") {
+    const tasks = (argOf("--tasks", allTaskIds().join(","))).split(",");
+    await runBatch(tasks.map((t) => ["run-task", "--task", t]), Number(argOf("--concurrency", "4")));
+  } else if (cmd === "author-oracle") {
+    const row = authorOracle(argOf("--task"));
+    console.log(`oracle ${row.task_id} exit=${row.exit} complete=${row.complete} produced=${row.produced.join(",")} wall=${row.wall_seconds}s`);
+  } else if (cmd === "validate-oracle") {
+    const row = validateOracle(argOf("--task"));
+    console.log(`validate ${row.task_id} valid=${row.valid} base_fail=${row.fails_on_base} ref_pass=${row.passes_on_reference} sabotage_fail=${row.fails_on_sabotage}`);
+  } else if (cmd === "judge") {
+    const row = runJudge();
+    console.log(`judge exit=${row.exit} artifacts=${row.artifacts} produced=${row.produced} wall=${row.wall_seconds}s`);
+  } else if (cmd === "report") {
+    buildReport();
+  } else if (cmd === "score-only") {
+    const taskId = argOf("--task"); const arm = argOf("--arm");
+    const id = `${taskId}-${arm}`;
+    console.log(JSON.stringify(scoreOracle(wtPath(id), taskId, dbName(id), path.join(RUNS_DIR, id)), null, 2));
+  } else {
+    console.log("usage: acef-atdd-min-experiment <prepare|teardown|arm-order|run-arm|run-task|score-only> [--task Tn] [--arm A|B] [--id slug]");
+    process.exit(1);
+  }
+}
+
+main().catch((e) => { console.error(e.stack || e.message); process.exit(1); });

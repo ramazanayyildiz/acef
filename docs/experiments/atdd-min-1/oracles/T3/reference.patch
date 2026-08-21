@@ -1,0 +1,198 @@
+diff --git a/app/Navigation/NavigationScrollContract.php b/app/Navigation/NavigationScrollContract.php
+new file mode 100644
+index 00000000..0a69115f
+--- /dev/null
++++ b/app/Navigation/NavigationScrollContract.php
+@@ -0,0 +1,132 @@
++<?php
++
++declare(strict_types=1);
++
++namespace App\Navigation;
++
++use Illuminate\Http\Request;
++
++/**
++ * Server-rendered contract behind the primary navigation's current state and
++ * the scroll-restoration markers.
++ *
++ * Two things have to agree for a request:
++ *   - which navigation item is *the* current page (announced with
++ *     `aria-current`, and identical in the desktop and mobile renderings), and
++ *   - which stored scroll offset belongs to the page being rendered.
++ *
++ * Both are derived here — once — so the desktop nav, the mobile drawer and the
++ * layout's scroll region can never disagree.
++ *
++ * The legacy `active` flag stays untouched: `ActiveStateResolver` marks a whole
++ * section active (every item whose route prefix matches), which is right for
++ * styling but wrong for `aria-current`, where exactly one item may be current.
++ */
++class NavigationScrollContract
++{
++    /**
++     * Route suffixes that `ActiveStateResolver` treats as the terminal action
++     * segment of a resource route.
++     */
++    private const ACTION_SUFFIX = '/\.(index|show|create|edit|store|update|destroy)$/';
++
++    public function __construct(
++        private readonly Request $request,
++    ) {}
++
++    /**
++     * Stable scroll-restoration key for a navigation item.
++     *
++     * Derived from the item alone — never from the request or the rendering
++     * variant — so the desktop and mobile renderings of one item share a key
++     * and that key survives across requests.
++     *
++     * @param  array<string, mixed>  $item
++     */
++    public function keyFor(array $item): string
++    {
++        foreach (['key', 'route', 'data_testid'] as $field) {
++            $value = (string) ($item[$field] ?? '');
++
++            if ($value !== '') {
++                return 'nav:' . $value;
++            }
++        }
++
++        return 'nav:unknown';
++    }
++
++    /**
++     * Key of the single item that represents the page being rendered, or null
++     * when the current route is not reachable from the primary navigation.
++     *
++     * The most specific match wins: an exact route match beats a section
++     * prefix match, and a longer prefix beats a shorter one. Ties keep the
++     * first declared item, so the result is deterministic for a given menu.
++     *
++     * @param  array<int, array<string, mixed>>  $items
++     */
++    public function currentKey(array $items): ?string
++    {
++        $currentRoute = (string) ($this->request->route()?->getName() ?? '');
++
++        if ($currentRoute === '') {
++            return null;
++        }
++
++        $bestScore = 0;
++        $bestKey = null;
++
++        foreach ($items as $item) {
++            $route = (string) ($item['route'] ?? '');
++
++            if ($route === '') {
++                continue;
++            }
++
++            $score = $this->specificity($route, $currentRoute);
++
++            if ($score > $bestScore) {
++                $bestScore = $score;
++                $bestKey = $this->keyFor($item);
++            }
++        }
++
++        return $bestKey;
++    }
++
++    /**
++     * Identifier of the page being rendered, used as the scroll-restoration
++     * region marker so Back/Forward can look up the offset stored for the page
++     * it is returning to.
++     *
++     * @param  array<int, array<string, mixed>>  $items
++     */
++    public function pageKey(array $items): string
++    {
++        $current = $this->currentKey($items);
++
++        if ($current !== null) {
++            return $current;
++        }
++
++        $routeName = (string) ($this->request->route()?->getName() ?? '');
++
++        return 'page:' . ($routeName !== '' ? $routeName : trim($this->request->path(), '/'));
++    }
++
++    private function specificity(string $itemRoute, string $currentRoute): int
++    {
++        if ($itemRoute === $currentRoute) {
++            return 1000 + strlen($itemRoute);
++        }
++
++        $prefix = (string) preg_replace(self::ACTION_SUFFIX, '', $itemRoute);
++
++        if ($prefix !== '' && str_starts_with($currentRoute, $prefix . '.')) {
++            return strlen($prefix);
++        }
++
++        return 0;
++    }
++}
+diff --git a/resources/views/components/topbar-navigation.blade.php b/resources/views/components/topbar-navigation.blade.php
+index 238db7c7..c3476351 100644
+--- a/resources/views/components/topbar-navigation.blade.php
++++ b/resources/views/components/topbar-navigation.blade.php
+@@ -1,4 +1,4 @@
+-@props(['items' => [], 'variant' => 'desktop', 'except' => []])
++@props(['items' => [], 'variant' => 'desktop', 'except' => [], 'current' => null])
+ 
+ @php
+     $isDesktop = $variant === 'desktop';
+@@ -6,14 +6,24 @@
+     $activeClasses = $isDesktop ? 'font-semibold text-white' : 'font-semibold text-white bg-white/10';
+     $inactiveClasses = $isDesktop ? 'text-white/80 hover:text-white' : 'text-white/80';
+     $testidSuffix = $isDesktop ? '' : '-mobile';
++
++    // Current page + scroll keys are resolved from the item list, not from the
++    // rendering variant, so the desktop nav and the mobile drawer always agree.
++    $scrollContract = app(\App\Navigation\NavigationScrollContract::class);
++    $currentKey = $current ?? $scrollContract->currentKey($items);
+ @endphp
+ 
+ @foreach ($items as $item)
+     @continue(empty($item['route']))
+     @continue(in_array($item['key'] ?? null, $except, true))
++    @php
++        $scrollKey = $scrollContract->keyFor($item);
++    @endphp
+     <a
+         href="{{ route($item['route']) }}"
+         data-testid="{{ ($item['data_testid'] ?? ('nav-' . ($item['key'] ?? ''))) . $testidSuffix }}"
++        data-scroll-key="{{ $scrollKey }}"
++        @if ($scrollKey === $currentKey) aria-current="page" @endif
+         class="{{ $linkBase }} {{ ($item['active'] ?? false) ? $activeClasses : $inactiveClasses }}"
+     >
+         {{ $item['label'] }}
+diff --git a/resources/views/layouts/authenticated.blade.php b/resources/views/layouts/authenticated.blade.php
+index 6605bd98..b202dd97 100644
+--- a/resources/views/layouts/authenticated.blade.php
++++ b/resources/views/layouts/authenticated.blade.php
+@@ -21,6 +21,11 @@
+     $currentTeam = authUser()?->currentTeam;
+     $navigationMenu = $navigationMenu ?? [];
+     $userMenu = $userMenu ?? [];
++
++    // Identifies the page being rendered so Back/Forward can restore the
++    // scroll offset stored for the page it is returning to. Same key space as
++    // the per-link scroll keys in the primary navigation.
++    $scrollRegionKey = app(\App\Navigation\NavigationScrollContract::class)->pageKey($navigationMenu);
+ @endphp
+ 
+ <div class="min-h-screen flex flex-col" x-data="{ mobileNavOpen: false }">
+@@ -69,7 +74,7 @@
+     @endisset
+ 
+     {{-- Page Body --}}
+-    <div class="flex-1 min-h-0">
++    <div class="flex-1 min-h-0" data-scroll-region="{{ $scrollRegionKey }}">
+         @yield('content')
+     </div>
+ </div>

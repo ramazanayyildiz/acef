@@ -1,0 +1,45 @@
+{
+  "task": "T2",
+  "assertions": [
+    {
+      "method": "event_overview_refuses_a_workspace_member_without_event_view_authorization",
+      "severity": "S1",
+      "description": "After confirming the page is served to an entitled organizer, a member of the SAME workspace who holds no event view capability (billing admin) must be refused with 403/404 and must not receive the event content. Catches authorization that lives only in the view layer (hiding actions while still rendering the page) and permissive route-permission entries such as 'auth only, no capability check'."
+    },
+    {
+      "method": "event_overview_refuses_an_actor_from_another_workspace",
+      "severity": "S1",
+      "description": "After confirming the page is served inside the owning workspace, an admin of a different workspace requesting the same event's overview must be refused with 403/404 and must not receive the event title. Catches a missing tenant/scope check, e.g. resolving the event without the team scope or bypassing it to 'support cross-team admins'."
+    },
+    {
+      "method": "event_overview_requires_an_authenticated_session",
+      "severity": "S1",
+      "description": "An unauthenticated visitor must not be served the overview page and must be redirected to login. Catches a route registered outside the authenticated middleware group or a route-permission entry marked public because the page is 'only read-only'."
+    },
+    {
+      "method": "event_overview_is_reachable_through_the_named_route_for_an_authorized_organizer",
+      "severity": "S2",
+      "description": "A named route 'events.overview' must exist, answer GET, resolve to /events/{event:uuid}/overview, and render the event for an entitled organizer. Catches a missing or differently-named/pathed route."
+    },
+    {
+      "method": "event_overview_renders_the_event_settings_tab_strip_for_this_event",
+      "severity": "S2",
+      "description": "The overview page must render the event settings navigation for this specific event, linking its sibling settings surfaces (landing preview, registration form, custom domain, automations). Catches a page that renders standalone instead of through the shared shell that carries the tab strip."
+    },
+    {
+      "method": "event_overview_action_visibility_follows_the_shared_event_action_model",
+      "severity": "S2",
+      "description": "Expected visibility is read from the existing EventActionAvailability model, then compared against the rendered page: the metadata edit surface is offered on a DRAFT event and withheld on a PUBLISHED one. Catches a page that does not pass action availability into the shell (defaults leak every action) or that re-implements visibility with per-page conditionals."
+    },
+    {
+      "method": "event_overview_exposes_no_state_changing_control_for_the_event",
+      "severity": "S2",
+      "description": "The read-only overview must expose no form submitting for this event, no mutating events-module form, no component form submission, and no publish/cancel/suspend/reactivate/force-end control. Catches the shell being adopted by copying the preview page's action row wholesale, quietly widening the read-only page into a state-changing one."
+    },
+    {
+      "method": "landing_preview_keeps_action_driven_header_and_preview_body_after_shell_adoption",
+      "severity": "S2",
+      "description": "After the retrofit the Landing Preview page must still render its preview body and preserved root test id, still gate its header on the shared action model (edit offered on DRAFT, withheld on PUBLISHED), and present the same shell navigation the overview page presents for the same event and actor. Catches a retrofit that drops preview behaviour other pages/tests depend on, or that leaves the two pages on divergent headers."
+    }
+  ]
+}

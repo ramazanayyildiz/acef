@@ -1,0 +1,559 @@
+diff --git a/app/Modules/Events/Http/Controllers/LandingPreviewShareController.php b/app/Modules/Events/Http/Controllers/LandingPreviewShareController.php
+new file mode 100644
+index 00000000..8f51c03c
+--- /dev/null
++++ b/app/Modules/Events/Http/Controllers/LandingPreviewShareController.php
+@@ -0,0 +1,55 @@
++<?php
++
++declare(strict_types=1);
++
++namespace App\Modules\Events\Http\Controllers;
++
++use App\Modules\Events\Models\Event;
++use App\Modules\Events\Models\LandingPage;
++use App\Modules\Events\Services\EventService;
++use App\Modules\Events\Support\LandingPreviewPayload;
++use App\Modules\Events\Support\LocaleResolver;
++use Illuminate\Http\JsonResponse;
++use Illuminate\Routing\Controller;
++use Symfony\Component\HttpFoundation\Response;
++
++/**
++ * Capsule T5 — shareable landing-preview link for unauthenticated reviewers.
++ *
++ * store()  organiser mints the link (capability-gated by route.permission).
++ * show()   reviewer opens it (guarded by the `signed` middleware, which
++ *          refuses altered parameters and expired links before we run).
++ */
++class LandingPreviewShareController extends Controller
++{
++    public function __construct(
++        private readonly EventService $eventService,
++    ) {}
++
++    public function store(Event $event): JsonResponse
++    {
++        return response()->json([
++            'url' => $this->eventService->mintLandingPreviewShareUrl($event, authUser()),
++        ]);
++    }
++
++    public function show(string $eventUuid): Response
++    {
++        $event = $this->eventService->findLandingPreviewShareEvent($eventUuid);
++
++        if (! $event instanceof Event) {
++            abort(404);
++        }
++
++        app()->setLocale(LocaleResolver::resolve($event->default_locale));
++
++        $landing = $event->landingPage;
++
++        return response()->view('events::public.landing-share', [
++            'event' => $event,
++            'previewData' => $landing instanceof LandingPage
++                ? $landing->previewPayload($event)
++                : LandingPreviewPayload::build($event, []),
++        ]);
++    }
++}
+diff --git a/app/Modules/Events/Resources/views/components/landing-preview.blade.php b/app/Modules/Events/Resources/views/components/landing-preview.blade.php
+index 2586fefe..164a1357 100644
+--- a/app/Modules/Events/Resources/views/components/landing-preview.blade.php
++++ b/app/Modules/Events/Resources/views/components/landing-preview.blade.php
+@@ -7,6 +7,10 @@
+     $cta        = $blocks['cta']      ?? ['visible' => false, 'label' => null, 'url' => null];
+     $faq        = $blocks['faq']      ?? ['visible' => false, 'items' => []];
+     $rootTestId = $rootTestId ?? 'landing-inline-preview';
++    // Capsule T5 — false on the shared reviewer link: render the surfaces
++    // without any live submission target. Flows into the template partials
++    // below via get_defined_vars().
++    $registrationSubmittable = $registrationSubmittable ?? true;
+     $template   = in_array(($previewData['template'] ?? 'classic'), ['classic', 'modern', 'bold'], true)
+         ? $previewData['template']
+         : 'classic';
+@@ -108,11 +112,13 @@ class="flex-1 rounded-[8px] px-3 py-2 text-[12px] font-semibold transition"
+                     <h2 class="text-[24px] font-bold text-jako-heading">{{ __('events.public_registration.lookup_title') }}</h2>
+                     <p class="mt-2 text-[14px] leading-relaxed text-[#828282]">{{ __('events.public_registration.viewer.invalid_link') }}</p>
+ 
+-                    <div inert class="pointer-events-none mt-6 select-none">
+-                        @include('events::public.partials.registration-lookup-form', [
+-                            'event' => $event,
+-                        ])
+-                    </div>
++                    @if($registrationSubmittable)
++                        <div inert class="pointer-events-none mt-6 select-none">
++                            @include('events::public.partials.registration-lookup-form', [
++                                'event' => $event,
++                            ])
++                        </div>
++                    @endif
+                 </div>
+ 
+                 <div class="flex min-h-[320px] flex-col justify-end p-8 text-white" style="background-color: {{ $primary }};">
+diff --git a/app/Modules/Events/Resources/views/components/landing-preview/bold.blade.php b/app/Modules/Events/Resources/views/components/landing-preview/bold.blade.php
+index eff5f5dc..05a562b0 100644
+--- a/app/Modules/Events/Resources/views/components/landing-preview/bold.blade.php
++++ b/app/Modules/Events/Resources/views/components/landing-preview/bold.blade.php
+@@ -40,6 +40,7 @@
+                 <h3 class="mb-4 text-[18px] font-bold text-jako-heading">{{ __('events.public_landing.register_now') }}</h3>
+                 <div inert class="pointer-events-none select-none">
+                     @include('events::public.partials.registration-form', [
++                        'submittable' => $registrationSubmittable ?? true,
+                         'event' => $event,
+                         'configurable' => $configurable,
+                         'formConfig' => $formConfig,
+diff --git a/app/Modules/Events/Resources/views/components/landing-preview/classic.blade.php b/app/Modules/Events/Resources/views/components/landing-preview/classic.blade.php
+index 4b652fe0..027ceb6f 100644
+--- a/app/Modules/Events/Resources/views/components/landing-preview/classic.blade.php
++++ b/app/Modules/Events/Resources/views/components/landing-preview/classic.blade.php
+@@ -111,6 +111,7 @@
+                 <h3 class="text-[18px] font-bold text-jako-heading">{{ __('events.public_landing.register_now') }}</h3>
+                 <div inert class="pointer-events-none select-none">
+                     @include('events::public.partials.registration-form', [
++                        'submittable' => $registrationSubmittable ?? true,
+                         'event' => $event,
+                         'configurable' => $configurable,
+                         'formConfig' => $formConfig,
+diff --git a/app/Modules/Events/Resources/views/components/landing-preview/modern.blade.php b/app/Modules/Events/Resources/views/components/landing-preview/modern.blade.php
+index 6e9affba..1459369a 100644
+--- a/app/Modules/Events/Resources/views/components/landing-preview/modern.blade.php
++++ b/app/Modules/Events/Resources/views/components/landing-preview/modern.blade.php
+@@ -41,6 +41,7 @@
+         <div class="px-8 max-w-2xl mx-auto pb-6">
+             <div inert class="pointer-events-none select-none rounded-[16px] border border-gray-100 bg-white p-5 text-left">
+                 @include('events::public.partials.registration-form', [
++                    'submittable' => $registrationSubmittable ?? true,
+                     'event' => $event,
+                     'configurable' => $configurable,
+                     'formConfig' => $formConfig,
+diff --git a/app/Modules/Events/Resources/views/public/landing-share.blade.php b/app/Modules/Events/Resources/views/public/landing-share.blade.php
+new file mode 100644
+index 00000000..dd76ce41
+--- /dev/null
++++ b/app/Modules/Events/Resources/views/public/landing-share.blade.php
+@@ -0,0 +1,28 @@
++@extends('layouts.public')
++
++@section('title', $event->title)
++@section('meta_description', __('events.landing.preview.title'))
++{{-- A review link is not a public URL: keep it out of search indexes. --}}
++@section('robots', 'noindex, nofollow')
++
++@section('content')
++<div class="min-h-screen bg-[#F3F0F0] px-4 py-8" data-testid="landing-share-page">
++    <div class="mx-auto w-full max-w-[1100px]">
++        <h1 class="mb-5 text-[22px] font-bold text-jako-heading">{{ $event->title }}</h1>
++
++        {{--
++            Read-only rendering only. No registration submission surface, no
++            authoring/edit control, and no link back into the authenticated
++            landing editor — the reviewer is never signed in by this route.
++        --}}
++        <div inert class="pointer-events-none select-none rounded-[8px] bg-white p-6">
++            @include('events::components.landing-preview', [
++                'event' => $event,
++                'previewData' => $previewData,
++                'rootTestId' => 'landing-share-preview',
++                'registrationSubmittable' => false,
++            ])
++        </div>
++    </div>
++</div>
++@endsection
+diff --git a/app/Modules/Events/Resources/views/public/partials/registration-form.blade.php b/app/Modules/Events/Resources/views/public/partials/registration-form.blade.php
+index 7e846979..65329f9a 100644
+--- a/app/Modules/Events/Resources/views/public/partials/registration-form.blade.php
++++ b/app/Modules/Events/Resources/views/public/partials/registration-form.blade.php
+@@ -1,3 +1,9 @@
++@php
++    // Capsule T5 — the shared landing-preview link renders this partial for an
++    // unauthenticated reviewer. There the fields are shown for layout review
++    // only: no form element, no submission target, no submit control.
++    $submittable = $submittable ?? true;
++@endphp
+ <style>
+   #publicLandingFormWrap input:focus,
+   #publicLandingFormWrap select:focus { border-color: {{ $accent ?? '#F26524' }} !important; box-shadow: 0 0 0 2px {{ $accent ?? '#F26524' }}26 !important; }
+@@ -14,8 +20,12 @@
+     <x-alert type="error" data-testid="public-registration-consent-error">{{ $message }}</x-alert>
+ @enderror
+ 
++@if($submittable)
+ <form method="POST" action="{{ route('events.public.registration.store', ['eventUuid' => $event->uuid]) }}" class="space-y-4" novalidate>
+     @csrf
++@else
++<div class="space-y-4" data-testid="public-registration-form-readonly" inert>
++@endif
+ 
+     <x-form.input
+         id="publicLandingFullName"
+@@ -200,14 +210,18 @@ class="h-10 w-full rounded-[12px] border border-[#bdbdbd] bg-white px-3 text-[13
+         </div>
+     @endif
+ 
+-    <button type="submit" class="inline-flex w-full items-center justify-center gap-2 rounded-[12px] px-6 py-3 text-[14px] font-semibold text-white transition-colors" style="background-color: {{ $accent ?? '#F26524' }};">
++    <button @if($submittable) type="submit" @else type="button" disabled @endif class="inline-flex w-full items-center justify-center gap-2 rounded-[12px] px-6 py-3 text-[14px] font-semibold text-white transition-colors" style="background-color: {{ $accent ?? '#F26524' }};">
+         {{ __('events.public_registration.submit') }}
+     </button>
++@if($submittable)
+ </form>
+ 
+ <a href="{{ route('events.public.registration.lookup', ['eventUuid' => $event->uuid]) }}"
+    class="block text-center text-[12px] font-semibold text-[#828282] hover:text-jako-heading">
+     {{ __('events.public_registration.lookup_title') }}
+ </a>
++@else
++</div>
++@endif
+ 
+ </div>{{-- #publicLandingFormWrap --}}
+diff --git a/app/Modules/Events/Services/EventService.php b/app/Modules/Events/Services/EventService.php
+index 35981472..670781e0 100644
+--- a/app/Modules/Events/Services/EventService.php
++++ b/app/Modules/Events/Services/EventService.php
+@@ -34,6 +34,7 @@ public function __construct(
+         private readonly EventLandingService $landing,
+         private readonly PublicRegistrationService $publicRegistration,
+         private readonly PublicLandingService $publicLanding,
++        private readonly LandingPreviewShareService $landingPreviewShare,
+     ) {}
+ 
+     public function getById(int $id): Event
+@@ -220,6 +221,26 @@ public function findPublicLandingEvent(string $eventUuid): ?Event
+         return $this->publicLanding->findPublicLandingEvent($eventUuid);
+     }
+ 
++    /**
++     * Capsule T5 — mint a time-limited, tamper-evident landing-preview share
++     * link for an unauthenticated reviewer.
++     *
++     * @throws AuthorizationException
++     */
++    public function mintLandingPreviewShareUrl(Event $event, User $actor): string
++    {
++        return $this->landingPreviewShare->mintShareUrl($event, $actor);
++    }
++
++    /**
++     * Capsule T5 — resolve the event a verified share link points at.
++     * Callers MUST have passed the signed-URL guard first.
++     */
++    public function findLandingPreviewShareEvent(string $eventUuid): ?Event
++    {
++        return $this->landingPreviewShare->findSharedEvent($eventUuid);
++    }
++
+     public function findPublicRegistrant(Event $event, string $registrationUuid): ?Registration
+     {
+         return $this->publicRegistration->findPublicRegistrant($event, $registrationUuid);
+diff --git a/app/Modules/Events/Services/LandingPreviewShareService.php b/app/Modules/Events/Services/LandingPreviewShareService.php
+new file mode 100644
+index 00000000..c4aa109a
+--- /dev/null
++++ b/app/Modules/Events/Services/LandingPreviewShareService.php
+@@ -0,0 +1,74 @@
++<?php
++
++declare(strict_types=1);
++
++namespace App\Modules\Events\Services;
++
++use App\Models\User;
++use App\Modules\Events\Contracts\Repositories\EventRepositoryInterface;
++use App\Modules\Events\Models\Event;
++use Illuminate\Auth\Access\AuthorizationException;
++use Illuminate\Support\Facades\URL;
++
++/**
++ * Capsule T5 — shareable landing-preview links for unauthenticated reviewers.
++ *
++ * The link is a framework temporary signed route: time-limited and
++ * tamper-evident without a new column or a bespoke token format. The
++ * event uuid is part of the signed payload, so a link minted for one
++ * event cannot be re-pointed at another.
++ *
++ * The serving side reads through the public-landing finder, which drops
++ * TeamScope because the reviewer has no tenant context. Per
++ * docs/handbook/01_Architecture_and_Concepts/TeamScope_Bypass_Convention.md
++ * that bypass is legitimate only behind a guard that runs FIRST — here the
++ * `signed` middleware on the route, which rejects the request before this
++ * service is ever reached.
++ */
++class LandingPreviewShareService
++{
++    /**
++     * How long a minted review link stays valid. Deliberately short-lived:
++     * the link exposes an unpublished landing page, so it must age out
++     * rather than become a permanent public URL.
++     */
++    private const LINK_TTL_DAYS = 7;
++
++    public function __construct(
++        private readonly EventAuthorizationService $authz,
++        private readonly EventMetadataService $metadata,
++        private readonly EventRepositoryInterface $events,
++    ) {}
++
++    /**
++     * Mint a share link for the event's landing preview.
++     *
++     * Requires the same view + event-update capability pair that guards the
++     * authenticated landing surfaces — sharing a preview is an authoring act.
++     *
++     * @throws AuthorizationException
++     */
++    public function mintShareUrl(Event $event, User $actor): string
++    {
++        $this->authz->authorizeView($event, $actor);
++        $this->metadata->authorizeEventUpdate($event->team, $actor);
++
++        return URL::temporarySignedRoute(
++            'events.public.landing-share',
++            now()->addDays(self::LINK_TTL_DAYS),
++            ['eventUuid' => $event->uuid],
++        );
++    }
++
++    /**
++     * Resolve the event a valid share link points at.
++     *
++     * No state filter: the whole point of the link is to let a reviewer see a
++     * DRAFT landing page. Authorization for this read is the signed URL
++     * itself, verified by the route's `signed` middleware before this call.
++     */
++    public function findSharedEvent(string $eventUuid): ?Event
++    {
++        return $this->events->findPublicByUuid($eventUuid);
++    }
++}
+diff --git a/app/Modules/Events/routes.php b/app/Modules/Events/routes.php
+index 22e3e096..5832de1a 100644
+--- a/app/Modules/Events/routes.php
++++ b/app/Modules/Events/routes.php
+@@ -18,6 +18,7 @@
+ use App\Modules\Events\Http\Controllers\CrossEventReportController;
+ use App\Modules\Events\Http\Controllers\EventController;
+ use App\Modules\Events\Http\Controllers\EventExportController;
++use App\Modules\Events\Http\Controllers\LandingPreviewShareController;
+ use App\Modules\Events\Http\Controllers\PublicLandingController;
+ use App\Modules\Events\Http\Controllers\PublicRegistrationController;
+ use App\Modules\Events\Http\Controllers\PublicSitemapController;
+@@ -47,6 +48,14 @@
+         Route::get('/webinars/{eventUuid}', [PublicLandingController::class, 'show'])
+             ->whereUuid('eventUuid')
+             ->name('events.public.show');
++        // Capsule T5 — read-only landing preview for an unauthenticated
++        // reviewer. `signed` is the whole authorization story here: it
++        // refuses altered parameters and expired links, and binds the link
++        // to this one event uuid.
++        Route::get('/webinars/{eventUuid}/preview-share', [LandingPreviewShareController::class, 'show'])
++            ->whereUuid('eventUuid')
++            ->middleware('signed')
++            ->name('events.public.landing-share');
+         Route::post('/webinars/{eventUuid}/register', [PublicRegistrationController::class, 'store'])
+             ->whereUuid('eventUuid')
+             ->name('events.public.registration.store');
+@@ -117,6 +126,9 @@
+         Route::patch('/{event:uuid}', [EventController::class, 'update'])->name('update');
+         Route::get('/{event:uuid}/landing', LandingSetup::class)->name('landing.edit');
+         Route::get('/{event:uuid}/landing/preview', LandingPreview::class)->name('landing.preview');
++        // Capsule T5 — mint a share link for the landing preview.
++        Route::post('/{event:uuid}/landing/share', [LandingPreviewShareController::class, 'store'])
++            ->name('landing.share');
+         Route::get('/{event:uuid}/form-config', RegistrationFormConfig::class)->name('form-config.edit');
+         Route::get('/{event:uuid}/custom-domain', EventCustomDomainSetup::class)->name('custom-domain.edit');
+         Route::get('/{event:uuid}/automations', [AutomationConfigurationController::class, 'show'])->name('automations.show');
+diff --git a/config/route_permissions.php b/config/route_permissions.php
+index acd1388e..844d7852 100644
+--- a/config/route_permissions.php
++++ b/config/route_permissions.php
+@@ -123,6 +123,7 @@
+         'events.update' => 'events.update.team|events.update.global', // S2-2-F1 — DRAFT-only metadata edit surface
+         'events.landing.edit' => 'events.update.team|events.update.global', // Story 3-1
+         'events.landing.preview' => 'events.update.team|events.update.global', // Story 3-2
++        'events.landing.share' => 'events.update.team|events.update.global', // Capsule T5
+         'events.form-config.edit' => 'events.update.team|events.update.global', // Story 3-3
+         'events.custom-domain.edit' => 'events.update.team|events.update.global', // E-DOM S1
+         'events.automations.show' => 'automations.view.team|automations.view.global', // Story 12-3 read-only Co-host context
+@@ -216,6 +217,7 @@
+         'public.root' => '__public__',
+         'events.public.sitemap' => '__public__',
+         'events.public.show' => '__public__',
++        'events.public.landing-share' => '__public__', // Capsule T5 — auth-free, but gated by the `signed` middleware on the route
+         'events.public.replay-view' => '__public__',
+         'events.engagement.viewer-auth' => '__public__',
+         'public.livewire.update' => '__public__', // Story 6-4 — scoped public engagement Livewire submit endpoint (component-allowlisted, signed-token verified)
+diff --git a/tests/Feature/Events/LandingPreviewShareLinkTest.php b/tests/Feature/Events/LandingPreviewShareLinkTest.php
+new file mode 100644
+index 00000000..7a53abf8
+--- /dev/null
++++ b/tests/Feature/Events/LandingPreviewShareLinkTest.php
+@@ -0,0 +1,165 @@
++<?php
++
++declare(strict_types=1);
++
++namespace Tests\Feature\Events;
++
++use App\Enums\UserRole;
++use App\Models\Team;
++use App\Models\User;
++use App\Modules\Events\Enums\EventState;
++use App\Modules\Events\Models\Event;
++use Illuminate\Support\Facades\Cache;
++use PHPUnit\Framework\Attributes\Group;
++use PHPUnit\Framework\Attributes\Test;
++use Tests\Feature\FeatureTestCase;
++
++/**
++ * Capsule T5 ATDD — shareable landing-preview link for unauthenticated reviewers.
++ *
++ * Covers:
++ *  - AC1 organiser with the event-update capability mints a share link
++ *  - AC2 unauthenticated visitor gets a read-only landing preview, DRAFT included
++ *  - AC3 tampered parameters and expired links are refused
++ *  - AC4 a link minted for one event does not open another event
++ *  - AC5 an actor without the event-update capability cannot mint
++ *  - AC6 shared view is read-only, non-authenticating, and no gateway to the editor
++ */
++#[Group('events')]
++final class LandingPreviewShareLinkTest extends FeatureTestCase
++{
++    private User $organiser;
++
++    private Team $team;
++
++    protected function setUp(): void
++    {
++        parent::setUp();
++        Cache::flush();
++
++        $this->organiser = User::factory()->create();
++        $this->team = Team::factory()->create(['user_id' => $this->organiser->id]);
++        $this->organiser->teams()->attach($this->team, ['role' => UserRole::ADMIN->value]);
++        $this->organiser->forceFill(['current_team_id' => $this->team->id])->save();
++        $this->organiser = $this->organiser->fresh();
++    }
++
++    private function draftEvent(?Team $team = null): Event
++    {
++        $team ??= $this->team;
++
++        return Event::factory()
++            ->inState(EventState::DRAFT)
++            ->for($team)
++            ->create([
++                'created_by' => $this->organiser->id,
++                'title' => 'Quarterly Product Ops Review '.uniqid(),
++            ]);
++    }
++
++    private function mintShareUrl(Event $event): string
++    {
++        $response = $this->actingAs($this->organiser)
++            ->postJson(route('events.landing.share', $event->uuid));
++
++        $response->assertOk();
++        $response->assertJsonStructure(['url']);
++
++        $url = $response->json('url');
++        $this->assertIsString($url);
++        $this->assertNotSame('', trim($url));
++
++        return $url;
++    }
++
++    #[Test]
++    public function organiser_mints_share_link_and_guest_sees_read_only_draft_landing_preview(): void
++    {
++        $event = $this->draftEvent();
++
++        $url = $this->mintShareUrl($event);
++
++        // AC2 — unauthenticated reviewer reaches a read-only preview of a DRAFT event.
++        $this->app['auth']->forgetGuards();
++        $shared = $this->get($url);
++
++        $shared->assertOk();
++        $shared->assertSee('data-testid="landing-share-page"', false);
++        $shared->assertSee($event->title, false);
++
++        // AC6 — no registration submission surface and no authoring/edit control.
++        $shared->assertDontSee(
++            route('events.public.registration.store', ['eventUuid' => $event->uuid]),
++            false,
++        );
++        $shared->assertDontSee(route('events.landing.edit', $event->uuid), false);
++
++        // AC6 — visiting the share link neither logs the reviewer in ...
++        $this->assertGuest();
++
++        // ... nor opens the authenticated landing editor for them.
++        $this->get(route('events.landing.edit', $event->uuid))->assertRedirect();
++        $this->assertGuest();
++    }
++
++    #[Test]
++    public function tampered_share_link_is_refused(): void
++    {
++        $event = $this->draftEvent();
++
++        $url = $this->mintShareUrl($event);
++        $tampered = $url.(str_contains($url, '?') ? '&' : '?').'reviewer=admin';
++
++        $this->app['auth']->forgetGuards();
++
++        $this->get($tampered)->assertForbidden();
++    }
++
++    #[Test]
++    public function expired_share_link_is_refused(): void
++    {
++        $event = $this->draftEvent();
++
++        $url = $this->mintShareUrl($event);
++
++        $this->app['auth']->forgetGuards();
++        $this->travel(8)->days();
++
++        $this->get($url)->assertForbidden();
++    }
++
++    #[Test]
++    public function share_link_for_one_event_does_not_open_another_event(): void
++    {
++        $shared = $this->draftEvent();
++        $other = $this->draftEvent();
++
++        $url = $this->mintShareUrl($shared);
++        $swapped = str_replace($shared->uuid, $other->uuid, $url);
++
++        $this->assertNotSame($url, $swapped, 'Share URL must be bound to a specific event.');
++
++        $this->app['auth']->forgetGuards();
++
++        $response = $this->get($swapped);
++
++        $this->assertNotSame(200, $response->getStatusCode());
++        $response->assertDontSee($other->title, false);
++    }
++
++    #[Test]
++    public function actor_without_event_update_capability_cannot_mint_share_link(): void
++    {
++        $event = $this->draftEvent();
++
++        $billingAdmin = User::factory()->create();
++        $billingAdmin->teams()->attach($this->team, ['role' => UserRole::BILLING_ADMIN->value]);
++        $billingAdmin->forceFill(['current_team_id' => $this->team->id])->save();
++
++        $response = $this->actingAs($billingAdmin->fresh())
++            ->postJson(route('events.landing.share', $event->uuid));
++
++        $response->assertForbidden();
++        $this->assertNull($response->json('url'));
++    }
++}

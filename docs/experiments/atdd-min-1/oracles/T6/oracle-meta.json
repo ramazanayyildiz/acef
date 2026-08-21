@@ -1,0 +1,55 @@
+{
+  "task": "T6",
+  "assertions": [
+    {
+      "method": "platform_admin_reverts_a_published_event_without_registrations_to_draft",
+      "severity": "S2",
+      "description": "A platform admin POSTing the named revert route for a PUBLISHED event with no registrations leaves the event persisted in DRAFT."
+    },
+    {
+      "method": "revert_records_the_lifecycle_transition_through_the_audited_path",
+      "severity": "S1",
+      "description": "The revert is written through the guarded transition path: a lifecycle transition audit row exists for the event, attributed to the acting admin, recording from=published and to=draft. Fails when the state is written directly, which also skips the row lock and the in-lock cancellation re-check."
+    },
+    {
+      "method": "revert_route_is_a_post_route_gated_by_the_route_permission_configuration",
+      "severity": "S1",
+      "description": "The named route exists, accepts POST but not GET (no state change via a safe method), and carries a non-permissive entry in the route-permission configuration (present, a capability string, not '__public__' and not auth-only null)."
+    },
+    {
+      "method": "revert_is_refused_for_a_workspace_admin_of_the_owning_workspace",
+      "severity": "S1",
+      "description": "A workspace-level ADMIN of the event's own workspace is refused with 403 and the event stays PUBLISHED; a platform-admin action must not be reachable by tenant-level roles even when the UI hides the control."
+    },
+    {
+      "method": "revert_is_refused_for_an_unauthenticated_visitor",
+      "severity": "S1",
+      "description": "An unauthenticated POST to the revert route does not succeed and leaves the event PUBLISHED."
+    },
+    {
+      "method": "revert_is_refused_for_events_that_are_not_published",
+      "severity": "S2",
+      "description": "For every non-PUBLISHED state (draft, preparing, ready, live, ended, failed, suspended) the revert attempt leaves the persisted state unchanged."
+    },
+    {
+      "method": "revert_is_refused_when_the_event_already_has_registrations",
+      "severity": "S1",
+      "description": "A PUBLISHED event that already has a registration stays PUBLISHED and no transition audit row is written; the registration check must see registrations of the event's workspace, not only of the acting admin's own workspace."
+    },
+    {
+      "method": "cancelled_published_event_cannot_be_reverted",
+      "severity": "S1",
+      "description": "A cancelled PUBLISHED event is not reverted, its cancellation flag is untouched, and no transition audit row is written: cancellation keeps winning over backward lifecycle moves."
+    },
+    {
+      "method": "legal_transition_table_gains_only_the_published_to_draft_edge",
+      "severity": "S1",
+      "description": "Across all 64 state pairs the canonical legal-transition table equals the pre-existing table plus exactly one new edge, PUBLISHED to DRAFT. Fails both when the machine is routed around (edge never added) and when the invariant is widened (e.g. any state allowed back to DRAFT)."
+    },
+    {
+      "method": "state_derived_rules_keep_their_existing_answers",
+      "severity": "S2",
+      "description": "The state-derived rules other code reads (metadata lock, registration blocking, live-operability, terminal-ended, public hiding, public indexability, registrant viewer mode, public shell, suspendability, plus the cancelled-event overrides) return their existing answers for every state."
+    }
+  ]
+}

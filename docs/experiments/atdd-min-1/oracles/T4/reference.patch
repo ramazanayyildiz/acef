@@ -1,0 +1,366 @@
+diff --git a/app/Modules/SuperAdmin/Http/Controllers/EventRegistrationExportController.php b/app/Modules/SuperAdmin/Http/Controllers/EventRegistrationExportController.php
+new file mode 100644
+index 00000000..97d53460
+--- /dev/null
++++ b/app/Modules/SuperAdmin/Http/Controllers/EventRegistrationExportController.php
+@@ -0,0 +1,33 @@
++<?php
++
++declare(strict_types=1);
++
++namespace App\Modules\SuperAdmin\Http\Controllers;
++
++use App\Models\User;
++use App\Modules\Events\Models\Event;
++use App\Modules\SuperAdmin\Services\AdminEventRegistrationExportService;
++use Illuminate\Support\Facades\Gate;
++use Symfony\Component\HttpFoundation\StreamedResponse;
++
++/**
++ * Streams one event's registration list as CSV for platform support staff.
++ *
++ * Registration rows carry attendee personal data, so the endpoint re-states the
++ * capability that `config/route_permissions.php` maps to this route rather than
++ * relying on whatever else the admin area happens to allow.
++ */
++class EventRegistrationExportController
++{
++    private const CAPABILITY = 'events.view.global';
++
++    public function __invoke(Event $event, AdminEventRegistrationExportService $exports): StreamedResponse
++    {
++        $actor = authUser();
++
++        abort_if(! $actor instanceof User, 403);
++        abort_unless(Gate::forUser($actor)->allows(self::CAPABILITY), 403);
++
++        return $exports->response($event);
++    }
++}
+diff --git a/app/Modules/SuperAdmin/Routes/web.php b/app/Modules/SuperAdmin/Routes/web.php
+index dc79560f..65eee128 100644
+--- a/app/Modules/SuperAdmin/Routes/web.php
++++ b/app/Modules/SuperAdmin/Routes/web.php
+@@ -8,6 +8,7 @@
+ use App\Modules\Events\Livewire\LandingPreview;
+ use App\Modules\Events\Livewire\LandingSetup;
+ use App\Modules\Events\Livewire\RegistrationFormConfig;
++use App\Modules\SuperAdmin\Http\Controllers\EventRegistrationExportController;
+ use App\Modules\SuperAdmin\Http\Controllers\RoleActionController;
+ use App\Modules\SuperAdmin\Http\Controllers\UserActionController;
+ use App\Modules\SuperAdmin\Http\Controllers\WorkspaceActionController;
+@@ -48,6 +49,10 @@
+         Route::get('/events/{event:uuid}/landing', LandingSetup::class)->whereUuid('event')->name('events.landing.edit');
+         Route::get('/events/{event:uuid}/landing/preview', LandingPreview::class)->whereUuid('event')->name('events.landing.preview');
+         Route::get('/events/{event:uuid}/form-config', RegistrationFormConfig::class)->whereUuid('event')->name('events.form-config.edit');
++        // Platform support export of one event's registration list (attendee PII).
++        Route::get('/events/{event:uuid}/registrations/export', EventRegistrationExportController::class)
++            ->whereUuid('event')
++            ->name('events.registrations.export');
+         Route::get('/events/{event:uuid}/automations', [AutomationConfigurationController::class, 'show'])->whereUuid('event')->name('events.automations.show');
+         Route::post('/events/{event:uuid}/automations', [AutomationConfigurationController::class, 'update'])->whereUuid('event')->name('events.automations.update');
+         Route::patch('/events/{event:uuid}/automations/{type}/status', [AutomationConfigurationController::class, 'toggle'])
+diff --git a/app/Modules/SuperAdmin/Services/AdminEventRegistrationExportService.php b/app/Modules/SuperAdmin/Services/AdminEventRegistrationExportService.php
+new file mode 100644
+index 00000000..1f7fbb79
+--- /dev/null
++++ b/app/Modules/SuperAdmin/Services/AdminEventRegistrationExportService.php
+@@ -0,0 +1,91 @@
++<?php
++
++declare(strict_types=1);
++
++namespace App\Modules\SuperAdmin\Services;
++
++use App\Modules\Events\Models\Event;
++use App\Modules\Events\Models\Registration;
++use Illuminate\Database\Eloquent\Collection;
++use Illuminate\Support\Str;
++use Symfony\Component\HttpFoundation\StreamedResponse;
++
++/**
++ * Platform support export of a single event's registration list.
++ *
++ * The query is scoped to the requested event and nothing else. Cross-workspace
++ * reach is already handled at the scope layer (User::shouldBypassTeamScope), so
++ * no TeamScope bypass is repeated here per the SuperAdmin module rules.
++ */
++class AdminEventRegistrationExportService
++{
++    public function response(Event $event): StreamedResponse
++    {
++        $rows = $this->rows($event);
++
++        return response()->streamDownload(function () use ($rows): void {
++            $handle = fopen('php://output', 'wb');
++            if ($handle === false) {
++                return;
++            }
++
++            foreach ($rows as $row) {
++                fputcsv($handle, $row, escape: '\\');
++            }
++
++            fclose($handle);
++        }, $this->filename($event), [
++            'Content-Type' => 'text/csv; charset=UTF-8',
++        ]);
++    }
++
++    /**
++     * @return list<list<string>>
++     */
++    public function rows(Event $event): array
++    {
++        $rows = [$this->headers()];
++
++        /** @var Collection<int, Registration> $registrations */
++        $registrations = Registration::query()
++            ->where('event_id', $event->id)
++            ->orderBy('created_at')
++            ->orderBy('id')
++            ->get();
++
++        foreach ($registrations as $registration) {
++            $rows[] = [
++                (string) $registration->full_name,
++                (string) $registration->email,
++                (string) ($registration->company ?? ''),
++                (string) ($registration->country ?? ''),
++                (string) $registration->source,
++                $registration->consent_accepted_at?->toIso8601String() ?? '',
++                $registration->created_at?->toIso8601String() ?? '',
++            ];
++        }
++
++        return $rows;
++    }
++
++    public function filename(Event $event): string
++    {
++        $stem = Str::slug((string) $event->title);
++
++        if ($stem === '') {
++            $stem = 'event-'.$event->id;
++        }
++
++        return sprintf('%s-%s-registrations.csv', $stem, (string) $event->uuid);
++    }
++
++    /**
++     * @return list<string>
++     */
++    private function headers(): array
++    {
++        $headers = __('super-admin::super-admin.events.registration_export.headers');
++
++        return is_array($headers) ? array_values(array_map('strval', $headers)) : [];
++    }
++}
+diff --git a/config/route_permissions.php b/config/route_permissions.php
+index acd1388e..d4365912 100644
+--- a/config/route_permissions.php
++++ b/config/route_permissions.php
+@@ -47,6 +47,9 @@
+         'admin.events.landing.edit' => 'events.update.global',
+         'admin.events.landing.preview' => 'events.update.global',
+         'admin.events.form-config.edit' => 'events.update.global',
++        // Registration export streams attendee personal data — same global
++        // event-visibility capability the endpoint itself checks.
++        'admin.events.registrations.export' => 'events.view.global',
+         'admin.events.automations.show' => 'automations.manage.global',
+         'admin.events.automations.detail' => 'automations.manage.global',
+         'admin.events.automations.toggle' => 'automations.manage.global',
+diff --git a/lang/vendor/super-admin/en/super-admin.php b/lang/vendor/super-admin/en/super-admin.php
+index 7e668d19..a473c452 100644
+--- a/lang/vendor/super-admin/en/super-admin.php
++++ b/lang/vendor/super-admin/en/super-admin.php
+@@ -73,6 +73,17 @@
+         'actions' => [
+             'view' => 'View',
+         ],
++        'registration_export' => [
++            'headers' => [
++                'Full name',
++                'Email',
++                'Company',
++                'Country',
++                'Source',
++                'Consent accepted at',
++                'Registered at',
++            ],
++        ],
+     ],
+     'workspaces' => [
+         'subtitle' => 'Platform-level view of every workspace, including suspended and deleted records.',
+diff --git a/lang/vendor/super-admin/tr/super-admin.php b/lang/vendor/super-admin/tr/super-admin.php
+index c54f5a99..7cfa59e1 100644
+--- a/lang/vendor/super-admin/tr/super-admin.php
++++ b/lang/vendor/super-admin/tr/super-admin.php
+@@ -73,6 +73,17 @@
+         'actions' => [
+             'view' => 'Görüntüle',
+         ],
++        'registration_export' => [
++            'headers' => [
++                'Ad Soyad',
++                'E-posta',
++                'Şirket',
++                'Ülke',
++                'Kaynak',
++                'Onay zamanı',
++                'Kayıt zamanı',
++            ],
++        ],
+     ],
+     'workspaces' => [
+         'subtitle' => 'Askıya alınmış ve silinmiş kayıtlar dahil tüm çalışma alanlarının platform düzeyindeki görünümü.',
+diff --git a/tests/Feature/SuperAdmin/AdminEventRegistrationExportTest.php b/tests/Feature/SuperAdmin/AdminEventRegistrationExportTest.php
+new file mode 100644
+index 00000000..14c7dfc4
+--- /dev/null
++++ b/tests/Feature/SuperAdmin/AdminEventRegistrationExportTest.php
+@@ -0,0 +1,143 @@
++<?php
++
++declare(strict_types=1);
++
++namespace Tests\Feature\SuperAdmin;
++
++use App\Enums\UserRole;
++use App\Models\Team;
++use App\Modules\Events\Models\Event;
++use App\Modules\Events\Models\Registration;
++use Illuminate\Support\Str;
++use Illuminate\Testing\TestResponse;
++use PHPUnit\Framework\Attributes\Test;
++use PHPUnit\Framework\Attributes\TestDox;
++use Symfony\Component\HttpFoundation\StreamedResponse;
++use Tests\Feature\FeatureTestCase;
++use Tests\Feature\SuperAdmin\Support\InteractsWithSuperAdmin;
++
++/**
++ * Platform-admin export of a single event's registration list.
++ */
++class AdminEventRegistrationExportTest extends FeatureTestCase
++{
++    use InteractsWithSuperAdmin;
++
++    private const ROUTE = 'admin.events.registrations.export';
++
++    #[Test]
++    #[TestDox('AC1/AC5 — a platform admin downloads the registration list as CSV')]
++    public function platform_admin_downloads_the_registration_csv(): void
++    {
++        $workspace = $this->createWorkspace();
++        $event = $this->eventFor($workspace, 'Spring Product Briefing');
++        $this->registerAttendee($event, 'Dana Whitfield', 'dana.whitfield@example.test');
++
++        $response = $this->actingAs($this->createPlatformSuperAdmin($workspace))
++            ->get(route(self::ROUTE, $event));
++
++        $response->assertOk();
++
++        $disposition = (string) $response->headers->get('content-disposition');
++        $this->assertStringContainsString('attachment', $disposition);
++        $this->assertStringContainsString(Str::slug((string) $event->title), $disposition);
++        $this->assertStringContainsString('csv', strtolower((string) $response->headers->get('content-type').$disposition));
++
++        $this->assertStringContainsString('Dana Whitfield', $this->csvOf($response));
++    }
++
++    #[Test]
++    #[TestDox('AC4 — the export contains no registrations from another event')]
++    public function export_excludes_registrations_of_other_events(): void
++    {
++        $workspace = $this->createWorkspace();
++        $wanted = $this->eventFor($workspace, 'Wanted Event');
++        $other = $this->eventFor($workspace, 'Other Event');
++
++        $this->registerAttendee($wanted, 'Kai Rehnberg', 'kai.rehnberg@example.test');
++        $this->registerAttendee($other, 'Mira Halloway', 'mira.halloway@example.test');
++
++        $response = $this->actingAs($this->createPlatformSuperAdmin($workspace))
++            ->get(route(self::ROUTE, $wanted));
++
++        $response->assertOk();
++
++        $csv = $this->csvOf($response);
++        $this->assertStringContainsString('Kai Rehnberg', $csv);
++        $this->assertStringNotContainsString('Mira Halloway', $csv);
++    }
++
++    #[Test]
++    #[TestDox('AC3 — a workspace administrator is refused and receives no CSV')]
++    public function workspace_administrator_is_refused(): void
++    {
++        $workspace = $this->createWorkspace();
++        $event = $this->eventFor($workspace, 'Gated Event');
++        $this->registerAttendee($event, 'Ruth Bellamy', 'ruth.bellamy@example.test');
++
++        $member = $this->createWorkspaceMember($workspace, UserRole::ADMIN);
++
++        $response = $this->actingAs($member)->get(route(self::ROUTE, $event));
++
++        $response->assertForbidden();
++        $this->assertStringNotContainsString('Ruth Bellamy', (string) $response->getContent());
++    }
++
++    #[Test]
++    #[TestDox('AC2 — the route is gated through the route-permission configuration')]
++    public function route_is_mapped_in_the_route_permission_configuration(): void
++    {
++        $mappings = config('route_permissions.routes');
++
++        $this->assertArrayHasKey(self::ROUTE, $mappings);
++        $this->assertNotNull($mappings[self::ROUTE]);
++        $this->assertNotSame('__public__', $mappings[self::ROUTE]);
++    }
++
++    #[Test]
++    #[TestDox('AC6 — pre-existing admin permission entries are untouched')]
++    public function pre_existing_admin_permission_entries_are_unchanged(): void
++    {
++        $mappings = config('route_permissions.routes');
++
++        $this->assertSame('events.view.global', $mappings['admin.events.index']);
++        $this->assertSame('events.view.global', $mappings['admin.events.show']);
++        $this->assertSame('events.update.global', $mappings['admin.events.edit']);
++        $this->assertSame('system_admin_access', $mappings['admin.dashboard']);
++        $this->assertSame('users.viewany.global', $mappings['admin.users.index']);
++    }
++
++    private function eventFor(Team $workspace, string $title): Event
++    {
++        return Event::factory()->for($workspace)->create(['title' => $title]);
++    }
++
++    private function registerAttendee(Event $event, string $fullName, string $email): void
++    {
++        Registration::unguarded(function () use ($event, $fullName, $email): void {
++            Registration::query()->create([
++                'team_id' => $event->team_id,
++                'event_id' => $event->id,
++                'email' => $email,
++                'email_hash' => hash('sha256', $email),
++                'source' => 'direct',
++                'full_name' => $fullName,
++                'consent_accepted_at' => now(),
++            ]);
++        });
++    }
++
++    private function csvOf(TestResponse $response): string
++    {
++        $base = $response->baseResponse;
++
++        if ($base instanceof StreamedResponse) {
++            ob_start();
++            $base->sendContent();
++
++            return (string) ob_get_clean();
++        }
++
++        return (string) $base->getContent();
++    }
++}
