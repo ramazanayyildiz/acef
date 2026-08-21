@@ -9,6 +9,22 @@ or evidence contract. Do not use it to claim implementation status; link to the 
 
 ## Unreleased
 
+### Full v3 repair and review now reuse one bounded work contract
+
+- Made the existing worker scope authoritative across Development, review, and bounded repair. A `REVISE` now returns
+  run, role, and worker scope to the original Developer through one typed transition instead of resuming work while
+  state still claims Code Review.
+- Kept repair expansion fail-closed at the approved worker scope while allowing the next review capsule and close gate
+  to include the actual in-scope repair delta. Later story commits no longer contaminate an accepted story's review range.
+- Replaced duplicated source bodies in review capsules with commit-bound path/hash/byte references; context and diff
+  remain inline, preserving independent review while removing the common capsule-size failure.
+- Namespaced only colliding reviewer finding IDs and stopped test-only commits from invalidating an otherwise unchanged
+  specification verdict.
+- Added `acef-native-test --work-unit <id>` for independently admitted split children that share a branch and HEAD, so
+  one child cannot consume another child's focused-command budget. After a terminal Full-v3 `REPLAN`, a fresh successful
+  named-work-unit receipt also lets that native child pass the retired parent's circuit breaker without touching its
+  control state.
+
 ### In-flight Full v3 runs recover without replaying BMAD
 
 - Bound dispatch readiness to the run that started with the contract, so an ACEF upgrade no longer applies new

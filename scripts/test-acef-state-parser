@@ -19,6 +19,7 @@ const {
   atddRedExecutionFailure,
   atddTestSourceAuthenticityFailure,
   atddGreenTestContinuityFailure,
+  deriveReviewFindingDispositions,
   safeRelative,
 } = require("./lib/acef-state-parser");
 
@@ -364,6 +365,15 @@ class CircularTest extends TestCase {
   });
   assertThrows(() => parseEvidenceManifest(path.join(tmp, "bad-evidence.json")), /integer exitCode/, "bad evidence");
   assertThrows(() => safeRelative(path.join(tmp, "..", "escape.json"), tmp), /escapes root/, "safeRelative");
+
+  const collisionSafeFindings = deriveReviewFindingDispositions([
+    { phase: "code-review", findings: [{ id: "F-1", severity: "HIGH", status: "OPEN" }] },
+    { phase: "patch-assurance", findings: [{ id: "F-1", severity: "MEDIUM", status: "OPEN" }] },
+  ]);
+  if (JSON.stringify(collisionSafeFindings.map((finding) => finding.id))
+    !== JSON.stringify(["codereview:F-1", "patchassurance:F-1"])) {
+    throw new Error("review finding collisions were not deterministically namespaced by reviewer role");
+  }
 
   console.log("acef-state-parser tests passed");
 } finally {

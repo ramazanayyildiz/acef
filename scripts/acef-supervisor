@@ -138,9 +138,14 @@ function readCapsule(filePath) {
   if (integrity.payloadSha256 !== sha256(JSON.stringify(payload))) {
     throw new Error(`${filePath}: assurance capsule payload hash mismatch`);
   }
-  for (const blob of [record.currentContext, record.diff, ...record.sourceBlobs]) {
+  for (const blob of [record.currentContext, record.diff, ...(record.sourceBlobs || [])]) {
     if (blob.sha256 !== sha256(Buffer.from(blob.content)) || blob.bytes !== Buffer.byteLength(blob.content)) {
       throw new Error(`${filePath}: assurance capsule blob mismatch ${blob.path}`);
+    }
+  }
+  for (const ref of record.sourceRefs || []) {
+    if (!/^[a-f0-9]{64}$/.test(ref.sha256) || !Number.isInteger(ref.bytes) || ref.bytes < 0) {
+      throw new Error(`${filePath}: assurance capsule source reference metadata mismatch ${ref.path}`);
     }
   }
   return record;
@@ -456,7 +461,26 @@ function build(repo) {
       }
     }
   } else if (currentPhase === "development") {
-    if (!hasActor(actorId("development"))) {
+    const pendingRepair = latestGate?.verdict === "REVISE"
+      && !repairs.some((record) => record.cycle === reviewCycle);
+    const postGateEvidence = pendingRepair
+      ? developerEvidence.filter((record) => String(record.finishedAt || record.startedAt || "") > String(latestGate.createdAt || ""))
+      : [];
+    const latestRepairEvidence = postGateEvidence.at(-1) || null;
+    const repairReceiptId = `${storyKey}-repair${reviewCycle}`;
+    const repairReceiptPath = `docs/ai/repairs/${repairReceiptId}.json`;
+    const repairCommand = latestGate
+      ? `.acef/bin/acef-state developer-repair --repo . --id ${repairReceiptId} --prior-gate ${latestGate.gateId} --developer-actor ${actorId("development")}`
+      : null;
+    if (pendingRepair && !latestRepairEvidence) {
+      action = {
+        type: "resume", role: "development", actorInstanceId: actorId("development"), runtime: runtime.development,
+        repairCycle: reviewCycle, repairCommand, repairReceiptPath,
+        reason: "review findings returned the existing work contract atomically to the original Developer",
+      };
+    } else if (pendingRepair && latestRepairEvidence?.exitCode === 0 && latestRepairEvidence.discovery) {
+      action = { type: "replan", reason: `Developer repair returned green evidence without the exact supervisor-owned receipt ${repairReceiptPath}` };
+    } else if (!hasActor(actorId("development"))) {
       const developerId = actorId("development");
       action = {
         type: "dispatch",
@@ -533,22 +557,11 @@ function build(repo) {
         reason: `mechanical story gate failed with semantic reviewers PASS: ${failedChecks.join(", ") || "unknown check"}`,
       };
     } else if (latestGate?.verdict === "REVISE" && !repairs.some((record) => record.cycle === reviewCycle)) {
-      const postGateEvidence = developerEvidence.filter((record) => String(record.finishedAt || record.startedAt || "") > String(latestGate.createdAt || ""));
-      const latestRepairEvidence = postGateEvidence.at(-1) || null;
-      const repairReceiptId = `${storyKey}-repair${reviewCycle}`;
-      const repairReceiptPath = `docs/ai/repairs/${repairReceiptId}.json`;
-      const repairCommand = `.acef/bin/acef-state developer-repair --repo . --id ${repairReceiptId} --prior-gate ${latestGate.gateId} --developer-actor ${actorId("development")}`;
-      if (!latestRepairEvidence) {
-        action = {
-          type: "resume", role: "development", actorInstanceId: actorId("development"), runtime: runtime.development,
-          repairCycle: reviewCycle, repairCommand, repairReceiptPath,
-          reason: "review findings require original Developer; the same Developer must write the exact supervisor-owned repair receipt after green evidence",
-        };
-      } else if (latestRepairEvidence.exitCode === 0 && latestRepairEvidence.discovery) {
-        action = { type: "replan", reason: `Developer repair returned green evidence without the exact supervisor-owned receipt ${repairReceiptPath}` };
-      } else {
-        action = { type: "replan", reason: "Developer repair follow-up returned without accepted green evidence" };
-      }
+      action = {
+        type: "transition", nextPhase: "development",
+        command: ".acef/bin/acef-state phase-transition --repo . --phase development",
+        reason: "REVISE atomically returns run and worker scope to the original Developer before repair",
+      };
     } else {
       const repair = reviewCycle > 0 ? repairs.find((record) => record.cycle === reviewCycle) : null;
       const priorCodeReport = latestGate?.reportPaths?.codeReview

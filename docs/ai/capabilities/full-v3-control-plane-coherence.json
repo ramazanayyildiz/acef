@@ -1,6 +1,6 @@
 {
   "capabilityId": "full-v3-control-plane-coherence",
-  "requestedIntent": "Make new ACEF Full four-actor-v3 runs fail fast on incomplete startup state, give each worker one frozen command and bounded scope, preserve cumulative active-control time, and hand authentic ATDD RED evidence directly to Development without another conductor cycle.",
+  "requestedIntent": "Make ACEF Full four-actor-v3 use one bounded worker contract from dispatch through repair, fail fast on incoherent state, preserve authentic evidence, and keep review inputs story-scoped without duplicating lifecycle work or source context.",
   "status": "enforced",
   "requiredLayers": [
     "docs",
@@ -20,7 +20,8 @@
       "skills/acef/references/ACEF_BMAD_V2_LANE.md#Fail-fast-startup-and-reuse-contract"
     ],
     "schema": [
-      "schemas/worker-scope.schema.json#allowedCommands"
+      "schemas/worker-scope.schema.json#allowedCommands",
+      "schemas/assurance-capsule-v1.schema.json#sourceRefs"
     ],
     "cli": [
       "scripts/acef-state",
@@ -62,6 +63,11 @@
       "layer": "tests",
       "ref": "scripts/test-acef-capsule-supervisor-v2",
       "note": "Exercises Full v3 capsule startup, authentic RED handoff, phase progression, and terminal closeout compatibility."
+    },
+    {
+      "layer": "tests",
+      "ref": "scripts/test-acef-capsule-supervisor",
+      "note": "Exercises coherent REVISE-to-Development transition, bounded repair retry, and hash-bound reference capsules through deterministic closeout."
     },
     {
       "layer": "tests",

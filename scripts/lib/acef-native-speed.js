@@ -73,12 +73,13 @@ function classifyNativeVerification(argv) {
   return { kind: "unknown", identity };
 }
 
-function freshNativeBudget(repoRoot, head, branch, now = Date.now()) {
+function freshNativeBudget(repoRoot, head, branch, workUnitId = "native", now = Date.now()) {
   return {
     schema: "acef.native-speed.v1",
     repoRoot,
     head,
     branch,
+    workUnitId,
     startedAt: new Date(now).toISOString(),
     commands: {},
     focusedCommands: [],

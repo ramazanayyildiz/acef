@@ -4,6 +4,7 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const cp = require("node:child_process");
+const crypto = require("node:crypto");
 const {
   NATIVE_ACTIVE_SECONDS,
   NATIVE_CLOSEOUT_TIMEOUT_SECONDS,
@@ -24,26 +25,35 @@ function git(args, cwd) {
 
 function parseArgs(argv) {
   let closeout = false;
+  let workUnitId = "native";
   const separator = argv.indexOf("--");
-  if (separator < 0) fail("usage: acef-native-test [--closeout] -- <test-command> [args...]");
-  for (const arg of argv.slice(0, separator)) {
+  if (separator < 0) fail("usage: acef-native-test [--closeout] [--work-unit <id>] -- <test-command> [args...]");
+  const options = argv.slice(0, separator);
+  for (let index = 0; index < options.length; index += 1) {
+    const arg = options[index];
     if (arg === "--closeout") closeout = true;
+    else if (arg === "--work-unit") {
+      workUnitId = String(options[index + 1] || "").trim();
+      index += 1;
+      if (!/^[A-Za-z0-9._-]+$/.test(workUnitId)) fail("--work-unit must contain only letters, digits, dot, underscore, or dash");
+    }
     else fail(`unknown option ${arg}`);
   }
   const command = argv.slice(separator + 1);
   if (!command.length) fail("test command is required after --");
-  return { closeout, command };
+  return { closeout, workUnitId, command };
 }
 
-function readState(filePath, repoRoot, head, branch) {
+function readState(filePath, repoRoot, head, branch, workUnitId) {
   try {
     const state = JSON.parse(fs.readFileSync(filePath, "utf8"));
     if (state.schema === "acef.native-speed.v1" && state.repoRoot === repoRoot
-      && state.head === head && state.branch === branch) return state;
+      && state.head === head && state.branch === branch
+      && (state.workUnitId || "native") === workUnitId) return state;
   } catch {
     // A missing/stale task budget starts fresh at the current branch+HEAD.
   }
-  return freshNativeBudget(repoRoot, head, branch);
+  return freshNativeBudget(repoRoot, head, branch, workUnitId);
 }
 
 function writeState(filePath, state) {
@@ -53,7 +63,7 @@ function writeState(filePath, state) {
   fs.renameSync(temp, filePath);
 }
 
-const { closeout, command } = parseArgs(process.argv.slice(2));
+const { closeout, workUnitId, command } = parseArgs(process.argv.slice(2));
 const cwd = process.cwd();
 let repoRoot;
 let head;
@@ -63,14 +73,15 @@ try {
   repoRoot = git(["rev-parse", "--show-toplevel"], cwd);
   head = git(["rev-parse", "HEAD"], repoRoot);
   branch = git(["branch", "--show-current"], repoRoot) || "detached";
-  const gitPath = git(["rev-parse", "--git-path", "acef-native-speed/state.json"], repoRoot);
+  const suffix = workUnitId === "native" ? "state" : `state-${crypto.createHash("sha256").update(workUnitId).digest("hex").slice(0, 16)}`;
+  const gitPath = git(["rev-parse", "--git-path", `acef-native-speed/${suffix}.json`], repoRoot);
   statePath = path.resolve(repoRoot, gitPath);
 } catch {
   fail("must run inside a Git worktree");
 }
 
 const classification = classifyNativeVerification(command);
-const state = readState(statePath, repoRoot, head, branch);
+const state = readState(statePath, repoRoot, head, branch, workUnitId);
 const cleanTree = closeout ? git(["status", "--porcelain"], repoRoot) === "" : false;
 const budgetFailure = nativeBudgetFailure(state, classification, { closeout, cleanTree });
 if (budgetFailure) fail(budgetFailure);
@@ -93,6 +104,9 @@ const result = cp.spawnSync(command[0], command.slice(1), {
   timeout: timeoutSeconds * 1000,
   killSignal: "SIGTERM",
 });
+state.lastFinishedAt = new Date().toISOString();
+state.lastExitCode = result.status === null ? 1 : result.status;
+writeState(statePath, state);
 if (result.error?.code === "ETIMEDOUT") fail(`command timed out after ${timeoutSeconds}s; record the bottleneck and stop expanding scope`, 124);
 if (result.error) fail(`command failed to start: ${result.error.message}`, 126);
-process.exit(result.status === null ? 1 : result.status);
+process.exit(state.lastExitCode);

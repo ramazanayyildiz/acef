@@ -12,6 +12,8 @@ Native work uses the installed speed contract: no subagents; at most three disti
 two attempts per identical command, 180 seconds per focused command, and 10 active minutes. Run recognized tests or
 static analysis through `.acef/bin/acef-native-test -- <focused-command>`. Broad verification is implementation-time
 forbidden and may run once only as `.acef/bin/acef-native-test --closeout -- <broad-command>` on a clean worktree.
+Independently admitted children sharing one branch and HEAD use `--work-unit <stable-child-id>` so their verification
+budgets remain separate without creating ACEF run artifacts.
 When the requested patch is green, stop; record unrelated failures as follow-up work instead of investigating them.
 
 Start ACEF only when the request needs its controls: persistence/migration, security/privacy/permissions, money,
@@ -38,6 +40,10 @@ worktree with `scripts/update-acef-installation --repo <target> --all-worktrees`
 New ACEF Fix runs use `quickFixContract: single-review-v1`: one developer, one independent reviewer, focused red/green
 and revert-proof evidence, then deterministic closeout. Guarded may strengthen evidence and scope controls, but it does
 not add Process Judge, Patch Assurance, Verify-Patch, Test Review, or a second review cycle to Quick Fix.
+
+For Full v3, the typed worker scope is the canonical work contract through implementation and bounded repair. `REVISE`
+returns that same contract to the original Developer before repair; it does not create a repair phase or another
+lifecycle. A repair may extend the reviewed delta only to paths already permitted by the worker scope.
 
 For new Full v3 work, readiness is a deterministic delta over existing approved sources. Do not create a fresh
 readiness session or repeat a full PRD/NFR inventory unless a named source conflict or product ambiguity requires

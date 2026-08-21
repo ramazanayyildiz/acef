@@ -7,7 +7,7 @@
   "required": [
     "schema", "runId", "fullFlowContract", "runtimeContract", "story", "role", "actorInstanceId",
     "reviewCycle", "baseCommit", "inputCommit", "inputTree", "scopePaths", "acceptanceIds",
-    "currentContext", "diff", "sourceBlobs", "redEvidence", "greenEvidence", "reviewPolicy",
+    "currentContext", "diff", "redEvidence", "greenEvidence", "reviewPolicy",
     "allowedCommands", "integrity"
   ],
   "properties": {
@@ -27,6 +27,7 @@
     "currentContext": { "$ref": "#/$defs/blob" },
     "diff": { "$ref": "#/$defs/blob" },
     "sourceBlobs": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/blob" } },
+    "sourceRefs": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/ref" } },
     "redEvidence": { "type": "object" },
     "greenEvidence": { "type": "object" },
     "previousFindings": { "type": "array", "items": { "type": "object" } },
@@ -43,6 +44,10 @@
       }
     }
   },
+  "anyOf": [
+    { "required": ["sourceBlobs"] },
+    { "required": ["sourceRefs"] }
+  ],
   "$defs": {
     "blob": {
       "type": "object",
@@ -53,6 +58,16 @@
         "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
         "bytes": { "type": "integer", "minimum": 0 },
         "content": { "type": "string" }
+      }
+    },
+    "ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256", "bytes"],
+      "properties": {
+        "path": { "type": "string", "minLength": 1 },
+        "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "bytes": { "type": "integer", "minimum": 0 }
       }
     }
   }

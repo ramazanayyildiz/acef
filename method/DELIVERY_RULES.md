@@ -163,6 +163,8 @@ Native does not mean unbounded. Installed repositories run recognized test/stati
 focused command, and 10 active minutes. Native workers do not spawn subagents. Broad verification is forbidden during
 implementation and may run once only with `--closeout` on a clean worktree. Once the requested patch is green, stop and
 record unrelated failures as later work.
+Independently admitted split children sharing a branch and HEAD use `--work-unit <stable-child-id>` so each keeps its
+own native verification budget without adding ACEF lifecycle records.
 
 NFR work and broad regression are conditional controls, not lifecycle defaults. Create or refresh an NFR assessment
 only when the patch adds/changes a non-functional contract or an acceptance criterion names one. Use focused tests

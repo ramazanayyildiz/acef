@@ -30,7 +30,7 @@ const {
 const { riskRequiresGuarded } = require("./lib/acef-execution-policy");
 const { parseJsonLines, codexMetrics, isAllowedPath } = require("./lib/acef-empirical");
 const { evaluateExpectations, linkDependencies } = require("./acef-empirical-validation");
-const { parseGateVerdict } = require("./lib/acef-state-parser");
+const { deriveReviewFindingDispositions, parseGateVerdict } = require("./lib/acef-state-parser");
 
 const root = path.resolve(__dirname, "..");
 const defaultManifest = path.join(root, "docs", "experiments", "execution-assurance-v2", "manifest.json");
@@ -2888,16 +2888,7 @@ function validateDurableLifecycleEvidence(clone, expectedContract, acceptedActor
         }
       }
       if (boundReports.codeReview && boundReports.patchAssurance) {
-        const findings = new Map();
-        for (const report of [boundReports.codeReview, boundReports.patchAssurance]) {
-          for (const finding of report.findings) findings.set(finding.id, finding);
-        }
-        const dispositions = [...findings.values()].map((finding) => {
-          const disposition = { id: finding.id, severity: finding.severity, status: finding.status };
-          if (finding.reason) disposition.reason = finding.reason;
-          if (finding.approvalId) disposition.approvalId = finding.approvalId;
-          return disposition;
-        }).sort((left, right) => left.id.localeCompare(right.id));
+        const dispositions = deriveReviewFindingDispositions([boundReports.codeReview, boundReports.patchAssurance]);
         const unresolved = dispositions.filter((finding) => finding.status === "OPEN")
           .map(({ severity, id }) => ({ severity, id }));
         if (JSON.stringify(dispositions) !== JSON.stringify(gate.findingDispositions || [])) {

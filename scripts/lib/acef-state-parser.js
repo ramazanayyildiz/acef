@@ -529,11 +529,11 @@ function parseAssuranceCapsule(filePath) {
   const fields = [
     "schema", "runId", "fullFlowContract", "runtimeContract", "story", "role", "actorInstanceId",
     "reviewCycle", "baseCommit", "inputCommit", "inputTree", "scopePaths", "acceptanceIds",
-    "currentContext", "diff", "sourceBlobs", "redEvidence", "greenEvidence", "previousFindings",
+    "currentContext", "diff", "sourceBlobs", "sourceRefs", "redEvidence", "greenEvidence", "previousFindings",
     "repairReceipt", "reviewPolicy", "allowedCommands", "integrity",
   ];
   rejectUnknownFields(record, fields, "assurance capsule");
-  requireFields(record, fields.filter((field) => !["previousFindings", "repairReceipt"].includes(field)), "assurance capsule");
+  requireFields(record, fields.filter((field) => !["sourceBlobs", "sourceRefs", "previousFindings", "repairReceipt"].includes(field)), "assurance capsule");
   if (record.schema !== "acef.assurance-capsule.v1"
     || record.fullFlowContract !== "four-actor-v3"
     || !["capsule-supervisor-v1", "capsule-supervisor-v2"].includes(record.runtimeContract)) {
@@ -546,15 +546,23 @@ function parseAssuranceCapsule(filePath) {
   for (const field of ["scopePaths", "acceptanceIds", "reviewPolicy", "allowedCommands"]) {
     requireStringArray(record, field, "assurance capsule", { nonEmpty: true });
   }
-  if (!Array.isArray(record.sourceBlobs) || !record.sourceBlobs.length) {
-    throw new Error("assurance capsule sourceBlobs must not be empty");
+  if ((!Array.isArray(record.sourceBlobs) || !record.sourceBlobs.length)
+    && (!Array.isArray(record.sourceRefs) || !record.sourceRefs.length)) {
+    throw new Error("assurance capsule requires sourceBlobs or sourceRefs");
   }
-  const blobs = [record.currentContext, record.diff, ...record.sourceBlobs];
+  const blobs = [record.currentContext, record.diff, ...(record.sourceBlobs || [])];
   for (const [index, blob] of blobs.entries()) {
     if (!blob || typeof blob !== "object" || Array.isArray(blob)) throw new Error(`assurance capsule blob ${index} must be an object`);
     requireFields(blob, ["path", "sha256", "bytes", "content"], `assurance capsule blob ${index}`);
     if (!/^[a-f0-9]{64}$/.test(blob.sha256) || Buffer.byteLength(blob.content) !== blob.bytes) {
       throw new Error(`assurance capsule blob ${index} hash/byte metadata is invalid`);
+    }
+  }
+  for (const [index, ref] of (record.sourceRefs || []).entries()) {
+    if (!ref || typeof ref !== "object" || Array.isArray(ref)) throw new Error(`assurance capsule sourceRef ${index} must be an object`);
+    requireFields(ref, ["path", "sha256", "bytes"], `assurance capsule sourceRef ${index}`);
+    if (!/^[a-f0-9]{64}$/.test(ref.sha256) || !Number.isInteger(ref.bytes) || ref.bytes < 0) {
+      throw new Error(`assurance capsule sourceRef ${index} metadata is invalid`);
     }
   }
   if (!record.integrity || record.integrity.algorithm !== "sha256"
@@ -1647,6 +1655,29 @@ function parseFreshness(record, label = "freshness") {
   return record;
 }
 
+function deriveReviewFindingDispositions(reports) {
+  const present = (reports || []).filter(Boolean);
+  const counts = new Map();
+  for (const report of present) {
+    for (const finding of report.findings || []) counts.set(finding.id, Number(counts.get(finding.id) || 0) + 1);
+  }
+  const dispositions = [];
+  for (const report of present) {
+    const namespace = String(report.phase || "review").toLowerCase().replace(/[^a-z0-9]+/g, "");
+    for (const finding of report.findings || []) {
+      const disposition = {
+        id: counts.get(finding.id) > 1 ? `${namespace}:${finding.id}` : finding.id,
+        severity: finding.severity,
+        status: finding.status,
+      };
+      if (finding.reason) disposition.reason = finding.reason;
+      if (finding.approvalId) disposition.approvalId = finding.approvalId;
+      dispositions.push(disposition);
+    }
+  }
+  return dispositions.sort((left, right) => left.id.localeCompare(right.id));
+}
+
 function safeRelative(filePath, root) {
   const rel = path.relative(root, filePath);
   if (rel === "" || rel.startsWith("..") || path.isAbsolute(rel)) {
@@ -1685,5 +1716,6 @@ module.exports = {
   atddRedExecutionFailure,
   atddTestSourceAuthenticityFailure,
   atddGreenTestContinuityFailure,
+  deriveReviewFindingDispositions,
   safeRelative,
 };

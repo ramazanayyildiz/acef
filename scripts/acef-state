@@ -24,6 +24,7 @@ const {
   atddRedExecutionFailure,
   atddTestSourceAuthenticityFailure,
   atddGreenTestContinuityFailure,
+  deriveReviewFindingDispositions,
 } = require("./lib/acef-state-parser");
 const { validateDurableStoryClosePackage } = require("./lib/acef-story-close");
 const { riskRequiresGuarded, workflowSelectionFailures } = require("./lib/acef-execution-policy");
@@ -334,7 +335,6 @@ function isControlPath(filePath) {
     || /^_bmad(?:-output)?\//.test(normalized)
     || /^docs\/ai\/ACEF_[^/]+\.(?:json|md)$/.test(normalized)
     || normalized === "docs/ai/ACEF_ACTIVE_LEDGER"
-    || /^docs\/ai\//.test(normalized)
     || /^docs\/ai\/(?:actors|gates|evidence|reports|approvals|repairs|corrections|capsules|judges|objectives|recoveries)\//.test(normalized);
 }
 
@@ -1922,7 +1922,10 @@ function writeReviewScope(opts) {
     || normalizedScope(scope.activeStory) !== normalizedScope(activeRun.activeStory)) {
     throw new Error("review-scope active run and worker scope do not match");
   }
-  const productionPaths = applicationChangedSince(opts.repo, scope.baseRef, "HEAD").filter((filePath) => !testPath(filePath));
+  const acceptedGate = priorDeterministicStoryGates(opts.repo, activeRun.activeStory, activeRun)
+    .map(({ gate }) => gate).filter((gate) => gate.verdict === "PASS").at(-1);
+  const reviewHead = acceptedGate?.applicationCommit || "HEAD";
+  const productionPaths = applicationChangedSince(opts.repo, scope.baseRef, reviewHead).filter((filePath) => !testPath(filePath));
   const outsideScope = productionPaths.filter((filePath) => !scopeAllows(scope.allowedPaths, filePath));
   if (!productionPaths.length || outsideScope.length) {
     throw new Error(`review-scope requires non-test changes inside the frozen scope; outside=${outsideScope.join(", ") || "none"}`);
@@ -2057,22 +2060,6 @@ function boundReviewReport(repo, actor, expectedPhase, scope, activeRun) {
   return { report, path: relativePath, hash: reportHash };
 }
 
-function derivedReviewDispositions(codeReviewReport, patchAssuranceReport) {
-  const findings = new Map();
-  for (const report of [codeReviewReport, patchAssuranceReport]) {
-    for (const finding of report.findings) {
-      if (findings.has(finding.id)) throw new Error(`duplicate review finding id across reports: ${finding.id}`);
-      findings.set(finding.id, finding);
-    }
-  }
-  return [...findings.values()].map((finding) => {
-    const disposition = { id: finding.id, severity: finding.severity, status: finding.status };
-    if (finding.reason) disposition.reason = finding.reason;
-    if (finding.approvalId) disposition.approvalId = finding.approvalId;
-    return disposition;
-  }).sort((left, right) => left.id.localeCompare(right.id));
-}
-
 function writeDeterministicStoryCloseGate(opts, activeRun) {
   required(opts, [
     "id", "scope", "atddActor", "developmentActor", "codeReviewActor", "patchAssuranceActor",
@@ -2151,14 +2138,23 @@ function writeDeterministicStoryCloseGate(opts, activeRun) {
     }
   }
   const derivedScopePaths = normalizedScopePaths(applicationChangedSince(opts.repo, scopeBaseParent, head));
-  const scopePaths = reviewCycle > 0 ? normalizedScopePaths(priorGate.scopePaths) : derivedScopePaths;
-  const scopeExpanded = reviewCycle > 0 && derivedScopePaths.some((filePath) => !scopePaths.includes(filePath));
+  let scopePaths = reviewCycle > 0 ? normalizedScopePaths(priorGate.scopePaths) : derivedScopePaths;
   const activeScopePath = path.resolve(opts.repo, activeRun.workerScopePath || "docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json");
   const activeScope = parseWorkerScope(activeScopePath);
   if (activeScope.runId !== activeRun.runId || normalizedScope(activeScope.activeStory) !== normalizedScope(opts.scope)) {
     scopeBinding = false;
     failures.push("active worker scope does not bind the deterministic story close run/story");
   }
+  let repairInput = null;
+  let repairDeltaPaths = [];
+  if (reviewCycle > 0) {
+    required(opts, ["repairReceipt"]);
+    const receiptPath = path.resolve(opts.repo, opts.repairReceipt);
+    repairInput = parseDeveloperRepair(receiptPath);
+    repairDeltaPaths = normalizedScopePaths(applicationChangedSince(opts.repo, repairInput.preCommit, repairInput.postCommit));
+    scopePaths = normalizedScopePaths([...scopePaths, ...repairDeltaPaths]);
+  }
+  const scopeExpanded = repairDeltaPaths.some((filePath) => !scopeAllows(activeScope.allowedPaths, filePath));
   const relativeScopePath = relative(opts.repo, activeScopePath).replaceAll(path.sep, "/");
   let committedScope = null;
   try {
@@ -2176,7 +2172,7 @@ function writeDeterministicStoryCloseGate(opts, activeRun) {
   const inputOutputEvidence = parseBindingEvidence(opts.bindingEvidence) || [];
   if (!scopePaths.length) failures.push("story scope has no application/test paths");
   if (scopeExpanded) {
-    failures.push("repair expanded the frozen story scope");
+    failures.push("repair changed paths outside the approved worker scope");
   }
   const applicationTree = applicationTreeDigest(opts.repo, head, scopePaths);
   const redGreenChronology = red.exitCode !== 0
@@ -2302,7 +2298,7 @@ function writeDeterministicStoryCloseGate(opts, activeRun) {
   if (opts.patchAssuranceReportHash && opts.patchAssuranceReportHash !== reportHashes.patchAssurance) throw new Error("--patch-assurance-report-hash does not match bound assurance report");
   const hashBinding = true;
 
-  const findingDispositions = derivedReviewDispositions(codeReviewBinding.report, patchAssuranceBinding.report);
+  const findingDispositions = deriveReviewFindingDispositions([codeReviewBinding.report, patchAssuranceBinding.report]);
   const unresolvedFindings = findingDispositions
     .filter((finding) => finding.status === "OPEN")
     .map(({ severity, id }) => ({ severity, id }));
@@ -2554,6 +2550,7 @@ function writePhaseTransition(opts) {
   const allowed = (current === "readiness" && requested === "atdd")
     || (current === "atdd" && requested === "development")
     || (current === "atddcorrection" && requested === "development")
+    || (current === "codereview" && requested === "development")
     || (current === "development" && requested === "codereview");
   if (!allowed) throw new Error(`invalid capsule-supervisor phase transition ${activeRun.activePhase} -> ${opts.phase}`);
   if (current === "readiness" && requested === "atdd"
@@ -2565,7 +2562,7 @@ function writePhaseTransition(opts) {
   }
   let workerScopeTransition = null;
   let workerScopeTarget = null;
-  if (["atdd", "atddcorrection"].includes(current) && requested === "development") {
+  if (requested === "development") {
     workerScopeTarget = activeRun.workerScopePath
       ? path.resolve(opts.repo, activeRun.workerScopePath)
       : path.join(opts.repo, "docs", "ai", "ACEF_ACTIVE_WORKER_SCOPE.json");
@@ -2575,7 +2572,12 @@ function writePhaseTransition(opts) {
       || normalizedScope(workerScope.activeStory) !== normalizedScope(activeRun.activeStory)) {
       throw new Error("ATDD to Development worker scope does not match the active run/story");
     }
-    if (current === "atddcorrection") {
+    if (current === "codereview") {
+      const priorGate = priorDeterministicStoryGates(opts.repo, activeRun.activeStory, activeRun).at(-1)?.gate;
+      if (!priorGate || priorGate.verdict !== "REVISE") {
+        throw new Error("Code Review can return to Development only from the active story's latest REVISE gate");
+      }
+    } else if (current === "atddcorrection") {
       const correctionPath = path.join(opts.repo, "docs", "ai", "corrections", `${capsuleActorId(activeRun, "atdd_correction1")}.json`);
       const correction = parseAtddCorrection(correctionPath);
       if (correction.schema !== "acef.atdd-correction.v2" || correction.runId !== activeRun.runId) {
@@ -2595,7 +2597,8 @@ function writePhaseTransition(opts) {
   const transitionBinding = requested === "atdd"
     ? { workerRole: "test-author", activeActorId: null, nextAllowedStep: "write_failing_tests" }
     : requested === "development"
-      ? { workerRole: "developer", activeActorId: null, nextAllowedStep: "implement_to_green" }
+      ? { workerRole: "developer", activeActorId: current === "codereview" ? capsuleActorId(activeRun, "development") : null,
+        nextAllowedStep: current === "codereview" ? "implement_repair" : "implement_to_green" }
       : requested === "codereview"
         ? { workerRole: null, activeActorId: null, nextAllowedStep: "review_report_only" }
         : {};
@@ -2678,7 +2681,11 @@ function writeDeveloperRepair(opts) {
   const developer = parseActorRecord(actorPath(opts.repo, opts.developerActor));
   const cycle = priorGate.reviewCycle + 1;
   const postCommit = gitCommit(opts.repo);
-  const scopePaths = normalizedScopePaths(priorGate.scopePaths);
+  const activeScopePath = path.resolve(opts.repo, activeRun.workerScopePath || "docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json");
+  const activeScope = parseWorkerScope(activeScopePath);
+  const changedPaths = normalizedScopePaths(applicationChangedSince(opts.repo, priorGate.applicationCommit, postCommit));
+  const outsideScope = changedPaths.filter((filePath) => !scopeAllows(activeScope.allowedPaths, filePath));
+  const scopePaths = normalizedScopePaths([...(priorGate.scopePaths || []), ...changedPaths]);
   const postTree = applicationTreeDigest(opts.repo, postCommit, scopePaths);
   if (priorGate.gateType !== "deterministic-story-close-v3" || priorGate.verdict !== "REVISE"
     || priorGate.runId !== activeRun.runId || priorGate.fullFlowContract !== activeRun.fullFlowContract
@@ -2687,8 +2694,7 @@ function writeDeveloperRepair(opts) {
     || developer.runId !== activeRun.runId || developer.fullFlowContract !== activeRun.fullFlowContract
     || !developer.sessionId || cycle < 1 || cycle > 2
     || !gitIsAncestor(opts.repo, priorGate.applicationCommit, postCommit)
-    || applicationChangedSince(opts.repo, priorGate.applicationCommit, postCommit)
-      .filter((filePath) => scopePaths.includes(filePath)).length === 0) {
+    || changedPaths.length === 0 || outsideScope.length > 0) {
     throw new Error("Developer repair can only bind the original Developer/session and a real post-REVISE application change");
   }
   const record = {
@@ -2745,7 +2751,8 @@ function writeReviewCapsule(opts) {
     const priorGate = parseGateVerdict(priorGatePath);
     if (repair.runId !== activeRun.runId || repair.cycle !== cycle || priorGate.reviewCycle !== cycle - 1
       || priorGate.verdict !== "REVISE") throw new Error("review-capsule repair receipt/cycle mismatch");
-    scopePaths = normalizedScopePaths(priorGate.scopePaths);
+    const repairDelta = normalizedScopePaths(applicationChangedSince(opts.repo, repair.preCommit, repair.postCommit));
+    scopePaths = normalizedScopePaths([...(priorGate.scopePaths || []), ...repairDelta]);
     repairReceipt = { path: relative(opts.repo, repairPath), sha256: sha256(fs.readFileSync(repairPath)), record: repair };
     for (const reportPath of Object.values(priorGate.reportPaths || {})) {
       const report = parseReviewReport(path.resolve(opts.repo, reportPath));
@@ -2758,13 +2765,13 @@ function writeReviewCapsule(opts) {
   if (!fs.existsSync(contextPath)) throw new Error("review-capsule current context is missing");
   const contextContent = fs.readFileSync(contextPath, "utf8");
   const diffContent = runGit(opts.repo, ["diff", "--no-ext-diff", "--unified=40", `${opts.baseCommit}..${inputCommit}`, "--", ...scopePaths]);
-  const sourceBlobs = scopePaths.map((filePath) => {
+  const sourceRefs = scopePaths.map((filePath) => {
     let content = "";
     try { content = runGit(opts.repo, ["show", `${inputCommit}:${filePath}`]); } catch {}
-    return capsuleBlob(filePath, content);
+    const bytes = Buffer.from(content);
+    return { path: filePath, sha256: sha256(bytes), bytes: bytes.length };
   });
-  const totalBytes = Buffer.byteLength(contextContent) + Buffer.byteLength(diffContent)
-    + sourceBlobs.reduce((sum, blob) => sum + blob.bytes, 0);
+  const totalBytes = Buffer.byteLength(contextContent) + Buffer.byteLength(diffContent);
   if (totalBytes > 400000) throw new Error(`review-capsule exceeds 400000-byte bounded context limit (${totalBytes})`);
   const reviewRuntime = resolveRoleRuntime(loadModelRoutingPolicy(opts.repo).record, opts.role);
   const reviewPolicy = opts.role === "code-review"
@@ -2786,7 +2793,7 @@ function writeReviewCapsule(opts) {
     acceptanceIds: [...new Set([...red.satisfies, ...green.satisfies])],
     currentContext: capsuleBlob(relative(opts.repo, contextPath), contextContent),
     diff: capsuleBlob(`git-diff:${opts.baseCommit}..${inputCommit}`, diffContent),
-    sourceBlobs,
+    sourceRefs,
     redEvidence: red,
     greenEvidence: green,
     previousFindings,
@@ -2815,9 +2822,16 @@ function validateCapsuleIntegrity(repo, record) {
   const { integrity, ...payload } = record;
   if (integrity.payloadSha256 !== sha256(JSON.stringify(payload))) throw new Error("assurance capsule payload hash mismatch");
   if (record.inputTree !== gitTreeAt(repo, record.inputCommit)) throw new Error("assurance capsule input tree is stale or invalid");
-  for (const blob of [record.currentContext, record.diff, ...record.sourceBlobs]) {
+  for (const blob of [record.currentContext, record.diff, ...(record.sourceBlobs || [])]) {
     if (sha256(Buffer.from(blob.content)) !== blob.sha256 || Buffer.byteLength(blob.content) !== blob.bytes) {
       throw new Error(`assurance capsule blob mismatch: ${blob.path}`);
+    }
+  }
+  for (const ref of record.sourceRefs || []) {
+    let content = "";
+    try { content = runGit(repo, ["show", `${record.inputCommit}:${ref.path}`]); } catch {}
+    if (sha256(Buffer.from(content)) !== ref.sha256 || Buffer.byteLength(content) !== ref.bytes) {
+      throw new Error(`assurance capsule source reference mismatch: ${ref.path}`);
     }
   }
 }

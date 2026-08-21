@@ -49,6 +49,7 @@ verification. Do not spawn a subagent. Run recognized tests/static analysis thro
 `.acef/bin/acef-native-test -- <focused-command>`: three distinct focused commands, two attempts each, 180 seconds per
 command, and 10 active minutes. Stop when the requested patch is green. Broad verification is allowed once only as a
 clean-tree `--closeout` after all related repairs, never during native implementation.
+Use `--work-unit <stable-child-id>` only for independently admitted native children sharing a branch and HEAD.
 
 Admit the work to ACEF when persistence/migration, security/privacy/permissions, money, provider integration, realtime,
 concurrency/fencing, state-machine behavior, tracking/reporting/analytics, a new pattern, scope expansion, multiple

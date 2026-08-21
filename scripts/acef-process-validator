@@ -27,6 +27,7 @@ const {
   atddRedExecutionFailure,
   atddTestSourceAuthenticityFailure,
   atddGreenTestContinuityFailure,
+  deriveReviewFindingDispositions,
 } = require("./lib/acef-state-parser");
 const { installationFreshnessFailures, readInstallationManifest } = require("./lib/acef-installation");
 const { loadObjective, objectiveFailures } = require("./lib/acef-objective-supervisor");
@@ -404,11 +405,13 @@ function ancestorCommitError(repoRoot, commit, label) {
   return "";
 }
 
-function recordCommitError(repoRoot, commit, label) {
+function recordCommitError(repoRoot, commit, label, { ignoreTestPaths = false } = {}) {
   const ancestorError = ancestorCommitError(repoRoot, commit, label);
   if (ancestorError) return ancestorError;
   const head = gitHead(repoRoot);
-  const changed = gitChangedFiles(repoRoot, commit, head).filter((filePath) => !stateControlPath(filePath));
+  const changed = gitChangedFiles(repoRoot, commit, head)
+    .filter((filePath) => !stateControlPath(filePath))
+    .filter((filePath) => !(ignoreTestPaths && isTestPath(filePath)));
   if (changed.length) return `${label} is stale; application paths changed since ${commit}: ${changed.slice(0, 8).join(", ")}`;
   return "";
 }
@@ -582,7 +585,7 @@ function validateSpecReadinessForDispatch(repoRoot, activeRun, triggers = []) {
   } catch (error) {
     return [`spec readiness verdict invalid: ${error.message}`];
   }
-  const commitError = recordCommitError(repoRoot, verdict.repositoryCommit, "spec readiness verdict");
+  const commitError = recordCommitError(repoRoot, verdict.repositoryCommit, "spec readiness verdict", { ignoreTestPaths: true });
   if (commitError) failures.push(commitError);
   const highRisk = (triggers.concat(verdict.riskFlags || [])).some((item) => /(schema|migration|auth|authorization|permission|role|payment|billing|invoice|accounting|finance|financial|revenue|expense|tax|ledger|muhasebe|payout|security|tenant|privacy|pii|persistence|database|crm)/i.test(item));
   if (verdict.status !== "PASS") {
@@ -2046,9 +2049,20 @@ function boundReviewReportIntegrity(repoRoot, actor, reportPathValue, reportHash
       const capsule = parseAssuranceCapsule(capsulePath);
       const { integrity, ...payload } = capsule;
       if (integrity.payloadSha256 !== sha256(JSON.stringify(payload))) throw new Error(`${expectedPhase} review capsule payload hash mismatch`);
-      for (const blob of [capsule.currentContext, capsule.diff, ...capsule.sourceBlobs]) {
+      for (const blob of [capsule.currentContext, capsule.diff, ...(capsule.sourceBlobs || [])]) {
         if (blob.sha256 !== sha256(Buffer.from(blob.content)) || blob.bytes !== Buffer.byteLength(blob.content)) {
           throw new Error(`${expectedPhase} review capsule blob mismatch: ${blob.path}`);
+        }
+      }
+      for (const ref of capsule.sourceRefs || []) {
+        let content = "";
+        try {
+          content = cp.execFileSync("git", ["show", `${capsule.inputCommit}:${ref.path}`], {
+            cwd: repoRoot, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"],
+          }).trim();
+        } catch {}
+        if (ref.sha256 !== sha256(Buffer.from(content)) || ref.bytes !== Buffer.byteLength(content)) {
+          throw new Error(`${expectedPhase} review capsule source reference mismatch: ${ref.path}`);
         }
       }
       const expectedRole = expectedPhase === "codereview" ? "code-review" : "patch-assurance";
@@ -2065,19 +2079,6 @@ function boundReviewReportIntegrity(repoRoot, actor, reportPathValue, reportHash
     failures.push(error.message);
   }
   return { report, failures };
-}
-
-function findingDispositionsFromReports(reports) {
-  const findings = new Map();
-  for (const report of reports.filter(Boolean)) {
-    for (const finding of report.findings) findings.set(finding.id, finding);
-  }
-  return [...findings.values()].map((finding) => {
-    const disposition = { id: finding.id, severity: finding.severity, status: finding.status };
-    if (finding.reason) disposition.reason = finding.reason;
-    if (finding.approvalId) disposition.approvalId = finding.approvalId;
-    return disposition;
-  }).sort((left, right) => left.id.localeCompare(right.id));
 }
 
 function deterministicGateRecordIntegrityFailures(repoRoot, activeRun, gate) {
@@ -2171,10 +2172,7 @@ function deterministicGateRecordIntegrityFailures(repoRoot, activeRun, gate) {
   const codeBinding = boundReviewReportIntegrity(repoRoot, actorRecords.codeReview, gate.reportPaths?.codeReview, gate.reportHashes?.codeReview, "codereview", activeRun.activeStory, activeRun);
   const assuranceBinding = boundReviewReportIntegrity(repoRoot, actorRecords.patchAssurance, gate.reportPaths?.patchAssurance, gate.reportHashes?.patchAssurance, "patchassurance", activeRun.activeStory, activeRun);
   failures.push(...codeBinding.failures, ...assuranceBinding.failures);
-  const findingIds = [codeBinding.report, assuranceBinding.report].filter(Boolean).flatMap((report) => report.findings.map((finding) => finding.id));
-  const duplicateFindingIds = [...new Set(findingIds.filter((id, index) => findingIds.indexOf(id) !== index))];
-  if (duplicateFindingIds.length) failures.push(`duplicate review finding id(s) across reports: ${duplicateFindingIds.join(", ")}`);
-  const dispositions = findingDispositionsFromReports([codeBinding.report, assuranceBinding.report]);
+  const dispositions = deriveReviewFindingDispositions([codeBinding.report, assuranceBinding.report]);
   const derivedFindings = dispositions.filter((finding) => finding.status === "OPEN").map(({ severity, id }) => ({ severity, id }));
   if (JSON.stringify(dispositions) !== JSON.stringify(gate.findingDispositions || [])) failures.push("gate finding dispositions do not match bound review reports");
   if (JSON.stringify(derivedFindings) !== JSON.stringify(gate.unresolvedFindings || [])) failures.push("gate unresolved findings do not match bound review reports");
@@ -3883,6 +3881,35 @@ function checkControlDosing(repoRoot) {
   }
 }
 
+function successfulNativeSplitWorkUnit(repoRoot) {
+  let stateDir;
+  let head;
+  let branch;
+  try {
+    stateDir = path.resolve(repoRoot, cp.execFileSync("git", ["rev-parse", "--git-path", "acef-native-speed"], {
+      cwd: repoRoot, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"],
+    }).trim());
+    head = gitHead(repoRoot);
+    branch = cp.execFileSync("git", ["branch", "--show-current"], {
+      cwd: repoRoot, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"],
+    }).trim() || "detached";
+  } catch {
+    return null;
+  }
+  if (!exists(stateDir)) return null;
+  const now = Date.now();
+  for (const name of fs.readdirSync(stateDir).filter((entry) => /^state-[a-f0-9]{16}\.json$/.test(entry)).sort()) {
+    try {
+      const record = JSON.parse(fs.readFileSync(path.join(stateDir, name), "utf8"));
+      const finishedAt = Date.parse(record.lastFinishedAt || "");
+      if (record.schema === "acef.native-speed.v1" && record.repoRoot === repoRoot
+        && record.head === head && record.branch === branch && record.workUnitId && record.workUnitId !== "native"
+        && record.lastExitCode === 0 && Number.isFinite(finishedAt) && now - finishedAt <= 600000) return record;
+    } catch {}
+  }
+  return null;
+}
+
 // Lane-aware pre-commit bundle. Mutable lifecycle commits (ATDD, development, review,
 // repair) enforce authorization/scope and the review breaker without requiring final
 // close artifacts that cannot exist yet. Closeout/complete additionally requires the
@@ -3918,6 +3945,23 @@ function checkPrecommitGate(repoRoot) {
   } catch {
     stagedCloseout = false;
     stagedGateTransition = false;
+  }
+  let terminalReplan = null;
+  if (execution.record?.fullFlowContract === "four-actor-v3") {
+    try {
+      const latest = latestGateForActiveRun(repoRoot, execution.record, { requirePass: false }).gate;
+      if (latest?.verdict === "REPLAN") terminalReplan = latest;
+    } catch {}
+  }
+  const nativeSplitWorkUnit = terminalReplan ? successfulNativeSplitWorkUnit(repoRoot) : null;
+  if (nativeSplitWorkUnit) {
+    const stagedControl = stagedPaths.filter(stateControlPath);
+    if (stagedControl.length) {
+      return result("precommit-gate", false,
+        `native split child ${nativeSplitWorkUnit.workUnitId} cannot mutate retired parent control state: ${stagedControl.slice(0, 8).join(", ")}`);
+    }
+    return result("precommit-gate", true,
+      `terminal REPLAN parent is inert; native split child ${nativeSplitWorkUnit.workUnitId} has a fresh successful focused verification receipt`);
   }
   const closingPhase = stagedCloseout || (execution.record
     ? /^(?:closeout|complete|storyclose)$/i.test(canonicalPhase(execution.record.activePhase))

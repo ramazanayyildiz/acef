@@ -75,6 +75,18 @@ try {
   fs.rmSync(distinct.repo, { recursive: true, force: true });
 }
 
+const splitChildren = repoFixture();
+try {
+  const focused = ["--", "php", "artisan", "test", "--filter=FocusedCase"];
+  assert.equal(run(splitChildren, ["--work-unit", "child-a", ...focused]).status, 0);
+  assert.equal(run(splitChildren, ["--work-unit", "child-a", ...focused]).status, 0);
+  assert.equal(run(splitChildren, ["--work-unit", "child-a", ...focused]).status, 2);
+  assert.equal(run(splitChildren, ["--work-unit", "child-b", ...focused]).status, 0,
+    "an independently admitted split child must receive its own native verification budget");
+} finally {
+  fs.rmSync(splitChildren.repo, { recursive: true, force: true });
+}
+
 const broad = repoFixture();
 try {
   const args = ["--", "php", "artisan", "test", "--testsuite=Feature"];
