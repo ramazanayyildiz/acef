@@ -214,6 +214,7 @@ function expectDispatcherDecision(label, payload, decision, env = {}) {
   if (actual !== decision) {
     throw new Error(`Expected dispatcher ${label} to ${decision}, got ${actual || "none"}:\n${JSON.stringify(output, null, 2)}`);
   }
+  return output;
 }
 
 function expectHookDecision(label, payload, decision, env = {}, expectedSystemMessages = []) {
@@ -2238,11 +2239,14 @@ try {
     cwd: dispatcherNative,
     tool_input: { command: "php artisan test --testsuite=Feature" },
   }, "deny");
-  expectDispatcherDecision("native focused wrapper is allowed", {
+  const nativeFocusedAllow = expectDispatcherDecision("native focused wrapper is allowed", {
     tool_name: "Bash",
     cwd: dispatcherNative,
     tool_input: { command: ".acef/bin/acef-native-test -- php artisan test --filter=OneTest" },
   }, "allow");
+  if (nativeFocusedAllow.systemMessage) {
+    throw new Error(`normal Native allow must be silent, got: ${nativeFocusedAllow.systemMessage}`);
+  }
   expectDispatcherDecision("native named work-unit wrapper is allowed", {
     tool_name: "Bash",
     cwd: dispatcherNative,

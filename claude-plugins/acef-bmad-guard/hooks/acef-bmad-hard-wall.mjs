@@ -1202,7 +1202,9 @@ function p1ConformanceRestricted(repoRoot) {
       deny(nativeReason);
       return;
     }
-    allow("ACEF native speed contract: no active ACEF lifecycle; use a bounded patch, focused verification, and stop at the requested outcome.");
+    // A normal Native allow is intentionally silent. Claude surfaces allow-side
+    // systemMessage text as "PreToolUse says", which looks like a tool failure.
+    allow();
     return;
   }
 

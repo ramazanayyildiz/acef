@@ -26,6 +26,8 @@ or evidence contract. Do not use it to claim implementation status; link to the 
   ignores dirty ACEF control/installation files while still rejecting dirty application or test paths.
 - Kept non-code exploration outside implementation governance by allowing built-in read-only Explore/Plan agents when
   no ACEF lifecycle is active; general-purpose and implementation subagents remain blocked in Native work.
+- Made ordinary Native allow decisions silent; Claude no longer renders an informational allow-side hook message as a
+  misleading `PreToolUse says` verification failure.
 
 ### Full v3 repair and review now reuse one bounded work contract
 
