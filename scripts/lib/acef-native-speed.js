@@ -81,6 +81,7 @@ function freshNativeBudget(repoRoot, head, branch, workUnitId = "native", now = 
     branch,
     workUnitId,
     startedAt: new Date(now).toISOString(),
+    activeMilliseconds: 0,
     commands: {},
     focusedCommands: [],
     broadSuiteCount: 0,
@@ -88,11 +89,11 @@ function freshNativeBudget(repoRoot, head, branch, workUnitId = "native", now = 
 }
 
 function nativeBudgetFailure(state, classification, options = {}, now = Date.now()) {
-  const elapsedSeconds = Math.max(0, Math.floor((now - Date.parse(state.startedAt)) / 1000));
+  const elapsedSeconds = Math.max(0, Math.floor(Number(state.activeMilliseconds || 0) / 1000));
   if (classification.kind === "unknown") return "acef-native-test accepts only recognized test or static-analysis commands";
   if (classification.kind === "broad") {
     if (!options.closeout) return "broad verification is forbidden during native implementation; use focused tests or run one clean-tree --closeout after all repairs";
-    if (!options.cleanTree) return "native broad closeout requires a clean worktree after the repair commits";
+    if (!options.cleanTree) return "native broad closeout requires a clean application/test tree after the repair commits";
     if (state.broadSuiteCount >= 1) return "native broad closeout suite already ran once for this HEAD";
     return "";
   }

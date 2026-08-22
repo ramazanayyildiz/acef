@@ -146,8 +146,9 @@ reversible single-boundary/single-surface repair and no ACEF control trigger rem
 
 Native does not mean unbounded. Installed repositories run recognized test/static-analysis commands through
 `.acef/bin/acef-native-test`: at most three distinct focused commands, two attempts per exact command, 180 seconds per
-focused command, and 10 active minutes. Native workers do not spawn subagents. Broad verification is forbidden during
-implementation and may run once only with `--closeout` on a clean worktree. Once the requested patch is green, stop and
+focused command, and 10 minutes of actual command execution. Native implementation workers do not spawn subagents;
+read-only Explore/Plan remains outside ACEF before repository mutation. Broad verification is forbidden during
+implementation and may run once only with `--closeout` on a clean application/test tree. Once the requested patch is green, stop and
 record unrelated failures as later work.
 
 NFR work and broad regression are conditional controls, not lifecycle defaults. Create or refresh an NFR assessment

@@ -21,6 +21,11 @@ or evidence contract. Do not use it to claim implementation status; link to the 
 - Added a scoped formatter wrapper and restored `docs/ai/runs/` to the control-path contract used by recovery.
 - Decoupled the standalone installation-freshness probe from malformed legacy lifecycle state, so stale-install diagnosis
   remains available precisely when an old active-run record needs repair.
+- Repaired the native hard-wall/runtime seam: named work-unit syntax and the nested worktree-isolation runner are now
+  recognized, the ten-minute budget counts actual command execution instead of idle wall-clock time, and closeout
+  ignores dirty ACEF control/installation files while still rejecting dirty application or test paths.
+- Kept non-code exploration outside implementation governance by allowing built-in read-only Explore/Plan agents when
+  no ACEF lifecycle is active; general-purpose and implementation subagents remain blocked in Native work.
 
 ### Full v3 repair and review now reuse one bounded work contract
 

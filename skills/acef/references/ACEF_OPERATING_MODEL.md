@@ -351,8 +351,9 @@ New typed intake records `reversible`, `technicalBoundaryCount`, and `productSur
 without an ACEF control trigger fails bootstrap with `NATIVE_WORKFLOW`; release importance alone is not an admission
 trigger and must not create a per-defect ACEF lifecycle.
 
-The installed native speed contract then limits execution without creating ACEF artifacts: no subagents, three
-distinct focused verification commands, two attempts per exact command, 180 seconds per focused command, and 10 active
+The installed native speed contract then limits execution without creating ACEF artifacts: no implementation
+subagents (read-only Explore/Plan remains outside ACEF before repository mutation), three distinct focused verification
+commands, two attempts per exact command, 180 seconds per focused command, and 10 minutes of actual command execution
 minutes. Tests/static analysis use `.acef/bin/acef-native-test`; broad verification is denied until one clean-tree
 `--closeout` run after the repair batch.
 

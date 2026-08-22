@@ -63,6 +63,22 @@ function writeState(filePath, state) {
   fs.renameSync(temp, filePath);
 }
 
+function controlPath(filePath) {
+  const normalized = String(filePath || "").replaceAll(path.sep, "/");
+  return /^\.acef\//.test(normalized)
+    || /^\.(?:agents|claude|cline|codex|cursor|gemini|goose|kiro|mymir|opencode|qoder|qwen|roo|windsurf)\//.test(normalized)
+    || /^_bmad(?:-output)?\//.test(normalized)
+    || /^docs\/ai\//.test(normalized);
+}
+
+function dirtyApplicationPaths(repoRoot) {
+  const status = cp.execFileSync("git", ["status", "--porcelain=v1"], { cwd: repoRoot, encoding: "utf8" });
+  return status.split(/\r?\n/).filter(Boolean).map((line) => {
+    const value = line.slice(3).replace(/^"|"$/g, "");
+    return value.includes(" -> ") ? value.split(" -> ").at(-1) : value;
+  }).filter((filePath) => !controlPath(filePath));
+}
+
 const { closeout, workUnitId, command } = parseArgs(process.argv.slice(2));
 const cwd = process.cwd();
 let repoRoot;
@@ -82,7 +98,7 @@ try {
 
 const classification = classifyNativeVerification(command);
 const state = readState(statePath, repoRoot, head, branch, workUnitId);
-const cleanTree = closeout ? git(["status", "--porcelain"], repoRoot) === "" : false;
+const cleanTree = closeout ? dirtyApplicationPaths(repoRoot).length === 0 : false;
 const budgetFailure = nativeBudgetFailure(state, classification, { closeout, cleanTree });
 if (budgetFailure) fail(budgetFailure);
 
@@ -93,10 +109,11 @@ else {
 }
 writeState(statePath, state);
 
-const elapsedSeconds = Math.max(0, Math.floor((Date.now() - Date.parse(state.startedAt)) / 1000));
+const elapsedSeconds = Math.max(0, Math.floor(Number(state.activeMilliseconds || 0) / 1000));
 const timeoutSeconds = classification.kind === "broad"
   ? NATIVE_CLOSEOUT_TIMEOUT_SECONDS
   : Math.max(1, Math.min(NATIVE_FOCUSED_TIMEOUT_SECONDS, NATIVE_ACTIVE_SECONDS - elapsedSeconds));
+const commandStartedAt = Date.now();
 const result = cp.spawnSync(command[0], command.slice(1), {
   cwd: repoRoot,
   env: process.env,
@@ -104,6 +121,7 @@ const result = cp.spawnSync(command[0], command.slice(1), {
   timeout: timeoutSeconds * 1000,
   killSignal: "SIGTERM",
 });
+state.activeMilliseconds = Number(state.activeMilliseconds || 0) + Math.max(0, Date.now() - commandStartedAt);
 state.lastFinishedAt = new Date().toISOString();
 state.lastExitCode = result.status === null ? 1 : result.status;
 writeState(statePath, state);

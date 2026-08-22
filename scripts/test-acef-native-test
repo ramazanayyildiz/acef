@@ -13,6 +13,8 @@ const {
   NATIVE_FOCUSED_TIMEOUT_SECONDS,
   NATIVE_REPEAT_LIMIT,
   classifyNativeVerification,
+  freshNativeBudget,
+  nativeBudgetFailure,
 } = require("./lib/acef-native-speed");
 
 const wrapper = path.resolve(__dirname, "acef-native-test");
@@ -26,6 +28,11 @@ assert.equal(classifyNativeVerification(["php", "artisan", "test", "--testsuite=
 assert.equal(classifyNativeVerification(["php", "artisan", "test", "tests/Feature/OneTest.php"]).kind, "focused");
 assert.equal(classifyNativeVerification(["vendor/bin/phpstan", "analyse", "--configuration=phpstan.neon"]).kind, "broad");
 assert.equal(classifyNativeVerification(["vendor/bin/phpstan", "analyse", "app/Services/One.php"]).kind, "focused");
+const idleBudget = freshNativeBudget("/repo", "a".repeat(40), "main", "idle", Date.now() - 60 * 60 * 1000);
+assert.equal(nativeBudgetFailure(idleBudget, { kind: "focused", identity: "focused" }), "",
+  "wall-clock idle time must not consume the active command budget");
+idleBudget.activeMilliseconds = NATIVE_ACTIVE_SECONDS * 1000;
+assert.match(nativeBudgetFailure(idleBudget, { kind: "focused", identity: "focused" }), /active test budget exceeded/);
 
 function repoFixture() {
   const repo = fs.mkdtempSync(path.join(os.tmpdir(), "acef-native-speed-"));
@@ -93,12 +100,24 @@ try {
   const early = run(broad, args);
   assert.equal(early.status, 2);
   assert.match(early.stderr, /broad verification is forbidden/);
+  fs.mkdirSync(path.join(broad.repo, ".acef"), { recursive: true });
+  fs.writeFileSync(path.join(broad.repo, ".acef", "installed-runtime.txt"), "control-only\n");
   assert.equal(run(broad, ["--closeout", ...args]).status, 0);
   const repeatedBroad = run(broad, ["--closeout", ...args]);
   assert.equal(repeatedBroad.status, 2);
   assert.match(repeatedBroad.stderr, /already ran once/);
 } finally {
   fs.rmSync(broad.repo, { recursive: true, force: true });
+}
+
+const dirtyProduct = repoFixture();
+try {
+  fs.writeFileSync(path.join(dirtyProduct.repo, "product.php"), "<?php\n");
+  const denied = run(dirtyProduct, ["--closeout", "--", "php", "artisan", "test", "--testsuite=Feature"]);
+  assert.equal(denied.status, 2);
+  assert.match(denied.stderr, /clean application\/test tree/);
+} finally {
+  fs.rmSync(dirtyProduct.repo, { recursive: true, force: true });
 }
 
 console.log("acef native speed contract tests passed");

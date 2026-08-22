@@ -15,7 +15,10 @@
       "scripts/acef-state#writeActiveRun",
       "scripts/acef-supervisor#review dispatch",
       "scripts/acef-worktree-test",
-      "scripts/acef-scoped-format"
+      "scripts/acef-scoped-format",
+      "scripts/acef-native-test",
+      "scripts/lib/acef-native-speed.js",
+      "claude-plugins/acef-bmad-guard/hooks/acef-bmad-hard-wall.mjs"
     ],
     "validator": [
       "scripts/acef-process-validator#checkTypedActorSeparation",
@@ -36,6 +39,7 @@
   "limitations": [
     "The integrated RED default is supported by the preregistered ATDD-MIN-1 calibration; it remains enforced rather than proven until live product canaries reproduce the speed result without a quality regression.",
     "The worktree runner isolates names and detects external Composer/vendor resolution. Target-specific services must still honor the emitted DB/cache/queue/port environment values.",
+    "Only built-in read-only Explore/Plan actor types are mechanically recognizable outside an active lifecycle; an untyped general-purpose agent remains blocked because the hook cannot prove it is read-only.",
     "Infrastructure retry is mechanically trusted only for the installed worktree runner's exit 75 marker and is capped at two attempts; ordinary failing tests remain immutable product evidence.",
     "Existing in-flight runs without redOwnershipContract retain their original contract and are not reinterpreted after installation."
   ],

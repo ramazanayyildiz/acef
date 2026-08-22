@@ -177,7 +177,9 @@ A worker launched before this bootstrap is drift. Stop, record it, patch the amb
   normalized `runId`; recovery keeps the story name unchanged and starts a new runId. Never create `r2`/`r3` story
   aliases to escape stale actor files. When `evidence-run` reports `REUSED`, consume the alias it wrote instead of
   executing the same command or rebuilding the same test environment.
-- For framework tests in linked worktrees, freeze the installed `acef-worktree-test` wrapper as the evidence command.
+- For Native framework tests in linked worktrees, run the installed isolation wrapper inside the budget wrapper:
+  `.acef/bin/acef-native-test --work-unit <id> -- .acef/bin/acef-worktree-test --work-unit <id> -- <command>`.
+  For admitted evidence, freeze `acef-worktree-test` as the exact evidence command.
   It isolates runtime names and rejects parent-checkout Composer/vendor leakage. Its typed setup exit 75 is recorded as
   infrastructure and permits at most two retries without consuming the canonical product evidence ID.
 - Run formatters only through `acef-scoped-format --allow-path ... -- <formatter>` so a formatter cannot silently touch

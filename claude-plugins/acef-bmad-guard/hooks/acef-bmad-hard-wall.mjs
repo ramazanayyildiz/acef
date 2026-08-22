@@ -374,12 +374,19 @@ function nativeVerificationCommand(command) {
 
 function nativeWrapperCommand(command) {
   const text = String(command || "").trim();
-  return /^(?:\.\/)?\.acef\/bin\/acef-native-test(?:\s+--closeout)?\s+--\s+\S+/.test(text)
+  return /^(?:\.\/)?\.acef\/bin\/acef-native-test(?:(?:\s+--closeout)|(?:\s+--work-unit\s+[A-Za-z0-9._-]+))*\s+--\s+\S+/.test(text)
     && !/(?:&&|\|\||[;|\n])/.test(text);
+}
+
+function nativeReadOnlyAgent(toolName, input) {
+  if (!/(?:^|\.)(?:Task|Agent)$/i.test(toolName)) return false;
+  const type = String(input?.subagent_type || input?.subagentType || input?.agent_type || input?.agentType || "");
+  return /^(?:Explore|Plan)$/i.test(type);
 }
 
 function nativeSpeedRestricted(payload, toolName, input) {
   if (/(?:^|\.)(?:Task|Agent|spawn_agent)$/i.test(toolName)) {
+    if (nativeReadOnlyAgent(toolName, input)) return "";
     return "ACEF native speed contract: native work does not use subagents; finish the bounded patch in the current session.";
   }
   if (!isShellTool(toolName)) return "";
@@ -388,7 +395,7 @@ function nativeSpeedRestricted(payload, toolName, input) {
     return "ACEF native speed contract: native work does not spawn or dispatch agents/subagents.";
   }
   if (nativeVerificationCommand(command) && !nativeWrapperCommand(command)) {
-    return "ACEF native speed contract: run tests through '.acef/bin/acef-native-test -- <focused-command>'. Raw test/static-analysis commands are blocked; broad verification requires one clean-tree '--closeout'.";
+    return "ACEF native speed contract: run tests through '.acef/bin/acef-native-test [--work-unit <id>] -- <focused-command>'. Wrap isolated framework tests as '.acef/bin/acef-native-test --work-unit <id> -- .acef/bin/acef-worktree-test --work-unit <id> -- <focused-command>'. Raw test/static-analysis commands are blocked; broad verification requires one clean application/test tree '--closeout'.";
   }
   return "";
 }

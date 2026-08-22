@@ -328,8 +328,9 @@ per-defect ACEF lifecycle.
 
 The installed native speed contract supplies the missing execution boundary without creating a lifecycle: no
 subagents, three distinct focused verification commands, two attempts per exact command, 180 seconds per focused
-command, and 10 active minutes. The repo-local hook requires `.acef/bin/acef-native-test`; implementation-time broad
-suites are denied, while one clean-tree `--closeout` broad run is available after the repair batch is complete.
+command, and 10 minutes of actual command execution. The repo-local hook requires `.acef/bin/acef-native-test`;
+implementation-time broad suites are denied, while one application/test-clean `--closeout` broad run is available
+after the repair batch is complete. Dirty ACEF installation/control files do not block that closeout.
 
 | Execution workflow | Stable ID | Use for | Base lifecycle |
 |---|---|---|---|

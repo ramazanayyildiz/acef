@@ -8,7 +8,8 @@ Do not bootstrap ACEF for reversible, contained work with one technical boundary
 repository's native workflow, make targeted reads, implement the smallest patch, run focused verification, and report
 the result. Do not create ACEF run artifacts for that work.
 
-Native work uses the installed speed contract: no subagents; at most three distinct focused verification commands,
+Native implementation uses the installed speed contract: no implementation subagents; built-in read-only Explore/Plan
+agents remain outside ACEF when no lifecycle is active. Use at most three distinct focused verification commands,
 two attempts per identical command, 180 seconds per focused command, and 10 active minutes. Run recognized tests or
 static analysis through `.acef/bin/acef-native-test -- <focused-command>`. Broad verification is implementation-time
 forbidden and may run once only as `.acef/bin/acef-native-test --closeout -- <broad-command>` on a clean worktree.
@@ -16,7 +17,8 @@ Independently admitted children sharing one branch and HEAD use `--work-unit <st
 budgets remain separate without creating ACEF run artifacts.
 When a regression test is useful, the same Developer writes the focused RED and continues to GREEN; Native, Fix, and
 Standard must not open a separate Test Author session. Run framework tests through
-`.acef/bin/acef-worktree-test --work-unit <id> -- <focused-command>` when a linked worktree can share Composer autoload,
+`.acef/bin/acef-native-test --work-unit <id> -- .acef/bin/acef-worktree-test --work-unit <id> -- <focused-command>`
+when a linked worktree can share Composer autoload,
 database, cache, queue, or ports. Infrastructure setup exit 75 does not consume canonical product evidence.
 When the requested patch is green, stop; record unrelated failures as follow-up work instead of investigating them.
 

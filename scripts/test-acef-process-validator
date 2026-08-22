@@ -2243,6 +2243,26 @@ try {
     cwd: dispatcherNative,
     tool_input: { command: ".acef/bin/acef-native-test -- php artisan test --filter=OneTest" },
   }, "allow");
+  expectDispatcherDecision("native named work-unit wrapper is allowed", {
+    tool_name: "Bash",
+    cwd: dispatcherNative,
+    tool_input: { command: ".acef/bin/acef-native-test --work-unit control-room -- php artisan test --filter=OneTest" },
+  }, "allow");
+  expectDispatcherDecision("native isolated worktree chain is allowed", {
+    tool_name: "Bash",
+    cwd: dispatcherNative,
+    tool_input: { command: ".acef/bin/acef-native-test --work-unit control-room -- .acef/bin/acef-worktree-test --work-unit control-room -- php artisan test --filter=OneTest" },
+  }, "allow");
+  expectDispatcherDecision("direct isolation runner cannot bypass native budgets", {
+    tool_name: "Bash",
+    cwd: dispatcherNative,
+    tool_input: { command: ".acef/bin/acef-worktree-test --work-unit control-room -- php artisan test --filter=OneTest" },
+  }, "deny");
+  expectDispatcherDecision("native read-only Explore agent is outside implementation governance", {
+    tool_name: "Agent",
+    cwd: dispatcherNative,
+    tool_input: { subagent_type: "Explore", prompt: "Map routes without writing files" },
+  }, "allow");
   expectDispatcherDecision("native subagent is denied", {
     tool_name: "Agent",
     cwd: dispatcherNative,
