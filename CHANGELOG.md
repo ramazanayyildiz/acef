@@ -24,8 +24,9 @@ or evidence contract. Do not use it to claim implementation status; link to the 
 - Repaired the native hard-wall/runtime seam: named work-unit syntax and the nested worktree-isolation runner are now
   recognized, the ten-minute budget counts actual command execution instead of idle wall-clock time, and closeout
   ignores dirty ACEF control/installation files while still rejecting dirty application or test paths.
-- Kept non-code exploration outside implementation governance by allowing built-in read-only Explore/Plan agents when
-  no ACEF lifecycle is active; general-purpose and implementation subagents remain blocked in Native work.
+- Removed implicit Native governance when no ACEF lifecycle is active. Installation is not admission: agents, shell
+  commands, raw tests, and repository-native work are outside ACEF in that state. The Native verification wrapper is
+  now an opt-in speed helper; active run, worker-scope, and compatibility Direct contracts retain their fences.
 - Made ordinary Native allow decisions silent; Claude no longer renders an informational allow-side hook message as a
   misleading `PreToolUse says` verification failure.
 

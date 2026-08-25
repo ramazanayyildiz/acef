@@ -158,12 +158,11 @@ New typed intake records reversibility plus technical-boundary and product-surfa
 reversible single-boundary/single-surface repair and no ACEF control trigger remains, bootstrap fails with
 `NATIVE_WORKFLOW`; importance or release-certification language alone does not admit the work.
 
-Native does not mean unbounded. Installed repositories run recognized test/static-analysis commands through
-`.acef/bin/acef-native-test`: at most three distinct focused commands, two attempts per exact command, 180 seconds per
-focused command, and 10 minutes of actual command execution. Native implementation workers do not spawn subagents;
-read-only Explore/Plan remains outside ACEF before repository mutation. Broad verification is forbidden during
-implementation and may run once only with `--closeout` on a clean application/test tree. Once the requested patch is green, stop and
-record unrelated failures as later work.
+Installation is not admission. With no active lifecycle ACEF does not govern agents, shell commands, tests, or
+repository-native work. Teams may deliberately opt into `.acef/bin/acef-native-test`: at most three distinct focused
+commands, two attempts per exact command, 180 seconds per focused command, 10 minutes of actual command execution, and
+one `--closeout` broad run on a clean application/test tree. Once the requested patch is green, stop and record
+unrelated failures as later work.
 Independently admitted split children sharing a branch and HEAD use `--work-unit <stable-child-id>` so each keeps its
 own native verification budget without adding ACEF lifecycle records.
 

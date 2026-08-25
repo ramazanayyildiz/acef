@@ -88,10 +88,10 @@ After splitting, perform admission again before choosing Fix/Standard/Full. Reco
 count, and product-surface count. A reversible `1/1` child without an ACEF control trigger is `NATIVE_WORKFLOW`, even
 when CI or release certification is important; do not create ACEF artifacts for it.
 
-Native children use the installed speed contract rather than an ACEF lifecycle: no implementation subagents (read-only
-Explore/Plan remains outside ACEF before repository mutation), up to three focused
-verification commands with two attempts each, and no broad suite during implementation. Use
-`.acef/bin/acef-native-test`; stop at green and defer unrelated failures.
+Installation is not admission. Native children remain outside ACEF, and with no active lifecycle its hard-wall does
+not govern agents, shell commands, tests, or repository-native work. A team may deliberately opt into the installed
+speed helper: use up to three focused verification commands with two attempts each, no broad suite during
+implementation, and `.acef/bin/acef-native-test`; stop at green and defer unrelated failures.
 
 Admit a native task to Route A/B/C when it is irreversible, crosses more than one product surface or technical boundary,
 needs a new pattern, or touches persistence, auth/security/privacy, money, migration, provider integration,

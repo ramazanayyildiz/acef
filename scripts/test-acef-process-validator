@@ -2234,11 +2234,11 @@ try {
   fs.mkdirSync(path.join(dispatcherNative, ".acef", "bin"), { recursive: true });
   fs.copyFileSync(bmadHook, path.join(dispatcherNative, ".acef", "hooks", "acef-bmad-hard-wall.mjs"));
   fs.writeFileSync(path.join(dispatcherNative, ".acef", "bin", "acef-native-test"), "#!/bin/sh\nexit 0\n");
-  expectDispatcherDecision("native raw broad suite is denied", {
+  expectDispatcherDecision("raw test is outside ACEF when no lifecycle is active", {
     tool_name: "Bash",
     cwd: dispatcherNative,
     tool_input: { command: "php artisan test --testsuite=Feature" },
-  }, "deny");
+  }, "allow");
   const nativeFocusedAllow = expectDispatcherDecision("native focused wrapper is allowed", {
     tool_name: "Bash",
     cwd: dispatcherNative,
@@ -2257,21 +2257,26 @@ try {
     cwd: dispatcherNative,
     tool_input: { command: ".acef/bin/acef-native-test --work-unit control-room -- .acef/bin/acef-worktree-test --work-unit control-room -- php artisan test --filter=OneTest" },
   }, "allow");
-  expectDispatcherDecision("direct isolation runner cannot bypass native budgets", {
+  expectDispatcherDecision("isolation runner is outside ACEF when no lifecycle is active", {
     tool_name: "Bash",
     cwd: dispatcherNative,
     tool_input: { command: ".acef/bin/acef-worktree-test --work-unit control-room -- php artisan test --filter=OneTest" },
-  }, "deny");
-  expectDispatcherDecision("native read-only Explore agent is outside implementation governance", {
+  }, "allow");
+  expectDispatcherDecision("native read-only Explore agent is outside lifecycle governance", {
     tool_name: "Agent",
     cwd: dispatcherNative,
     tool_input: { subagent_type: "Explore", prompt: "Map routes without writing files" },
   }, "allow");
-  expectDispatcherDecision("native subagent is denied", {
+  expectDispatcherDecision("untyped agent is outside ACEF when no lifecycle is active", {
     tool_name: "Agent",
     cwd: dispatcherNative,
     tool_input: {},
-  }, "deny");
+  }, "allow");
+  expectDispatcherDecision("shell-dispatched agent is outside ACEF when no lifecycle is active", {
+    tool_name: "Bash",
+    cwd: dispatcherNative,
+    tool_input: { command: "claude agent run live-health-refresh" },
+  }, "allow");
   fs.rmSync(dispatcherNative, { recursive: true, force: true });
 
   const dispatcherLocal = fs.mkdtempSync(path.join(os.tmpdir(), "acef-dispatcher-local-"));

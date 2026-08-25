@@ -45,10 +45,11 @@ Read only the references needed for the current step, but do read the selected f
 work or a localized bug fix with one technical boundary and one product surface, stop routing: the task stays outside
 ACEF. Do not load ACEF references, refresh the adapter, create preflight/run/ledger/context/worker/reviewer artifacts,
 or call `acef-state`. Use the repository's native workflow, targeted reads, the smallest patch, and focused
-verification. Do not spawn a subagent. Run recognized tests/static analysis through
+verification. Installation is not admission: with no active lifecycle ACEF does not govern agents, shell commands,
+tests, or repository-native work. If the team deliberately opts into the Native speed helper, run verification through
 `.acef/bin/acef-native-test -- <focused-command>`: three distinct focused commands, two attempts each, 180 seconds per
-command, and 10 active minutes. Stop when the requested patch is green. Broad verification is allowed once only as a
-clean-tree `--closeout` after all related repairs, never during native implementation.
+command, and 10 active minutes. Stop when the requested patch is green. The optional helper permits one clean-tree
+`--closeout` after all related repairs, never during native implementation.
 Use `--work-unit <stable-child-id>` only for independently admitted native children sharing a branch and HEAD.
 
 Admit the work to ACEF when persistence/migration, security/privacy/permissions, money, provider integration, realtime,

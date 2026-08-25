@@ -326,11 +326,11 @@ New typed intake makes admission topology explicit with `reversible`, `technical
 `NATIVE_WORKFLOW`, including after `REPLAN/SPLIT`; it receives focused native verification and review instead of a
 per-defect ACEF lifecycle.
 
-The installed native speed contract supplies the missing execution boundary without creating a lifecycle: no
-subagents, three distinct focused verification commands, two attempts per exact command, 180 seconds per focused
-command, and 10 minutes of actual command execution. The repo-local hook requires `.acef/bin/acef-native-test`;
-implementation-time broad suites are denied, while one application/test-clean `--closeout` broad run is available
-after the repair batch is complete. Dirty ACEF installation/control files do not block that closeout.
+Installation is not admission. With no active lifecycle, ACEF's hard-wall is inert and does not govern agents, shell
+commands, tests, or repository-native work. Teams may opt into `.acef/bin/acef-native-test` as a speed aid without
+creating a lifecycle; the wrapper then permits three distinct focused verification commands, two attempts per exact
+command, 180 seconds per focused command, 10 minutes of actual command execution, and one application/test-clean
+`--closeout` broad run. Dirty ACEF installation/control files do not block that optional closeout.
 
 | Execution workflow | Stable ID | Use for | Base lifecycle |
 |---|---|---|---|

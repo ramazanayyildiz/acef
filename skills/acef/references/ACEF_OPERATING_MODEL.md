@@ -351,11 +351,10 @@ New typed intake records `reversible`, `technicalBoundaryCount`, and `productSur
 without an ACEF control trigger fails bootstrap with `NATIVE_WORKFLOW`; release importance alone is not an admission
 trigger and must not create a per-defect ACEF lifecycle.
 
-The installed native speed contract then limits execution without creating ACEF artifacts: no implementation
-subagents (read-only Explore/Plan remains outside ACEF before repository mutation), three distinct focused verification
-commands, two attempts per exact command, 180 seconds per focused command, and 10 minutes of actual command execution
-minutes. Tests/static analysis use `.acef/bin/acef-native-test`; broad verification is denied until one clean-tree
-`--closeout` run after the repair batch.
+Installation is not admission. With no active lifecycle, ACEF's hard-wall is inert and does not govern agents, shell
+commands, tests, or repository-native work. Teams may opt into `.acef/bin/acef-native-test` as a speed aid without
+creating ACEF artifacts; the wrapper then permits three distinct focused commands, two attempts per exact command,
+180 seconds per focused command, 10 minutes of actual command execution, and one clean-tree `--closeout` broad run.
 
 Quick-fix scope is intentionally wider than one implementation file. The conductor records a computed envelope in
 `docs/ai/ACEF_LIGHTWEIGHT_RUN.json`: implementation paths, tests that exercise the touched symbols/routes, fixtures,

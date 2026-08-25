@@ -8,8 +8,9 @@ Do not bootstrap ACEF for reversible, contained work with one technical boundary
 repository's native workflow, make targeted reads, implement the smallest patch, run focused verification, and report
 the result. Do not create ACEF run artifacts for that work.
 
-Native implementation uses the installed speed contract: no implementation subagents; built-in read-only Explore/Plan
-agents remain outside ACEF when no lifecycle is active. Use at most three distinct focused verification commands,
+Native implementation should not multiply implementation subagents. Installation is not admission: when no ACEF
+lifecycle is active, the hard-wall is inert and does not govern agents, shell commands, tests, or repository-native
+work. When deliberately using the optional Native speed contract, use at most three distinct focused verification commands,
 two attempts per identical command, 180 seconds per focused command, and 10 active minutes. Run recognized tests or
 static analysis through `.acef/bin/acef-native-test -- <focused-command>`. Broad verification is implementation-time
 forbidden and may run once only as `.acef/bin/acef-native-test --closeout -- <broad-command>` on a clean worktree.
