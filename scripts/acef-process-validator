@@ -32,6 +32,7 @@ const {
 const { installationFreshnessFailures, readInstallationManifest } = require("./lib/acef-installation");
 const { loadObjective, objectiveFailures } = require("./lib/acef-objective-supervisor");
 const { inspectRunAuthorization } = require("./lib/acef-run-authorization");
+const { loadModelRoutingPolicy, resolveActorRuntime } = require("./lib/acef-model-routing");
 const { recoveredStoryCloseBindingFailures } = require("./lib/acef-story-close");
 const {
   buildAssuranceRequirements,
@@ -1721,12 +1722,24 @@ function checkTypedActorSeparation(repoRoot, activeRun) {
   const duplicates = ids.filter((id, index) => ids.indexOf(id) !== index);
   if (duplicates.length) return result("actor-separation", false, `Typed phase actors must be distinct: ${[...new Set(duplicates)].join(", ")}`);
   const failures = [];
+  const routingPolicy = activeRun.modelRoutingContract === "admitted-role-routing-v1"
+    ? loadModelRoutingPolicy(repoRoot).record : null;
   for (const phase of requiredPhases) {
     const actor = byPhase.get(phase);
     if (isFourActorV3(activeRun) && JSON.stringify(actor.storyInventory) !== JSON.stringify(activeRun.expectedStories)) {
       failures.push(`${phase}: actor frozen story inventory mismatch`);
     }
     if (/^(?:conductor|dispatcher|orchestrator|main|general-purpose)$/i.test(actor.role)) failures.push(`${phase}: invalid role ${actor.role}`);
+    if (routingPolicy) {
+      try {
+        const expected = resolveActorRuntime(routingPolicy, actor.role, actor.phase);
+        if (actor.model !== expected.model || actor.reasoningEffort !== expected.reasoningEffort) {
+          failures.push(`${phase}: actor runtime must be ${expected.model}/${expected.reasoningEffort}, got ${actor.model || "null"}/${actor.reasoningEffort || "null"}`);
+        }
+      } catch (error) {
+        failures.push(`${phase}: ${error.message}`);
+      }
+    }
     const commitError = ancestorCommitError(repoRoot, actor.inputCommit, `actor ${actor.actorInstanceId}`);
     if (commitError) failures.push(commitError);
   }

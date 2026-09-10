@@ -343,6 +343,11 @@ command, 180 seconds per focused command, 10 minutes of actual command execution
 | **Baseline** | No high-risk boundary trigger. | The selected workflow's base controls. |
 | **Guarded** | Persistence/migration, auth/security/privacy/permissions, money, provider integration, realtime, concurrency/fencing, state-machine behavior, destructive/irreversible effects. | Strong worker scope/current context, independent developer/Judge provenance, evidence manifests, evidence-backed PASS gate, guarded boundary test floor, and the two-non-PASS circuit breaker. |
 
+Every admitted semantic actor uses the provider-neutral role routing policy. `acef-next` exposes the exact model and
+reasoning effort for the current role. New Fix and Standard runs bind `admitted-role-routing-v1`; dispatch is rejected
+before spawn when either field is missing or differs, and actor registration checks the same binding. Existing
+in-flight runs retain their original contract. Native work remains outside ACEF model routing.
+
 Guarded is not a fourth workflow and does not silently turn ACEF Fix or ACEF Standard into Full BMAD. It only adds
 assurance controls. `full-bmad + guarded` runs one Full lifecycle with the Guarded deltas; it does not repeat readiness,
 ATDD, review, verification, or closeout.

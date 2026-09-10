@@ -351,6 +351,11 @@ New typed intake records `reversible`, `technicalBoundaryCount`, and `productSur
 without an ACEF control trigger fails bootstrap with `NATIVE_WORKFLOW`; release importance alone is not an admission
 trigger and must not create a per-defect ACEF lifecycle.
 
+Every admitted semantic actor uses the provider-neutral role routing policy. `acef-next` exposes the exact model and
+reasoning effort for the current role. New Fix and Standard runs bind `admitted-role-routing-v1`; dispatch is rejected
+before spawn when either field is missing or differs, and actor registration checks the same binding. Existing
+in-flight runs retain their original contract. Native work remains outside ACEF model routing.
+
 Installation is not admission. With no active lifecycle, ACEF's hard-wall is inert and does not govern agents, shell
 commands, tests, or repository-native work. Teams may opt into `.acef/bin/acef-native-test` as a speed aid without
 creating ACEF artifacts; the wrapper then permits three distinct focused commands, two attempts per exact command,

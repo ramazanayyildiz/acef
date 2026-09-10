@@ -53,6 +53,12 @@ Native repository work is the default for contained reversible work. ACEF Standa
 ACEF Fix handles reproduced defects, and ACEF Full handles planning-heavy work. Guarded may be combined with any one of
 them; a non-Full Guarded epic requires typed human approval.
 
+All admitted semantic actors use the provider-neutral role routing policy rather than inheriting the conductor's
+runtime. `acef-next` prints the required model and reasoning effort. New Fix and Standard runs bind
+`modelRoutingContract: admitted-role-routing-v1`; their dispatches fail closed when either value is missing or differs
+from the calibrated route, and actor registration verifies the same binding. Existing in-flight runs retain their
+original contract. Native work remains outside this policy.
+
 The guard hook activates only from ACEF-owned markers or typed ACEF state. Stock `.bmad`, `_bmad`, and `_bmad-output`
 directories do not activate ACEF.
 

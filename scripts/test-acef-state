@@ -526,6 +526,9 @@ try {
     if (quickFixActive.redOwnershipContract !== "integrated-developer-v1") {
       throw new Error("new Quick Fix run did not bind Developer-owned RED");
     }
+    if (quickFixActive.modelRoutingContract !== "admitted-role-routing-v1") {
+      throw new Error("new Quick Fix run did not bind admitted role model routing");
+    }
     if (quickFixActive.intakeDecision.parentRunId !== "RUN-bundled-defects"
       || quickFixActive.intakeDecision.reAdmissionConfirmed !== true) {
       throw new Error("split child did not persist independent re-admission");

@@ -9,6 +9,15 @@ or evidence contract. Do not use it to claim implementation status; link to the 
 
 ## Unreleased
 
+### Role-calibrated model routing now covers Fix and Standard
+
+- Made `acef-next` expose the required provider, model, and reasoning effort for the current admitted semantic role.
+- Added pre-dispatch enforcement for Fix and Standard so omitted model settings cannot inherit an expensive conductor
+  runtime; wrong, underpowered, and unnecessarily overpowered routes fail before the subagent consumes tokens.
+- Added actor-registration verification as a second boundary while keeping Native/ACEF-external work unaffected.
+- Versioned the change as `admitted-role-routing-v1` on new Fix and Standard runs so installation does not reinterpret
+  an in-flight lifecycle.
+
 ### Focused RED and worktree verification no longer multiply contexts
 
 - Bound new Native, Fix, and Standard work to Developer-owned focused RED→GREEN; Full v3 retains its independent Test

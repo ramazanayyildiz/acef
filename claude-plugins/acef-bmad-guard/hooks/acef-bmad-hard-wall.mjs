@@ -63,6 +63,27 @@ function runAuthorization(repoRoot, options = {}) {
   }
 }
 
+function loadModelRouting(repoRoot) {
+  const candidates = [
+    path.join(repoRoot, ".acef", "bin", "lib", "acef-model-routing.js"),
+    path.resolve(hookDir, "../../../scripts/lib/acef-model-routing.js"),
+  ];
+  const libraryPath = candidates.find(exists);
+  if (!libraryPath) throw new Error("ACEF model routing library is not installed");
+  const library = require(libraryPath);
+  const policy = library.loadModelRoutingPolicy(repoRoot).record;
+  return { policy, resolveActorRuntime: library.resolveActorRuntime };
+}
+
+function readActiveRunRecord(repoRoot) {
+  const filePath = path.join(repoRoot, "docs", "ai", "ACEF_ACTIVE_RUN.json");
+  try {
+    return exists(filePath) ? JSON.parse(fs.readFileSync(filePath, "utf8")) : null;
+  } catch {
+    return null;
+  }
+}
+
 function under(filePath, dirPath) {
   const rel = path.relative(dirPath, filePath);
   return rel === "" || (!!rel && !rel.startsWith("..") && !path.isAbsolute(rel));
@@ -366,6 +387,43 @@ function bashIsCommit(command) {
 function bashSpawnsAgent(command) {
   return /\b(claude|codex)\b.*\b(agent|subagent|task)\b/i.test(command || "")
     || /\b(spawn|dispatch|launch)\b.*\b(agent|subagent|worker)\b/i.test(command || "");
+}
+
+function structuredSpawnTool(toolName) {
+  return /(?:^|\.)(?:Task|Agent|spawn_agent)$/i.test(toolName || "");
+}
+
+function spawnRuntime(toolName, input, command) {
+  if (structuredSpawnTool(toolName)) {
+    return {
+      model: String(input?.model || "").trim(),
+      effort: String(input?.reasoning_effort || input?.reasoningEffort || input?.effort || input?.thinking || "").trim(),
+    };
+  }
+  const model = String(command || "").match(/(?:^|\s)(?:--model|-m)\s+([A-Za-z0-9._-]+)|(?:^|\s)model=([A-Za-z0-9._-]+)/i);
+  const effort = String(command || "").match(/(?:^|\s)--(?:reasoning-effort|effort)\s+([A-Za-z0-9._-]+)|(?:^|\s)(?:reasoning_effort|effort)=([A-Za-z0-9._-]+)/i);
+  return {
+    model: String(model?.[1] || model?.[2] || "").trim(),
+    effort: String(effort?.[1] || effort?.[2] || "").trim(),
+  };
+}
+
+function admittedModelRoutingRestricted(repoRoot, payload, toolName, input, command) {
+  if (isWorker(payload)) return "";
+  if (!structuredSpawnTool(toolName) && !(isShellTool(toolName) && bashSpawnsAgent(command))) return "";
+  const activeRun = readActiveRunRecord(repoRoot);
+  if (!activeRun || activeRun.status !== "active" || activeRun.modelRoutingContract !== "admitted-role-routing-v1") return "";
+  try {
+    const { policy, resolveActorRuntime } = loadModelRouting(repoRoot);
+    const expected = resolveActorRuntime(policy, activeRun.workerRole || "", activeRun.activePhase || "");
+    const actual = spawnRuntime(toolName, input, command);
+    if (actual.model !== expected.model || actual.effort !== expected.reasoningEffort) {
+      return `ACEF model routing: ${activeRun.workflowId} ${expected.role} dispatch must set model=${expected.model} and reasoning_effort=${expected.reasoningEffort}; received model=${actual.model || "inherited/unspecified"} reasoning_effort=${actual.effort || "inherited/unspecified"}.`;
+    }
+  } catch (error) {
+    return `ACEF model routing: cannot authorize admitted worker dispatch: ${error.message}`;
+  }
+  return "";
 }
 
 function parseTargetEpicNumber(command) {
@@ -832,7 +890,7 @@ function countCommitsSince(repoRoot, baseRef) {
 function workerScopeRestricted(payload, toolName, input, cwd, repoRoot, filePath) {
   if (!isWorker(payload)) return "";
 
-  if (/^(Task|Agent)$/i.test(toolName)) {
+  if (structuredSpawnTool(toolName)) {
     return "ACEF worker scope fence: worker cannot spawn Agent/subagent tools. Return a final report and STOP.";
   }
 
@@ -1177,7 +1235,7 @@ function p1ConformanceRestricted(repoRoot) {
     : /^apply_patch$/i.test(toolName)
       ? patchPaths.some((patchPath) => implementationPath(patchPath, repoRoot))
       : isShellTool(toolName) && bashTouchesImplementation(command, cwd, repoRoot);
-  const spawnsWorker = /^(?:Task|Agent|spawn_agent)$/i.test(toolName)
+  const spawnsWorker = structuredSpawnTool(toolName)
     || (isShellTool(toolName) && bashSpawnsAgent(command));
   if (touchesImplementation || spawnsWorker) {
     const authorization = runAuthorization(repoRoot, {
@@ -1196,6 +1254,12 @@ function p1ConformanceRestricted(repoRoot) {
       allow("ACEF direct run authorized by ACEF_DIRECT_RUN.json");
       return;
     }
+  }
+
+  const modelRoutingReason = admittedModelRoutingRestricted(repoRoot, payload, toolName, input, command);
+  if (modelRoutingReason) {
+    deny(modelRoutingReason);
+    return;
   }
 
   const workerScopeReason = workerScopeRestricted(payload, toolName, input, cwd, repoRoot, filePath);

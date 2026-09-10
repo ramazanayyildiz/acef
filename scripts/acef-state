@@ -29,7 +29,7 @@ const {
 const { validateDurableStoryClosePackage } = require("./lib/acef-story-close");
 const { riskRequiresGuarded, workflowSelectionFailures } = require("./lib/acef-execution-policy");
 const { buildAssuranceRequirements } = require("./lib/acef-assurance-requirements");
-const { loadModelRoutingPolicy, resolveRoleRuntime } = require("./lib/acef-model-routing");
+const { loadModelRoutingPolicy, resolveActorRuntime, resolveRoleRuntime } = require("./lib/acef-model-routing");
 const { installationFreshnessFailures, readInstallationManifest } = require("./lib/acef-installation");
 const validatorModule = fs.existsSync(path.join(__dirname, "acef-process-validator.cjs"))
   ? "./acef-process-validator.cjs" : "./acef-process-validator";
@@ -515,6 +515,11 @@ function writeActiveRun(opts) {
       ? (fullFlowContract === "four-actor-v3" ? "independent-test-author-v1" : undefined)
       : "integrated-developer-v1");
   const installation = readInstallationManifest(opts.repo);
+  const installedModelRoutingContract = installation?.components?.tools?.defaultModelRoutingContract;
+  const modelRoutingContract = sameRun
+    ? previous.modelRoutingContract
+    : (["quick-fix", "lightweight"].includes(workflowId)
+      ? (installedModelRoutingContract || "admitted-role-routing-v1") : undefined);
   const installedRuntimeDefault = installation?.components?.tools?.defaultRuntimeContract;
   const installedDispatchReadinessContract = installation?.components?.tools?.dispatchReadinessContract;
   const runtimeContract = sameRun
@@ -589,6 +594,7 @@ function writeActiveRun(opts) {
     repo: path.basename(opts.repo),
     workflowId,
     ...(quickFixContract ? { quickFixContract } : {}),
+    ...(modelRoutingContract ? { modelRoutingContract } : {}),
     ...(redOwnershipContract ? { redOwnershipContract } : {}),
     ...(fullFlowContract ? { fullFlowContract } : {}),
     ...(runtimeContract ? { runtimeContract } : {}),
@@ -1233,6 +1239,12 @@ function writeActor(opts) {
   if (v3 && normalizedScope(opts.story) !== normalizedScope(activeRun.activeStory)) throw new Error("four-actor-v3 actor story must match active run scope");
   if (v3 && canonicalGatePhase(opts.phase) === "development" && !opts.sessionId) {
     throw new Error("four-actor-v3 Developer actor requires --session-id for repair continuity");
+  }
+  if (activeRun?.status === "active" && activeRun.modelRoutingContract === "admitted-role-routing-v1") {
+    const routing = resolveActorRuntime(loadModelRoutingPolicy(opts.repo).record, opts.role, opts.phase);
+    if (opts.model !== routing.model || opts.effort !== routing.reasoningEffort) {
+      throw new Error(`${activeRun.workflowId} ${routing.role} actor must bind calibrated runtime ${routing.model}/${routing.reasoningEffort}; inherited or unspecified runtimes are not allowed`);
+    }
   }
   if (capsuleRuntime(activeRun)) {
     const actorPhase = canonicalGatePhase(opts.phase);

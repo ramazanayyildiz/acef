@@ -7,9 +7,50 @@ const path = require("node:path");
 const EXECUTION_CLASSES = new Set(["orchestration", "semantic-standard", "semantic-critical"]);
 const REASONING_TIERS = new Set(["low", "medium", "high", "xhigh", "max"]);
 const ROLE_ALIASES = {
+  "coordinator": "conductor",
+  "orchestrator": "conductor",
+  "test-author": "atdd",
+  "atdd-test-author": "atdd",
+  "developer": "development",
+  "dev": "development",
+  "implementation": "development",
+  "review": "code-review",
+  "reviewer": "code-review",
+  "code-reviewer": "code-review",
+  "verify-patch": "patch-assurance",
+  "test-review": "patch-assurance",
+  "test-reviewer": "patch-assurance",
   "story-judge": "process-judge",
   "epic-judge": "epic-process-judge",
 };
+
+function normalizedRole(value) {
+  return String(value || "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+}
+
+function canonicalRoutingRole(role, phase = "") {
+  const normalized = normalizedRole(role);
+  const direct = ROLE_ALIASES[normalized] || normalized;
+  if (direct && Object.prototype.hasOwnProperty.call({
+    conductor: true,
+    atdd: true,
+    development: true,
+    "code-review": true,
+    "patch-assurance": true,
+    "process-judge": true,
+    "epic-process-judge": true,
+  }, direct)) return direct;
+
+  const phaseRole = normalizedRole(phase);
+  if (/epic.*(?:process-)?judge|(?:process-)?judge.*epic/.test(phaseRole)) return "epic-process-judge";
+  if (/patch-assurance|verify-patch|test-review/.test(phaseRole)) return "patch-assurance";
+  if (/process-judge|story-judge|judge/.test(phaseRole)) return "process-judge";
+  if (/code-review|review/.test(phaseRole)) return "code-review";
+  if (/atdd|test-author/.test(phaseRole)) return "atdd";
+  if (/development|developer|implement|^dev$/.test(phaseRole)) return "development";
+  if (/conductor|coordinator|orchestrat/.test(phaseRole)) return "conductor";
+  return null;
+}
 
 function sha256(bytes) {
   return crypto.createHash("sha256").update(bytes).digest("hex");
@@ -52,7 +93,8 @@ function loadModelRoutingPolicy(repoRoot) {
 }
 
 function resolveRoleRuntime(policyRecord, role, providerId = null) {
-  const canonicalRole = ROLE_ALIASES[role] || role;
+  const normalized = normalizedRole(role);
+  const canonicalRole = ROLE_ALIASES[normalized] || normalized;
   const assignment = policyRecord.roles[canonicalRole];
   if (!assignment) throw new Error(`model routing policy has no assignment for role ${canonicalRole}`);
   const provider = providerId || policyRecord.activeProvider;
@@ -72,8 +114,16 @@ function resolveRoleRuntime(policyRecord, role, providerId = null) {
   };
 }
 
+function resolveActorRuntime(policyRecord, role, phase = "", providerId = null) {
+  const canonicalRole = canonicalRoutingRole(role, phase);
+  if (!canonicalRole) throw new Error(`model routing policy cannot classify actor role=${role || "null"} phase=${phase || "null"}`);
+  return { role: canonicalRole, ...resolveRoleRuntime(policyRecord, canonicalRole, providerId) };
+}
+
 module.exports = {
+  canonicalRoutingRole,
   loadModelRoutingPolicy,
+  resolveActorRuntime,
   resolveRoleRuntime,
   validateModelRoutingPolicy,
 };

@@ -54,6 +54,12 @@ benefits from independent review, ACEF Fix handles reproduced defects, and ACEF 
 Guarded is an additive assurance profile available on all three workflows. A non-Full Guarded epic is exceptional and
 requires typed human approval; ordinary epics use ACEF Full, with Guarded added when risk requires it.
 
+All admitted semantic actors use the provider-neutral role routing policy, not the conductor's inherited runtime.
+`acef-next` prints the required model and reasoning effort. New Fix and Standard runs bind
+`modelRoutingContract: admitted-role-routing-v1`; their dispatches fail closed when either value is missing or differs
+from the calibrated route, and actor registration verifies the same binding. Existing in-flight runs retain their
+original contract. Native work is outside this policy because installation is not admission.
+
 **Surface declaration is lane-independent for admitted ACEF work.** Every admitted work item declares at intake
 which user-facing surface delivers it (`ui`, `admin`, `api`, `cli`, `queue`, …) or records `surface: none` with a
 justification. At close, the judging actor verifies the owning persona can actually reach the capability through

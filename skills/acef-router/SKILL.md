@@ -93,6 +93,10 @@ not govern agents, shell commands, tests, or repository-native work. A team may 
 speed helper: use up to three focused verification commands with two attempts each, no broad suite during
 implementation, and `.acef/bin/acef-native-test`; stop at green and defer unrelated failures.
 
+For every admitted semantic actor whose `.acef/bin/acef-next --repo .` packet includes `active_state.runtime`, use its
+exact model and `reasoning_effort`. Never omit them and inherit the conductor runtime. New Fix and Standard runs bind
+this contract automatically; existing in-flight runs are not reinterpreted.
+
 Admit a native task to Route A/B/C when it is irreversible, crosses more than one product surface or technical boundary,
 needs a new pattern, or touches persistence, auth/security/privacy, money, migration, provider integration,
 realtime/concurrency/state-machine, tracking/reporting/analytics, or multi-session/worker coordination.

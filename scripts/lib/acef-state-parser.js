@@ -183,6 +183,12 @@ function parseActiveRun(filePath) {
         throw new Error("active run quickFixContract is only valid for quick-fix workflow");
       }
     }
+    if (record.modelRoutingContract !== undefined) {
+      requireEnum(record, "modelRoutingContract", ["admitted-role-routing-v1"], "active run");
+      if (!["quick-fix", "lightweight"].includes(record.workflowId)) {
+        throw new Error("active run modelRoutingContract is only valid for Fix and Standard workflows");
+      }
+    }
     if (record.fullFlowContract !== undefined) {
       requireEnum(record, "fullFlowContract", ["six-actor-v2", "four-actor-v3"], "active run");
       if (record.workflowId !== "full-bmad") {

@@ -62,6 +62,11 @@ additive overlay, never a fourth workflow and never a reason to repeat BMAD phas
 `workflowId`, `assuranceProfile`, and `scopeUnit`; an active legacy `lane: guarded` must be explicitly migrated before
 continuing.
 
+Before spawning any admitted semantic actor, read the role-calibrated `active_state.runtime` from `acef-next` and pass
+its exact model and reasoning effort. New Fix and Standard runs bind `admitted-role-routing-v1` and must not inherit
+the conductor's runtime; the hook rejects such dispatches before tokens are spent, and actor registration rechecks the
+binding. Existing in-flight runs keep their original contract. Native work is unaffected.
+
 New `quick-fix` runs use `quickFixContract: single-review-v1`: Developer, one independent Code Reviewer, and
 deterministic closeout. The Developer owns focused RED→GREEN; a separate ATDD context is forbidden. New Standard runs
 use the same `redOwnershipContract: integrated-developer-v1`. Do not schedule Process Judge, Patch Assurance, Verify-Patch,

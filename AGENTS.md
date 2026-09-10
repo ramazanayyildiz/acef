@@ -33,6 +33,10 @@ For admitted work, choose execution depth and assurance separately:
 - Baseline or Guarded assurance. Guarded is additive; it is not a fourth workflow and must not duplicate the selected
   workflow's lifecycle.
 
+Every admitted semantic actor dispatch must bind the role-calibrated model and reasoning effort printed by
+`acef-next`. Do not omit these fields and inherit the conductor runtime. New Fix and Standard runs bind
+`modelRoutingContract: admitted-role-routing-v1`; Full retains its compiled routing and Native remains outside ACEF.
+
 Every new admitted run belongs to one stable parent objective. Pass `--objective-id` and `--objective-scope` when
 writing active-run state; changing a run or story label does not reset its cumulative run, replan, review, or active
 control-time budget. At five runs, three replans, six review cycles, or 30 active control minutes without a product/test

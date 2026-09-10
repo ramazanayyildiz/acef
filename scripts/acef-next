@@ -6,6 +6,7 @@ const { inspectRunAuthorization } = require("./lib/acef-run-authorization");
 const { displayName } = require("./lib/acef-execution-policy");
 const { installationFreshnessFailures } = require("./lib/acef-installation");
 const { loadObjective, objectiveFailures } = require("./lib/acef-objective-supervisor");
+const { loadModelRoutingPolicy, resolveActorRuntime } = require("./lib/acef-model-routing");
 const validatorModule = fs.existsSync(path.join(__dirname, "acef-process-validator.cjs"))
   ? "./acef-process-validator.cjs" : "./acef-process-validator";
 const { FULL_V3_DISPATCH_CHECKS, evaluateProcessChecks } = require(validatorModule);
@@ -101,6 +102,21 @@ function phaseCanWrite(activeRun, workerScope) {
     "apply_required_review_patch",
     "write_or_update_story_artifact",
   ].includes(action);
+}
+
+function routedRuntime(repo, activeRun, roleOverride) {
+  const routed = activeRun?.modelRoutingContract === "admitted-role-routing-v1"
+    || (activeRun?.workflowId === "full-bmad" && ["capsule-supervisor-v1", "capsule-supervisor-v2"].includes(activeRun.runtimeContract));
+  if (!activeRun || activeRun.status !== "active" || !routed) return null;
+  try {
+    return resolveActorRuntime(
+      loadModelRoutingPolicy(repo).record,
+      roleOverride || activeRun.workerRole || "",
+      activeRun.activePhase || "",
+    );
+  } catch {
+    return null;
+  }
 }
 
 function loadWorkflow(repo, activeRunRecord) {
@@ -260,6 +276,7 @@ function buildNext(repo, roleOverride) {
 
   const action = deriveNextAllowedAction(activeRun.record);
   const role = roleOverride || activeRun.record.workerRole || workerScope.record?.workerId || null;
+  const runtime = routedRuntime(repo, activeRun.record, roleOverride || activeRun.record.workerRole);
   base.active_state = {
     lane: activeRun.record.lane,
     workflow: activeRun.record.workflowId,
@@ -272,6 +289,12 @@ function buildNext(repo, roleOverride) {
     phase: activeRun.record.activePhase,
     story: activeRun.record.activeStory,
     role,
+    runtime: runtime ? {
+      policy_role: runtime.role,
+      provider: runtime.provider,
+      model: runtime.model,
+      reasoning_effort: runtime.reasoningEffort,
+    } : null,
     last_passed_gate: activeRun.record.lastPassedGate || null,
     terminal_disposition: activeRun.record.terminalDisposition || null,
     next_allowed_action: blockers.length ? null : action,

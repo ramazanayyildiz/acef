@@ -4,7 +4,9 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const {
+  canonicalRoutingRole,
   loadModelRoutingPolicy,
+  resolveActorRuntime,
   resolveRoleRuntime,
   validateModelRoutingPolicy,
 } = require("./lib/acef-model-routing");
@@ -24,6 +26,15 @@ if (patchAssurance.reasoningEffort !== "high" || patchAssurance.executionClass !
 }
 if (conductor.reasoningEffort !== "medium" || conductor.executionClass !== "orchestration") {
   throw new Error("compiled conductor route was not resolved");
+}
+if (canonicalRoutingRole("developer", "development") !== "development"
+  || canonicalRoutingRole("reviewer", "code-review") !== "code-review"
+  || canonicalRoutingRole("process-judge", "review") !== "process-judge") {
+  throw new Error("actor role aliases do not resolve to calibrated policy roles");
+}
+const standardDeveloper = resolveActorRuntime(loaded.record, "developer", "development");
+if (standardDeveloper.model !== "gpt-5.6-sol" || standardDeveloper.reasoningEffort !== "high") {
+  throw new Error("Standard/Fix Developer route was not resolved");
 }
 
 const portable = structuredClone(loaded.record);

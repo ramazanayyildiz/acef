@@ -54,8 +54,13 @@ try {
   write("tests/fix.test.js", "const assert = require('node:assert/strict'); assert.equal(require('../app/fix')(), 'fixed');\n");
   run("git", ["add", "tests/fix.test.js"]);
   run("git", ["commit", "-qm", "test: reproduce bounded defect"]);
+  const unroutedDeveloper = cp.spawnSync(process.execPath, [state, "actor", "--repo", repo, "--id", "developer-unrouted",
+    "--story", "Bounded defect", "--phase", "development", "--role", "developer", "--client", "codex",
+    "--context-profile", "bounded"], { cwd: repo, encoding: "utf8" });
+  assert.notEqual(unroutedDeveloper.status, 0, "Quick Fix accepted an inherited/unspecified Developer runtime");
+  assert.match(`${unroutedDeveloper.stdout}${unroutedDeveloper.stderr}`, /must bind calibrated runtime gpt-5\.6-sol\/high/);
   stateRun(["actor", "--repo", repo, "--id", "developer-1", "--story", "Bounded defect", "--phase", "development",
-    "--role", "developer", "--client", "codex", "--context-profile", "bounded"]);
+    "--role", "developer", "--client", "codex", "--context-profile", "bounded", "--model", "gpt-5.6-sol", "--effort", "high"]);
   const red = cp.spawnSync(process.execPath, [state, "evidence-run", "--repo", repo, "--id", "QF-red", "--kind", "runtime-test",
     "--actor", "developer-1", "--story", "Bounded defect", "--satisfies", "regression-red", "--",
     process.execPath, "tests/fix.test.js"], { cwd: repo, encoding: "utf8" });
@@ -74,7 +79,7 @@ try {
   write("docs/ai/reports/quick-fix-review.md", "# Independent review\n\nVerdict: PASS\nNo unresolved findings.\n");
   stateRun(["actor", "--repo", repo, "--id", "reviewer-1", "--story", "Bounded defect", "--phase", "code-review",
     "--role", "code-review", "--client", "codex", "--context-profile", "bounded-review",
-    "--artifact-path", "docs/ai/reports/quick-fix-review.md"]);
+    "--artifact-path", "docs/ai/reports/quick-fix-review.md", "--model", "gpt-5.6-sol", "--effort", "medium"]);
   stateRun(["gate", "--repo", repo, "--id", "QF-gate", "--scope", "Bounded defect", "--verdict", "PASS",
     "--decided-by", "reviewer-1", "--evidence", "QF-green", "--evidence", "QF-revert"]);
 
@@ -123,6 +128,14 @@ try {
     assert.equal(result.status, 0, `${check} failed:\n${result.stdout}${result.stderr}`);
   }
   assert.match(validatorRun("gate-decider").stdout, /single independent reviewer/);
+
+  const developerActorPath = path.join(repo, "docs", "ai", "actors", "developer-1.json");
+  const developerActor = JSON.parse(fs.readFileSync(developerActorPath, "utf8"));
+  fs.writeFileSync(developerActorPath, `${JSON.stringify({ ...developerActor, model: "gpt-6-astra", reasoningEffort: "xhigh" }, null, 2)}\n`);
+  const overpoweredActor = validatorRun("actor-separation");
+  assert.notEqual(overpoweredActor.status, 0, "actor-separation accepted a runtime outside the calibrated route");
+  assert.match(`${overpoweredActor.stdout}${overpoweredActor.stderr}`, /actor runtime must be gpt-5\.6-sol\/high/);
+  fs.writeFileSync(developerActorPath, `${JSON.stringify(developerActor, null, 2)}\n`);
 
   lifecycle.quickFix.completedAt = "2026-08-06T10:31:00.000Z";
   write("docs/ai/ACEF_LIGHTWEIGHT_RUN.json", `${JSON.stringify(lifecycle, null, 2)}\n`);

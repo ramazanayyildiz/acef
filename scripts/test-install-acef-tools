@@ -153,6 +153,7 @@ try {
   if (!installation.components.tools.controlDosing) throw new Error("tools component missing control-dosing manifest");
   if (!installation.components.tools.modelRoutingPolicy) throw new Error("tools component missing model-routing policy");
   if (installation.components.tools.objectiveSupervisor !== "objective-supervisor-v1"
+    || installation.components.tools.defaultModelRoutingContract !== "admitted-role-routing-v1"
     || installation.components.tools.defaultRuntimeContract !== "capsule-supervisor-v2"
     || installation.components.tools.dispatchReadinessContract !== "full-v3-dispatch-readiness-v1"
     || installation.components.tools.boundedRedOwnershipContract !== "integrated-developer-v1"
