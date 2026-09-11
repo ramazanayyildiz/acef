@@ -1,0 +1,40 @@
+#!/usr/bin/env node
+"use strict";
+const assert = require("node:assert/strict");
+const cp = require("node:child_process");
+const crypto = require("node:crypto");
+const fs = require("node:fs");
+const os = require("node:os");
+const path = require("node:path");
+const producer = path.resolve(__dirname, "acef-lightweight-surface-evidence");
+const repo = fs.mkdtempSync(path.join(os.tmpdir(), "acef-surface-projection-"));
+function sha(value) { return crypto.createHash("sha256").update(value).digest("hex"); }
+function write(relative, value) { const file = path.join(repo, relative); fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, value); }
+function run(args) { return cp.spawnSync(process.execPath, [producer, "--repo", repo, ...args], { encoding: "utf8" }); }
+function proof(record) { return sha(JSON.stringify({ schema: "acef-evidence-runner-proof-v1", runner: "acef-state evidence-run", evidenceId: record.evidenceId, kind: record.kind, command: record.command, exitCode: record.exitCode, startedAt: record.startedAt || null, finishedAt: record.finishedAt || null, repositoryCommit: record.repositoryCommit, repositoryTree: record.repositoryTree || null, dirtyDigest: record.dirtyDigest, dirtyApplicationPathsBefore: record.dirtyApplicationPathsBefore || [], dirtyApplicationPathsAfter: record.dirtyApplicationPathsAfter || [], environmentDigest: record.environmentDigest || null, actorInstanceId: record.actorInstanceId, story: record.story, rawArtifact: record.rawArtifact, satisfies: record.satisfies })); }
+try {
+  const help = run(["--help"]);
+  assert.equal(help.status, 0, help.stderr);
+  assert.match(help.stdout, /does not execute its command/);
+  cp.execFileSync("git", ["init", "-q"], { cwd: repo }); cp.execFileSync("git", ["config", "user.email", "acef@example.invalid"], { cwd: repo }); cp.execFileSync("git", ["config", "user.name", "ACEF"], { cwd: repo });
+  const artifact = "command: definitely-not-run\nexit_code: 0\n\n--- stdout ---\nPASS\n--- stderr ---\n";
+  write("docs/ai/evidence/raw.txt", artifact);
+  write("docs/ai/actors/impl.json", JSON.stringify({ actorInstanceId: "impl", runId: "RUN-1", story: "Bounded", phase: "development", role: "developer", client: "codex", inputCommit: "base", inputTree: "tree", allowedContextProfile: "focused", producedArtifactHash: null, producedArtifactPath: null }));
+  const steps = ["preflight-current-context", "reuse-before-create", "implementation", "independent-review", "focused-verification", "closeout-evidence"].map((name) => ({ name, status: "PASS", evidencePaths: ["docs/ai/evidence/raw.txt"] }));
+  const runRecord = { runId: "RUN-1", lane: "lightweight", status: "active", implementationActorId: "impl", reviewActorId: "review", steps, promotion: { decision: "stay-lightweight", triggers: [] }, surfaces: ["api", "cli"] };
+  write("docs/ai/ACEF_LIGHTWEIGHT_RUN.json", JSON.stringify(runRecord));
+  cp.execFileSync("git", ["add", "."] , { cwd: repo }); cp.execFileSync("git", ["commit", "-qm", "fixture"], { cwd: repo });
+  const commit = cp.execFileSync("git", ["rev-parse", "HEAD"], { cwd: repo, encoding: "utf8" }).trim(); const tree = cp.execFileSync("git", ["rev-parse", "HEAD^{tree}"], { cwd: repo, encoding: "utf8" }).trim();
+  const evidence = { evidenceId: "EV-1", kind: "runtime-test", command: "definitely-not-run", exitCode: 0, repositoryCommit: commit, repositoryTree: tree, dirtyDigest: null, actorInstanceId: "impl", story: "Bounded", rawArtifact: { path: "docs/ai/evidence/raw.txt", sha256: sha(artifact) }, satisfies: ["api surface validation", "cli surface validation"] };
+  evidence.runnerProof = { schema: "acef-evidence-runner-proof-v1", runner: "acef-state evidence-run", sha256: proof(evidence) };
+  write("docs/ai/evidence/EV-1.json", JSON.stringify(evidence));
+  const projected = run(["--evidence", "EV-1", "--surface", "api", "--surface", "cli"]);
+  assert.equal(projected.status, 0, projected.stderr);
+  const output = JSON.parse(projected.stdout); assert.equal(output.entries.length, 2); assert.ok(output.entries.every((entry) => entry.evidencePath === "docs/ai/evidence/raw.txt" && entry.exitCode === 0));
+  runRecord.status = "complete"; runRecord.surfaceEvidence = output.entries; write("docs/ai/ACEF_LIGHTWEIGHT_RUN.json", JSON.stringify(runRecord));
+  const lifecycle = cp.spawnSync(process.execPath, [path.resolve(__dirname, "acef-process-validator"), "--repo", repo, "--check", "lightweight-lifecycle"], { encoding: "utf8" });
+  assert.equal(lifecycle.status, 0, lifecycle.stderr);
+  const undeclared = run(["--evidence", "EV-1", "--surface", "queue"]); assert.equal(undeclared.status, 2); assert.match(undeclared.stderr, /not declared/);
+  evidence.exitCode = 1; write("docs/ai/evidence/EV-1.json", JSON.stringify(evidence)); const failed = run(["--evidence", "EV-1", "--surface", "api"]); assert.equal(failed.status, 2);
+  console.log("acef lightweight surface evidence tests passed");
+} finally { fs.rmSync(repo, { recursive: true, force: true }); }

@@ -14,12 +14,14 @@ const {
   parseDirectRun,
   parseEvidenceManifest,
   parseGateVerdict,
+  parseLightweightRun,
   parseReviewReport,
   parseDeveloperRepair,
   parseAssuranceCapsule,
   parseAtddCorrection,
   parseProcessJudgeDecision,
   parseWorkerScope,
+  validateActiveRunRecord,
   validateWorkerScopeRecord,
   atddRedExecutionFailure,
   atddTestSourceAuthenticityFailure,
@@ -29,20 +31,49 @@ const {
 const { validateDurableStoryClosePackage } = require("./lib/acef-story-close");
 const { riskRequiresGuarded, workflowSelectionFailures } = require("./lib/acef-execution-policy");
 const { buildAssuranceRequirements } = require("./lib/acef-assurance-requirements");
+const { staticReuseInputFingerprint } = require("./lib/acef-evidence-reuse-contract");
 const { loadModelRoutingPolicy, resolveActorRuntime, resolveRoleRuntime } = require("./lib/acef-model-routing");
 const { installationFreshnessFailures, readInstallationManifest } = require("./lib/acef-installation");
+const {
+  attemptPath,
+  collectRunAttempts,
+  finishInvocation,
+  recordFixtureAuthoringRecovery,
+  recordInfrastructureRecovery,
+  startInvocation,
+} = require("./lib/acef-invocation-ledger");
+const {
+  prepareGuard,
+  prepareWrite,
+  pendingTransactionPath,
+  publishStateTransaction,
+  prepareSnapshotGuard,
+  recoverStateTransaction,
+} = require("./lib/acef-state-transaction");
 const validatorModule = fs.existsSync(path.join(__dirname, "acef-process-validator.cjs"))
   ? "./acef-process-validator.cjs" : "./acef-process-validator";
-const { FULL_V3_DISPATCH_CHECKS, evaluateProcessChecks } = require(validatorModule);
+const {
+  FULL_V3_DISPATCH_CHECKS,
+  evaluateProcessChecks,
+  validateEvidenceRecord,
+  validateTerminalCandidate,
+} = require(validatorModule);
 const {
   fingerprintScope,
   objectivePath,
+  loadObjective,
   persistObjectiveHeartbeat,
+  prepareCloseObjective,
+  prepareObjectiveHeartbeat,
+  prepareReplanEvent,
+  prepareRegisterRun,
+  prepareValidatedCompletion,
   recordDefect,
-  registerRun,
   setManualQa,
   transitionDefect,
 } = require("./lib/acef-objective-supervisor");
+
+let commandStateSnapshotGuards = [];
 
 function usage(command = "") {
   if (command === "direct-run") {
@@ -72,6 +103,8 @@ Usage:
   acef-state objective-qa --repo <path> --objective-id <id> --status running|complete
   acef-state objective-defect --repo <path> --objective-id <id> --id <id> --source review|manual-qa|broad-suite --defect-class <class> --summary <text> --discovered-in-run <id> [--defect-status <status> --batch-key <key> --root-cause-key <key>]
   acef-state objective-defect-transition --repo <path> --objective-id <id> --id <id> --defect-status batched|escalated|fixed|deferred|legacy-quarantined [--batch-key <key>]
+  acef-state objective-replan --repo <path> --objective-id <id> --run-id <id> --event-id <id> --cause new-root-cause|scope-error|evidence-invalid
+  acef-state objective-close --repo <path> --objective-id <id> --run-id <active-terminal-run-id> --completion-evidence <id> [--run-disposition '<run-id>|<resolved-or-superseded>|<reason>'...]
   acef-state migrate-active-run --repo <path> --workflow-id quick-fix|lightweight|full-bmad [--assurance baseline|guarded] [--assurance-rationale <text>] [--assurance-approval <approval-id>]
   acef-state recover-active-run --repo <path> --red-commit <sha> --product-commit <sha> --red-artifact <path> --reason <text> -- <exact-focused-command>
   acef-state recovery-review --repo <path> --actor <canonical-id> --session-id <id> --verdict PASS|REPLAN [--finding SEVERITY:id:reason]...
@@ -79,6 +112,9 @@ Usage:
   acef-state actor --repo <path> --id <id> --story <scope> --phase <phase> --role <role> --client <client> --context-profile <profile> [options]
   acef-state worker-scope --repo <path> --story <scope> --phase <phase> --worker-id <id> --allow <glob>... [--allow-command <exact-command>...] [--surface <name>...] [--pattern-use <kind>] [--requires-round-trip true|false] [--binding <input>><output>:<field>[:defaultMaskingRisk]] [options]
   acef-state context-sync --repo <path>
+  acef-state lightweight-complete --repo <path> --gate-id <id> --disposition PASS|FAIL|REPLAN|BLOCKED --reason <text> [--failure-evidence <id>...]
+  acef-state invocation-recovery --repo <path> --attempt-id <id> --recovery-id <id> --mode infrastructure|fixture-authoring --reason <text> [--changed-path <path>... --test-path <path>... --fixture-path <path>...] -- <exact-command>
+  acef-state recover-state-transaction --repo <path>
   acef-state atdd-precheck --repo <path> --test-path <path>...
   acef-state atdd-correction-start --repo <path> --findings-sha256 <sha256>
   acef-state phase-transition --repo <path> --phase atdd|development|code-review
@@ -106,7 +142,7 @@ function durablePersistenceEvidenceText(text) {
 
 function parseArgs(argv) {
   const [command, ...rest] = argv;
-  const opts = { command, repo: process.cwd(), allow: [], allowCommand: [], satisfies: [], evidence: [], surface: [], surfaceEvidence: [], binding: [], bindingEvidence: [], riskTrigger: [], clarifyingQuestion: [], inferredAnswer: [], unresolvedQuestion: [], requiredSurface: [], coveredSurface: [], goalEvidence: [], goalMissing: [], acceptance: [], changedPath: [], verificationCommand: [], verificationExitCode: [], unresolvedRisk: [], unresolvedFinding: [], finding: [], findingId: [], findingSeverity: [], findingReason: [], promotionReason: [], expectedStory: [], expectedTest: [], testPath: [], objectiveDefect: [], commandArgv: [] };
+  const opts = { command, repo: process.cwd(), allow: [], allowCommand: [], satisfies: [], evidence: [], failureEvidence: [], surface: [], surfaceEvidence: [], binding: [], bindingEvidence: [], riskTrigger: [], clarifyingQuestion: [], inferredAnswer: [], unresolvedQuestion: [], requiredSurface: [], coveredSurface: [], goalEvidence: [], goalMissing: [], acceptance: [], changedPath: [], verificationCommand: [], verificationExitCode: [], unresolvedRisk: [], unresolvedFinding: [], finding: [], findingId: [], findingSeverity: [], findingReason: [], promotionReason: [], expectedStory: [], expectedTest: [], testPath: [], fixturePath: [], objectiveDefect: [], runDisposition: [], commandArgv: [] };
   for (let index = 0; index < rest.length; index += 1) {
     const arg = rest[index];
     if (arg === "--help" || arg === "-h") {
@@ -126,7 +162,7 @@ function parseArgs(argv) {
     const value = rest[index + 1];
     if (value === undefined || value.startsWith("--")) throw new Error(`Missing value for ${arg}`);
     index += 1;
-    if (["allow", "allowCommand", "satisfies", "evidence", "surface", "surfaceEvidence", "binding", "bindingEvidence", "riskTrigger", "clarifyingQuestion", "inferredAnswer", "unresolvedQuestion", "requiredSurface", "coveredSurface", "goalEvidence", "goalMissing", "acceptance", "changedPath", "verificationCommand", "verificationExitCode", "unresolvedRisk", "unresolvedFinding", "finding", "findingId", "findingSeverity", "findingReason", "promotionReason", "expectedStory", "expectedTest", "testPath", "objectiveDefect"].includes(key)) opts[key].push(value);
+    if (["allow", "allowCommand", "satisfies", "evidence", "failureEvidence", "surface", "surfaceEvidence", "binding", "bindingEvidence", "riskTrigger", "clarifyingQuestion", "inferredAnswer", "unresolvedQuestion", "requiredSurface", "coveredSurface", "goalEvidence", "goalMissing", "acceptance", "changedPath", "verificationCommand", "verificationExitCode", "unresolvedRisk", "unresolvedFinding", "finding", "findingId", "findingSeverity", "findingReason", "promotionReason", "expectedStory", "expectedTest", "testPath", "fixturePath", "objectiveDefect", "runDisposition"].includes(key)) opts[key].push(value);
     else opts[key] = value;
   }
   opts.repo = path.resolve(opts.repo);
@@ -306,6 +342,10 @@ function evidenceRunnerProof(record) {
     repositoryCommit: record.repositoryCommit,
     repositoryTree: record.repositoryTree || null,
     dirtyDigest: record.dirtyDigest,
+    ...(Object.prototype.hasOwnProperty.call(record, "inputFingerprint")
+      ? { inputFingerprint: record.inputFingerprint } : {}),
+    ...(Object.prototype.hasOwnProperty.call(record, "reuseInputFingerprint")
+      ? { reuseInputFingerprint: record.reuseInputFingerprint } : {}),
     dirtyApplicationPathsBefore: record.dirtyApplicationPathsBefore || [],
     dirtyApplicationPathsAfter: record.dirtyApplicationPathsAfter || [],
     environmentDigest: record.environmentDigest || null,
@@ -328,6 +368,99 @@ function dirtyDigest(repo) {
   return status ? sha256(status) : "clean";
 }
 
+function applicationStatusEntries(repo) {
+  const output = cp.execFileSync("git", ["status", "--porcelain=v1", "-z", "--untracked-files=all"], {
+    cwd: repo,
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  const fields = output.split("\0");
+  const entries = [];
+  for (let index = 0; index < fields.length; index += 1) {
+    const field = fields[index];
+    if (!field) continue;
+    const status = field.slice(0, 2);
+    const paths = [field.slice(3)];
+    if (/[RC]/.test(status)) {
+      const sourcePath = fields[index + 1];
+      if (!sourcePath) return null;
+      paths.push(sourcePath);
+      index += 1;
+    }
+    const applicationPaths = paths.filter(Boolean).filter((filePath) => !isControlPath(filePath)).sort();
+    if (applicationPaths.length) entries.push({ status, paths: applicationPaths });
+  }
+  return entries.sort((left, right) => JSON.stringify(left).localeCompare(JSON.stringify(right)));
+}
+
+function applicationNodeIdentity(repo, filePath) {
+  const absolutePath = path.resolve(repo, filePath);
+  const relativePath = path.relative(repo, absolutePath);
+  if (!relativePath || relativePath.startsWith("..") || path.isAbsolute(relativePath)) return null;
+  let stat;
+  try {
+    stat = fs.lstatSync(absolutePath);
+  } catch (error) {
+    if (error?.code === "ENOENT") return { kind: "missing" };
+    return null;
+  }
+  try {
+    if (stat.isSymbolicLink()) {
+      // Link text alone cannot prove the bytes a command reads through the
+      // target. Refuse reuse unless a future contract can bound that target.
+      return null;
+    }
+    if (stat.isFile()) {
+      return {
+        kind: "file",
+        executable: Boolean(stat.mode & 0o111),
+        contentSha256: sha256(fs.readFileSync(absolutePath)),
+      };
+    }
+  } catch {
+    return null;
+  }
+  // Dirty submodules, directories, sockets, and device nodes have no cheap,
+  // complete byte identity. Refuse reuse instead of guessing.
+  return null;
+}
+
+function evidenceInputFingerprint(repo, activeRun) {
+  const statusEntries = applicationStatusEntries(repo);
+  if (!statusEntries) return null;
+  const nodes = [];
+  for (const entry of statusEntries) {
+    const identities = [];
+    for (const filePath of entry.paths) {
+      const identity = applicationNodeIdentity(repo, filePath);
+      if (!identity) return null;
+      identities.push({ path: filePath, ...identity });
+    }
+    nodes.push({ status: entry.status, nodes: identities });
+  }
+  const riskTriggers = [...new Set([
+    ...(activeRun?.riskTriggers || []),
+    ...(activeRun?.intakeDecision?.riskTriggers || []),
+  ].map((value) => String(value).trim().toLowerCase()).filter(Boolean))].sort();
+  return `application-input-v1:${sha256(JSON.stringify({
+    schema: "acef-application-input-v1",
+    repositoryTree: gitTree(repo),
+    riskTriggers,
+    dirtyApplicationNodes: nodes,
+  }))}`;
+}
+
+const MUTABLE_EVIDENCE_RISK_PATTERN = /(?:auth|permission|access[-_ ]?control|credential|secret|payment|billing|money|invoice|subscription|refund|persistence|database|migration|external[-_ ]?provider|provider[-_ ]?integration|webhook|session|realtime|concurrency|fencing|state[-_ ]?machine|stateful[-_ ]?product[-_ ]?data|tracking|reporting|analytics|multi[-_ ]?session|multi[-_ ]?worker)/i;
+
+function automaticEvidenceReuseEligible(kind, activeRun, reuseInputFingerprint) {
+  if (!reuseInputFingerprint) return false;
+  const riskTriggers = [
+    ...(activeRun?.riskTriggers || []),
+    ...(activeRun?.intakeDecision?.riskTriggers || []),
+  ];
+  return !riskTriggers.some((trigger) => MUTABLE_EVIDENCE_RISK_PATTERN.test(String(trigger)));
+}
+
 function isControlPath(filePath) {
   const normalized = String(filePath || "").replaceAll(path.sep, "/");
   return /^\.acef\//.test(normalized)
@@ -339,12 +472,9 @@ function isControlPath(filePath) {
 }
 
 function dirtyApplicationPaths(repo) {
-  const output = cp.execFileSync("git", ["status", "--porcelain=v1"], {
-    cwd: repo,
-    encoding: "utf8",
-    stdio: ["ignore", "pipe", "pipe"],
-  });
-  return output.split(/\r?\n/).filter(Boolean).map((line) => line.slice(3)).filter((filePath) => !isControlPath(filePath));
+  const entries = applicationStatusEntries(repo);
+  if (!entries) throw new Error("unable to parse complete application status");
+  return [...new Set(entries.flatMap((entry) => entry.paths))].sort();
 }
 
 function atomicJson(filePath, record, { overwrite = false, validate = null } = {}) {
@@ -360,8 +490,9 @@ function atomicJson(filePath, record, { overwrite = false, validate = null } = {
   }
 }
 
-function syncRuntimeContext(repo, activeRun, workerScope = null) {
-  if (!capsuleRuntime(activeRun) || !activeRun.contextPath) return;
+function renderRuntimeContext(activeRun, workerScope = null) {
+  if ((!capsuleRuntime(activeRun) && activeRun.lightweightStateContract !== "lightweight-state-v1")
+    || !activeRun.contextPath) return null;
   const matchingScope = workerScope
     && workerScope.runId === activeRun.runId
     && normalizedScope(workerScope.activeStory) === normalizedScope(activeRun.activeStory)
@@ -390,7 +521,9 @@ function syncRuntimeContext(repo, activeRun, workerScope = null) {
     ...(allowedPaths.length ? allowedPaths.map((entry) => `- \`${entry}\``) : ["- Conductor-owned control state only until a worker scope is bound."]),
     "",
     "## Relevant Acceptance Criteria",
-    "- Use only the active story artifact and its bound evidence requirements.",
+    ...(matchingScope?.acceptanceCriteria?.length
+      ? matchingScope.acceptanceCriteria.map((entry) => `- ${entry}`)
+      : ["- No acceptance criterion is authorized until it is bound in typed worker scope."]),
     "",
     "## Required Commands",
     ...(allowedCommands.length ? allowedCommands.map((entry) => `- \`${entry}\``) : ["- No worker command is authorized until an exact command is bound in worker scope."]),
@@ -425,6 +558,12 @@ function syncRuntimeContext(repo, activeRun, workerScope = null) {
     for (const surface of matchingScope.surfaces || []) lines.push(`- Surface: \`${surface}\``);
   }
   lines.push("- Stop rule: refuse writes outside typed scope; stop fail-closed when state and supervisor disagree.", "");
+  return `${lines.join("\n")}\n`;
+}
+
+function syncRuntimeContext(repo, activeRun, workerScope = null) {
+  const content = renderRuntimeContext(activeRun, workerScope);
+  if (content === null) return;
   const target = path.resolve(repo, activeRun.contextPath);
   const relativeTarget = relative(repo, target);
   if (!relativeTarget || relativeTarget.startsWith("..") || path.isAbsolute(relativeTarget)) {
@@ -433,11 +572,53 @@ function syncRuntimeContext(repo, activeRun, workerScope = null) {
   fs.mkdirSync(path.dirname(target), { recursive: true });
   const tmp = `${target}.${process.pid}.tmp`;
   try {
-    fs.writeFileSync(tmp, `${lines.join("\n")}\n`);
+    fs.writeFileSync(tmp, content);
     fs.renameSync(tmp, target);
   } finally {
     fs.rmSync(tmp, { force: true });
   }
+}
+
+function storedActiveRun(activeRun) {
+  const {
+    lane: _derivedLane,
+    executionMigrationRequired: _derivedMigration,
+    ...record
+  } = activeRun;
+  return record;
+}
+
+function preparedObjectiveWrite(repo, prepared) {
+  if (!prepared) return null;
+  return prepareWrite(repo, relative(repo, prepared.path), `${JSON.stringify(prepared.record, null, 2)}\n`);
+}
+
+function lightweightStateWrites(repo, activeRun, workerScope = null, leadingWrites = []) {
+  const initialBefore = new Map(commandStateSnapshotGuards.map((guard) => [guard.path, guard.expectedSha256]));
+  const fromInitialSnapshot = (write) => initialBefore.has(write.path)
+    ? { ...write, beforeSha256: initialBefore.get(write.path) }
+    : write;
+  const record = storedActiveRun(validateActiveRunRecord(storedActiveRun(activeRun)));
+  const context = renderRuntimeContext(record, workerScope);
+  if (context === null) throw new Error("lightweight-state-v1 requires a generated current context");
+  const writes = leadingWrites.filter(Boolean).map(fromInitialSnapshot);
+  if (workerScope) {
+    validateWorkerScopeRecord(workerScope);
+    writes.push(fromInitialSnapshot(prepareWrite(repo, "docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json", `${JSON.stringify(workerScope, null, 2)}\n`)));
+  }
+  writes.push(fromInitialSnapshot(prepareWrite(repo, record.contextPath, context)));
+  writes.push(fromInitialSnapshot(prepareWrite(repo, "docs/ai/ACEF_ACTIVE_LEDGER", `${record.ledgerPath}\n`)));
+  writes.push(fromInitialSnapshot(prepareWrite(repo, "docs/ai/ACEF_ACTIVE_RUN.json", `${JSON.stringify(record, null, 2)}\n`)));
+  return writes;
+}
+
+function publishLightweightState(repo, activeRun, workerScope = null, { leadingWrites = [], guards = [], action = "state" } = {}) {
+  const transactionId = `${safeId(activeRun.runId, "run id")}-${action}-${Date.now()}`;
+  return publishStateTransaction(repo, {
+    transactionId,
+    writes: lightweightStateWrites(repo, activeRun, workerScope, leadingWrites),
+    guards,
+  });
 }
 
 function relative(repo, filePath) {
@@ -520,6 +701,14 @@ function writeActiveRun(opts) {
     ? previous.modelRoutingContract
     : (["quick-fix", "lightweight"].includes(workflowId)
       ? (installedModelRoutingContract || "admitted-role-routing-v1") : undefined);
+  const installedLightweightStateContract = installation?.components?.tools?.defaultLightweightStateContract;
+  const lightweightStateContract = sameRun
+    ? previous.lightweightStateContract
+    : (["quick-fix", "lightweight"].includes(workflowId)
+      ? (installedLightweightStateContract || "lightweight-state-v1") : undefined);
+  if (lightweightStateContract === "lightweight-state-v1" && opts.status === "complete") {
+    throw new Error("lightweight-state-v1 terminal state requires acef-state lightweight-complete");
+  }
   const installedRuntimeDefault = installation?.components?.tools?.defaultRuntimeContract;
   const installedDispatchReadinessContract = installation?.components?.tools?.dispatchReadinessContract;
   const runtimeContract = sameRun
@@ -595,6 +784,7 @@ function writeActiveRun(opts) {
     workflowId,
     ...(quickFixContract ? { quickFixContract } : {}),
     ...(modelRoutingContract ? { modelRoutingContract } : {}),
+    ...(lightweightStateContract ? { lightweightStateContract } : {}),
     ...(redOwnershipContract ? { redOwnershipContract } : {}),
     ...(fullFlowContract ? { fullFlowContract } : {}),
     ...(runtimeContract ? { runtimeContract } : {}),
@@ -622,7 +812,7 @@ function writeActiveRun(opts) {
     workflowRationale: opts.workflowRationale || opts.laneRationale || (sameRun ? previous.workflowRationale : null),
     intakeDecision: intakeDecision(opts) || (sameRun ? previous.intakeDecision : null),
     riskTriggers: riskTriggers.length ? riskTriggers : (sameRun ? previous.riskTriggers : []),
-    workerScopePath: opts.workerScope || (sameRun ? previous.workerScopePath : null),
+    workerScopePath: opts.workerScope || (sameRun ? previous.workerScopePath : (lightweightStateContract ? "docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json" : null)),
     workflowPath: opts.workflow || (sameRun ? previous.workflowPath : null),
     workflowNodeId: opts.workflowNode || (sameRun ? previous.workflowNodeId : null),
     fullLedgerAccess,
@@ -630,7 +820,7 @@ function writeActiveRun(opts) {
     lastPassedGate: opts.lastPassedGate || (sameRun ? previous.lastPassedGate : null),
     nextAllowedStep: opts.nextAllowedStep || (sameRun ? previous.nextAllowedStep : null),
     ledgerPath: opts.ledger,
-    contextPath: opts.context || (sameRun ? previous.contextPath : null),
+    contextPath: opts.context || (sameRun ? previous.contextPath : (lightweightStateContract ? "docs/ai/ACEF_CURRENT_CONTEXT.md" : null)),
     updatedAt: new Date().toISOString(),
   };
   if (["two-axis-v1", "two-axis-v2", "two-axis-v3"].includes(record.intakeDecision?.routingPolicyVersion)
@@ -640,8 +830,12 @@ function writeActiveRun(opts) {
       throw new Error(`active-run routing rejected before bootstrap: ${routingFailures.join("; ")}`);
     }
   }
-  if (!sameRun && objectiveContract) {
-    registerRun(opts.repo, {
+  if (["quick-fix", "lightweight"].includes(workflowId)
+    && previous && previous.runId !== opts.runId && previous.status !== "complete") {
+    throw new Error(`unfinished run ${previous.runId} must be completed or explicitly replanned before starting ${opts.runId}`);
+  }
+  const preparedObjective = !sameRun && objectiveContract
+    ? prepareRegisterRun(opts.repo, {
       objectiveId,
       objectiveScope: opts.objectiveScope,
       runId: opts.runId,
@@ -650,7 +844,31 @@ function writeActiveRun(opts) {
       replanCause: opts.replanCause,
       workflowId,
       assuranceProfile,
+      ...(lightweightStateContract === "lightweight-state-v1"
+        ? { accountingVersion: "objective-accounting-v2" } : {}),
+    }) : (sameRun ? prepareObjectiveHeartbeat(opts.repo, record) : null);
+  if (lightweightStateContract === "lightweight-state-v1") {
+    let matchingWorkerScope = null;
+    if (sameRun && previous.lightweightStateContract === "lightweight-state-v1") {
+      const workerPath = path.resolve(opts.repo, previous.workerScopePath || "docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json");
+      if (fs.existsSync(workerPath)) {
+        const candidateScope = parseWorkerScope(workerPath);
+        if (candidateScope.runId === record.runId
+          && normalizedScope(candidateScope.activeStory) === normalizedScope(record.activeStory)) {
+          matchingWorkerScope = candidateScope;
+        }
+      }
+    }
+    publishLightweightState(opts.repo, record, matchingWorkerScope, {
+      leadingWrites: [preparedObjectiveWrite(opts.repo, preparedObjective)],
+      action: sameRun ? "update" : "start",
     });
+    console.log(`WROTE active-run ${relative(opts.repo, target)}`);
+    return;
+  }
+  if (preparedObjective) {
+    fs.mkdirSync(path.dirname(preparedObjective.path), { recursive: true });
+    atomicJson(preparedObjective.path, preparedObjective.record, { overwrite: fs.existsSync(preparedObjective.path) });
   }
   atomicJson(target, record, { overwrite: true, validate: parseActiveRun });
   syncRuntimeContext(opts.repo, record);
@@ -683,6 +901,95 @@ function writeObjectiveDefectTransition(opts) {
   required(opts, ["objectiveId", "id", "defectStatus"]);
   transitionDefect(opts.repo, opts.objectiveId, opts.id, opts.defectStatus, opts.batchKey);
   console.log(`WROTE objective-defect-transition ${opts.id} status=${opts.defectStatus}`);
+}
+
+function authenticatedObjectiveRun(opts, { allowActiveReplan = false } = {}) {
+  required(opts, ["objectiveId", "runId"]);
+  const activeRelative = "docs/ai/ACEF_ACTIVE_RUN.json";
+  const activePath = path.join(opts.repo, activeRelative);
+  const activeGuard = prepareGuard(opts.repo, activeRelative);
+  const activeRun = parseActiveRun(activePath);
+  if (activeRun.schema !== "acef.active-run.v2" || activeRun.objectiveContract !== "objective-supervisor-v1"
+    || activeRun.objectiveId !== safeId(opts.objectiveId, "objective id")
+    || activeRun.runId !== safeId(opts.runId, "run id")
+    || activeRun.objectivePath !== `docs/ai/objectives/${activeRun.objectiveId}.json`) {
+    throw new Error("objective command requires the canonical active objective and exact active run id");
+  }
+  const activeReplan = allowActiveReplan && activeRun.status === "active" && !activeRun.terminalDisposition;
+  const terminal = activeRun.status === "complete" && Boolean(activeRun.terminalDisposition);
+  if (!terminal && !activeReplan) {
+    throw new Error(allowActiveReplan
+      ? "objective replan requires the active same run or its terminal REPLAN state"
+      : "objective command requires a terminal canonical active run");
+  }
+  if (allowActiveReplan && terminal && activeRun.terminalDisposition !== "REPLAN") {
+    throw new Error("objective replan requires the active same run or its terminal REPLAN state");
+  }
+  const objectiveGuard = prepareGuard(opts.repo, activeRun.objectivePath);
+  const objective = loadObjective(opts.repo, activeRun.objectiveId);
+  const registered = objective?.runs.find((run) => run.runId === activeRun.runId);
+  if (!objective || objective.scopeFingerprint !== activeRun.scopeFingerprint
+    || !registered || registered.terminalDisposition !== activeRun.terminalDisposition) {
+    throw new Error("canonical active run does not match its registered objective terminal state");
+  }
+  return { activeRun, activePath, activeRelative, activeGuard, objectiveGuard };
+}
+
+function publishObjectiveCommand(opts, prepared, authentication, action) {
+  const objectiveRelative = relative(opts.repo, prepared.path);
+  const activeBytes = fs.readFileSync(authentication.activePath);
+  const initialBefore = new Map(commandStateSnapshotGuards.map((guard) => [guard.path, guard.expectedSha256]));
+  const fromInitialSnapshot = (write) => initialBefore.has(write.path)
+    ? { ...write, beforeSha256: initialBefore.get(write.path) }
+    : write;
+  publishStateTransaction(opts.repo, {
+    transactionId: `${safeId(authentication.activeRun.runId, "run id")}-${action}-${Date.now()}`,
+    writes: [
+      fromInitialSnapshot(prepareWrite(opts.repo, objectiveRelative, `${JSON.stringify(prepared.record, null, 2)}\n`)),
+      // The transaction format requires canonical active-run last. This is an
+      // exact no-op write guarded by the bytes authenticated above.
+      fromInitialSnapshot(prepareWrite(opts.repo, authentication.activeRelative, activeBytes)),
+    ],
+    guards: [],
+  });
+}
+
+function parseRunDispositions(entries) {
+  return entries.map((entry) => {
+    const first = entry.indexOf("|");
+    const second = first < 0 ? -1 : entry.indexOf("|", first + 1);
+    if (first < 1 || second <= first + 1 || !entry.slice(second + 1).trim()) {
+      throw new Error("--run-disposition must be <run-id>|<resolved|superseded>|<reason>");
+    }
+    return {
+      runId: entry.slice(0, first),
+      disposition: entry.slice(first + 1, second),
+      reason: entry.slice(second + 1).trim(),
+    };
+  });
+}
+
+function writeObjectiveReplan(opts) {
+  required(opts, ["eventId", "cause"]);
+  const authentication = authenticatedObjectiveRun(opts, { allowActiveReplan: true });
+  const prepared = prepareReplanEvent(opts.repo, opts.objectiveId, {
+    eventId: opts.eventId,
+    runId: opts.runId,
+    cause: opts.cause,
+  });
+  publishObjectiveCommand(opts, prepared, authentication, "objective-replan");
+  console.log(`WROTE objective-replan ${safeId(opts.eventId, "replan event id")} run=${authentication.activeRun.runId}`);
+}
+
+function writeObjectiveClose(opts) {
+  required(opts, ["completionEvidence"]);
+  const authentication = authenticatedObjectiveRun(opts);
+  const prepared = prepareCloseObjective(opts.repo, opts.objectiveId, {
+    completionEvidenceId: opts.completionEvidence,
+    runDispositions: parseRunDispositions(opts.runDisposition),
+  });
+  publishObjectiveCommand(opts, prepared, authentication, "objective-close");
+  console.log(`WROTE objective-close ${safeId(opts.objectiveId, "objective id")} status=DONE evidence=${safeId(opts.completionEvidence, "completion evidence id")}`);
 }
 
 function migrateActiveRun(opts) {
@@ -1236,6 +1543,7 @@ function writeActor(opts) {
   const activeRunPath = path.join(opts.repo, "docs", "ai", "ACEF_ACTIVE_RUN.json");
   const activeRun = fs.existsSync(activeRunPath) ? parseActiveRun(activeRunPath) : null;
   const v3 = activeRun?.fullFlowContract === "four-actor-v3";
+  const lightweightState = activeRun?.lightweightStateContract === "lightweight-state-v1";
   if (v3 && normalizedScope(opts.story) !== normalizedScope(activeRun.activeStory)) throw new Error("four-actor-v3 actor story must match active run scope");
   if (v3 && canonicalGatePhase(opts.phase) === "development" && !opts.sessionId) {
     throw new Error("four-actor-v3 Developer actor requires --session-id for repair continuity");
@@ -1264,6 +1572,7 @@ function writeActor(opts) {
   const record = {
     actorInstanceId: opts.id,
     ...(v3 ? { runId: activeRun.runId, fullFlowContract: activeRun.fullFlowContract, storyInventory: activeRun.expectedStories } : {}),
+    ...(lightweightState ? { runId: activeRun.runId, lightweightStateContract: activeRun.lightweightStateContract } : {}),
     story: opts.story,
     phase: opts.phase,
     role: opts.role,
@@ -1283,6 +1592,23 @@ function writeActor(opts) {
   const target = actorPath(opts.repo, opts.id);
   atomicJson(target, record, { validate: parseActorRecord });
   let heartbeatRun = activeRun;
+  if (lightweightState && activeRun.status === "active") {
+    const scopePath = activeRun.workerScopePath || "docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json";
+    let workerScope = null;
+    try { workerScope = fs.existsSync(path.resolve(opts.repo, scopePath)) ? parseWorkerScope(path.resolve(opts.repo, scopePath)) : null; } catch {}
+    heartbeatRun = {
+      ...storedActiveRun(activeRun),
+      workerRole: opts.role,
+      activeActorId: opts.id,
+      updatedAt: new Date().toISOString(),
+    };
+    const preparedObjective = opts.skipObjectiveHeartbeat ? null : prepareObjectiveHeartbeat(opts.repo, heartbeatRun);
+    publishLightweightState(opts.repo, heartbeatRun, workerScope, {
+      leadingWrites: [preparedObjectiveWrite(opts.repo, preparedObjective)],
+      guards: [prepareGuard(opts.repo, relative(opts.repo, target))],
+      action: "actor",
+    });
+  }
   if (v3 && activeRun.status === "active") {
     const workerScopePath = activeRun.workerScopePath
       ? path.resolve(opts.repo, activeRun.workerScopePath)
@@ -1310,7 +1636,7 @@ function writeActor(opts) {
       syncRuntimeContext(opts.repo, heartbeatRun, actorMatchesWorker ? workerScope : null);
     }
   }
-  if (!opts.skipObjectiveHeartbeat) persistObjectiveHeartbeat(opts.repo, heartbeatRun);
+  if (!opts.skipObjectiveHeartbeat && !lightweightState) persistObjectiveHeartbeat(opts.repo, heartbeatRun);
   console.log(`WROTE actor ${relative(opts.repo, target)}`);
 }
 
@@ -1343,6 +1669,7 @@ function writeWorkerScope(opts) {
     workerId: opts.workerId,
     allowedPaths: opts.allow,
     ...(opts.allowCommand.length ? { allowedCommands: [...new Set(opts.allowCommand)] } : {}),
+    ...(opts.acceptance.length ? { acceptanceCriteria: [...new Set(opts.acceptance)] } : {}),
     surfaces: opts.surface.length ? opts.surface : undefined,
     patternUse: opts.patternUse || undefined,
     requiresRoundTrip,
@@ -1354,6 +1681,21 @@ function writeWorkerScope(opts) {
     createdAt: new Date().toISOString(),
   };
   const target = path.join(opts.repo, "docs", "ai", "ACEF_ACTIVE_WORKER_SCOPE.json");
+  if (activeRun.lightweightStateContract === "lightweight-state-v1") {
+    const updatedRun = {
+      ...storedActiveRun(activeRun),
+      workerScopePath: "docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json",
+      contextPath: activeRun.contextPath || "docs/ai/ACEF_CURRENT_CONTEXT.md",
+      updatedAt: new Date().toISOString(),
+    };
+    const preparedObjective = prepareObjectiveHeartbeat(opts.repo, updatedRun);
+    publishLightweightState(opts.repo, updatedRun, record, {
+      leadingWrites: [preparedObjectiveWrite(opts.repo, preparedObjective)],
+      action: "scope",
+    });
+    console.log(`WROTE worker-scope ${relative(opts.repo, target)}`);
+    return;
+  }
   atomicJson(target, record, { overwrite: true, validate: parseWorkerScope });
   syncRuntimeContext(opts.repo, activeRun, record);
   persistObjectiveHeartbeat(opts.repo, activeRun);
@@ -1361,17 +1703,201 @@ function writeWorkerScope(opts) {
 }
 
 function writeContextSync(opts) {
-  const activeRun = activeV3Run(opts.repo);
-  if (!capsuleRuntime(activeRun)) {
-    throw new Error("context-sync requires a capsule-supervisor runtime");
+  const activeRunPath = path.join(opts.repo, "docs", "ai", "ACEF_ACTIVE_RUN.json");
+  if (!fs.existsSync(activeRunPath)) throw new Error("context-sync requires docs/ai/ACEF_ACTIVE_RUN.json");
+  const activeRun = parseActiveRun(activeRunPath);
+  if (!capsuleRuntime(activeRun) && activeRun.lightweightStateContract !== "lightweight-state-v1") {
+    throw new Error("context-sync requires capsule-supervisor or lightweight-state-v1");
   }
   const workerScopePath = activeRun.workerScopePath
     ? path.resolve(opts.repo, activeRun.workerScopePath)
     : path.join(opts.repo, "docs", "ai", "ACEF_ACTIVE_WORKER_SCOPE.json");
   const workerScope = fs.existsSync(workerScopePath) ? parseWorkerScope(workerScopePath) : null;
-  syncRuntimeContext(opts.repo, activeRun, workerScope);
-  persistObjectiveHeartbeat(opts.repo, activeRun);
+  if (activeRun.lightweightStateContract === "lightweight-state-v1") {
+    const updatedRun = { ...storedActiveRun(activeRun), updatedAt: new Date().toISOString() };
+    const preparedObjective = prepareObjectiveHeartbeat(opts.repo, updatedRun);
+    publishLightweightState(opts.repo, updatedRun, workerScope, {
+      leadingWrites: [preparedObjectiveWrite(opts.repo, preparedObjective)],
+      action: "context",
+    });
+  } else {
+    syncRuntimeContext(opts.repo, activeRun, workerScope);
+    persistObjectiveHeartbeat(opts.repo, activeRun);
+  }
   console.log(`WROTE current-context ${activeRun.contextPath}`);
+}
+
+function writeLightweightComplete(opts) {
+  required(opts, ["gateId", "disposition", "reason"]);
+  const disposition = String(opts.disposition).toUpperCase();
+  if (!["PASS", "FAIL", "REPLAN", "BLOCKED"].includes(disposition)) {
+    throw new Error("--disposition must be PASS, FAIL, REPLAN, or BLOCKED");
+  }
+  const activePath = path.join(opts.repo, "docs", "ai", "ACEF_ACTIVE_RUN.json");
+  if (!fs.existsSync(activePath)) throw new Error("lightweight-complete requires docs/ai/ACEF_ACTIVE_RUN.json");
+  const activeRun = parseActiveRun(activePath);
+  if (activeRun.status !== "active" || activeRun.lightweightStateContract !== "lightweight-state-v1"
+    || !["quick-fix", "lightweight"].includes(activeRun.workflowId)) {
+    throw new Error("lightweight-complete requires an active Fix/Standard lightweight-state-v1 run");
+  }
+  const gateRelative = `docs/ai/gates/${safeId(opts.gateId, "gate id")}.json`;
+  const gatePath = path.join(opts.repo, gateRelative);
+  const gate = parseGateVerdict(gatePath);
+  const lifecycleRelative = "docs/ai/ACEF_LIGHTWEIGHT_RUN.json";
+  const lifecyclePath = path.join(opts.repo, lifecycleRelative);
+  const lightweightRun = parseLightweightRun(lifecyclePath);
+  const workerRelative = activeRun.workerScopePath || "docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json";
+  const workerPath = path.resolve(opts.repo, workerRelative);
+  const workerScope = fs.existsSync(workerPath) ? parseWorkerScope(workerPath) : null;
+  const candidate = {
+    ...storedActiveRun(activeRun),
+    status: "complete",
+    activePhase: "closeout",
+    terminalDisposition: disposition,
+    terminalGateId: gate.gateId,
+    terminalReason: String(opts.reason).trim(),
+    ...(opts.failureEvidence.length ? { terminalFailureEvidenceIds: [...new Set(opts.failureEvidence)] } : {}),
+    nextAllowedStep: disposition === "PASS"
+      ? "commit the exact validated terminal control package and stop"
+      : "stop without product promotion; replan or start a newly admitted run",
+    updatedAt: new Date().toISOString(),
+  };
+  validateActiveRunRecord(candidate);
+  const validationPackage = { currentRun: activeRun, candidateRun: candidate, gate, workerScope, lightweightRun };
+  const validation = validateTerminalCandidate(opts.repo, validationPackage);
+  if (!validation.ok) throw new Error(`terminal candidate rejected: ${validation.failures.join("; ")}`);
+
+  let preparedObjective = null;
+  if (candidate.objectiveContract) {
+    preparedObjective = disposition === "PASS"
+      ? prepareValidatedCompletion(opts.repo, candidate.objectiveId, {
+        runId: candidate.runId,
+        terminalDisposition: "PASS",
+        gatePath: gateRelative,
+        applicationTree: gate.applicationTree,
+        invocationId: validationPackage.greenInvocationId,
+      })
+      : prepareObjectiveHeartbeat(opts.repo, candidate);
+  }
+  const guards = [
+    prepareGuard(opts.repo, gateRelative),
+    prepareGuard(opts.repo, lifecycleRelative),
+    prepareGuard(opts.repo, relative(opts.repo, actorPath(opts.repo, gate.decidedBy))),
+    ...(workerScope ? [prepareGuard(opts.repo, relative(opts.repo, workerPath))] : []),
+  ];
+  const evidenceIds = disposition === "PASS" ? [gate.greenEvidenceId] : (candidate.terminalFailureEvidenceIds || []);
+  for (const evidenceId of evidenceIds) guards.push(prepareGuard(opts.repo, relative(opts.repo, evidencePath(opts.repo, evidenceId))));
+  if (validationPackage.greenInvocationId) {
+    guards.push(prepareGuard(opts.repo, relative(opts.repo, attemptPath(opts.repo, validationPackage.greenInvocationId))));
+  }
+  publishLightweightState(opts.repo, candidate, workerScope, {
+    leadingWrites: [preparedObjectiveWrite(opts.repo, preparedObjective)],
+    guards,
+    action: "complete",
+  });
+  console.log(`WROTE lightweight-complete ${relative(opts.repo, activePath)} gate=${gate.gateId} disposition=${disposition}`);
+}
+
+function writeInvocationRecovery(opts) {
+  required(opts, ["attemptId", "recoveryId", "mode", "reason"]);
+  if (!opts.commandArgv.length) throw new Error("invocation-recovery requires the exact retry command after --");
+  if (!["infrastructure", "fixture-authoring"].includes(opts.mode)) {
+    throw new Error("--mode must be infrastructure or fixture-authoring");
+  }
+  const activeRun = parseActiveRun(path.join(opts.repo, "docs", "ai", "ACEF_ACTIVE_RUN.json"));
+  if (activeRun.status !== "active" || activeRun.lightweightStateContract !== "lightweight-state-v1"
+    || !["quick-fix", "lightweight"].includes(activeRun.workflowId)) {
+    throw new Error("invocation-recovery requires an active Fix/Standard lightweight-state-v1 run");
+  }
+  const attemptFile = attemptPath(opts.repo, safeId(opts.attemptId, "attempt id"));
+  const attempt = JSON.parse(fs.readFileSync(attemptFile, "utf8"));
+  if (attempt.runId !== activeRun.runId || attempt.status === "running" || attempt.status === "passed") {
+    throw new Error("invocation-recovery requires a finalized failed attempt from the active run");
+  }
+  const actor = parseActorRecord(actorPath(opts.repo, attempt.actorId));
+  if (actor.runId !== activeRun.runId || canonicalGatePhase(actor.phase) !== "development") {
+    throw new Error("invocation-recovery must retain the same bound Developer");
+  }
+  const invocation = invocationContext(opts.repo, activeRun, attempt.actorId, activeRun.activeStory, opts.commandArgv);
+  const expectedIdentity = sha256(JSON.stringify(opts.commandArgv));
+  if (attempt.scopeFingerprint !== invocation.scopeFingerprint || attempt.commandIdentity !== expectedIdentity) {
+    throw new Error("invocation-recovery must retain the exact command and frozen scope");
+  }
+  const attemptsDirectory = path.dirname(attemptFile);
+  const priorRecoveries = fs.readdirSync(attemptsDirectory).filter((name) => name.startsWith("recovery-") && name.endsWith(".json"))
+    .flatMap((name) => {
+      try {
+        const record = JSON.parse(fs.readFileSync(path.join(attemptsDirectory, name), "utf8"));
+        return record.schema === "acef.invocation-recovery.v1" && record.runId === activeRun.runId ? [record] : [];
+      } catch { return []; }
+    });
+  if (priorRecoveries.length) throw new Error(`run ${activeRun.runId} already used its one invocation recovery`);
+  const common = {
+    attemptId: attempt.invocationId,
+    recoveryId: opts.recoveryId,
+    runId: attempt.runId,
+    actorId: attempt.actorId,
+    evidenceId: attempt.evidenceId,
+    kind: attempt.kind,
+    scopeFingerprint: attempt.scopeFingerprint,
+    commandArgv: opts.commandArgv,
+    reason: opts.reason,
+  };
+  let receipt;
+  if (opts.mode === "infrastructure") {
+    receipt = recordInfrastructureRecovery(opts.repo, common);
+  } else {
+    if (!opts.changedPath.length) throw new Error("fixture-authoring recovery requires --changed-path");
+    const lifecycle = parseLightweightRun(path.join(opts.repo, "docs", "ai", "ACEF_LIGHTWEIGHT_RUN.json"));
+    const envelope = lifecycle.quickFix?.envelope;
+    if (!envelope) throw new Error("fixture-authoring recovery requires a typed Quick Fix envelope");
+    const frozenTestPaths = [...new Set(envelope.testPaths || [])];
+    const frozenFixturePaths = [...new Set(envelope.fixturePaths || [])];
+    const frozenRecoveryPaths = [...frozenTestPaths, ...frozenFixturePaths];
+    if (opts.testPath.some((filePath) => !frozenTestPaths.includes(filePath))
+      || opts.fixturePath.some((filePath) => !frozenFixturePaths.includes(filePath))) {
+      throw new Error("fixture-authoring recovery CLI paths cannot widen the frozen Quick Fix envelope");
+    }
+    const actualChangedPaths = dirtyApplicationPaths(opts.repo);
+    const declaredChangedPaths = [...new Set(opts.changedPath)].sort();
+    if (JSON.stringify(actualChangedPaths) !== JSON.stringify(declaredChangedPaths)) {
+      throw new Error(`fixture-authoring recovery changed-path mismatch; actual=${actualChangedPaths.join(",") || "none"}`);
+    }
+    if (actualChangedPaths.some((filePath) => !frozenRecoveryPaths.includes(filePath))) {
+      throw new Error("fixture-authoring recovery actual changes escape the frozen test/fixture envelope");
+    }
+    const originalEvidence = parseEvidenceManifest(evidencePath(opts.repo, attempt.evidenceId));
+    const originalEvidenceFailures = validateEvidenceRecord(opts.repo, originalEvidence, { requireFresh: false });
+    if (originalEvidenceFailures.length
+      || originalEvidence.evidenceId !== attempt.evidenceId
+      || originalEvidence.actorInstanceId !== attempt.actorId
+      || originalEvidence.kind !== attempt.kind
+      || sha256(JSON.stringify(originalEvidence.commandArgv || [])) !== attempt.commandIdentity) {
+      throw new Error(`fixture-authoring recovery requires authentic original failed evidence and exact attempt binding: ${originalEvidenceFailures.join("; ") || "binding mismatch"}`);
+    }
+    const implementationPaths = envelope.implementationPaths || [];
+    const originalDirty = [...new Set([
+      ...(originalEvidence.dirtyApplicationPathsBefore || []),
+      ...(originalEvidence.dirtyApplicationPathsAfter || []),
+    ])];
+    if (!originalEvidence.inputFingerprint
+      || originalDirty.some((filePath) => !frozenRecoveryPaths.includes(filePath))) {
+      throw new Error("fixture-authoring recovery cannot reconstruct a clean frozen product boundary at the original attempt");
+    }
+    if (applicationTreeDigest(opts.repo, originalEvidence.repositoryCommit, implementationPaths)
+      !== applicationTreeDigest(opts.repo, "HEAD", implementationPaths)) {
+      throw new Error("fixture-authoring recovery product commits changed after the failed attempt");
+    }
+    receipt = recordFixtureAuthoringRecovery(opts.repo, {
+      ...common,
+      changedPaths: declaredChangedPaths,
+      testPaths: frozenTestPaths,
+      fixturePaths: frozenFixturePaths,
+      beforeProductTree: applicationTreeDigest(opts.repo, originalEvidence.repositoryCommit, implementationPaths),
+      afterProductTree: applicationTreeDigest(opts.repo, "HEAD", implementationPaths),
+    });
+  }
+  console.log(`WROTE invocation-recovery ${receipt.recoveryId} mode=${receipt.mode} attempt=${receipt.attemptId}`);
 }
 
 function writeApproval(opts) {
@@ -1460,6 +1986,35 @@ function assertFrozenEvidenceCommands(repo, activeRun, actor, story, commands) {
   }
 }
 
+function invocationContext(repo, activeRun, actorId, story, commandArgv) {
+  if (activeRun?.lightweightStateContract !== "lightweight-state-v1") return null;
+  const scopePath = activeRun.workerScopePath || "docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json";
+  const workerScope = parseWorkerScope(path.resolve(repo, scopePath));
+  const actor = parseActorRecord(actorPath(repo, actorId));
+  if (activeRun.status !== "active" || workerScope.runId !== activeRun.runId
+    || normalizedScope(workerScope.activeStory) !== normalizedScope(story)
+    || workerScope.workerId !== actorId || activeRun.activeActorId !== actorId
+    || actor.runId !== activeRun.runId
+    || actor.lightweightStateContract !== activeRun.lightweightStateContract
+    || normalizedScope(actor.story) !== normalizedScope(story)) {
+    throw new Error("lightweight-state-v1 invocation requires canonical active run, worker scope, and actor binding");
+  }
+  const commandText = commandArgv.map(quoteArg).join(" ");
+  if (!workerScope.allowedCommands?.includes(commandText)) {
+    throw new Error(`lightweight-state-v1 invocation command is not authorized by workerScope.allowedCommands: ${commandText}`);
+  }
+  const scopeFingerprint = sha256(JSON.stringify({
+    schema: "acef-invocation-scope-v1",
+    runId: activeRun.runId,
+    activeStory: workerScope.activeStory,
+    phase: workerScope.phase,
+    workerId: workerScope.workerId,
+    allowedPaths: [...workerScope.allowedPaths].sort(),
+    allowedCommands: [...(workerScope.allowedCommands || [])].sort(),
+  }));
+  return { workerScope, scopeFingerprint };
+}
+
 function writeEvidence(opts) {
   required(opts, ["id", "kind", "actor", "story"]);
   if (!opts.satisfies.length) throw new Error("evidence-run requires at least one --satisfies value");
@@ -1489,17 +2044,27 @@ function writeEvidence(opts) {
     { label: "evidence", commandText },
     ...(discoveryArgv ? [{ label: "discovery", commandText: discoveryArgv.map(quoteArg).join(" ") }] : []),
   ]);
+  // Authorization/binding is checked even when immutable evidence can be reused.
+  // Reuse avoids a physical invocation; it must not bypass the current actor/scope contract.
+  const invocation = invocationContext(opts.repo, activeRun, opts.actor, opts.story, opts.commandArgv);
   const currentCommit = gitCommit(opts.repo);
   const currentTree = gitTree(opts.repo);
   const currentDirtyDigest = dirtyDigest(opts.repo);
   const currentDirtyApplicationPaths = dirtyApplicationPaths(opts.repo);
+  const currentInputFingerprint = evidenceInputFingerprint(opts.repo, activeRun);
+  const currentReuseInputFingerprint = staticReuseInputFingerprint(opts.repo, opts.kind, opts.commandArgv);
   const currentEnvironmentDigest = sha256(`${process.platform}\n${process.arch}\n${process.version}\n${os.release()}`);
   const evidenceDir = path.join(opts.repo, "docs", "ai", "evidence");
-  const reusable = activeRun && fs.existsSync(evidenceDir)
+  const reusable = activeRun && currentInputFingerprint
+    && automaticEvidenceReuseEligible(opts.kind, activeRun, currentReuseInputFingerprint) && fs.existsSync(evidenceDir)
     ? fs.readdirSync(evidenceDir).filter((name) => name.endsWith(".json")).map((name) => {
       try { return parseEvidenceManifest(path.join(evidenceDir, name)); } catch { return null; }
-    }).filter((record) => record && !record.reusedFromEvidenceId).find((record) => {
-      if (record.kind !== opts.kind || record.command !== commandText
+    }).filter((record) => {
+      if (!record || record.reusedFromEvidenceId || record.exitCode !== 0
+        || record.inputFingerprint !== currentInputFingerprint
+        || record.reuseInputFingerprint !== currentReuseInputFingerprint
+        || record.kind !== opts.kind || record.command !== commandText
+        || JSON.stringify(record.commandArgv || []) !== JSON.stringify(opts.commandArgv)
         || record.repositoryCommit !== currentCommit || record.repositoryTree !== currentTree
         || JSON.stringify(record.dirtyApplicationPathsBefore || []) !== JSON.stringify(currentDirtyApplicationPaths)
         || record.environmentDigest !== currentEnvironmentDigest
@@ -1509,9 +2074,22 @@ function writeEvidence(opts) {
           || opts.expectedTest.some((identity) => !record.discovery.discoveredTests?.includes(identity)))) return false;
       try {
         const actor = parseActorRecord(actorPath(opts.repo, record.actorInstanceId));
-        return actor.runId === activeRun.runId;
+        if (actor.runId !== activeRun.runId) return false;
+        const rawPathForRecord = path.resolve(opts.repo, record.rawArtifact.path);
+        const rawRelative = path.relative(opts.repo, rawPathForRecord);
+        if (!rawRelative || rawRelative.startsWith("..") || path.isAbsolute(rawRelative)
+          || !fs.lstatSync(rawPathForRecord).isFile()
+          || sha256(fs.readFileSync(rawPathForRecord)) !== record.rawArtifact.sha256
+          || record.runnerProof?.schema !== "acef-evidence-runner-proof-v1"
+          || record.runnerProof?.runner !== "acef-state evidence-run"
+          || record.runnerProof?.sha256 !== evidenceRunnerProof(record)) return false;
+        return true;
       } catch { return false; }
-    }) : null;
+    }).sort((left, right) => {
+      const leftTime = Date.parse(left.finishedAt || left.startedAt || "") || 0;
+      const rightTime = Date.parse(right.finishedAt || right.startedAt || "") || 0;
+      return rightTime - leftTime || right.evidenceId.localeCompare(left.evidenceId);
+    })[0] : null;
   if (reusable) {
     if (reusable.evidenceId === opts.id) {
       console.log(`REUSED evidence ${relative(opts.repo, target)} source=${reusable.evidenceId} exit=${reusable.exitCode}`);
@@ -1614,6 +2192,22 @@ function writeEvidence(opts) {
   }
 
   const startedAt = new Date().toISOString();
+  const invocationId = invocation
+    ? `${safeId(opts.id, "evidence id")}-attempt${collectRunAttempts(opts.repo, activeRun.runId)
+      .filter((attempt) => attempt.evidenceId === opts.id).length + 1}`
+    : null;
+  if (invocation) {
+    startInvocation(opts.repo, {
+      invocationId,
+      runId: activeRun.runId,
+      actorId: opts.actor,
+      evidenceId: opts.id,
+      kind: opts.kind,
+      scopeFingerprint: invocation.scopeFingerprint,
+      commandArgv: opts.commandArgv,
+      startedAt,
+    });
+  }
   const execution = cp.spawnSync(opts.commandArgv[0], opts.commandArgv.slice(1), {
     cwd: opts.repo,
     encoding: "utf8",
@@ -1622,6 +2216,17 @@ function writeEvidence(opts) {
   });
   const finishedAt = new Date().toISOString();
   const exitCode = Number.isInteger(execution.status) ? execution.status : 1;
+  if (invocation) {
+    finishInvocation(opts.repo, {
+      invocationId,
+      runId: activeRun.runId,
+      actorId: opts.actor,
+      scopeFingerprint: invocation.scopeFingerprint,
+      commandArgv: opts.commandArgv,
+      ...(execution.signal ? { signal: execution.signal } : { exitCode }),
+      finishedAt,
+    });
+  }
   const trustedInfrastructureFailure = exitCode === 75
     && /^(?:acef-worktree-test|acef-worktree-test\.cjs)$/.test(path.basename(opts.commandArgv[0]))
     && `${execution.stdout || ""}\n${execution.stderr || ""}`.includes("ACEF_INFRASTRUCTURE_FAILURE");
@@ -1663,6 +2268,8 @@ function writeEvidence(opts) {
   fs.writeFileSync(rawPath, `${raw}\n`);
 
   const afterDirty = dirtyApplicationPaths(opts.repo);
+  const afterInputFingerprint = evidenceInputFingerprint(opts.repo, activeRun);
+  const afterReuseInputFingerprint = staticReuseInputFingerprint(opts.repo, opts.kind, opts.commandArgv);
   const record = {
     evidenceId: opts.id,
     kind: opts.kind,
@@ -1674,6 +2281,10 @@ function writeEvidence(opts) {
     repositoryCommit: currentCommit,
     repositoryTree: currentTree,
     dirtyDigest: currentDirtyDigest,
+    ...(currentInputFingerprint && afterInputFingerprint === currentInputFingerprint
+      ? { inputFingerprint: currentInputFingerprint } : {}),
+    ...(currentReuseInputFingerprint && afterReuseInputFingerprint === currentReuseInputFingerprint
+      ? { reuseInputFingerprint: currentReuseInputFingerprint } : {}),
     dirtyApplicationPathsBefore: beforeDirty,
     dirtyApplicationPathsAfter: afterDirty,
     environmentDigest: currentEnvironmentDigest,
@@ -2491,6 +3102,23 @@ function writeLegacyGate(opts) {
   const activeRunPath = path.join(opts.repo, "docs", "ai", "ACEF_ACTIVE_RUN.json");
   const activeRun = fs.existsSync(activeRunPath) ? parseActiveRun(activeRunPath) : null;
   const judge = parseActorRecord(actorPath(opts.repo, opts.decidedBy));
+  const lightweightState = activeRun?.lightweightStateContract === "lightweight-state-v1";
+  let lightweightScope = null;
+  if (lightweightState) {
+    const scopePath = activeRun.workerScopePath || "docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json";
+    const absoluteScopePath = path.resolve(opts.repo, scopePath);
+    lightweightScope = fs.existsSync(absoluteScopePath) ? parseWorkerScope(absoluteScopePath) : null;
+    if (opts.verdict === "PASS" && !lightweightScope) {
+      throw new Error("lightweight-state-v1 PASS gate requires canonical worker scope");
+    }
+    if (activeRun.status !== "active" || judge.runId !== activeRun.runId
+      || judge.lightweightStateContract !== activeRun.lightweightStateContract
+      || normalizedScope(judge.story) !== normalizedScope(activeRun.activeStory)
+      || (lightweightScope && (lightweightScope.runId !== activeRun.runId
+        || normalizedScope(lightweightScope.activeStory) !== normalizedScope(activeRun.activeStory)))) {
+      throw new Error("lightweight-state-v1 gate must bind the active run, actor, and worker scope");
+    }
+  }
   if (activeRun?.fullFlowContract === "four-actor-v3"
     && (judge.runId !== activeRun.runId || judge.fullFlowContract !== activeRun.fullFlowContract
       || JSON.stringify(judge.storyInventory) !== JSON.stringify(activeRun.expectedStories)
@@ -2506,17 +3134,32 @@ function writeLegacyGate(opts) {
     const evidence = gateEvidence(opts.repo, evidenceId, opts.scope, { enforceScope: /^\s*story\b/i.test(opts.scope) });
     if (opts.verdict === "PASS" && evidence.exitCode !== 0) throw new Error(`PASS gate cannot cite failed evidence ${evidenceId}`);
   }
+  if (lightweightState && opts.verdict === "PASS") {
+    required(opts, ["greenEvidence"]);
+    if (!opts.evidence.includes(opts.greenEvidence)) {
+      throw new Error("lightweight-state-v1 PASS gate green evidence must be listed in --evidence");
+    }
+  }
+  const currentCommit = gitCommit(opts.repo);
   const record = {
     gateId: opts.id,
     ...(activeRun?.fullFlowContract === "four-actor-v3"
       ? { runId: activeRun.runId, fullFlowContract: activeRun.fullFlowContract, storyInventory: activeRun.expectedStories }
       : {}),
+    ...(lightweightState ? {
+      runId: activeRun.runId,
+      lightweightStateContract: activeRun.lightweightStateContract,
+      applicationCommit: currentCommit,
+      applicationTree: applicationTreeDigest(opts.repo, currentCommit, lightweightScope?.allowedPaths || []),
+      scopePaths: lightweightScope?.allowedPaths || [],
+      ...(opts.greenEvidence ? { greenEvidenceId: opts.greenEvidence } : {}),
+    } : {}),
     gateType: "actor-decided-v1",
     decisionMode: "actor",
     scope: opts.scope,
     verdict: opts.verdict,
     decidedBy: opts.decidedBy,
-    repositoryCommit: gitCommit(opts.repo),
+    repositoryCommit: currentCommit,
     repositoryTree: gitTree(opts.repo),
     evidenceIds: opts.evidence,
     surfaceEvidence: parseSurfaceEvidence(opts.surfaceEvidence),
@@ -2568,7 +3211,14 @@ function writeLegacyGate(opts) {
   }
   const target = path.join(opts.repo, "docs", "ai", "gates", `${safeId(opts.id, "gate id")}.json`);
   atomicJson(target, record, { validate: parseGateVerdict });
-  if (activeRun) persistObjectiveHeartbeat(opts.repo, activeRun);
+  if (lightweightState) {
+    const preparedObjective = prepareObjectiveHeartbeat(opts.repo, activeRun);
+    publishLightweightState(opts.repo, activeRun, lightweightScope, {
+      leadingWrites: [preparedObjectiveWrite(opts.repo, preparedObjective)],
+      guards: [prepareGuard(opts.repo, relative(opts.repo, target))],
+      action: "gate",
+    });
+  } else if (activeRun) persistObjectiveHeartbeat(opts.repo, activeRun);
   console.log(`WROTE gate ${relative(opts.repo, target)} verdict=${opts.verdict}`);
 }
 
@@ -3142,14 +3792,52 @@ function writeEpicComplete(opts) {
   console.log(`WROTE epic-complete ${relative(opts.repo, activeRunPath)} gate=${gate.gateId} verdict=${gate.verdict}`);
 }
 
+function captureCommandStateSnapshot(opts) {
+  const activeRelative = "docs/ai/ACEF_ACTIVE_RUN.json";
+  const activeGuard = prepareSnapshotGuard(opts.repo, activeRelative);
+  const paths = new Set([
+    "docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json",
+    "docs/ai/ACEF_CURRENT_CONTEXT.md",
+    "docs/ai/ACEF_ACTIVE_LEDGER",
+  ]);
+  if (/^[A-Za-z0-9._-]+$/.test(String(opts.objectiveId || ""))) {
+    paths.add(`docs/ai/objectives/${opts.objectiveId}.json`);
+  }
+  try {
+    const active = JSON.parse(fs.readFileSync(path.join(opts.repo, "docs/ai/ACEF_ACTIVE_RUN.json"), "utf8"));
+    if (/^docs\/ai\/objectives\/[A-Za-z0-9._-]+\.json$/.test(String(active.objectivePath || ""))) paths.add(active.objectivePath);
+    if (/^docs\/ai\/ACEF_[A-Za-z0-9._-]+\.md$/.test(String(active.contextPath || ""))) paths.add(active.contextPath);
+    if (/^docs\/ai\/ACEF_[A-Za-z0-9._-]+\.json$/.test(String(active.workerScopePath || ""))) paths.add(active.workerScopePath);
+  } catch { /* The command handler reports malformed active state. */ }
+  return [activeGuard, ...[...paths].map((relativePath) => prepareSnapshotGuard(opts.repo, relativePath))];
+}
+
 function main() {
   const opts = parseArgs(process.argv.slice(2));
   if (!opts.command || opts.command === "help" || opts.command === "--help" || opts.help) return usage(opts.command);
   runGit(opts.repo, ["rev-parse", "--git-dir"]);
+  if (opts.command === "recover-state-transaction") {
+    const recovered = recoverStateTransaction(opts.repo);
+    console.log(recovered.status === "recovered"
+      ? `RECOVERED state transaction ${recovered.transactionId}`
+      : "NO pending state transaction");
+    return;
+  }
+  if (!["atdd-precheck", "capsule-show"].includes(opts.command)) {
+    try {
+      fs.lstatSync(pendingTransactionPath(opts.repo));
+      throw new Error(`pending ACEF state transaction blocks mutation; run acef-state recover-state-transaction --repo ${opts.repo}`);
+    } catch (error) {
+      if (error?.code !== "ENOENT") throw error;
+    }
+    commandStateSnapshotGuards = captureCommandStateSnapshot(opts);
+  }
   if (opts.command === "active-run") return writeActiveRun(opts);
   if (opts.command === "objective-qa") return writeObjectiveQa(opts);
   if (opts.command === "objective-defect") return writeObjectiveDefect(opts);
   if (opts.command === "objective-defect-transition") return writeObjectiveDefectTransition(opts);
+  if (opts.command === "objective-replan") return writeObjectiveReplan(opts);
+  if (opts.command === "objective-close") return writeObjectiveClose(opts);
   if (opts.command === "migrate-active-run") return migrateActiveRun(opts);
   if (opts.command === "recover-active-run") return writeActiveRunRecovery(opts);
   if (opts.command === "recovery-review") return writeRecoveryReview(opts);
@@ -3157,6 +3845,8 @@ function main() {
   if (opts.command === "actor") return writeActor(opts);
   if (opts.command === "worker-scope") return writeWorkerScope(opts);
   if (opts.command === "context-sync") return writeContextSync(opts);
+  if (opts.command === "lightweight-complete") return writeLightweightComplete(opts);
+  if (opts.command === "invocation-recovery") return writeInvocationRecovery(opts);
   if (opts.command === "atdd-precheck") return writeAtddPrecheck(opts);
   if (opts.command === "atdd-correction-start") return writeAtddCorrectionStart(opts);
   if (opts.command === "phase-transition") return writePhaseTransition(opts);

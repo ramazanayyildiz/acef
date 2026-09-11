@@ -2,6 +2,7 @@
 
 const fs = require("node:fs");
 const path = require("node:path");
+const { pendingTransactionPath, PENDING_RELATIVE_PATH } = require("./acef-state-transaction");
 const {
   parseActiveRun,
   parseActorRecord,
@@ -268,6 +269,33 @@ function completedCapsuleTerminalBlockers(repoRoot, activeRun, contextPath) {
 
 function inspectRunAuthorization(repo, options = {}) {
   const repoRoot = path.resolve(repo);
+  // Do not parse a partially published state, including a Direct fallback. The
+  // receipt need not be readable or valid for publication to remain blocked.
+  let pending = false;
+  try {
+    fs.lstatSync(pendingTransactionPath(repoRoot));
+    pending = true;
+  } catch (error) {
+    if (error.code !== "ENOENT") pending = true;
+  }
+  if (pending) {
+    const recoveryArgv = ["acef-state", "recover-state-transaction", "--repo", repoRoot];
+    const recoveryCommand = recoveryArgv.map((arg) => /^[A-Za-z0-9_./:-]+$/.test(arg)
+      ? arg : `'${arg.replaceAll("'", "'\\''")}'`).join(" ");
+    return {
+      ok: false,
+      mode: "typed",
+      blockers: [`pending ACEF state transaction blocks authorization; run ${recoveryCommand}`],
+      repoRoot,
+      activeRun: null,
+      directRun: null,
+      workerScope: null,
+      workerScopePath: null,
+      ledgerPath: null,
+      contextPath: "docs/ai/ACEF_CURRENT_CONTEXT.md",
+      stateTransaction: { status: "pending", path: PENDING_RELATIVE_PATH, recoveryArgv, recoveryCommand },
+    };
+  }
   const allowedStatuses = new Set(options.allowedStatuses || ["active"]);
   const activeRunPath = path.join(repoRoot, "docs", "ai", "ACEF_ACTIVE_RUN.json");
   const directRunPath = path.join(repoRoot, "docs", "ai", "ACEF_DIRECT_RUN.json");

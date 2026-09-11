@@ -1,0 +1,73 @@
+#!/usr/bin/env node
+"use strict";
+const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const os = require("node:os");
+const path = require("node:path");
+const { startInvocation, finishInvocation, collectRunAttempts, recordFixtureAuthoringRecovery, recordInfrastructureRecovery } = require("./lib/acef-invocation-ledger");
+const repo = fs.mkdtempSync(`${os.tmpdir()}/acef-invocations-`);
+function corrupted(name, bytes, assertion) {
+  const file = path.join(repo, "docs/ai/evidence/attempts", name);
+  const original = fs.readFileSync(file);
+  try {
+    fs.writeFileSync(file, typeof bytes === "function" ? JSON.stringify(bytes(JSON.parse(original))) : bytes);
+    assertion();
+  } finally { fs.writeFileSync(file, original); }
+}
+try {
+  const base = { runId: "RUN-1", actorId: "actor-1", evidenceId: "EV-1", kind: "focused", scopeFingerprint: "a".repeat(64), commandArgv: ["php", "artisan", "test", "--filter=One"] };
+  startInvocation(repo, { invocationId: "attempt-1", ...base });
+  finishInvocation(repo, { invocationId: "attempt-1", ...base, exitCode: 1 });
+  startInvocation(repo, { invocationId: "attempt-2", ...base, evidenceId: "EV-2" });
+  const interrupted = finishInvocation(repo, { invocationId: "attempt-2", ...base, evidenceId: "EV-2", signal: "SIGTERM" });
+  assert.equal(interrupted.status, "interrupted");
+  assert.equal(collectRunAttempts(repo, "RUN-1").length, 2, "failed and interrupted physical attempts remain visible");
+  const infrastructure = { ...base, invocationId: "attempt-3", evidenceId: "EV-3" };
+  startInvocation(repo, infrastructure);
+  finishInvocation(repo, { ...infrastructure, exitCode: 75 });
+  assert.equal(recordInfrastructureRecovery(repo, { ...infrastructure, attemptId: "attempt-3", recoveryId: "recover-1", reason: "isolated database provisioning failed" }).mode, "infrastructure");
+  assert.throws(() => recordInfrastructureRecovery(repo, { ...infrastructure, attemptId: "attempt-3", recoveryId: "recover-2", reason: "again" }), /one recovery allowance/);
+  const fixture = { ...base, runId: "RUN-2", invocationId: "attempt-4", evidenceId: "EV-4" };
+  startInvocation(repo, fixture);
+  finishInvocation(repo, { ...fixture, exitCode: 1 });
+  assert.equal(recordFixtureAuthoringRecovery(repo, { ...fixture, attemptId: "attempt-4", recoveryId: "recover-3", reason: "missing fixture", changedPaths: ["tests/Fixtures/sample.json"], testPaths: ["tests/Feature/OneTest.php"], fixturePaths: ["tests/Fixtures/sample.json"], beforeProductTree: "tree-a", afterProductTree: "tree-a" }).mode, "fixture-authoring");
+  assert.throws(() => recordFixtureAuthoringRecovery(repo, { ...fixture, attemptId: "attempt-4", recoveryId: "recover-4", reason: "again", changedPaths: ["app/Product.php"], testPaths: [], fixturePaths: [], beforeProductTree: "tree-a", afterProductTree: "tree-a" }), /approved test\/fixture envelope/);
+  const fifth = { ...base, invocationId: "attempt-5", evidenceId: "EV-5" };
+  startInvocation(repo, fifth);
+  finishInvocation(repo, { ...fifth, exitCode: 1 });
+  const sixth = { ...base, invocationId: "attempt-6", evidenceId: "EV-6" };
+  startInvocation(repo, sixth);
+  finishInvocation(repo, { ...sixth, exitCode: 1 });
+  assert.equal(collectRunAttempts(repo, "RUN-1").length, 5, "each physical failed attempt counts; evidence reuse creates no receipt");
+  corrupted("attempt-5.json", (record) => ({ ...record, schema: "unknown" }),
+    () => assert.throws(() => collectRunAttempts(repo, "RUN-1"), /unknown invocation receipt schema/));
+  corrupted("attempt-5.json", (record) => ({ ...record, invocationId: "renamed" }),
+    () => assert.throws(() => collectRunAttempts(repo, "RUN-1"), /invalid invocation receipt/));
+  corrupted("attempt-5.json", (record) => ({ ...record, exitCode: 0 }),
+    () => assert.throws(() => collectRunAttempts(repo, "RUN-1"), /invalid invocation receipt/));
+  corrupted("attempt-5.json", (record) => ({ ...record, startedAt: "not-a-date" }),
+    () => assert.throws(() => collectRunAttempts(repo, "RUN-1"), /invalid invocation receipt/));
+  corrupted("attempt-5.json", (record) => ({ ...record, finishedAt: new Date(0).toISOString() }),
+    () => assert.throws(() => collectRunAttempts(repo, "RUN-1"), /invalid invocation receipt/));
+  const secondRecovery = () => recordFixtureAuthoringRecovery(repo, {
+    ...sixth, attemptId: "attempt-6", recoveryId: "second-run-recovery", reason: "another fixture failure",
+    changedPaths: ["tests/Fixtures/sample.json"], testPaths: [], fixturePaths: ["tests/Fixtures/sample.json"],
+    beforeProductTree: "tree-a", afterProductTree: "tree-a",
+  });
+  assert.throws(secondRecovery, /one recovery allowance/, "the second failed attempt cannot gain another mode's allowance");
+  corrupted("recovery-recover-1.json", "{broken", () => {
+    assert.throws(() => collectRunAttempts(repo, "RUN-1"), /malformed invocation receipt/);
+    assert.throws(secondRecovery, /malformed invocation receipt/);
+  });
+  corrupted("recovery-recover-1.json", (record) => ({ ...record, runId: "RUN-forged" }),
+    () => assert.throws(secondRecovery, /recovery source binding/));
+  assert.throws(() => startInvocation(repo, { ...base, invocationId: "invalid-time", startedAt: "invalid" }), /invalid invocation receipt/);
+  assert.equal(fs.existsSync(path.join(repo, "docs/ai/evidence/attempts/invalid-time.json")), false);
+  const running = { ...base, runId: "RUN-3", invocationId: "running-3", evidenceId: "EV-running" };
+  startInvocation(repo, running);
+  corrupted("running-3.json", (record) => ({ ...record, schema: "unknown" }),
+    () => assert.throws(() => finishInvocation(repo, { ...running, exitCode: 0 }), /unknown invocation receipt schema/));
+  assert.throws(() => finishInvocation(repo, { ...running, exitCode: 0, finishedAt: "invalid" }), /invalid invocation receipt/);
+  assert.equal(collectRunAttempts(repo, "RUN-3")[0].status, "running", "invalid completion must preserve the started receipt");
+  console.log("acef invocation ledger tests passed");
+} finally { fs.rmSync(repo, { recursive: true, force: true }); }

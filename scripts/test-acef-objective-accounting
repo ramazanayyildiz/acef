@@ -1,0 +1,224 @@
+#!/usr/bin/env node
+"use strict";
+const assert = require("node:assert/strict");
+const cp = require("node:child_process");
+const crypto = require("node:crypto");
+const fs = require("node:fs");
+const os = require("node:os");
+const path = require("node:path");
+const objective = require("./lib/acef-objective-supervisor");
+const { startInvocation, finishInvocation } = require("./lib/acef-invocation-ledger");
+const repo = fs.mkdtempSync(path.join(os.tmpdir(), "acef-objective-accounting-"));
+const sha = (bytes) => crypto.createHash("sha256").update(bytes).digest("hex");
+function git(...args) { return cp.execFileSync("git", args, { cwd: repo, encoding: "utf8" }).trim(); }
+function write(relative, value) {
+  const target = path.join(repo, relative);
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+  fs.writeFileSync(target, typeof value === "string" ? value : JSON.stringify(value, null, 2) + "\n");
+}
+function open(id, name) {
+  return objective.registerRun(repo, {
+    objectiveId: name, objectiveScope: "Scope " + name, runId: id,
+    workflowId: "lightweight", assuranceProfile: "baseline",
+    accountingVersion: name === "LEGACY" ? undefined : "objective-accounting-v2",
+  });
+}
+function successful(id, name, { alias = false } = {}) {
+  const evidenceId = "EV-" + id;
+  const invocationId = "INV-" + id;
+  const actorId = "DEV-" + id;
+  const reviewerId = "REVIEW-" + id;
+  const scopeFingerprint = "a".repeat(64);
+  const commit = git("rev-parse", "HEAD");
+  const tree = git("rev-parse", "HEAD^{tree}");
+  const commandArgv = alias ? [process.execPath, "--check", "source.cjs"]
+    : [process.execPath, "-e", "process.stdout.write('verified\\n')"];
+  const kind = alias ? "static-check" : "runtime-test";
+  const actor = {
+    actorInstanceId: actorId, runId: id, story: id, phase: "development", role: "developer",
+    client: "codex", sessionId: actorId, inputCommit: commit, inputTree: tree,
+    allowedContextProfile: "developer", lightweightStateContract: "lightweight-state-v1",
+  };
+  write("docs/ai/actors/" + actorId + ".json", actor);
+  const report = "# Review " + id + "\nVerdict: PASS\n";
+  const reportPath = "docs/ai/reports/" + reviewerId + ".md";
+  write(reportPath, report);
+  write("docs/ai/actors/" + reviewerId + ".json", {
+    ...actor, actorInstanceId: reviewerId, sessionId: reviewerId, role: "code-reviewer", phase: "code-review",
+    producedArtifactPath: reportPath, producedArtifactHash: sha(report),
+  });
+  if (alias) write("docs/ai/ACEF_ACTIVE_RUN.json", {
+    runId: id, repo: "fixture", lane: "lightweight", status: "active", activeStory: id, activePhase: "development",
+    ledgerPath: "docs/ai/ACEF_fixture_DELIVERY_AUDIT.md", riskTriggers: [],
+  });
+  startInvocation(repo, { invocationId, runId: id, actorId, evidenceId, kind, scopeFingerprint, commandArgv });
+  const execution = cp.spawnSync(process.execPath, [path.join(__dirname, "acef-state"), "evidence-run", "--repo", repo,
+    "--id", evidenceId, "--kind", kind, "--actor", actorId, "--story", id,
+    "--satisfies", "focused green", "--", ...commandArgv], { encoding: "utf8" });
+  assert.equal(execution.status, 0, execution.stderr);
+  finishInvocation(repo, { invocationId, runId: id, actorId, scopeFingerprint, commandArgv, exitCode: execution.status });
+  const greenEvidenceId = alias ? evidenceId + "-alias" : evidenceId;
+  if (alias) {
+    const reused = cp.spawnSync(process.execPath, [path.join(__dirname, "acef-state"), "evidence-run", "--repo", repo,
+      "--id", greenEvidenceId, "--kind", kind, "--actor", actorId, "--story", id,
+      "--satisfies", "focused green", "--", ...commandArgv], { encoding: "utf8" });
+    assert.equal(reused.status, 0, reused.stderr);
+    assert.match(reused.stdout, /REUSED evidence/);
+    fs.unlinkSync(path.join(repo, "docs/ai/ACEF_ACTIVE_RUN.json"));
+  }
+  const gatePath = "docs/ai/gates/" + id + ".json";
+  write(gatePath, {
+    gateId: id, runId: id, scope: id, verdict: "PASS", decidedBy: reviewerId,
+    gateType: "actor-decided-v1", decisionMode: "actor", lightweightStateContract: "lightweight-state-v1",
+    repositoryCommit: commit, repositoryTree: tree, applicationCommit: commit, applicationTree: tree,
+    scopePaths: ["README.md"], greenEvidenceId, evidenceIds: [greenEvidenceId],
+  });
+  const input = { runId: id, terminalDisposition: "PASS", invocationId, gatePath, applicationTree: tree };
+  objective.publishPreparedObjective(objective.prepareValidatedCompletion(repo, name, input));
+  return input;
+}
+function failed(id, name) {
+  const record = objective.loadObjective(repo, name);
+  record.runs.find((entry) => entry.runId === id).terminalDisposition = "FAIL";
+  objective.publishPreparedObjective({ path: objective.objectivePath(repo, name), record: objective.reconcileObjective(repo, record) });
+}
+function temporarilyChanged(relative, edit, assertion) {
+  const target = path.join(repo, relative);
+  const original = fs.readFileSync(target);
+  try { fs.writeFileSync(target, edit(original)); assertion(); }
+  finally { fs.writeFileSync(target, original); }
+}
+function bindActiveObjective(runId, objectiveId, status = "active", disposition = null) {
+  const record = objective.loadObjective(repo, objectiveId);
+  write("docs/ai/ACEF_ACTIVE_RUN.json", {
+    schema: "acef.active-run.v2",
+    runId,
+    repo: path.basename(repo),
+    workflowId: "lightweight",
+    lightweightStateContract: "lightweight-state-v1",
+    redOwnershipContract: "integrated-developer-v1",
+    assuranceProfile: "baseline",
+    scopeUnit: "story",
+    status,
+    activeStory: runId,
+    activePhase: status === "complete" ? "closeout" : "development",
+    ledgerPath: "docs/ai/ACEF_fixture_DELIVERY_AUDIT.md",
+    contextPath: "docs/ai/ACEF_CURRENT_CONTEXT.md",
+    workerScopePath: "docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json",
+    objectiveContract: "objective-supervisor-v1",
+    objectiveId,
+    objectivePath: `docs/ai/objectives/${objectiveId}.json`,
+    scopeFingerprint: record.scopeFingerprint,
+    riskTriggers: [],
+    ...(disposition ? {
+      terminalDisposition: disposition,
+      terminalGateId: `GATE-${runId}`,
+      terminalReason: `Terminal ${disposition} fixture`,
+    } : {}),
+    updatedAt: new Date().toISOString(),
+  });
+}
+function state(args) {
+  return cp.spawnSync(process.execPath, [path.join(__dirname, "acef-state"), ...args, "--repo", repo], { encoding: "utf8" });
+}
+try {
+  git("init", "-q");
+  git("config", "user.email", "acef@example.invalid");
+  git("config", "user.name", "ACEF");
+  write("README.md", "fixture\n");
+  write("source.cjs", "module.exports = 1;\n");
+  write("docs/ai/.gitkeep", "");
+  git("add", ".");
+  git("commit", "-qm", "fixture");
+  for (let index = 1; index <= 9; index += 1) { open("S-" + index, "SUCCESS"); successful("S-" + index, "SUCCESS"); }
+  const healthy = objective.loadObjective(repo, "SUCCESS");
+  assert.equal(healthy.runCount, 9);
+  assert.equal(healthy.status, "EXECUTING");
+  assert.equal(healthy.accounting.consecutiveNoProgressRuns, 0);
+  assert.equal(healthy.reviewCycleCount, 9);
+  write("docs/ai/reports/unbound.json", { schema: "acef.review-report.v3", runId: "S-9", story: "S-9", inputTree: "made-up", phase: "code-review" });
+  assert.equal(objective.collectObjectiveReviews(repo, healthy).length, 9, "unbound minimal JSON must not inflate review accounting");
+  temporarilyChanged("docs/ai/actors/REVIEW-S-9.json", (bytes) => JSON.stringify({ ...JSON.parse(bytes), sessionId: "DEV-S-9" }),
+    () => assert.equal(objective.collectObjectiveReviews(repo, healthy).length, 8, "a developer's own session is not independent review"));
+  temporarilyChanged("docs/ai/actors/REVIEW-S-9.json", (bytes) => JSON.stringify({ ...JSON.parse(bytes), inputTree: "made-up" }),
+    () => assert.equal(objective.collectObjectiveReviews(repo, healthy).length, 8, "review must bind an actual input tree"));
+  const close = () => objective.prepareCloseObjective(repo, "SUCCESS", { completionEvidenceId: "EV-S-9" });
+  assert.equal(close().record.status, "DONE");
+  // Even a formerly successful, non-selected run must retain authentic proof.
+  const source = JSON.parse(fs.readFileSync(path.join(repo, "docs/ai/evidence/EV-S-1.json")));
+  temporarilyChanged(source.rawArtifact.path, (bytes) => bytes + "\nchanged", () => assert.throws(close, /binding is no longer valid/));
+  temporarilyChanged("docs/ai/gates/S-9.json", (bytes) => JSON.stringify({ ...JSON.parse(bytes), verdict: "REPLAN" }),
+    () => assert.throws(close, /binding is no longer valid/));
+  temporarilyChanged("docs/ai/actors/REVIEW-S-9.json", (bytes) => JSON.stringify({ ...JSON.parse(bytes), sessionId: "DEV-S-9" }),
+    () => assert.throws(close, /independent actor/));
+  temporarilyChanged("docs/ai/evidence/attempts/INV-S-9.json", (bytes) => JSON.stringify({ ...JSON.parse(bytes), finishedAt: new Date(Date.parse(JSON.parse(bytes).finishedAt) + 1000).toISOString() }),
+    () => assert.throws(close, /artifacts changed/));
+  for (let index = 1; index <= 4; index += 1) { open("F-" + index, "FAILS"); failed("F-" + index, "FAILS"); }
+  open("F-5", "FAILS");
+  assert.equal(objective.loadObjective(repo, "FAILS").status, "CONSOLIDATING");
+  for (let index = 1; index <= 4; index += 1) { open("L-" + index, "LEGACY"); failed("L-" + index, "LEGACY"); }
+  open("L-5", "LEGACY");
+  assert.equal(objective.loadObjective(repo, "LEGACY").status, "CONSOLIDATING");
+  assert.equal(objective.loadObjective(repo, "LEGACY").accounting, undefined);
+  open("R-1", "REPLANS");
+  for (let index = 1; index <= 5; index += 1) objective.recordReplanEvent(repo, "REPLANS", { eventId: "RE-" + index, runId: "R-1", cause: "scope-error" });
+  assert.equal(objective.loadObjective(repo, "REPLANS").accounting.consecutiveReplans, 5);
+  assert.throws(() => objective.recordReplanEvent(repo, "REPLANS", { eventId: "RE-5", runId: "R-1", cause: "scope-error" }), /already recorded/);
+  assert.throws(() => objective.prepareCloseObjective(repo, "FAILS", { completionEvidenceId: "EV-S-1" }), /terminal|explicit disposition/);
+  open("A-1", "ALIAS");
+  successful("A-1", "ALIAS", { alias: true });
+  const aliasCompletion = objective.loadObjective(repo, "ALIAS").runs[0].successfulCompletion;
+  assert.equal(aliasCompletion.evidenceId, "EV-A-1-alias");
+  assert.equal(aliasCompletion.physicalEvidenceId, "EV-A-1");
+  assert.equal(objective.prepareCloseObjective(repo, "ALIAS", { completionEvidenceId: "EV-A-1-alias" }).record.status, "DONE");
+  open("M-failed", "MIXED");
+  failed("M-failed", "MIXED");
+  open("M-passed", "MIXED");
+  successful("M-passed", "MIXED");
+  assert.throws(() => objective.prepareCloseObjective(repo, "MIXED", { completionEvidenceId: "EV-M-passed" }), /explicit disposition/);
+  assert.throws(() => objective.prepareCloseObjective(repo, "MIXED", {
+    completionEvidenceId: "EV-M-passed",
+    runDispositions: [{ runId: "M-failed", disposition: "owner-authorized", reason: "unverified approval" }],
+  }), /terminal non-PASS run/);
+  const preparedClose = objective.prepareCloseObjective(repo, "MIXED", {
+    completionEvidenceId: "EV-M-passed",
+    runDispositions: [{ runId: "M-failed", disposition: "superseded", reason: "Covered by the validated replacement run M-passed." }],
+  });
+  assert.equal(preparedClose.record.status, "DONE");
+  assert.equal(preparedClose.record.runs[0].outcomeDisposition, "superseded");
+  assert.notEqual(objective.loadObjective(repo, "MIXED").status, "DONE", "preparation must not publish objective state");
+
+  open("CLI-R-1", "CLI-REPLANS");
+  bindActiveObjective("CLI-R-1", "CLI-REPLANS");
+  for (let index = 1; index <= 5; index += 1) {
+    const result = state(["objective-replan", "--objective-id", "CLI-REPLANS", "--run-id", "CLI-R-1",
+      "--event-id", `CLI-RE-${index}`, "--cause", "scope-error"]);
+    assert.equal(result.status, 0, `${result.stdout}${result.stderr}`);
+  }
+  assert.equal(objective.loadObjective(repo, "CLI-REPLANS").accounting.consecutiveReplans, 5);
+  const duplicateReplan = state(["objective-replan", "--objective-id", "CLI-REPLANS", "--run-id", "CLI-R-1",
+    "--event-id", "CLI-RE-5", "--cause", "scope-error"]);
+  assert.notEqual(duplicateReplan.status, 0);
+  assert.match(`${duplicateReplan.stdout}${duplicateReplan.stderr}`, /already recorded/);
+
+  bindActiveObjective("M-passed", "MIXED", "complete", "PASS");
+  const objectiveBeforeRejectedClose = fs.readFileSync(objective.objectivePath(repo, "MIXED"));
+  const wrongRunClose = state(["objective-close", "--objective-id", "MIXED", "--run-id", "M-failed",
+    "--completion-evidence", "EV-M-passed", "--run-disposition", "M-failed|superseded|Covered by M-passed"]);
+  assert.notEqual(wrongRunClose.status, 0);
+  assert.deepEqual(fs.readFileSync(objective.objectivePath(repo, "MIXED")), objectiveBeforeRejectedClose);
+  const missingDispositionClose = state(["objective-close", "--objective-id", "MIXED", "--run-id", "M-passed",
+    "--completion-evidence", "EV-M-passed"]);
+  assert.notEqual(missingDispositionClose.status, 0);
+  assert.match(`${missingDispositionClose.stdout}${missingDispositionClose.stderr}`, /explicit disposition/);
+  assert.deepEqual(fs.readFileSync(objective.objectivePath(repo, "MIXED")), objectiveBeforeRejectedClose);
+  const cliClose = state(["objective-close", "--objective-id", "MIXED", "--run-id", "M-passed",
+    "--completion-evidence", "EV-M-passed",
+    "--run-disposition", "M-failed|superseded|Covered by the validated replacement M-passed"]);
+  assert.equal(cliClose.status, 0, `${cliClose.stdout}${cliClose.stderr}`);
+  const closedByCli = objective.loadObjective(repo, "MIXED");
+  assert.equal(closedByCli.status, "DONE");
+  assert.equal(closedByCli.runs[0].outcomeDisposition, "superseded");
+  assert.equal(closedByCli.runs[0].outcomeReason, "Covered by the validated replacement M-passed");
+  console.log("acef objective accounting tests passed");
+} finally { fs.rmSync(repo, { recursive: true, force: true }); }

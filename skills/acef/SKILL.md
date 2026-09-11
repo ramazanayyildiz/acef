@@ -88,6 +88,10 @@ same-key non-critical findings. Critical security, payments, migration, realtime
 findings cannot be batched, deferred, or quarantined and require Standard/Full + Guarded. Same-run remediation still
 uses the existing maximum of two delta-review cycles; do not add reviewers or duplicate lifecycle phases.
 
+For newly created Fix/Standard objectives bound to `objective-accounting-v2`, those run/replan/review thresholds apply
+to consecutive no-progress work, not lifetime successful deliveries. A validated PASS resets churn, while lifetime
+totals and physical execution receipts remain available. Full and existing v1 objectives retain their contract.
+
 Run `.acef/bin/acef-process-validator --repo <target> --check installation-freshness` before admitted work. If it
 reports `INSTALL_STALE`, refresh the target and every linked worktree from the current ACEF source with
 `scripts/update-acef-installation --repo <target> --all-worktrees`; do not repair copied runtime files manually.

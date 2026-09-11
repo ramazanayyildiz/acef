@@ -1,0 +1,81 @@
+#!/usr/bin/env node
+"use strict";
+
+const assert = require("node:assert/strict");
+const cp = require("node:child_process");
+const fs = require("node:fs");
+const os = require("node:os");
+const path = require("node:path");
+const { inspectRunAuthorization } = require("./lib/acef-run-authorization");
+const { pendingTransactionPath } = require("./lib/acef-state-transaction");
+
+const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "acef-pending-guards-"));
+const repo = path.join(tmp, "repo with ' quote");
+fs.mkdirSync(path.join(repo, "docs/ai"), { recursive: true });
+cp.execFileSync("git", ["init", "-q"], { cwd: repo });
+
+function packet(tool, flags = []) {
+  const result = cp.spawnSync(process.execPath, [path.join(__dirname, tool), "--repo", repo, ...flags], { encoding: "utf8" });
+  assert.equal(result.status, 2, `${tool}: ${result.stderr}\n${result.stdout}`);
+  return JSON.parse(result.stdout);
+}
+
+try {
+  // A malformed/incomplete receipt still takes precedence over malformed
+  // canonical records and cannot be bypassed by permissive caller options.
+  fs.writeFileSync(pendingTransactionPath(repo), "{interrupted");
+  fs.writeFileSync(path.join(repo, "docs/ai/ACEF_ACTIVE_RUN.json"), "{partial");
+  fs.writeFileSync(path.join(repo, "docs/ai/ACEF_DIRECT_RUN.json"), "{partial");
+  const state = path.join(__dirname, "acef-state");
+  const beforeActive = fs.readFileSync(path.join(repo, "docs/ai/ACEF_ACTIVE_RUN.json"));
+  const blockedActor = cp.spawnSync(process.execPath, [state, "actor", "--repo", repo,
+    "--id", "BLOCKED-ACTOR", "--story", "blocked", "--phase", "development",
+    "--role", "developer", "--client", "codex", "--context-profile", "developer"], { encoding: "utf8" });
+  assert.notEqual(blockedActor.status, 0);
+  assert.match(`${blockedActor.stdout}${blockedActor.stderr}`, /pending ACEF state transaction blocks mutation/);
+  assert.equal(fs.existsSync(path.join(repo, "docs/ai/actors/BLOCKED-ACTOR.json")), false);
+  const marker = path.join(repo, "command-executed");
+  const blockedEvidence = cp.spawnSync(process.execPath, [state, "evidence-run", "--repo", repo,
+    "--id", "BLOCKED-EVIDENCE", "--kind", "runtime-test", "--actor", "BLOCKED-ACTOR",
+    "--story", "blocked", "--satisfies", "must not execute", "--", process.execPath, "-e",
+    "require('node:fs').writeFileSync(process.argv[1], 'executed')", marker], { encoding: "utf8" });
+  assert.notEqual(blockedEvidence.status, 0);
+  assert.match(`${blockedEvidence.stdout}${blockedEvidence.stderr}`, /pending ACEF state transaction blocks mutation/);
+  assert.equal(fs.existsSync(marker), false);
+  assert.equal(fs.existsSync(path.join(repo, "docs/ai/evidence/BLOCKED-EVIDENCE.json")), false);
+  assert.deepEqual(fs.readFileSync(path.join(repo, "docs/ai/ACEF_ACTIVE_RUN.json")), beforeActive);
+  for (const options of [{}, { allowDirect: true, requireContext: false, requireWorkerScope: false, allowedStatuses: ["active", "complete"] }]) {
+    const result = inspectRunAuthorization(repo, options);
+    assert.equal(result.ok, false);
+    assert.equal(result.activeRun, null);
+    assert.equal(result.directRun, null);
+    assert.equal(result.blockers.length, 1);
+    assert.match(result.blockers[0], /pending ACEF state transaction/);
+    assert.deepEqual(result.stateTransaction.recoveryArgv, ["acef-state", "recover-state-transaction", "--repo", repo]);
+    // Verify the printed shell command preserves spaces and quotes without
+    // executing recovery or reading any unrelated environment state.
+    const quotedRepo = result.stateTransaction.recoveryCommand.split(" --repo ")[1];
+    const decoded = cp.execFileSync("/bin/sh", ["-c", `printf '%s' ${quotedRepo}`], { encoding: "utf8" });
+    assert.equal(decoded, repo);
+  }
+  const next = packet("acef-next");
+  assert.equal(next.status, "blocked");
+  assert.equal(next.active_state, null);
+  assert.deepEqual(next.allowed, { can_write: false, paths: [], commands: [] });
+  assert.equal(next.stop_condition, "recover_state_transaction_then_rerun_acef_next");
+  assert.equal(next.state_transaction.status, "pending");
+  const status = packet("acef-status", ["--format", "json"]);
+  assert.equal(status.status, "needs-attention");
+  assert.equal(status.activeRun, null);
+  assert.equal(status.stateTransaction.status, "pending");
+
+  // A dangling link must not make the pending path disappear from the guard.
+  fs.unlinkSync(pendingTransactionPath(repo));
+  fs.symlinkSync("missing-receipt", pendingTransactionPath(repo));
+  assert.equal(inspectRunAuthorization(repo).stateTransaction.status, "pending");
+  fs.unlinkSync(pendingTransactionPath(repo));
+  assert.equal(inspectRunAuthorization(repo).stateTransaction, undefined);
+  console.log("PASS pending transaction blocks authorization/status/next with exact recovery guidance");
+} finally {
+  fs.rmSync(tmp, { recursive: true, force: true });
+}

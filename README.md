@@ -11,9 +11,10 @@ the reality of your current project.
 The v2 empirical matrix (72 runs: 12 seeded-defect tasks × 3 lanes × 2 clients, July 2026) updated both v1 claims —
 full write-up in `docs/experiments/empirical-validation/report-v2.md`:
 
-- **Token cost is fixed.** After the worker short-circuit (scoped workers read only their compiled current context,
+- **Token overhead fell in the v2 benchmark.** After the worker short-circuit (scoped workers read only their compiled current context,
   never the ACEF references), ACEF lane overhead fell from +39%/+65% (v1, codex) to +20%/+24%; on opencode ACEF
-  lanes now cost the same as or less than baseline.
+  lanes in that experiment cost the same as or less than baseline. These results do not establish the cost of current
+  Fix, Standard, or Full workflows, or attribute account-wide usage to an individual task.
 - **The v1 quality edge did not replicate.** On a task set purpose-built to be lane-sensitive (scope bait,
   test-weakening bait, hidden findings, multi-file wiring, durable persistence, multi-system defects), every lane —
   including baseline — performed at ceiling with current-generation agents. ACEF is therefore **not** claimed to
@@ -429,6 +430,8 @@ ACEF separates implementation review from process review:
 - **Parent-objective supervisor** binds every new installed run to a stable objective/scope fingerprint. It consolidates
   at 5 runs, 3 replans, 6 review cycles, or 30 active control minutes without product progress, and refuses an eighth
   run or fifth replan. Manual-QA findings enter one typed ledger instead of recursively opening review lifecycles.
+  New Fix/Standard objectives use versioned no-progress accounting: validated successful deliveries reset churn,
+  while lifetime totals remain visible. Full and existing objectives retain v1 accounting.
 - **Worktree freshness handshake** refuses new admitted work when the installed runtime or its recorded ACEF source
   digest changed. Refresh every linked worktree with
   `scripts/update-acef-installation --repo /path/to/repo --all-worktrees`.

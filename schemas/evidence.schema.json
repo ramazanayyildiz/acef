@@ -20,6 +20,8 @@
     "repositoryCommit": { "type": "string", "minLength": 1 },
     "repositoryTree": { "type": ["string", "null"] },
     "dirtyDigest": { "type": ["string", "null"] },
+    "inputFingerprint": { "type": "string", "pattern": "^application-input-v1:[a-f0-9]{64}$" },
+    "reuseInputFingerprint": { "type": "string", "pattern": "^node-syntax-input-v1:[a-f0-9]{64}$" },
     "dirtyApplicationPathsBefore": {
       "type": "array",
       "items": { "type": "string", "minLength": 1 }

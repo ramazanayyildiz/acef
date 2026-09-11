@@ -41,10 +41,25 @@
           "runId": { "type": "string", "pattern": "^[A-Za-z0-9._-]+$" },
           "openedAt": { "type": "string", "format": "date-time" },
           "terminalDisposition": { "enum": ["PASS", "FAIL", "REPLAN", "BLOCKED"] },
+          "outcomeDisposition": { "enum": ["resolved", "superseded"] },
+          "outcomeReason": { "type": "string", "minLength": 1 },
           "replanCause": { "enum": ["new-root-cause", "scope-error", "evidence-invalid"] },
           "defectIds": {
             "type": "array", "uniqueItems": true,
             "items": { "type": "string", "pattern": "^[A-Za-z0-9._-]+$" }
+          },
+          "successfulCompletion": {
+            "type": "object", "additionalProperties": false,
+            "required": ["invocationId", "evidenceId", "physicalEvidenceId", "gatePath", "applicationTree", "validatedAt"],
+            "properties": {
+              "invocationId": { "type": "string", "pattern": "^[A-Za-z0-9._-]+$" },
+              "evidenceId": { "type": "string", "pattern": "^[A-Za-z0-9._-]+$" },
+              "physicalEvidenceId": { "type": "string", "pattern": "^[A-Za-z0-9._-]+$" },
+              "gatePath": { "type": "string", "pattern": "^docs/ai/gates/[^/]+\\.json$" },
+              "applicationTree": { "type": "string", "minLength": 1 },
+              "artifactHashes": { "type": "object", "minProperties": 1, "additionalProperties": { "type": "string", "pattern": "^[a-f0-9]{64}$" } },
+              "validatedAt": { "type": "string", "format": "date-time" }
+            }
           }
         }
       }
@@ -52,6 +67,29 @@
     "runCount": { "type": "integer", "minimum": 0 },
     "replanCount": { "type": "integer", "minimum": 0 },
     "reviewCycleCount": { "type": "integer", "minimum": 0 },
+    "accounting": {
+      "type": "object", "additionalProperties": false,
+      "required": ["version", "consecutiveNoProgressRuns", "consecutiveReplans", "successfulCompletionCount"],
+      "properties": {
+        "version": { "const": "objective-accounting-v2" },
+        "consecutiveNoProgressRuns": { "type": "integer", "minimum": 0 },
+        "consecutiveReplans": { "type": "integer", "minimum": 0 },
+        "consecutiveReviewCycles": { "type": "integer", "minimum": 0 },
+        "successfulCompletionCount": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "replanEvents": {
+      "type": "array", "uniqueItems": true,
+      "items": { "type": "object", "additionalProperties": false,
+        "required": ["eventId", "runId", "cause", "createdAt"],
+        "properties": {
+          "eventId": { "type": "string", "pattern": "^[A-Za-z0-9._-]+$" },
+          "runId": { "type": "string", "pattern": "^[A-Za-z0-9._-]+$" },
+          "cause": { "enum": ["new-root-cause", "scope-error", "evidence-invalid"] },
+          "createdAt": { "type": "string", "format": "date-time" }
+        }
+      }
+    },
     "defectLedger": {
       "type": "array",
       "items": {

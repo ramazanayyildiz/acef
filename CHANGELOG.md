@@ -9,6 +9,25 @@ or evidence contract. Do not use it to claim implementation status; link to the 
 
 ## Unreleased
 
+### Evidence reuse and lightweight state now have explicit integrity boundaries
+
+- Limited automatic evidence reuse to successful syntax-only Node checks with explicit source/configuration,
+  interpreter, environment, and application-content fingerprints. An arbitrary static/lint/typecheck label no longer
+  grants reuse. Legacy identities, failed results, runtime/manual checks, mutable-state risks, and commands that change
+  their own inputs are not reusable. The original runner evidence remains immutable.
+- Made the optional Native runner recognize the documented nested worktree wrapper while charging its exact inner
+  command to the same focused/broad verification budget. The original wrapper argv still executes.
+- Added the versioned `lightweight-state-v1` contract for new Fix and Standard runs: canonical typed state generates the
+  current-context view and active-ledger pointer. Publication uses a guarded, recoverable transaction with active-run
+  last, not a claim of operating-system-level multi-file atomicity. A pending transaction blocks authorization.
+- Added a read-only multi-surface evidence producer: one authentic, fresh successful execution can satisfy multiple
+  declared surfaces without rerunning the command or inventing coverage it did not record.
+- Introduced physical invocation receipts, typed review accounting, explicit replan events, versioned no-progress
+  counters, and bounded recovery records. Lifetime totals remain available; account-wide token savings are not inferred
+  from these local counters.
+
+See `docs/ai/capabilities/core-reliability-and-accounting.json` for the source implementation and verification boundary.
+
 ### Role-calibrated model routing now covers Fix and Standard
 
 - Made `acef-next` expose the required provider, model, and reasoning effort for the current admitted semantic role.

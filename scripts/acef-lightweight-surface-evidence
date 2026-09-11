@@ -1,0 +1,54 @@
+#!/usr/bin/env node
+"use strict";
+
+// Projects immutable successful evidence into one or more declared lightweight
+// surfaces.  It deliberately never invokes the command recorded by evidence.
+const fs = require("node:fs");
+const path = require("node:path");
+const { parseActorRecord, parseLightweightRun } = require("./lib/acef-state-parser");
+const validatorModule = fs.existsSync(path.join(__dirname, "acef-process-validator.cjs"))
+  ? "./acef-process-validator.cjs" : "./acef-process-validator";
+const { evidenceRecordById, lightweightSurfaceProof, validateEvidenceRecord } = require(validatorModule);
+
+function fail(message) { throw new Error(`acef lightweight surface evidence: ${message}`); }
+function parse(argv) {
+  let repo = process.cwd(); let evidenceId = ""; const surfaces = [];
+  for (let index = 0; index < argv.length; index += 1) {
+    const arg = argv[index];
+    if (arg === "--repo") repo = path.resolve(argv[++index] || "");
+    else if (arg === "--evidence") evidenceId = argv[++index] || "";
+    else if (arg === "--surface") surfaces.push(argv[++index] || "");
+    else fail(`unknown option ${arg}`);
+  }
+  if (!evidenceId || !/^[A-Za-z0-9._-]+$/.test(evidenceId)) fail("--evidence requires a safe evidence id");
+  if (!surfaces.length || surfaces.some((surface) => !surface)) fail("provide one or more --surface values");
+  return { repo, evidenceId, surfaces: [...new Set(surfaces)] };
+}
+
+function main() {
+  if (process.argv.slice(2).some((arg) => arg === "--help" || arg === "-h")) {
+    process.stdout.write("Usage: acef-lightweight-surface-evidence --repo <path> --evidence <id> --surface <name> [--surface <name>...]\nProjects existing successful evidence; does not execute its command.\n");
+    return;
+  }
+  const args = parse(process.argv.slice(2));
+  const run = parseLightweightRun(path.join(args.repo, "docs", "ai", "ACEF_LIGHTWEIGHT_RUN.json"));
+  const evidence = evidenceRecordById(args.repo, args.evidenceId);
+  const validation = validateEvidenceRecord(args.repo, evidence, { requireFresh: true });
+  if (validation.length) fail(validation.join("; "));
+  if (evidence.exitCode !== 0) fail(`evidence ${evidence.evidenceId} is not successful`);
+  if (evidence.actorInstanceId !== run.implementationActorId) fail("evidence actor is not the active run implementation actor");
+  const actor = parseActorRecord(path.join(args.repo, "docs", "ai", "actors", `${evidence.actorInstanceId}.json`));
+  if (actor.runId && actor.runId !== run.runId) fail("evidence actor is bound to a different run");
+  if (String(actor.story || "").trim() !== String(evidence.story || "").trim()) fail("evidence actor/story binding mismatch");
+  for (const surface of args.surfaces) {
+    if (!(run.surfaces || []).includes(surface)) fail(`surface ${surface} is not declared by the active run`);
+    if (!(evidence.satisfies || []).includes(`${surface} surface validation`)) fail(`evidence ${evidence.evidenceId} does not declare ${surface} coverage`);
+  }
+  const entries = args.surfaces.sort().map((surface) => {
+    const entry = { surface, evidencePath: evidence.rawArtifact.path, command: evidence.command, exitCode: evidence.exitCode };
+    return { ...entry, runnerProof: { schema: "acef-lightweight-surface-proof-v1", runner: "acef-lightweight-surface-evidence", sha256: lightweightSurfaceProof(entry, evidence.rawArtifact.sha256) } };
+  });
+  process.stdout.write(`${JSON.stringify({ schema: "acef.lightweight-surface-projection.v1", runId: run.runId, sourceEvidenceId: evidence.evidenceId, entries }, null, 2)}\n`);
+}
+
+try { main(); } catch (error) { process.stderr.write(`${error.message}\n`); process.exitCode = 2; }

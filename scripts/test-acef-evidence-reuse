@@ -1,0 +1,297 @@
+#!/usr/bin/env node
+const assert = require("node:assert/strict");
+const crypto = require("node:crypto");
+const cp = require("node:child_process");
+const fs = require("node:fs");
+const os = require("node:os");
+const path = require("node:path");
+
+const repoRoot = path.resolve(__dirname, "..");
+const state = path.join(repoRoot, "scripts", "acef-state");
+const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "acef-evidence-reuse-"));
+
+function sha256(value) {
+  return crypto.createHash("sha256").update(value).digest("hex");
+}
+
+function runGit(args) {
+  return cp.execFileSync("git", args, { cwd: tmp, encoding: "utf8" }).trim();
+}
+
+function readJson(relativePath) {
+  return JSON.parse(fs.readFileSync(path.join(tmp, relativePath), "utf8"));
+}
+
+function writeJson(relativePath, record) {
+  const target = path.join(tmp, relativePath);
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+  fs.writeFileSync(target, `${JSON.stringify(record, null, 2)}\n`);
+}
+
+function runnerProof(record) {
+  return sha256(JSON.stringify({
+    schema: "acef-evidence-runner-proof-v1",
+    runner: "acef-state evidence-run",
+    evidenceId: record.evidenceId,
+    kind: record.kind,
+    command: record.command,
+    ...(Object.prototype.hasOwnProperty.call(record, "commandArgv") ? { commandArgv: record.commandArgv } : {}),
+    exitCode: record.exitCode,
+    startedAt: record.startedAt || null,
+    finishedAt: record.finishedAt || null,
+    repositoryCommit: record.repositoryCommit,
+    repositoryTree: record.repositoryTree || null,
+    dirtyDigest: record.dirtyDigest,
+    ...(Object.prototype.hasOwnProperty.call(record, "inputFingerprint")
+      ? { inputFingerprint: record.inputFingerprint } : {}),
+    ...(Object.prototype.hasOwnProperty.call(record, "reuseInputFingerprint")
+      ? { reuseInputFingerprint: record.reuseInputFingerprint } : {}),
+    dirtyApplicationPathsBefore: record.dirtyApplicationPathsBefore || [],
+    dirtyApplicationPathsAfter: record.dirtyApplicationPathsAfter || [],
+    environmentDigest: record.environmentDigest || null,
+    actorInstanceId: record.actorInstanceId,
+    story: record.story,
+    rawArtifact: record.rawArtifact,
+    ...(Object.prototype.hasOwnProperty.call(record, "reusedFromEvidenceId")
+      ? { reusedFromEvidenceId: record.reusedFromEvidenceId } : {}),
+    ...(Object.prototype.hasOwnProperty.call(record, "discovery") ? { discovery: record.discovery } : {}),
+    satisfies: record.satisfies,
+  }));
+}
+
+function counterCommand(name, { failOnce = false } = {}) {
+  const counterPath = `.acef/${name}.count`;
+  const source = [
+    "const fs=require('node:fs')",
+    `const p=${JSON.stringify(counterPath)}`,
+    "fs.mkdirSync('.acef',{recursive:true})",
+    "const n=fs.existsSync(p)?Number(fs.readFileSync(p,'utf8')):0",
+    "fs.writeFileSync(p,String(n+1))",
+    failOnce ? "if(n===0)process.exit(7)" : "",
+  ].filter(Boolean).join(";");
+  return [process.execPath, "-e", source];
+}
+
+function count(name) {
+  return Number(fs.readFileSync(path.join(tmp, ".acef", `${name}.count`), "utf8"));
+}
+
+function runEvidence(id, kind, command) {
+  return cp.spawnSync(process.execPath, [state, "evidence-run", "--repo", tmp,
+    "--id", id, "--kind", kind, "--actor", "development", "--story", "Story reuse",
+    "--satisfies", "reuse-contract", "--", ...command], { cwd: tmp, encoding: "utf8" });
+}
+
+function expectWrite(result, id, exitCode = 0) {
+  assert.equal(result.status, exitCode, `${id} exit mismatch:\n${result.stdout}${result.stderr}`);
+  assert.match(result.stdout, new RegExp(`WROTE evidence .*${id}\\.json`));
+}
+
+function expectReuse(result, id, sourceId) {
+  assert.equal(result.status, 0, `${id} reuse failed:\n${result.stdout}${result.stderr}`);
+  assert.match(result.stdout, new RegExp(`REUSED evidence .*${id}\\.json source=${sourceId}`));
+}
+
+try {
+  runGit(["init", "-q"]);
+  runGit(["config", "user.email", "acef@example.invalid"]);
+  runGit(["config", "user.name", "ACEF Test"]);
+  fs.mkdirSync(path.join(tmp, "app"), { recursive: true });
+  fs.writeFileSync(path.join(tmp, "app", "source.js"), "module.exports = 'base';\n");
+  fs.writeFileSync(path.join(tmp, "app", "delete-me.js"), "module.exports = 'base';\n");
+  runGit(["add", "app"]);
+  runGit(["commit", "-qm", "fixture"]);
+  const head = runGit(["rev-parse", "HEAD"]);
+  const tree = runGit(["rev-parse", "HEAD^{tree}"]);
+
+  writeJson("docs/ai/ACEF_ACTIVE_RUN.json", {
+    runId: "RUN-reuse",
+    repo: "fixture",
+    lane: "lightweight",
+    status: "active",
+    activeStory: "Story reuse",
+    activePhase: "development",
+    ledgerPath: "docs/ai/ACEF_reuse_DELIVERY_AUDIT.md",
+    riskTriggers: [],
+  });
+  writeJson("docs/ai/actors/development.json", {
+    actorInstanceId: "development",
+    runId: "RUN-reuse",
+    story: "Story reuse",
+    phase: "development",
+    role: "developer",
+    client: "codex",
+    inputCommit: head,
+    inputTree: tree,
+    allowedContextProfile: "development",
+  });
+
+  fs.writeFileSync(path.join(tmp, "app", "syntax-safe.js"), "module.exports = 1;\n");
+  const safeCommand = [process.execPath, "--check", "app/syntax-safe.js"];
+  expectWrite(runEvidence("EV-safe-1", "static-check", safeCommand), "EV-safe-1");
+  expectReuse(runEvidence("EV-safe-2", "static-check", safeCommand), "EV-safe-2", "EV-safe-1");
+  assert.equal(readJson("docs/ai/evidence/EV-safe-2.json").reusedFromEvidenceId, "EV-safe-1");
+  assert.match(readJson("docs/ai/evidence/EV-safe-1.json").reuseInputFingerprint, /^node-syntax-input-v1:/);
+
+  const arbitraryStaticCommand = counterCommand("arbitrary_static");
+  expectWrite(runEvidence("EV-arbitrary-1", "static-check", arbitraryStaticCommand), "EV-arbitrary-1");
+  expectWrite(runEvidence("EV-arbitrary-2", "static-check", arbitraryStaticCommand), "EV-arbitrary-2");
+  assert.equal(count("arbitrary_static"), 2, "arbitrary static-check command reused a stale PASS");
+
+  fs.writeFileSync(path.join(tmp, "app", "source.js"), "module.exports = 'tracked-one';\n");
+  const trackedCommand = counterCommand("tracked");
+  expectWrite(runEvidence("EV-tracked-1", "lint", trackedCommand), "EV-tracked-1");
+  const trackedOne = readJson("docs/ai/evidence/EV-tracked-1.json");
+  fs.writeFileSync(path.join(tmp, "app", "source.js"), "module.exports = 'tracked-two';\n");
+  expectWrite(runEvidence("EV-tracked-2", "lint", trackedCommand), "EV-tracked-2");
+  const trackedTwo = readJson("docs/ai/evidence/EV-tracked-2.json");
+  assert.deepEqual(trackedTwo.dirtyApplicationPathsBefore, trackedOne.dirtyApplicationPathsBefore);
+  assert.notEqual(trackedTwo.inputFingerprint, trackedOne.inputFingerprint);
+  assert.equal(count("tracked"), 2, "same tracked path with changed bytes reused stale evidence");
+
+  const binaryPath = path.join(tmp, "app", "untracked.bin");
+  fs.writeFileSync(binaryPath, Buffer.from([0, 1, 2, 255]));
+  const binaryCommand = counterCommand("binary");
+  expectWrite(runEvidence("EV-binary-1", "typecheck", binaryCommand), "EV-binary-1");
+  const binaryOne = readJson("docs/ai/evidence/EV-binary-1.json");
+  fs.writeFileSync(binaryPath, Buffer.from([0, 1, 3, 255]));
+  expectWrite(runEvidence("EV-binary-2", "typecheck", binaryCommand), "EV-binary-2");
+  const binaryTwo = readJson("docs/ai/evidence/EV-binary-2.json");
+  assert.deepEqual(binaryTwo.dirtyApplicationPathsBefore, binaryOne.dirtyApplicationPathsBefore);
+  assert.notEqual(binaryTwo.inputFingerprint, binaryOne.inputFingerprint);
+  assert.equal(count("binary"), 2, "same untracked binary path with changed bytes reused stale evidence");
+
+  const linkPath = path.join(tmp, "app", "current-link");
+  fs.symlinkSync("target-one", linkPath);
+  const linkCommand = counterCommand("symlink");
+  expectWrite(runEvidence("EV-link-1", "static-check", linkCommand), "EV-link-1");
+  fs.unlinkSync(linkPath);
+  fs.symlinkSync("target-two", linkPath);
+  expectWrite(runEvidence("EV-link-2", "static-check", linkCommand), "EV-link-2");
+  expectWrite(runEvidence("EV-link-3", "static-check", linkCommand), "EV-link-3");
+  assert.equal(readJson("docs/ai/evidence/EV-link-3.json").inputFingerprint, undefined);
+  assert.equal(count("symlink"), 3, "unbounded symlink input was automatically reused");
+  fs.unlinkSync(linkPath);
+
+  fs.writeFileSync(path.join(tmp, "app", "delete-me.js"), "module.exports = 'changed';\n");
+  fs.writeFileSync(path.join(tmp, "app", "syntax-delete.cjs"), "module.exports = 1;\n");
+  const deletionCommand = [process.execPath, "--check", "app/syntax-delete.cjs"];
+  expectWrite(runEvidence("EV-delete-1", "static-check", deletionCommand), "EV-delete-1");
+  fs.unlinkSync(path.join(tmp, "app", "delete-me.js"));
+  expectWrite(runEvidence("EV-delete-2", "static-check", deletionCommand), "EV-delete-2");
+  expectReuse(runEvidence("EV-delete-3", "static-check", deletionCommand), "EV-delete-3", "EV-delete-2");
+  assert.equal(readJson("docs/ai/evidence/EV-delete-3.json").reusedFromEvidenceId, "EV-delete-2");
+
+  const legacyCommand = counterCommand("legacy");
+  expectWrite(runEvidence("EV-legacy-1", "static-check", legacyCommand), "EV-legacy-1");
+  const legacy = readJson("docs/ai/evidence/EV-legacy-1.json");
+  delete legacy.inputFingerprint;
+  legacy.runnerProof.sha256 = runnerProof(legacy);
+  writeJson("docs/ai/evidence/EV-legacy-1.json", legacy);
+  expectWrite(runEvidence("EV-legacy-2", "static-check", legacyCommand), "EV-legacy-2");
+  assert.equal(count("legacy"), 2, "fingerprint-less legacy evidence was automatically reused");
+
+  const failedCommand = counterCommand("failed", { failOnce: true });
+  expectWrite(runEvidence("EV-failed-1", "static-check", failedCommand), "EV-failed-1", 7);
+  expectWrite(runEvidence("EV-failed-2", "static-check", failedCommand), "EV-failed-2");
+  assert.equal(count("failed"), 2, "failed evidence was silently reused");
+
+  for (const kind of ["runtime-test", "manual-smoke", "build", "other"]) {
+    const name = kind.replace("-", "_");
+    const command = counterCommand(name);
+    expectWrite(runEvidence(`EV-${name}-1`, kind, command), `EV-${name}-1`);
+    expectWrite(runEvidence(`EV-${name}-2`, kind, command), `EV-${name}-2`);
+    assert.equal(count(name), 2, `${kind} evidence was automatically reused`);
+  }
+
+  const activeRun = readJson("docs/ai/ACEF_ACTIVE_RUN.json");
+  activeRun.riskTriggers = ["external-provider"];
+  writeJson("docs/ai/ACEF_ACTIVE_RUN.json", activeRun);
+  fs.writeFileSync(path.join(tmp, "app", "syntax-provider.mjs"), "export default 1;\n");
+  const providerCommand = [process.execPath, "--check", "app/syntax-provider.mjs"];
+  expectWrite(runEvidence("EV-provider-1", "static-check", providerCommand), "EV-provider-1");
+  expectWrite(runEvidence("EV-provider-2", "static-check", providerCommand), "EV-provider-2");
+  assert.equal(readJson("docs/ai/evidence/EV-provider-2.json").reusedFromEvidenceId, undefined, "known mutable provider risk reused a source-only label");
+  activeRun.riskTriggers = ["stateful-product-data"];
+  writeJson("docs/ai/ACEF_ACTIVE_RUN.json", activeRun);
+  const statefulCommand = [process.execPath, "--check", "app/syntax-provider.mjs"];
+  expectWrite(runEvidence("EV-stateful-1", "static-check", statefulCommand), "EV-stateful-1");
+  expectWrite(runEvidence("EV-stateful-2", "static-check", statefulCommand), "EV-stateful-2");
+  assert.equal(readJson("docs/ai/evidence/EV-stateful-2.json").reusedFromEvidenceId, undefined, "stateful-product-data risk was automatically reused");
+  activeRun.riskTriggers = [];
+  writeJson("docs/ai/ACEF_ACTIVE_RUN.json", activeRun);
+
+  const mutatingCommand = [process.execPath, "-e", [
+    "const fs=require('node:fs')",
+    "const p='app/mutated.js'",
+    "const n=fs.existsSync(p)?Number(fs.readFileSync(p,'utf8')):0",
+    "fs.writeFileSync(p,String(n+1))",
+  ].join(";")];
+  expectWrite(runEvidence("EV-mutating-1", "lint", mutatingCommand), "EV-mutating-1");
+  assert.equal(readJson("docs/ai/evidence/EV-mutating-1.json").inputFingerprint, undefined);
+  expectWrite(runEvidence("EV-mutating-2", "lint", mutatingCommand), "EV-mutating-2");
+  assert.equal(fs.readFileSync(path.join(tmp, "app/mutated.js"), "utf8"), "2");
+
+  fs.writeFileSync(path.join(tmp, "app", "syntax-latest.js"), "module.exports = 1;\n");
+  const latestCommand = [process.execPath, "--check", "app/syntax-latest.js"];
+  expectWrite(runEvidence("EV-latest-a-old", "static-check", latestCommand), "EV-latest-a-old");
+  fs.renameSync(path.join(tmp, "docs/ai/evidence/EV-latest-a-old.json"), path.join(tmp, ".acef/EV-latest-a-old.json"));
+  expectWrite(runEvidence("EV-latest-z-new", "static-check", latestCommand), "EV-latest-z-new");
+  fs.renameSync(path.join(tmp, ".acef/EV-latest-a-old.json"), path.join(tmp, "docs/ai/evidence/EV-latest-a-old.json"));
+  expectReuse(runEvidence("EV-latest-target", "static-check", latestCommand), "EV-latest-target", "EV-latest-z-new");
+  assert.equal(readJson("docs/ai/evidence/EV-latest-target.json").reusedFromEvidenceId, "EV-latest-z-new", "latest matching source was not selected deterministically");
+
+  fs.writeFileSync(path.join(tmp, "app", "syntax-authorized.cjs"), "module.exports = 1;\n");
+  const authorizedCommand = [process.execPath, "--check", "app/syntax-authorized.cjs"];
+  const strictRun = readJson("docs/ai/ACEF_ACTIVE_RUN.json");
+  strictRun.schema = "acef.active-run.v2";
+  strictRun.workflowId = "lightweight";
+  strictRun.assuranceProfile = "baseline";
+  strictRun.scopeUnit = "story";
+  delete strictRun.lane;
+  strictRun.lightweightStateContract = "lightweight-state-v1";
+  strictRun.activeActorId = "development";
+  strictRun.workerScopePath = "docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json";
+  strictRun.contextPath = "docs/ai/ACEF_CURRENT_CONTEXT.md";
+  writeJson("docs/ai/ACEF_ACTIVE_RUN.json", strictRun);
+  const strictActor = readJson("docs/ai/actors/development.json");
+  strictActor.lightweightStateContract = "lightweight-state-v1";
+  writeJson("docs/ai/actors/development.json", strictActor);
+  writeJson("docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json", {
+    runId: strictRun.runId,
+    activeStory: strictRun.activeStory,
+    phase: "development",
+    workerId: "development",
+    allowedPaths: ["app/**"],
+    allowedCommands: [authorizedCommand.map((value) => /^[A-Za-z0-9_./:@%+=,-]+$/.test(value) ? value : `'${value.replaceAll("'", `'\\''`)}'`).join(" ")],
+    baseRef: head,
+    maxCommits: 1,
+    canEditLedger: false,
+    canSpawnAgents: false,
+  });
+  expectWrite(runEvidence("EV-auth-1", "static-check", authorizedCommand), "EV-auth-1");
+  strictRun.activeActorId = "stale-reviewer";
+  writeJson("docs/ai/ACEF_ACTIVE_RUN.json", strictRun);
+  const staleActorReuse = runEvidence("EV-auth-stale", "static-check", authorizedCommand);
+  assert.equal(staleActorReuse.status, 1);
+  assert.match(staleActorReuse.stderr, /canonical active run, worker scope, and actor binding/);
+  assert.equal(fs.existsSync(path.join(tmp, "docs/ai/evidence/EV-auth-stale.json")), false, "stale actor request created a reuse alias");
+  strictRun.activeActorId = "development";
+  writeJson("docs/ai/ACEF_ACTIVE_RUN.json", strictRun);
+  const scope = readJson("docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json");
+  scope.allowedCommands = ["node unauthorized-command.js"];
+  writeJson("docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json", scope);
+  const unauthorizedReuse = runEvidence("EV-auth-command", "static-check", authorizedCommand);
+  assert.equal(unauthorizedReuse.status, 1);
+  assert.match(unauthorizedReuse.stderr, /not authorized by workerScope.allowedCommands/);
+  assert.equal(fs.existsSync(path.join(tmp, "docs/ai/evidence/EV-auth-command.json")), false, "unauthorized command request created a reuse alias");
+
+  for (const name of fs.readdirSync(path.join(tmp, "docs/ai/evidence")).filter((entry) => entry.endsWith(".json"))) {
+    const evidence = readJson(`docs/ai/evidence/${name}`);
+    assert.equal(evidence.runnerProof.sha256, runnerProof(evidence), `${name} runner proof mismatch`);
+  }
+
+  console.log("acef evidence reuse tests passed");
+} finally {
+  fs.rmSync(tmp, { recursive: true, force: true });
+}

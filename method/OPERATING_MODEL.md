@@ -58,9 +58,10 @@ context from quietly overriding the active ledger.
 - Worker results use `acef-worker-result-v1`: status, normalized failure kind, short summary, detailed artifact path and
   SHA-256, optional transcript path and SHA-256, usage metrics, answer key, and verdict. Transcripts stay outside Git;
   the repo stores only their path/hash reference.
-- Model overrides are optional and secondary. Use cheaper/faster models for mechanical planning, cleanup, ledger
-  formatting, and simple ATDD; use the parent/stronger model for development, review, Process Judge, and guarded or
-  security-sensitive work.
+- For admitted runs, bind the role-specific model and reasoning effort printed by `acef-next` explicitly at dispatch.
+  New Fix/Standard runs use `admitted-role-routing-v1`; Full keeps its compiled routing contract. Do not inherit the
+  conductor's runtime by omission. Preserve the frozen contract of an in-flight run when installed tools change.
+  Native work remains outside this routing contract and can use a model appropriate to its bounded task.
 - If a tool cannot enforce `fork_context: false`, the worker prompt must still state that prior chat is not evidence and
   all decisions must be grounded in the supplied ledger/spec paths.
 
@@ -69,6 +70,11 @@ context from quietly overriding the active ledger.
 The append-only delivery ledger remains the source of truth, but it is not the default worker input. Before each worker
 phase, derive `docs/ai/ACEF_CURRENT_CONTEXT.md` from the active ledger, Epic Context Pack, exact story artifact, and the
 last phase report. Keep it at 150 lines or fewer and replace it at each phase transition.
+
+For new Fix/Standard runs bound to `lightweight-state-v1`, typed active-run and worker-scope records instead own the
+current machine state. The writer derives this hot slice and the active-ledger pointer from that contract without
+rewriting the ledger body. Do not hand-edit generated views to resolve state drift; use the typed state transition or
+the pending-transaction recovery route printed by status/next.
 
 The hot slice must contain current work, gate state, allowed scope, relevant acceptance criteria, required commands,
 deferred/out-of-scope work, known pitfalls, artifact paths, and role-specific inputs. It records `source_ledger`,

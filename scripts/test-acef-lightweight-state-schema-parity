@@ -1,0 +1,19 @@
+#!/usr/bin/env node
+"use strict";
+const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const path = require("node:path");
+const root = path.resolve(__dirname, "..");
+function schema(name) { return JSON.parse(fs.readFileSync(path.join(root, "schemas", name), "utf8")); }
+const active = schema("active-run-v2.schema.json");
+assert.equal(active.properties.lightweightStateContract.enum[0], "lightweight-state-v1");
+assert.equal(active.properties.terminalReason.minLength, 1);
+assert.equal(active.properties.terminalFailureEvidenceIds.items.pattern, "^[A-Za-z0-9._-]+$");
+const completeRule = active.allOf.find((entry) => entry.if?.required?.includes("lightweightStateContract") && entry.if?.required?.includes("status"));
+assert.deepEqual(completeRule.then.required, ["terminalDisposition", "terminalGateId", "terminalReason"]);
+const actor = schema("actor.schema.json");
+assert.equal(actor.properties.lightweightStateContract.enum[0], "lightweight-state-v1");
+assert.ok(actor.allOf.some((entry) => entry.if?.required?.includes("lightweightStateContract") && entry.then.required.includes("runId")));
+assert.equal(schema("lightweight-run.schema.json").properties.lightweightStateContract.enum[0], "lightweight-state-v1");
+assert.equal(schema("lightweight-run-v2.schema.json").properties.lightweightStateContract.const, "lightweight-state-v1");
+console.log("acef lightweight-state schema parity tests passed");

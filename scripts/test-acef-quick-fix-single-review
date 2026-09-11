@@ -34,6 +34,11 @@ function validatorRun(check) {
   return cp.spawnSync(process.execPath, [validator, "--repo", repo, "--check", check], { encoding: "utf8" });
 }
 
+function commandText(argv) {
+  return argv.map((value) => /^[A-Za-z0-9_./:@%+=,-]+$/.test(value)
+    ? value : `'${value.replaceAll("'", `'\\''`)}'`).join(" ");
+}
+
 try {
   run("git", ["init", "-q"]);
   run("git", ["config", "user.email", "acef@example.invalid"]);
@@ -61,6 +66,11 @@ try {
   assert.match(`${unroutedDeveloper.stdout}${unroutedDeveloper.stderr}`, /must bind calibrated runtime gpt-5\.6-sol\/high/);
   stateRun(["actor", "--repo", repo, "--id", "developer-1", "--story", "Bounded defect", "--phase", "development",
     "--role", "developer", "--client", "codex", "--context-profile", "bounded", "--model", "gpt-5.6-sol", "--effort", "high"]);
+  const focusedCommand = [process.execPath, "tests/fix.test.js"];
+  const revertCommand = [process.execPath, "-e", "console.log('REVERT_PROOF_PASS')"];
+  stateRun(["worker-scope", "--repo", repo, "--story", "Bounded defect", "--phase", "development", "--worker-id", "developer-1",
+    "--allow", "app/fix.js", "--allow", "tests/fix.test.js", "--allow-command", commandText(focusedCommand),
+    "--allow-command", commandText(revertCommand), "--acceptance", "The bounded regression passes without weakening its assertion."]);
   const red = cp.spawnSync(process.execPath, [state, "evidence-run", "--repo", repo, "--id", "QF-red", "--kind", "runtime-test",
     "--actor", "developer-1", "--story", "Bounded defect", "--satisfies", "regression-red", "--",
     process.execPath, "tests/fix.test.js"], { cwd: repo, encoding: "utf8" });
@@ -81,7 +91,7 @@ try {
     "--role", "code-review", "--client", "codex", "--context-profile", "bounded-review",
     "--artifact-path", "docs/ai/reports/quick-fix-review.md", "--model", "gpt-5.6-sol", "--effort", "medium"]);
   stateRun(["gate", "--repo", repo, "--id", "QF-gate", "--scope", "Bounded defect", "--verdict", "PASS",
-    "--decided-by", "reviewer-1", "--evidence", "QF-green", "--evidence", "QF-revert"]);
+    "--decided-by", "reviewer-1", "--evidence", "QF-green", "--evidence", "QF-revert", "--green-evidence", "QF-green"]);
 
   const rawRed = readJson("docs/ai/evidence/QF-red.json").rawArtifact.path;
   const rawGreen = readJson("docs/ai/evidence/QF-green.json").rawArtifact.path;
@@ -91,6 +101,7 @@ try {
     schema: "acef.lightweight-run.v2",
     runId: "RUN-single-review",
     workflowId: "quick-fix",
+    lightweightStateContract: "lightweight-state-v1",
     quickFixContract: "single-review-v1",
     redOwnershipContract: "integrated-developer-v1",
     assuranceProfile: "guarded",

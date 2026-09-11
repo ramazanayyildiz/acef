@@ -14,6 +14,7 @@ state moves into typed sidecars and is read through one parser library.
 | Worker identity and context profile | `docs/ai/actors/*.json` |
 | Active worker write boundary, including active-run `runId` | `docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json` |
 | Runtime command evidence | `docs/ai/evidence/*.json` |
+| Physical verification attempts | `docs/ai/evidence/attempts/*.json` |
 | Gate verdict | `docs/ai/gates/*.json` |
 | Human approval receipt | `docs/ai/approvals/*.json` |
 | Story acceptance criteria | story artifact |
@@ -143,14 +144,89 @@ the green evidence for every listed story. Naming a story scope `Epic ...` does 
 `evidence-run` executes an argv command without a shell, stores stdout/stderr under
 `docs/ai/evidence/raw/`, hashes the raw artifact, records the Git commit/tree and actor, and preserves the command's
 exit code. It also writes a deterministic `runnerProof` over the command, exit code, repository state, actor, story,
-raw artifact hash, and satisfied checks. It refuses to start when application paths are already dirty. A `PASS` gate must
+raw artifact hash, and satisfied checks. Dirty application paths are recorded, not treated as a clean certification. A `PASS` gate must
 cite at least one successful evidence manifest whose raw hash, runner header, and runner proof still match.
+
+Automatic reuse is narrower than evidence validity. The current allow-list contains only `static-check` using the
+current Node interpreter with `--check` or `-c` and one repository-local `.js`, `.cjs`, or `.mjs` regular file.
+`reuseInputFingerprint: node-syntax-input-v1:...` binds that exact source, ancestor package configuration, interpreter
+bytes, and a hash of the environment; preloads and dynamic-linker overrides disable reuse. No environment values are
+published. A generic static-check/lint/typecheck label does not establish a safe dependency contract.
+
+The separate `application-input-v1` fingerprint includes tracked and untracked application bytes, deletions, and
+executable modes. Uncertain symlink inputs fail closed; changing inputs during the check also disables reuse. Legacy
+identities, FAIL, unknown static tools, runtime tests, manual smoke, builds, and mutable-state risk runs always require
+execution. These identities are not snapshots of external services or databases.
+
+Evidence aliases preserve the original execution and do not count as new physical invocations. To project successful
+evidence into multiple declared Standard surfaces without another execution, record the coverage in the original
+`--satisfies` fields, then use:
+
+```bash
+.acef/bin/acef-lightweight-surface-evidence --repo . --evidence story-4-1-runtime \
+  --surface backend --surface frontend
+```
+
+The read-only output contains runner-proven entries for the lightweight record's surface evidence. It refuses
+undeclared surfaces, coverage absent from the source manifest, failed or stale evidence, and incompatible actor/run
+bindings. The projection itself is not another test or proof that an untested surface works.
 
 Actor, evidence, gate, and approval records are immutable. `ACEF_DIRECT_RUN.json`, `ACEF_ACTIVE_RUN.json`, and
 `ACEF_ACTIVE_WORKER_SCOPE.json` are atomic singletons and may be replaced only as the run advances.
 `acef-state worker-scope` requires an active run, requires the same story, and copies the active `runId` into the scope.
 Legacy scopes without `runId` still parse for migration, but write authorization and pre-commit reject them until the
 scope is regenerated.
+
+### Lightweight state publication and recovery
+
+New Fix and Standard runs bind `lightweightStateContract: lightweight-state-v1`. The active run and worker scope are
+canonical; the current-context hot slice and `ACEF_ACTIVE_LEDGER` pointer are derived views. Their publication preserves
+the delivery ledger body. Existing runs keep their previously bound contract when installed tools are refreshed.
+
+Updates prepare and validate their candidate records before publication, then use a worktree-local writer lock and a
+pending receipt. Objective/scope/view files publish before active-run. This is recoverable ordered publication, not a
+multi-file atomic filesystem transaction. While a receipt exists, authorization, status, next-action, and precommit
+must fail closed and show the recovery route:
+
+```bash
+.acef/bin/acef-state recover-state-transaction --repo .
+```
+
+Recovery rolls forward only when each destination still matches its recorded before/after bytes and immutable guards
+still match. Unexpected edits remain untouched and require reconciliation; deleting the receipt to bypass the guard
+is not recovery. A failed candidate validation does not publish a terminal active-run record.
+Same-run updates retain their matching canonical worker scope; a new run never inherits the previous run's scope.
+Terminal precommit requires exact dependency bytes in Git's index, including the gate, evidence, and actor artifacts.
+A later control-only commit does not invalidate the application proof, but application drift still blocks closure.
+
+### Objective accounting and explicit closure
+
+New lightweight-state runs opt into versioned no-progress accounting. Physical executions have durable attempt
+receipts, including interrupted and failed executions; evidence aliases do not create attempts. Review counts require
+bound independent actors and valid report artifacts. Validated PASS completion resets consecutive no-progress
+counters without erasing lifetime totals. Existing Full and legacy objectives keep their original accounting rules.
+
+Record an in-place replan against the exact active run, with a unique event ID and an admitted cause:
+
+```bash
+.acef/bin/acef-state objective-replan --repo . --objective-id OBJ-4 --run-id RUN-4 \
+  --event-id REPLAN-4-1 --cause evidence-invalid
+```
+
+Objective closure requires a terminal canonical run, authentic successful completion evidence, and no unresolved
+blocking defects or required QA. Every earlier non-PASS outcome must be explicitly resolved or superseded with a
+reason; a later PASS alone does not silently close those outcomes:
+
+```bash
+.acef/bin/acef-state objective-close --repo . --objective-id OBJ-4 --run-id RUN-4 \
+  --completion-evidence story-4-green \
+  --run-disposition 'RUN-3|superseded|Replaced by the independently reviewed RUN-4 correction'
+```
+
+An invocation recovery is one allowance per run, shared across infrastructure and fixture-authoring modes. Infrastructure
+recovery requires the trusted setup exit 75. Fixture-authoring recovery derives actual changes, checks the frozen
+test/fixture envelope, and refuses changed or unprovable product inputs. Neither mode changes the bound actor,
+scope, or exact retry command, and neither turns the failed execution into successful evidence.
 
 ## Validator Contract
 

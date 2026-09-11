@@ -164,8 +164,7 @@ function validateBindingEntry(item, index, label, { requireEvidence = false } = 
   if (item.defaultRejected !== undefined && typeof item.defaultRejected !== "boolean") throw new Error(`${label}[${index}].defaultRejected must be boolean`);
 }
 
-function parseActiveRun(filePath) {
-  const record = readJson(filePath);
+function validateActiveRunRecord(record) {
   const v2 = record.schema === "acef.active-run.v2";
   if (record.schema !== undefined && !v2) throw new Error(`active run has unsupported schema ${record.schema}`);
   requireFields(
@@ -187,6 +186,12 @@ function parseActiveRun(filePath) {
       requireEnum(record, "modelRoutingContract", ["admitted-role-routing-v1"], "active run");
       if (!["quick-fix", "lightweight"].includes(record.workflowId)) {
         throw new Error("active run modelRoutingContract is only valid for Fix and Standard workflows");
+      }
+    }
+    if (record.lightweightStateContract !== undefined) {
+      requireEnum(record, "lightweightStateContract", ["lightweight-state-v1"], "active run");
+      if (!["quick-fix", "lightweight"].includes(record.workflowId)) {
+        throw new Error("active run lightweightStateContract is only valid for Fix and Standard workflows");
       }
     }
     if (record.fullFlowContract !== undefined) {
@@ -259,11 +264,24 @@ function parseActiveRun(filePath) {
     requireEnum(record, "terminalDisposition", ["PASS", "FAIL", "REPLAN", "BLOCKED"], "active run");
     if (record.status !== "complete") throw new Error("active run terminalDisposition is valid only when status is complete");
   }
+  if (record.terminalReason !== undefined
+    && (typeof record.terminalReason !== "string" || !record.terminalReason.trim())) {
+    throw new Error("active run terminalReason must be a non-empty string");
+  }
+  if (record.terminalFailureEvidenceIds !== undefined) {
+    requireStringArray(record, "terminalFailureEvidenceIds", "active run");
+  }
   if (record.terminalGateId !== undefined) {
     if (typeof record.terminalGateId !== "string" || !/^[A-Za-z0-9._-]+$/.test(record.terminalGateId)) {
       throw new Error("active run terminalGateId must be a safe typed gate id");
     }
     if (record.status !== "complete") throw new Error("active run terminalGateId is valid only when status is complete");
+  }
+  if (record.lightweightStateContract === "lightweight-state-v1" && record.status === "complete") {
+    requireFields(record, ["terminalDisposition", "terminalGateId", "terminalReason"], "completed lightweight-state-v1 active run");
+    if (normalizedRecordScope(record.activePhase) !== "closeout") {
+      throw new Error("completed lightweight-state-v1 active run must be in closeout phase");
+    }
   }
   if (["capsule-supervisor-v1", "capsule-supervisor-v2"].includes(record.runtimeContract) && record.status === "complete") {
     const expectedEpicScope = record.activeEpic || "Epic closeout";
@@ -376,6 +394,10 @@ function parseActiveRun(filePath) {
   return normalizeExecutionState(record);
 }
 
+function parseActiveRun(filePath) {
+  return validateActiveRunRecord(readJson(filePath));
+}
+
 function parseActiveRunRecovery(filePath) {
   const record = readJson(filePath);
   requireFields(record, [
@@ -464,6 +486,10 @@ function parseActorRecord(filePath) {
   requireFields(record, ["actorInstanceId", "story", "phase", "role", "client", "inputCommit", "allowedContextProfile"], "actor record");
   if (record.runId !== undefined && (typeof record.runId !== "string" || !record.runId.trim())) throw new Error("actor record runId must be non-empty");
   if (record.fullFlowContract !== undefined) requireEnum(record, "fullFlowContract", ["six-actor-v2", "four-actor-v3"], "actor record");
+  if (record.lightweightStateContract !== undefined) {
+    requireEnum(record, "lightweightStateContract", ["lightweight-state-v1"], "actor record");
+    requireFields(record, ["runId"], "lightweight-state-v1 actor record");
+  }
   if (record.fullFlowContract === "four-actor-v3") {
     requireFields(record, ["runId", "storyInventory"], "four-actor-v3 actor record");
     requireStringArray(record, "storyInventory", "four-actor-v3 actor record", { nonEmpty: true });
@@ -607,6 +633,14 @@ function parseEvidenceManifest(filePath) {
   requireEnum(record, "kind", ["runtime-test", "static-check", "manual-smoke", "build", "lint", "typecheck", "other"], "evidence manifest");
   if (record.commandArgv !== undefined) requireStringArray(record, "commandArgv", "evidence manifest", { nonEmpty: true });
   if (!Number.isInteger(record.exitCode)) throw new Error("evidence manifest missing integer exitCode");
+  if (record.inputFingerprint !== undefined
+    && !/^application-input-v1:[a-f0-9]{64}$/.test(record.inputFingerprint)) {
+    throw new Error("evidence manifest inputFingerprint must be a versioned SHA-256 digest");
+  }
+  if (record.reuseInputFingerprint !== undefined
+    && !/^node-syntax-input-v1:[a-f0-9]{64}$/.test(record.reuseInputFingerprint)) {
+    throw new Error("evidence manifest reuseInputFingerprint must be a supported versioned SHA-256 digest");
+  }
   requireStringArray(record, "satisfies", "evidence manifest", { nonEmpty: true });
   if (record.reusedFromEvidenceId !== undefined
     && (typeof record.reusedFromEvidenceId !== "string" || !record.reusedFromEvidenceId.trim()
@@ -661,6 +695,15 @@ function parseGateVerdict(filePath) {
   }
   if (record.gateType !== undefined) {
     requireEnum(record, "gateType", ["actor-decided-v1", "deterministic-story-close-v3", "recovered-story-close-v1"], "gate verdict");
+  }
+  if (record.lightweightStateContract !== undefined) {
+    requireEnum(record, "lightweightStateContract", ["lightweight-state-v1"], "gate verdict");
+    requireFields(record, ["runId", "repositoryTree", "applicationCommit", "applicationTree", "scopePaths"], "lightweight-state-v1 gate verdict");
+    requireStringArray(record, "scopePaths", "lightweight-state-v1 gate verdict");
+    if (record.verdict === "PASS") {
+      requireFields(record, ["greenEvidenceId"], "lightweight-state-v1 PASS gate verdict");
+      if (!record.scopePaths.length) throw new Error("lightweight-state-v1 PASS gate verdict requires scopePaths");
+    }
   }
   if (record.fullFlowContract === "four-actor-v3") {
     requireFields(record, ["runId", "storyInventory"], "four-actor-v3 gate verdict");
@@ -847,6 +890,12 @@ function validateWorkerScopeRecord(record) {
     requireStringArray(record, "allowedCommands", "worker scope", { nonEmpty: true });
     if (new Set(record.allowedCommands).size !== record.allowedCommands.length) {
       throw new Error("worker scope allowedCommands must be unique");
+    }
+  }
+  if (record.acceptanceCriteria !== undefined) {
+    requireStringArray(record, "acceptanceCriteria", "worker scope", { nonEmpty: true });
+    if (new Set(record.acceptanceCriteria).size !== record.acceptanceCriteria.length) {
+      throw new Error("worker scope acceptanceCriteria must be unique");
     }
   }
   if (!Number.isInteger(record.maxCommits) || record.maxCommits < 1) {
@@ -1116,6 +1165,9 @@ function parseLightweightRun(filePath) {
     if (record.quickFixContract !== undefined) {
       requireEnum(record, "quickFixContract", ["single-review-v1"], "lightweight run");
       if (record.workflowId !== "quick-fix") throw new Error("lightweight run quickFixContract requires quick-fix workflow");
+    }
+    if (record.lightweightStateContract !== undefined) {
+      requireEnum(record, "lightweightStateContract", ["lightweight-state-v1"], "lightweight run");
     }
     if (record.lane !== undefined) throw new Error("lightweight run v2 must use workflowId, not lane");
   } else {
@@ -1720,6 +1772,7 @@ module.exports = {
   parseApproval,
   parseWorkerScope,
   validateWorkerScopeRecord,
+  validateActiveRunRecord,
   parseAtddCorrection,
   parseWorkflow,
   parsePrReview,

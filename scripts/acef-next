@@ -238,6 +238,7 @@ function buildNext(repo, roleOverride) {
     repo,
     status: blockers.length ? "blocked" : "ready",
     blockers,
+    state_transaction: authorization.stateTransaction || null,
     dispatch_readiness: dispatchReadiness,
     active_state: null,
     objective: objective ? {
@@ -246,6 +247,7 @@ function buildNext(repo, roleOverride) {
       run_count: objective.runCount,
       replan_count: objective.replanCount,
       review_cycle_count: objective.reviewCycleCount,
+      accounting: objective.accounting || null,
       warnings: objective.warnings || [],
     } : null,
     allowed: { can_write: false, paths: [], commands: [] },
@@ -269,7 +271,9 @@ function buildNext(repo, roleOverride) {
       outputs: workflow.node.outputs,
     } : null,
     evidence_required: [],
-    stop_condition: "fix_blockers_then_rerun_acef_next",
+    stop_condition: authorization.stateTransaction
+      ? "recover_state_transaction_then_rerun_acef_next"
+      : "fix_blockers_then_rerun_acef_next",
   };
 
   if (!activeRun.record) return base;

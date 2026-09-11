@@ -45,6 +45,11 @@ until a human-approved scope split. Manual QA must finish before non-critical fi
 security, money, migration, realtime, concurrency, or state-machine findings remain independent Standard/Full + Guarded
 work. Same-run review remediation remains capped at two cycles.
 
+For a newly created Fix/Standard parent objective with `objective-accounting-v2`, the run/replan/review thresholds
+above apply to consecutive no-progress work, not lifetime successful deliveries. Validated completion resets that
+churn; lifetime totals remain visible. Explicit same-run replan events count, and evidence aliases do not count as
+physical executions. Full and existing v1 objectives keep their previously bound accounting semantics.
+
 Before admitted work, installation freshness must pass. If the ACEF source runtime changed, refresh every linked target
 worktree with `scripts/update-acef-installation --repo <target> --all-worktrees`; never continue from stale copied tools.
 

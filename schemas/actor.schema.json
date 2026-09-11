@@ -8,6 +8,7 @@
   "properties": {
     "actorInstanceId": { "type": "string", "minLength": 1 },
     "runId": { "type": "string", "minLength": 1 },
+    "lightweightStateContract": { "type": "string", "enum": ["lightweight-state-v1"] },
     "fullFlowContract": { "type": "string", "enum": ["six-actor-v2", "four-actor-v3"] },
     "storyInventory": {
       "type": "array",
@@ -35,6 +36,10 @@
     {
       "if": { "properties": { "fullFlowContract": { "const": "four-actor-v3" } }, "required": ["fullFlowContract"] },
       "then": { "required": ["runId", "storyInventory"] }
+    },
+    {
+      "if": { "required": ["lightweightStateContract"] },
+      "then": { "required": ["runId"] }
     }
   ]
 }

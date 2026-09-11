@@ -207,6 +207,13 @@ Every new run in an installation with `objective-supervisor-v1` binds to one sta
 scope fingerprint. Run/story suffixes such as `r2` or `recovery` do not create a fresh budget. An unfinished objective
 with the same fingerprint blocks a renamed replacement.
 
+Existing objectives and Full retain v1 accounting. Newly created Fix/Standard objectives opt into
+`objective-accounting-v2`: lifetime run/replan/review totals remain visible, while the thresholds below use consecutive
+no-progress run/replan/review counts. Only a bound, validated PASS completion resets those counts. Same-run explicit
+replan events count without double-counting the terminal REPLAN; a new label or an evidence alias cannot reset them.
+Physical invocation receipts retain failed and interrupted attempts. Review counts come from typed actor/artifact
+bindings, not the number of files in a reports directory.
+
 - At 5 runs, 3 terminal replans, 6 distinct review cycles, or 30 active control minutes without product/test progress,
   the objective becomes `CONSOLIDATING`. Later runs must cite typed defect-ledger entries.
 - An eighth run or fifth replan is refused as `SUSPENDED_OVER_BUDGET`; continuing requires a human-approved scope split,
@@ -219,6 +226,11 @@ with the same fingerprint blocks a renamed replacement.
 - Fifteen active control minutes without a product/test commit and a control/product commit ratio above 1.5 are visible
   warnings, not quality gates. The 30-minute consolidation transition is mechanical. Idle gaps are capped at five
   minutes per observation so laptop sleep does not consume the active budget.
+
+The control-time counter is an estimate from bounded observations, not measured worker runtime or account token use.
+Objective DONE additionally requires every registered run to be terminal, explicit disposition of non-successful runs
+and remaining non-critical findings, no unresolved critical finding, and successful completion evidence whose
+gate/actor/runner/raw-artifact integrity still verifies. A non-PASS run close is not objective completion.
 
 Updated installations also use `worktree-handshake-v1`. Before active-run creation or supervisor dispatch, the installed
 runtime digest must match the worktree manifest and its recorded ACEF source runtime. `INSTALL_STALE` blocks writes;

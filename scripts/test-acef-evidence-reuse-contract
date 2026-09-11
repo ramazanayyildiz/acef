@@ -1,0 +1,48 @@
+#!/usr/bin/env node
+"use strict";
+const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const os = require("node:os");
+const path = require("node:path");
+const { staticReuseInputFingerprint } = require("./lib/acef-evidence-reuse-contract");
+const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "acef-reuse-contract-"));
+const repo = path.join(tmp, "repo");
+fs.mkdirSync(path.join(repo, ".acef"), { recursive: true });
+const command = [process.execPath, "--check", ".acef/config.cjs"];
+const source = path.join(repo, ".acef/config.cjs");
+const fingerprint = (argv = command, environment = {}) => staticReuseInputFingerprint(repo, "static-check", argv, environment);
+try {
+  fs.writeFileSync(source, "module.exports = 1;\n");
+  const original = fingerprint();
+  assert.match(original, /^node-syntax-input-v1:[a-f0-9]{64}$/);
+  assert.equal(fingerprint(), original);
+  fs.writeFileSync(source, "module.exports = 2;\n");
+  assert.notEqual(fingerprint(), original, "excluded control-directory inputs are explicitly bound");
+  fs.writeFileSync(source, "module.exports = 1;\n");
+  assert.equal(fingerprint(), original);
+  fs.writeFileSync(path.join(repo, "package.json"), '{"type":"module"}\n');
+  assert.notEqual(fingerprint(), original, "Node package-mode inputs must be bound");
+  fs.unlinkSync(path.join(repo, "package.json"));
+  fs.writeFileSync(path.join(tmp, "package.json"), '{"type":"commonjs"}\n');
+  assert.notEqual(fingerprint(), original, "ancestor package mode must be bound even outside repo");
+  fs.unlinkSync(path.join(tmp, "package.json"));
+  assert.notEqual(fingerprint(command, { ACEF_TEST_SETTING: "changed" }), original);
+  assert.match(fingerprint(command, { NODE_REPL_TRUSTED_BROWSER_CLIENT_SHA256S: "host-setting" }), /^node-syntax-input-v1:[a-f0-9]{64}$/);
+  assert.equal(fingerprint(command, { NODE_OPTIONS: "--require ./preload.cjs" }), null);
+  assert.equal(fingerprint(command, { NODE_PATH: "./injected-modules" }), null);
+  assert.equal(fingerprint(command, { DYLD_INSERT_LIBRARIES: "injected.dylib" }), null);
+  assert.equal(fingerprint([process.execPath, "-e", "process.exit(0)"]), null);
+  assert.equal(fingerprint([process.execPath, "--check", "--", ".acef/config.cjs"]), null);
+  assert.equal(staticReuseInputFingerprint(repo, "lint", command, {}), null);
+  assert.equal(staticReuseInputFingerprint(repo, "typecheck", command, {}), null);
+  assert.equal(fingerprint(["eslint", "--check", ".acef/config.cjs"]), null);
+  fs.symlinkSync(source, path.join(repo, "linked.cjs"));
+  assert.equal(fingerprint([process.execPath, "--check", "linked.cjs"]), null);
+  fs.symlinkSync(path.join(repo, ".acef"), path.join(repo, "linked-dir"));
+  assert.equal(fingerprint([process.execPath, "--check", "linked-dir/config.cjs"]), null);
+  fs.unlinkSync(source);
+  assert.equal(fingerprint(), null);
+  console.log("acef evidence reuse contract tests passed");
+} finally {
+  fs.rmSync(tmp, { recursive: true, force: true });
+}

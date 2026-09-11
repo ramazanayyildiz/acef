@@ -67,6 +67,9 @@
     "status": { "type": "string", "enum": ["active", "paused", "blocked", "complete"] },
     "terminalDisposition": { "type": "string", "enum": ["PASS", "FAIL", "REPLAN", "BLOCKED"] },
     "terminalGateId": { "type": "string", "pattern": "^[A-Za-z0-9._-]+$" },
+    "terminalReason": { "type": "string", "minLength": 1 },
+    "terminalFailureEvidenceIds": { "type": "array", "items": { "type": "string", "pattern": "^[A-Za-z0-9._-]+$" } },
+    "lightweightStateContract": { "type": "string", "enum": ["lightweight-state-v1"] },
     "activeEpic": { "type": ["string", "null"] },
     "activeStory": { "type": "string", "minLength": 1 },
     "activePhase": { "type": "string", "minLength": 1 },
@@ -263,9 +266,15 @@
       "then": {
         "allOf": [
           { "not": { "required": ["terminalDisposition"] } },
-          { "not": { "required": ["terminalGateId"] } }
+          { "not": { "required": ["terminalGateId"] } },
+          { "not": { "required": ["terminalReason"] } },
+          { "not": { "required": ["terminalFailureEvidenceIds"] } }
         ]
       }
+    },
+    {
+      "if": { "properties": { "lightweightStateContract": { "const": "lightweight-state-v1" }, "status": { "const": "complete" } }, "required": ["lightweightStateContract", "status"] },
+      "then": { "properties": { "activePhase": { "const": "closeout" } }, "required": ["terminalDisposition", "terminalGateId", "terminalReason"] }
     }
   ],
   "$defs": {

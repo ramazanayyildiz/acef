@@ -15,9 +15,11 @@ const {
   classifyNativeVerification,
   freshNativeBudget,
   nativeBudgetFailure,
+  unwrapWorktreeTest,
 } = require("./lib/acef-native-speed");
 
 const wrapper = path.resolve(__dirname, "acef-native-test");
+const worktreeRunnerSource = path.resolve(__dirname, "acef-worktree-test");
 
 assert.equal(NATIVE_FOCUSED_COMMAND_LIMIT, 3);
 assert.equal(NATIVE_REPEAT_LIMIT, 2);
@@ -28,6 +30,15 @@ assert.equal(classifyNativeVerification(["php", "artisan", "test", "--testsuite=
 assert.equal(classifyNativeVerification(["php", "artisan", "test", "tests/Feature/OneTest.php"]).kind, "focused");
 assert.equal(classifyNativeVerification(["vendor/bin/phpstan", "analyse", "--configuration=phpstan.neon"]).kind, "broad");
 assert.equal(classifyNativeVerification(["vendor/bin/phpstan", "analyse", "app/Services/One.php"]).kind, "focused");
+const wrappedFocused = [".acef/bin/acef-worktree-test", "--work-unit", "child-a", "--",
+  "php", "artisan", "test", "--filter=WrappedCase", "--", "--preserve"];
+assert.equal(classifyNativeVerification(wrappedFocused).kind, "focused");
+assert.equal(classifyNativeVerification(wrappedFocused).identity,
+  "php artisan test --filter=WrappedCase -- --preserve");
+assert.match(unwrapWorktreeTest(["acef-worktree-test", "--work-unit", "child-a"]).error, /requires -- before/);
+assert.match(unwrapWorktreeTest(["acef-worktree-test", "--bad", "--", "php"]).error, /unsupported option/);
+assert.match(unwrapWorktreeTest(["acef-worktree-test", "--work-unit", "--", "php"]).error, /missing --work-unit value/);
+assert.match(unwrapWorktreeTest(["acef-worktree-test", "--work-unit", "child-a", "--"]).error, /requires a test command/);
 const idleBudget = freshNativeBudget("/repo", "a".repeat(40), "main", "idle", Date.now() - 60 * 60 * 1000);
 assert.equal(nativeBudgetFailure(idleBudget, { kind: "focused", identity: "focused" }), "",
   "wall-clock idle time must not consume the active command budget");
@@ -43,9 +54,14 @@ function repoFixture() {
   const bin = path.join(repo, "fake-bin");
   fs.mkdirSync(bin);
   const php = path.join(bin, "php");
-  fs.writeFileSync(php, "#!/usr/bin/env node\nprocess.exit(0);\n");
+  fs.writeFileSync(php, "#!/usr/bin/env node\nconst fs=require('node:fs');fs.mkdirSync('.acef',{recursive:true});fs.writeFileSync('.acef/php-argv.json', JSON.stringify(process.argv.slice(2)));\nprocess.exit(0);\n");
   fs.chmodSync(php, 0o755);
-  cp.execFileSync("git", ["add", "README.md", "fake-bin/php"], { cwd: repo });
+  const worktreeBin = path.join(repo, ".acef", "bin");
+  fs.mkdirSync(worktreeBin, { recursive: true });
+  const worktreeRunner = path.join(worktreeBin, "acef-worktree-test");
+  fs.copyFileSync(worktreeRunnerSource, worktreeRunner);
+  fs.chmodSync(worktreeRunner, 0o755);
+  cp.execFileSync("git", ["add", "README.md", "fake-bin/php", ".acef/bin/acef-worktree-test"], { cwd: repo });
   cp.execFileSync("git", ["commit", "-qm", "fixture"], { cwd: repo });
   return { repo, env: { ...process.env, PATH: `${bin}${path.delimiter}${process.env.PATH}` } };
 }
@@ -92,6 +108,50 @@ try {
     "an independently admitted split child must receive its own native verification budget");
 } finally {
   fs.rmSync(splitChildren.repo, { recursive: true, force: true });
+}
+
+const wrapped = repoFixture();
+try {
+  const inner = ["php", "artisan", "test", "--filter=WrappedCase", "--", "--preserve"];
+  const command = ["--work-unit", "child-a", "--", ".acef/bin/acef-worktree-test", "--work-unit", "child-a", "--", ...inner];
+  assert.equal(run(wrapped, command).status, 0, "a documented worktree wrapper composition must execute");
+  const runtimeRoot = path.resolve(wrapped.repo, cp.execFileSync("git", ["rev-parse", "--git-path", "acef-runtime"], { cwd: wrapped.repo, encoding: "utf8" }).trim());
+  const receiptDir = fs.readdirSync(runtimeRoot).at(0);
+  const receipt = JSON.parse(fs.readFileSync(path.join(runtimeRoot, receiptDir, "last-run.json"), "utf8"));
+  assert.equal(receipt.workUnit, "child-a");
+  assert.deepEqual(receipt.command, inner);
+  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(wrapped.repo, ".acef", "php-argv.json"), "utf8")), inner.slice(1));
+  const stateRoot = path.resolve(wrapped.repo, cp.execFileSync("git", ["rev-parse", "--git-path", "acef-native-speed"], { cwd: wrapped.repo, encoding: "utf8" }).trim());
+  const stateFile = path.join(stateRoot, fs.readdirSync(stateRoot).find((name) => name.startsWith("state-") && name.endsWith(".json")));
+  const state = JSON.parse(fs.readFileSync(stateFile, "utf8"));
+  assert.equal(state.workUnitId, "child-a");
+  assert.equal(state.commands["php artisan test --filter=WrappedCase -- --preserve"], 1);
+  const broadNested = run(wrapped, ["--work-unit", "child-b", "--", ".acef/bin/acef-worktree-test", "--work-unit", "child-b", "--",
+    "php", "artisan", "test", "--testsuite=Feature"]);
+  assert.equal(broadNested.status, 2);
+  assert.match(broadNested.stderr, /broad verification is forbidden/);
+  const malformed = run(wrapped, ["--", ".acef/bin/acef-worktree-test", "--bogus", "--", ...inner]);
+  assert.equal(malformed.status, 2);
+  assert.match(malformed.stderr, /recognized test or static-analysis commands/);
+  const missingWorkUnit = run(wrapped, ["--", ".acef/bin/acef-worktree-test", "--work-unit", "--", ...inner]);
+  assert.equal(missingWorkUnit.status, 2);
+  const missing = run(wrapped, ["--", ".acef/bin/acef-worktree-test", "--work-unit", "child-a", "--"]);
+  assert.equal(missing.status, 2);
+} finally {
+  fs.rmSync(wrapped.repo, { recursive: true, force: true });
+}
+
+const equivalent = repoFixture();
+try {
+  const raw = ["--", "php", "artisan", "test", "--filter=SameCase"];
+  const nested = ["--", ".acef/bin/acef-worktree-test", "--work-unit", "focused", "--", ...raw.slice(1)];
+  assert.equal(run(equivalent, raw).status, 0);
+  assert.equal(run(equivalent, nested).status, 0);
+  const third = run(equivalent, raw);
+  assert.equal(third.status, 2);
+  assert.match(third.stderr, /repeat budget exceeded/);
+} finally {
+  fs.rmSync(equivalent.repo, { recursive: true, force: true });
 }
 
 const broad = repoFixture();

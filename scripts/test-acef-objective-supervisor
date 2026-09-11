@@ -33,9 +33,11 @@ function state(args) {
 }
 
 function active(runId, objectiveId, objectiveScope, extra = []) {
+  // Exercise the unchanged v1 objective contract through legacy Full. Fresh
+  // Fix/Standard uses validated lightweight-complete and is covered separately.
   return state([
     "active-run", "--run-id", runId, "--objective-id", objectiveId, "--objective-scope", objectiveScope,
-    "--workflow-id", "lightweight", "--assurance", "baseline", "--scope-unit", "work-item",
+    "--workflow-id", "full-bmad", "--full-flow-contract", "six-actor-v2", "--assurance", "baseline", "--scope-unit", "work-item",
     "--status", "active", "--story", "Bounded repair", "--phase", "development",
     "--ledger", "docs/ai/ACEF_DELIVERY_LEDGER.md", ...extra,
   ]);
@@ -43,7 +45,7 @@ function active(runId, objectiveId, objectiveScope, extra = []) {
 
 function close(runId, disposition = "PASS") {
   return state([
-    "active-run", "--run-id", runId, "--workflow-id", "lightweight", "--assurance", "baseline",
+    "active-run", "--run-id", runId, "--workflow-id", "full-bmad", "--full-flow-contract", "six-actor-v2", "--assurance", "baseline",
     "--scope-unit", "work-item", "--status", "complete", "--terminal-disposition", disposition,
     "--story", "Bounded repair", "--phase", "closeout", "--ledger", "docs/ai/ACEF_DELIVERY_LEDGER.md",
   ]);

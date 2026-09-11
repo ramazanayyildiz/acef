@@ -16,6 +16,30 @@ function executableName(value) {
   return path.basename(String(value || "")).toLowerCase();
 }
 
+function unwrapWorktreeTest(argv) {
+  let command = argv;
+  while (executableName(command[0]) === "acef-worktree-test") {
+    const separator = command.indexOf("--", 1);
+    if (separator < 0) return { error: "acef-worktree-test requires -- before its test command" };
+    for (let index = 1; index < separator; index += 1) {
+      if (command[index] !== "--work-unit") {
+        return { error: `acef-worktree-test has an unsupported option ${command[index]}` };
+      }
+      if (index + 1 >= separator) {
+        return { error: "acef-worktree-test has a missing --work-unit value" };
+      }
+      const workUnit = String(command[index + 1] || "").trim();
+      if (!/^[A-Za-z0-9._-]+$/.test(workUnit)) {
+        return { error: "acef-worktree-test has an invalid --work-unit" };
+      }
+      index += 1;
+    }
+    command = command.slice(separator + 1);
+    if (!command.length) return { error: "acef-worktree-test requires a test command after --" };
+  }
+  return { command };
+}
+
 function focusedTokens(args, patterns) {
   return args.some((arg) => patterns.some((pattern) => pattern.test(arg)));
 }
@@ -34,9 +58,14 @@ function packageTestKind(args) {
 
 function classifyNativeVerification(argv) {
   if (!Array.isArray(argv) || !argv.length) return { kind: "unknown", identity: "" };
-  const executable = executableName(argv[0]);
-  const args = argv.slice(1);
-  const identity = normalizedArgv(argv);
+  const unwrapped = unwrapWorktreeTest(argv);
+  if (unwrapped.error) return { kind: "unknown", identity: "", error: unwrapped.error };
+  const command = unwrapped.command;
+  const executable = executableName(command[0]);
+  const args = command.slice(1);
+  // The isolation wrapper changes the runtime, not the logical verification.
+  // Keeping the inner identity preserves prior raw-command budgets as well.
+  const identity = normalizedArgv(command);
 
   if (executable === "php" && args[0] === "artisan" && args[1] === "test") {
     return { kind: phpTestKind(args.slice(2)), identity };
@@ -117,4 +146,5 @@ module.exports = {
   freshNativeBudget,
   nativeBudgetFailure,
   normalizedArgv,
+  unwrapWorktreeTest,
 };

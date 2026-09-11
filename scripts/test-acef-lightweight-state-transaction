@@ -1,0 +1,351 @@
+#!/usr/bin/env node
+"use strict";
+
+const assert = require("node:assert/strict");
+const crypto = require("node:crypto");
+const cp = require("node:child_process");
+const fs = require("node:fs");
+const os = require("node:os");
+const path = require("node:path");
+const { lightweightSurfaceProof } = require("./acef-process-validator");
+const objectiveSupervisor = require("./lib/acef-objective-supervisor");
+
+const sourceRoot = path.resolve(__dirname, "..");
+const state = path.join(sourceRoot, "scripts", "acef-state");
+const validator = path.join(sourceRoot, "scripts", "acef-process-validator");
+
+function sha256(bytes) { return crypto.createHash("sha256").update(bytes).digest("hex"); }
+function write(repo, relativePath, bytes) {
+  const target = path.join(repo, relativePath);
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+  fs.writeFileSync(target, typeof bytes === "string" ? bytes : `${JSON.stringify(bytes, null, 2)}\n`);
+}
+function read(repo, relativePath) { return fs.readFileSync(path.join(repo, relativePath), "utf8"); }
+function json(repo, relativePath) { return JSON.parse(read(repo, relativePath)); }
+function git(repo, args) { return cp.execFileSync("git", args, { cwd: repo, encoding: "utf8" }).trim(); }
+function run(repo, args) {
+  const separator = args.indexOf("--");
+  const argv = separator < 0
+    ? [...args, "--repo", repo]
+    : [...args.slice(0, separator), "--repo", repo, ...args.slice(separator)];
+  return cp.spawnSync(process.execPath, [state, ...argv], { cwd: repo, encoding: "utf8" });
+}
+function initRepo() {
+  const repo = fs.mkdtempSync(path.join(os.tmpdir(), "acef-lightweight-state-"));
+  git(repo, ["init", "-q"]);
+  git(repo, ["config", "user.email", "acef@example.invalid"]);
+  git(repo, ["config", "user.name", "ACEF Test"]);
+  write(repo, "app/value.js", "module.exports = 1;\n");
+  write(repo, ".acef/control-dosing.json", fs.readFileSync(path.join(sourceRoot, "method", "control-dosing.json"), "utf8"));
+  git(repo, ["add", "app/value.js"]);
+  git(repo, ["commit", "-qm", "fixture"]);
+  return repo;
+}
+function activeRecord(repo, runId, actorId) {
+  return {
+    schema: "acef.active-run.v2",
+    runId,
+    repo: "fixture",
+    workflowId: "lightweight",
+    lightweightStateContract: "lightweight-state-v1",
+    assuranceProfile: "baseline",
+    scopeUnit: "story",
+    status: "active",
+    activeStory: "Story state",
+    activePhase: "development",
+    workflowRationale: "A bounded cross-file change needs the Standard lane.",
+    intakeDecision: {
+      routingPolicyVersion: "two-axis-v3",
+      route: "lightweight",
+      confidence: "high",
+      admissionDecision: "acef",
+      admissionRationale: "The native workflow is insufficient for the required independent closeout.",
+      sourceDisposition: "fresh",
+      reversible: true,
+      technicalBoundaryCount: 2,
+      productSurfaceCount: 1,
+      inferredAnswers: ["The scope is bounded."],
+      unresolvedQuestions: [],
+      executionApproved: true,
+    },
+    workerRole: actorId === "developer" ? "developer" : "process-judge",
+    activeActorId: actorId,
+    workerScopePath: "docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json",
+    contextPath: "docs/ai/ACEF_CURRENT_CONTEXT.md",
+    fullLedgerAccess: "denied",
+    maxLines: 120,
+    nextAllowedStep: "follow the typed worker scope",
+    ledgerPath: `docs/ai/ACEF_${runId}_DELIVERY_AUDIT.md`,
+    riskTriggers: [],
+  };
+}
+function actor(repo, runId, id, phase, role) {
+  const head = git(repo, ["rev-parse", "HEAD"]);
+  return {
+    actorInstanceId: id,
+    runId,
+    lightweightStateContract: "lightweight-state-v1",
+    story: "Story state",
+    phase,
+    role,
+    client: "codex",
+    inputCommit: head,
+    inputTree: git(repo, ["rev-parse", "HEAD^{tree}"]),
+    allowedContextProfile: phase,
+  };
+}
+function lifecycle(runId, status) {
+  const passing = status === "complete";
+  const evidencePaths = passing ? ["docs/ai/evidence/EV-green.json"] : [];
+  return {
+    schema: "acef.lightweight-run.v2",
+    runId,
+    workflowId: "lightweight",
+    lightweightStateContract: "lightweight-state-v1",
+    assuranceProfile: "baseline",
+    status,
+    implementationActorId: "developer",
+    reviewActorId: "reviewer",
+    steps: ["preflight-current-context", "reuse-before-create", "implementation", "independent-review", "focused-verification", "closeout-evidence"]
+      .map((name, index) => ({ name, status: passing ? "PASS" : (index === 0 ? "BLOCKED" : "PENDING"), evidencePaths })),
+    promotion: { decision: "stay-lightweight", triggers: [] },
+    ...(passing ? { surfaces: ["internal"] } : {}),
+  };
+}
+
+const repos = [];
+try {
+  const passRepo = initRepo();
+  repos.push(passRepo);
+  const passRun = "RUN-pass";
+  const passObjective = objectiveSupervisor.registerRun(passRepo, {
+    objectiveId: "OBJ-pass", objectiveScope: "Complete the transactional lightweight fixture", runId: passRun,
+    workflowId: "lightweight", assuranceProfile: "baseline", accountingVersion: "objective-accounting-v2",
+  });
+  const objectiveBinding = {
+    objectiveContract: "objective-supervisor-v1",
+    objectiveId: "OBJ-pass",
+    objectivePath: "docs/ai/objectives/OBJ-pass.json",
+    scopeFingerprint: passObjective.scopeFingerprint,
+  };
+  write(passRepo, `docs/ai/ACEF_${passRun}_DELIVERY_AUDIT.md`, [
+    "# Delivery", "", "## Lean Evidence Contract", "status: PASS", "scope: Story state",
+    "worker_report: docs/ai/evidence/EV-green.json", "review_report: docs/ai/evidence/surface-internal.log",
+    "process_judge_report: docs/ai/evidence/surface-internal.log", "session_handoff_updated: yes",
+    "worker_context: bounded", "fork_context: false", "raw_output_policy: artifact-only",
+    "diff_policy: targeted", "test_output_policy: summary-only", "search_output_policy: summarized", "",
+    "## Session Handoff", "status: ready", "current_step: closeout", "last_passed_gate: G-pass-2",
+    "next_allowed_step: terminal validation", "active_lane: lightweight", "active_track: standard",
+    `ledger_path: docs/ai/ACEF_${passRun}_DELIVERY_AUDIT.md`, "",
+  ].join("\n"));
+  write(passRepo, "docs/ai/ACEF_ACTIVE_LEDGER", `docs/ai/ACEF_${passRun}_DELIVERY_AUDIT.md\n`);
+  write(passRepo, "docs/ai/ACEF_ACTIVE_RUN.json", { ...activeRecord(passRepo, passRun, "developer"), ...objectiveBinding });
+  write(passRepo, "docs/ai/actors/developer.json", actor(passRepo, passRun, "developer", "development", "developer"));
+  write(passRepo, "docs/ai/actors/reviewer.json", actor(passRepo, passRun, "reviewer", "process-judge", "process-judge"));
+  write(passRepo, "docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json", {
+    runId: passRun,
+    activeStory: "Story state",
+    phase: "development",
+    workerId: "developer",
+    allowedPaths: ["app/value.js"],
+    allowedCommands: ["true"],
+    acceptanceCriteria: ["The state transaction is validated before publication."],
+    baseRef: git(passRepo, ["rev-parse", "HEAD"]),
+    maxCommits: 1,
+    canEditLedger: false,
+    canSpawnAgents: false,
+  });
+  const evidence = run(passRepo, ["evidence-run", "--id", "EV-green", "--kind", "runtime-test", "--actor", "developer", "--story", "Story state", "--satisfies", "focused-verification", "--", "true"]);
+  assert.equal(evidence.status, 0, evidence.stderr);
+  const nextActive = activeRecord(passRepo, passRun, "reviewer");
+  Object.assign(nextActive, objectiveBinding);
+  nextActive.activePhase = "process-judge";
+  write(passRepo, "docs/ai/ACEF_ACTIVE_RUN.json", nextActive);
+  const scope = json(passRepo, "docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json");
+  scope.phase = "process-judge";
+  scope.workerId = "reviewer";
+  write(passRepo, "docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json", scope);
+  const synced = run(passRepo, ["context-sync"]);
+  assert.equal(synced.status, 0, synced.stderr);
+  const sameRunUpdate = run(passRepo, ["active-run", "--run-id", passRun, "--workflow-id", "lightweight",
+    "--status", "active", "--story", "Story state", "--phase", "process-judge",
+    "--ledger", `docs/ai/ACEF_${passRun}_DELIVERY_AUDIT.md`]);
+  assert.equal(sameRunUpdate.status, 0, `${sameRunUpdate.stdout}${sameRunUpdate.stderr}`);
+  assert.match(read(passRepo, "docs/ai/ACEF_CURRENT_CONTEXT.md"), /The state transaction is validated before publication/);
+  assert.match(read(passRepo, "docs/ai/ACEF_CURRENT_CONTEXT.md"), /`true`/);
+  const surfacePath = "docs/ai/evidence/surface-internal.log";
+  const surfaceBytes = "command: true\nexit_code: 0\ninternal result verified\n";
+  write(passRepo, surfacePath, surfaceBytes);
+  const surface = { surface: "internal", evidencePath: surfacePath, command: "true", exitCode: 0 };
+  surface.runnerProof = {
+    schema: "acef-lightweight-surface-proof-v1",
+    runner: "acef-lightweight-surface-evidence",
+    sha256: lightweightSurfaceProof(surface, sha256(surfaceBytes)),
+  };
+  const passLifecycle = lifecycle(passRun, "complete");
+  passLifecycle.surfaceEvidence = [surface];
+  write(passRepo, "docs/ai/ACEF_LIGHTWEIGHT_RUN.json", passLifecycle);
+  const gateResult = run(passRepo, ["gate", "--id", "G-pass", "--scope", "Story state", "--verdict", "PASS", "--decided-by", "reviewer", "--evidence", "EV-green", "--green-evidence", "EV-green"]);
+  assert.equal(gateResult.status, 0, gateResult.stderr);
+  const originalActive = read(passRepo, "docs/ai/ACEF_ACTIVE_RUN.json");
+  const originalContext = fs.existsSync(path.join(passRepo, "docs/ai/ACEF_CURRENT_CONTEXT.md"))
+    ? read(passRepo, "docs/ai/ACEF_CURRENT_CONTEXT.md") : null;
+  const gate = json(passRepo, "docs/ai/gates/G-pass.json");
+  gate.applicationTree = "0".repeat(64);
+  write(passRepo, "docs/ai/gates/G-pass.json", gate);
+  const rejected = run(passRepo, ["lightweight-complete", "--gate-id", "G-pass", "--disposition", "PASS", "--reason", "verified"]);
+  assert.equal(rejected.status, 1);
+  assert.match(rejected.stderr, /terminal candidate rejected/);
+  assert.equal(read(passRepo, "docs/ai/ACEF_ACTIVE_RUN.json"), originalActive, "rejected candidate changed active run");
+  assert.equal(fs.existsSync(path.join(passRepo, "docs/ai/ACEF_STATE_TRANSACTION.json")), false, "rejected candidate left pending transaction");
+  if (originalContext !== null) assert.equal(read(passRepo, "docs/ai/ACEF_CURRENT_CONTEXT.md"), originalContext);
+  fs.rmSync(path.join(passRepo, "docs/ai/gates/G-pass.json"));
+  git(passRepo, ["add", ".acef", "docs/ai"]);
+  git(passRepo, ["commit", "-qm", "acef: prepare reviewed closeout"]);
+  const regenerated = run(passRepo, ["gate", "--id", "G-pass-2", "--scope", "Story state", "--verdict", "PASS", "--decided-by", "reviewer", "--evidence", "EV-green", "--green-evidence", "EV-green"]);
+  assert.equal(regenerated.status, 0, regenerated.stderr);
+  const completed = run(passRepo, ["lightweight-complete", "--gate-id", "G-pass-2", "--disposition", "PASS", "--reason", "verified"]);
+  assert.equal(completed.status, 0, `${completed.stdout}${completed.stderr}`);
+  assert.equal(json(passRepo, "docs/ai/ACEF_ACTIVE_RUN.json").terminalDisposition, "PASS");
+  assert.match(read(passRepo, "docs/ai/ACEF_CURRENT_CONTEXT.md"), /The state transaction is validated before publication/);
+  assert.equal(read(passRepo, "docs/ai/ACEF_ACTIVE_LEDGER"), `docs/ai/ACEF_${passRun}_DELIVERY_AUDIT.md\n`);
+  git(passRepo, ["add", "docs/ai/ACEF_ACTIVE_RUN.json", "docs/ai/ACEF_CURRENT_CONTEXT.md", "docs/ai/ACEF_ACTIVE_LEDGER"]);
+  const untrackedGatePrecommit = cp.spawnSync(process.execPath, [validator, "--repo", passRepo, "--check", "precommit-gate"], { cwd: passRepo, encoding: "utf8" });
+  assert.notEqual(untrackedGatePrecommit.status, 0, "terminal package passed while its validated gate remained untracked");
+  assert.match(untrackedGatePrecommit.stdout, /dependencies must exist in the index with exact current bytes/);
+  git(passRepo, ["add", "docs/ai"]);
+  const precommit = cp.spawnSync(process.execPath, [validator, "--repo", passRepo, "--check", "precommit-gate"], { cwd: passRepo, encoding: "utf8" });
+  assert.equal(precommit.status, 0, `${precommit.stdout}${precommit.stderr}`);
+  git(passRepo, ["commit", "-qm", "acef: terminal lightweight package"]);
+  const objectiveClose = run(passRepo, ["objective-close", "--objective-id", "OBJ-pass", "--run-id", passRun,
+    "--completion-evidence", "EV-green"]);
+  assert.equal(objectiveClose.status, 0, `${objectiveClose.stdout}${objectiveClose.stderr}`);
+  git(passRepo, ["add", "docs/ai/objectives/OBJ-pass.json"]);
+  const postTerminalObjectivePrecommit = cp.spawnSync(process.execPath, [validator, "--repo", passRepo, "--check", "precommit-gate"], { cwd: passRepo, encoding: "utf8" });
+  assert.equal(postTerminalObjectivePrecommit.status, 0, `${postTerminalObjectivePrecommit.stdout}${postTerminalObjectivePrecommit.stderr}`);
+  git(passRepo, ["commit", "-qm", "acef: close objective"]);
+  write(passRepo, "app/value.js", "module.exports = 2;\n");
+  git(passRepo, ["add", "app/value.js"]);
+  git(passRepo, ["commit", "-qm", "product: drift after terminal proof"]);
+  const driftedPostTerminalPrecommit = cp.spawnSync(process.execPath, [validator, "--repo", passRepo, "--check", "precommit-gate"], { cwd: passRepo, encoding: "utf8" });
+  assert.notEqual(driftedPostTerminalPrecommit.status, 0, "terminal proof authorized a later product commit");
+  assert.match(driftedPostTerminalPrecommit.stdout, /application drift|application tree/);
+
+  const failRepo = initRepo();
+  repos.push(failRepo);
+  const failRun = "RUN-fail";
+  write(failRepo, `docs/ai/ACEF_${failRun}_DELIVERY_AUDIT.md`, "# Delivery\n");
+  const failActive = activeRecord(failRepo, failRun, "reviewer");
+  delete failActive.workerScopePath;
+  write(failRepo, "docs/ai/ACEF_ACTIVE_RUN.json", failActive);
+  write(failRepo, "docs/ai/actors/reviewer.json", actor(failRepo, failRun, "reviewer", "process-judge", "process-judge"));
+  write(failRepo, "docs/ai/ACEF_LIGHTWEIGHT_RUN.json", lifecycle(failRun, "blocked"));
+  git(failRepo, ["add", ".acef", "docs/ai"]);
+  git(failRepo, ["commit", "-qm", "acef: record blocked preparation"]);
+  const failGate = run(failRepo, ["gate", "--id", "G-fail", "--scope", "Story state", "--verdict", "FAIL", "--decided-by", "reviewer"]);
+  assert.equal(failGate.status, 0, failGate.stderr);
+  const failed = run(failRepo, ["lightweight-complete", "--gate-id", "G-fail", "--disposition", "FAIL", "--reason", "bootstrap prerequisite unavailable"]);
+  assert.equal(failed.status, 0, `${failed.stdout}${failed.stderr}`);
+  const failedActive = json(failRepo, "docs/ai/ACEF_ACTIVE_RUN.json");
+  assert.equal(failedActive.terminalDisposition, "FAIL");
+  assert.deepEqual(failedActive.terminalFailureEvidenceIds, undefined);
+  assert.equal(json(failRepo, "docs/ai/gates/G-fail.json").scopePaths.length, 0);
+  git(failRepo, ["add", "docs/ai"]);
+  const failPrecommit = cp.spawnSync(process.execPath, [validator, "--repo", failRepo, "--check", "precommit-gate"], { cwd: failRepo, encoding: "utf8" });
+  assert.equal(failPrecommit.status, 0, `${failPrecommit.stdout}${failPrecommit.stderr}`);
+  write(failRepo, "app/value.js", "module.exports = 2;\n");
+  git(failRepo, ["add", "app/value.js"]);
+  const escapedFail = cp.spawnSync(process.execPath, [validator, "--repo", failRepo, "--check", "precommit-gate"], { cwd: failRepo, encoding: "utf8" });
+  assert.notEqual(escapedFail.status, 0, "non-PASS terminal package authorized a product change");
+  assert.match(escapedFail.stdout, /unrelated staged paths|clean application tree/);
+
+  const isolatedRepo = initRepo();
+  repos.push(isolatedRepo);
+  const oldRun = activeRecord(isolatedRepo, "RUN-old", "reviewer");
+  Object.assign(oldRun, {
+    status: "complete", activePhase: "closeout", terminalDisposition: "FAIL",
+    terminalGateId: "G-old", terminalReason: "Old run stopped",
+  });
+  write(isolatedRepo, "docs/ai/ACEF_ACTIVE_RUN.json", oldRun);
+  write(isolatedRepo, "docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json", {
+    runId: "RUN-old", activeStory: "Story state", phase: "development", workerId: "developer",
+    allowedPaths: ["app/value.js"], allowedCommands: ["false"], acceptanceCriteria: ["OLD SCOPE MUST NOT BLEED"],
+    baseRef: git(isolatedRepo, ["rev-parse", "HEAD"]), maxCommits: 1, canEditLedger: false, canSpawnAgents: false,
+  });
+  const isolatedStart = run(isolatedRepo, ["active-run", "--run-id", "RUN-new", "--workflow-id", "lightweight",
+    "--status", "active", "--story", "Fresh story", "--phase", "development",
+    "--ledger", "docs/ai/ACEF_RUN-new_DELIVERY_AUDIT.md"]);
+  assert.equal(isolatedStart.status, 0, `${isolatedStart.stdout}${isolatedStart.stderr}`);
+  assert.doesNotMatch(read(isolatedRepo, "docs/ai/ACEF_CURRENT_CONTEXT.md"), /OLD SCOPE MUST NOT BLEED|`false`/);
+
+  const recoveryRepo = initRepo();
+  repos.push(recoveryRepo);
+  const recoveryRun = "RUN-recovery";
+  const recoveryActive = activeRecord(recoveryRepo, recoveryRun, "developer");
+  write(recoveryRepo, "tests/fixture.js", "module.exports = 'before';\n");
+  git(recoveryRepo, ["add", "tests/fixture.js"]);
+  git(recoveryRepo, ["commit", "-qm", "test: fixture baseline"]);
+  write(recoveryRepo, `docs/ai/ACEF_${recoveryRun}_DELIVERY_AUDIT.md`, "# Recovery\n");
+  write(recoveryRepo, "docs/ai/ACEF_ACTIVE_RUN.json", recoveryActive);
+  write(recoveryRepo, "docs/ai/actors/developer.json", actor(recoveryRepo, recoveryRun, "developer", "development", "developer"));
+  write(recoveryRepo, "docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json", {
+    runId: recoveryRun,
+    activeStory: "Story state",
+    phase: "development",
+    workerId: "developer",
+    allowedPaths: ["app/value.js", "tests/fixture.js"],
+    allowedCommands: ["false"],
+    baseRef: git(recoveryRepo, ["rev-parse", "HEAD"]),
+    maxCommits: 1,
+    canEditLedger: false,
+    canSpawnAgents: false,
+  });
+  const originalFailure = run(recoveryRepo, ["evidence-run", "--id", "EV-fail", "--kind", "runtime-test", "--actor", "developer", "--story", "Story state", "--satisfies", "fixture-setup", "--", "false"]);
+  assert.notEqual(originalFailure.status, 0, "fixture setup failure unexpectedly passed");
+  const failureRaw = json(recoveryRepo, "docs/ai/evidence/EV-fail.json").rawArtifact.path;
+  const recoveryLifecycle = lifecycle(recoveryRun, "active");
+  recoveryLifecycle.quickFix = {
+    intent: "Repair the test fixture only.",
+    scope: "One fixture file without product changes.",
+    reproEvidencePath: failureRaw,
+    beforePatchEvidencePath: failureRaw,
+    afterPatchEvidencePath: failureRaw,
+    envelope: {
+      source: "computed",
+      implementationPaths: ["app/value.js"],
+      testPaths: ["tests/fixture.js"],
+      fixturePaths: [],
+      sharedResources: [],
+    },
+  };
+  write(recoveryRepo, "docs/ai/ACEF_LIGHTWEIGHT_RUN.json", recoveryLifecycle);
+  write(recoveryRepo, "tests/fixture.js", "module.exports = 'after';\n");
+  write(recoveryRepo, "app/value.js", "module.exports = 99;\n");
+  const dirtyProductRecovery = run(recoveryRepo, ["invocation-recovery", "--attempt-id", "EV-fail-attempt1", "--recovery-id", "REC-dirty", "--mode", "fixture-authoring", "--reason", "Attempt with a dirty product file.", "--changed-path", "app/value.js", "--changed-path", "tests/fixture.js", "--test-path", "tests/fixture.js", "--", "false"]);
+  assert.notEqual(dirtyProductRecovery.status, 0, "fixture recovery ignored an uncommitted same-path product edit");
+  assert.match(dirtyProductRecovery.stderr, /escape the frozen test\/fixture envelope/);
+  write(recoveryRepo, "app/value.js", "module.exports = 1;\n");
+  const widenedRecovery = run(recoveryRepo, ["invocation-recovery", "--attempt-id", "EV-fail-attempt1", "--recovery-id", "REC-wide", "--mode", "fixture-authoring", "--reason", "Attempt with a widened CLI envelope.", "--changed-path", "tests/fixture.js", "--test-path", "app/value.js", "--", "false"]);
+  assert.notEqual(widenedRecovery.status, 0, "fixture recovery accepted a CLI-widened test envelope");
+  assert.match(widenedRecovery.stderr, /cannot widen the frozen Quick Fix envelope/);
+  const failedEvidencePath = path.join(recoveryRepo, "docs/ai/evidence/EV-fail.json");
+  const authenticFailedEvidence = fs.readFileSync(failedEvidencePath);
+  const tamperedFailedEvidence = JSON.parse(authenticFailedEvidence);
+  tamperedFailedEvidence.dirtyApplicationPathsAfter = ["tests/fixture.js"];
+  fs.writeFileSync(failedEvidencePath, `${JSON.stringify(tamperedFailedEvidence, null, 2)}\n`);
+  const tamperedEvidenceRecovery = run(recoveryRepo, ["invocation-recovery", "--attempt-id", "EV-fail-attempt1", "--recovery-id", "REC-tampered", "--mode", "fixture-authoring", "--reason", "Attempt with altered original evidence metadata.", "--changed-path", "tests/fixture.js", "--test-path", "tests/fixture.js", "--", "false"]);
+  assert.notEqual(tamperedEvidenceRecovery.status, 0, "fixture recovery trusted altered original evidence metadata");
+  assert.match(tamperedEvidenceRecovery.stderr, /authentic original failed evidence/);
+  assert.equal(fs.existsSync(path.join(recoveryRepo, "docs/ai/evidence/attempts/recovery-REC-tampered.json")), false);
+  fs.writeFileSync(failedEvidencePath, authenticFailedEvidence);
+  const recovery = run(recoveryRepo, ["invocation-recovery", "--attempt-id", "EV-fail-attempt1", "--recovery-id", "REC-1", "--mode", "fixture-authoring", "--reason", "The fixture setup was invalid.", "--changed-path", "tests/fixture.js", "--test-path", "tests/fixture.js", "--", "false"]);
+  assert.equal(recovery.status, 0, `${recovery.stdout}${recovery.stderr}`);
+  assert.equal(json(recoveryRepo, "docs/ai/evidence/attempts/recovery-REC-1.json").mode, "fixture-authoring");
+  const secondRecovery = run(recoveryRepo, ["invocation-recovery", "--attempt-id", "EV-fail-attempt1", "--recovery-id", "REC-2", "--mode", "fixture-authoring", "--reason", "Retry twice.", "--changed-path", "tests/fixture.js", "--test-path", "tests/fixture.js", "--", "false"]);
+  assert.notEqual(secondRecovery.status, 0, "a second recovery was admitted for one run");
+  assert.match(secondRecovery.stderr, /already used its one invocation recovery/);
+
+  console.log("acef lightweight state transaction tests passed");
+} finally {
+  for (const repo of repos) fs.rmSync(repo, { recursive: true, force: true });
+}

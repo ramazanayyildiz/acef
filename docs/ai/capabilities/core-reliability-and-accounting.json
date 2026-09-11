@@ -1,0 +1,34 @@
+{
+  "capabilityId": "core-reliability-and-accounting",
+  "requestedIntent": "Reduce repeated ACEF execution and state-reconciliation work while preserving authentic evidence, independent review, versioned lifecycle obligations, and truthful execution accounting.",
+  "status": "enforced",
+  "requiredLayers": ["docs", "schema", "cli", "workflow", "validator", "tests", "installer"],
+  "implementedLayers": {
+    "docs": ["CHANGELOG.md#Evidence reuse and lightweight state now have explicit integrity boundaries", "method/TYPED_STATE.md#Lightweight state publication and recovery", "method/OPERATING_MODEL.md#Worker Context Budget"],
+    "schema": ["schemas/active-run-v2.schema.json", "schemas/actor.schema.json", "schemas/evidence.schema.json", "schemas/gate.schema.json", "schemas/objective-supervision-v1.schema.json"],
+    "cli": ["scripts/acef-state", "scripts/acef-lightweight-surface-evidence", "scripts/acef-status", "scripts/acef-next"],
+    "workflow": ["scripts/lib/acef-native-speed.js", "scripts/lib/acef-evidence-reuse-contract.js", "scripts/lib/acef-state-transaction.js", "scripts/lib/acef-invocation-ledger.js", "scripts/lib/acef-objective-supervisor.js"],
+    "validator": ["scripts/acef-process-validator", "scripts/lib/acef-run-authorization.js", "scripts/lib/acef-state-parser.js"],
+    "tests": ["scripts/test-acef-evidence-reuse", "scripts/test-acef-evidence-reuse-contract", "scripts/test-acef-native-test", "scripts/test-acef-state-transaction", "scripts/test-acef-lightweight-state-transaction", "scripts/test-acef-pending-state-guards", "scripts/test-acef-lightweight-surface-evidence", "scripts/test-acef-invocation-ledger", "scripts/test-acef-objective-accounting", "scripts/test-acef-lightweight-state-schema-parity", "scripts/test-acef-next", "scripts/test-acef-status", "scripts/test-acef-run-authorization", "scripts/test-acef-state-parser", "scripts/test-acef-state", "scripts/test-acef-typed-state-validator", "scripts/test-acef-lightweight-lifecycle", "scripts/test-acef-quick-fix-single-review", "scripts/test-acef-objective-supervisor", "scripts/test-acef-process-validator"],
+    "installer": ["scripts/install-acef-tools", "scripts/test-install-acef-tools"]
+  },
+  "limitations": [
+    "Source enforcement and 21 focused/compatibility suites, including disposable installed fixtures, were verified locally on 2026-09-11; this is not a target-project rollout.",
+    "No target project has been updated by this source change, and no production deployment or cost-savings percentage is claimed.",
+    "Runner proofs and state receipts are local integrity checks, not cryptographic signatures against an actor with unrestricted repository write access.",
+    "Automatic reuse is limited to the explicit syntax-only Node input/toolchain contract; arbitrary lint/typecheck scripts and external-service/database execution are not cached.",
+    "Ordered publication is recoverable but not multi-file crash atomic; unexpected edits block recovery without being overwritten."
+  ],
+  "evidence": [
+    { "layer": "tests", "ref": "scripts/test-acef-pending-state-guards", "note": "Pending and malformed receipts block authorization and next/status packets, including Direct fallback; actor and evidence mutations leave no side effects." },
+    { "layer": "tests", "ref": "scripts/test-acef-evidence-reuse", "note": "Actual syntax-only reuse, changed inputs, excluded configuration, unsafe commands, and legacy evidence are covered; aliases do not create physical attempts." },
+    { "layer": "tests", "ref": "scripts/test-acef-state-transaction", "note": "Initial-read preconditions, interrupted publication, later-destination edits during recovery, and dead locks without journals are covered." },
+    { "layer": "tests", "ref": "scripts/test-acef-lightweight-state-transaction", "note": "Real PASS/non-PASS closure, authentic fixture recovery, exact staged dependencies, control-only terminal commit followed by objective closure, product drift, same-run scope preservation, and new-run isolation pass." },
+    { "layer": "tests", "ref": "scripts/test-acef-objective-accounting", "note": "Nine validated successful runs remain admissible; invalid review artifacts, proof tampering, no-progress/replan limits, and unresolved non-PASS outcomes are rejected. Explicit objective CLI mutation tests also pass." },
+    { "layer": "tests", "ref": "scripts/test-acef-invocation-ledger", "note": "Unknown/malformed records, inconsistent IDs/status/times, altered recovery receipts, and repeated cross-mode recovery fail closed." },
+    { "layer": "tests", "ref": "scripts/test-acef-lightweight-surface-evidence", "note": "Two declared surfaces consume one immutable evidence source; lifecycle validation passes without executing the source command again." },
+    { "layer": "tests", "ref": "scripts/test-acef-objective-supervisor", "note": "Legacy Full six-actor-v2 retains v1 objective semantics; broad state, typed-state, lifecycle, Quick Fix, and process-validator compatibility suites pass." },
+    { "layer": "installer", "ref": "scripts/test-install-acef-tools", "note": "Installed command/helper/schema packaging passes. The final installer/compatibility run retained source runtime digest 1e36881f427ef228aa7b80cc9805393a11c74613459072d48a30344a6004953e." }
+  ],
+  "createdAt": "2026-09-11"
+}

@@ -1,0 +1,168 @@
+#!/usr/bin/env node
+const assert = require("node:assert/strict");
+const cp = require("node:child_process");
+const fs = require("node:fs");
+const os = require("node:os");
+const path = require("node:path");
+const {
+  pendingTransactionPath,
+  prepareGuard,
+  prepareSnapshotGuard,
+  prepareWrite,
+  publishStateTransaction,
+  recoverStateTransaction,
+  writerLockPath,
+} = require("./lib/acef-state-transaction");
+
+const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "acef-state-transaction-"));
+const outside = fs.mkdtempSync(path.join(os.tmpdir(), "acef-state-transaction-outside-"));
+
+function write(relativePath, bytes) {
+  const target = path.join(tmp, relativePath);
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+  fs.writeFileSync(target, bytes);
+}
+
+function read(relativePath) {
+  return fs.readFileSync(path.join(tmp, relativePath), "utf8");
+}
+
+function pendingRecord(id, writes, guards) {
+  return {
+    schema: "acef.state-transaction.v1",
+    transactionId: id,
+    status: "pending",
+    writes,
+    guards,
+    publicationOrder: "prepared-objective-scope-views-active-run-last",
+    createdAt: new Date().toISOString(),
+  };
+}
+
+try {
+  cp.execFileSync("git", ["init", "-q"], { cwd: tmp });
+  write("docs/ai/ACEF_ACTIVE_RUN.json", "active-before\n");
+  write("docs/ai/gates/GATE.json", "immutable-gate\n");
+
+  // A candidate derived from the initial state must not adopt a concurrent
+  // writer's bytes as its late prepareWrite precondition.
+  const initialActiveSnapshot = prepareSnapshotGuard(tmp, "docs/ai/ACEF_ACTIVE_RUN.json");
+  write("docs/ai/ACEF_ACTIVE_RUN.json", "active-from-concurrent-writer\n");
+  const latePreparedActive = prepareWrite(tmp, "docs/ai/ACEF_ACTIVE_RUN.json", "stale-derived-candidate\n");
+  const staleCandidateWrites = [
+    prepareWrite(tmp, "docs/ai/ACEF_CURRENT_CONTEXT.md", "stale-context\n"),
+    { ...latePreparedActive, beforeSha256: initialActiveSnapshot.expectedSha256 },
+  ];
+  assert.throws(() => publishStateTransaction(tmp, {
+    transactionId: "TX-stale-candidate",
+    writes: staleCandidateWrites,
+    guards: [],
+  }), /precondition changed/);
+  assert.equal(read("docs/ai/ACEF_ACTIVE_RUN.json"), "active-from-concurrent-writer\n");
+  assert.equal(fs.existsSync(path.join(tmp, "docs/ai/ACEF_CURRENT_CONTEXT.md")), false);
+  write("docs/ai/ACEF_ACTIVE_RUN.json", "active-before\n");
+
+  fs.symlinkSync(outside, path.join(tmp, "outside-link"));
+  assert.throws(() => prepareWrite(tmp, "outside-link/escaped.json", "escape\n"), /contains symlink/);
+  fs.writeFileSync(path.join(outside, "destination.json"), "outside-before\n");
+  fs.symlinkSync(path.join(outside, "destination.json"), path.join(tmp, "docs/ai/destination-link.json"));
+  assert.throws(() => prepareWrite(tmp, "docs/ai/destination-link.json", "escape\n"), /contains symlink/);
+  fs.rmSync(path.join(tmp, "docs/ai/destination-link.json"));
+  fs.symlinkSync(path.join(outside, "pending.json"), path.join(tmp, "docs/ai/ACEF_STATE_TRANSACTION.json"));
+  assert.throws(() => recoverStateTransaction(tmp), /contains symlink/);
+  assert.equal(fs.existsSync(path.join(outside, "pending.json")), false, "pending symlink target was created outside repository");
+  fs.rmSync(path.join(tmp, "docs/ai/ACEF_STATE_TRANSACTION.json"));
+
+  const guards = [prepareGuard(tmp, "docs/ai/gates/GATE.json")];
+  const writes = [
+    prepareWrite(tmp, "docs/ai/objectives/OBJ.json", "objective-after\n"),
+    prepareWrite(tmp, "docs/ai/ACEF_CURRENT_CONTEXT.md", "context-after\n"),
+    prepareWrite(tmp, "docs/ai/ACEF_ACTIVE_LEDGER", "docs/ai/ACEF_run_DELIVERY_AUDIT.md\n"),
+    prepareWrite(tmp, "docs/ai/ACEF_ACTIVE_RUN.json", "active-after\n"),
+  ];
+
+  write("docs/ai/gates/GATE.json", "concurrent-gate-edit\n");
+  assert.throws(
+    () => publishStateTransaction(tmp, { transactionId: "TX-guard", writes, guards }),
+    /guard changed/,
+  );
+  assert.equal(read("docs/ai/ACEF_ACTIVE_RUN.json"), "active-before\n");
+  assert.equal(fs.existsSync(pendingTransactionPath(tmp)), false, "ordinary validation failure left pending state");
+
+  write("docs/ai/gates/GATE.json", "immutable-gate\n");
+  publishStateTransaction(tmp, { transactionId: "TX-success", writes, guards });
+  assert.equal(read("docs/ai/objectives/OBJ.json"), "objective-after\n");
+  assert.equal(read("docs/ai/ACEF_ACTIVE_RUN.json"), "active-after\n");
+  assert.equal(fs.existsSync(pendingTransactionPath(tmp)), false);
+
+  fs.writeFileSync(writerLockPath(tmp), "2147483647\n");
+  assert.deepEqual(recoverStateTransaction(tmp), { status: "none" });
+  assert.equal(fs.existsSync(writerLockPath(tmp)), false, "dead pre-journal writer lock remained permanently busy");
+
+  const recoveryWrites = [
+    prepareWrite(tmp, "docs/ai/ACEF_CURRENT_CONTEXT.md", "context-recovered\n"),
+    prepareWrite(tmp, "docs/ai/ACEF_ACTIVE_RUN.json", "active-recovered\n"),
+  ];
+  write(pendingTransactionPath(tmp).slice(tmp.length + 1), `${JSON.stringify(pendingRecord("TX-recover", recoveryWrites, guards), null, 2)}\n`);
+  write(recoveryWrites[0].path, Buffer.from(recoveryWrites[0].bytesBase64, "base64"));
+  assert.deepEqual(recoverStateTransaction(tmp), { status: "recovered", transactionId: "TX-recover" });
+  assert.equal(read("docs/ai/ACEF_CURRENT_CONTEXT.md"), "context-recovered\n");
+  assert.equal(read("docs/ai/ACEF_ACTIVE_RUN.json"), "active-recovered\n");
+
+  for (let boundary = 0; boundary <= 3; boundary += 1) {
+    const boundaryWrites = [
+      prepareWrite(tmp, "docs/ai/objectives/OBJ.json", `objective-boundary-${boundary}\n`),
+      prepareWrite(tmp, "docs/ai/ACEF_CURRENT_CONTEXT.md", `context-boundary-${boundary}\n`),
+      prepareWrite(tmp, "docs/ai/ACEF_ACTIVE_RUN.json", `active-boundary-${boundary}\n`),
+    ];
+    write(pendingTransactionPath(tmp).slice(tmp.length + 1), `${JSON.stringify(pendingRecord(`TX-boundary-${boundary}`, boundaryWrites, guards), null, 2)}\n`);
+    for (const item of boundaryWrites.slice(0, boundary)) {
+      write(item.path, Buffer.from(item.bytesBase64, "base64"));
+    }
+    assert.deepEqual(recoverStateTransaction(tmp), { status: "recovered", transactionId: `TX-boundary-${boundary}` });
+    assert.equal(read("docs/ai/objectives/OBJ.json"), `objective-boundary-${boundary}\n`);
+    assert.equal(read("docs/ai/ACEF_CURRENT_CONTEXT.md"), `context-boundary-${boundary}\n`);
+    assert.equal(read("docs/ai/ACEF_ACTIVE_RUN.json"), `active-boundary-${boundary}\n`);
+  }
+
+  const staleWrites = [
+    prepareWrite(tmp, "docs/ai/ACEF_CURRENT_CONTEXT.md", "context-after-stale-lock\n"),
+    prepareWrite(tmp, "docs/ai/ACEF_ACTIVE_RUN.json", "active-after-stale-lock\n"),
+  ];
+  write(pendingTransactionPath(tmp).slice(tmp.length + 1), `${JSON.stringify(pendingRecord("TX-stale-lock", staleWrites, guards), null, 2)}\n`);
+  fs.writeFileSync(writerLockPath(tmp), "2147483647\n");
+  assert.deepEqual(recoverStateTransaction(tmp), { status: "recovered", transactionId: "TX-stale-lock" });
+  assert.equal(fs.existsSync(writerLockPath(tmp)), false, "stale writer lock was not removed after recovery");
+
+  const concurrentRecoveryWrites = [
+    prepareWrite(tmp, "docs/ai/ACEF_CURRENT_CONTEXT.md", "context-before-concurrent-active\n"),
+    prepareWrite(tmp, "docs/ai/ACEF_ACTIVE_RUN.json", "active-after-concurrent-recovery\n"),
+  ];
+  write(pendingTransactionPath(tmp).slice(tmp.length + 1), `${JSON.stringify(pendingRecord("TX-concurrent-recovery", concurrentRecoveryWrites, guards), null, 2)}\n`);
+  assert.throws(() => recoverStateTransaction(tmp, {
+    beforeRecoveryWrite(item) {
+      if (item.path === "docs/ai/ACEF_ACTIVE_RUN.json") write(item.path, "active-from-concurrent-recovery-writer\n");
+    },
+  }), /diverged|changed before recovery write/);
+  assert.equal(read("docs/ai/ACEF_CURRENT_CONTEXT.md"), "context-before-concurrent-active\n");
+  assert.equal(read("docs/ai/ACEF_ACTIVE_RUN.json"), "active-from-concurrent-recovery-writer\n");
+  assert.equal(fs.existsSync(pendingTransactionPath(tmp)), true, "concurrent recovery discarded its journal");
+  fs.rmSync(pendingTransactionPath(tmp));
+  write("docs/ai/ACEF_ACTIVE_RUN.json", "active-after-stale-lock\n");
+
+  const divergenceWrites = [
+    prepareWrite(tmp, "docs/ai/ACEF_CURRENT_CONTEXT.md", "context-final\n"),
+    prepareWrite(tmp, "docs/ai/ACEF_ACTIVE_RUN.json", "active-final\n"),
+  ];
+  write(pendingTransactionPath(tmp).slice(tmp.length + 1), `${JSON.stringify(pendingRecord("TX-diverged", divergenceWrites, guards), null, 2)}\n`);
+  write("docs/ai/ACEF_CURRENT_CONTEXT.md", "independent-concurrent-content\n");
+  assert.throws(() => recoverStateTransaction(tmp), /diverged; preserved current files/);
+  assert.equal(read("docs/ai/ACEF_CURRENT_CONTEXT.md"), "independent-concurrent-content\n");
+  assert.equal(read("docs/ai/ACEF_ACTIVE_RUN.json"), "active-after-stale-lock\n");
+  assert.equal(fs.existsSync(pendingTransactionPath(tmp)), true, "divergent recovery discarded pending receipt");
+
+  console.log("acef state transaction tests passed");
+} finally {
+  fs.rmSync(tmp, { recursive: true, force: true });
+  fs.rmSync(outside, { recursive: true, force: true });
+}

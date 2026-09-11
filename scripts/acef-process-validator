@@ -32,6 +32,8 @@ const {
 const { installationFreshnessFailures, readInstallationManifest } = require("./lib/acef-installation");
 const { loadObjective, objectiveFailures } = require("./lib/acef-objective-supervisor");
 const { inspectRunAuthorization } = require("./lib/acef-run-authorization");
+const { pendingTransactionPath } = require("./lib/acef-state-transaction");
+const { collectRunAttempts } = require("./lib/acef-invocation-ledger");
 const { loadModelRoutingPolicy, resolveActorRuntime } = require("./lib/acef-model-routing");
 const { recoveredStoryCloseBindingFailures } = require("./lib/acef-story-close");
 const {
@@ -191,6 +193,15 @@ function exists(filePath) {
   }
 }
 
+function lexicalEntryExists(filePath) {
+  try {
+    fs.lstatSync(filePath);
+    return true;
+  } catch (error) {
+    return error?.code !== "ENOENT";
+  }
+}
+
 function read(filePath) {
   return fs.readFileSync(filePath, "utf8");
 }
@@ -318,6 +329,10 @@ function evidenceRunnerProof(record) {
     repositoryCommit: record.repositoryCommit,
     repositoryTree: record.repositoryTree || null,
     dirtyDigest: record.dirtyDigest,
+    ...(Object.prototype.hasOwnProperty.call(record, "inputFingerprint")
+      ? { inputFingerprint: record.inputFingerprint } : {}),
+    ...(Object.prototype.hasOwnProperty.call(record, "reuseInputFingerprint")
+      ? { reuseInputFingerprint: record.reuseInputFingerprint } : {}),
     dirtyApplicationPathsBefore: record.dirtyApplicationPathsBefore || [],
     dirtyApplicationPathsAfter: record.dirtyApplicationPathsAfter || [],
     environmentDigest: record.environmentDigest || null,
@@ -680,6 +695,10 @@ function validateEvidenceRecord(repoRoot, evidence, { requireFresh = false, scop
         || JSON.stringify(source.commandArgv || []) !== JSON.stringify(evidence.commandArgv || [])
         || source.exitCode !== evidence.exitCode || source.repositoryCommit !== evidence.repositoryCommit
         || source.repositoryTree !== evidence.repositoryTree || source.environmentDigest !== evidence.environmentDigest
+        || source.inputFingerprint !== evidence.inputFingerprint
+        || source.reuseInputFingerprint !== evidence.reuseInputFingerprint
+        || JSON.stringify(source.dirtyApplicationPathsBefore || []) !== JSON.stringify(evidence.dirtyApplicationPathsBefore || [])
+        || JSON.stringify(source.dirtyApplicationPathsAfter || []) !== JSON.stringify(evidence.dirtyApplicationPathsAfter || [])
         || source.rawArtifact.path !== evidence.rawArtifact.path
         || source.rawArtifact.sha256 !== evidence.rawArtifact.sha256) {
         failures.push(`evidence ${evidence.evidenceId} reuse alias does not exactly bind its original execution`);
@@ -1822,7 +1841,9 @@ function checkWorkerScope(repoRoot) {
     const scope = parseWorkerScope(scopePath);
     const failures = [];
     if (normalizedScope(scope.activeStory) !== normalizedScope(activeRun.activeStory)) failures.push("activeStory does not match active run");
-    if (canonicalPhase(scope.phase) !== canonicalPhase(activeRun.activePhase)) failures.push("phase does not match active run");
+    const terminalLightweight = activeRun.lightweightStateContract === "lightweight-state-v1"
+      && activeRun.status === "complete" && canonicalPhase(activeRun.activePhase) === "closeout";
+    if (!terminalLightweight && canonicalPhase(scope.phase) !== canonicalPhase(activeRun.activePhase)) failures.push("phase does not match active run");
     if (activeRun.activeActorId && scope.workerId !== activeRun.activeActorId) failures.push("workerId does not match activeActorId");
     const actor = actorRecordById(repoRoot, scope.workerId);
     if (normalizedScope(actor.story) !== normalizedScope(scope.activeStory)) failures.push("worker actor story does not match scope");
@@ -3448,7 +3469,47 @@ function checkQuickFixCloseout(repoRoot) {
     const elapsedMinutes = (Date.parse(quickFix.completedAt) - Date.parse(quickFix.startedAt)) / 60000;
     if (elapsedMinutes < 0) failures.push("Quick Fix completedAt precedes startedAt");
     if (elapsedMinutes > 30) failures.push(`Quick Fix hard time-box exceeded: ${elapsedMinutes.toFixed(1)}/30 minutes; REPLAN is required`);
-    if (quickFix.frameworkFailures !== 0) failures.push("Quick Fix cannot close after an in-run framework failure; restart or replan after framework repair");
+    if (activeRun.lightweightStateContract === "lightweight-state-v1") {
+      const attempts = collectRunAttempts(repoRoot, activeRun.runId);
+      const attemptById = new Map(attempts.map((attempt) => [attempt.invocationId, attempt]));
+      const attemptsDir = path.join(repoRoot, "docs", "ai", "evidence", "attempts");
+      const recoveries = exists(attemptsDir) ? fs.readdirSync(attemptsDir)
+        .filter((name) => name.startsWith("recovery-") && name.endsWith(".json"))
+        .flatMap((name) => {
+          try {
+            const record = JSON.parse(read(path.join(attemptsDir, name)));
+            return record.schema === "acef.invocation-recovery.v1" && record.runId === activeRun.runId ? [record] : [];
+          } catch { return []; }
+        }) : [];
+      if (recoveries.length > 1) failures.push("Quick Fix permits only one typed invocation recovery per run");
+      for (const recovery of recoveries) {
+        const original = attemptById.get(recovery.attemptId);
+        if (!original || original.status === "running" || original.status === "passed"
+          || recovery.actorId !== original.actorId || recovery.scopeFingerprint !== original.scopeFingerprint
+          || recovery.commandIdentity !== original.commandIdentity
+          || !["infrastructure", "fixture-authoring"].includes(recovery.mode)) {
+          failures.push(`Quick Fix recovery ${recovery.recoveryId || recovery.attemptId} has invalid failed-attempt binding`);
+        }
+        const exactRetries = attempts.filter((attempt) => attempt.invocationId !== recovery.attemptId
+          && Date.parse(attempt.startedAt || "") >= Date.parse(recovery.createdAt || "")
+          && attempt.actorId === recovery.actorId
+          && attempt.scopeFingerprint === recovery.scopeFingerprint
+          && attempt.commandIdentity === recovery.commandIdentity);
+        if (exactRetries.length !== 1) {
+          failures.push(`Quick Fix recovery ${recovery.recoveryId || recovery.attemptId} must authorize exactly one later exact retry`);
+        }
+      }
+      const allowance = recoveries.length === 1 ? 1 : 0;
+      if (attempts.length > 4 + allowance) {
+        failures.push(`Quick Fix physical invocation budget exceeded: ${attempts.length}/${4 + allowance}`);
+      }
+      if (quickFix.frameworkFailures > 0
+        && (quickFix.frameworkFailures !== 1 || recoveries.length !== 1)) {
+        failures.push("Quick Fix framework failure requires exactly one retained typed recovery receipt");
+      }
+    } else if (quickFix.frameworkFailures !== 0) {
+      failures.push("Quick Fix cannot close after an in-run framework failure; restart or replan after framework repair");
+    }
 
     const evidenceIds = [quickFix.redEvidenceId, quickFix.greenEvidenceId, quickFix.revertProofEvidenceId, quickFix.productEvidenceId].filter(Boolean);
     if (new Set(evidenceIds).size !== evidenceIds.length || evidenceIds.length > 4) {
@@ -3749,8 +3810,8 @@ function evidenceRefExists(repoRoot, ref) {
   return exists(resolvePath(filePart, repoRoot));
 }
 
-function checkGoalCoverage(repoRoot) {
-  const activeRun = typedActiveRun(repoRoot);
+function checkGoalCoverage(repoRoot, activeRunOverride = null) {
+  const activeRun = activeRunOverride || typedActiveRun(repoRoot);
   if (!activeRun) return result("goal-coverage", true, "No typed active run; legacy goal coverage checks remain active");
   if (activeRun.status !== "complete") return result("goal-coverage", true, "Active run is not complete");
   if (!goalLooksUserFacing(activeRun)) return result("goal-coverage", true, "Goal is not classified as user-facing");
@@ -3785,6 +3846,163 @@ function checkGoalCoverage(repoRoot) {
     : result("goal-coverage", true, `User-facing goal covered by ${covered.join(", ")} surface evidence`);
 }
 
+function terminalRunProjection(record) {
+  const copy = JSON.parse(JSON.stringify(record));
+  for (const field of [
+    "status", "activePhase", "terminalDisposition", "terminalGateId", "terminalReason",
+    "terminalFailureEvidenceIds", "nextAllowedStep", "updatedAt",
+    "lane", "executionMigrationRequired",
+  ]) delete copy[field];
+  return copy;
+}
+
+function validateTerminalCandidate(repoRoot, packageRecord) {
+  const failures = [];
+  try {
+    const currentRun = packageRecord.currentRun || typedActiveRun(repoRoot);
+    const candidateRun = packageRecord.candidateRun;
+    const gate = packageRecord.gate;
+    const workerScope = packageRecord.workerScope || null;
+    const lightweightRun = packageRecord.lightweightRun;
+    if (!currentRun || currentRun.lightweightStateContract !== "lightweight-state-v1"
+      || !["quick-fix", "lightweight"].includes(currentRun.workflowId)) {
+      failures.push("terminal candidate requires an active Fix/Standard lightweight-state-v1 run");
+    }
+    if (currentRun?.status !== "active") failures.push("terminal candidate source run must be active");
+    if (!candidateRun || candidateRun.status !== "complete" || candidateRun.activePhase !== "closeout") {
+      failures.push("terminal candidate must be complete in closeout phase");
+    }
+    if (JSON.stringify(terminalRunProjection(currentRun || {})) !== JSON.stringify(terminalRunProjection(candidateRun || {}))) {
+      failures.push("terminal candidate changed frozen run fields outside terminal publication metadata");
+    }
+    const disposition = String(candidateRun?.terminalDisposition || "").toUpperCase();
+    if (!['PASS', 'FAIL', 'REPLAN', 'BLOCKED'].includes(disposition)) failures.push("terminal candidate disposition is invalid");
+    if (!String(candidateRun?.terminalReason || "").trim()) failures.push("terminal candidate requires a reason");
+    if (!gate || gate.gateId !== candidateRun?.terminalGateId || gate.verdict !== disposition) {
+      failures.push("terminal gate id/verdict does not match the candidate disposition");
+    }
+    if (gate && (gate.runId !== currentRun?.runId
+      || gate.lightweightStateContract !== currentRun?.lightweightStateContract
+      || normalizedScope(gate.scope) !== normalizedScope(currentRun?.activeStory))) {
+      failures.push("terminal gate does not bind the current run, contract, and story");
+    }
+    if (!lightweightRun || lightweightRun.runId !== currentRun?.runId
+      || lightweightRun.workflowId !== currentRun?.workflowId
+      || lightweightRun.lightweightStateContract !== currentRun?.lightweightStateContract) {
+      failures.push("lightweight lifecycle record does not bind the current run and contract");
+    }
+
+    let decider = null;
+    if (gate?.decidedBy) {
+      try {
+        decider = actorRecordById(repoRoot, gate.decidedBy);
+        if (decider.runId !== currentRun.runId
+          || decider.lightweightStateContract !== currentRun.lightweightStateContract
+          || normalizedScope(decider.story) !== normalizedScope(currentRun.activeStory)) {
+          failures.push("terminal decider actor does not bind the current run, contract, and story");
+        }
+      } catch (error) { failures.push(error.message); }
+    }
+
+    const attempts = currentRun ? collectRunAttempts(repoRoot, currentRun.runId) : [];
+    if (disposition === "PASS") {
+      if (!workerScope) failures.push("PASS terminal candidate requires the canonical worker scope");
+      else {
+        try { validateWorkerScopeRecord(workerScope); } catch (error) { failures.push(error.message); }
+        if (workerScope.runId !== currentRun.runId
+          || normalizedScope(workerScope.activeStory) !== normalizedScope(currentRun.activeStory)) {
+          failures.push("worker scope does not bind the current run and story");
+        }
+        if (JSON.stringify(gate?.scopePaths || []) !== JSON.stringify(workerScope.allowedPaths || [])) {
+          failures.push("terminal gate scope paths do not exactly match the canonical worker scope");
+        }
+      }
+      if (lightweightRun?.status !== "complete") failures.push("PASS requires a complete lightweight lifecycle record");
+      const lifecycle = checkLightweightLifecycle(repoRoot);
+      if (!lifecycle.ok) failures.push(`lightweight-lifecycle: ${lifecycle.message}`);
+      const expectedCommit = cp.execFileSync("git", ["rev-parse", "HEAD"], { cwd: repoRoot, encoding: "utf8" }).trim();
+      if (packageRecord.allowControlOnlyHeadAdvance) {
+        const gateCommit = gate?.applicationCommit;
+        let ancestor = false;
+        try {
+          ancestor = gateCommit === gate?.repositoryCommit
+            && cp.spawnSync("git", ["merge-base", "--is-ancestor", gateCommit, expectedCommit], { cwd: repoRoot }).status === 0;
+        } catch { ancestor = false; }
+        const applicationDrift = ancestor
+          ? gitChangedFiles(repoRoot, gateCommit, expectedCommit).filter((filePath) => !stateControlPath(filePath))
+          : [];
+        if (!ancestor || applicationDrift.length) {
+          failures.push(`PASS gate commit must remain an ancestor with control-only changes to HEAD${applicationDrift.length ? `; application drift: ${applicationDrift.slice(0, 8).join(", ")}` : ""}`);
+        }
+      } else if (gate?.applicationCommit !== expectedCommit || gate?.repositoryCommit !== expectedCommit) {
+        failures.push(`PASS gate does not bind the current application commit (${gate?.applicationCommit || "missing"}/${gate?.repositoryCommit || "missing"} != ${expectedCommit})`);
+      }
+      if (workerScope && gate?.applicationTree !== applicationTreeDigest(repoRoot, expectedCommit, workerScope.allowedPaths)) {
+        failures.push("PASS gate application tree does not match the current scoped application tree");
+      }
+      const dirty = workingApplicationChanges(repoRoot);
+      if (dirty.length) failures.push(`PASS candidate has dirty application paths: ${dirty.slice(0, 8).join(", ")}`);
+      let green = null;
+      try {
+        green = evidenceRecordById(repoRoot, gate?.greenEvidenceId);
+        failures.push(...validateEvidenceRecord(repoRoot, green, { requireFresh: true, scopePaths: workerScope?.allowedPaths || [] }));
+        if (green.exitCode !== 0 || !gate.evidenceIds?.includes(green.evidenceId)) {
+          failures.push("PASS gate green evidence must be successful and included in gate evidenceIds");
+        }
+        const actor = actorRecordById(repoRoot, green.actorInstanceId);
+        if (actor.runId !== currentRun.runId || actor.lightweightStateContract !== currentRun.lightweightStateContract) {
+          failures.push("green evidence actor is not bound to the current run");
+        }
+      } catch (error) { failures.push(error.message); }
+      if (decider && lightweightRun && (decider.actorInstanceId !== lightweightRun.reviewActorId
+        || decider.actorInstanceId === lightweightRun.implementationActorId
+        || !["codereview", "processjudge"].includes(canonicalPhase(decider.phase)))) {
+        failures.push("PASS requires the lifecycle's independent reviewer/judge actor");
+      }
+      if (gate) failures.push(...gateDeciderIntegrityFailures(repoRoot, currentRun, gate));
+      const latest = latestGateForActiveRun(repoRoot, currentRun);
+      if (latest.gate?.gateId !== gate?.gateId) failures.push("selected PASS gate is not the latest gate for the active run");
+      failures.push(...latest.failures);
+      const goal = checkGoalCoverage(repoRoot, candidateRun);
+      if (!goal.ok) failures.push(`goal-coverage: ${goal.message}`);
+      if (isSingleReviewQuickFix(currentRun)) {
+        const quick = checkQuickFixCloseout(repoRoot);
+        if (!quick.ok) failures.push(`quick-fix-closeout: ${quick.message}`);
+      }
+      if (packageRecord.validateLaneBundle !== false) {
+        const ledger = findLedger(repoRoot);
+        const adapter = findAdapter(repoRoot);
+        const lane = checkLaneCloseout(repoRoot, ledger, adapter, findPatternRegistry(repoRoot, adapter));
+        if (!lane.ok) failures.push(`lane-closeout: ${lane.message}`);
+      }
+      const physicalEvidenceId = green?.reusedFromEvidenceId || green?.evidenceId;
+      const passedAttempt = attempts.find((attempt) => attempt.status === "passed" && attempt.evidenceId === physicalEvidenceId);
+      if (!passedAttempt) failures.push("PASS green evidence has no bound successful physical invocation receipt");
+      packageRecord.greenInvocationId = passedAttempt?.invocationId || null;
+    } else {
+      if (lightweightRun?.status !== "blocked") failures.push("non-PASS terminal candidate requires a blocked lightweight lifecycle record");
+      if (decider && !["codereview", "processjudge", "epicprocessjudge"].includes(canonicalPhase(decider.phase))
+        && !/(?:review|judge|coordinator)/i.test(decider.role || "")) {
+        failures.push("non-PASS closure requires an authenticated reviewer, judge, or coordinator actor");
+      }
+      const failureIds = candidateRun?.terminalFailureEvidenceIds || [];
+      if (!failureIds.length && (workerScope || attempts.length)) {
+        failures.push("non-PASS closure after dispatch requires failure evidence");
+      }
+      for (const evidenceId of failureIds) {
+        try {
+          const evidence = evidenceRecordById(repoRoot, evidenceId);
+          failures.push(...validateEvidenceRecord(repoRoot, evidence));
+          if (!gate?.evidenceIds?.includes(evidenceId)) failures.push(`terminal gate does not cite failure evidence ${evidenceId}`);
+        } catch (error) { failures.push(error.message); }
+      }
+    }
+  } catch (error) {
+    failures.push(error.message);
+  }
+  return { ok: failures.length === 0, failures: [...new Set(failures)] };
+}
+
 function closeoutResultFailure(item) {
   return item.ok ? "" : `${item.name}: ${item.message}`;
 }
@@ -3806,7 +4024,7 @@ function controlCheckForId(controlId, repoRoot, ledgerPath) {
   return checks[controlId] || null;
 }
 
-function baseCloseoutChecks(execution, repoRoot, ledgerPath, adapterPath, registryPath) {
+function baseCloseoutChecks(execution, repoRoot, ledgerPath, adapterPath, registryPath, options = {}) {
   if (execution.workflow === "direct") {
     return [
       () => checkLaneSelection(repoRoot),
@@ -3816,7 +4034,7 @@ function baseCloseoutChecks(execution, repoRoot, ledgerPath, adapterPath, regist
   const checks = [
     () => checkInstallationFreshness(repoRoot),
     () => checkObjectiveSupervision(repoRoot),
-    () => checkRunAuthorization(repoRoot, { requireScopeRunId: true }),
+    ...(!options.skipRunAuthorization ? [() => checkRunAuthorization(repoRoot, { requireScopeRunId: true })] : []),
     () => checkLaneSelection(repoRoot),
     () => checkSessionHandoff(repoRoot, ledgerPath, adapterPath, registryPath),
   ];
@@ -3840,7 +4058,7 @@ function baseCloseoutChecks(execution, repoRoot, ledgerPath, adapterPath, regist
   return checks;
 }
 
-function checkLaneCloseout(repoRoot, ledgerPath, adapterPath, registryPath) {
+function checkLaneCloseout(repoRoot, ledgerPath, adapterPath, registryPath, options = {}) {
   const execution = inferActiveExecution(repoRoot, ledgerPath);
   if (!execution.workflow) return result("lane-closeout", false, "Missing typed active run or lightweight run workflow");
   if (!["direct", "quick-fix", "lightweight", "full-bmad"].includes(execution.workflow)) {
@@ -3856,7 +4074,7 @@ function checkLaneCloseout(repoRoot, ledgerPath, adapterPath, registryPath) {
 
   const checks = [
     () => checkControlDosing(repoRoot),
-    ...baseCloseoutChecks(execution, repoRoot, ledgerPath, adapterPath, registryPath),
+    ...baseCloseoutChecks(execution, repoRoot, ledgerPath, adapterPath, registryPath, options),
   ];
   const scheduled = new Set();
   const bundle = execution.workflow === "direct"
@@ -3934,6 +4152,17 @@ function successfulNativeSplitWorkUnit(repoRoot) {
 // close artifacts that cannot exist yet. Closeout/complete additionally requires the
 // final gate decider and full lean-evidence contract. This removes the bootstrap cycle
 // without weakening the terminal self-certification guard.
+function indexMatchesWorkingFile(repoRoot, filePath) {
+  const absolute = path.join(repoRoot, filePath);
+  let working;
+  try {
+    if (!fs.lstatSync(absolute).isFile()) return false;
+    working = fs.readFileSync(absolute);
+  } catch { return false; }
+  const indexed = cp.spawnSync("git", ["show", `:${filePath}`], { cwd: repoRoot, encoding: null });
+  return indexed.status === 0 && Buffer.isBuffer(indexed.stdout) && indexed.stdout.equals(working);
+}
+
 function checkPrecommitGate(repoRoot) {
   const activeRunPath = path.join(repoRoot, "docs", "ai", "ACEF_ACTIVE_RUN.json");
   if (!exists(activeRunPath)) return result("precommit-gate", true, "No active ACEF run");
@@ -3964,6 +4193,102 @@ function checkPrecommitGate(repoRoot) {
   } catch {
     stagedCloseout = false;
     stagedGateTransition = false;
+  }
+  if (execution.record?.lightweightStateContract === "lightweight-state-v1") {
+    const run = execution.record;
+    if (run.status !== "complete") {
+      const phaseChecks = [
+        checkRunAuthorization(repoRoot, { requireScopeRunId: true }),
+        checkWorkerScope(repoRoot),
+        checkReviewCircuitBreaker(repoRoot),
+      ];
+      const phaseFailures = phaseChecks.filter((item) => !item.ok)
+        .map((item) => `${item.name}: ${item.message}`);
+      return phaseFailures.length
+        ? result("precommit-gate", false, `${execution.workflow}/${execution.assurance} mutable phase failed — ${phaseFailures.join("; ")}`)
+        : result("precommit-gate", true, `${execution.workflow}/${execution.assurance} mutable phase is authorized and scope-bound`);
+    }
+
+    const terminalAllowed = new Set([
+      "docs/ai/ACEF_ACTIVE_RUN.json",
+      run.contextPath || "docs/ai/ACEF_CURRENT_CONTEXT.md",
+      "docs/ai/ACEF_ACTIVE_LEDGER",
+      "docs/ai/ACEF_LIGHTWEIGHT_RUN.json",
+      `docs/ai/gates/${run.terminalGateId}.json`,
+      ...(run.objectivePath ? [run.objectivePath] : []),
+    ]);
+    const terminalFailures = [];
+    const applicationChanges = workingApplicationChanges(repoRoot);
+    if (applicationChanges.length) terminalFailures.push(`terminal transition requires a clean application tree: ${applicationChanges.slice(0, 8).join(", ")}`);
+    try {
+      const gate = parseGateVerdict(path.join(repoRoot, "docs", "ai", "gates", `${run.terminalGateId}.json`));
+      const lightweightRun = parseLightweightRun(path.join(repoRoot, "docs", "ai", "ACEF_LIGHTWEIGHT_RUN.json"));
+      const workerPath = resolvePath(run.workerScopePath || "docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json", repoRoot);
+      const workerScope = exists(workerPath) ? parseWorkerScope(workerPath) : null;
+      const source = { ...run, status: "active", activePhase: workerScope?.phase || "development" };
+      delete source.terminalDisposition;
+      delete source.terminalGateId;
+      delete source.terminalReason;
+      delete source.terminalFailureEvidenceIds;
+      const candidate = validateTerminalCandidate(repoRoot, {
+        currentRun: source,
+        candidateRun: run,
+        gate,
+        workerScope,
+        lightweightRun,
+        validateLaneBundle: false,
+        allowControlOnlyHeadAdvance: true,
+      });
+      terminalFailures.push(...candidate.failures);
+      if (workerScope) terminalAllowed.add(path.relative(repoRoot, workerPath).replaceAll(path.sep, "/"));
+      const dependencyActors = new Set([gate.decidedBy]);
+      const dependencyEvidence = new Set([...(gate.evidenceIds || []), ...(run.terminalFailureEvidenceIds || [])]);
+      const visitedEvidence = new Set();
+      for (const evidenceId of dependencyEvidence) {
+        if (!evidenceId || visitedEvidence.has(evidenceId)) continue;
+        visitedEvidence.add(evidenceId);
+        const evidence = evidenceRecordById(repoRoot, evidenceId);
+        terminalAllowed.add(`docs/ai/evidence/${evidenceId}.json`);
+        terminalAllowed.add(evidence.rawArtifact.path);
+        dependencyActors.add(evidence.actorInstanceId);
+        if (evidence.reusedFromEvidenceId) dependencyEvidence.add(evidence.reusedFromEvidenceId);
+      }
+      for (const actorId of dependencyActors) {
+        if (!actorId) continue;
+        const actor = actorRecordById(repoRoot, actorId);
+        terminalAllowed.add(`docs/ai/actors/${actorId}.json`);
+        if (actor.producedArtifactPath) terminalAllowed.add(actor.producedArtifactPath);
+      }
+      if (candidate.greenInvocationId) {
+        terminalAllowed.add(`docs/ai/evidence/attempts/${candidate.greenInvocationId}.json`);
+      }
+      if (run.objectivePath && exists(path.join(repoRoot, run.objectivePath))) {
+        const objective = JSON.parse(read(path.join(repoRoot, run.objectivePath)));
+        for (const pathName of objective.runs?.flatMap((entry) => Object.keys(entry.successfulCompletion?.artifactHashes || {})) || []) {
+          terminalAllowed.add(pathName);
+        }
+      }
+    } catch (error) {
+      terminalFailures.push(error.message);
+    }
+    const extra = stagedPaths.filter((filePath) => !terminalAllowed.has(filePath));
+    if (extra.length) terminalFailures.push(`terminal transition has unrelated staged paths: ${extra.slice(0, 8).join(", ")}`);
+    const missingDurable = [...terminalAllowed].filter((filePath) => !indexMatchesWorkingFile(repoRoot, filePath));
+    if (missingDurable.length) terminalFailures.push(`terminal package dependencies must exist in the index with exact current bytes: ${missingDurable.join(", ")}`);
+    const unstagedTerminal = [...terminalAllowed].filter((filePath) => cp.spawnSync(
+      "git", ["diff", "--quiet", "--", filePath], { cwd: repoRoot },
+    ).status !== 0);
+    if (unstagedTerminal.length) terminalFailures.push(`terminal records have unstaged divergence: ${unstagedTerminal.join(", ")}`);
+    if (run.terminalDisposition === "PASS") {
+      const adapter = findAdapter(repoRoot);
+      const lane = checkLaneCloseout(repoRoot, ledger, adapter, findPatternRegistry(repoRoot, adapter), {
+        skipRunAuthorization: true,
+      });
+      if (!lane.ok) terminalFailures.push(`lane-closeout: ${lane.message}`);
+    }
+    return terminalFailures.length
+      ? result("precommit-gate", false, `${execution.workflow}/${execution.assurance} terminal package failed — ${[...new Set(terminalFailures)].join("; ")}`)
+      : result("precommit-gate", true, `${execution.workflow}/${execution.assurance} ${run.terminalDisposition} terminal package is exact and validated`);
   }
   let terminalReplan = null;
   if (execution.record?.fullFlowContract === "four-actor-v3") {
@@ -4213,6 +4538,9 @@ function evaluateProcessChecks(repoRoot, checks, options = {}) {
   const adapter = needsLifecycleContext ? (args.adapter || findAdapter(args.repo)) : null;
   const registry = needsLifecycleContext ? findPatternRegistry(args.repo, adapter) : null;
   return checks.map((check) => {
+    if (needsLifecycleContext && lexicalEntryExists(pendingTransactionPath(args.repo)) && !contextFree.has(check)) {
+      return result(check, false, `pending ACEF state transaction; run acef-state recover-state-transaction --repo ${args.repo}`);
+    }
     if (check === "clean-tree") return checkCleanTree(args.repo);
     if (check === "preflight") return checkPreflight(args.repo);
     if (check === "claims") return checkClaims(args.repo, ledger);
@@ -4288,4 +4616,13 @@ if (require.main === module) {
   }
 }
 
-module.exports = { FULL_V3_DISPATCH_CHECKS, evaluateProcessChecks, stateChangingRiskSignals, stateControlPath };
+module.exports = {
+  FULL_V3_DISPATCH_CHECKS,
+  evaluateProcessChecks,
+  evidenceRecordById,
+  lightweightSurfaceProof,
+  stateChangingRiskSignals,
+  stateControlPath,
+  validateTerminalCandidate,
+  validateEvidenceRecord,
+};
