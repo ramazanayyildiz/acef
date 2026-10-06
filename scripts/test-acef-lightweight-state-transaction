@@ -231,7 +231,7 @@ try {
   assert.notEqual(driftedPostTerminalPrecommit.status, 0, "terminal proof authorized a later product commit");
   assert.match(driftedPostTerminalPrecommit.stdout, /application drift|application tree/);
 
-  function standardReviewBinding(runId, reviewBeforeRepair) {
+  function standardReviewBinding(runId, reviewBeforeRepair, probe = null) {
     const repo = initRepo();
     repos.push(repo);
     write(repo, `docs/ai/ACEF_${runId}_DELIVERY_AUDIT.md`, [
@@ -282,6 +282,7 @@ try {
     git(repo, ["commit", "-qm", "acef: prepare reviewed closeout"]);
     const bindGate = run(repo, ["gate", "--id", "G-bind", "--scope", "Story state", "--verdict", "PASS", "--decided-by", "reviewer", "--evidence", "EV-green", "--green-evidence", "EV-green"]);
     assert.equal(bindGate.status, 0, bindGate.stderr);
+    if (probe) return probe(repo);
     return run(repo, ["lightweight-complete", "--gate-id", "G-bind", "--disposition", "PASS", "--reason", "verified"]);
   }
   const staleReview = standardReviewBinding("RUN-stale-review", true);
@@ -289,6 +290,52 @@ try {
   assert.match(staleReview.stderr, /Standard reviewer did not inspect the declared final application commit\/tree/);
   const finalReview = standardReviewBinding("RUN-final-review", false);
   assert.equal(finalReview.status, 0, `${finalReview.stdout}${finalReview.stderr}`);
+  const validatorCheck = (repo, name) => cp.spawnSync(process.execPath, [validator, "--repo", repo, "--check", name], { cwd: repo, encoding: "utf8" });
+  const staleBinding = /Standard reviewer did not inspect the declared final application commit\/tree/;
+  // gate-transition has no CLI entry; precommit-gate runs it for a staged gate only under legacy-contract Guarded
+  // (heavy) Standard. lightweight-state-v1 mutable phases return earlier and accept PASS only via the terminal path.
+  const guardedGateTransition = (repo) => {
+    const active = json(repo, "docs/ai/ACEF_ACTIVE_RUN.json");
+    delete active.lightweightStateContract;
+    Object.assign(active, { assuranceProfile: "guarded", assuranceRationale: "Exercise the heavy precommit gate-transition path." });
+    write(repo, "docs/ai/ACEF_ACTIVE_RUN.json", active);
+    git(repo, ["add", "docs/ai/gates/G-bind.json"]);
+    return validatorCheck(repo, "precommit-gate");
+  };
+  standardReviewBinding("RUN-stale-checks", true, (repo) => {
+    const verdict = validatorCheck(repo, "gate-verdict");
+    assert.notEqual(verdict.status, 0, "gate-verdict accepted a Standard reviewer bound to the pre-repair commit");
+    assert.match(verdict.stdout, staleBinding);
+    assert.match(validatorCheck(repo, "gate-decider").stdout, /not a product acceptance by itself/);
+    const transition = guardedGateTransition(repo);
+    assert.notEqual(transition.status, 0, "gate-transition accepted a Standard reviewer bound to the pre-repair commit");
+    assert.match(transition.stdout, /gate-transition: [^;]*Standard reviewer did not inspect the declared final application commit\/tree/);
+  });
+  standardReviewBinding("RUN-final-checks", false, (repo) => {
+    const verdict = validatorCheck(repo, "gate-verdict");
+    assert.equal(verdict.status, 0, `${verdict.stdout}${verdict.stderr}`);
+    assert.doesNotMatch(guardedGateTransition(repo).stdout, staleBinding);
+  });
+  const legacyCloseout = (repo) => {
+    const active = json(repo, "docs/ai/ACEF_ACTIVE_RUN.json");
+    delete active.lightweightStateContract;
+    Object.assign(active, { status: "complete", activePhase: "closeout" });
+    write(repo, "docs/ai/ACEF_ACTIVE_RUN.json", active);
+    const legacyScope = json(repo, "docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json");
+    legacyScope.phase = "closeout";
+    write(repo, "docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json", legacyScope);
+    git(repo, ["add", "docs/ai"]);
+    return validatorCheck(repo, "precommit-gate");
+  };
+  standardReviewBinding("RUN-legacy-stale", true, (repo) => {
+    const precommit = legacyCloseout(repo);
+    assert.notEqual(precommit.status, 0, "legacy Standard precommit-gate accepted a reviewer bound to the pre-repair commit");
+    assert.match(precommit.stdout, staleBinding);
+  });
+  standardReviewBinding("RUN-legacy-final", false, (repo) => {
+    const precommit = legacyCloseout(repo);
+    assert.equal(precommit.status, 0, `${precommit.stdout}${precommit.stderr}`);
+  });
 
   const failRepo = initRepo();
   repos.push(failRepo);

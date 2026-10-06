@@ -2457,6 +2457,39 @@ function deterministicGateIntegrityFailures(repoRoot, activeRun, gate, options =
   return failures;
 }
 
+// A Standard PASS is accepted only when its deciding reviewer inspected the gate's final application:
+// the reviewer input commit precedes the gate commit with control-only changes in between, its recorded
+// tree is authentic, and (when declared) its scoped application digest equals the gate's applicationTree.
+// lightweight-state-v1 gates must declare applicationCommit/applicationTree; legacy Standard gates, which
+// predate those fields, bind to their repositoryCommit.
+function standardReviewerBoundToGate(repoRoot, activeRun, gate) {
+  if (activeRun?.workflowId !== "lightweight" || gate?.verdict !== "PASS") return [];
+  if (gate.lightweightStateContract && (!gate.applicationCommit || !gate.applicationTree)) {
+    return ["Standard PASS gate must declare its application commit/tree"];
+  }
+  const gateCommit = gate.applicationCommit || gate.repositoryCommit;
+  if (!gateCommit) return ["Standard PASS gate must declare its application commit/tree"];
+  let reviewer;
+  try { reviewer = actorRecordById(repoRoot, gate.decidedBy); } catch (error) { return [error.message]; }
+  const inspectedFinal = Boolean(reviewer.inputCommit)
+    && gitIsAncestor(repoRoot, reviewer.inputCommit, gateCommit)
+    && reviewer.inputTree === gitTreeAt(repoRoot, reviewer.inputCommit)
+    && (!gate.applicationTree
+      || applicationTreeDigest(repoRoot, reviewer.inputCommit, gate.scopePaths || []) === gate.applicationTree)
+    && gitChangedFiles(repoRoot, reviewer.inputCommit, gateCommit).filter((filePath) => !stateControlPath(filePath)).length === 0;
+  return inspectedFinal ? [] : ["Standard reviewer did not inspect the declared final application commit/tree"];
+}
+
+function checkStandardReviewerBinding(repoRoot) {
+  const activeRun = typedActiveRun(repoRoot);
+  if (activeRun?.workflowId !== "lightweight") return result("standard-reviewer-binding", true, "Not a Standard run");
+  const { gate } = latestGateForActiveRun(repoRoot, activeRun, { requirePass: false });
+  const failures = gate ? standardReviewerBoundToGate(repoRoot, activeRun, gate) : [];
+  return failures.length
+    ? result("standard-reviewer-binding", false, failures.join("; "))
+    : result("standard-reviewer-binding", true, "Standard PASS reviewer is bound to the final application commit");
+}
+
 // Narrow, tree-independent decider check for the closeout commit path. Legacy v2 uses a
 // genuine, distinct Process Judge; four-actor v3 uses a deterministic close gate and only
 // validates a Process Judge when an explicit ambiguity/waiver/conflict trigger exists. It
@@ -2464,8 +2497,9 @@ function deterministicGateIntegrityFailures(repoRoot, activeRun, gate, options =
 function checkGateDecider(repoRoot) {
   const activeRun = typedActiveRun(repoRoot);
   if (!activeRun) return result("gate-decider", true, "No typed active run; legacy gate checks remain active");
+  const notAcceptance = "; role/self-approval check only, not a product acceptance by itself";
   if (!isHeavy(activeRun)) {
-    return result("gate-decider", true, "Execution does not require an independent gate decider");
+    return result("gate-decider", true, `Execution does not require an independent gate decider${notAcceptance}`);
   }
   const { gate, failures } = latestGateForActiveRun(repoRoot, activeRun);
   if (gate) {
@@ -2474,11 +2508,11 @@ function checkGateDecider(repoRoot) {
   }
   return failures.length
     ? result("gate-decider", false, failures.join("; "))
-    : result("gate-decider", true, isSingleReviewQuickFix(activeRun)
+    : result("gate-decider", true, (isSingleReviewQuickFix(activeRun)
       ? `${gate.gateId} PASS is decided by the single independent reviewer; closeout is deterministic`
       : gate.gateType === "deterministic-story-close-v3"
       ? `${gate.gateId} PASS is mechanically decided; Process Judge is conditional`
-      : `${gate.gateId} PASS is decided by an independent Process Judge`);
+      : `${gate.gateId} PASS is decided by an independent Process Judge`) + notAcceptance);
 }
 
 function checkGateTransition(repoRoot) {
@@ -2488,6 +2522,7 @@ function checkGateTransition(repoRoot) {
   if (gate) {
     failures.push(...gateDeciderIntegrityFailures(repoRoot, activeRun, gate));
     failures.push(...deterministicGateRecordIntegrityFailures(repoRoot, activeRun, gate));
+    failures.push(...standardReviewerBoundToGate(repoRoot, activeRun, gate));
   }
   return failures.length
     ? result("gate-transition", false, failures.join("; "))
@@ -2516,6 +2551,7 @@ function checkGateVerdict(repoRoot) {
     const recoveredStoryClose = gate.gateType === "recovered-story-close-v1";
     failures.push(...gateDeciderIntegrityFailures(repoRoot, activeRun, gate));
     failures.push(...deterministicGateIntegrityFailures(repoRoot, activeRun, gate));
+    failures.push(...standardReviewerBoundToGate(repoRoot, activeRun, gate));
     const commitError = gate.gateType === "deterministic-story-close-v3"
       ? scopedCommitError(repoRoot, gate.repositoryCommit, `gate ${gate.gateId}`, gate.scopePaths)
       : recordCommitError(repoRoot, gate.repositoryCommit, `gate ${gate.gateId}`);
@@ -3959,18 +3995,7 @@ function validateTerminalCandidate(repoRoot, packageRecord) {
         || !["codereview", "processjudge"].includes(canonicalPhase(decider.phase)))) {
         failures.push("PASS requires the lifecycle's independent reviewer/judge actor");
       }
-      if (decider && gate && currentRun?.workflowId === "lightweight") {
-        if (!gate.applicationCommit || !gate.applicationTree) {
-          failures.push("Standard PASS gate must declare its application commit/tree");
-        } else {
-          const inspectedFinal = gitIsAncestor(repoRoot, decider.inputCommit, gate.applicationCommit)
-            && decider.inputTree === gitTreeAt(repoRoot, decider.inputCommit)
-            && applicationTreeDigest(repoRoot, decider.inputCommit, gate.scopePaths || []) === gate.applicationTree
-            && gitChangedFiles(repoRoot, decider.inputCommit, gate.applicationCommit)
-              .filter((filePath) => !stateControlPath(filePath)).length === 0;
-          if (!inspectedFinal) failures.push("Standard reviewer did not inspect the declared final application commit/tree");
-        }
-      }
+      if (decider && gate) failures.push(...standardReviewerBoundToGate(repoRoot, currentRun, gate));
       if (gate) failures.push(...gateDeciderIntegrityFailures(repoRoot, currentRun, gate));
       const latest = latestGateForActiveRun(repoRoot, currentRun);
       if (latest.gate?.gateId !== gate?.gateId) failures.push("selected PASS gate is not the latest gate for the active run");
@@ -4394,7 +4419,7 @@ function checkPrecommitGate(repoRoot) {
         ? []
         : ["run-authorization", "review-circuit-breaker", "gate-transition"]
       : ["run-authorization", "review-circuit-breaker", ...(stagedGateTransition ? ["gate-transition"] : []), ...(closingPhase ? ["gate-decider", "gate-verdict", ...(isSingleReviewQuickFix(execution.record) ? ["quick-fix-closeout"] : []), ...(epicClosing ? ["epic-process-judge"] : []), "lean-evidence"] : [])]
-    : ["run-authorization", "lean-evidence"];
+    : ["run-authorization", ...(closingPhase && execution.record?.workflowId === "lightweight" ? ["standard-reviewer-binding"] : []), "lean-evidence"];
   const failures = [];
   if (compatibilityTerminalNonPassEpic) {
     if (compatibilityTerminalRecordStaged) {
@@ -4438,6 +4463,8 @@ function checkPrecommitGate(repoRoot) {
             ? checkQuickFixCloseout(repoRoot)
           : name === "gate-verdict"
             ? checkGateVerdict(repoRoot)
+          : name === "standard-reviewer-binding"
+            ? checkStandardReviewerBinding(repoRoot)
             : name === "epic-process-judge"
               ? checkEpicProcessJudgeGate(repoRoot)
           : checkLeanEvidence(repoRoot, ledger);

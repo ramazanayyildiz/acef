@@ -16,6 +16,10 @@ or evidence contract. Do not use it to claim implementation status; link to the 
   `applicationCommit` with only control-path changes in between, its recorded `inputTree` must be that commit's tree, and
   its scoped application digest must equal the gate's `applicationTree`. A review of a pre-repair commit no longer
   certifies a repaired application. Quick Fix and Full v3 keep their existing bindings.
+- fix(validator): the Standard reviewer binding is now one shared check (`standardReviewerBoundToGate`) used by the
+  terminal candidate, `gate-verdict`, `gate-transition`, and a legacy-contract Standard `precommit-gate` closeout
+  (`standard-reviewer-binding`). Legacy Standard gates without `applicationCommit` bind to their `repositoryCommit`.
+  `gate-decider` now states that it is a role/self-approval check only, not a product acceptance by itself.
 - fix(objective): for `objective-accounting-v2` objectives, a validated completion now resets the no-progress
   `activeControlSeconds` to 0 (and stamps `lastProductProgressAt`) exactly once per run. Review and closeout time spent
   after the last product commit no longer pushes an objective whose slice was validly completed into CONSOLIDATING and
