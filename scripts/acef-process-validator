@@ -3959,6 +3959,18 @@ function validateTerminalCandidate(repoRoot, packageRecord) {
         || !["codereview", "processjudge"].includes(canonicalPhase(decider.phase)))) {
         failures.push("PASS requires the lifecycle's independent reviewer/judge actor");
       }
+      if (decider && gate && currentRun?.workflowId === "lightweight") {
+        if (!gate.applicationCommit || !gate.applicationTree) {
+          failures.push("Standard PASS gate must declare its application commit/tree");
+        } else {
+          const inspectedFinal = gitIsAncestor(repoRoot, decider.inputCommit, gate.applicationCommit)
+            && decider.inputTree === gitTreeAt(repoRoot, decider.inputCommit)
+            && applicationTreeDigest(repoRoot, decider.inputCommit, gate.scopePaths || []) === gate.applicationTree
+            && gitChangedFiles(repoRoot, decider.inputCommit, gate.applicationCommit)
+              .filter((filePath) => !stateControlPath(filePath)).length === 0;
+          if (!inspectedFinal) failures.push("Standard reviewer did not inspect the declared final application commit/tree");
+        }
+      }
       if (gate) failures.push(...gateDeciderIntegrityFailures(repoRoot, currentRun, gate));
       const latest = latestGateForActiveRun(repoRoot, currentRun);
       if (latest.gate?.gateId !== gate?.gateId) failures.push("selected PASS gate is not the latest gate for the active run");

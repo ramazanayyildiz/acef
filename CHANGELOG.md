@@ -9,6 +9,14 @@ or evidence contract. Do not use it to claim implementation status; link to the 
 
 ## Unreleased
 
+### Control-plane correctness fixes (2026-10-06)
+
+- fix(validator): a Standard (`lightweight`) PASS terminal candidate now requires the deciding reviewer actor to have
+  inspected the gate's declared final application commit/tree: its input commit must be an ancestor of the gate's
+  `applicationCommit` with only control-path changes in between, its recorded `inputTree` must be that commit's tree, and
+  its scoped application digest must equal the gate's `applicationTree`. A review of a pre-repair commit no longer
+  certifies a repaired application. Quick Fix and Full v3 keep their existing bindings.
+
 ### Evidence reuse and lightweight state now have explicit integrity boundaries
 
 - Limited automatic evidence reuse to successful syntax-only Node checks with explicit source/configuration,

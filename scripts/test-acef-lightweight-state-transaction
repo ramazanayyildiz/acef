@@ -231,6 +231,65 @@ try {
   assert.notEqual(driftedPostTerminalPrecommit.status, 0, "terminal proof authorized a later product commit");
   assert.match(driftedPostTerminalPrecommit.stdout, /application drift|application tree/);
 
+  function standardReviewBinding(runId, reviewBeforeRepair) {
+    const repo = initRepo();
+    repos.push(repo);
+    write(repo, `docs/ai/ACEF_${runId}_DELIVERY_AUDIT.md`, [
+      "# Delivery", "", "## Lean Evidence Contract", "status: PASS", "scope: Story state",
+      "worker_report: docs/ai/evidence/EV-green.json", "review_report: docs/ai/evidence/surface-internal.log",
+      "process_judge_report: docs/ai/evidence/surface-internal.log", "session_handoff_updated: yes",
+      "worker_context: bounded", "fork_context: false", "raw_output_policy: artifact-only",
+      "diff_policy: targeted", "test_output_policy: summary-only", "search_output_policy: summarized", "",
+      "## Session Handoff", "status: ready", "current_step: closeout", "last_passed_gate: G-bind",
+      "next_allowed_step: terminal validation", "active_lane: lightweight", "active_track: standard",
+      `ledger_path: docs/ai/ACEF_${runId}_DELIVERY_AUDIT.md`, "",
+    ].join("\n"));
+    write(repo, "docs/ai/ACEF_ACTIVE_LEDGER", `docs/ai/ACEF_${runId}_DELIVERY_AUDIT.md\n`);
+    write(repo, "docs/ai/ACEF_ACTIVE_RUN.json", activeRecord(repo, runId, "developer"));
+    write(repo, "docs/ai/actors/developer.json", actor(repo, runId, "developer", "development", "developer"));
+    write(repo, "docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json", {
+      runId, activeStory: "Story state", phase: "development", workerId: "developer",
+      allowedPaths: ["app/value.js"], allowedCommands: ["true"],
+      acceptanceCriteria: ["The reviewer inspects the final application commit."],
+      baseRef: git(repo, ["rev-parse", "HEAD"]), maxCommits: 1, canEditLedger: false, canSpawnAgents: false,
+    });
+    if (reviewBeforeRepair) write(repo, "docs/ai/actors/reviewer.json", actor(repo, runId, "reviewer", "process-judge", "process-judge"));
+    write(repo, "app/value.js", "module.exports = 2;\n");
+    git(repo, ["add", "app/value.js"]);
+    git(repo, ["commit", "-qm", "product: repair after review"]);
+    if (!reviewBeforeRepair) write(repo, "docs/ai/actors/reviewer.json", actor(repo, runId, "reviewer", "process-judge", "process-judge"));
+    const green = run(repo, ["evidence-run", "--id", "EV-green", "--kind", "runtime-test", "--actor", "developer", "--story", "Story state", "--satisfies", "focused-verification", "--", "true"]);
+    assert.equal(green.status, 0, green.stderr);
+    const reviewActive = activeRecord(repo, runId, "reviewer");
+    reviewActive.activePhase = "process-judge";
+    write(repo, "docs/ai/ACEF_ACTIVE_RUN.json", reviewActive);
+    const reviewScope = json(repo, "docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json");
+    Object.assign(reviewScope, { phase: "process-judge", workerId: "reviewer" });
+    write(repo, "docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json", reviewScope);
+    assert.equal(run(repo, ["context-sync"]).status, 0);
+    const bytes = "command: true\nexit_code: 0\ninternal result verified\n";
+    write(repo, "docs/ai/evidence/surface-internal.log", bytes);
+    const reviewSurface = { surface: "internal", evidencePath: "docs/ai/evidence/surface-internal.log", command: "true", exitCode: 0 };
+    reviewSurface.runnerProof = {
+      schema: "acef-lightweight-surface-proof-v1",
+      runner: "acef-lightweight-surface-evidence",
+      sha256: lightweightSurfaceProof(reviewSurface, sha256(bytes)),
+    };
+    const reviewLifecycle = lifecycle(runId, "complete");
+    reviewLifecycle.surfaceEvidence = [reviewSurface];
+    write(repo, "docs/ai/ACEF_LIGHTWEIGHT_RUN.json", reviewLifecycle);
+    git(repo, ["add", ".acef", "docs/ai"]);
+    git(repo, ["commit", "-qm", "acef: prepare reviewed closeout"]);
+    const bindGate = run(repo, ["gate", "--id", "G-bind", "--scope", "Story state", "--verdict", "PASS", "--decided-by", "reviewer", "--evidence", "EV-green", "--green-evidence", "EV-green"]);
+    assert.equal(bindGate.status, 0, bindGate.stderr);
+    return run(repo, ["lightweight-complete", "--gate-id", "G-bind", "--disposition", "PASS", "--reason", "verified"]);
+  }
+  const staleReview = standardReviewBinding("RUN-stale-review", true);
+  assert.equal(staleReview.status, 1, "Standard PASS accepted a reviewer that inspected the pre-repair commit");
+  assert.match(staleReview.stderr, /Standard reviewer did not inspect the declared final application commit\/tree/);
+  const finalReview = standardReviewBinding("RUN-final-review", false);
+  assert.equal(finalReview.status, 0, `${finalReview.stdout}${finalReview.stderr}`);
+
   const failRepo = initRepo();
   repos.push(failRepo);
   const failRun = "RUN-fail";

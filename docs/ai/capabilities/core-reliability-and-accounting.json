@@ -4,7 +4,7 @@
   "status": "enforced",
   "requiredLayers": ["docs", "schema", "cli", "workflow", "validator", "tests", "installer"],
   "implementedLayers": {
-    "docs": ["CHANGELOG.md#Evidence reuse and lightweight state now have explicit integrity boundaries", "method/TYPED_STATE.md#Lightweight state publication and recovery", "method/OPERATING_MODEL.md#Worker Context Budget"],
+    "docs": ["CHANGELOG.md#Evidence reuse and lightweight state now have explicit integrity boundaries", "CHANGELOG.md#Control-plane correctness fixes (2026-10-06)", "method/TYPED_STATE.md#Lightweight state publication and recovery", "method/OPERATING_MODEL.md#Worker Context Budget"],
     "schema": ["schemas/active-run-v2.schema.json", "schemas/actor.schema.json", "schemas/evidence.schema.json", "schemas/gate.schema.json", "schemas/objective-supervision-v1.schema.json"],
     "cli": ["scripts/acef-state", "scripts/acef-lightweight-surface-evidence", "scripts/acef-status", "scripts/acef-next"],
     "workflow": ["scripts/lib/acef-native-speed.js", "scripts/lib/acef-evidence-reuse-contract.js", "scripts/lib/acef-state-transaction.js", "scripts/lib/acef-invocation-ledger.js", "scripts/lib/acef-objective-supervisor.js"],
@@ -24,6 +24,7 @@
     { "layer": "tests", "ref": "scripts/test-acef-evidence-reuse", "note": "Actual syntax-only reuse, changed inputs, excluded configuration, unsafe commands, and legacy evidence are covered; aliases do not create physical attempts." },
     { "layer": "tests", "ref": "scripts/test-acef-state-transaction", "note": "Initial-read preconditions, interrupted publication, later-destination edits during recovery, and dead locks without journals are covered." },
     { "layer": "tests", "ref": "scripts/test-acef-lightweight-state-transaction", "note": "Real PASS/non-PASS closure, authentic fixture recovery, exact staged dependencies, control-only terminal commit followed by objective closure, product drift, same-run scope preservation, and new-run isolation pass." },
+    { "layer": "tests", "ref": "scripts/test-acef-lightweight-state-transaction", "note": "2026-10-06: a Standard PASS whose reviewer inspected the pre-repair commit is rejected by lightweight-complete; the same flow with the reviewer bound to the repaired commit (plus a control-only closeout commit) passes. Source-only; no target installation was refreshed." },
     { "layer": "tests", "ref": "scripts/test-acef-objective-accounting", "note": "Nine validated successful runs remain admissible; invalid review artifacts, proof tampering, no-progress/replan limits, and unresolved non-PASS outcomes are rejected. Explicit objective CLI mutation tests also pass." },
     { "layer": "tests", "ref": "scripts/test-acef-invocation-ledger", "note": "Unknown/malformed records, inconsistent IDs/status/times, altered recovery receipts, and repeated cross-mode recovery fail closed." },
     { "layer": "tests", "ref": "scripts/test-acef-lightweight-surface-evidence", "note": "Two declared surfaces consume one immutable evidence source; lifecycle validation passes without executing the source command again." },
