@@ -605,6 +605,11 @@ function prepareValidatedCompletion(repo, objectiveId, input) {
   if (run.successfulCompletion) throw new Error(`run ${run.runId} already has a validated completion`);
   const integrity = completionIntegrity(repo, run.runId, input, { requireFresh: true });
   run.successfulCompletion = { invocationId: input.invocationId, ...integrity, applicationTree: input.applicationTree, validatedAt: new Date().toISOString() };
+  if (next.accounting?.version === "objective-accounting-v2") {
+    // A validated completion is progress: review/closeout time after the last product commit must not carry over.
+    const now = new Date().toISOString();
+    next.progress = { ...next.progress, activeControlSeconds: 0, lastProductProgressAt: now, lastObservedAt: now };
+  }
   return { path: objectivePath(repo, objectiveId), record: reconcileObjective(repo, next) };
 }
 

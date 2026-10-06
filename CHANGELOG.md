@@ -16,6 +16,11 @@ or evidence contract. Do not use it to claim implementation status; link to the 
   `applicationCommit` with only control-path changes in between, its recorded `inputTree` must be that commit's tree, and
   its scoped application digest must equal the gate's `applicationTree`. A review of a pre-repair commit no longer
   certifies a repaired application. Quick Fix and Full v3 keep their existing bindings.
+- fix(objective): for `objective-accounting-v2` objectives, a validated completion now resets the no-progress
+  `activeControlSeconds` to 0 (and stamps `lastProductProgressAt`) exactly once per run. Review and closeout time spent
+  after the last product commit no longer pushes an objective whose slice was validly completed into CONSOLIDATING and
+  block the next slice. Without a completion the counter accumulates as before; v1 objectives are unchanged. Pausing
+  the counter during review is not part of this change.
 
 ### Evidence reuse and lightweight state now have explicit integrity boundaries
 

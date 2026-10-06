@@ -188,6 +188,26 @@ try {
   assert.equal(preparedClose.record.runs[0].outcomeDisposition, "superseded");
   assert.notEqual(objective.loadObjective(repo, "MIXED").status, "DONE", "preparation must not publish objective state");
 
+  // Review/closeout control time after the last product commit must not block the next slice once a run is validated.
+  function accumulateControlTime(name) {
+    const record = objective.loadObjective(repo, name);
+    record.progress.activeControlSeconds = 1800;
+    record.progress.lastObservedAt = new Date(Date.now() - 60 * 1000).toISOString();
+    return objective.publishPreparedObjective({ path: objective.objectivePath(repo, name), record: objective.reconcileObjective(repo, record) });
+  }
+  open("CT-idle", "CONTROL-IDLE");
+  const idle = accumulateControlTime("CONTROL-IDLE");
+  assert.ok(idle.progress.activeControlSeconds >= 1800 + 59, "control time keeps accumulating without a completion");
+  assert.equal(idle.status, "CONSOLIDATING");
+  open("CT-pass", "CONTROL-PASS");
+  assert.equal(accumulateControlTime("CONTROL-PASS").status, "CONSOLIDATING");
+  successful("CT-pass", "CONTROL-PASS");
+  const completedControl = objective.loadObjective(repo, "CONTROL-PASS");
+  assert.equal(completedControl.progress.activeControlSeconds, 0, "validated completion resets no-progress control time");
+  assert.equal(completedControl.status, "EXECUTING");
+  assert.equal(completedControl.accounting.successfulCompletionCount, 1);
+  assert.ok(Date.parse(completedControl.progress.lastProductProgressAt) >= Date.parse(completedControl.runs[0].successfulCompletion.validatedAt) - 1000);
+
   open("CLI-R-1", "CLI-REPLANS");
   bindActiveObjective("CLI-R-1", "CLI-REPLANS");
   for (let index = 1; index <= 5; index += 1) {
