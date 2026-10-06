@@ -336,6 +336,21 @@ try {
     const precommit = legacyCloseout(repo);
     assert.equal(precommit.status, 0, `${precommit.stdout}${precommit.stderr}`);
   });
+  // The legacy closeout path must reuse gate-verdict: product drift after the gate and a missing gate are rejected.
+  standardReviewBinding("RUN-legacy-drift", false, (repo) => {
+    write(repo, "app/value.js", "module.exports = 3;\n");
+    git(repo, ["add", "app/value.js"]);
+    git(repo, ["commit", "-qm", "product: changed after gate"]);
+    const precommit = legacyCloseout(repo);
+    assert.notEqual(precommit.status, 0, "legacy Standard precommit-gate accepted a gate older than the delivered product");
+    assert.match(precommit.stdout, /gate-verdict: [^]*gate G-bind is stale; application paths changed since/);
+  });
+  standardReviewBinding("RUN-legacy-no-gate", false, (repo) => {
+    fs.rmSync(path.join(repo, "docs/ai/gates/G-bind.json"));
+    const precommit = legacyCloseout(repo);
+    assert.notEqual(precommit.status, 0, "legacy Standard precommit-gate accepted a closeout without a gate");
+    assert.match(precommit.stdout, /gate-verdict: [^]*No typed gate verdict for Story state/);
+  });
 
   const failRepo = initRepo();
   repos.push(failRepo);

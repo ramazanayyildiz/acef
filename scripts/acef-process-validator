@@ -2480,16 +2480,6 @@ function standardReviewerBoundToGate(repoRoot, activeRun, gate) {
   return inspectedFinal ? [] : ["Standard reviewer did not inspect the declared final application commit/tree"];
 }
 
-function checkStandardReviewerBinding(repoRoot) {
-  const activeRun = typedActiveRun(repoRoot);
-  if (activeRun?.workflowId !== "lightweight") return result("standard-reviewer-binding", true, "Not a Standard run");
-  const { gate } = latestGateForActiveRun(repoRoot, activeRun, { requirePass: false });
-  const failures = gate ? standardReviewerBoundToGate(repoRoot, activeRun, gate) : [];
-  return failures.length
-    ? result("standard-reviewer-binding", false, failures.join("; "))
-    : result("standard-reviewer-binding", true, "Standard PASS reviewer is bound to the final application commit");
-}
-
 // Narrow, tree-independent decider check for the closeout commit path. Legacy v2 uses a
 // genuine, distinct Process Judge; four-actor v3 uses a deterministic close gate and only
 // validates a Process Judge when an explicit ambiguity/waiver/conflict trigger exists. It
@@ -4413,13 +4403,17 @@ function checkPrecommitGate(repoRoot) {
     : [];
   const compatibilityTerminalRecordStaged = compatibilityTerminalPaths
     .some((filePath) => stagedPaths.includes(filePath));
+  // Legacy (pre-lightweight-state-v1) Standard closeout reuses the gate-verdict evaluation; an explicit
+  // non-PASS terminal disposition keeps its separate closeout path.
+  const legacyStandardPassCloseout = closingPhase && execution.record?.workflowId === "lightweight"
+    && !["FAIL", "REPLAN", "BLOCKED"].includes(String(execution.record.terminalDisposition || "").toUpperCase());
   const subChecks = execution.record && isHeavy(execution.record)
     ? terminalNonPassEpic
       ? compatibilityTerminalNonPassEpic
         ? []
         : ["run-authorization", "review-circuit-breaker", "gate-transition"]
       : ["run-authorization", "review-circuit-breaker", ...(stagedGateTransition ? ["gate-transition"] : []), ...(closingPhase ? ["gate-decider", "gate-verdict", ...(isSingleReviewQuickFix(execution.record) ? ["quick-fix-closeout"] : []), ...(epicClosing ? ["epic-process-judge"] : []), "lean-evidence"] : [])]
-    : ["run-authorization", ...(closingPhase && execution.record?.workflowId === "lightweight" ? ["standard-reviewer-binding"] : []), "lean-evidence"];
+    : ["run-authorization", ...(legacyStandardPassCloseout ? ["gate-verdict"] : []), "lean-evidence"];
   const failures = [];
   if (compatibilityTerminalNonPassEpic) {
     if (compatibilityTerminalRecordStaged) {
@@ -4463,8 +4457,6 @@ function checkPrecommitGate(repoRoot) {
             ? checkQuickFixCloseout(repoRoot)
           : name === "gate-verdict"
             ? checkGateVerdict(repoRoot)
-          : name === "standard-reviewer-binding"
-            ? checkStandardReviewerBinding(repoRoot)
             : name === "epic-process-judge"
               ? checkEpicProcessJudgeGate(repoRoot)
           : checkLeanEvidence(repoRoot, ledger);
