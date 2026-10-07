@@ -187,6 +187,12 @@ try {
   write(passRepo, "docs/ai/ACEF_LIGHTWEIGHT_RUN.json", passLifecycle);
   const gateResult = run(passRepo, ["gate", "--id", "G-pass", "--scope", "Story state", "--verdict", "PASS", "--decided-by", "reviewer", "--evidence", "EV-green", "--green-evidence", "EV-green"]);
   assert.equal(gateResult.status, 0, gateResult.stderr);
+  const goalPass = run(passRepo, ["active-run", "--run-id", passRun, "--workflow-id", "lightweight",
+    "--status", "active", "--story", "Story state", "--phase", "process-judge",
+    "--ledger", `docs/ai/ACEF_${passRun}_DELIVERY_AUDIT.md`, "--goal-status", "PASS", "--last-passed-gate", "G-pass"]);
+  assert.equal(goalPass.status, 0, `valid typed PASS gate was rejected for --goal-status PASS: ${goalPass.stdout}${goalPass.stderr}`);
+  assert.equal(json(passRepo, "docs/ai/ACEF_ACTIVE_RUN.json").goalCoverage.status, "PASS");
+  assert.equal(json(passRepo, "docs/ai/ACEF_ACTIVE_RUN.json").lastPassedGate, "G-pass");
   const originalActive = read(passRepo, "docs/ai/ACEF_ACTIVE_RUN.json");
   const originalContext = fs.existsSync(path.join(passRepo, "docs/ai/ACEF_CURRENT_CONTEXT.md"))
     ? read(passRepo, "docs/ai/ACEF_CURRENT_CONTEXT.md") : null;

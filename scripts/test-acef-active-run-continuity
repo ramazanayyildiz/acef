@@ -1,0 +1,131 @@
+#!/usr/bin/env node
+// WP-3: same-run active-run updates keep assurance/ledger/maxLines/goal state; PASS goal needs a valid typed gate.
+// WP-8a: validator applicationTreeDigest fails loudly on invalid scope paths instead of returning "".
+// WP-11: routing provider is recorded on the run and drives actor runtime binding.
+"use strict";
+const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const os = require("node:os");
+const path = require("node:path");
+const cp = require("node:child_process");
+
+const sourceRoot = path.resolve(__dirname, "..");
+const state = path.join(sourceRoot, "scripts", "acef-state");
+const validator = require(path.join(sourceRoot, "scripts", "acef-process-validator"));
+
+function write(repo, rel, bytes) {
+  const target = path.join(repo, rel);
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+  fs.writeFileSync(target, typeof bytes === "string" ? bytes : `${JSON.stringify(bytes, null, 2)}\n`);
+}
+const json = (repo, rel) => JSON.parse(fs.readFileSync(path.join(repo, rel), "utf8"));
+const git = (repo, args) => cp.execFileSync("git", args, { cwd: repo, encoding: "utf8" }).trim();
+function run(repo, args) {
+  return cp.spawnSync(process.execPath, [state, ...args, "--repo", repo], { cwd: repo, encoding: "utf8" });
+}
+function initRepo() {
+  const repo = fs.mkdtempSync(path.join(os.tmpdir(), "acef-run-continuity-"));
+  git(repo, ["init", "-q"]);
+  git(repo, ["config", "user.email", "acef@example.invalid"]);
+  git(repo, ["config", "user.name", "ACEF Test"]);
+  write(repo, "app/value.js", "module.exports = 1;\n");
+  write(repo, ".acef/control-dosing.json", fs.readFileSync(path.join(sourceRoot, "method", "control-dosing.json"), "utf8"));
+  git(repo, ["add", "app/value.js"]);
+  git(repo, ["commit", "-qm", "fixture"]);
+  return repo;
+}
+const base = (runId) => ["active-run", "--run-id", runId, "--workflow-id", "lightweight", "--status", "active",
+  "--story", "Story cont", "--ledger", `docs/ai/ACEF_${runId}_DELIVERY_AUDIT.md`];
+
+// ---------- WP-3 ----------
+{
+  const repo = initRepo();
+  const start = run(repo, [...base("RUN-c"), "--phase", "development", "--risk-trigger", "migration",
+    "--assurance-rationale", "schema change", "--story-type", "ui-surface", "--required-surface", "ui", "--required-surface", "api"]);
+  assert.equal(start.status, 0, `${start.stdout}${start.stderr}`);
+  let record = json(repo, "docs/ai/ACEF_ACTIVE_RUN.json");
+  assert.equal(record.assuranceProfile, "guarded");
+  assert.equal(record.maxLines, 120, "lightweight run must default maxLines to 120");
+
+  const step = run(repo, [...base("RUN-c"), "--phase", "development", "--next-allowed-step", "implement_to_green"]);
+  assert.equal(step.status, 0, `${step.stdout}${step.stderr}`);
+  record = json(repo, "docs/ai/ACEF_ACTIVE_RUN.json");
+  assert.equal(record.assuranceProfile, "guarded", "same-run update dropped guarded profile");
+  assert.equal(record.assuranceRationale, "schema change", "same-run update dropped assurance rationale");
+  assert.deepEqual(record.riskTriggers, ["migration"], "same-run update dropped risk triggers");
+  assert.equal(record.nextAllowedStep, "implement_to_green");
+
+  const reviewer = run(repo, [...base("RUN-c"), "--phase", "code-review", "--worker-role", "code-review", "--actor", "reviewer"]);
+  assert.equal(reviewer.status, 0, `${reviewer.stdout}${reviewer.stderr}`);
+  record = json(repo, "docs/ai/ACEF_ACTIVE_RUN.json");
+  assert.equal(record.fullLedgerAccess, "denied", "role change must not null fullLedgerAccess on a lightweight run");
+  assert.equal(record.maxLines, 120);
+
+  const covered = run(repo, [...base("RUN-c"), "--phase", "code-review", "--covered-surface", "ui"]);
+  assert.equal(covered.status, 0, `${covered.stdout}${covered.stderr}`);
+  record = json(repo, "docs/ai/ACEF_ACTIVE_RUN.json");
+  assert.equal(record.goalCoverage.storyType, "ui-surface", "partial goal update erased storyType");
+  assert.deepEqual(record.goalCoverage.requiredSurfaces, ["ui", "api"], "partial goal update erased requiredSurfaces");
+  assert.deepEqual(record.goalCoverage.coveredSurfaces, ["ui"]);
+
+  const reset = run(repo, [...base("RUN-c"), "--phase", "code-review", "--goal-reset", "--story-type", "integration"]);
+  assert.equal(reset.status, 0, `${reset.stdout}${reset.stderr}`);
+  record = json(repo, "docs/ai/ACEF_ACTIVE_RUN.json");
+  assert.equal(record.goalCoverage.storyType, "integration");
+  assert.equal(record.goalCoverage.requiredSurfaces, undefined, "--goal-reset must replace goal coverage");
+
+  const before = fs.readFileSync(path.join(repo, "docs/ai/ACEF_ACTIVE_RUN.json"), "utf8");
+  const noGate = run(repo, [...base("RUN-c"), "--phase", "code-review", "--goal-status", "PASS"]);
+  assert.equal(noGate.status, 1, "goal PASS without a typed PASS gate was accepted");
+  assert.match(noGate.stderr, /goal-status PASS requires/);
+  assert.equal(fs.readFileSync(path.join(repo, "docs/ai/ACEF_ACTIVE_RUN.json"), "utf8"), before, "rejected PASS wrote state");
+
+  write(repo, "docs/ai/gates/G-other.json", { schema: "acef.gate.v1", gateId: "G-other", runId: "RUN-other", scope: "Story cont",
+    verdict: "PASS", decidedBy: "reviewer", repositoryCommit: git(repo, ["rev-parse", "HEAD"]), evidenceIds: [], createdAt: new Date().toISOString() });
+  const otherRun = run(repo, [...base("RUN-c"), "--phase", "code-review", "--goal-status", "PASS", "--last-passed-gate", "G-other"]);
+  assert.equal(otherRun.status, 1, "goal PASS accepted a gate that is not a valid PASS gate of this run");
+  assert.equal(fs.readFileSync(path.join(repo, "docs/ai/ACEF_ACTIVE_RUN.json"), "utf8"), before);
+  console.log("WP-3 same-run continuity ok");
+}
+
+// ---------- WP-8a ----------
+{
+  const repo = initRepo();
+  assert.throws(() => validator.applicationTreeDigest(repo, "HEAD", ["app/value.js", "docs/ai/reports/x.md"]),
+    /invalid story scope path docs\/ai\/reports\/x\.md/, "control path in scope must fail loudly, not digest to empty string");
+  assert.throws(() => validator.applicationTreeDigest(repo, "HEAD", ["../escape.js"]), /invalid story scope path/);
+  assert.match(validator.applicationTreeDigest(repo, "HEAD", ["app/value.js"]), /^[a-f0-9]{64}$/);
+  assert.equal(validator.applicationTreeDigest(repo, "0000000000000000000000000000000000000000", ["app/value.js"]), "", "unknown commit still yields an empty digest");
+  console.log("WP-8a loud digest ok");
+}
+
+// ---------- WP-11 ----------
+{
+  const repo = initRepo();
+  const unknown = run(repo, [...base("RUN-p"), "--phase", "development", "--routing-provider", "nonexistent"]);
+  assert.equal(unknown.status, 1);
+  assert.match(unknown.stderr, /routing provider nonexistent/);
+  const start = run(repo, [...base("RUN-p"), "--phase", "development", "--routing-provider", "anthropic"]);
+  assert.equal(start.status, 0, `${start.stdout}${start.stderr}`);
+  assert.equal(json(repo, "docs/ai/ACEF_ACTIVE_RUN.json").routingProvider, "anthropic");
+  const keep = run(repo, [...base("RUN-p"), "--phase", "development", "--next-allowed-step", "write_failing_tests"]);
+  assert.equal(keep.status, 0, `${keep.stdout}${keep.stderr}`);
+  assert.equal(json(repo, "docs/ai/ACEF_ACTIVE_RUN.json").routingProvider, "anthropic", "same-run update dropped routingProvider");
+
+  const actorArgs = (model, effort) => ["actor", "--id", `dev-${model}`, "--story", "Story cont", "--phase", "development", "--role", "developer",
+    "--client", "claude-code", "--model", model, "--effort", effort, "--context-profile", "worker"];
+  const openai = run(repo, actorArgs("gpt-5.6-sol", "high"));
+  assert.equal(openai.status, 1, "openai runtime accepted on an anthropic-routed run");
+  assert.match(openai.stderr, /must bind calibrated runtime claude-/);
+  const claude = run(repo, actorArgs("claude-sonnet-5-5", "high"));
+  assert.equal(claude.status, 0, `${claude.stdout}${claude.stderr}`);
+
+  const defaultRepo = initRepo();
+  const plain = run(defaultRepo, [...base("RUN-d"), "--phase", "development"]);
+  assert.equal(plain.status, 0, `${plain.stdout}${plain.stderr}`);
+  assert.equal(json(defaultRepo, "docs/ai/ACEF_ACTIVE_RUN.json").routingProvider, undefined, "default run must not record a provider");
+  const stillOpenai = run(defaultRepo, actorArgs("gpt-5.6-sol", "high"));
+  assert.equal(stillOpenai.status, 0, `${stillOpenai.stdout}${stillOpenai.stderr}`);
+  console.log("WP-11 routing provider ok");
+}
+console.log("acef active-run continuity tests passed");

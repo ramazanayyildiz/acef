@@ -63,17 +63,26 @@ function validateModelRoutingPolicy(record) {
   if (typeof record.activeProvider !== "string" || !/^[A-Za-z0-9._-]+$/.test(record.activeProvider)) throw new Error("model routing policy requires a safe activeProvider");
   if (!record.roles || typeof record.roles !== "object" || Array.isArray(record.roles) || !Object.keys(record.roles).length) throw new Error("model routing policy requires role assignments");
   if (!record.providers || typeof record.providers !== "object" || Array.isArray(record.providers)) throw new Error("model routing policy requires provider mappings");
-  const provider = record.providers[record.activeProvider];
-  if (!provider?.models || !provider?.reasoning) throw new Error(`model routing policy has no complete mapping for active provider ${record.activeProvider}`);
   for (const [role, assignment] of Object.entries(record.roles)) {
     if (!assignment || typeof assignment !== "object" || !EXECUTION_CLASSES.has(assignment.executionClass)) throw new Error(`model routing role ${role} has invalid executionClass`);
     if (!REASONING_TIERS.has(assignment.reasoningTier)) throw new Error(`model routing role ${role} has invalid reasoningTier`);
     if (typeof assignment.sessionPolicy !== "string" || !assignment.sessionPolicy.trim()) throw new Error(`model routing role ${role} requires sessionPolicy`);
     if (typeof assignment.evidence !== "string" || !assignment.evidence.trim()) throw new Error(`model routing role ${role} requires evidence`);
-    if (typeof provider.models[assignment.executionClass] !== "string" || !provider.models[assignment.executionClass].trim()) throw new Error(`provider ${record.activeProvider} does not map ${assignment.executionClass}`);
-    if (!REASONING_TIERS.has(provider.reasoning[assignment.reasoningTier])) throw new Error(`provider ${record.activeProvider} does not map reasoning tier ${assignment.reasoningTier}`);
   }
+  validateProviderMapping(record, record.activeProvider, "active provider");
   return record;
+}
+
+// Every role must resolve under the named provider; the active provider is checked at load time and a run-selected
+// provider (`active-run --routing-provider`) is checked when it is recorded.
+function validateProviderMapping(record, providerId, label = "provider") {
+  const provider = record.providers?.[providerId];
+  if (!provider?.models || !provider?.reasoning) throw new Error(`model routing policy has no complete mapping for ${label} ${providerId}`);
+  for (const assignment of Object.values(record.roles)) {
+    if (typeof provider.models[assignment.executionClass] !== "string" || !provider.models[assignment.executionClass].trim()) throw new Error(`provider ${providerId} does not map ${assignment.executionClass}`);
+    if (!REASONING_TIERS.has(provider.reasoning[assignment.reasoningTier])) throw new Error(`provider ${providerId} does not map reasoning tier ${assignment.reasoningTier}`);
+  }
+  return provider;
 }
 
 function policyCandidates(repoRoot) {
@@ -124,6 +133,7 @@ module.exports = {
   canonicalRoutingRole,
   loadModelRoutingPolicy,
   resolveActorRuntime,
+  validateProviderMapping,
   resolveRoleRuntime,
   validateModelRoutingPolicy,
 };

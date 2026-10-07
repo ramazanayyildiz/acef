@@ -37,6 +37,15 @@ if (standardDeveloper.model !== "gpt-5.6-sol" || standardDeveloper.reasoningEffo
   throw new Error("Standard/Fix Developer route was not resolved");
 }
 
+const anthropicDeveloper = resolveRoleRuntime(loaded.record, "development", "anthropic");
+if (!/^claude-/.test(anthropicDeveloper.model) || anthropicDeveloper.provider !== "anthropic"
+  || !["low", "medium", "high", "xhigh", "max"].includes(anthropicDeveloper.reasoningEffort)) {
+  throw new Error("anthropic provider mapping did not resolve the development role");
+}
+if (resolveRoleRuntime(loaded.record, "code-review").provider !== "openai") {
+  throw new Error("default provider changed; activeProvider must remain openai");
+}
+
 const portable = structuredClone(loaded.record);
 portable.activeProvider = "future-provider";
 portable.providers["future-provider"] = {

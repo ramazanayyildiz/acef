@@ -65,7 +65,9 @@ continuing.
 Before spawning any admitted semantic actor, read the role-calibrated `active_state.runtime` from `acef-next` and pass
 its exact model and reasoning effort. New Fix and Standard runs bind `admitted-role-routing-v1` and must not inherit
 the conductor's runtime; the hook rejects such dispatches before tokens are spent, and actor registration rechecks the
-binding. Existing in-flight runs keep their original contract. Native work is unaffected.
+binding. Existing in-flight runs keep their original contract. Native work is unaffected. To run on another mapped
+provider (for example `anthropic`), record it once at admission with `acef-state active-run --routing-provider <id>`;
+the effort shown is a recorded claim, so open the actor session at exactly that effort.
 
 New `quick-fix` runs use `quickFixContract: single-review-v1`: Developer, one independent Code Reviewer, and
 deterministic closeout. The Developer owns focused RED→GREEN; a separate ATDD context is forbidden. New Standard runs

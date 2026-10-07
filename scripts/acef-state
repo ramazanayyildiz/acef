@@ -32,7 +32,7 @@ const { validateDurableStoryClosePackage } = require("./lib/acef-story-close");
 const { riskRequiresGuarded, workflowSelectionFailures } = require("./lib/acef-execution-policy");
 const { buildAssuranceRequirements } = require("./lib/acef-assurance-requirements");
 const { staticReuseInputFingerprint } = require("./lib/acef-evidence-reuse-contract");
-const { loadModelRoutingPolicy, resolveActorRuntime, resolveRoleRuntime } = require("./lib/acef-model-routing");
+const { loadModelRoutingPolicy, resolveActorRuntime, resolveRoleRuntime, validateProviderMapping } = require("./lib/acef-model-routing");
 const { installationFreshnessFailures, readInstallationManifest } = require("./lib/acef-installation");
 const {
   attemptPath,
@@ -99,12 +99,16 @@ The existing direct record is the compact compatibility context. Do not inspect 
   console.log(`ACEF typed-state writer
 
 Usage:
-  acef-state active-run --repo <path> --run-id <id> --objective-id <id> --objective-scope <stable-parent-scope> --workflow-id quick-fix|lightweight|full-bmad [--objective-defect <id>...] [--replan-cause new-root-cause|scope-error|evidence-invalid] [options]
+  acef-state active-run --repo <path> --run-id <id> --objective-id <id> --objective-scope <stable-parent-scope> --workflow-id quick-fix|lightweight|full-bmad [--objective-defect <id>...] [--replan-cause new-root-cause|scope-error|evidence-invalid] [options] [--routing-provider <provider-id>] [--goal-reset]
   acef-state objective-qa --repo <path> --objective-id <id> --status running|complete
   acef-state objective-defect --repo <path> --objective-id <id> --id <id> --source review|manual-qa|broad-suite --defect-class <class> --summary <text> --discovered-in-run <id> [--defect-status <status> --batch-key <key> --root-cause-key <key>]
   acef-state objective-defect-transition --repo <path> --objective-id <id> --id <id> --defect-status batched|escalated|fixed|deferred|legacy-quarantined [--batch-key <key>]
   acef-state objective-replan --repo <path> --objective-id <id> --run-id <id> --event-id <id> --cause new-root-cause|scope-error|evidence-invalid
   acef-state objective-close --repo <path> --objective-id <id> --run-id <active-terminal-run-id> --completion-evidence <id> [--run-disposition '<run-id>|<resolved-or-superseded>|<reason>'...]
+  Same-run active-run updates keep assuranceProfile/rationale/approval, riskTriggers, fullLedgerAccess, maxLines,
+  routingProvider and goalCoverage unless a flag changes them; goal flags merge field-by-field (--goal-reset replaces).
+  On lightweight-state-v1 runs, --goal-status PASS needs --last-passed-gate naming a typed PASS gate that passes gate-verdict.
+  --routing-provider selects a provider mapped in the model routing policy (default: the policy's activeProvider).
   acef-state migrate-active-run --repo <path> --workflow-id quick-fix|lightweight|full-bmad [--assurance baseline|guarded] [--assurance-rationale <text>] [--assurance-approval <approval-id>]
   acef-state recover-active-run --repo <path> --red-commit <sha> --product-commit <sha> --red-artifact <path> --reason <text> -- <exact-focused-command>
   acef-state recovery-review --repo <path> --actor <canonical-id> --session-id <id> --verdict PASS|REPLAN [--finding SEVERITY:id:reason]...
@@ -155,7 +159,7 @@ function parseArgs(argv) {
     }
     if (!arg.startsWith("--")) throw new Error(`Unexpected argument: ${arg}`);
     const key = arg.slice(2).replace(/-([a-z])/g, (_, letter) => letter.toUpperCase());
-    if (["force"].includes(key)) {
+    if (["force", "goalReset"].includes(key)) {
       opts[key] = true;
       continue;
     }
@@ -257,6 +261,13 @@ function goalCoverage(opts) {
   if (opts.goalMissing.length) record.missing = opts.goalMissing;
   if (opts.goalNotes) record.notes = opts.goalNotes;
   return record;
+}
+
+function mergedGoalCoverage(opts, previousCoverage) {
+  const update = goalCoverage(opts);
+  if (!update) return opts.goalReset ? null : (previousCoverage || null);
+  if (opts.goalReset || !previousCoverage) return update;
+  return { ...previousCoverage, ...update };
 }
 
 function parseSurfaceEvidence(entries) {
@@ -727,8 +738,16 @@ function writeActiveRun(opts) {
     : (workflowId === "full-bmad" && fullFlowContract === "four-actor-v3"
       && installedDispatchReadinessContract === "full-v3-dispatch-readiness-v1"
       ? installedDispatchReadinessContract : undefined);
-  const riskTriggers = opts.riskTrigger.length ? opts.riskTrigger : [];
-  const assuranceProfile = opts.assurance || (riskRequiresGuarded(riskTriggers) ? "guarded" : "baseline");
+  // Same-run updates keep the admitted risk/assurance state unless a flag explicitly changes it.
+  const riskTriggers = opts.riskTrigger.length ? opts.riskTrigger : (sameRun ? (previous.riskTriggers || []) : []);
+  const assuranceProfile = opts.assurance
+    || (riskRequiresGuarded(riskTriggers) ? "guarded" : ((sameRun && previous.assuranceProfile) || "baseline"));
+  const routingProvider = opts.routingProvider || (sameRun ? previous.routingProvider : undefined) || undefined;
+  if (routingProvider) {
+    const policy = loadModelRoutingPolicy(opts.repo).record;
+    if (!policy.providers[routingProvider]) throw new Error(`routing provider ${routingProvider} is not mapped in the model routing policy ${policy.policyId}`);
+    validateProviderMapping(policy, routingProvider);
+  }
   const scopeUnit = opts.scopeUnit || (opts.epic ? "epic" : "story");
   const expectedStories = opts.expectedStory.length ? [...new Set(opts.expectedStory)] : (sameRun ? previous.expectedStories : undefined);
   if (sameRun && previous.expectedStories && opts.expectedStory.length
@@ -747,8 +766,12 @@ function writeActiveRun(opts) {
     throw new Error(`active story ${opts.story} is not in the frozen expectedStories inventory`);
   }
   const assuranceRationale = opts.assuranceRationale
+    || (sameRun ? previous.assuranceRationale : null)
     || (assuranceProfile === "guarded" ? `risk triggers: ${riskTriggers.join(", ") || "explicit guarded selection"}` : null);
-  if (assuranceProfile === "guarded" && scopeUnit === "epic" && workflowId !== "full-bmad" && !opts.assuranceApproval) {
+  const assuranceApprovalId = opts.assuranceApproval
+    ? safeId(opts.assuranceApproval, "assurance approval id")
+    : (sameRun ? (previous.assuranceApprovalId ?? null) : null);
+  if (assuranceProfile === "guarded" && scopeUnit === "epic" && workflowId !== "full-bmad" && !assuranceApprovalId) {
     throw new Error("non-Full guarded epic requires --assurance-approval <typed approval id>");
   }
   const objectiveRequired = installation?.components?.tools?.objectiveSupervisor === "objective-supervisor-v1";
@@ -776,7 +799,9 @@ function writeActiveRun(opts) {
     : /process[-_ ]?judge/i.test(workerRole || "") ? "story-slice" : "denied";
   const fullLedgerAccess = opts.fullLedgerAccess
     || (sameRun && !opts.workerRole ? previous.fullLedgerAccess : null)
-    || (runtimeContract ? defaultLedgerAccess : null);
+    || (runtimeContract ? defaultLedgerAccess : null)
+    || (sameRun ? previous.fullLedgerAccess : null)
+    || (lightweightStateContract ? defaultLedgerAccess : null);
   const record = {
     schema: "acef.active-run.v2",
     runId: opts.runId,
@@ -797,7 +822,8 @@ function writeActiveRun(opts) {
     scopeUnit,
     ...(expectedStories ? { expectedStories } : {}),
     assuranceRationale,
-    assuranceApprovalId: opts.assuranceApproval ? safeId(opts.assuranceApproval, "assurance approval id") : null,
+    assuranceApprovalId,
+    ...(routingProvider ? { routingProvider } : {}),
     track: opts.track === "guarded" ? null : (opts.track || null),
     status: opts.status,
     ...(opts.terminalDisposition ? { terminalDisposition: opts.terminalDisposition } : {}),
@@ -806,23 +832,32 @@ function writeActiveRun(opts) {
     activeStory: opts.story,
     activePhase: opts.phase,
     activeGoal: activeGoal(opts) || (sameRun ? previous.activeGoal : null),
-    goalCoverage: goalCoverage(opts) || (sameRun ? previous.goalCoverage : null),
+    goalCoverage: mergedGoalCoverage(opts, sameRun ? previous.goalCoverage : null),
     workerRole,
     activeActorId: opts.actor || (sameRun ? previous.activeActorId : null),
     workflowRationale: opts.workflowRationale || opts.laneRationale || (sameRun ? previous.workflowRationale : null),
     intakeDecision: intakeDecision(opts) || (sameRun ? previous.intakeDecision : null),
-    riskTriggers: riskTriggers.length ? riskTriggers : (sameRun ? previous.riskTriggers : []),
+    riskTriggers,
     workerScopePath: opts.workerScope || (sameRun ? previous.workerScopePath : (lightweightStateContract ? "docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json" : null)),
     workflowPath: opts.workflow || (sameRun ? previous.workflowPath : null),
     workflowNodeId: opts.workflowNode || (sameRun ? previous.workflowNodeId : null),
     fullLedgerAccess,
-    maxLines: opts.maxLines ? Number(opts.maxLines) : (sameRun ? previous.maxLines : (runtimeContract ? 120 : null)),
+    maxLines: opts.maxLines
+      ? Number(opts.maxLines)
+      : ((sameRun && previous.maxLines) || ((runtimeContract || lightweightStateContract) ? 120 : null)),
     lastPassedGate: opts.lastPassedGate || (sameRun ? previous.lastPassedGate : null),
     nextAllowedStep: opts.nextAllowedStep || (sameRun ? previous.nextAllowedStep : null),
     ledgerPath: opts.ledger,
     contextPath: opts.context || (sameRun ? previous.contextPath : (lightweightStateContract ? "docs/ai/ACEF_CURRENT_CONTEXT.md" : null)),
     updatedAt: new Date().toISOString(),
   };
+  if (lightweightStateContract === "lightweight-state-v1" && opts.goalStatus === "PASS") {
+    const { goalPassGateFailures } = require("./acef-process-validator");
+    const gateFailures = goalPassGateFailures(opts.repo, record.lastPassedGate);
+    if (gateFailures.length) {
+      throw new Error(`--goal-status PASS requires a validated typed PASS gate for this run (--last-passed-gate): ${gateFailures.join("; ")}`);
+    }
+  }
   if (["two-axis-v1", "two-axis-v2", "two-axis-v3"].includes(record.intakeDecision?.routingPolicyVersion)
     && (!sameRun || normalizedScope(record.activePhase) === "intake")) {
     const routingFailures = workflowSelectionFailures(record);
@@ -1549,7 +1584,7 @@ function writeActor(opts) {
     throw new Error("four-actor-v3 Developer actor requires --session-id for repair continuity");
   }
   if (activeRun?.status === "active" && activeRun.modelRoutingContract === "admitted-role-routing-v1") {
-    const routing = resolveActorRuntime(loadModelRoutingPolicy(opts.repo).record, opts.role, opts.phase);
+    const routing = resolveActorRuntime(loadModelRoutingPolicy(opts.repo).record, opts.role, opts.phase, activeRun.routingProvider || null);
     if (opts.model !== routing.model || opts.effort !== routing.reasoningEffort) {
       throw new Error(`${activeRun.workflowId} ${routing.role} actor must bind calibrated runtime ${routing.model}/${routing.reasoningEffort}; inherited or unspecified runtimes are not allowed`);
     }
@@ -1564,7 +1599,7 @@ function writeActor(opts) {
               : actorPhase === "processjudge" && activeRun.scopeUnit === "epic" ? "epic-process-judge"
               : actorPhase === "processjudge" ? "process-judge" : null;
     if (!routingRole) throw new Error(`capsule-supervisor-v1 cannot route semantic actor phase ${opts.phase}`);
-    const routing = resolveRoleRuntime(loadModelRoutingPolicy(opts.repo).record, routingRole);
+    const routing = resolveRoleRuntime(loadModelRoutingPolicy(opts.repo).record, routingRole, activeRun.routingProvider || null);
     if (opts.model !== routing.model || opts.effort !== routing.reasoningEffort) {
       throw new Error(`capsule-supervisor-v1 ${routingRole} actor must bind calibrated runtime ${routing.model}/${routing.reasoningEffort}`);
     }

@@ -387,9 +387,11 @@ function normalizedScopePaths(paths) {
 }
 
 function applicationTreeDigest(repoRoot, commit = "HEAD", scopePaths = null) {
+  // An invalid scope (control path, absolute, "..") is a configuration error and must fail loudly;
+  // only git lookup failures (unknown commit) degrade to an empty digest.
+  const normalized = scopePaths ? normalizedScopePaths(scopePaths) : null;
   try {
-    if (scopePaths) {
-      const normalized = normalizedScopePaths(scopePaths);
+    if (normalized) {
       const entries = normalized.map((filePath) => {
         const entry = cp.execFileSync("git", ["ls-tree", "--full-tree", commit, "--", filePath], {
           cwd: repoRoot,
@@ -1751,7 +1753,7 @@ function checkTypedActorSeparation(repoRoot, activeRun) {
     if (/^(?:conductor|dispatcher|orchestrator|main|general-purpose)$/i.test(actor.role)) failures.push(`${phase}: invalid role ${actor.role}`);
     if (routingPolicy) {
       try {
-        const expected = resolveActorRuntime(routingPolicy, actor.role, actor.phase);
+        const expected = resolveActorRuntime(routingPolicy, actor.role, actor.phase, activeRun.routingProvider || null);
         if (actor.model !== expected.model || actor.reasoningEffort !== expected.reasoningEffort) {
           failures.push(`${phase}: actor runtime must be ${expected.model}/${expected.reasoningEffort}, got ${actor.model || "null"}/${actor.reasoningEffort || "null"}`);
         }
@@ -1903,6 +1905,21 @@ function latestGateForActiveRun(repoRoot, activeRun, { requirePass = true } = {}
   if (!gate) failures.push(`No typed gate verdict for ${activeRun.activeStory}`);
   else if (requirePass && gate.verdict !== "PASS") failures.push(`Latest typed gate ${gate.gateId} is ${gate.verdict}, not PASS`);
   return { gate, failures };
+}
+
+// Used by `acef-state active-run --goal-status PASS` on lightweight-state-v1 runs: the named gate must be the
+// latest typed PASS gate of this run and the full gate-verdict evaluation must pass on the current tree.
+function goalPassGateFailures(repoRoot, gateId) {
+  const activeRun = typedActiveRun(repoRoot);
+  if (!activeRun) return ["no typed active run"];
+  if (!gateId) return ["--last-passed-gate must name the typed PASS gate"];
+  const { gate, failures } = latestGateForActiveRun(repoRoot, activeRun);
+  if (!gate) return failures;
+  if (gate.gateId !== gateId) failures.push(`latest typed gate for ${activeRun.activeStory} is ${gate.gateId}, not ${gateId}`);
+  if (gate.runId && gate.runId !== activeRun.runId) failures.push(`gate ${gate.gateId} belongs to run ${gate.runId}, not ${activeRun.runId}`);
+  const verdict = checkGateVerdict(repoRoot);
+  if (!verdict.ok) failures.push(verdict.message);
+  return failures;
 }
 
 function gateDeciderIntegrityFailures(repoRoot, activeRun, gate) {
@@ -4649,8 +4666,10 @@ if (require.main === module) {
 
 module.exports = {
   FULL_V3_DISPATCH_CHECKS,
+  applicationTreeDigest,
   evaluateProcessChecks,
   evidenceRecordById,
+  goalPassGateFailures,
   lightweightSurfaceProof,
   stateChangingRiskSignals,
   stateControlPath,

@@ -9,6 +9,31 @@ or evidence contract. Do not use it to claim implementation status; link to the 
 
 ## Unreleased
 
+### B2Press friction fixes WP-3, WP-8a, WP-11 (2026-10-07)
+
+Source: `b2press-rebuild/observations/acef-recommendations-20261007.md` (69 findings from three Standard slices).
+
+- fix(state): a same-run `active-run` update no longer silently drops admitted state. `assuranceProfile`,
+  `assuranceRationale`, `assuranceApprovalId` and `riskTriggers` carry over unless a flag changes them (risk
+  triggers can still raise the profile to guarded; they never lower it implicitly). `fullLedgerAccess` keeps the
+  previous value across a `--worker-role` change when no runtime contract supplies a role default, and
+  `lightweight-state-v1` runs default it to the role default (`denied`) instead of `null`. `maxLines` defaults to 120
+  on `lightweight-state-v1` runs, so `current-context` no longer fails with `Missing field(s): max_lines`.
+  Goal flags (`--story-type`, `--required-surface`, `--covered-surface`, ...) merge field-by-field into the previous
+  `goalCoverage`; `--goal-reset` replaces it. On `lightweight-state-v1` runs `--goal-status PASS` now requires
+  `--last-passed-gate` to name the latest typed PASS gate of this run and the full `gate-verdict` evaluation to pass
+  (`goalPassGateFailures`); a missing, non-PASS, foreign-run or stale gate is rejected and nothing is written.
+- fix(validator): `applicationTreeDigest` no longer returns an empty digest for an invalid scope (control path,
+  absolute path, `..`); it throws `invalid story scope path <path>`, so a worker scope that names `docs/ai/...` fails
+  loudly instead of making every tree comparison trivially equal. Unknown commits still yield an empty digest.
+  `applicationTreeDigest` and `goalPassGateFailures` are exported for `acef-state`.
+- feat(routing): `method/model-routing-policy-v1.json` gains a `providers.anthropic` mapping (Sonnet for every
+  execution class, economical default). `activeProvider` stays `openai`, so existing repos are unchanged. A run selects
+  a provider with `acef-state active-run --routing-provider <id>`; the choice is recorded as `routingProvider` on the
+  active run (schema + parser), carried across same-run updates, and used by actor registration, `acef-next` and the
+  validator's actor-runtime check. An unmapped provider is rejected when recorded. The reasoning effort remains a
+  recorded claim: the launcher must open the session at that effort.
+
 ### Control-plane correctness fixes (2026-10-06)
 
 - fix(validator): a Standard (`lightweight`) PASS terminal candidate now requires the deciding reviewer actor to have

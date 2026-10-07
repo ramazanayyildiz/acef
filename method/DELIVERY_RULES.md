@@ -58,7 +58,9 @@ All admitted semantic actors use the provider-neutral role routing policy, not t
 `acef-next` prints the required model and reasoning effort. New Fix and Standard runs bind
 `modelRoutingContract: admitted-role-routing-v1`; their dispatches fail closed when either value is missing or differs
 from the calibrated route, and actor registration verifies the same binding. Existing in-flight runs retain their
-original contract. Native work is outside this policy because installation is not admission.
+original contract. Native work is outside this policy because installation is not admission. A run that must use a
+different mapped provider records it once with `active-run --routing-provider <id>`; the effort it binds is a claim the
+launcher has to honor when opening the session.
 
 **Surface declaration is lane-independent for admitted ACEF work.** Every admitted work item declares at intake
 which user-facing surface delivers it (`ui`, `admin`, `api`, `cli`, `queue`, …) or records `surface: none` with a

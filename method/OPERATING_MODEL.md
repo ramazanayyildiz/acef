@@ -352,7 +352,10 @@ command, 180 seconds per focused command, 10 minutes of actual command execution
 Every admitted semantic actor uses the provider-neutral role routing policy. `acef-next` exposes the exact model and
 reasoning effort for the current role. New Fix and Standard runs bind `admitted-role-routing-v1`; dispatch is rejected
 before spawn when either field is missing or differs, and actor registration checks the same binding. Existing
-in-flight runs retain their original contract. Native work remains outside ACEF model routing.
+in-flight runs retain their original contract. Native work remains outside ACEF model routing. The policy maps each
+abstract tier per provider; the default provider is the policy's `activeProvider`, and a run may select another mapped
+provider with `acef-state active-run --routing-provider <id>` (recorded as `routingProvider`). The reasoning effort is a
+recorded claim, not an enforcement: the launcher must open the actor session at that effort.
 
 Guarded is not a fourth workflow and does not silently turn ACEF Fix or ACEF Standard into Full BMAD. It only adds
 assurance controls. `full-bmad + guarded` runs one Full lifecycle with the Guarded deltas; it does not repeat readiness,

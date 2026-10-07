@@ -113,6 +113,7 @@ function routedRuntime(repo, activeRun, roleOverride) {
       loadModelRoutingPolicy(repo).record,
       roleOverride || activeRun.workerRole || "",
       activeRun.activePhase || "",
+      activeRun.routingProvider || null,
     );
   } catch {
     return null;
