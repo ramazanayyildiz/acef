@@ -851,11 +851,14 @@ function writeActiveRun(opts) {
     contextPath: opts.context || (sameRun ? previous.contextPath : (lightweightStateContract ? "docs/ai/ACEF_CURRENT_CONTEXT.md" : null)),
     updatedAt: new Date().toISOString(),
   };
-  if (lightweightStateContract === "lightweight-state-v1" && opts.goalStatus === "PASS") {
+  // Any published goal PASS (explicit or inherited through the field-wise merge) must hold for the record being
+  // written: a story change, a raised risk profile or a stale gate invalidates it instead of carrying it forward.
+  if (lightweightStateContract === "lightweight-state-v1" && record.goalCoverage?.status === "PASS") {
     const { goalPassGateFailures } = require("./acef-process-validator");
     const gateFailures = goalPassGateFailures(opts.repo, record.lastPassedGate, validateActiveRunRecord(structuredClone(record)));
     if (gateFailures.length) {
-      throw new Error(`--goal-status PASS requires a validated typed PASS gate for this run (--last-passed-gate): ${gateFailures.join("; ")}`);
+      const origin = opts.goalStatus === "PASS" ? "--goal-status PASS" : "inherited goalCoverage.status PASS";
+      throw new Error(`${origin} requires a validated typed PASS gate for this run context (--last-passed-gate): ${gateFailures.join("; ")}; use --goal-reset or a new --goal-status when the context changed`);
     }
   }
   if (["two-axis-v1", "two-axis-v2", "two-axis-v3"].includes(record.intakeDecision?.routingPolicyVersion)

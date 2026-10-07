@@ -205,6 +205,30 @@ try {
     "--ledger", `docs/ai/ACEF_${passRun}_DELIVERY_AUDIT.md`, "--goal-status", "PASS", "--last-passed-gate", "G-pass"]);
   assert.equal(raisedRisk.status, 1, "goal PASS accepted while raising the run to guarded without guarded evidence");
   assert.equal(read(passRepo, "docs/ai/ACEF_ACTIVE_RUN.json"), afterGoalPass, "rejected raised-risk PASS wrote state");
+  const inheritedStory = run(passRepo, ["active-run", "--run-id", passRun, "--workflow-id", "lightweight",
+    "--status", "active", "--story", "Story NOT REVIEWED", "--phase", "process-judge",
+    "--ledger", `docs/ai/ACEF_${passRun}_DELIVERY_AUDIT.md`]);
+  assert.equal(inheritedStory.status, 1, "story change silently inherited goal PASS");
+  assert.match(inheritedStory.stderr, /inherited goalCoverage.status PASS/);
+  assert.equal(read(passRepo, "docs/ai/ACEF_ACTIVE_RUN.json"), afterGoalPass);
+  const inheritedRisk = run(passRepo, ["active-run", "--run-id", passRun, "--workflow-id", "lightweight",
+    "--status", "active", "--story", "Story state", "--phase", "process-judge", "--risk-trigger", "migration",
+    "--ledger", `docs/ai/ACEF_${passRun}_DELIVERY_AUDIT.md`]);
+  assert.equal(inheritedRisk.status, 1, "risk raise silently inherited goal PASS");
+  assert.equal(read(passRepo, "docs/ai/ACEF_ACTIVE_RUN.json"), afterGoalPass);
+  const unchangedContext = run(passRepo, ["active-run", "--run-id", passRun, "--workflow-id", "lightweight",
+    "--status", "active", "--story", "Story state", "--phase", "process-judge", "--next-allowed-step", "closeout",
+    "--ledger", `docs/ai/ACEF_${passRun}_DELIVERY_AUDIT.md`]);
+  assert.equal(unchangedContext.status, 0, `legitimate same-context update rejected: ${unchangedContext.stderr}`);
+  assert.equal(json(passRepo, "docs/ai/ACEF_ACTIVE_RUN.json").goalCoverage.status, "PASS");
+  const resetStory = run(passRepo, ["active-run", "--run-id", passRun, "--workflow-id", "lightweight",
+    "--status", "active", "--story", "Story state", "--phase", "process-judge", "--goal-reset", "--goal-status", "INCOMPLETE",
+    "--ledger", `docs/ai/ACEF_${passRun}_DELIVERY_AUDIT.md`]);
+  assert.equal(resetStory.status, 0, `--goal-reset update rejected: ${resetStory.stderr}`);
+  const restorePass = run(passRepo, ["active-run", "--run-id", passRun, "--workflow-id", "lightweight",
+    "--status", "active", "--story", "Story state", "--phase", "process-judge", "--goal-status", "PASS", "--last-passed-gate", "G-pass",
+    "--ledger", `docs/ai/ACEF_${passRun}_DELIVERY_AUDIT.md`]);
+  assert.equal(restorePass.status, 0, restorePass.stderr);
   const originalActive = read(passRepo, "docs/ai/ACEF_ACTIVE_RUN.json");
   const originalContext = fs.existsSync(path.join(passRepo, "docs/ai/ACEF_CURRENT_CONTEXT.md"))
     ? read(passRepo, "docs/ai/ACEF_CURRENT_CONTEXT.md") : null;

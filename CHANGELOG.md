@@ -24,7 +24,10 @@ Source: `b2press-rebuild/observations/acef-recommendations-20261007.md` (69 find
   `--last-passed-gate` to name the latest typed PASS gate of this run and the full `gate-verdict` evaluation to pass
   (`goalPassGateFailures`); the check runs against the proposed record (run, story, risk, scope), not the stale
   on-disk run, so a same-run update that changes the story or raises risk cannot inherit a PASS reviewed for another
-  scope. A missing, non-PASS, foreign-run or stale gate is rejected and nothing is written.
+  scope. The same validation applies to a PASS inherited through the merge: an update that changes the story or
+  raises risk without touching the goal flags is rejected (`inherited goalCoverage.status PASS ...`) instead of
+  carrying the old approval forward; unchanged-context updates still pass. A missing, non-PASS, foreign-run or stale
+  gate is rejected and nothing is written.
 - fix(validator): `applicationTreeDigest` no longer returns an empty digest for an invalid scope (control path,
   absolute path, `..`); it throws `invalid story scope path <path>`, so a worker scope that names `docs/ai/...` fails
   loudly instead of making every tree comparison trivially equal. Unknown commits still yield an empty digest.
