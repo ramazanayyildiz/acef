@@ -853,7 +853,7 @@ function writeActiveRun(opts) {
   };
   if (lightweightStateContract === "lightweight-state-v1" && opts.goalStatus === "PASS") {
     const { goalPassGateFailures } = require("./acef-process-validator");
-    const gateFailures = goalPassGateFailures(opts.repo, record.lastPassedGate);
+    const gateFailures = goalPassGateFailures(opts.repo, record.lastPassedGate, validateActiveRunRecord(structuredClone(record)));
     if (gateFailures.length) {
       throw new Error(`--goal-status PASS requires a validated typed PASS gate for this run (--last-passed-gate): ${gateFailures.join("; ")}`);
     }
@@ -1429,7 +1429,7 @@ function writeRecoveryReview(opts) {
     createdAt: now,
   };
   atomicJson(decisionPath, decision, { validate: parseRecoveryReviewDecision });
-  const runtime = resolveRoleRuntime(loadModelRoutingPolicy(opts.repo).record, "process-judge");
+  const runtime = resolveRoleRuntime(loadModelRoutingPolicy(opts.repo).record, "process-judge", activeRun.routingProvider || null);
   const actor = {
     actorInstanceId: actorId,
     runId: activeRun.runId,
@@ -3501,7 +3501,7 @@ function writeReviewCapsule(opts) {
   });
   const totalBytes = Buffer.byteLength(contextContent) + Buffer.byteLength(diffContent);
   if (totalBytes > 400000) throw new Error(`review-capsule exceeds 400000-byte bounded context limit (${totalBytes})`);
-  const reviewRuntime = resolveRoleRuntime(loadModelRoutingPolicy(opts.repo).record, opts.role);
+  const reviewRuntime = resolveRoleRuntime(loadModelRoutingPolicy(opts.repo).record, opts.role, activeRun.routingProvider || null);
   const reviewPolicy = opts.role === "code-review"
     ? ["Judge correctness, security, acceptance conformance, and scope.", "Consume the hash-bound runner proof; do not rerun it unless reporting a named evidence conflict.", "Do not edit files or consume the other reviewer conclusion.", "Use targeted follow-up reads only for a named uncertainty."]
     : ["Judge final-tree patch integrity, test quality, discovery proof, and runner evidence.", "Consume the hash-bound runner proof; rerun only when a named evidence conflict requires adjudication.", "Do not edit files or consume the Code Review conclusion.", "Use targeted follow-up reads only for a named uncertainty."];

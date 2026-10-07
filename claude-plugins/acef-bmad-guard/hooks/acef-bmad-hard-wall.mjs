@@ -415,7 +415,7 @@ function admittedModelRoutingRestricted(repoRoot, payload, toolName, input, comm
   if (!activeRun || activeRun.status !== "active" || activeRun.modelRoutingContract !== "admitted-role-routing-v1") return "";
   try {
     const { policy, resolveActorRuntime } = loadModelRouting(repoRoot);
-    const expected = resolveActorRuntime(policy, activeRun.workerRole || "", activeRun.activePhase || "");
+    const expected = resolveActorRuntime(policy, activeRun.workerRole || "", activeRun.activePhase || "", activeRun.routingProvider || null);
     const actual = spawnRuntime(toolName, input, command);
     if (actual.model !== expected.model || actual.effort !== expected.reasoningEffort) {
       return `ACEF model routing: ${activeRun.workflowId} ${expected.role} dispatch must set model=${expected.model} and reasoning_effort=${expected.reasoningEffort}; received model=${actual.model || "inherited/unspecified"} reasoning_effort=${actual.effort || "inherited/unspecified"}.`;

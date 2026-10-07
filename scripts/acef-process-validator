@@ -1909,15 +1909,17 @@ function latestGateForActiveRun(repoRoot, activeRun, { requirePass = true } = {}
 
 // Used by `acef-state active-run --goal-status PASS` on lightweight-state-v1 runs: the named gate must be the
 // latest typed PASS gate of this run and the full gate-verdict evaluation must pass on the current tree.
-function goalPassGateFailures(repoRoot, gateId) {
-  const activeRun = typedActiveRun(repoRoot);
+function goalPassGateFailures(repoRoot, gateId, candidateRun = null) {
+  // The candidate (proposed run/story/risk/scope) is validated, never the stale on-disk record: a same-run update that
+  // changes the story or raises risk must not inherit a PASS that was reviewed for a different scope.
+  const activeRun = candidateRun || typedActiveRun(repoRoot);
   if (!activeRun) return ["no typed active run"];
   if (!gateId) return ["--last-passed-gate must name the typed PASS gate"];
   const { gate, failures } = latestGateForActiveRun(repoRoot, activeRun);
   if (!gate) return failures;
   if (gate.gateId !== gateId) failures.push(`latest typed gate for ${activeRun.activeStory} is ${gate.gateId}, not ${gateId}`);
   if (gate.runId && gate.runId !== activeRun.runId) failures.push(`gate ${gate.gateId} belongs to run ${gate.runId}, not ${activeRun.runId}`);
-  const verdict = checkGateVerdict(repoRoot);
+  const verdict = checkGateVerdict(repoRoot, activeRun);
   if (!verdict.ok) failures.push(verdict.message);
   return failures;
 }
@@ -2536,8 +2538,9 @@ function checkGateTransition(repoRoot) {
     : result("gate-transition", true, `${gate.gateId} ${gate.verdict} transition is typed and integrity-bound`);
 }
 
-function checkGateVerdict(repoRoot) {
-  const activeRun = typedActiveRun(repoRoot);
+function checkGateVerdict(repoRoot, activeRunOverride = null) {
+  // activeRunOverride lets a writer validate a proposed (not yet published) active run against the current tree.
+  const activeRun = activeRunOverride || typedActiveRun(repoRoot);
   if (!activeRun) return result("gate-verdict", true, "No typed active run; legacy gate checks remain active");
   let activeScope = null;
   const activeScopePath = activeRun.workerScopePath

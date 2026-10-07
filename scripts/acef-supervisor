@@ -211,13 +211,14 @@ function build(repo) {
     throw new Error("supervisor requires an active full-bmad/four-actor-v3/capsule-supervisor run");
   }
   const routingPolicy = loadModelRoutingPolicy(repo);
+  const provider = run.routingProvider || null;
   const runtime = {
-    atdd: resolveRoleRuntime(routingPolicy.record, "atdd"),
-    development: resolveRoleRuntime(routingPolicy.record, "development"),
-    "code-review": resolveRoleRuntime(routingPolicy.record, "code-review"),
-    "patch-assurance": resolveRoleRuntime(routingPolicy.record, "patch-assurance"),
-    "story-judge": resolveRoleRuntime(routingPolicy.record, "process-judge"),
-    "epic-judge": resolveRoleRuntime(routingPolicy.record, "epic-process-judge"),
+    atdd: resolveRoleRuntime(routingPolicy.record, "atdd", provider),
+    development: resolveRoleRuntime(routingPolicy.record, "development", provider),
+    "code-review": resolveRoleRuntime(routingPolicy.record, "code-review", provider),
+    "patch-assurance": resolveRoleRuntime(routingPolicy.record, "patch-assurance", provider),
+    "story-judge": resolveRoleRuntime(routingPolicy.record, "process-judge", provider),
+    "epic-judge": resolveRoleRuntime(routingPolicy.record, "epic-process-judge", provider),
   };
   const story = run.activeStory;
   const storyKey = token(story);

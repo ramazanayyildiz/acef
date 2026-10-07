@@ -2117,6 +2117,21 @@ try {
     cwd: partialHook,
     tool_input: { command: "claude agent run standard-developer --model gpt-5.6-sol --effort high" },
   }, "allow");
+  const providerRun = JSON.parse(fs.readFileSync(path.join(partialHook, "docs", "ai", "ACEF_ACTIVE_RUN.json"), "utf8"));
+  providerRun.routingProvider = "anthropic";
+  fs.writeFileSync(path.join(partialHook, "docs", "ai", "ACEF_ACTIVE_RUN.json"), JSON.stringify(providerRun, null, 2));
+  expectHookDecision("run-selected provider rejects the default provider's runtime", {
+    tool_name: "Agent",
+    cwd: partialHook,
+    tool_input: { task_name: "standard-developer", model: "gpt-5.6-sol", reasoning_effort: "high", prompt: "Implement the bounded change" },
+  }, "deny", {}, ["model=claude-sonnet-5-5", "reasoning_effort=high"]);
+  expectHookDecision("run-selected provider accepts its calibrated runtime", {
+    tool_name: "Agent",
+    cwd: partialHook,
+    tool_input: { task_name: "standard-developer", model: "claude-sonnet-5-5", reasoning_effort: "high", prompt: "Implement the bounded change" },
+  }, "allow");
+  delete providerRun.routingProvider;
+  fs.writeFileSync(path.join(partialHook, "docs", "ai", "ACEF_ACTIVE_RUN.json"), JSON.stringify(providerRun, null, 2));
   const preRoutingRun = JSON.parse(fs.readFileSync(path.join(partialHook, "docs", "ai", "ACEF_ACTIVE_RUN.json"), "utf8"));
   delete preRoutingRun.modelRoutingContract;
   fs.writeFileSync(path.join(partialHook, "docs", "ai", "ACEF_ACTIVE_RUN.json"), JSON.stringify(preRoutingRun, null, 2));

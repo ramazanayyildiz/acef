@@ -193,6 +193,18 @@ try {
   assert.equal(goalPass.status, 0, `valid typed PASS gate was rejected for --goal-status PASS: ${goalPass.stdout}${goalPass.stderr}`);
   assert.equal(json(passRepo, "docs/ai/ACEF_ACTIVE_RUN.json").goalCoverage.status, "PASS");
   assert.equal(json(passRepo, "docs/ai/ACEF_ACTIVE_RUN.json").lastPassedGate, "G-pass");
+  const afterGoalPass = read(passRepo, "docs/ai/ACEF_ACTIVE_RUN.json");
+  const changedStory = run(passRepo, ["active-run", "--run-id", passRun, "--workflow-id", "lightweight",
+    "--status", "active", "--story", "Story NOT REVIEWED", "--phase", "process-judge",
+    "--ledger", `docs/ai/ACEF_${passRun}_DELIVERY_AUDIT.md`, "--goal-status", "PASS", "--last-passed-gate", "G-pass"]);
+  assert.equal(changedStory.status, 1, "goal PASS accepted for a story the gate never reviewed");
+  assert.match(changedStory.stderr, /goal-status PASS requires/);
+  assert.equal(read(passRepo, "docs/ai/ACEF_ACTIVE_RUN.json"), afterGoalPass, "rejected changed-story PASS wrote state");
+  const raisedRisk = run(passRepo, ["active-run", "--run-id", passRun, "--workflow-id", "lightweight",
+    "--status", "active", "--story", "Story state", "--phase", "process-judge", "--risk-trigger", "migration",
+    "--ledger", `docs/ai/ACEF_${passRun}_DELIVERY_AUDIT.md`, "--goal-status", "PASS", "--last-passed-gate", "G-pass"]);
+  assert.equal(raisedRisk.status, 1, "goal PASS accepted while raising the run to guarded without guarded evidence");
+  assert.equal(read(passRepo, "docs/ai/ACEF_ACTIVE_RUN.json"), afterGoalPass, "rejected raised-risk PASS wrote state");
   const originalActive = read(passRepo, "docs/ai/ACEF_ACTIVE_RUN.json");
   const originalContext = fs.existsSync(path.join(passRepo, "docs/ai/ACEF_CURRENT_CONTEXT.md"))
     ? read(passRepo, "docs/ai/ACEF_CURRENT_CONTEXT.md") : null;
