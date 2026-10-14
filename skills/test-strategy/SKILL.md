@@ -68,7 +68,7 @@ Pass the Risk Profile + source file. You'll get a complete test file with all ca
 ### Step A5: Add Browser Tests for Critical Flows
 **Skill**: `test-browser-generator`
 
-For flows that involve a user interacting with a UI, pass the Section B (Browser) cases from the planner. Get Playwright or Dusk test files.
+For flows that involve a user interacting with a UI, pass the Section G (Automated Browser Tests) cases from the planner. Get Playwright or Dusk test files.
 
 ### Pacing Guide
 
@@ -115,7 +115,7 @@ test-coverage-auditor → test-risk-classifier → test-generator
 
 **Quick Scan** (start here if you don't know where the gaps are):
 - Provide your source directory and test directory
-- In Claude Code: the auditor will run `find` and `grep` commands automatically
+- With shell access the auditor runs its bundled scan scripts (`scan_source.py`, `scan_tests.py`, `gap_report.py`)
 - Get a full picture in one pass
 
 **Deep Audit** (if you already know which module to focus on):

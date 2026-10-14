@@ -8,8 +8,6 @@ description: "Compose deliverable-grade flow test suites from flow documents and
 
 Turns a validated flow document and test planning artifacts into a deliverable-grade flow test suite. This is the composition layer — it organizes existing evidence into a complete testing deliverable that QA can execute and developers can automate.
 
-This skill restores the historical `docs/test-cases/flows/*` layer that made the old CRM test documentation effective.
-
 ## Pipeline Position
 
 ```
@@ -314,7 +312,7 @@ Produce all output artifacts.
 
 1. **Compose, do not hallucinate** — This skill reorganizes and densifies known information from upstream artifacts. It does not invent new behaviors, hidden state machines, or bugs beyond what the flow document and test plan provide. If something seems missing, flag it as an unknown.
 
-2. **Avoid duplication** — If module-level tests already cover a case, note it in `relationship_to_module_tests` and skip it — unless the flow needs an end-to-end expression. The old CRM suites were disciplined about this separation.
+2. **Avoid duplication** — If module-level tests already cover a case, note it in `relationship_to_module_tests` and skip it — unless the flow needs an end-to-end expression.
 
 3. **Every case needs a bug rationale** — `what_bug_this_catches` is mandatory. This is what separates a useful test suite from a checkbox exercise. If you can't articulate a specific bug, use "Guards against regression in {component} when {condition} changes."
 

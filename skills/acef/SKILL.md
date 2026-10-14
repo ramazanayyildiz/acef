@@ -213,7 +213,7 @@ A worker launched before this bootstrap is drift. Stop, record it, patch the amb
 - Freeze the mandatory closeout inventory before execution. Closeout analysis may not create actors, mandatory work,
   a larger denominator, or another closeout chain.
 - Full BMAD delegation is approved once per run for ACEF-required persona workers only; generic delegation remains forbidden.
-- Every multi-step feature uses preflight + delivery ledger + Process Judge gates.
+- Full multi-step features use preflight + delivery ledger + Process Judge gates; Fix and Standard runs use their own reviewer and deterministic closeout (see the run-depth rules above).
 - Epic N+1 needs Epic N Process Judge `PASS` and explicit Epic Transition Approval; generic “go on/devam/continue” is not approval.
 - Guarded work needs explicit approval and at least one symbol-grounded boundary test.
 - A proven, bounded defect with no new contract may use ACEF Fix + Guarded even across multiple risky boundaries; do

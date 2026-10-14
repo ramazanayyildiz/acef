@@ -18,7 +18,7 @@ and consumed by `test-generator`. Both skills must agree on this schema.
 | `ClassName` | string | Fully qualified class name |
 | `Overall risk` | enum | LOW / MEDIUM / HIGH / CRITICAL |
 | `Recommended test ratio` | string | e.g. "60% Unit / 40% Feature" |
-| `Complexity Score` | integer | Sum of branches + side effects + deps + invariants |
+| `Complexity Score` | integer | branches × 1.0 + side effects × 2.0 + preconditions × 0.5, rounded (`parse_class.py`) |
 | `Priority` | enum | Critical / Important / Nice to have |
 | `[B{n}]` | branch ID | Numbered branch — maps to a test case in generator |
 | `[SE{n}]` | side effect ID | Numbered side effect — maps to an assertion in generator |
@@ -30,10 +30,10 @@ and consumed by `test-generator`. Both skills must agree on this schema.
 
 | Score | Tier | Recommended minimum test cases |
 |---|---|---|
-| 1–3 | 🟢 LOW | 1–2 (happy path + 1 edge) |
-| 4–6 | 🟡 MEDIUM | 3–5 (all branches + key side effects) |
-| 7–10 | 🔴 HIGH | 6–10 (all branches + all side effects + edge cases) |
-| 10+ | 🚨 CRITICAL | 10+ or refactor first |
+| 0–3 | 🟢 LOW | 2–4 (happy path + 1–2 edge) |
+| 4–7 | 🟡 MEDIUM | 5–8 (all branches + key side effects) |
+| 8–14 | 🔴 HIGH | 8–15 (all branches + all side effects + edge cases) |
+| 15+ | 🚨 CRITICAL | 15+ or refactor first |
 
 ---
 

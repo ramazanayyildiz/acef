@@ -2,9 +2,8 @@
 name: test-generator
 version: 1.0.0
 description: 'Generate complete, production-ready test classes from a Risk Profile.
-  Framework-aware workflow — reads framework-specific templates from references/{framework}/.
-  Currently supports Laravel. from references/{framework}/ before generating code.
-  Currently supports: Laravel (references/laravel/). Triggers on: "generate tests
+  Framework-aware workflow — reads framework-specific templates from references/{framework}/
+  before generating code. Currently supports: Laravel (references/laravel/). Triggers on: "generate tests
   from risk profile", "implement the risk profile", "generate test code", "write the
   test class", "create test file", "implement tests from plan", "generate test skeleton".
   Does NOT trigger on: "plan tests" or "what should I test" — those go to test-case-planner.
@@ -49,7 +48,7 @@ Detect framework → Quick inline analysis → Generate
 ### Quick inline analysis (replaces full pipeline):
 1. List all public methods
 2. For each: count branches (if/else/match), spot obvious side effects
-3. Apply minimum test counts (LOW→2, MEDIUM→4)
+3. Apply the minimum test counts from the tier table below (LOW 2–4, MEDIUM 5–8)
 4. Generate with standard setUp() for detected side effects
 
 ### When to refuse fast path and require full pipeline:
@@ -169,7 +168,7 @@ State the detected framework before proceeding.
 
 Accept input in one of two forms:
 
-**Form A (preferred):** Risk Profile handoff block (see `shared/handoff-schema.md` § "Risk Profile Handoff") + original source file
+**Form A (preferred):** Risk Profile handoff block (the JSON block `test-risk-classifier` appends) + original source file
 **Form B (low-context mode):** Source file only — run basic inline analysis before generating. **Note: this is lower
 confidence. Do not use for ACEF guarded gates, comprehensive coverage, or code with external side effects unless the
 missing risk-profile/test-case evidence is explicitly accepted by the human.**

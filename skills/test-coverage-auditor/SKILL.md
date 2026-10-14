@@ -51,25 +51,27 @@ If the user hasn't specified, ask:
 
 ## Step 2: Discover the Codebase
 
-### With Claude Code (preferred — use the bundled scripts):
+### With shell access (preferred — use the bundled scripts):
+
+`<skill-dir>` is the directory containing this SKILL.md (in an ACEF install, `.claude/skills/test-coverage-auditor`).
 
 ```bash
 # Full pipeline: scan source + tests + generate gap report in one command
-python skills/test-coverage-auditor/scripts/gap_report.py --scan app/ tests/ --summary
+python <skill-dir>/scripts/gap_report.py --scan app/ tests/ --summary
 
 # Or run steps individually:
 
 # 1. Scan source classes (outputs source_map.json)
-python skills/test-coverage-auditor/scripts/scan_source.py app/ --out source_map.json --summary
+python <skill-dir>/scripts/scan_source.py app/ --out source_map.json --summary
 
 # 2. Scan test suite (outputs test_map.json)
-python skills/test-coverage-auditor/scripts/scan_tests.py tests/ --out test_map.json --summary
+python <skill-dir>/scripts/scan_tests.py tests/ --out test_map.json --summary
 
 # 3. Generate prioritized gap report
-python skills/test-coverage-auditor/scripts/gap_report.py source_map.json test_map.json --summary
+python <skill-dir>/scripts/gap_report.py source_map.json test_map.json --summary
 
 # Top N gaps only:
-python skills/test-coverage-auditor/scripts/gap_report.py source_map.json test_map.json --summary --top 15
+python <skill-dir>/scripts/gap_report.py source_map.json test_map.json --summary --top 15
 ```
 
 The scripts handle multi-language (PHP, Python, JS/TS), spaces in filenames,
@@ -153,28 +155,10 @@ grep -rn "assertJsonValidationErrors\|assertSessionHasErrors" tests/
 
 ## Step 5: Score and Prioritize
 
-For each gap found, calculate a priority score:
-
-```
-Priority Score = Coverage Gap Weight + Complexity Estimate + Business Risk
-
-Coverage Gap Weight:
-  RED    = 3 (no tests)
-  ORANGE = 2 (happy path only)
-  YELLOW = 1 (partial)
-
-Complexity Estimate (from file size / method count heuristic):
-  Large file (200+ lines)  = +2
-  Medium file (100-200)    = +1
-  Small file (<100 lines)  = +0
-
-Business Risk:
-  Contains "payment", "billing", "subscription", "auth", "permission" = +3
-  Contains "publish", "distribute", "send", "notify", "delete"       = +2
-  Contains "get", "list", "show", "index", "read"                    = +0
-```
-
-Sort all gaps by score descending — highest score = test first.
+`gap_report.py` computes `priority_score` for every gap (coverage status, method and line counts, untested side
+effects, risk keywords in the class name or path, and missing failure cases); use its order. Without the scripts, rank
+gaps by coverage status first (RED, then ORANGE, then YELLOW), then by untested side effects and size, and move money,
+auth/permission, publishing/sending, and deletion code up. Report the ranking basis you used.
 
 ---
 

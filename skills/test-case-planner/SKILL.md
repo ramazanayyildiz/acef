@@ -8,8 +8,7 @@ description: 'Analyze any codebase and generate a structured, prioritized list o
   Vue, etc.). Triggers on: "plan tests for", "list test cases for", "what test cases
   do I need", "test plan for", "what should I test in", "plan the tests". Does NOT
   trigger on: "write tests", "generate test code", "implement tests" — those go to
-  test-generator. Does NOT trigger on: "where do I start" — that goes to a test-strategy-*
-  skill. Accepts story-map artifacts for broad planning, flow-map artifacts for deeper planning,
+  test-generator. Does NOT trigger on: "where do I start" — that goes to test-strategy. Accepts story-map artifacts for broad planning, flow-map artifacts for deeper planning,
   or direct source files for code-first planning. Run this before test-risk-classifier and test-generator.
 
   '
@@ -441,8 +440,7 @@ before moving to `test-generator` for code generation.
 
 ### Handoff Block (machine-readable)
 
-Always append this block at the end of every Test Case Plan output.
-Schema defined in `shared/handoff-schema.md` § "Test Case Plan Handoff".
+Always append this block at the end of every Test Case Plan output. The block below is the handoff contract.
 
 ```json
 {

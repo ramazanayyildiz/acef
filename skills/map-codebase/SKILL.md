@@ -1,7 +1,7 @@
 ---
 name: map-codebase
 version: 1.0.0
-description: "Auto-generate a code-grounded codebase map and pattern registry for any repo using 4 parallel agents (STACK, ARCHITECTURE, CONVENTIONS, CONCERNS). Use when onboarding to a new codebase, before relying on stale docs, after major refactors, before conformance-sensitive implementation, or when asking 'what does this repo actually do / how does this repo write this'. Triggers: map this codebase, map the repo, codebase map, generate repo map, pattern registry, how does this repo write, what does this codebase look like, scan the repo, repo overview"
+description: "Generate a code-grounded codebase map and pattern registry for a repo using four parallel read-only agents (stack, architecture, conventions, concerns). Use when onboarding to a codebase, when asked for a repo map or overview, before relying on possibly stale docs, after major refactors, before conformance-sensitive implementation, or when asked what a repo does or how it writes a given kind of code."
 ---
 
 # Map Codebase
@@ -119,7 +119,7 @@ removed, or prioritized?"
 
 ### After all 4 agents return
 
-1. **Synthesize** their outputs into a single `codebase-map.md` with five clearly labeled sections
+1. **Synthesize** their outputs into a single `codebase-map.md` with the six labeled sections shown in Output Format
 2. **Verify high-impact claims** from source evidence; never promote a subagent summary directly into a gate.
 3. **Capture a freshness stamp** before writing: `git rev-parse --short HEAD` (commit), the date, and the scope
    covered (which dirs/modules). This lets later runs decide "refresh or reuse?" mechanically instead of guessing.

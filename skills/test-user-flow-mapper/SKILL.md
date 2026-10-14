@@ -214,7 +214,7 @@ If component names are unknown, use descriptive placeholders:
 Before producing the Flow Map, ask (or infer from context):
 
 **Use Compact Mode when:**
-- Passing output to another skill (test-case-planner, test-strategy-*)
+- Passing output to another skill (test-case-planner, test-strategy)
 - The system has more than 8 flows
 - The user asked for "overview", "quick", or "list"
 - Context window is constrained
@@ -363,8 +363,7 @@ Or pass the entire Flow Map to `test-case-planner` for a deeper focused plan.
 
 ## Handoff Block (machine-readable)
 
-Always append this block at the end of every Flow Map output.
-Schema defined in `shared/handoff-schema.md` § "Flow Map Handoff".
+Always append this block at the end of every Flow Map output. The block below is the handoff contract.
 
 ```json
 {

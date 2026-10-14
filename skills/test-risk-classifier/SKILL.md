@@ -170,27 +170,29 @@ For framework-specific fake/mock syntax, read:
 
 ### Lens D: Complexity Score
 
-Score each method using this formula:
+Score each method with the formula `scripts/parse_class.py` uses (`compute_complexity`); when the script runs, take its number:
 
 ```
-Score = branch_count + side_effect_count + dependency_count + precondition_count
+Score = branches × 1.0 + side_effects × 2.0 + preconditions × 0.5   (rounded)
 ```
+
+Side effects weigh most because each needs fakes, setup and assertions; preconditions weigh least because guards reduce the cases needed. Dependencies are listed (Lens C) but not scored.
 
 Map to tier:
 
 | Score | Tier | Meaning |
 |---|---|---|
-| 1–3 | 🟢 LOW | Simple — few cases needed |
-| 4–6 | 🟡 MEDIUM | Standard coverage — include edge cases |
-| 7–10 | 🔴 HIGH | Thorough coverage required — prioritize this method |
-| 10+ | 🚨 CRITICAL | Consider refactoring before testing |
+| 0–3 | 🟢 LOW | Simple — few cases needed |
+| 4–7 | 🟡 MEDIUM | Standard coverage — include edge cases |
+| 8–14 | 🔴 HIGH | Thorough coverage required — prioritize this method |
+| 15+ | 🚨 CRITICAL | Consider refactoring before testing |
 
 **Output per method:**
 ```
 Complexity:
-  Score: 4 (branches) + 4 (side effects) + 5 (deps) + 2 (preconditions) = 15
-  Tier: 🚨 CRITICAL
-  Note: High complexity — consider decomposing this method before writing tests
+  Score: 4 (branches) + 4×2 (side effects) + 2×0.5 (preconditions) = 13
+  Tier: 🔴 HIGH
+  Note: Effect-heavy — set up fakes for every side effect
 ```
 
 ---
@@ -336,8 +338,8 @@ then trigger `test-generator` to produce the test file.
 
 ### Handoff Block (machine-readable)
 
-Always append this block at the end of every Risk Profile output.
-Schema defined in `shared/handoff-schema.md` § "Risk Profile Handoff".
+Always append this block at the end of every Risk Profile output. The block below is the handoff contract that
+`test-generator` validates.
 
 ```json
 {
@@ -380,7 +382,7 @@ Schema defined in `shared/handoff-schema.md` § "Risk Profile Handoff".
 **Rules:**
 - `linked_case_ids` connects back to test-case-plan case_ids for traceability
 - `recommended_test_count` calibration: LOW=2-4, MEDIUM=5-8, HIGH=8-15, CRITICAL=15+
-- Complexity formula: `(branches × 1.0) + (side_effects × 1.5) + (dependencies × 1.0) + (preconditions × 1.2)`
+- Complexity formula and tiers: Lens D (same as `parse_class.py`)
 - Side effect types: DB | EVENT | QUEUE | EMAIL | HTTP | CACHE | FILESYSTEM | LOG
 - `unknowns`: list anything assumed. Generator reads these and asks for missing info.
 

@@ -1,8 +1,10 @@
 ---
 name: test-gen
 version: 1.0.0
-description: 'Generate comprehensive test cases with coverage-driven iteration. Triggers:
-  generate tests, write tests, test this, add tests for, increase coverage, /test-gen'
+description: 'Generate and run Swift/XCTest tests with coverage-driven iteration (swift test
+  + llvm-cov). Use when asked to generate, write, or add tests for Swift package code or
+  to raise its coverage, or on /test-gen. For Laravel/PHP or Risk-Profile-driven test
+  code use test-generator.'
 permalink: ram/04-ai-toolkit/skills/test/test-gen/skill
 ---
 
@@ -96,7 +98,7 @@ permalink: ram/04-ai-toolkit/skills/test/test-gen/skill
 8. **If tests pass, check coverage** (if available):
    ```bash
    swift test --enable-code-coverage
-   xcrun llvm-cov report .build/debug/milayoutPackageTests.xctest/Contents/MacOS/milayoutPackageTests --instr-profile .build/debug/codecov/default.profdata --sources Sources/
+   xcrun llvm-cov report .build/debug/<Package>PackageTests.xctest/Contents/MacOS/<Package>PackageTests --instr-profile .build/debug/codecov/default.profdata --sources Sources/
    ```
 
 9. **Report results:**
@@ -111,18 +113,18 @@ permalink: ram/04-ai-toolkit/skills/test/test-gen/skill
 
 10. Re-run coverage, identify remaining gaps, generate targeted tests for uncovered branches
 
-## Important Rules
+## Rules
 
-- **NEVER modify source code** to make tests pass (unless it's clearly a bug — ask first)
-- **NEVER test private methods** — test through the public API
-- **NEVER create tests that require real macOS permissions** (Accessibility, Screen Recording) — these belong in integration tests, not unit tests
-- **ALWAYS run tests before presenting** — don't show untested test code
-- **ALWAYS match existing project conventions** — read existing tests first
-- **Prefer fewer high-quality tests** over many shallow ones
+- Change source code only to fix a genuine bug, and ask first: the tests should describe current behavior.
+- Test private methods through the public API.
+- Keep tests that need real macOS permissions (Accessibility, Screen Recording) out of unit tests; they belong in integration tests.
+- Run the tests before presenting them; an unrun test is a guess.
+- Match the project's existing test conventions; read existing tests first.
+- Prefer fewer high-quality tests over many shallow ones.
 
 ## Arguments
 
 - `/test-gen` — auto-detect most under-tested module
-- `/test-gen Sources/MiLayoutCore/Window/TileEngine.swift` — target specific file
+- `/test-gen Sources/<Module>/<File>.swift` — target specific file
 - `/test-gen --plan-only` — show test plan without generating code
 - `/test-gen --gaps` — run coverage and show uncovered areas only

@@ -21,7 +21,7 @@ It never asks the user to pick a route, phase, persona, or skill.
    stamp), run Project Adapter Extraction first (stack, test framework/command, CI, folder pattern, golden
    neighbors, risky areas). Stack-agnostic — discover, don't assume.
 2. **Route the work** using the router questions.
-3. **Run only the route's minimum steps** (per `ACEF_BROWNFIELD_PILOT_ROUTES.md`).
+3. **Run only the route's minimum steps** (per `ACEF_BROWNFIELD_ROUTES.md`).
 4. **Pick the golden neighbor** from the adapter; if none qualifies, escalate to the larger/new-pattern route. A neighbor is only qualified when the file match and the consumed symbol/hook/contract shape both match.
 
 ## Router questions (the agent infers what it can; asks only the rest)

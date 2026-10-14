@@ -10,10 +10,12 @@ Use this skill as the front door for ACEF brownfield work.
 
 ## Sources
 
-- `references/ACEF_BROWNFIELD_ROUTES.md`
-- `references/ACEF_AGENT_BEHAVIOR.md`
-- `references/ACEF_PROJECT_ADAPTER_EXTRACTION.md`
-- `references/ACEF_DELIVERY_RULES.md`
+These live in the `acef` skill, installed beside this one:
+
+- `../acef/references/ACEF_BROWNFIELD_ROUTES.md`
+- `../acef/references/ACEF_AGENT_BEHAVIOR.md`
+- `../acef/references/ACEF_PROJECT_ADAPTER_EXTRACTION.md`
+- `../acef/references/ACEF_DELIVERY_RULES.md`
 
 ## Rule
 

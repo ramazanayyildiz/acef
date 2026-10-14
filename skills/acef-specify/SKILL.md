@@ -10,7 +10,7 @@ Use this skill for Route B large features or unclear work that has escalated bey
 
 ## Sources
 
-- `docs/ai/ACEF_BROWNFIELD_PILOT_ROUTES.md`
+- `../acef/references/ACEF_BROWNFIELD_ROUTES.md`
 - project adapter
 - existing BMAD/Kiro/manual artifacts if present
 

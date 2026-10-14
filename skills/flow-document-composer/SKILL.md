@@ -79,7 +79,7 @@ Read the source code to trace the flow. For each step in the journey:
 6. Note side effects (emails, notifications, queue jobs, webhooks)
 7. **Follow side-effect chains to their end** — don't stop at "dispatches event X". Find what X actually triggers. Trace: events → listeners → handlers, observers → callbacks, middleware → hooks, queue jobs → their execute methods. The most important bugs hide at the END of these chains, not at the dispatch point.
 
-Side-effect chain tracing is framework-specific — see `references/` for where to look:
+Side-effect chain tracing is framework-specific. Where to look:
 - Laravel: `EventServiceProvider` → listener classes → `handle()` methods
 - React/Next.js: `useEffect` → API calls → state updates → re-renders
 - Swift: `NotificationCenter` → observers, delegate callbacks

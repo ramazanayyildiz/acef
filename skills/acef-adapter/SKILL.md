@@ -1,7 +1,7 @@
 ---
 name: acef-adapter
 version: 1.0.0
-description: "Extract a project's ACEF Project Adapter — the stack-agnostic, evidence-based snapshot and living repo memory that makes ACEF fit THIS repo: identity/lifecycle, stack + package manager, repo layout, real commands, test setup, CI/CD, golden neighbors, pattern registry, do-not-copy, reuse probes, risk surface, provenance, and freshness. Read-only fact-finding; never installs, never writes tests, never changes code, never picks a framework without approval. Run on first onboarding to a repo, when there's no fresh map, before large/multi-repo/test-bootstrap/conformance-sensitive work, or after major refactors/upgrades. Output is the per-repo adapter (the moat: each project feeds on its own reality). Triggers: extract the adapter, onboard this repo, map this project, project adapter, pattern registry, what stack/test/CI does this repo use, refresh the codemap/adapter"
+description: "Extract a project's ACEF Project Adapter: an evidence-backed snapshot plus living repo memory (stack, commands, test setup, CI/CD, golden neighbors, pattern registry, do-not-copy, risk surface, freshness). Read-only: never installs, writes tests, changes code, or picks a framework without approval. Use when onboarding to a repo, when no fresh adapter or codemap exists, when asked what stack, tests, or CI a repo uses, before large, multi-repo, test-bootstrap, or conformance-sensitive work, or after a major refactor or upgrade."
 ---
 
 # ACEF Project Adapter Extraction

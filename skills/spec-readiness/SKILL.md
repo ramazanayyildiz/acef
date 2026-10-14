@@ -18,6 +18,11 @@ The output is not chat state. Write the verdict to `docs/ai/ACEF_SPEC_READINESS.
 `docs/ai/ACEF_SPEC_READINESS_LOG.jsonl` when the project keeps a readiness history. Dispatch may proceed only when the
 current verdict is `PASS`, or when a human explicitly accepts risk for a reversible low-risk exception.
 
+The process validator enforces the verdict file at dispatch: a `PASS` needs `ambiguity` <= 0.20 unless `fastTrack` is
+true; `fastTrack` is rejected when any trigger or risk flag is high-risk (schema, migration, auth/permission/role,
+money/billing/finance/payout, security, tenant, privacy/PII, persistence/database, CRM); a high-risk non-PASS must list
+`blockingQuestions`; and `repositoryCommit` must name a real commit in the repo.
+
 Clarifying questions are not approval. A PASS must show that missing product facts were answered and that the user has
 approved the resulting brief/spec boundary when the work is guarded or full-BMAD.
 
