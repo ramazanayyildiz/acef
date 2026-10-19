@@ -15,7 +15,7 @@ acef paths.
 ## Why this lane exists
 
 `b2press-rebuild observations/ACEF_EVAL_REPORT.md` (commit `056662ba2`, "Nihai yargı", 2026-10-08) measured ACEF
-Standard against a native flow on the same product:
+against a native flow on the same product:
 
 - Product quality was equal: 7/7 ACEF slices PASS (one after a REVISE round); both native comparison candidates PASS.
 - ACEF caught 1 real defect in 7 slices (P03-EDIT-03: typed evidence re-run on a clean tree exposed a flaky race test).
@@ -231,7 +231,7 @@ admission**, like native work (then the admission triggers below contradict it)?
 | `method/OPERATING_MODEL.md:369` | Fix: the same reviewer may do one delta recheck; one review cycle | the lane's re-review runs in a **new** session and may repeat |
 | `method/OPERATING_MODEL.md:372` | Fix: 30-minute hard stop, 4 commits, 5 files, 50 lines | the lane checks an agent at 90 minutes; size is bounded by the ≤150-line slice and the allowed list, not by counters |
 | `method/BMAD_V2_LANE.md:6` | small/ongoing work uses ACEF Standard | see `DELIVERY_RULES.md:54` |
-| `README.md` "Install & use", step 3 | `/acef` selects Fix, Standard, or Full for admitted work | the front door (`skills/acef/SKILL.md`) does not know the Slice lane |
+| `README.md:167` ("Install & use", step 3) | `/acef` selects Fix, Standard, or Full for admitted work | the front door (`skills/acef/SKILL.md`) does not know the Slice lane |
 
 Consistent, not conflicting: `method/CONTROL_RATIONALE.md:199` and `:205` (worker scope and evidence manifests earn
 their cost when work is delegated, unattended, or later-audited; a skeptical re-run is the stronger backstop) — this is

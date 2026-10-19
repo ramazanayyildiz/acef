@@ -7,6 +7,55 @@ proven, or installed.
 Update this file whenever ACEF itself gains or changes a flow, gate, validator, hook, skill, installer behavior, workflow,
 or evidence contract. Do not use it to claim implementation status; link to the capability record for that.
 
+## v3.0.0-alpha — Slice lane (2026-10-20, branch `v3/slice-lane`, untagged)
+
+Owner decision 2026-10-20 (METHOD-02): fold slice-method into ACEF instead of a separate repository. The Slice lane
+becomes the default for attended single-team work; the v2 Fix/Standard/Full + Guarded lanes are unchanged and remain the
+option for unattended, multi-session, or multi-worker delivery. Capability record:
+`docs/ai/capabilities/slice-lane.json` (`specified`). Lane: `method/SLICE_LANE.md`. Measured basis:
+`b2press-rebuild observations/ACEF_EVAL_REPORT.md` at `056662ba2` (7 ACEF slices PASS, 1 real catch, equal quality vs
+native, 1.72× developer tokens on P03-LIST-01, 162 friction items; heavy flow retired for attended work on 2026-10-07).
+
+From slice-method v0.1.1 (commit `2a3ba48` = tag `v0.1.1` `3951843` + METHOD-01 review records), imported verbatim in
+one commit, then path-fixed:
+
+- Templates → `templates/slice/`: slice (≤150 lines, numbered K items, scanned allowed list with dated additions,
+  standards compliance, size and depth, review class), dev report with pre-review self-check (Jakomeet), review brief
+  with the TAM annex (Cloudflare MIT derivative), review checklist A–E, targeted re-review r2, closing note with
+  `metrics.py` fields, invariants skeleton, hot-file locks, module agent rules, exploration tour.
+- Scripts → `scripts/slice/`: `gate.sh` (project command list from `slice-method.json`, exit 0/1/2/3, one summary
+  line, dirty-tree refusal), `standards-check.sh` (ratchet; a missing tool FAILs), `check-module-boundaries.php`
+  (Jakomeet PR #94, `--namespace`), `codex-review.sh` (required model, read-only, missing verdict = tool error),
+  `metrics.py`, `metrics-demo.sh`, `selfcheck.sh`, `tests/` (gate, standards, boundaries, metrics fixture).
+  `selfcheck.sh` now resolves the acef root and checks only the slice JSON files: SELFCHECK PASS ok=79 fail=0.
+- Schemas → `schemas/slice-method.schema.json`, `schemas/slice-interventions.schema.json` (`$id` in acef style).
+  `install-acef-tools` copies them into targets' `.acef/schemas/`; no slice script is installed.
+- Docs → `docs/slice-lane/`: Turkish README, adoption, open questions, metrics demo 2026-10-19, CHANGELOG (v0.1.0,
+  v0.1.1), METHOD-01 review (REVISE) and r2 (PASS), SOURCES with a slice-method provenance row, examples. Original
+  lines are unchanged so the reviews' `file:line` citations stay valid; an appended section maps package paths to
+  acef paths.
+- `LICENSES/security-audit-MIT.txt` (Cloudflare MIT). ACEF's own licence is still not selected.
+- One cross-link line under the H1 of `AGENTS.md`, `DELIVERY_RULES.md`, `OPERATING_MODEL.md`, `GUARDED_LANE.md`,
+  `BMAD_V2_LANE.md`, `CONTROL_RATIONALE.md`; no v2 text changed. v2 statements that name another default are listed
+  in `method/SLICE_LANE.md` "Unreconciled v2 statements" for the owner.
+
+Side effect: `scripts/slice/` and `schemas/slice-*` are inside `sourceRuntimeDigest`
+(`scripts/lib/acef-installation.js`); installed target repos see a changed source digest and need
+`update-acef-installation` before admitted v2 work, once this branch is the installed source.
+
+Open v0.1.2 items (from `docs/slice-lane/METHOD-01-review-r2.md`, low, non-blocking):
+
+- R1 — SOURCES Live Learning row: last commit per file (docs/standards `7cf9936`, gate `9f953e4`, standards-check
+  `7bf90faa`, baseline `fad01981`).
+- R2 — open-questions #8 and adoption: cite `COORDINATOR-STATE-2026-10-19.md:29` and `OVERNIGHT-2026-10-17.md:81` for
+  the Live Learning push claim.
+- R3 — `standards-check.sh`: apply the "No such file or directory" heuristic only when `count_regex` matched nothing;
+  add case E to the self-test.
+- R4 — the licence file carries a provenance header while SOURCES says "(aynen)": move the header to a NOTICE/README
+  or reword.
+
+Planned for v0.2: closing-note gate before merge, fixed REVISE reason enum, time/token header in review reports.
+
 ## Unreleased
 
 ### B2Press friction fixes WP-3, WP-8a, WP-11 (2026-10-07)

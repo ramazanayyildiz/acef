@@ -29,6 +29,31 @@ contract and experiment instead of rewriting that result.
 ACEF still does not promote SQLite, vector, graph, SCIP, Serena, Codebase-Memory, or Context Mode-backed retrieval
 as defaults.
 
+## v3 — Slice lane (2026-10-20)
+
+**Status:** branch `v3/slice-lane`, not merged, untagged; capability record `docs/ai/capabilities/slice-lane.json`
+(`specified`). Full lane: [`method/SLICE_LANE.md`](method/SLICE_LANE.md).
+
+**What was measured.** In `b2press-rebuild` (`observations/ACEF_EVAL_REPORT.md`, final verdict 2026-10-08), 7
+slices ran under ACEF: all 7 PASS, one real defect caught (a flaky race test exposed by re-running the evidence on a
+clean tree), product quality equal to the native comparison runs, 1.7× developer tokens on the one slice with a direct
+token comparison (P03-LIST-01), and 162 friction items plus 70+ manual interventions. The owner retired the heavy flow
+for attended work there on 2026-10-07. Limits: one product, one team, one model family, small sample; escaped defects
+were not measured.
+
+**What the Slice lane keeps.** Numbered acceptance items; an allowed-file list from a usage scan; a re-run of every
+claimed command on a clean tree before review; an independent reviewer in a separate session (another model family for
+money and migration slices); 3–5 mutations per new or changed rule; real-browser evidence (1280 and 390 px); a targeted
+re-review in a new session after REVISE; a closing note with fixed fields. What it drops: admission, typed run state,
+`acef-state`/`acef-next`, ledgers, preflight artifacts, and gate records.
+
+**Where it applies.** The Slice lane is the default for attended single-team work. The v2 Fix/Standard/Full + Guarded
+lanes stay intact for unattended, multi-session, or multi-worker delivery. The v2 documents are not rewritten; where
+they name another default, `method/SLICE_LANE.md` lists the conflict for the owner.
+
+**Planned for v0.2.** A closing-note gate before merge; a fixed REVISE reason enum in review findings; a time/token
+header line in every review report. Four low-severity v0.1.2 items (R1–R4) are open.
+
 ## Core idea
 
 Generic AI development frameworks are useful, but they fall short on real codebases because they don't know:
@@ -80,12 +105,18 @@ method/      The delivery engine — how the work actually runs
   PRODUCT_RISK_MODEL.md domain-agnostic product risk / edge-case modeling method (documented-only)
   RULE_ENFORCEMENT_MAP.md  which rules are machinery/shard/JIT vs documentation-only
   DELIVERY_RULES.md    lane selection + promotion — the glue (Layer 5)
+  SLICE_LANE.md        v3 default lane for attended single-team work (slice-method v0.1.1)
 skills/      The ACEF agent skills you install into Claude Code
   acef/ acef-adapter/ acef-router/ acef-specify/ acef-test-bootstrap/ acef-release-adapter/   orchestration + adapter memory
   map-codebase/                                                          codemap + pattern registry / repo grounding (Layer 4)
   test-user-flow-mapper/ test-case-planner/ test-browser-generator/
   test-gen/ test-generator/ test-coverage-auditor/ test-strategy/ test-risk-classifier/
   flow-document-composer/ flow-suite-composer/ storymap/ bug-hunter/      test, flow, and review workhorses (Layer 2)
+templates/slice/  Slice-lane templates copied into applications (slice, reports, review brief/checklist, closing note)
+scripts/slice/    Slice-lane scripts: gate, standards ratchet, module boundaries, codex review, metrics, selfcheck + tests
+docs/slice-lane/  Slice-lane source docs (Turkish): adoption, open questions, metrics demo, METHOD-01 reviews, SOURCES
+schemas/slice-*.schema.json  slice-method.json project declaration and intervention log schemas
+LICENSES/         Third-party licence texts for derived content (Cloudflare MIT for the TAM review annex)
 archive/external-skills/  Non-ACEF third-party skill snapshots kept for reference only, not installed as ACEF skills
 docs/        The developer-guide website (also published via GitHub Pages)
 README.md
@@ -476,3 +507,5 @@ The site lives in `docs/` and is published with GitHub Pages (Source: `main`, Fo
 ## License
 
 License not selected yet. BMAD-METHOD, referenced as an optional dependency, is MIT-licensed and not redistributed here.
+`LICENSES/` holds third-party licence texts for derived content only (Cloudflare MIT for the Slice lane's TAM review
+annex in `templates/slice/review-brief.md`); it does not select a licence for ACEF itself.
