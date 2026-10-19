@@ -1,6 +1,6 @@
 # ACEF Delivery Rules — Lanes + Promotion (Layer 5, the glue)
 
-> **v3 (2026-10-20): Slice lane.** For attended single-team work the default lane is now [`method/SLICE_LANE.md`](SLICE_LANE.md). This document still describes the v2 lanes, which stay intact as the option for unattended, multi-session, or multi-worker delivery. Statements below that name a different default are listed in `method/SLICE_LANE.md` ("Unreconciled v2 statements") for the owner to reconcile; they are not rewritten here.
+> **v3 (2026-10-20): Slice lane.** For attended single-team work the default lane is now [`method/SLICE_LANE.md`](SLICE_LANE.md). This document still describes the v2 lanes, which stay intact as the option for unattended, multi-session, or multi-worker delivery. Statements below that name a different default keep their v2 text and carry a "Slice lane exception" sentence that applies the owner's decision (2026-10-20: the Slice lane sits beside admission); `method/SLICE_LANE.md` ("Reconciled v2 statements") lists them.
 
 This is the **integration layer**: it doesn't add a new tool, it says **which layer runs for which work**, so the
 operating model (Layer 1), the test/flow skills (Layer 2), the BMAD v2 lane (Layer 3), and the codemap/adapter
@@ -14,6 +14,8 @@ CI, golden neighbors, pattern registry, risk surface, with a freshness stamp. No
 Contained reversible single-boundary/single-surface work is outside ACEF and uses targeted repo reads plus focused
 verification. It does not create ACEF artifacts. The retired `direct` lane exists only to read, close, or promote
 records created before retirement.
+Slice lane exception: this short-circuit is unchanged; attended single-team work that goes beyond it runs in the Slice lane
+(`SLICE_LANE.md`) beside admission.
 
 ACEF runs in lean mode by default: durable artifacts carry the evidence; chat carries only compact status. Do not paste
 full artifacts, broad search output, long logs, or worker transcripts into chat unless the user asks for detail.
@@ -55,6 +57,9 @@ Native repository work is the default for truly contained, reversible work. ACEF
 benefits from independent review, ACEF Fix handles reproduced defects, and ACEF Full handles planning-heavy scope.
 Guarded is an additive assurance profile available on all three workflows. A non-Full Guarded epic is exceptional and
 requires typed human approval; ordinary epics use ACEF Full, with Guarded added when risk requires it.
+Slice lane exception: for attended single-team work with the owner present, the Slice lane (`SLICE_LANE.md`), not ACEF
+Fix/Standard/Full, is the default for scoped work, defects, and epics; the workflows above are the default for unattended,
+multi-session, or multi-worker delivery.
 
 All admitted semantic actors use the provider-neutral role routing policy, not the conductor's inherited runtime.
 `acef-next` prints the required model and reasoning effort. New Fix and Standard runs bind
@@ -63,6 +68,8 @@ from the calibrated route, and actor registration verifies the same binding. Exi
 original contract. Native work is outside this policy because installation is not admission. A run that must use a
 different mapped provider records it once with `active-run --routing-provider <id>`; the effort it binds is a claim the
 launcher has to honor when opening the session.
+Slice lane exception: Slice lane work is outside this policy; its reviewer model comes from `REVIEW_MODEL` / `slice-method.json` via
+`scripts/slice/codex-review.sh`.
 
 **Surface declaration is lane-independent for admitted ACEF work.** Every admitted work item declares at intake
 which user-facing surface delivers it (`ui`, `admin`, `api`, `cli`, `queue`, …) or records `surface: none` with a
@@ -87,6 +94,8 @@ Before any admitted ACEF lane executes, the conductor must write/update the pref
 No preflight artifact with `PASS` means no planning, implementation, test generation, release, or done-state change.
 For multi-step features, the conductor must also create/update the feature delivery ledger described in
 `OPERATING_MODEL.md`. Preflight proves the start; the ledger proves the run stayed on the rails.
+Slice lane exception: the Slice lane is not an admitted lane and writes no preflight artifact or delivery ledger; the slice file
+(`templates/slice/slice.md`) and the closing note play those roles.
 
 Before any admitted ACEF worker fan-out, source verification, deep workflow/template read, planning artifact, or implementation step,
 the conductor must also complete the Active Run Bootstrap from `OPERATING_MODEL.md`: target repo/workspace resolved,
@@ -103,6 +112,11 @@ run's gates.
 | Bug fix | native when contained; otherwise ACEF Fix; ACEF Full if planning/scope expands | Baseline or Guarded from risk |
 | Large feature / epic | ACEF Full (BMAD v2) by default | Baseline or Guarded from risk |
 | Test-case extraction · automation | capability inside the selected workflow | inherits selected assurance |
+
+Slice lane exception: for attended single-team work with the owner present, small features, bug fixes beyond the native
+short-circuit, and large features/epics run in the Slice lane (`SLICE_LANE.md`) as slices grouped into phases with an
+exploration tour at phase close; risk selects the TAM review class instead of Guarded. The table above applies to
+unattended, multi-session, or multi-worker delivery.
 
 **Test/flow work (D/E/F) is a capability set invoked inside a route, not a separate lane.** A small feature needing
 tests pulls the test skills into ACEF Standard; an epic needing E2E pulls them into ACEF Full.
@@ -186,6 +200,8 @@ Two consecutive typed non-`PASS` review verdicts or a third repair cycle on the 
 `REPLAN/SPLIT`. V3 additionally treats a new HIGH in consecutive rounds or growing patch scope as an earlier reviewer
 signal, but its mechanical hard stop is the bounded repair counter. Legacy contracts retain their
 code-review/test-review/Judge inputs. The breaker does not grep prose or require literal `REPLAN` wording.
+Slice lane exception: the Slice lane has no repair counter or breaker: REVISE leads to a targeted re-review in a new session (r2,
+r3, …), and moving the work to a v2 lane is an owner decision.
 
 Full-BMAD ATDD starts with the critical vertical path. The Test Author maps every acceptance criterion, but regression-
 only criteria do not each need a red test before the first implementation. When ATDD returns `REVISE`, do not blindly

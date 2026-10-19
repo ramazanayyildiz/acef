@@ -1,6 +1,6 @@
 # ACEF Guarded Assurance — high-risk controls at any execution depth
 
-> **v3 (2026-10-20): Slice lane.** For attended single-team work the default lane is now [`method/SLICE_LANE.md`](SLICE_LANE.md). This document still describes the v2 lanes, which stay intact as the option for unattended, multi-session, or multi-worker delivery. Statements below that name a different default are listed in `method/SLICE_LANE.md` ("Unreconciled v2 statements") for the owner to reconcile; they are not rewritten here.
+> **v3 (2026-10-20): Slice lane.** For attended single-team work the default lane is now [`method/SLICE_LANE.md`](SLICE_LANE.md). This document still describes the v2 lanes, which stay intact as the option for unattended, multi-session, or multi-worker delivery. Statements below that name a different default keep their v2 text and carry a "Slice lane exception" sentence that applies the owner's decision (2026-10-20: the Slice lane sits beside admission); `method/SLICE_LANE.md` ("Reconciled v2 statements") lists them.
 
 > Compatibility note: the filename predates active-run v2. Guarded is now an assurance profile, not a lane.
 
@@ -14,6 +14,8 @@ boundary where a mistake cannot be apologized away. It composes with exactly one
 
 At epic scope, ACEF Full is the default. Choosing non-Full + Guarded requires typed human approval and retains the
 epic-boundary capstone described below.
+Slice lane exception: attended risky epics run in the Slice lane (`SLICE_LANE.md`) as TAM slices without typed approval records;
+this default and approval govern admitted v2 runs.
 
 ## Per story / work item (any scale)
 
@@ -96,6 +98,8 @@ Owner ratification is a typed approval in the validation repo (`approval-capston
   requires a typed approval with the owner's exact words (`acef-state approval`) and `assuranceApprovalId` set
   on active-run v2. An agent that starts a non-Full Guarded epic without that record has reproduced the O2-19
   deviation.
+  Slice lane exception: this approval governs admitted v2 runs only; attended epics in the Slice lane need no
+  `acef-state approval` record.
 - Prefer **full BMAD v2** when the epic needs heavy *planning* discipline per story — ambiguous requirements,
   architecture conformance risk, unfamiliar stack — because guarded adds its extra weight at the close, not at
   readiness/ATDD time.

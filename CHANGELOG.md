@@ -7,7 +7,7 @@ proven, or installed.
 Update this file whenever ACEF itself gains or changes a flow, gate, validator, hook, skill, installer behavior, workflow,
 or evidence contract. Do not use it to claim implementation status; link to the capability record for that.
 
-## v3.0.0-alpha — Slice lane (2026-10-20, branch `v3/slice-lane`, untagged)
+## v3.0.0-alpha — Slice lane (2026-10-20, tag `v3.0.0-alpha`)
 
 Owner decision 2026-10-20 (METHOD-02): fold slice-method into ACEF instead of a separate repository. The Slice lane
 becomes the default for attended single-team work; the v2 Fix/Standard/Full + Guarded lanes are unchanged and remain the
@@ -36,8 +36,13 @@ one commit, then path-fixed:
   acef paths.
 - `LICENSES/security-audit-MIT.txt` (Cloudflare MIT). ACEF's own licence is still not selected.
 - One cross-link line under the H1 of `AGENTS.md`, `DELIVERY_RULES.md`, `OPERATING_MODEL.md`, `GUARDED_LANE.md`,
-  `BMAD_V2_LANE.md`, `CONTROL_RATIONALE.md`; no v2 text changed. v2 statements that name another default are listed
-  in `method/SLICE_LANE.md` "Unreconciled v2 statements" for the owner.
+  `BMAD_V2_LANE.md`, `CONTROL_RATIONALE.md`.
+- Reconciled (owner decision 2026-10-20: the Slice lane sits beside admission and is the default for attended,
+  single-team, owner-present work; it does not go through admission, typed approvals, `acef-next` model binding, or
+  the Fix counters). Every v2 statement that names another default keeps its text and gets a "Slice lane exception"
+  sentence next to it in `AGENTS.md`, `README.md`, `DELIVERY_RULES.md`, `OPERATING_MODEL.md`, `GUARDED_LANE.md`,
+  `BMAD_V2_LANE.md`; `method/SLICE_LANE.md` "Reconciled v2 statements" maps each row to its sentence.
+  `skills/acef/SKILL.md` selects the Slice lane for attended work before the admission short-circuit.
 
 Side effect: `scripts/slice/` and `schemas/slice-*` are inside `sourceRuntimeDigest`
 (`scripts/lib/acef-installation.js`); installed target repos see a changed source digest and need

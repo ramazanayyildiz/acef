@@ -31,7 +31,7 @@ as defaults.
 
 ## v3 — Slice lane (2026-10-20)
 
-**Status:** branch `v3/slice-lane`, not merged, untagged; capability record `docs/ai/capabilities/slice-lane.json`
+**Status:** merged to `main`, tag `v3.0.0-alpha`; capability record `docs/ai/capabilities/slice-lane.json`
 (`specified`). Full lane: [`method/SLICE_LANE.md`](method/SLICE_LANE.md).
 
 **What was measured.** In `b2press-rebuild` (`observations/ACEF_EVAL_REPORT.md`, final verdict 2026-10-08), 7
@@ -48,8 +48,10 @@ re-review in a new session after REVISE; a closing note with fixed fields. What 
 `acef-state`/`acef-next`, ledgers, preflight artifacts, and gate records.
 
 **Where it applies.** The Slice lane is the default for attended single-team work. The v2 Fix/Standard/Full + Guarded
-lanes stay intact for unattended, multi-session, or multi-worker delivery. The v2 documents are not rewritten; where
-they name another default, `method/SLICE_LANE.md` lists the conflict for the owner.
+lanes stay intact for unattended, multi-session, or multi-worker delivery. The Slice lane sits beside admission (owner
+decision 2026-10-20): no admission, typed approvals, `acef-next` model binding, or Fix counters. The v2 text is kept;
+where it names another default, a "Slice lane exception" sentence follows it (`method/SLICE_LANE.md`, "Reconciled v2
+statements"), and `/acef` picks the Slice lane for attended work.
 
 **Planned for v0.2.** A closing-note gate before merge; a fixed REVISE reason enum in review findings; a time/token
 header line in every review report. Four low-severity v0.1.2 items (R1–R4) are open.
@@ -167,6 +169,8 @@ files the agent follows. No build, no npm, no services.
 3. **Use it** — open your own repo and run `/acef` (or just say "use acef"). It first decides whether ACEF controls are
    warranted, then selects ACEF Fix (`quick-fix`), ACEF Standard (`lightweight`), or ACEF Full (`full-bmad`), and
    independently selects Baseline or Guarded assurance per `method/DELIVERY_RULES.md`.
+   Slice lane exception: for attended single-team work with the owner present, `/acef` selects the Slice lane
+   (`method/SLICE_LANE.md`) beside admission: no admission, typed approvals, `acef-next` binding, or Fix counters.
    New Quick Fix runs use `single-review-v1`: one developer, one independent reviewer, focused evidence, and
    deterministic closeout with a 30-minute hard stop. Guarded does not add the Full BMAD review stack.
    Reversible contained single-boundary/single-surface tasks stay outside ACEF: use targeted reads, the smallest native

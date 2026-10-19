@@ -1,6 +1,6 @@
 # ACEF Operating Model — Personas + Tracks (Layer 1)
 
-> **v3 (2026-10-20): Slice lane.** For attended single-team work the default lane is now [`method/SLICE_LANE.md`](SLICE_LANE.md). This document still describes the v2 lanes, which stay intact as the option for unattended, multi-session, or multi-worker delivery. Statements below that name a different default are listed in `method/SLICE_LANE.md` ("Unreconciled v2 statements") for the owner to reconcile; they are not rewritten here.
+> **v3 (2026-10-20): Slice lane.** For attended single-team work the default lane is now [`method/SLICE_LANE.md`](SLICE_LANE.md). This document still describes the v2 lanes, which stay intact as the option for unattended, multi-session, or multi-worker delivery. Statements below that name a different default keep their v2 text and carry a "Slice lane exception" sentence that applies the owner's decision (2026-10-20: the Slice lane sits beside admission); `method/SLICE_LANE.md` ("Reconciled v2 statements") lists them.
 
 The base operating model for running multi-agent delivery work. It is a **process guide**, not a rules document, and
 it is **stack-agnostic** — the specific branch names, model tiers, and example surfaces are filled in per repo by the
@@ -42,6 +42,8 @@ workflows, architecture change, or unresolved scope. A proven bounded defect in 
 Fix + Guarded. Reversible copy, style, localized UI/config, docs, localized bug fixes, and already-patterned mechanical
 edits stay outside ACEF: use the repository's native workflow, targeted reads, the smallest patch, and focused
 verification. The retired `direct` lane remains only to close or promote existing compatibility records.
+Slice lane exception: attended single-team work that needs more than this native path runs in the Slice lane (`SLICE_LANE.md`)
+beside admission instead of being admitted.
 
 ## Worker Context Budget
 
@@ -326,6 +328,8 @@ ACEF makes three separate decisions. Do not collapse them into one lane name:
 
 1. **Admission:** contained reversible single-boundary/single-surface work uses the repository-native workflow;
    work that needs ACEF controls is admitted to ACEF.
+   Slice lane exception: attended single-team work with the owner present sits beside admission in the Slice lane
+   (`SLICE_LANE.md`); this admission decision governs unattended, multi-session, or multi-worker delivery.
 2. **Execution workflow:** planning depth and lifecycle weight.
 3. **Assurance profile:** risk controls added to the selected workflow.
 
@@ -358,6 +362,8 @@ in-flight runs retain their original contract. Native work remains outside ACEF 
 abstract tier per provider; the default provider is the policy's `activeProvider`, and a run may select another mapped
 provider with `acef-state active-run --routing-provider <id>` (recorded as `routingProvider`). The reasoning effort is a
 recorded claim, not an enforcement: the launcher must open the actor session at that effort.
+Slice lane exception: Slice lane work is outside this policy; its reviewer model comes from `REVIEW_MODEL` / `slice-method.json` via
+`scripts/slice/codex-review.sh`.
 
 Guarded is not a fourth workflow and does not silently turn ACEF Fix or ACEF Standard into Full BMAD. It only adds
 assurance controls. `full-bmad + guarded` runs one Full lifecycle with the Guarded deltas; it does not repeat readiness,
@@ -370,6 +376,9 @@ may perform one delta recheck after one repair, but there is still one review cy
 closeout validates focused red, green, revert-proof, and—when user-facing—product-outcome evidence. It mechanically
 enforces four commits maximum, five product files, 50 product-line churn, four evidence runs, zero framework failures,
 and a 30-minute hard stop. Process Judge and the Full BMAD review stack are not part of this contract.
+Slice lane exception: the single review cycle and the Fix counters (commits, files, lines, evidence runs, 30-minute stop) do not
+apply to the Slice lane: the re-review after REVISE runs in a new session and may repeat, size is bounded by the
+≤150-line slice and its allowed-file list, and an agent is checked at 90 minutes.
 
 The retired `direct` experiment is not a BMAD flow. Existing `ACEF_DIRECT_RUN.json` records remain readable only so
 they can be closed or promoted; new contained work stays outside ACEF.

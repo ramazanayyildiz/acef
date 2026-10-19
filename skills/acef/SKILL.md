@@ -31,7 +31,8 @@ Evidence stays on disk; chat stays small.
 ## What This Agent Does
 
 1. Identify current state and next useful action.
-2. Bootstrap the active run before workers or deep planning, except when the task does not qualify for ACEF admission.
+2. Bootstrap the active run before workers or deep planning, except when the task does not qualify for ACEF admission
+   or runs in the Slice lane.
 3. Route the work through ACEF.
 4. Delegate to the right helper/persona skill.
 5. Verify durable evidence before saying `PASS`.
@@ -40,6 +41,16 @@ Evidence stays on disk; chat stays small.
 ## Required References By Situation
 
 Read only the references needed for the current step, but do read the selected files completely.
+
+**Slice lane selection (v3, decide first):** when the work is attended single-team work (the owner or a coordinator is
+present, writes the slice, and runs the clean-tree re-run), use the Slice lane: read `method/SLICE_LANE.md` in the ACEF
+source repository (adopted applications carry `slice-method.json` and the templates under `docs/slices/_templates/`).
+The Slice lane sits beside admission: create no preflight/run/ledger/context artifacts, call no `acef-state` or
+`acef-next`, bind no `admitted-role-routing-v1` runtime, record no typed approvals, and apply no Fix counters. Money,
+permissions/tenant, state transitions, migrations, and security select its TAM review class, not admission. Truly tiny
+contained work still takes the native short-circuit below. Unattended or asynchronous delivery, multi-session work
+without a standing coordinator, and multi-worker fan-out that must be audited later continue with the admission flow
+below. Moving attended work to a v2 lane is an owner decision.
 
 **ACEF admission short-circuit:** when the request is clearly reversible copy/style/local UI/config/docs/mechanical
 work or a localized bug fix with one technical boundary and one product surface, stop routing: the task stays outside

@@ -2,13 +2,16 @@
 
 This is the short entry point for fresh agents working on ACEF.
 
-> **v3 (2026-10-20): Slice lane.** For attended single-team work, read [`method/SLICE_LANE.md`](method/SLICE_LANE.md) first: it is the default lane there and needs no ACEF admission, active-run state, or `acef-state`/`acef-next` calls. The rules below govern the v2 lanes (Fix/Standard/Full + Guarded), which remain the option for unattended, multi-session, or multi-worker delivery. Where they name a different default, `method/SLICE_LANE.md` lists the conflict for the owner to reconcile.
+> **v3 (2026-10-20): Slice lane.** For attended single-team work, read [`method/SLICE_LANE.md`](method/SLICE_LANE.md) first: it is the default lane there and needs no ACEF admission, active-run state, or `acef-state`/`acef-next` calls. The rules below govern the v2 lanes (Fix/Standard/Full + Guarded), which remain the option for unattended, multi-session, or multi-worker delivery. Where they name a different default, a "Slice lane exception" sentence next to the statement applies the owner's decision (2026-10-20: the Slice lane sits beside admission); `method/SLICE_LANE.md` ("Reconciled v2 statements") lists them.
 
 ## ACEF Admission
 
 Do not bootstrap ACEF for reversible, contained work with one technical boundary and one product surface. Use the
 repository's native workflow, make targeted reads, implement the smallest patch, run focused verification, and report
 the result. Do not create ACEF run artifacts for that work.
+Slice lane exception: this native short-circuit is unchanged for tiny contained work; attended single-team work with the owner present
+that goes beyond it runs in the Slice lane (`method/SLICE_LANE.md`), which sits beside admission and creates no ACEF run
+artifacts either.
 
 Native implementation should not multiply implementation subagents. Installation is not admission: when no ACEF
 lifecycle is active, the hard-wall is inert and does not govern agents, shell commands, tests, or repository-native
@@ -28,6 +31,9 @@ When the requested patch is green, stop; record unrelated failures as follow-up 
 Start ACEF only when the request needs its controls: persistence/migration, security/privacy/permissions, money,
 provider integration, realtime, concurrency/fencing, state-machine behavior, tracking/reporting/analytics, a new
 pattern, multiple technical boundaries/product surfaces, irreversible effects, or multi-session/worker coordination.
+Slice lane exception: when such work is attended (single team, owner or coordinator present), it runs in the Slice lane instead of
+being admitted, and the risk domains above select the Slice lane's TAM review class; these admission triggers govern
+unattended, multi-session, or multi-worker delivery.
 
 For admitted work, choose execution depth and assurance separately:
 
@@ -38,6 +44,9 @@ For admitted work, choose execution depth and assurance separately:
 Every admitted semantic actor dispatch must bind the role-calibrated model and reasoning effort printed by
 `acef-next`. Do not omit these fields and inherit the conductor runtime. New Fix and Standard runs bind
 `modelRoutingContract: admitted-role-routing-v1`; Full retains its compiled routing and Native remains outside ACEF.
+Slice lane exception: Slice lane actors are not admitted and bind no `acef-next` runtime; the reviewer model comes from
+`REVIEW_MODEL` / `slice-method.json` via `scripts/slice/codex-review.sh` (another model family is mandatory for money and
+migration slices).
 
 Every new admitted run belongs to one stable parent objective. Pass `--objective-id` and `--objective-scope` when
 writing active-run state; changing a run or story label does not reset its cumulative run, replan, review, or active
@@ -46,6 +55,9 @@ commit, consolidate into the objective defect ledger. An attempted eighth run or
 until a human-approved scope split. Manual QA must finish before non-critical findings are explicitly batched; critical
 security, money, migration, realtime, concurrency, or state-machine findings remain independent Standard/Full + Guarded
 work. Same-run review remediation remains capped at two cycles.
+Slice lane exception: the Slice lane has no objective counters and no two-cycle cap: each REVISE gets a targeted re-review in a new
+session, an agent past 90 minutes without progress is restarted with a narrowed task, and moving the work to a v2 lane
+is an owner decision.
 
 For a newly created Fix/Standard parent objective with `objective-accounting-v2`, the run/replan/review thresholds
 above apply to consecutive no-progress work, not lifetime successful deliveries. Validated completion resets that

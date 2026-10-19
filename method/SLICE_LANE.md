@@ -1,8 +1,9 @@
 # ACEF Slice Lane (v3) — the default for attended single-team work
 
-> Status: owner decision 2026-10-20 (METHOD-02: "ACEF'i güncelle, yeni repo açmak yerine"), branch `v3/slice-lane`,
-> not merged to `main`. Capability record: `docs/ai/capabilities/slice-lane.json` (`specified`: documented, with
-> standalone self-tested scripts; nothing in ACEF's front door, installers, hooks, or validators routes to it yet).
+> Status: owner decision 2026-10-20 (METHOD-02: "ACEF'i güncelle, yeni repo açmak yerine"), merged to `main`, tag
+> `v3.0.0-alpha`. Capability record: `docs/ai/capabilities/slice-lane.json` (`specified`: documented, with standalone
+> self-tested scripts; the `/acef` front door selects it in prose, but no installer, hook, or validator routes to or
+> enforces it).
 > Source: slice-method `2a3ba48` (tag `v0.1.1` = `3951843` plus the METHOD-01 review records), imported unchanged
 > under `templates/slice/`, `scripts/slice/`, `docs/slice-lane/`, `schemas/slice-*.schema.json`, `LICENSES/`.
 
@@ -41,8 +42,9 @@ observer is present).
 
 Risk does not move work out of the Slice lane. Money, permissions/tenant, state transitions, migrations, and security
 select the **TAM** review class, which raises the review dose (below). Moving attended work to a v2 lane is an owner
-decision; nothing promotes automatically. Whether truly tiny contained work still uses the native short-circuit of
-`AGENTS.md` is an open reconciliation item (see the end of this page).
+decision; nothing promotes automatically. The lane sits beside admission (owner decision 2026-10-20): it does not go
+through ACEF admission, typed approvals, `acef-next` model binding, or the Fix counters. Truly tiny contained work still
+takes the native short-circuit of `AGENTS.md`; the Slice lane starts where that ends (see "Reconciled v2 statements").
 
 ## Flow
 
@@ -210,28 +212,38 @@ Open low-severity items from `docs/slice-lane/METHOD-01-review-r2.md` (non-block
 - **R4** — `LICENSES/security-audit-MIT.txt` carries a provenance header, so SOURCES' "(aynen)" is inaccurate: move the
   header to a NOTICE/README or reword to "(licence text verbatim, provenance header on top)".
 
-## Unreconciled v2 statements
+## Reconciled v2 statements
 
-Owner decision needed. The central question: is the Slice lane an **admitted ACEF lane** (then the admission,
-preflight, active-run, ledger, and model-routing rules below apply to it and contradict it) or does it sit **beside
-admission**, like native work (then the admission triggers below contradict it)? Line numbers are on branch
-`v3/slice-lane` after the cross-link lines were added.
+Owner decision 2026-10-20 (relayed by the coordinator: "admission yanında ayrı hat"): the Slice lane is a lane
+**beside admission**. It is the default for attended, single-team, owner-present work and does not go through ACEF
+admission, typed approvals, `acef-next` model binding, or the Fix counters. The v2 admitted lanes (Fix / Standard /
+Full, Baseline or Guarded) remain for unattended, multi-worker, or unsupervised delivery. The v2 text is kept; a
+"Slice lane exception" sentence next to each statement applies the decision. Line numbers are on `main` at tag
+`v3.0.0-alpha`.
 
-| File:line | v2 statement | Conflict with the Slice lane |
-|---|---|---|
-| `AGENTS.md:9` | reversible one-boundary/one-surface work uses the native workflow, no ACEF artifacts | the lane does not say whether tiny work still goes native or becomes a HAFİF slice |
-| `AGENTS.md:28` | start ACEF (admission) for persistence/migration, security/permissions, money, state machine, multi-session coordination … | the lane handles exactly these attended cases as TAM slices without admission |
-| `AGENTS.md:38`, `method/DELIVERY_RULES.md:59`, `method/OPERATING_MODEL.md:354` | every admitted actor binds the model/effort printed by `acef-next` (provider-neutral routing policy) | the lane picks the reviewer model via `REVIEW_MODEL` / `slice-method.json` and `codex-review.sh`; no `acef-next` |
-| `AGENTS.md:48`, `method/DELIVERY_RULES.md:185` | review remediation capped at two cycles; two consecutive non-PASS → `REPLAN/SPLIT` | the lane has no circuit breaker; REVISE → r2 → r3 … without a cap |
-| `method/DELIVERY_RULES.md:14`, `:54` | native is the default for contained work; ACEF Standard handles scoped work with independent review | for attended work the lane, not Standard, is the default for scoped work with independent review |
-| `method/DELIVERY_RULES.md:86` | preflight artifact before any admitted lane executes | the lane has no preflight artifact; the slice file plays that role |
-| `method/DELIVERY_RULES.md:102`, `:104` | small feature → ACEF Standard; large feature/epic → ACEF Full by default | attended features and epics run as slices grouped into phases with an exploration tour |
-| `method/GUARDED_LANE.md:15`, `:95` | at epic scope ACEF Full is the default; non-Full Guarded epics need typed human approval | attended risky epics run as TAM slices without typed approval records |
-| `method/OPERATING_MODEL.md:42`, `:327` | admission: contained work native, everything needing controls admitted to ACEF | same question as `AGENTS.md:9/28` |
-| `method/OPERATING_MODEL.md:369` | Fix: the same reviewer may do one delta recheck; one review cycle | the lane's re-review runs in a **new** session and may repeat |
-| `method/OPERATING_MODEL.md:372` | Fix: 30-minute hard stop, 4 commits, 5 files, 50 lines | the lane checks an agent at 90 minutes; size is bounded by the ≤150-line slice and the allowed list, not by counters |
-| `method/BMAD_V2_LANE.md:6` | small/ongoing work uses ACEF Standard | see `DELIVERY_RULES.md:54` |
-| `README.md:167` ("Install & use", step 3) | `/acef` selects Fix, Standard, or Full for admitted work | the front door (`skills/acef/SKILL.md`) does not know the Slice lane |
+Interpretation (owner may override): the decision defines the lane by attendance, not size, and does not retire the
+native short-circuit. Truly tiny reversible one-boundary/one-surface work therefore stays native; the Slice lane starts
+where native ends, for attended work that would otherwise be admitted. Rows marked ¹ rest on this reading.
+
+| v2 statement (file:line) | v2 statement | Was in conflict with the Slice lane | Reconciled: exception at |
+|---|---|---|---|
+| `AGENTS.md:9` ¹ | reversible one-boundary/one-surface work uses the native workflow, no ACEF artifacts | the lane did not say whether tiny work still goes native or becomes a HAFİF slice | `AGENTS.md:12` |
+| `AGENTS.md:31` | start ACEF (admission) for persistence/migration, security/permissions, money, state machine, multi-session coordination … | the lane handles exactly these attended cases as TAM slices without admission | `AGENTS.md:34` |
+| `AGENTS.md:44`, `method/DELIVERY_RULES.md:64`, `method/OPERATING_MODEL.md:358` | every admitted actor binds the model/effort printed by `acef-next` (provider-neutral routing policy) | the lane picks the reviewer model via `REVIEW_MODEL` / `slice-method.json` and `codex-review.sh`; no `acef-next` | `AGENTS.md:47`, `method/DELIVERY_RULES.md:71`, `method/OPERATING_MODEL.md:365` |
+| `AGENTS.md:57`, `method/DELIVERY_RULES.md:199` | review remediation capped at two cycles; two consecutive non-PASS → `REPLAN/SPLIT` | the lane has no circuit breaker; REVISE → r2 → r3 … without a cap | `AGENTS.md:58`, `method/DELIVERY_RULES.md:203` |
+| `method/DELIVERY_RULES.md:14` ¹, `:56` | native is the default for contained work; ACEF Standard handles scoped work with independent review | for attended work the lane, not Standard, is the default for scoped work with independent review | `method/DELIVERY_RULES.md:17`, `:60` |
+| `method/DELIVERY_RULES.md:93` | preflight artifact before any admitted lane executes | the lane has no preflight artifact; the slice file plays that role | `method/DELIVERY_RULES.md:97` |
+| `method/DELIVERY_RULES.md:111`, `:113` | small feature → ACEF Standard; large feature/epic → ACEF Full by default | attended features and epics run as slices grouped into phases with an exploration tour | `method/DELIVERY_RULES.md:116` |
+| `method/GUARDED_LANE.md:15`, `:97` | at epic scope ACEF Full is the default; non-Full Guarded epics need typed human approval | attended risky epics run as TAM slices without typed approval records | `method/GUARDED_LANE.md:17`, `:101` |
+| `method/OPERATING_MODEL.md:42` ¹, `:329` ¹ | admission: contained work native, everything needing controls admitted to ACEF | same question as `AGENTS.md:9/31` | `method/OPERATING_MODEL.md:45`, `:331` |
+| `method/OPERATING_MODEL.md:375` | Fix: the same reviewer may do one delta recheck; one review cycle | the lane's re-review runs in a **new** session and may repeat | `method/OPERATING_MODEL.md:379` |
+| `method/OPERATING_MODEL.md:378` | Fix: 30-minute hard stop, 4 commits, 5 files, 50 lines | the lane checks an agent at 90 minutes; size is bounded by the ≤150-line slice and the allowed list, not by counters | `method/OPERATING_MODEL.md:379` |
+| `method/BMAD_V2_LANE.md:6` | small/ongoing work uses ACEF Standard | see `DELIVERY_RULES.md:56` | `method/BMAD_V2_LANE.md:8` |
+| `README.md:169` ("Install & use", step 3) | `/acef` selects Fix, Standard, or Full for admitted work | the front door (`skills/acef/SKILL.md`) did not know the Slice lane | `README.md:172`; front door: `skills/acef/SKILL.md:34` (step 2) and `:45` ("Slice lane selection", read before the admission short-circuit) |
+
+The H1 banners of `AGENTS.md`, `method/DELIVERY_RULES.md`, `method/OPERATING_MODEL.md`, `method/GUARDED_LANE.md`,
+`method/BMAD_V2_LANE.md`, and `method/CONTROL_RATIONALE.md` point here. The condensed copies under
+`skills/acef/references/` are not changed; `/acef` reads the Slice lane selection in `SKILL.md` before them.
 
 Consistent, not conflicting: `method/CONTROL_RATIONALE.md:199` and `:205` (worker scope and evidence manifests earn
 their cost when work is delegated, unattended, or later-audited; a skeptical re-run is the stronger backstop) — this is

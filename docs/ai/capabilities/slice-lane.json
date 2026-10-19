@@ -7,7 +7,7 @@
     "docs": [
       "method/SLICE_LANE.md",
       "README.md#v3 — Slice lane (2026-10-20)",
-      "CHANGELOG.md#v3.0.0-alpha — Slice lane (2026-10-20, branch v3/slice-lane, untagged)",
+      "CHANGELOG.md#v3.0.0-alpha — Slice lane (2026-10-20, tag v3.0.0-alpha)",
       "docs/slice-lane/README.md",
       "docs/slice-lane/adoption.md",
       "docs/slice-lane/open-questions.md",
@@ -16,7 +16,8 @@
       "docs/slice-lane/METHOD-01-review.md",
       "docs/slice-lane/METHOD-01-review-r2.md",
       "docs/slice-lane/metrics-2026-10-19.md",
-      "LICENSES/security-audit-MIT.txt"
+      "LICENSES/security-audit-MIT.txt",
+      "skills/acef/SKILL.md#Slice lane selection"
     ],
     "artifact": [
       "templates/slice/slice.md",
@@ -52,8 +53,8 @@
     ]
   },
   "limitations": [
-    "Standalone: nothing in the ACEF front door (skills/acef), acef-next/acef-status, installers, hooks, validators, or method/control-dosing.json routes to or enforces the Slice lane. Applications copy the files manually per docs/slice-lane/adoption.md.",
-    "The v2 method documents still name other defaults; the conflicts are listed in method/SLICE_LANE.md 'Unreconciled v2 statements' and await the owner.",
+    "Standalone runtime: skills/acef/SKILL.md selects the Slice lane in prose ('Slice lane selection'), but nothing in acef-next/acef-status, installers, hooks, validators, or method/control-dosing.json routes to or enforces it. Applications copy the files manually per docs/slice-lane/adoption.md; the condensed skills/acef/references/ copies do not mention the lane.",
+    "Reconciled 2026-10-20 (owner decision: the Slice lane sits beside admission): every v2 statement that names another default keeps its text and carries a 'Slice lane exception' sentence; method/SLICE_LANE.md 'Reconciled v2 statements' maps each row. Keeping tiny contained work native is an interpretation the owner may override.",
     "Evidence for the lane's value is one product (b2press-rebuild), one team, one model family, small sample (ACEF_EVAL_REPORT.md at 056662ba2); escaped defects were not measured.",
     "scripts/slice/ and schemas/slice-*.schema.json fall inside sourceRuntimeDigest (scripts/lib/acef-installation.js), so installed target repos see a changed ACEF source digest and need update-acef-installation; install-acef-tools copies the two slice schemas into .acef/schemas/ but no slice script.",
     "Open v0.1.2 items R1-R4 (docs/slice-lane/METHOD-01-review-r2.md) and the three v0.2 items (closing-note gate, REVISE reason enum, time/token header) are not implemented."

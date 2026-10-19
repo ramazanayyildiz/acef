@@ -1,10 +1,12 @@
 # ACEF Full (BMAD v2) — the planning-heavy execution workflow (Layer 3)
 
-> **v3 (2026-10-20): Slice lane.** For attended single-team work the default lane is now [`method/SLICE_LANE.md`](SLICE_LANE.md). This document still describes the v2 lanes, which stay intact as the option for unattended, multi-session, or multi-worker delivery. Statements below that name a different default are listed in `method/SLICE_LANE.md` ("Unreconciled v2 statements") for the owner to reconcile; they are not rewritten here.
+> **v3 (2026-10-20): Slice lane.** For attended single-team work the default lane is now [`method/SLICE_LANE.md`](SLICE_LANE.md). This document still describes the v2 lanes, which stay intact as the option for unattended, multi-session, or multi-worker delivery. Statements below that name a different default keep their v2 text and carry a "Slice lane exception" sentence that applies the owner's decision (2026-10-20: the Slice lane sits beside admission); `method/SLICE_LANE.md` ("Reconciled v2 statements") lists them.
 
 The Full execution workflow for **epics / large features / core-behavior / planning-heavy** work. It runs one complete
 story lifecycle with hard gates. Small/ongoing work uses ACEF Standard and promotes here only when planning or scope
 grows. Risk is orthogonal: Baseline or Guarded assurance may be applied without repeating this lifecycle.
+Slice lane exception: attended single-team small/ongoing work and epics use the Slice lane (`SLICE_LANE.md`) instead; Standard
+and this workflow apply to unattended, multi-session, or multi-worker delivery.
 
 ## Full flow contract versions
 
