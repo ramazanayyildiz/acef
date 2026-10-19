@@ -1,0 +1,19 @@
+{
+  "_comment": "Example rules for a Laravel app. Derived from US-CRM PR #44 (scripts/standards/README.md 'Checks and their sources'). Copy to <app>/scripts/standards/rules.json and keep only rules your docs actually state. Paths cover app/ and app/Modules/*/ layouts.",
+  "scope": ["app", "resources", "packages", "routes", "database", "config", "tests"],
+  "line_checks": [
+    { "id": "GATE-LW1", "mode": "added", "pattern": "DB::transaction|Mail::(send|queue|to)|->forceFill\\(", "paths": ["app/Livewire", "app/Modules/*/Livewire"], "label": "business logic in Livewire" },
+    { "id": "GATE-LW2", "mode": "added", "pattern": "::(create|forceCreate|updateOrCreate|findOrFail)\\(|->save\\(\\)", "paths": ["app/Livewire", "app/Modules/*/Livewire", "app/Http/Controllers", "app/Modules/*/Http/Controllers"], "label": "persistence in Livewire/controllers" },
+    { "id": "GATE-HLP", "mode": "added", "pattern": "auth\\(\\)->user\\(\\)|Auth::user\\(\\)|(^|[^A-Za-z0-9_\\\\])Log::", "paths": ["app", ":!app/Helpers"], "label": "use the project helpers" },
+    { "id": "GATE-VIEW", "mode": "added", "pattern": "(^|[^A-Za-z0-9_])app\\(", "paths": ["resources/views/livewire", "app/Modules/*/Resources/views/livewire"], "label": "app( in Livewire views" },
+    { "id": "GATE-DLG", "mode": "any", "pattern": "(^|[^A-Za-z0-9_.])(window\\.)?(alert|confirm)\\(", "paths": ["resources/views", "resources/js", "app/Modules/*/Resources/views"], "label": "native dialogs" }
+  ],
+  "counters": [
+    { "id": "GATE-APP", "pattern": "(^|[^A-Za-z0-9_])app\\(", "paths": ["app/Livewire", "app/Services", "app/Http", "app/Modules/*/Livewire", "app/Modules/*/Services", "app/Modules/*/Http"], "label": "app( instead of constructor injection" },
+    { "id": "GATE-REPO", "pattern": "Repository(Interface)?([^A-Za-z0-9_]|$)", "paths": ["app/Livewire", "app/Http/Controllers", "app/Modules/*/Livewire", "app/Modules/*/Http/Controllers"], "label": "repository used from UI layer instead of a service" },
+    { "id": "GATE-WAIT", "pattern": "->pause\\(|waitForTimeout\\(|wait_for_timeout\\(|time\\.sleep\\(", "paths": ["tests"], "label": "fixed sleeps in browser tests" }
+  ],
+  "command_counters": [
+    { "id": "GATE-STAN", "run": "php vendor/bin/phpstan analyse --no-progress --memory-limit=2G --error-format=raw", "count_regex": "\\.php:[0-9]+:", "exclude_regex": "Ignored error pattern", "ok_exit": [0, 1], "requires": ["vendor/bin/phpstan"], "label": "PHPStan errors (project config + baseline); exit 1 = errors found, so the binary must be required explicitly" }
+  ]
+}

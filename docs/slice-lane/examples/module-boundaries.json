@@ -1,0 +1,72 @@
+{
+    "_comment": "Frozen module -> module dependency graph for app/Modules (ratchet). Events is the shared kernel: other modules may depend on it; the goal is to remove edges into other modules from Events (start with Events->Billing). Never add an edge here without review. Regenerate with: php scripts/check-module-boundaries.php --update-baseline",
+    "edges": {
+        "AiAudit": [
+            "Events"
+        ],
+        "AiCapabilities": [
+            "Billing",
+            "Engagement",
+            "Events",
+            "Streaming"
+        ],
+        "Audience": [
+            "Billing",
+            "Engagement",
+            "Events",
+            "Streaming"
+        ],
+        "Billing": [
+            "AiAudit",
+            "Audience",
+            "Events"
+        ],
+        "Engagement": [
+            "AiCapabilities",
+            "Audience",
+            "Billing",
+            "Events",
+            "Streaming"
+        ],
+        "Events": [
+            "AiAudit",
+            "AiCapabilities",
+            "Audience",
+            "Billing",
+            "Engagement",
+            "Streaming"
+        ],
+        "Streaming": [
+            "AiCapabilities",
+            "Billing",
+            "Engagement",
+            "Events"
+        ],
+        "SuperAdmin": [
+            "AiAudit",
+            "Audience",
+            "Billing",
+            "Engagement",
+            "Events",
+            "Streaming",
+            "Support"
+        ],
+        "Support": []
+    },
+    "frozen_symbols": {
+        "Events>Billing": [
+            "App\\Modules\\Billing\\Contracts\\AudienceBoostCreditServiceInterface",
+            "App\\Modules\\Billing\\Contracts\\EventCreditServiceInterface",
+            "App\\Modules\\Billing\\Contracts\\Repositories\\SubscriptionRepositoryInterface",
+            "App\\Modules\\Billing\\Enums\\EventCreditSource",
+            "App\\Modules\\Billing\\Enums\\EventPackage",
+            "App\\Modules\\Billing\\Enums\\PackagePurchaseStatus",
+            "App\\Modules\\Billing\\Exceptions\\EventCreditExhaustedException",
+            "App\\Modules\\Billing\\Models\\EventCreditBinding",
+            "App\\Modules\\Billing\\Models\\PackagePurchase",
+            "App\\Modules\\Billing\\Services\\PackageResolver",
+            "App\\Modules\\Billing\\Support\\BillingLocks",
+            "App\\Modules\\Billing\\Support\\EventCreditAvailability"
+        ]
+    }
+}

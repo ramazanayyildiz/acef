@@ -1,0 +1,97 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "slice-method/slice-method.schema.json",
+  "title": "slice-method.json — proje bildirimi",
+  "description": "Bir uygulamanın dilim yöntemine kendini tanıttığı tek dosya. Betikler (gate.sh, standards-check.sh, codex-review.sh, metrics.py) yalnız bu dosyayı okur; projeye özgü yol ve komut betiklerde yazılı değildir.",
+  "type": "object",
+  "required": ["method_version", "project", "slices_dir", "gate"],
+  "additionalProperties": false,
+  "properties": {
+    "$schema": { "type": "string" },
+    "method_version": { "type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+$", "description": "Benimsenen slice-method sürümü (etiket)." },
+    "project": { "type": "string" },
+    "slices_dir": { "type": "string", "description": "Dilim dosyalarının dizini, depo köküne göreli." },
+    "evidence_dir": { "type": "string" },
+    "invariants": { "type": "string", "description": "Değişmezler belgesi (I<n>)." },
+    "locks_file": { "type": "string" },
+    "backlog_file": { "type": "string" },
+    "interventions_file": { "type": "string" },
+    "selfcheck": { "type": "string", "description": "İnceleme öncesi öz-denetim komutu (dev-report öz-denetim bölümü)." },
+    "gate": {
+      "type": "object",
+      "required": ["commands"],
+      "additionalProperties": false,
+      "properties": {
+        "require_clean_tree": { "type": "boolean", "default": true },
+        "commands": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["name", "run"],
+            "additionalProperties": false,
+            "properties": {
+              "name": { "type": "string", "pattern": "^[a-z0-9][a-z0-9_-]*$" },
+              "run": { "type": "string", "description": "Ağaç kökünde `sh -c` ile çalışır. {tree} ve {port} yer tutucuları desteklenir." },
+              "full_only": { "type": "boolean", "default": false, "description": "Yalnız `gate.sh --full` ile koşar." },
+              "timeout_s": { "type": "integer", "minimum": 1 }
+            }
+          }
+        }
+      }
+    },
+    "critical_postmerge": { "type": "array", "items": { "type": "string" }, "description": "Her merge sonrası her zaman koşan komutlar (para, yetki, kiracı)." },
+    "standards": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "rules": { "type": "string", "description": "scripts/standards/rules.json biçiminde kural dosyası." },
+        "baseline": { "type": "string" },
+        "notes_dir": { "type": "string" },
+        "base_ref": { "type": "string" }
+      }
+    },
+    "module_boundaries": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "modules_dir": { "type": "string" },
+        "namespace": { "type": "string" },
+        "baseline": { "type": "string" }
+      }
+    },
+    "review": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "tam_reviewer": { "type": "string", "description": "TAM sınıfı inceleyici (farklı model ailesi tercih edilir)." },
+        "hafif_reviewer": { "type": "string" },
+        "codex_model": { "type": "string" },
+        "tam_domains": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "lanes": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "max_dev_lanes": { "type": "integer", "minimum": 1 },
+        "heavy_slots": { "type": "integer", "minimum": 1 },
+        "port_from": { "type": "integer" },
+        "port_to": { "type": "integer" },
+        "preview_port": { "type": "integer", "description": "Sahibin önizleme portu; ajanlar dokunmaz." },
+        "db_pattern": { "type": "string", "description": "Hat DB adı kalıbı; {n} hat numarası. Adın 'testing' içermesi önerilir." }
+      }
+    },
+    "hot_files": { "type": "array", "items": { "type": "string" } },
+    "hosts": {
+      "type": "array",
+      "description": "Paylaşılan sözleşme değişince salt okunur taranacak diğer uygulamalar (checklist B1, E1).",
+      "items": {
+        "type": "object",
+        "required": ["name", "path"],
+        "additionalProperties": false,
+        "properties": { "name": { "type": "string" }, "path": { "type": "string" }, "package_prefix": { "type": "string" } }
+      }
+    }
+  }
+}

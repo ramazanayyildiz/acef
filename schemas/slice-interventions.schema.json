@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "slice-method/interventions.schema.json",
+  "title": "Müdahale kaydı (observations/interventions.json)",
+  "description": "Araç, sunucu, DB, worktree, geçici dosya ve ajan durdurma/yeniden başlatma müdahaleleri. Kaynak: b2press-rebuild observations/interventions.json (111 kayıt; 108'i bu biçimde). Eski 'at/by/kind/detail' biçimi yalnız tarihsel okunur, yeni kayıt yazılmaz.",
+  "type": "array",
+  "items": {
+    "oneOf": [
+      {
+        "type": "object",
+        "required": ["ts", "slice", "actor", "type", "reason", "files"],
+        "additionalProperties": true,
+        "properties": {
+          "ts": { "type": "string", "format": "date-time", "description": "ISO 8601, saat dilimiyle" },
+          "slice": { "type": "string", "description": "Dilim kimliği ya da 'coordinator'" },
+          "actor": { "type": "string", "description": "Kim yaptı (koordinatör, geliştirici ajan, inceleyici, sahip)" },
+          "type": {
+            "type": "string",
+            "description": "Önerilen küme; rebuild'de gözlenen değerler: other(36), note(25), repair(14), restart(12), stop(11), exclude(3), skip-worktree(3), cleanup(1), config(1). Yeni projede 'other' yerine özel bir değer seçilir.",
+            "examples": ["stop", "restart", "repair", "cleanup", "config", "exclude", "skip-worktree", "note", "decision-wait", "timeout-90min", "other"]
+          },
+          "reason": { "type": "string", "minLength": 1 },
+          "files": { "type": "array", "items": { "type": "string" } },
+          "minutes": { "type": "number", "minimum": 0, "description": "İsteğe bağlı: müdahalenin ya da beklemenin süresi (dk). Ölçüm için önerilir; rebuild'de yok." }
+        }
+      },
+      {
+        "type": "object",
+        "required": ["at", "by", "kind", "detail"],
+        "description": "Tarihsel biçim (rebuild 2026-10-08, 3 kayıt). Yeni kayıtta kullanılmaz.",
+        "properties": {
+          "at": { "type": "string" },
+          "by": { "type": "string" },
+          "kind": { "type": "string" },
+          "detail": { "type": "string" }
+        }
+      }
+    ]
+  }
+}

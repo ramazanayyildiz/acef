@@ -1,0 +1,9 @@
+# Standards ratchet baselines (scripts/standards-check.sh). A count above its baseline is a FAIL. Counts only go down.
+# Who writes this file: ONLY the merger, at merge time, from `scripts/standards-check.sh --print-baseline <merged tree>`.
+# Branches never edit it; a slice that changes a counter writes the expected delta to baseline-notes/<SLICE-ID>.md.
+# Reason: parallel branches editing the same lines conflicted on every merge (b2press-rebuild TOOL-06).
+# First measurement: <sha>, <YYYY-MM-DD>.
+GATE-APP=0
+GATE-REPO=0
+GATE-WAIT=0
+GATE-STAN=0
