@@ -1,0 +1,239 @@
+# ACEF Slice Lane (v3) — the default for attended single-team work
+
+> Status: owner decision 2026-10-20 (METHOD-02: "ACEF'i güncelle, yeni repo açmak yerine"), branch `v3/slice-lane`,
+> not merged to `main`. Capability record: `docs/ai/capabilities/slice-lane.json` (`specified`: documented, with
+> standalone self-tested scripts; nothing in ACEF's front door, installers, hooks, or validators routes to it yet).
+> Source: slice-method `2a3ba48` (tag `v0.1.1` = `3951843` plus the METHOD-01 review records), imported unchanged
+> under `templates/slice/`, `scripts/slice/`, `docs/slice-lane/`, `schemas/slice-*.schema.json`, `LICENSES/`.
+
+The Slice lane is the development flow distilled in `b2press-rebuild` after the heavy ACEF flow was retired there for
+attended work on 2026-10-07, adopted by US-CRM, and run by the coordinator in the 2026-10-19 platform session. It is a
+set of templates, a few scripts, and rules. It has no runtime dependency, no typed run state, and no orchestration
+engine. The full Turkish source text is `docs/slice-lane/README.md`; this page is the English canonical summary with
+acef paths.
+
+## Why this lane exists
+
+`b2press-rebuild observations/ACEF_EVAL_REPORT.md` (commit `056662ba2`, "Nihai yargı", 2026-10-08) measured ACEF
+Standard against a native flow on the same product:
+
+- Product quality was equal: 7/7 ACEF slices PASS (one after a REVISE round); both native comparison candidates PASS.
+- ACEF caught 1 real defect in 7 slices (P03-EDIT-03: typed evidence re-run on a clean tree exposed a flaky race test).
+  The rule behind that catch — re-run the evidence on a clean tree with the recorded command — needs no ACEF machinery
+  and is kept here.
+- The defects were found by the independent reviewer, mutation tests, the real-browser matrix, and the user checkpoint.
+- Cost: ~10–20 min and ~0.3M tokens of admission plus closeout per slice, control commits ≥ product commits, 162
+  friction items, 70+ manual interventions; 1.72× developer tokens on P03-LIST-01 (Codex client, single data point).
+- Limits: one product, one team, one model family, small sample, interrupted sessions in the timings; escaped defects
+  were not measured.
+
+This matches the v2 status in `README.md`: the v1 quality edge did not replicate, and the value of the v2 controls lies
+in unattended, multi-session, or multi-worker regimes (`method/CONTROL_RATIONALE.md`, "Worker scope" and "Evidence
+manifests, runner proof, and gate verdicts" in the pricing model: a skeptical re-run is the stronger backstop when an
+observer is present).
+
+## Lane selection
+
+| Situation | Lane |
+|---|---|
+| Attended single-team work: an owner or coordinator is present, writes the slice, and runs the clean-tree re-run | **Slice lane** (this page), TAM or HAFİF review class by domain |
+| Unattended or asynchronous delivery, multi-session work without a standing coordinator, multi-worker fan-out that must be audited later | v2 lanes, unchanged: ACEF Fix / Standard / Full + Baseline or Guarded (`method/DELIVERY_RULES.md`) |
+
+Risk does not move work out of the Slice lane. Money, permissions/tenant, state transitions, migrations, and security
+select the **TAM** review class, which raises the review dose (below). Moving attended work to a v2 lane is an owner
+decision; nothing promotes automatically. Whether truly tiny contained work still uses the native short-circuit of
+`AGENTS.md` is an open reconciliation item (see the end of this page).
+
+## Flow
+
+```
+coordinator              developer (separate session)    coordinator / reviewer        reviewer (separate session)
+backlog -> slice file -> own worktree + port + DB    ->  clean-tree re-run         ->  independent review
+(numbered acceptance,    red test first, stays in the    (git status empty; the        (TAM: other model family,
+ allowed files + usage   allowed list, writes the dev    dev report is not evidence)   mutations, real browser
+ scan, review class)     report, never declares PASS                                   1280/390, checklist A–E)
+                                         ┌──────────── REVISE <─────────────────────────────┤
+                                         v                                                  v PASS
+                 fix inside the same allowed list -> targeted re-review (NEW session, r2) -> closing note
+                                                                                         -> merge --no-ff on the owner's
+                                                                                            word or written branch policy
+                                                                                         -> post-merge: gate + critical set
+```
+
+1. **Slice** (`templates/slice/slice.md`, ≤150 lines): task, numbered testable acceptance items (K1…), out of scope,
+   allowed-file list built from a `git grep` usage scan, standards compliance table, size and depth, review class. If a
+   product question is open, no slice is written; the owner is asked.
+2. **Developer** works in an own worktree with an own port and test DB. Behaviour changes start with a red test in a
+   separate test-only commit. The developer never leaves the allowed list: they stop, and the coordinator extends the
+   list in the slice's dated "Ekler" section. Report: `templates/slice/dev-report.md` (with the pre-review self-check).
+   The developer never declares PASS.
+3. **Clean-tree re-run**: a separate worktree of the candidate commit, `git status --short` empty, every command from
+   the dev report → expected → actual. `scripts/slice/gate.sh` treats only tracked changes as dirty
+   (`--untracked-files=no`); check untracked files separately with `git status --short`.
+4. **Independent review** in a separate session (`templates/slice/review-brief.md` +
+   `templates/slice/review-checklist.md`). Verify the claims, not the report. Re-apply every developer mutation and add
+   at least one own mutation. When a package view/lang/config key changes, scan the hosts for includes (B28).
+   Verdict: PASS | REVISE.
+5. **REVISE** → fix inside the same allowed list → **targeted re-review in a new session**
+   (`templates/slice/review-r2.md`): only the previous findings plus the fix diff.
+6. **Closing note** (`templates/slice/closing-note.md`): verdict, commits, durations, REVISE rounds, escaped defect,
+   explicit tag-candidate judgement, deferred backlog IDs, cleanup. `scripts/slice/metrics.py` reads these fields.
+7. **Merge** with `git merge --no-ff`: into `main` only on the owner's word; into owner-approved work branches after
+   PASS and a green post-merge run. Post-merge: `gate.sh`, `standards-check.sh`, affected tests, the project's
+   critical set (`slice-method.json` → `critical_postmerge`). The full suite runs only for shared-infrastructure
+   changes and at phase/group close.
+8. **Phase/group close**: exploration tour (`templates/slice/exploration-tour.md`) by another model family, as a user,
+   personas × 1280/390. A group with an open blocking finding is not closed.
+
+## Roles
+
+| Role | Does | Never |
+|---|---|---|
+| Owner | product decisions, the word for merging to `main`, pushing, going live | — |
+| Coordinator | writes slices, opens lanes, extends allowed lists with a date, clean-tree re-run, closing note, merge within policy, backlog/status document, standards baseline | reviews code it wrote; commits to `main` without the owner |
+| Developer | red test → code, dev report | edits outside the allowed list, declares PASS, merges |
+| Reviewer | clean tree, acceptance items, mutations, browser, checklist, verdict | fixes product code, merges |
+
+Developer and reviewer are never the same session. Without subagents, run the steps in order but use a separate
+session or `scripts/slice/codex-review.sh` for the review.
+
+## Review classes (by domain, not by line count)
+
+| Class | When | What |
+|---|---|---|
+| **TAM** (full) | money, permissions/tenant, state transitions, migrations, security; hot/shared files | separate session; another model family (Codex) **mandatory for money and migration slices**, recommended for other TAM; a second reviewer for browser and mutations; **3–5 mutations per new or changed rule**; real browser 1280/390 including error paths; checklist A–E; TAM annex (finding discipline, Cloudflare MIT derivative) |
+| **HAFİF** (light) | test-only, docs, tooling, catalogue screens, translations | one independent review; at least 3 mutations when a rule changes; the relevant browser flow; checklist A (+ B/C when relevant); similar small slices may be combined |
+
+Always required, in both classes — the core this lane keeps from ACEF:
+
+1. numbered, individually testable acceptance items;
+2. a scanned allowed-file list (dated additions only);
+3. a clean-tree re-run of every claimed command before review;
+4. an independent reviewer in a separate session (never the developer's);
+5. 3–5 mutations per new or changed rule, each with an evidence file, re-applied by the reviewer plus one of their own;
+6. real-browser evidence of the new scenario from its real entry point;
+7. a targeted re-review in a new session after REVISE;
+8. a closing note with the fixed fields.
+
+## Parallel lanes
+
+- At most **5 development lanes** and **2 heavy test/browser slots** (single-slot tools such as Dusk/E2E: 1). Lane
+  count = number of slices that are independent right now; dependent slices run in sequence.
+- Every lane: own worktree, own port (`lanes.port_from–port_to`), **own test DB** (`lanes.db_pattern`, the name contains
+  `testing`), own `TMPDIR`. The owner's preview port and DB belong to the owner only.
+- One writer per hot file per wave (`templates/slice/locks.md`); other lanes extend through traits/partials/events;
+  rebase before review; one merge queue.
+- Shared record files are per slice (report, standards note `baseline-notes/<ID>.md`, questions); only the merger
+  writes the shared standards baseline and the CHANGELOG.
+- An agent past 90 minutes is checked; without progress it is restarted with a narrowed task and logged in
+  `interventions.json` (`schemas/slice-interventions.schema.json`).
+
+## Never
+
+- Commit or merge to `main` without the owner's word; push without the owner's word; force-push.
+- Use a shared DB, the owner's preview port/DB, or another lane's DB.
+- `git stash` inside a worktree; `git add -A` (add by name).
+- Make tests green by loosening a test, timeout, or assertion; report a failed or skipped step as passed.
+- Declare your own code PASS; treat the dev report as evidence.
+- Put production data into the repo, evidence, chat, or an external service.
+- Leave an exception unwritten (a standards deviation missing from the slice's compliance table = REVISE).
+
+## Files in acef
+
+```text
+method/SLICE_LANE.md                 this page
+templates/slice/                     slice, dev-report, review-brief (+ TAM annex), review-checklist (A–E), review-r2,
+                                     closing-note, invariants-skeleton, locks, module-CLAUDE, exploration-tour
+scripts/slice/gate.sh                runs slice-method.json gate.commands; one summary line; exit 0/1/2/3
+scripts/slice/standards-check.sh     standards ratchet; rules in <app>/scripts/standards/rules.json
+scripts/slice/standards/             rules.example.json, baseline.example.txt, baseline-notes/
+scripts/slice/check-module-boundaries.php  module dependency ratchet (Jakomeet PR #94, --namespace generalised)
+scripts/slice/codex-review.sh        read-only review call with a required model (other model family)
+scripts/slice/metrics.py             measurement table from slice/review files and git history
+scripts/slice/metrics-demo.sh        regenerates docs/slice-lane/metrics-2026-10-19.md
+scripts/slice/selfcheck.sh           the lane's own gate (syntax, templates, self-tests, metrics fixture)
+scripts/slice/tests/                 gate, standards, boundaries self-tests + metrics fixture
+schemas/slice-method.schema.json     project declaration (slice-method.json)
+schemas/slice-interventions.schema.json  intervention log
+docs/slice-lane/                     README (Turkish source), adoption, open-questions, metrics-2026-10-19,
+                                     CHANGELOG (v0.1.0, v0.1.1), METHOD-01 reviews, SOURCES, examples/
+LICENSES/security-audit-MIT.txt      Cloudflare MIT text for the TAM annex derivative
+```
+
+The scripts are written to be copied into an application's `scripts/`; their defaults (for example
+`check-module-boundaries.php` → `<app>/scripts/module-boundaries.json`) assume that app layout, and the self-tests pass
+explicit paths. The scripts are not installed by `scripts/install-acef-tools`.
+
+## Adoption in an application
+
+```sh
+ACEF=/path/to/acef
+cp -R $ACEF/templates/slice <app>/docs/slices/_templates
+cp $ACEF/docs/slice-lane/examples/slice-method.example.json <app>/slice-method.json   # edit paths and commands
+cp $ACEF/scripts/slice/{gate.sh,standards-check.sh,codex-review.sh,metrics.py} <app>/scripts/
+cp $ACEF/scripts/slice/standards/rules.example.json <app>/scripts/standards/rules.json
+<app>/scripts/standards-check.sh --print-baseline <app> > <app>/scripts/standards/baseline.txt   # merger, clean main
+<app>/scripts/gate.sh <own worktree path>
+python3 -I <app>/scripts/metrics.py <app>/docs/slices --backlog <app>/docs/backlog.md
+```
+
+Per-application status (b2press-rebuild, US-CRM, Jakomeet, Live Learning, platform, unusual-saas-bootstrap):
+`docs/slice-lane/adoption.md`. The lane's own gate: `bash scripts/slice/selfcheck.sh`.
+
+## Enforcement honesty
+
+In `method/RULE_ENFORCEMENT_MAP.md` terms: the gate, standards ratchet, and module-boundary ratchet are **machinery**
+inside the application; the independent reviewer and the targeted re-review are **shards** (fresh sessions with a
+brief); the allowed-file list, the "never" list, and the closing note are **documentation-only** until the planned
+closing-note gate exists. No ACEF hook or validator enforces this lane.
+
+## Planned (v0.2) and open (v0.1.2)
+
+Planned from the measurement demo (`docs/slice-lane/open-questions.md`, `docs/slice-lane/metrics-2026-10-19.md`):
+
+1. **Closing-note gate** — `scripts/slice/closing-check.sh <slice>` before merge: closing-note fields filled without
+   placeholders and `Durum: KAPANDI`, otherwise no merge (rebuild: only 3 of 25 closing headings were filled).
+2. **REVISE reason enum** — a fixed `reason` column in review findings: `ürün-hatası | test-boşluğu | spec-metni |
+   izinli-liste | ortam | standart`; `metrics.py` prints the distribution (175 REVISE reports in the rebuild are
+   unreadable by reason today).
+3. **Time/token header** — line 3 of every review report: `Süre: <min> · Token: <in>/<out> | ölçülmedi`; `metrics.py`
+   reads it instead of the git-timestamp proxy.
+
+Open low-severity items from `docs/slice-lane/METHOD-01-review-r2.md` (non-blocking, v0.1.2):
+
+- **R1** — `docs/slice-lane/SOURCES.md` Live Learning row: give the last commit per file (docs/standards `7cf9936`,
+  gate `9f953e4`, standards-check `7bf90faa`, baseline `fad01981`).
+- **R2** — `docs/slice-lane/open-questions.md` #8 and `adoption.md`: cite `COORDINATOR-STATE-2026-10-19.md:29` and
+  `OVERNIGHT-2026-10-17.md:81` for the Live Learning push claim.
+- **R3** — `scripts/slice/standards-check.sh`: apply the "No such file or directory" heuristic only when `count_regex`
+  matched nothing; add review case E to the self-test.
+- **R4** — `LICENSES/security-audit-MIT.txt` carries a provenance header, so SOURCES' "(aynen)" is inaccurate: move the
+  header to a NOTICE/README or reword to "(licence text verbatim, provenance header on top)".
+
+## Unreconciled v2 statements
+
+Owner decision needed. The central question: is the Slice lane an **admitted ACEF lane** (then the admission,
+preflight, active-run, ledger, and model-routing rules below apply to it and contradict it) or does it sit **beside
+admission**, like native work (then the admission triggers below contradict it)? Line numbers are on branch
+`v3/slice-lane` after the cross-link lines were added.
+
+| File:line | v2 statement | Conflict with the Slice lane |
+|---|---|---|
+| `AGENTS.md:9` | reversible one-boundary/one-surface work uses the native workflow, no ACEF artifacts | the lane does not say whether tiny work still goes native or becomes a HAFİF slice |
+| `AGENTS.md:28` | start ACEF (admission) for persistence/migration, security/permissions, money, state machine, multi-session coordination … | the lane handles exactly these attended cases as TAM slices without admission |
+| `AGENTS.md:38`, `method/DELIVERY_RULES.md:59`, `method/OPERATING_MODEL.md:354` | every admitted actor binds the model/effort printed by `acef-next` (provider-neutral routing policy) | the lane picks the reviewer model via `REVIEW_MODEL` / `slice-method.json` and `codex-review.sh`; no `acef-next` |
+| `AGENTS.md:48`, `method/DELIVERY_RULES.md:185` | review remediation capped at two cycles; two consecutive non-PASS → `REPLAN/SPLIT` | the lane has no circuit breaker; REVISE → r2 → r3 … without a cap |
+| `method/DELIVERY_RULES.md:14`, `:54` | native is the default for contained work; ACEF Standard handles scoped work with independent review | for attended work the lane, not Standard, is the default for scoped work with independent review |
+| `method/DELIVERY_RULES.md:86` | preflight artifact before any admitted lane executes | the lane has no preflight artifact; the slice file plays that role |
+| `method/DELIVERY_RULES.md:102`, `:104` | small feature → ACEF Standard; large feature/epic → ACEF Full by default | attended features and epics run as slices grouped into phases with an exploration tour |
+| `method/GUARDED_LANE.md:15`, `:95` | at epic scope ACEF Full is the default; non-Full Guarded epics need typed human approval | attended risky epics run as TAM slices without typed approval records |
+| `method/OPERATING_MODEL.md:42`, `:327` | admission: contained work native, everything needing controls admitted to ACEF | same question as `AGENTS.md:9/28` |
+| `method/OPERATING_MODEL.md:369` | Fix: the same reviewer may do one delta recheck; one review cycle | the lane's re-review runs in a **new** session and may repeat |
+| `method/OPERATING_MODEL.md:372` | Fix: 30-minute hard stop, 4 commits, 5 files, 50 lines | the lane checks an agent at 90 minutes; size is bounded by the ≤150-line slice and the allowed list, not by counters |
+| `method/BMAD_V2_LANE.md:6` | small/ongoing work uses ACEF Standard | see `DELIVERY_RULES.md:54` |
+| `README.md` "Install & use", step 3 | `/acef` selects Fix, Standard, or Full for admitted work | the front door (`skills/acef/SKILL.md`) does not know the Slice lane |
+
+Consistent, not conflicting: `method/CONTROL_RATIONALE.md:199` and `:205` (worker scope and evidence manifests earn
+their cost when work is delegated, unattended, or later-audited; a skeptical re-run is the stronger backstop) — this is
+the rationale for the lane split above. `method/GUARDED_LANE.md:21` (human push approval) matches the lane's "never push
+without the owner".

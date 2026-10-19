@@ -1,5 +1,7 @@
 # ACEF Operating Model — Personas + Tracks (Layer 1)
 
+> **v3 (2026-10-20): Slice lane.** For attended single-team work the default lane is now [`method/SLICE_LANE.md`](SLICE_LANE.md). This document still describes the v2 lanes, which stay intact as the option for unattended, multi-session, or multi-worker delivery. Statements below that name a different default are listed in `method/SLICE_LANE.md` ("Unreconciled v2 statements") for the owner to reconcile; they are not rewritten here.
+
 The base operating model for running multi-agent delivery work. It is a **process guide**, not a rules document, and
 it is **stack-agnostic** — the specific branch names, model tiers, and example surfaces are filled in per repo by the
 project adapter, not hard-coded here.

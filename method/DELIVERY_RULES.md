@@ -1,5 +1,7 @@
 # ACEF Delivery Rules — Lanes + Promotion (Layer 5, the glue)
 
+> **v3 (2026-10-20): Slice lane.** For attended single-team work the default lane is now [`method/SLICE_LANE.md`](SLICE_LANE.md). This document still describes the v2 lanes, which stay intact as the option for unattended, multi-session, or multi-worker delivery. Statements below that name a different default are listed in `method/SLICE_LANE.md` ("Unreconciled v2 statements") for the owner to reconcile; they are not rewritten here.
+
 This is the **integration layer**: it doesn't add a new tool, it says **which layer runs for which work**, so the
 operating model (Layer 1), the test/flow skills (Layer 2), the BMAD v2 lane (Layer 3), and the codemap/adapter
 (Layer 4) work together as one system.

@@ -2,6 +2,8 @@
 
 This is the short entry point for fresh agents working on ACEF.
 
+> **v3 (2026-10-20): Slice lane.** For attended single-team work, read [`method/SLICE_LANE.md`](method/SLICE_LANE.md) first: it is the default lane there and needs no ACEF admission, active-run state, or `acef-state`/`acef-next` calls. The rules below govern the v2 lanes (Fix/Standard/Full + Guarded), which remain the option for unattended, multi-session, or multi-worker delivery. Where they name a different default, `method/SLICE_LANE.md` lists the conflict for the owner to reconcile.
+
 ## ACEF Admission
 
 Do not bootstrap ACEF for reversible, contained work with one technical boundary and one product surface. Use the

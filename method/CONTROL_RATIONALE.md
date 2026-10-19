@@ -1,5 +1,7 @@
 # ACEF Control Rationale
 
+> **v3 (2026-10-20): Slice lane.** For attended single-team work the default lane is now [`method/SLICE_LANE.md`](SLICE_LANE.md). This document still describes the v2 lanes, which stay intact as the option for unattended, multi-session, or multi-worker delivery. Statements below that name a different default are listed in `method/SLICE_LANE.md` ("Unreconciled v2 statements") for the owner to reconcile; they are not rewritten here.
+
 ACEF controls were not added as paperwork. They were added to close specific failure modes seen in real agent work:
 wrong actor, wrong scope, stale evidence, generic approval, phase drift, self-review, and repeated full-ledger reads.
 

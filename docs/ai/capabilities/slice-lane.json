@@ -1,0 +1,77 @@
+{
+  "capabilityId": "slice-lane",
+  "requestedIntent": "Owner decision 2026-10-20 (METHOD-02): fold the slice-method package (v0.1.1 + review records, commit 2a3ba48) into ACEF as the default lane for attended single-team work, keeping the v2 Fix/Standard/Full + Guarded lanes intact as the unattended/multi-session/multi-worker option.",
+  "status": "specified",
+  "requiredLayers": ["docs", "artifact", "schema", "cli", "tests"],
+  "implementedLayers": {
+    "docs": [
+      "method/SLICE_LANE.md",
+      "docs/slice-lane/README.md",
+      "docs/slice-lane/adoption.md",
+      "docs/slice-lane/open-questions.md",
+      "docs/slice-lane/CHANGELOG.md",
+      "docs/slice-lane/SOURCES.md",
+      "docs/slice-lane/METHOD-01-review.md",
+      "docs/slice-lane/METHOD-01-review-r2.md",
+      "docs/slice-lane/metrics-2026-10-19.md",
+      "LICENSES/security-audit-MIT.txt"
+    ],
+    "artifact": [
+      "templates/slice/slice.md",
+      "templates/slice/dev-report.md",
+      "templates/slice/review-brief.md",
+      "templates/slice/review-checklist.md",
+      "templates/slice/review-r2.md",
+      "templates/slice/closing-note.md",
+      "templates/slice/invariants-skeleton.md",
+      "templates/slice/locks.md",
+      "templates/slice/module-CLAUDE.md",
+      "templates/slice/exploration-tour.md",
+      "docs/slice-lane/examples/slice-method.example.json",
+      "docs/slice-lane/examples/module-boundaries.json"
+    ],
+    "schema": [
+      "schemas/slice-method.schema.json",
+      "schemas/slice-interventions.schema.json"
+    ],
+    "cli": [
+      "scripts/slice/gate.sh",
+      "scripts/slice/standards-check.sh",
+      "scripts/slice/check-module-boundaries.php",
+      "scripts/slice/codex-review.sh",
+      "scripts/slice/metrics.py",
+      "scripts/slice/metrics-demo.sh"
+    ],
+    "tests": [
+      "scripts/slice/selfcheck.sh",
+      "scripts/slice/tests/test-gate.sh",
+      "scripts/slice/tests/test-standards.sh",
+      "scripts/slice/tests/test-boundaries.sh"
+    ]
+  },
+  "limitations": [
+    "Standalone: nothing in the ACEF front door (skills/acef), acef-next/acef-status, installers, hooks, validators, or method/control-dosing.json routes to or enforces the Slice lane. Applications copy the files manually per docs/slice-lane/adoption.md.",
+    "The v2 method documents still name other defaults; the conflicts are listed in method/SLICE_LANE.md 'Unreconciled v2 statements' and await the owner.",
+    "Evidence for the lane's value is one product (b2press-rebuild), one team, one model family, small sample (ACEF_EVAL_REPORT.md at 056662ba2); escaped defects were not measured.",
+    "scripts/slice/ and schemas/slice-*.schema.json fall inside sourceRuntimeDigest (scripts/lib/acef-installation.js), so installed target repos see a changed ACEF source digest and need update-acef-installation; install-acef-tools copies the two slice schemas into .acef/schemas/ but no slice script.",
+    "Open v0.1.2 items R1-R4 (docs/slice-lane/METHOD-01-review-r2.md) and the three v0.2 items (closing-note gate, REVISE reason enum, time/token header) are not implemented."
+  ],
+  "evidence": [
+    {
+      "layer": "tests",
+      "ref": "scripts/slice/selfcheck.sh",
+      "note": "2026-10-20 on branch v3/slice-lane, clean worktree: SELFCHECK PASS ok=79 fail=0 (test-gate ok=7, test-standards ok=12, test-boundaries ok=4, metrics fixture, codex-review dry-run). slice-method reported ok=80 because rules.example.json was listed twice by its JSON loop."
+    },
+    {
+      "layer": "cli",
+      "ref": "scripts/slice/metrics-demo.sh",
+      "note": "Runs from the new path (rc=0). With platform pinned to 9acdde3 (local clone) and no session dir, the rebuild and platform sections reproduce docs/slice-lane/metrics-2026-10-19.md line for line; the session section cannot be reproduced because the git-less scratchpad changed since 2026-10-19."
+    },
+    {
+      "layer": "docs",
+      "ref": "commit:9f4927b",
+      "note": "Verbatim import of slice-method 2a3ba48; path fixes follow in the next commit."
+    }
+  ],
+  "createdAt": "2026-10-20"
+}
