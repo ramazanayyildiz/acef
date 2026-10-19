@@ -115,3 +115,21 @@ python3 -I <app>/scripts/metrics.py <app>/docs/slices --backlog <app>/docs/backl
 ```
 
 Paketin kendi kapısı: `scripts/selfcheck.sh`.
+
+---
+
+## acef yerleşimi (2026-10-20, METHOD-02)
+
+Bu dosya slice-method `2a3ba48` (etiket `v0.1.1` = `3951843` + METHOD-01 inceleme kayıtları) sürümünden **satır satır aynen** alındı; METHOD-01 incelemelerindeki `dosya:satır` atıfları geçerli kalsın diye yukarıdaki metin değiştirilmedi, yalnız bu bölüm eklendi. Yukarıdaki yollar paket yollarıdır; acef içinde karşılıkları:
+
+| slice-method | acef |
+|---|---|
+| `templates/*.md` | `templates/slice/*.md` |
+| `templates/interventions.schema.json` | `schemas/slice-interventions.schema.json` |
+| `schema/slice-method.schema.json` | `schemas/slice-method.schema.json` |
+| `scripts/*` (gate, standards-check, check-module-boundaries, codex-review, metrics, metrics-demo, selfcheck, `standards/`, `tests/`) | `scripts/slice/*` |
+| `README.md`, `SOURCES.md`, `docs/*.md` | `docs/slice-lane/*.md` |
+| `slice-method.example.json`, `examples/module-boundaries.json` | `docs/slice-lane/examples/` |
+| `LICENSES/security-audit-MIT.txt` | `LICENSES/security-audit-MIT.txt` |
+
+Yöntemin İngilizce kanonik özeti ve acef v2 kulvarlarıyla ilişkisi: `method/SLICE_LANE.md`. Uygulamaya kopyalanan dosyalardaki `scripts/gate.sh`, `templates/review-checklist.md` gibi atıflar uygulama içi yollardır ve değişmez.

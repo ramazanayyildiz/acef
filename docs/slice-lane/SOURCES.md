@@ -37,3 +37,27 @@ Bu paketteki her dosya aşağıdaki kaynaklardan damıtıldı. Kaynak depolar ya
 | `docs/open-questions.md` | REB `ACEF_EVAL_REPORT.md` "Nihai yargı", `fable-acceleration-memo.md`, `astra-acceleration-memo.md`; LL (inceleme kaydı, push farkı) |
 | `docs/adoption.md` | REB, CRM, JKM, PLT, LL (yukarıdaki commit'ler) |
 | `LICENSES/security-audit-MIT.txt` | JKM-SA `LICENSE` (aynen) |
+
+---
+
+## acef yerleşimi (2026-10-20, METHOD-02)
+
+Bu dosya slice-method `2a3ba48` (etiket `v0.1.1` = `3951843` + METHOD-01 inceleme kayıtları) sürümünden **satır satır aynen** alındı; METHOD-01 incelemelerindeki `dosya:satır` atıfları geçerli kalsın diye yukarıdaki metin değiştirilmedi, yalnız bu bölüm eklendi. Yukarıdaki yollar paket yollarıdır; acef içinde karşılıkları:
+
+| slice-method | acef |
+|---|---|
+| `templates/*.md` | `templates/slice/*.md` |
+| `templates/interventions.schema.json` | `schemas/slice-interventions.schema.json` |
+| `schema/slice-method.schema.json` | `schemas/slice-method.schema.json` |
+| `scripts/*` (gate, standards-check, check-module-boundaries, codex-review, metrics, metrics-demo, selfcheck, `standards/`, `tests/`) | `scripts/slice/*` |
+| `README.md`, `SOURCES.md`, `docs/*.md` | `docs/slice-lane/*.md` |
+| `slice-method.example.json`, `examples/module-boundaries.json` | `docs/slice-lane/examples/` |
+| `LICENSES/security-audit-MIT.txt` | `LICENSES/security-audit-MIT.txt` |
+
+Yöntemin İngilizce kanonik özeti ve acef v2 kulvarlarıyla ilişkisi: `method/SLICE_LANE.md`. Uygulamaya kopyalanan dosyalardaki `scripts/gate.sh`, `templates/review-checklist.md` gibi atıflar uygulama içi yollardır ve değişmez.
+
+### acef kaynak satırı (provenance)
+
+| Kısa ad | Depo / yol | Commit | Not |
+|---|---|---|---|
+| SM | `/Users/ramazanayyildiz/CODE/OPA/slice-method` (yerel, uzak yok) | `2a3ba488032d61b3d808cd20e227cf9a04856e43` (etiket `v0.1.1` = `3951843` + inceleme kayıtları) | acef dalı `v3/slice-lane`'e kopyalandı: ilk commit içerik değişikliği olmayan kopya, ikinci commit yalnız yol düzeltmeleri. Katman durumu: `docs/ai/capabilities/slice-lane.json`. slice-method bu sürümde donduruldu. |

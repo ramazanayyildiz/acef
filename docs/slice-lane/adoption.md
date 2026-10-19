@@ -20,3 +20,21 @@ Bir uygulama yöntemi dört adımda alır. Hiçbiri çalışma zamanı bağıml�
 **Live Learning.** Depo `/Users/ramazanayyildiz/CODE/Ram/live-learning`, dal `work-course-progress-report` (HEAD `4a5ec811`; `origin/development` geride). Yöntem dosyaları depo KÖKÜNDE, `backend/` Laravel uygulaması (`app/Modules/Learning`), `frontend/` ayrı. Zaten var: `scripts/gate.sh <tree>` (standart + PHPUnit + `node --test` + vitest + depo dışına vite build; çıkış 0/1/2/3, tek satır `GATE PASSED|FAILED …`), `scripts/standards-check.sh` (B2Press'ten modellenmiş; 7 sayaçlı `scripts/standards/baseline.txt`, GATE-BASE/GATE-SELF/GATE-R57, `baseline-notes/`), `docs/standards/live-learning-standards.md` (S-* kuralları + her dilimin inceleyicisinin yanıtladığı RQ-1..10 inceleme soruları), `docs/standards/gap-analysis.md` (STANDARDS-01, ölçüm `5cdb442`, REF-01..REF-12 sırası), `docs/standards/error-codes.md`, `backend/AGENTS.md` (katman kuralları, `git stash` yasağı, `AuthorizationMatrixTest`). Dilim dosyaları `docs/slices/` altında DEĞİL, doğrudan `docs/<ID>.md` (170 dosya; ürün kararları, gece notları ve handoff'larla karışık; `docs/slices/` dizini üç dalda da yok). İnceleme sonucu ayrı `-review.md` dosyası değil, dilim dosyasının "Review" bölümü (ör. `docs/FIX-D.md`: "an independent read-only reviewer found no High"); tam denetimler depo dışında `~/CODE/Ram/engineering-audit/audits/live-learning/`. Koordinatör durumu `docs/COORDINATOR-STATE-2026-10-19.md`, `docs/HANDOFF.md`, `docs/OVERNIGHT-<tarih>.md`; dilimler `.claude/worktrees/<x>` + `slice/<x>` dallarında, başsız `claude -p` süreçleri ve bir gözetmenle koşuyor. Farklar: merge sonrası **push sahibin sözü beklenmeden** birleştirme prosedürünün parçası (bu paketin "Asla" listesiyle çelişir; sahibin Live Learning'e özel kararı olup olmadığı doğrulanmadı); test DB'si bellek içi SQLite (MySQL koşusu MYSQL-TESTS-01). Benimseme: `slice-method.json` (gate = mevcut `scripts/gate.sh`), dilimleri `docs/slices/`'a taşımak ya da `slices_dir: docs` + ID öneki kuralı, inceleme sonucunu ayrı dosyaya ya da sabit "Karar:" satırına yazmak. `metrics.py` bugünkü düzende Live Learning'in incelemelerini sayamaz (ayrı rapor dosyası yok); bu yüzden ölçüm demosu yapılmadı.
 
 **platform (tek paket).** Bu oturumda yöntemi koşan depo: `docs/slices/` (8 dilim, 7 inceleme, hepsi kapanış notlu), `docs/backlog.md` B1–B41, `docs/STATUS-2026-10-19.md`, `composer check` kapısı. Eksik: `slice-method.json`, kapanış notunda süre ve kaçan hata alanları.
+
+---
+
+## acef yerleşimi (2026-10-20, METHOD-02)
+
+Bu dosya slice-method `2a3ba48` (etiket `v0.1.1` = `3951843` + METHOD-01 inceleme kayıtları) sürümünden **satır satır aynen** alındı; METHOD-01 incelemelerindeki `dosya:satır` atıfları geçerli kalsın diye yukarıdaki metin değiştirilmedi, yalnız bu bölüm eklendi. Yukarıdaki yollar paket yollarıdır; acef içinde karşılıkları:
+
+| slice-method | acef |
+|---|---|
+| `templates/*.md` | `templates/slice/*.md` |
+| `templates/interventions.schema.json` | `schemas/slice-interventions.schema.json` |
+| `schema/slice-method.schema.json` | `schemas/slice-method.schema.json` |
+| `scripts/*` (gate, standards-check, check-module-boundaries, codex-review, metrics, metrics-demo, selfcheck, `standards/`, `tests/`) | `scripts/slice/*` |
+| `README.md`, `SOURCES.md`, `docs/*.md` | `docs/slice-lane/*.md` |
+| `slice-method.example.json`, `examples/module-boundaries.json` | `docs/slice-lane/examples/` |
+| `LICENSES/security-audit-MIT.txt` | `LICENSES/security-audit-MIT.txt` |
+
+Yöntemin İngilizce kanonik özeti ve acef v2 kulvarlarıyla ilişkisi: `method/SLICE_LANE.md`. Uygulamaya kopyalanan dosyalardaki `scripts/gate.sh`, `templates/review-checklist.md` gibi atıflar uygulama içi yollardır ve değişmez.
