@@ -39,6 +39,14 @@ GATE_PORT=41001 "$HERE/gate.sh" "$T" >/dev/null 2>&1; check "$?" 0 "second run: 
 echo x > .tmp/stray.txt
 GATE_PORT=41001 "$HERE/gate.sh" "$T" >/dev/null 2>&1; check "$?" 2 "untracked file next to the gate's log dir is still refused"
 rm -rf .tmp && printf '.tmp/\n' > .gitignore && git add .gitignore && git commit -qm "gitignore back"
+# R1 (PR #3 review): a submodule's "ignore" setting must not hide untracked content from the dirty check
+mkdir "$T.sub" && ( cd "$T.sub" && git init -q -b main && git config user.email t@t && git config user.name t && echo s > s.txt && git add -A && git commit -qm s )
+git -c protocol.file.allow=always submodule add -q "$T.sub" sub >/dev/null 2>&1
+git config -f .gitmodules submodule.sub.ignore all && git add -A && git commit -qm sub
+GATE_PORT=41001 "$HERE/gate.sh" "$T" >/dev/null 2>&1; check "$?" 0 "clean tree with a submodule passes"
+echo x > sub/stray.txt
+GATE_PORT=41001 "$HERE/gate.sh" "$T" >/dev/null 2>&1; check "$?" 2 "untracked file inside a submodule with ignore=all refused"
+rm sub/stray.txt && git rm -q -f sub && rm -rf .git/modules/sub "$T.sub" && git commit -qm "no sub"
 # ---- stack profile placeholders (ACEF-NEUTRAL-01) ----
 mkdir -p "$T.prof" && trap 'rm -rf "$T" "$T.prof"' EXIT
 printf '{ "stack": "t", "placeholders": { "test_command": "test -d {tree}", "static_analysis": "false" } }\n' > "$T.prof/profile.json"

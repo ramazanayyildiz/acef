@@ -48,4 +48,32 @@ review 3 "first verdict line decides: NOT PASS then PASS -> 3" 'Verdict: NOT PAS
 Verdict: PASS'
 review 3 "no verdict line -> 3" 'looks fine to me'
 FAKE_RC=1 review 3 "codex exit 1 with a PASS report -> 3" 'Karar: PASS'
+# ---- R1 (PR #3 review): examples in fenced code are not the verdict; verdict lines must agree; bold is paired ----
+review 1 "reviewer's example: fenced Verdict: PASS, then the real Verdict: REVISE -> 1" 'Format example:
+```
+Verdict: PASS
+```
+Verdict: REVISE
+| 1 | HIGH | finding |'
+review 1 "~~~ fenced example PASS, real Karar: **REVISE** -> 1" '~~~text
+Karar: **PASS**
+~~~
+Karar: **REVISE**'
+review 0 "fenced REVISE example, real PASS -> 0" '```
+Verdict: REVISE
+```
+Verdict: PASS'
+review 3 "unfenced REVISE then unfenced PASS (disagree) -> 3" 'Verdict: REVISE
+later text
+Verdict: PASS'
+review 3 "only verdict line is inside a fence -> 3" '```
+Verdict: PASS
+```'
+review 3 "unpaired bold Verdict: **PASS -> 3" 'Verdict: **PASS'
+review 3 "unpaired bold Verdict: PASS** -> 3" 'Verdict: PASS**'
+review 3 "unpaired bold **Verdict: PASS -> 3" '**Verdict: PASS'
+review 1 "markdown heading ## Verdict: REVISE -> 1" '## Verdict: REVISE'
+review 0 "same verdict twice (header + summary) -> 0" 'Karar: **PASS**
+...
+Verdict: PASS'
 echo "test-codex-review: ok=$ok fail=$bad"; [ "$bad" -eq 0 ]
