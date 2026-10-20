@@ -1,9 +1,10 @@
 # <SLICE-ID> — hedefli yeniden inceleme (r<n>)
 
-Aynı inceleyici oturumu (bulguları yazan oturum bağlamıyla devam eder; geliştiricinin oturumu asla değil). O oturum kaybolduysa (bağlam sınırı, çökme) yeni inceleyici oturumu önceki raporu + düzeltme diff'ini okur ve bunu buraya yazar: <aynı oturum | yeni oturum: neden>. Kapsam YALNIZ önceki turun bulguları + düzeltme diff'i. Tam inceleme tekrarlanmaz; değişmeyen ve önceki turda temiz ağaçta kanıtlanmış aşamalar yeniden koşulmaz.
+Aynı inceleyici oturumu (bulguları yazan oturum bağlamıyla devam eder; geliştiricinin oturumu asla değil). O oturum kaybolduysa (bağlam sınırı, çökme) yeni inceleyici oturumu önceki raporu + düzeltme diff'ini okur ve bunu buraya yazar: <aynı oturum | yeni oturum: neden>. Kapsam YALNIZ önceki turun bulguları + düzeltme diff'i. Tam inceleme tekrarlanmaz; önceki bağımsız temiz kanıt yalnız bağları ve kapsadığı davranış hâlâ geçerliyse yeniden kullanılır (`method/SLICE_LANE.md` "Evidence validity and reuse").
 
 Karar: **PASS | REVISE**
 Tarih: <YYYY-MM-DD> · Önceki inceleme: `<sha>` (`<SLICE-ID>-review.md`) · Aday: `<yeni sha>` · Worktree: `<yol>`, DB `<lane DB>`, port `<port>`
+Güncel main `<sha>` / merge-base `<sha>`; test/standart/config, bağımlılık, DB/fixture, toolchain/ilgili ortam `<bağlar>`; yeniden kullanılan kanonik kayıtlar `<bağlantı + etkilenmeme gerekçesi>`. Aynı SHA veya `range-diff` tek başına yeterli değildir. Kod/taban/ilgili ortam değişimi etkilenen kanıtı geçersizleştirir; etki sınırlanamıyorsa geniş koşu gerekir. Aşağıdaki hedefli kontroller ve TAM/yüksek risk tekrarları korunur. Bu dosya bu inceleyicinin bu turdaki kanonik kararıdır; eski kayıtlar yeniden etiketlenmez.
 
 ## Kontroller
 

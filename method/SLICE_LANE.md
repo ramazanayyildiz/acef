@@ -73,7 +73,9 @@ backlog -> slice file -> own worktree + port + DB    ->  clean-tree re-run      
    list in the slice's dated "Ekler" section. Report: `templates/slice/dev-report.md` (with the pre-review self-check).
    The developer never declares PASS.
 3. **Clean-tree re-run**: a separate worktree of the candidate commit, `git status --short` empty, every command from
-   the dev report → expected → actual. `scripts/slice/gate.sh` treats tracked changes AND untracked files that
+   the dev report → expected → actual, run by the coordinator or reviewer independently of the developer. Record it
+   once; later references follow "Evidence validity and reuse" below. `scripts/slice/gate.sh` treats tracked changes
+   AND untracked files that
    `.gitignore` does not cover as dirty (only its own log dir is exempt). It never reports PASS when no command ran or
    when a command's output says zero tests ran (unless that command has `"allow_empty": true`), and a control field
    given as a string (`"false"`) is a usage error (exit 2).
@@ -97,6 +99,38 @@ backlog -> slice file -> own worktree + port + DB    ->  clean-tree re-run      
    changes and at phase/group close.
 8. **Phase/group close**: exploration tour (`templates/slice/exploration-tour.md`) by another model family, as a user,
    personas × 1280/390 (a group that touches no UI records a reasoned browser N/A). A group with an open blocking finding is not closed.
+
+## Evidence validity and reuse
+
+These are method and template rules (`documented-only`); no script validates the bindings or grants reuse.
+
+- **One record per execution.** Keep the command, expected/actual result, exit status, test count when applicable,
+  and raw-log link in one canonical entry in the existing report or evidence directory. Identify its executor/role,
+  candidate SHA, main base SHA and merge-base, test/standards versions (including configuration/baseline), and the
+  relevant dependency/lockfile, DB schema/fixture, toolchain and environment bindings. Shared bindings may appear once
+  in a report header; an entry names any exception. Record reproducible non-secret versions/configuration, not secrets.
+  Missing bindings mean reuse is not justified. Developer entries remain claims until independently reproduced.
+- **Keep the first independent clean run.** Every claimed developer command is reproduced in a separate clean
+  worktree by the coordinator or reviewer. A developer PASS or log never replaces it. The reviewer checks the
+  independent record's provenance, bindings and coverage, makes their own acceptance judgement, and executes all
+  required targeted checks (including applicable red-first, mutations and browser checks). Referencing that record
+  does not replace independent review or reduce the required reviewers or model-family separation.
+- **Reuse only evidence that remains valid.** For an unchanged report or a later handoff, reference the successful
+  independent broad-suite entry instead of producing the same run and log again. The person reusing it records the
+  current candidate/base/environment, the original entry and why its covered behaviour is unaffected. Same SHA alone
+  and equal `range-diff` alone are insufficient; all relevant bindings and coverage must still hold.
+- **Invalidate by impact.** A code, base, test/standards, dependency, DB/fixture, toolchain or relevant environment
+  change invalidates affected evidence. Rebase/conflict resolution and changes on main require the same impact
+  check. Re-run affected checks; if the impact cannot be bounded reliably, run the broader affected suite. Keep the
+  old record under its original bindings; never relabel it as a new execution. Required targeted REVISE checks,
+  explicit stronger high-risk/TAM or project repeat obligations, and merge/post-merge/phase-close gates still run.
+- **No false PASS.** NOT_RUN, zero tests, or failed/incomplete commands are not passing test evidence. A gate's
+  explicit `allow_empty` exception for a non-test check does not prove test coverage. Missing required evidence blocks
+  PASS; neither a link nor a previous verdict repairs it.
+- **One verdict per required reviewer and round.** Its existing `review.md` / `review-r<n>.md` is canonical; each
+  reviewer retains their own decision. Slice summaries, checklist/K rows and the closing note link to the canonical
+  evidence and current verdict rather than copying logs or rewriting findings. Keep report names, verdict syntax,
+  fixed closing/metrics fields and cost fields; a short compatibility summary is a reference, not another review.
 
 ## Roles
 

@@ -95,17 +95,15 @@ Giriş noktası (URL/menü) → eylem → ekranda görülmesi gereken. İnceleyi
 ## Raporlar ve sonuçlar (kısa)
 
 - Geliştirici: <rapor bağlantısı>; bildirilen komutlar inceleme ÖNCESİ temiz ağaçta yeniden koşulur.
-- Temiz ağaç yeniden koşusu: ağaç `<sha>`, `git status --short` boş
+- İlk bağımsız temiz koşu: ağaç `<sha>`, `git status --short` boş; `<kanonik kayıt bağlantısı, çalıştıran koordinatör/inceleyici>`
 
-| Komut | Beklenen | Gerçek |
-|---|---|---|
-| <…> | <…> | <…> |
+Komut/sonuç/log tablosunu buraya kopyalama; kaydın aday, main/merge-base, test/standart ve ilgili ortam bağlarına atıf ver. Yeniden kullanım: `method/SLICE_LANE.md` "Evidence validity and reuse"; ilk bağımsız koşu, inceleyicinin hedefli kontrolleri ve TAM/merge kapıları korunur.
 
-- İnceleme: <PASS/REVISE>; bloklayıcılar (kimlik, önem, öneri) ≤10 satır.
+- İnceleme: <PASS/REVISE özeti + her zorunlu inceleyicinin güncel kanonik karar bağlantısı>; açık bloklayıcı kimlikleri ≤10 satır; bulguyu yeniden yazma.
 
 ## Kapanış notu (koordinatör, ≤10 satır; `templates/closing-note.md`)
 
-- Karar: <PASS> (<inceleme dosyası>, tur <n>) · Tarih: <YYYY-MM-DD>
+- Karar: <PASS özeti> (<her zorunlu inceleyicinin güncel karar bağlantısı>, tur <n>) · Tarih: <YYYY-MM-DD>
 - Ürün commit'i: `<sha>` · İncelenen commit: `<sha>` · Merge: `<sha>` (no-ff, sahibin sözüyle / dal politikasıyla)
 - Süreler (dk): geliştirme <n> · inceleme <n> · yeniden inceleme <n> (ölçülmediyse "ölçülmedi")
 - REVISE turu: <n> · Kaçan hata: <yok | B-kimliği, hangi dilimde bulundu>

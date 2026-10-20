@@ -1,9 +1,10 @@
 # <SLICE-ID> — geliştirici raporu
 
-Geliştirici PASS ilan etmez. Bu rapor kanıt değildir; inceleyici her iddiayı temiz ağaçta yeniden üretir.
+Geliştirici PASS ilan etmez. Bu rapor kanıt değildir; her komut ilk bağımsız temiz koşuda yeniden üretilir. Geçerli bağımsız kanıta sonraki atıflar `method/SLICE_LANE.md` "Evidence validity and reuse" kuralına tabidir; inceleyicinin kendi zorunlu hedefli kontrolleri korunur.
 
 Dal: `<dal>` · Taban: `<taban-sha>` · Aday: `<aday-sha>` · Yalnız-test commit'i: `<test-sha>`
 Ortam: worktree `<yol>`, port `<port>`, test DB `<lane DB>`; ana önizlemeye ve paylaşılan DB'ye dokunulmadı.
+Kanıt bağları: main `<sha>`, merge-base `<sha>`; test/standart `<sürüm + config/baseline>`; ilgili bağımlılık/lockfile, DB şeması/fixture, toolchain ve ortam `<gizli olmayan sürüm/kimlikler veya gerekçeli uygulanmaz>`.
 Tarih / süre: <YYYY-MM-DD>, başlangıç <hh:mm>, bitiş <hh:mm>
 
 ## Yapılanlar
@@ -25,6 +26,8 @@ Tarih / süre: <YYYY-MM-DD>, başlangıç <hh:mm>, bitiş <hh:mm>
 `git checkout <test-sha>` (yalnız testler, ürün kodu yok) üzerinde: `<komut>` → <n> test kırmızı (`<evidence>/red-first.txt`). Aday üzerinde aynı komut yeşil.
 
 ## Çalıştırılan komutlar
+
+Her koşu için tek kayıt: komut hücresinde `<kayıt-kimliği>`, gerçek hücresinde sonuç + exit + varsa test sayısı + ham log bağlantısı; çalıştıran geliştiricidir, yukarıdaki aday ve bağlar geçerlidir (fark varsa satırda belirt). K/öz-denetim satırları aynı kayda atıf verebilir; logu kopyalama. NOT_RUN, sıfır test, başarısız/eksik komut test PASS'ı değildir. İlk bağımsız koşunun kaydı ayrıca bağlanır; bu rapor onun yerine geçmez.
 
 | Komut | Beklenen | Gerçek |
 |---|---|---|

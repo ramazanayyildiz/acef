@@ -1,0 +1,33 @@
+{
+  "capabilityId": "slice-evidence-reuse",
+  "requestedIntent": "Owner approval 2026-10-20: reduce repeated valid broad-suite runs and duplicate reporting in the current v3 Slice method/templates while preserving reviewer counts, model-family requirements, review classes, mutation dose, independent clean runs, browser acceptance and merge gates.",
+  "status": "documented-only",
+  "requiredLayers": ["docs"],
+  "implementedLayers": {
+    "docs": [
+      "method/SLICE_LANE.md#evidence-validity-and-reuse",
+      "docs/slice-lane/README.md",
+      "templates/slice/dev-report.md",
+      "templates/slice/review-brief.md",
+      "templates/slice/review-checklist.md",
+      "templates/slice/review-r2.md",
+      "templates/slice/slice.md",
+      "templates/slice/closing-note.md",
+      "CHANGELOG.md#Slice evidence reuse and canonical references (2026-10-20)"
+    ]
+  },
+  "limitations": [
+    "Method/template guidance only: no runtime validates evidence bindings, coverage, invalidation or reuse. The existing slice-lane capability remains specified; no CLI, schema, hook, installer or metrics behavior changes.",
+    "The first independent clean rerun, reviewer judgement and required targeted checks remain mandatory. Reuse cannot bypass explicit stronger high-risk repeat obligations or merge/post-merge/phase-close gates.",
+    "Same SHA or equal range-diff alone does not establish validity; unknown impact requires broader affected checks. Old records retain their original bindings.",
+    "No quality, time, token or cost improvement is claimed from this documentation change; unmeasured values remain unmeasured."
+  ],
+  "evidence": [
+    {
+      "layer": "docs",
+      "ref": "method/SLICE_LANE.md#evidence-validity-and-reuse",
+      "note": "Based on verified local and remote main bdee785d7c4cf4bc0dc30b930a1a643f998949e2. Defines canonical per-execution evidence and per-reviewer/round verdict references, context bindings and impact-based invalidation; keeps existing report names, verdict syntax and metrics/cost fields."
+    }
+  ],
+  "createdAt": "2026-10-20"
+}
