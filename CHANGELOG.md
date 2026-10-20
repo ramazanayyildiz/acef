@@ -35,6 +35,9 @@ Capability record: `docs/ai/capabilities/slice-lane.json` (unchanged).
   `--no-ansi` to every call, counts only rows newer than the pre-run newest batch, and refuses (exit 3) a fresh
   database with a schema dump or new rows spanning several batches. The gate's dirty check adds
   `--ignore-submodules=none`. Red tests in their own commit.
+- Review round R2 (PR #3): Laravel loads a schema dump whenever no migration has run, an existing but empty
+  migrations table included, so `migrate-roundtrip.sh` now refuses (exit 3, before `migrate`) whenever the pre-run
+  status has zero Ran rows, dump file or not (a configured dump path is not visible to the script).
 - Tests: `test-codex-review.sh` (fake codex: stale output, verdict forms), `test-gate.sh` (untracked/ignored files,
   repeated run without `.gitignore`), new `test-standards-check.sh`, new `stacks/laravel/tests/test-migrate-roundtrip.sh`
   (fake `php`; lives in the adapter because the core neutrality scan forbids stack words under `scripts/slice/`).

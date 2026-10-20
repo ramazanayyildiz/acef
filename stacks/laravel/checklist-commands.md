@@ -16,7 +16,7 @@ core templates carried before ACEF-NEUTRAL-01 (provenance: `docs/slice-lane/SOUR
 | `{{standards_check}}` | `scripts/standards-check.sh {tree}` with `scripts/standards/rules.json` from `standards/rules.example.json` |
 | `{{route_list}}` | `php artisan route:list --json` |
 | `{{app_shell}}` | `php artisan tinker --execute` |
-| `{{migrate_roundtrip}}` | `scripts/migrate-roundtrip.sh [--database=<conn>] [--path=…] [--realpath] [--force] [--schema-path=…]` (from `migrate-roundtrip.sh`): `php artisan migrate`, then `php artisan migrate:rollback --step=<n>`, n = rows newer than the newest batch before the run; arguments reach status, migrate and rollback alike, all calls `--no-ansi`; any other argument exits 2; nothing applied, a schema dump on a fresh DB, or new rows in more than one batch exit 3 without a rollback. Laravel 10+ (two-column `migrate:status`) |
+| `{{migrate_roundtrip}}` | `scripts/migrate-roundtrip.sh [--database=<conn>] [--path=…] [--realpath] [--force] [--schema-path=…]` (from `migrate-roundtrip.sh`): `php artisan migrate`, then `php artisan migrate:rollback --step=<n>`, n = rows newer than the newest batch before the run; arguments reach status, migrate and rollback alike, all calls `--no-ansi`; any other argument exits 2; nothing applied, zero Ran rows before the run (missing or empty migrations table: a schema dump could load), or new rows in more than one batch exit 3 without a rollback. Laravel 10+ (two-column `migrate:status`) |
 | `{{dependency_check}}` | `composer validate --strict` |
 | `{{browser_smoke}}` | `APP_ORIGIN=http://127.0.0.1:{port} npm run test:smoke` |
 
