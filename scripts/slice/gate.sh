@@ -12,6 +12,9 @@
 # No PASS without tests (ACEF-FIX-03): a gate in which no command ran is FAIL ("no command ran"). A command that exits 0
 # but whose output says zero tests ran (core ERE "[Nn]o tests (executed|found|ran)" plus the stack profile's
 # "gate": {"zero_tests_patterns": [ERE, …]}) is FAIL ("zero tests executed") unless it carries "allow_empty": true.
+# Each pattern is matched on its own (never joined into one ERE: joining renumbers groups and can make two valid
+# patterns invalid together) against the log with ANSI colour codes removed; a grep error (exit > 1) is FAIL, never
+# "no match". Output that merely quotes the phrase also FAILs; allow_empty is the only way out for that command.
 # allow_empty, like full_only and require_clean_tree, must be a JSON boolean; an invalid zero-tests pattern is exit 2.
 # Clean tree (unless "require_clean_tree": false or --allow-dirty, which tags the summary +dirty): no tracked change and
 # no untracked file that .gitignore does not cover ("??" in git status), submodules included whatever their "ignore"
@@ -26,7 +29,8 @@
 # name, or an empty run in ANY command is a usage error (exit 2) before any command runs, never an empty command.
 # A command with "full_only": true runs only with --full; without --full it is reported as "SKIP <name> (full only)"
 # and does NOT make the gate INCOMPLETE (it was not asked for). A command whose {port} is needed but GATE_PORT is unset
-# is SKIPPED and makes the gate INCOMPLETE.
+# is SKIPPED and makes the gate INCOMPLETE (exit 3), also when it was the only command. Verdict order: any FAIL -> FAIL;
+# else any such SKIP -> INCOMPLETE; else no command ran (every command full_only in a light run) -> FAIL; else PASS.
 # Requires: bash, git, python3 (reads JSON with -I, no third-party modules).
 set -u
 
@@ -57,7 +61,7 @@ if [ -n "${GATE_PORT:-}" ]; then
     case "$GATE_PORT" in ''|*[!0-9]*) die2 "GATE_PORT must be a number: $GATE_PORT";; esac
 fi
 
-# Read config -> "ZT<TAB><zero-tests ERE>", then TSV lines: name<TAB>full_only<TAB>timeout<TAB>require_clean<TAB>allow_empty<TAB>run (run last; tabs refused)
+# Read config -> "ZT<TAB><zero-tests ERE>" lines, then TSV lines: name<TAB>full_only<TAB>timeout<TAB>require_clean<TAB>allow_empty<TAB>run (run last; tabs refused)
 [ -z "$PROFILE" ] || [ -f "$PROFILE" ] || die2 "stack profile not found: $PROFILE"
 # The whole command list is validated and every placeholder resolved BEFORE anything runs: on any error the parser
 # prints only one "ERR …" line and the gate exits 2 without executing a command (R1/F1 of PR #1).
@@ -151,15 +155,28 @@ for i, c in enumerate(g["commands"]):
     seen.add(n)
     t = c.get("timeout_s", 0)
     rows.append("\t".join([n, "1" if c.get("full_only", False) else "0", str(t), clean, "1" if c.get("allow_empty", False) else "0", r]))
-print("ZT\t" + "|".join(f"({p})" for p in zt))
+for p in zt:
+    print("ZT\t" + p)   # one line per pattern; command names are lower-case, so no row starts with "ZT"
 print("\n".join(rows))
 PY
 )
 ERRLINE=$(printf '%s\n' "$PARSED" | grep -m1 '^ERR ' || true)
 [ -z "$ERRLINE" ] || die2 "${ERRLINE#ERR }"
-ZT=$(printf '%s\n' "$PARSED" | head -n 1 | cut -f2-)      # first line: ZT<TAB><zero-tests ERE>
-PARSED=$(printf '%s\n' "$PARSED" | tail -n +2)
-[ -n "$ZT" ] && [ -n "$PARSED" ] || die2 "gate.commands could not be read"
+ZTS=$(printf '%s\n' "$PARSED" | sed -n 's/^ZT	//p')        # "ZT<TAB><ERE>" lines: one zero-tests pattern each
+PARSED=$(printf '%s\n' "$PARSED" | grep -v '^ZT	')
+[ -n "$ZTS" ] && [ -n "$PARSED" ] || die2 "gate.commands could not be read"
+ESC=$(printf '\033')
+zero_tests() { # <log>: 0 = a pattern matched (ZTHIT), 1 = none, 2 = grep error on a pattern (ZTERR)
+    local p r=1
+    while IFS= read -r p; do
+        [ -n "$p" ] || continue
+        sed "s/${ESC}\[[0-9;]*[A-Za-z]//g" "$1" | grep -Eq -- "$p" 2>/dev/null
+        case $? in 0) ZTHIT=$p; return 0;; 1) ;; *) ZTERR=$p; r=2;; esac
+    done <<EOZ
+$ZTS
+EOZ
+    return "$r"
+}
 
 REQUIRE_CLEAN=$(printf '%s\n' "$PARSED" | head -n 1 | cut -f4)
 LOGDIR=${GATE_LOG_DIR:-$TREE/.tmp/gate}
@@ -197,9 +214,13 @@ while IFS="$(printf '\t')" read -r NAME FULLONLY TMO _CLEAN ALLOWEMPTY RUN; do
     ( cd "$TREE" && run_with_timeout "$TMO" "$CMD" ) >"$LOGDIR/$NAME.log" 2>&1 </dev/null
     RC=$?
     DT=$(( $(date +%s) - T0 ))
-    if [ "$RC" -eq 0 ] && [ "$ALLOWEMPTY" != 1 ] && grep -Eq -- "$ZT" "$LOGDIR/$NAME.log"; then
-        printf 'FAIL %s %ss zero tests executed (log %s; mark the command "allow_empty": true if that is intended)\n' "$NAME" "$DT" "$LOGDIR/$NAME.log"
-        grep -E -- "$ZT" "$LOGDIR/$NAME.log" | head -n 3 | sed 's/^/    /'
+    ZTRC=1
+    if [ "$RC" -eq 0 ] && [ "$ALLOWEMPTY" != 1 ]; then zero_tests "$LOGDIR/$NAME.log"; ZTRC=$?; fi
+    if [ "$ZTRC" -eq 0 ]; then
+        printf 'FAIL %s %ss zero tests executed (matched %s; log %s; mark the command "allow_empty": true if that is intended)\n' "$NAME" "$DT" "$ZTHIT" "$LOGDIR/$NAME.log"
+        FAILN=$((FAILN + 1))
+    elif [ "$ZTRC" -gt 1 ]; then
+        printf 'FAIL %s %ss zero-tests check could not run pattern %s (grep error; log %s)\n' "$NAME" "$DT" "$ZTERR" "$LOGDIR/$NAME.log"
         FAILN=$((FAILN + 1))
     elif [ "$RC" -eq 0 ]; then printf 'PASS %s %ss\n' "$NAME" "$DT"; PASSN=$((PASSN + 1))
     else
@@ -214,8 +235,8 @@ EOF2
 MODE=light; [ "$FULL" = 1 ] && MODE=full
 TOTAL=$(( $(date +%s) - START ))
 if [ "$FAILN" -gt 0 ]; then VERDICT=FAIL; RC=1
-elif [ $((PASSN + FAILN)) -eq 0 ]; then VERDICT=FAIL; RC=1; printf 'no command ran (a gate that ran nothing is never PASS)\n'
 elif [ "$SKIPN" -gt 0 ]; then VERDICT=INCOMPLETE; RC=3
+elif [ "$PASSN" -eq 0 ]; then VERDICT=FAIL; RC=1; printf 'no command ran (a gate that ran nothing is never PASS)\n'
 else VERDICT=PASS; RC=0; fi
 printf 'GATE %s %s%s %s pass=%s fail=%s skip=%s %ss\n' "$VERDICT" "$SHA7" "$DIRTYTAG" "$MODE" "$PASSN" "$FAILN" "$SKIPN" "$TOTAL"
 exit "$RC"

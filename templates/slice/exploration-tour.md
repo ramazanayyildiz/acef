@@ -2,7 +2,7 @@
 
 Betikler önceden yazılmış yolları doğrular; insanın takıldığı yerleri (anlaşılmayan metin, kopuk akış, mobil düzen, çelişen ekran) bulmaz. Keşif turu bunun içindir. **Ne zaman:** her plan grubu / faz kapanışında ve canlı öncesi. Engelleyici bulgusu açık grup kapanmış sayılmaz.
 
-Yalnız HAFİF dilimlerden oluşan grupta etkilenen UI akışı yoksa tarayıcı turu "uygulanmaz: <neden>" olarak kaydedilir; inceleyici gerekçeyi doğrular. Uygulanabilir tur ve TAM şartları korunur.
+Grubun hiçbir dilimi UI'a (rota, görünüm/şablon, UI bileşeni) dokunmuyorsa — sınıfı ne olursa olsun — tarayıcı turu "uygulanmaz: <neden>" olarak kaydedilir; inceleyici gerekçeyi doğrular (`method/SLICE_LANE.md` "Applicability"). Uygulanabilir tur ve TAM şartları korunur.
 
 - **Kim:** farklı model ailesi (ör. Codex `<model>`), ayrı test worktree'si, sentetik veri, kendi port.
 - **Erişim:** yalnız `127.0.0.1:<app-port>` ve `127.0.0.1:<cdp-port>`; yazma yalnız `<evidence>/<ID>-EXPLORE-<n>/` ve `.tmp/`. Kod, test, git ve uygulama komutlarıyla veri değişmez.

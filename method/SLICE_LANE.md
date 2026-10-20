@@ -282,6 +282,10 @@ Open low-severity items from `archive/slice-lane/METHOD-01-review-r2.md` (non-bl
   matched nothing; add review case E to the self-test.
 - **R4** — `LICENSES/security-audit-MIT.txt` carries a provenance header, so SOURCES' "(aynen)" is inaccurate: move the
   header to a NOTICE/README or reword to "(licence text verbatim, provenance header on top)".
+- **FIX03-R5** (pre-existing, from the PR #4 review) — `scripts/slice/standards-check.sh` reads the rule TSV with
+  `IFS=$TAB`; tab is IFS whitespace, so an empty field (empty `label`, empty `run`) shifts the fields after it, and a
+  missing `label` moves `requires` into LABEL, which skips the prerequisite check. Fix: a non-whitespace separator or
+  per-field defaults in the parser, plus a self-test.
 
 ## Reconciled v2 statements
 

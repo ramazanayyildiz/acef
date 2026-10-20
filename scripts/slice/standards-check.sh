@@ -84,7 +84,13 @@ if prof:
         extra = (json.load(open(prof, encoding="utf-8")).get("standards") or {}).get("tool_error_patterns") or []
     except Exception as e:
         print(f"ERR stack profile unreadable: {e}"); sys.exit(0)
-    pats += [p for p in extra if isinstance(p, str) and p and "\n" not in p]
+    import subprocess
+    for k, p in enumerate(extra):   # each on its own: a joined "a|b" can hide an invalid entry ("[" + "]")
+        if not isinstance(p, str) or not p or "\n" in p:
+            print(f"ERR stack profile standards.tool_error_patterns[{k}] must be a non-empty one-line string"); sys.exit(0)
+        if subprocess.run(["grep", "-E", "-e", p], input=b"", capture_output=True).returncode > 1:
+            print(f"ERR tool_error_patterns[{k}]: invalid ERE {p!r}"); sys.exit(0)
+        pats.append(p)
 print("|".join(pats))
 PY
 )

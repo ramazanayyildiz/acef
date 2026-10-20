@@ -30,6 +30,14 @@ controls and fails on regex errors. Red-first: tests in a separate commit.
   fields, three failure drills); its "## Bootstrap example (Laravel)" section is the only part exempt from the
   neutrality scan (`selfcheck.sh` + test).
 
+- R1 (PR #4 review): zero-tests patterns are matched one by one, never joined (a joined ERE renumbered groups, and
+  two valid patterns such as `(zero) \1` plus the core one formed an invalid ERE that grep read as "no match", so
+  `No tests executed!` passed); a grep error is FAIL; ANSI colour codes are stripped before matching. Verdict order:
+  FAIL > INCOMPLETE (a `{port}` SKIP, exit 3, also when it was the only command) > "no command ran" FAIL > PASS, as
+  the header says. `tool_error_patterns` entries are validated one by one (`["[", "]"]` joined into a valid class).
+  Browser N/A wording aligned with `SLICE_LANE.md` (any group touching no UI) in `exploration-tour.md` and the Turkish
+  README. Backlog: FIX03-R5 (rule TSV field shift on an empty field, pre-existing) in `SLICE_LANE.md`.
+
 Capability record: `docs/ai/capabilities/slice-lane.json` (still `specified`).
 
 ## fix(slice): validate gate control types and preserve regex errors (2026-10-20)

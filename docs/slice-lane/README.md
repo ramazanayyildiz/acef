@@ -29,7 +29,7 @@ backlog → dilim dosyası →  kendi worktree + port + DB   →   temiz ağaçt
 5. **REVISE** → aynı izinli listede düzeltme → **hedefli yeniden inceleme aynı inceleyici oturumunda** (`templates/review-r2.md`): yalnız önceki bulgular + düzeltme diff'i. Bulguları yazan inceleyici bağlamı yerindeyken kontrol eder; geliştiricinin oturumu asla değil. Yalnız o oturum kaybolduysa (bağlam sınırı, çökme) yeni inceleyici oturumu önceki raporu + düzeltme diff'ini okur ve r2 başlığına yazar.
 6. **Kapanış notu** (`templates/closing-note.md`): karar, commit'ler, süreler, REVISE turu, kaçan hata, açık "etiket adayı" yargısı, ertelenen backlog kimlikleri, temizlik. `scripts/metrics.py` bu alanları okur.
 7. **Merge**: `git merge --no-ff`. `main`'e yalnız sahibin sözüyle; sahibin yazılı izin verdiği iş dallarına (ör. `<proje>` için yazılı dal politikasındaki entegrasyon dalı) koordinatör PASS + yeşil postmerge sonrası beklemeden. Postmerge: `scripts/gate.sh`, `{{standards_check}}`, etkilenen testler, projenin kritik seti (`slice-method.json` → `critical_postmerge`). Tam takım yalnız ortak altyapı değişiminde ve faz/grup kapanışında.
-8. **Faz/grup kapanışı**: keşif turu (`templates/exploration-tour.md`): farklı model ailesi, kullanıcı gibi, personalar × 1280/390 (UI akışı olmayan HAFİF grupta tarayıcı gerekçeli uygulanmaz). Engelleyici bulgu açıkken grup kapanmaz.
+8. **Faz/grup kapanışı**: keşif turu (`templates/exploration-tour.md`): farklı model ailesi, kullanıcı gibi, personalar × 1280/390 (hiçbir dilimi UI'a dokunmayan grupta, sınıf ne olursa olsun, tarayıcı gerekçeli uygulanmaz). Engelleyici bulgu açıkken grup kapanmaz.
 
 ## Roller
 

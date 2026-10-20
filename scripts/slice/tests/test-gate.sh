@@ -152,8 +152,12 @@ printf '{ "stack": "t", "profile_version": "1.0.0", "placeholders": { "test_comm
 gate_case 2 "zero_tests_patterns that is not a list -> exit 2" --profile "$T.prof/zstr.json" "$T"
 # ---- R1 of PR #4: combined zero-tests ERE, lone {port} skip, ANSI inside the phrase ----
 printf '{ "stack": "t", "profile_version": "1.0.0", "placeholders": { "test_command": "touch %s/ran" }, "gate": { "zero_tests_patterns": ["(zero) \\\\1"] } }\n' "$T.prof" > "$T.prof/zback.json"
-smj "c['gate']={'commands':[{'name':'tests','run':'{{test_command}}'}]}"
-gate_case 2 "patterns valid alone but invalid combined (backreference) -> exit 2 (was: zero-tests check off, GATE PASS)" --profile "$T.prof/zback.json" "$T"
+smj "c['gate']={'commands':[{'name':'tests','run':'echo No tests executed!'}]}"
+"$HERE/gate.sh" --profile "$T.prof/zback.json" "$T" >/dev/null 2>&1
+check "$?" 1 "reviewer's profile pattern (zero) \\1 + 'No tests executed!' -> FAIL (was: joined ERE invalid, GATE PASS)"
+smj "c['gate']={'commands':[{'name':'tests','run':'echo zero zero'}]}"
+"$HERE/gate.sh" --profile "$T.prof/zback.json" "$T" >/dev/null 2>&1
+check "$?" 1 "the backreference pattern keeps its own group numbering ('zero zero' -> FAIL)"
 smj "c['gate']={'commands':[{'name':'smoke','run':'echo {port}'}]}"
 out=$(env -u GATE_PORT "$HERE/gate.sh" "$T" 2>&1); rc=$?
 check "$rc" 3 "only command skipped for a missing GATE_PORT -> INCOMPLETE exit 3 (documented skip)"
