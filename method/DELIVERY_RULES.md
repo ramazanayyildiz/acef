@@ -200,7 +200,7 @@ Two consecutive typed non-`PASS` review verdicts or a third repair cycle on the 
 `REPLAN/SPLIT`. V3 additionally treats a new HIGH in consecutive rounds or growing patch scope as an earlier reviewer
 signal, but its mechanical hard stop is the bounded repair counter. Legacy contracts retain their
 code-review/test-review/Judge inputs. The breaker does not grep prose or require literal `REPLAN` wording.
-Slice lane exception: the Slice lane has no repair counter or breaker: REVISE leads to a targeted re-review in a new session (r2,
+Slice lane exception: the Slice lane has no repair counter or breaker: REVISE leads to a targeted re-review in the same reviewer session (r2,
 r3, …), and moving the work to a v2 lane is an owner decision.
 
 Full-BMAD ATDD starts with the critical vertical path. The Test Author maps every acceptance criterion, but regression-

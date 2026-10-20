@@ -55,8 +55,8 @@ commit, consolidate into the objective defect ledger. An attempted eighth run or
 until a human-approved scope split. Manual QA must finish before non-critical findings are explicitly batched; critical
 security, money, migration, realtime, concurrency, or state-machine findings remain independent Standard/Full + Guarded
 work. Same-run review remediation remains capped at two cycles.
-Slice lane exception: the Slice lane has no objective counters and no two-cycle cap: each REVISE gets a targeted re-review in a new
-session, an agent past 90 minutes without progress is restarted with a narrowed task, and moving the work to a v2 lane
+Slice lane exception: the Slice lane has no objective counters and no two-cycle cap: each REVISE gets a targeted re-review in the same
+reviewer session, an agent past 90 minutes without progress is restarted with a narrowed task, and moving the work to a v2 lane
 is an owner decision.
 
 For a newly created Fix/Standard parent objective with `objective-accounting-v2`, the run/replan/review thresholds

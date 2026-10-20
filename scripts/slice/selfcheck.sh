@@ -12,7 +12,8 @@
 #   stack, tool of a stack, or source project — words: source project names, laravel, livewire, php, phpunit, phpstan,
 #   blade, eloquent, octane, artisan, composer — and carries no source-project identifiers (backlog ids B7/B27/B28/B40,
 #   the CACHE_DRIVER/CACHE_STORE example, source ports 8127–8139). Allowed: docs/slice-lane/SOURCES.md (provenance),
-#   the adoption guide's "## Laravel profile" section, this file and its own test. Every {{key}} the adoption guide
+#   the adoption guide's "## Laravel profile" section, docs/slice-lane/TEST-RUN.md's "## Bootstrap example (Laravel)"
+#   section, this file and its own test. Every {{key}} the adoption guide
 #   names must be used by a core template or the core example. --scan-only runs just the scan.
 set -u
 ROOT=$(cd "$(dirname "$0")/../.." && pwd -P)   # acef repo root (this file: scripts/slice/selfcheck.sh)
@@ -38,10 +39,12 @@ WORDS='jakomeet|b2press|rebuild|unusualspace|us-crm|laravel|livewire|(^|[^a-z])p
 IDS='(^|[^A-Za-z0-9-])B(7|27|28|40)([^0-9]|$)|CACHE_DRIVER|CACHE_STORE|(^|[^0-9])81(2[7-9]|3[0-9])([^0-9]|$)'
 CORE="method/SLICE_LANE.md templates/slice schemas docs/slice-lane scripts/slice"
 # Exemptions are exact paths (never basenames): a planted templates/slice/x/adoption.md is scanned like any file.
-EXEMPT='^(docs/slice-lane/SOURCES\.md|docs/slice-lane/adoption\.md|scripts/slice/selfcheck\.sh|scripts/slice/tests/test-selfcheck\.sh):'
+EXEMPT='^(docs/slice-lane/SOURCES\.md|docs/slice-lane/adoption\.md|docs/slice-lane/TEST-RUN\.md|scripts/slice/selfcheck\.sh|scripts/slice/tests/test-selfcheck\.sh):'
 # shellcheck disable=SC2086
 LEAKS=$(grep -rnIiE "$WORDS|$IDS" $CORE | grep -vE "$EXEMPT")
-ADOPT=$(awk -v f=docs/slice-lane/adoption.md '/^## /{s=($0=="## Laravel profile")} !s{print f ":" NR ":" $0}' docs/slice-lane/adoption.md \
+# Section-scoped exemptions: adoption.md "## Laravel profile", TEST-RUN.md "## Bootstrap example (Laravel)".
+ADOPT=$( { awk -v f=docs/slice-lane/adoption.md '/^## /{s=($0=="## Laravel profile")} !s{print f ":" NR ":" $0}' docs/slice-lane/adoption.md
+    awk -v f=docs/slice-lane/TEST-RUN.md '/^## /{s=($0=="## Bootstrap example (Laravel)")} !s{print f ":" NR ":" $0}' docs/slice-lane/TEST-RUN.md; } \
     | grep -iE "$WORDS|$IDS")
 [ -z "$LEAKS$ADOPT" ] && pass "core names no stack, stack tool, or source project" || {
     fail "core names a stack, stack tool, or source project"; printf '%s\n' "$LEAKS" "$ADOPT" | sed '/^$/d; s/^/    /'; }
@@ -74,12 +77,12 @@ need() { # <file> <literal>...
 }
 need templates/slice/slice.md '<SLICE-ID>' '## Standart uyumu' 'Kullanım taraması' '## Boyut ve derinlik' '## İzinli dosyalar' '### Ekler (koordinatör, tarihli)' '## Kabul maddeleri' 'Mutasyonlar' '## Kapanış notu'
 n=$(wc -l <templates/slice/slice.md | tr -d ' '); [ "$n" -le 150 ] && pass "templates/slice/slice.md $n <= 150 lines" || fail "templates/slice/slice.md $n > 150 lines"
-need templates/slice/dev-report.md '<SLICE-ID>' '## Kırmızı-önce kanıtı' '## İnceleme öncesi öz-denetim' '## Mutasyonlar'
+need templates/slice/dev-report.md '<SLICE-ID>' '## Kırmızı-önce kanıtı' '## İnceleme öncesi öz-denetim' '## Mutasyonlar' '## Maliyet' 'Duvar-saati-geliştirme-dk:' 'Duvar-saati-dilim-dk:' 'Token-geliştirici:' 'Token-inceleme:' 'Token-toplam:'
 need templates/slice/review-brief.md '<SLICE-ID>' 'review-checklist.md' 'iddiaları doğrula' '<paket-öneki>' 'TAM eki' 'needs_validation' 'Etiket adayı' 'her kural için 3–5 mutasyon' 'para ve göç dilimlerinde ZORUNLU' 'LICENSES/security-audit-MIT.txt'
 [ -f LICENSES/security-audit-MIT.txt ] && grep -q 'Copyright (c) 2025-2026 Cloudflare, Inc.' LICENSES/security-audit-MIT.txt && pass "LICENSES/security-audit-MIT.txt present" || fail "LICENSES/security-audit-MIT.txt missing"
 need docs/slice-lane/SOURCES.md 'LICENSES/security-audit-MIT.txt' '/Users/ramazanayyildiz/CODE/Ram/live-learning' 'Adoption status at import'
-need templates/slice/review-checklist.md '## A —' '## B —' '## C —' '## D —' '## E —' 'scrollWidth <= 390'
-need templates/slice/review-r2.md '<SLICE-ID>' 'Ayrı oturum' 'git diff <önceki-sha> <yeni-sha>'
+need templates/slice/review-checklist.md '## A —' '## B —' '## C —' '## D —' '## E —' 'scrollWidth <= 390' 'yalnız dilim UI'"'"'a dokunuyorsa' 'AYNI inceleyici oturumunda'
+need templates/slice/review-r2.md '<SLICE-ID>' 'Aynı inceleyici oturumu' 'git diff <önceki-sha> <yeni-sha>'
 need templates/slice/closing-note.md 'Süre-geliştirme-dk:' 'Süre-inceleme-dk:' 'REVISE-turu:' 'Kaçan-hata:' 'Etiket adayı:'
 need templates/slice/invariants-skeleton.md '**Kural**' '**Kaynak**' '**Nasıl sınanır**' '**Sabitleyen testler**' 'I<n>'
 need templates/slice/locks.md '<SLICE-ID>'

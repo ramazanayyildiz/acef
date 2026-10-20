@@ -340,7 +340,11 @@ def main(argv=None) -> int:
     except (OSError, ValueError) as e:
         print(f"stack profile unreadable: {e}", file=sys.stderr)
         return 2
-    sl = collect(a.slices_dir, not a.no_git, a.backlog, bool(pm.get("evidence_dir_strip_phase_prefix", False)))
+    strip = pm.get("evidence_dir_strip_phase_prefix", False)
+    if not isinstance(strip, bool):  # ACEF-FIX-03: the string "false" is truthy; never guess
+        print(f"stack profile metrics.evidence_dir_strip_phase_prefix must be a JSON boolean, got {type(strip).__name__} {strip!r}", file=sys.stderr)
+        return 2
+    sl = collect(a.slices_dir, not a.no_git, a.backlog, strip)
     sys.stdout.write(render(sl, a.label or os.path.abspath(a.slices_dir), a.format, a.summary_only))
     return 0
 

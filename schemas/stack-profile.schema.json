@@ -77,7 +77,30 @@
     },
     "metrics": {
       "type": "object",
-      "description": "Stack- or project-specific metrics inputs (paths config)."
+      "description": "Stack- or project-specific metrics inputs (paths config).",
+      "properties": {
+        "paths": {
+          "type": "string"
+        },
+        "evidence_dir_strip_phase_prefix": {
+          "type": "boolean",
+          "description": "JSON boolean; the string \"false\" is refused by metrics.py (exit 2), never read as true."
+        }
+      }
+    },
+    "gate": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "zero_tests_patterns": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "description": "Extra ERE patterns that mark a gate command's output as 'zero tests executed' (FAIL unless the command has \"allow_empty\": true), on top of the core's '[Nn]o tests (executed|found|ran)'. An invalid pattern is a gate usage error (exit 2)."
+        }
+      }
     },
     "standards": {
       "type": "object",

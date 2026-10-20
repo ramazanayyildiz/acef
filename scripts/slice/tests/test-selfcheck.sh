@@ -35,6 +35,14 @@ expect_scan_fail templates/slice/review-checklist.md "| X | host include (B28) |
 expect_scan_fail templates/slice/review-checklist.md "| X | env drift CACHE_DRIVER |" "CACHE_DRIVER example rejected"
 expect_scan_fail docs/slice-lane/examples/slice-method.example.json '"preview_port": 8127' "source port 8127 rejected"
 expect_scan_fail docs/slice-lane/adoption.md 'optional `{{test_filter}}`' "adoption names a {{key}} no core file uses"
+# ACEF-FIX-03: TEST-RUN.md is scanned except its "## Bootstrap example (Laravel)" section
+expect_scan_fail docs/slice-lane/TEST-RUN.md "## Drills
+run composer here" "a stack tool in TEST-RUN.md outside the bootstrap section is rejected"
+awk '/^## Bootstrap example \(Laravel\)/{print "uses phpunit and artisan here"} {print}' "$T/r/docs/slice-lane/TEST-RUN.md" > "$T/r/x.tmp" && mv "$T/r/x.tmp" "$T/r/docs/slice-lane/TEST-RUN.md"
+bash "$T/r/scripts/slice/selfcheck.sh" --scan-only >/dev/null 2>&1; rc=$?
+[ "$rc" -ne 0 ] && check 1 1 "stack words just before the bootstrap heading are rejected" || check 0 1 "stack words just before the bootstrap heading are rejected"
+fresh; printf '\nphpunit artisan composer\n' >> "$T/r/docs/slice-lane/TEST-RUN.md"
+bash "$T/r/scripts/slice/selfcheck.sh" --scan-only >/dev/null 2>&1; check "$?" 0 "stack words inside the bootstrap section (last section) are allowed"
 # R7 (Codex): exclusions are paths, not basenames
 fresh; mkdir -p "$T/r/templates/slice/x"; printf 'uses laravel and php\n' > "$T/r/templates/slice/x/adoption.md"
 out=$(bash "$T/r/scripts/slice/selfcheck.sh" --scan-only 2>&1); rc=$?

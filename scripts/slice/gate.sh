@@ -9,6 +9,13 @@
 #   ${GATE_LOG_DIR:-<tree>/.tmp/gate}/<name>.log
 # Last line: GATE PASS|FAIL|INCOMPLETE <sha7>[+dirty] <light|full> pass=<n> fail=<n> skip=<n> <seconds>s
 # Exit: 0 all PASS, 1 at least one FAIL, 2 usage/prerequisite, 3 no FAIL but something SKIPPED (INCOMPLETE; never success).
+# No PASS without tests (ACEF-FIX-03): a gate in which no command ran is FAIL ("no command ran"). A command that exits 0
+# but whose output says zero tests ran (core ERE "[Nn]o tests (executed|found|ran)" plus the stack profile's
+# "gate": {"zero_tests_patterns": [ERE, …]}) is FAIL ("zero tests executed") unless it carries "allow_empty": true.
+# Each pattern is matched on its own (never joined into one ERE: joining renumbers groups and can make two valid
+# patterns invalid together) against the log with ANSI colour codes removed; a grep error (exit > 1) is FAIL, never
+# "no match". Output that merely quotes the phrase also FAILs; allow_empty is the only way out for that command.
+# allow_empty, like full_only and require_clean_tree, must be a JSON boolean; an invalid zero-tests pattern is exit 2.
 # Clean tree (unless "require_clean_tree": false or --allow-dirty, which tags the summary +dirty): no tracked change and
 # no untracked file that .gitignore does not cover ("??" in git status), submodules included whatever their "ignore"
 # setting. Only the gate's own log dir is exempt.
@@ -22,7 +29,8 @@
 # name, or an empty run in ANY command is a usage error (exit 2) before any command runs, never an empty command.
 # A command with "full_only": true runs only with --full; without --full it is reported as "SKIP <name> (full only)"
 # and does NOT make the gate INCOMPLETE (it was not asked for). A command whose {port} is needed but GATE_PORT is unset
-# is SKIPPED and makes the gate INCOMPLETE.
+# is SKIPPED and makes the gate INCOMPLETE (exit 3), also when it was the only command. Verdict order: any FAIL -> FAIL;
+# else any such SKIP -> INCOMPLETE; else no command ran (every command full_only in a light run) -> FAIL; else PASS.
 # Requires: bash, git, python3 (reads JSON with -I, no third-party modules).
 set -u
 
@@ -53,7 +61,7 @@ if [ -n "${GATE_PORT:-}" ]; then
     case "$GATE_PORT" in ''|*[!0-9]*) die2 "GATE_PORT must be a number: $GATE_PORT";; esac
 fi
 
-# Read config -> TSV lines: name<TAB>full_only<TAB>timeout<TAB>require_clean<TAB>run  (run is last: may contain tabs? refused)
+# Read config -> "ZT<TAB><zero-tests ERE>" lines, then TSV lines: name<TAB>full_only<TAB>timeout<TAB>require_clean<TAB>allow_empty<TAB>run (run last; tabs refused)
 [ -z "$PROFILE" ] || [ -f "$PROFILE" ] || die2 "stack profile not found: $PROFILE"
 # The whole command list is validated and every placeholder resolved BEFORE anything runs: on any error the parser
 # prints only one "ERR …" line and the gate exits 2 without executing a command (R1/F1 of PR #1).
@@ -73,6 +81,7 @@ if not prof_path and "stack_profile" in cfg:
         err("stack_profile must be a non-empty path")
     prof_path = os.path.join(os.path.dirname(os.path.abspath(sys.argv[1])), cfg["stack_profile"])
 holders = {}
+zt = ["[Nn]o tests (executed|found|ran)"]
 if prof_path:
     try:
         prof = json.load(open(prof_path, encoding="utf-8"))
@@ -81,6 +90,15 @@ if prof_path:
     if not isinstance(prof, dict) or not isinstance(prof.get("placeholders"), dict):
         err(f"stack profile {prof_path} has no placeholders object")
     holders = prof["placeholders"]
+    pg = prof.get("gate", {})
+    zt_extra = pg.get("zero_tests_patterns", []) if isinstance(pg, dict) else None
+    if not isinstance(zt_extra, list) or not all(isinstance(p, str) and p and "\n" not in p and "\t" not in p for p in zt_extra):
+        err(f"stack profile {prof_path}: gate.zero_tests_patterns must be a list of non-empty one-line ERE strings")
+    zt += zt_extra
+import subprocess
+for p in zt:   # checked with the grep that will run them (exit 2 = invalid pattern)
+    if subprocess.run(["grep", "-E", "-e", p], input=b"", capture_output=True).returncode > 1:
+        err(f"zero-tests pattern {p!r} is not a valid ERE (stack profile gate.zero_tests_patterns)")
 KEY = re.compile(r"(?<!\{)\{\{([a-z0-9_]+)\}\}(?!\})")
 CTRL = re.compile(r"[\x00-\x1f\x7f]")
 def expand(r, i):
@@ -109,13 +127,25 @@ def expand(r, i):
 g = cfg.get("gate")
 if not isinstance(g, dict) or not isinstance(g.get("commands"), list) or not g["commands"]:
     err("gate.commands missing or empty")
+if set(g) - {"commands", "require_clean_tree"}:
+    err("gate has an unknown control field")
+if "require_clean_tree" in g and type(g["require_clean_tree"]) is not bool:
+    err("gate.require_clean_tree must be a boolean")
 clean = "1" if g.get("require_clean_tree", True) else "0"
 seen, rows = set(), []
 for i, c in enumerate(g["commands"]):
     if not isinstance(c, dict) or not isinstance(c.get("name"), str) or not isinstance(c.get("run"), str):
         err(f"gate.commands[{i}] needs string name and run")
+    if set(c) - {"name", "run", "full_only", "timeout_s", "allow_empty"}:
+        err(f"gate.commands[{i}] has an unknown control field")
+    if "full_only" in c and type(c["full_only"]) is not bool:
+        err(f"gate.commands[{i}] full_only must be a boolean")
+    if "allow_empty" in c and type(c["allow_empty"]) is not bool:
+        err(f"gate.commands[{i}] allow_empty must be a boolean")
+    if "timeout_s" in c and (type(c["timeout_s"]) is not int or c["timeout_s"] < 1):
+        err(f"gate.commands[{i}] timeout_s must be an integer >= 1")
     n = c["name"]
-    if not n or any(ch in n for ch in " \t\n/") or n in seen:
+    if not re.fullmatch(r"[a-z0-9][a-z0-9_-]*", n) or n in seen:
         err(f"gate.commands[{i}] bad or duplicate name: {n!r}")
     r = expand(c["run"], i)
     if not r.strip():
@@ -124,13 +154,29 @@ for i, c in enumerate(g["commands"]):
         err(f"gate.commands[{i}] run must be one line without tabs")
     seen.add(n)
     t = c.get("timeout_s", 0)
-    rows.append("\t".join([n, "1" if c.get("full_only") else "0", str(int(t) if isinstance(t, int) else 0), clean, r]))
+    rows.append("\t".join([n, "1" if c.get("full_only", False) else "0", str(t), clean, "1" if c.get("allow_empty", False) else "0", r]))
+for p in zt:
+    print("ZT\t" + p)   # one line per pattern; command names are lower-case, so no row starts with "ZT"
 print("\n".join(rows))
 PY
 )
 ERRLINE=$(printf '%s\n' "$PARSED" | grep -m1 '^ERR ' || true)
 [ -z "$ERRLINE" ] || die2 "${ERRLINE#ERR }"
-[ -n "$PARSED" ] || die2 "gate.commands could not be read"
+ZTS=$(printf '%s\n' "$PARSED" | sed -n 's/^ZT	//p')        # "ZT<TAB><ERE>" lines: one zero-tests pattern each
+PARSED=$(printf '%s\n' "$PARSED" | grep -v '^ZT	')
+[ -n "$ZTS" ] && [ -n "$PARSED" ] || die2 "gate.commands could not be read"
+ESC=$(printf '\033')
+zero_tests() { # <log>: 0 = a pattern matched (ZTHIT), 1 = none, 2 = grep error on a pattern (ZTERR)
+    local p r=1
+    while IFS= read -r p; do
+        [ -n "$p" ] || continue
+        sed "s/${ESC}\[[0-9;]*[A-Za-z]//g" "$1" | grep -Eq -- "$p" 2>/dev/null
+        case $? in 0) ZTHIT=$p; return 0;; 1) ;; *) ZTERR=$p; r=2;; esac
+    done <<EOZ
+$ZTS
+EOZ
+    return "$r"
+}
 
 REQUIRE_CLEAN=$(printf '%s\n' "$PARSED" | head -n 1 | cut -f4)
 LOGDIR=${GATE_LOG_DIR:-$TREE/.tmp/gate}
@@ -157,7 +203,7 @@ run_with_timeout() { # <seconds> <cmd>; 0 seconds = no timeout
 }
 
 PASSN=0; FAILN=0; SKIPN=0; START=$(date +%s)
-while IFS="$(printf '\t')" read -r NAME FULLONLY TMO _CLEAN RUN; do
+while IFS="$(printf '\t')" read -r NAME FULLONLY TMO _CLEAN ALLOWEMPTY RUN; do
     [ -n "$NAME" ] || continue
     if [ "$FULLONLY" = 1 ] && [ "$FULL" != 1 ]; then printf 'SKIP %s (full only)\n' "$NAME"; continue; fi
     case "$RUN" in
@@ -168,7 +214,15 @@ while IFS="$(printf '\t')" read -r NAME FULLONLY TMO _CLEAN RUN; do
     ( cd "$TREE" && run_with_timeout "$TMO" "$CMD" ) >"$LOGDIR/$NAME.log" 2>&1 </dev/null
     RC=$?
     DT=$(( $(date +%s) - T0 ))
-    if [ "$RC" -eq 0 ]; then printf 'PASS %s %ss\n' "$NAME" "$DT"; PASSN=$((PASSN + 1))
+    ZTRC=1
+    if [ "$RC" -eq 0 ] && [ "$ALLOWEMPTY" != 1 ]; then zero_tests "$LOGDIR/$NAME.log"; ZTRC=$?; fi
+    if [ "$ZTRC" -eq 0 ]; then
+        printf 'FAIL %s %ss zero tests executed (matched %s; log %s; mark the command "allow_empty": true if that is intended)\n' "$NAME" "$DT" "$ZTHIT" "$LOGDIR/$NAME.log"
+        FAILN=$((FAILN + 1))
+    elif [ "$ZTRC" -gt 1 ]; then
+        printf 'FAIL %s %ss zero-tests check could not run pattern %s (grep error; log %s)\n' "$NAME" "$DT" "$ZTERR" "$LOGDIR/$NAME.log"
+        FAILN=$((FAILN + 1))
+    elif [ "$RC" -eq 0 ]; then printf 'PASS %s %ss\n' "$NAME" "$DT"; PASSN=$((PASSN + 1))
     else
         printf 'FAIL %s %ss exit=%s (log %s)\n' "$NAME" "$DT" "$RC" "$LOGDIR/$NAME.log"
         tail -n 20 "$LOGDIR/$NAME.log" | sed 's/^/    /'
@@ -182,6 +236,7 @@ MODE=light; [ "$FULL" = 1 ] && MODE=full
 TOTAL=$(( $(date +%s) - START ))
 if [ "$FAILN" -gt 0 ]; then VERDICT=FAIL; RC=1
 elif [ "$SKIPN" -gt 0 ]; then VERDICT=INCOMPLETE; RC=3
+elif [ "$PASSN" -eq 0 ]; then VERDICT=FAIL; RC=1; printf 'no command ran (a gate that ran nothing is never PASS)\n'
 else VERDICT=PASS; RC=0; fi
 printf 'GATE %s %s%s %s pass=%s fail=%s skip=%s %ss\n' "$VERDICT" "$SHA7" "$DIRTYTAG" "$MODE" "$PASSN" "$FAILN" "$SKIPN" "$TOTAL"
 exit "$RC"

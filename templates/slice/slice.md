@@ -39,7 +39,7 @@ Numaralı, tek tek sınanabilir: koşul + beklenen gözlem + kanıt (test adı /
 - K1 <…> — kanıt: `<TestAdı::test_…>`
 - K2 <…> — kanıt: <…>
 
-Mutasyonlar (yeni/değişen her kural için 3–5; inceleyici hepsini yeniden uygular + kendi bir tanesini ekler):
+Mutasyonlar (TAM: yeni/değişen her kural için 3–5; HAFİF: davranış değişikliği başına bir; inceleyici hepsini yeniden uygular + kendi bir tanesini ekler). Yeni/değişen davranış yoksa "uygulanmaz: <neden>" yaz; inceleyici doğrular:
 - M1 <kuralı boz> → <kırmızı olması gereken test>
 - M2 <…> → <…>
 
@@ -80,7 +80,7 @@ Yığına özgü komutlar `{{…}}` yer tutucularıdır; `slice-method.json` →
 
 ## Kullanıcı senaryoları (yalnız bu dilimin yeni senaryosu)
 
-Giriş noktası (URL/menü) → eylem → ekranda görülmesi gereken. İnceleyici kullanıcı gibi yürür, 1280 ve 390 px.
+Giriş noktası (URL/menü) → eylem → ekranda görülmesi gereken. İnceleyici kullanıcı gibi yürür, 1280 ve 390 px. Dilim UI'a (rota, görünüm/şablon, UI bileşeni) dokunmuyorsa tarayıcı için "uygulanmaz: <neden>" yaz; inceleyici doğrular.
 
 1. <rol> ile <URL> → <eylem> → <beklenen>
 
@@ -88,8 +88,8 @@ Giriş noktası (URL/menü) → eylem → ekranda görülmesi gereken. İnceleyi
 
 - Boyut: ürün kodu ~<n> satır; paylaşılan bileşen/JS/CSS: var/yok; sıcak dosyalar: <liste/yok>
 - **Sınıf: TAM | HAFİF.** TAM = para, yetki/kiracı, durum geçişi, göç, güvenlik ya da sıcak/paylaşılan dosya. HAFİF = test-only, belge, araç, katalog ekranı, çeviri.
-- TAM: ayrı oturum + farklı model ailesi (varsa) + anlamlı mutasyonlar + gerçek tarayıcı 1280/390 + `templates/review-checklist.md` A–E.
-- HAFİF: tek bağımsız inceleme, kural değişiyorsa en az 3 mutasyon, ilgili tarayıcı akışı, checklist A (+ ilgiliyse B/C).
+- TAM: ayrı oturum + farklı model ailesi (para ve göçte zorunlu, diğer TAM'da önerilir) + kural başına 3–5 mutasyon + UI'a dokunuyorsa gerçek tarayıcı 1280/390 + `templates/review-checklist.md` A–E.
+- HAFİF: tek bağımsız inceleme; davranış değişikliği başına bir mutasyon, UI'a dokunuyorsa tarayıcı; aksi halde her biri için gerekçeli "uygulanmaz"; checklist A (+ ilgiliyse B/C). Gerekçeler dev raporuna taşınır ve inceleyici doğrular; uygulanabilir kontrol atlanmaz.
 - İKİSİNDE de zorunlu: numaralı K maddeleri, taranmış izinli liste, temiz ağaçta yeniden koşu, bağımsız inceleyici, yeni senaryonun gerçek kanıtı.
 
 ## Raporlar ve sonuçlar (kısa)

@@ -4,6 +4,13 @@
 
 Hangi katman: **A** her dilimde · **B** paket view/lang/config anahtarı değişince · **C** şablon/host hijyeni (UI, rota, config, migration dokunuşunda) · **D** TAM sınıfı (yetki/kiracı/para/durum/göç/güvenlik) · **E** paylaşılan sözleşme değişince.
 
+Uygulanabilirlik (açık kural):
+- **Tarayıcı / gerçek UI** (C4, D6 ve senaryo yürüyüşü) yalnız dilim UI'a dokunuyorsa: rota, görünüm/şablon ya da UI bileşeni. Dokunmuyorsa "uygulanmaz: rota/görünüm/bileşen yok".
+- **Mutasyon** (A4): kural başına 3–5 mutasyon yalnız TAM'da. HAFİF'te davranış değişikliği başına bir mutasyon; yeni/değişen davranış yoksa "uygulanmaz: <neden>".
+- **Hedefli yeniden inceleme** (REVISE sonrası, `review-r2.md`) AYNI inceleyici oturumunda yapılır, yeni oturumda değil; o oturum kaybolduysa nedeni r2 başlığına yazılır.
+
+İnceleyici dilim ve dev raporundaki gerekçeyi doğrular; uygulanabilir kontrol atlanmaz. TAM şartları değişmez.
+
 ## A — Her dilim
 
 | # | Madde | Kanıt (komut / dosya) |
@@ -11,7 +18,7 @@ Hangi katman: **A** her dilimde · **B** paket view/lang/config anahtarı deği�
 | A1 | Temiz ağaçta yeniden koşu: aday commit'in AYRI worktree'si, `git status --short` boş, dev raporundaki her komut | `git worktree add --detach <yol> <aday>`; tablo komut → beklenen → gerçek → `A1-rerun.txt` |
 | A2 | İzinli liste dışında değişiklik yok | `git diff --name-only <taban>..<aday>` ile dilimin izinli listesi karşılaştırması → `A2-allowed.txt` |
 | A3 | Kırmızı-önce kanıtı: yalnız-test commit'i ürün kodsuz kırmızı | `git checkout <test-sha> && <dilim testi>` → kırmızı sayısı → `A3-red-first.txt` |
-| A4 | Geliştiricinin her mutasyonu inceleyici tarafından YENİDEN uygulandı + inceleyicinin kendi en az bir mutasyonu | her biri için `<evidence>/…/review/mutations/M<n>.txt` (diff + kırmızı test çıktısı); sonda `git status --short` boş |
+| A4 | Geliştiricinin her mutasyonu inceleyici tarafından YENİDEN uygulandı + inceleyicinin kendi en az bir mutasyonu (TAM: kural başına 3–5; HAFİF: davranış değişikliği başına bir); HAFİF'te yeni/değişen davranış yoksa gerekçeli uygulanmaz | her biri için `<evidence>/…/review/mutations/M<n>.txt` (diff + kırmızı test çıktısı); sonda `git status --short` boş; ya da inceleyicinin doğruladığı uygulanmaz gerekçesi |
 | A5 | Kapı, standart, statik analiz, sınır | `scripts/gate.sh <worktree>` son satır; `{{standards_check}}`, `{{static_analysis}}`, `{{boundary_check}}` son satırları |
 | A6 | İddiaları doğrula, raporu değil: dev raporundaki her "yapıldı/geçti" cümlesi kendi komutunla | rapor içinde iddia → kendi kanıtın tablosu |
 
