@@ -1,5 +1,6 @@
 #!/bin/bash
-# Self-test for gate.sh: PASS, FAIL, full_only SKIP, {port} without GATE_PORT -> INCOMPLETE (exit 3), dirty refusal.
+# Self-test for gate.sh: PASS, FAIL, full_only SKIP, {port} without GATE_PORT -> INCOMPLETE (exit 3), dirty refusal,
+# {{placeholder}} expansion from a stack profile (--profile and "stack-profile"), undefined placeholder refused.
 set -u
 HERE=$(cd "$(dirname "$0")/.." && pwd -P)
 T=$(mktemp -d "${TMPDIR:-/tmp}/sm-gate.XXXXXX"); trap 'rm -rf "$T"' EXIT
@@ -22,4 +23,19 @@ env -u GATE_PORT "$HERE/gate.sh" "$T" >/dev/null; check "$?" 3 "missing GATE_POR
 GATE_PORT=8130 "$HERE/gate.sh" "$T" >/dev/null; check "$?" 0 "GATE_PORT given -> PASS"
 echo x >> slice-method.json
 "$HERE/gate.sh" "$T" >/dev/null 2>&1; check "$?" 2 "dirty tree refused"
+git checkout -q slice-method.json
+# ---- stack profile placeholders (ACEF-NEUTRAL-01) ----
+mkdir -p "$T.prof" && trap 'rm -rf "$T" "$T.prof"' EXIT
+printf '{ "stack": "t", "placeholders": { "test_command": "test -d {tree}", "static_analysis": "false" } }\n' > "$T.prof/profile.json"
+cat > slice-method.json <<'J'
+{ "method_version": "0.1.0", "project": "t", "slices_dir": "docs/slices",
+  "gate": { "commands": [ { "name": "tests", "run": "{{test_command}}" } ] } }
+J
+git commit -qam profile
+env -u SLICE_STACK_PROFILE "$HERE/gate.sh" "$T" >/dev/null 2>&1; check "$?" 2 "{{test_command}} without a profile refused"
+"$HERE/gate.sh" --profile "$T.prof/profile.json" "$T" >/dev/null; check "$?" 0 "--profile expands {{test_command}} (+ {tree})"
+SLICE_STACK_PROFILE="$T.prof/profile.json" "$HERE/gate.sh" "$T" >/dev/null; check "$?" 0 "SLICE_STACK_PROFILE expands {{test_command}}"
+python3 -c "import json;c=json.load(open('slice-method.json'));c['stack-profile']='$T.prof/profile.json';c['gate']['commands'].append({'name':'stan','run':'{{static_analysis}}'});json.dump(c,open('slice-method.json','w'))"
+git commit -qam stack-profile
+"$HERE/gate.sh" "$T" >/dev/null; check "$?" 1 "stack-profile in slice-method.json is read ({{static_analysis}} -> false)"
 echo "test-gate: ok=$ok fail=$bad"; [ "$bad" -eq 0 ]

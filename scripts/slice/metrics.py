@@ -3,6 +3,7 @@
 
 Usage:
   python3 -I scripts/metrics.py <slices_dir> [--backlog <backlog.md>] [--no-git] [--format md|tsv] [--summary-only]
+                                 [--profile <stack profile.json>]
 
 Reads (never writes):
   <ID>.md                      slice file (status, class, closing note)
@@ -13,7 +14,11 @@ Reads (never writes):
   --backlog                    rows that say a review missed something ("kaçırdı", "missed", "escaped") -> escaped-defect
                                CANDIDATES per slice
 
-Honesty rules (from b2press ACEF_EVAL_REPORT "Yöntem"): a number is printed only when it was read or computed from a
+Stack profile (--profile, else env SLICE_STACK_PROFILE; optional): its "metrics" object may set
+  evidence_dir_strip_phase_prefix (bool, default true) — also look for evidence/<ID without "P<nn>-">/ when
+  evidence/<ID>/ is missing (a naming convention of the source project, REB in docs/slice-lane/SOURCES.md).
+
+Honesty rules (from the source evaluation report, "Yöntem"; REB in docs/slice-lane/SOURCES.md): a number is printed only when it was read or computed from a
 source; otherwise the cell says "doğrulanmadı". Time columns are git add-timestamp deltas: spec added -> dev report
 added (dev), dev report added -> last review added (review). They include waiting and batching, and are "doğrulanmadı"
 when the two files landed in the same commit or the order is reversed. Closing-note fields "Süre-geliştirme-dk",
@@ -144,7 +149,18 @@ def minutes(a, b) -> str:
     return f"{round((b - a) / 60)} (git)"
 
 
-def collect(slices_dir: str, use_git: bool, backlog: str | None) -> list:
+def load_profile_metrics(path: str | None) -> dict:
+    """Return the "metrics" object of a stack profile, or {} when no profile is given."""
+    if not path:
+        return {}
+    import json
+    with open(path, encoding="utf-8") as fh:
+        prof = json.load(fh)
+    m = prof.get("metrics") if isinstance(prof, dict) else None
+    return m if isinstance(m, dict) else {}
+
+
+def collect(slices_dir: str, use_git: bool, backlog: str | None, strip_phase_prefix: bool = True) -> list:
     d = os.path.abspath(slices_dir)
     names = sorted(f for f in os.listdir(d) if f.endswith(".md"))
     # A slice id is upper-case with at least one hyphen (ADMIN-01, P04-ASSIGN-01, PAY-REVOLUT, BOOT-FIX-02);
@@ -178,7 +194,7 @@ def collect(slices_dir: str, use_git: bool, backlog: str | None) -> list:
                 s.reviews.append((f, verdict_of(read(p, 20000)), add_ts(p)))
         # reviews under evidence/<ID>/
         ed = os.path.join(ev_root, sid)
-        if not os.path.isdir(ed):  # rebuild names evidence dirs without the phase prefix: P03-PAYREQ-01 -> PAYREQ-01
+        if strip_phase_prefix and not os.path.isdir(ed):  # evidence dir without the phase prefix: P03-X-01 -> X-01
             alt = re.sub(r"^P\d{2}-", "", sid)
             if alt != sid and not os.path.exists(os.path.join(d, alt + ".md")):
                 ed = os.path.join(ev_root, alt)
@@ -308,14 +324,23 @@ def main(argv=None) -> int:
     ap.add_argument("--format", choices=("md", "tsv"), default="md")
     ap.add_argument("--summary-only", action="store_true")
     ap.add_argument("--label")
+    ap.add_argument("--profile", default=os.environ.get("SLICE_STACK_PROFILE") or None)
     a = ap.parse_args(argv)
+    if a.profile and not os.path.isfile(a.profile):
+        print(f"stack profile not found: {a.profile}", file=sys.stderr)
+        return 2
     if not os.path.isdir(a.slices_dir):
         print(f"slices dir not found: {a.slices_dir}", file=sys.stderr)
         return 2
     if a.backlog and not os.path.isfile(a.backlog):
         print(f"backlog not found: {a.backlog}", file=sys.stderr)
         return 2
-    sl = collect(a.slices_dir, not a.no_git, a.backlog)
+    try:
+        pm = load_profile_metrics(a.profile)
+    except (OSError, ValueError) as e:
+        print(f"stack profile unreadable: {e}", file=sys.stderr)
+        return 2
+    sl = collect(a.slices_dir, not a.no_git, a.backlog, bool(pm.get("evidence_dir_strip_phase_prefix", True)))
     sys.stdout.write(render(sl, a.label or os.path.abspath(a.slices_dir), a.format, a.summary_only))
     return 0
 

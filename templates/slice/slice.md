@@ -5,7 +5,7 @@
 Durum: TASLAK | GELİŞTİRMEDE | İNCELEMEDE | PASS | REVISE | KAPANDI
 İnceleme sınıfı: TAM | HAFİF (gerekçe: <alan: para / yetki-kiracı / durum geçişi / göç / güvenlik ya da hiçbiri>)
 Bağımlılık: <önceki dilimler ve durumları; sıcak dosya kilidi varsa `<locks-dosyası>` satırı>
-Hat: <hat no> · Port: <port> · Test DB: <lane DB adı, ör. `<app>_testing_l<N>`>
+Hat: <hat no> · Port: <port> · Test DB: <lane DB adı, ör. `{{project}}_testing_l<N>`>
 Dal / taban: `<dal>` · `<taban-sha>`
 Backlog: <B-kimlikleri ya da "yok">
 Tarih: <YYYY-MM-DD>
@@ -56,7 +56,7 @@ Listede olmayan dosya değiştirilmez. Geliştirici gerekirse DURUR; koordinatö
 - Belge: `<SLICE-ID>*.md`, `<belge yolu>`
 - DOKUNULMAZ: `<yollar>` (ör. sayaç taban dosyası, ana ağaç, başka depo)
 
-**Kullanım taraması (zorunlu, koddan önce):** değişen her paylaşılan bileşen, sınıf, view/lang/config anahtarı, CSS kuralı, JS fonksiyonu için tüm kullanım yerleri. Paket anahtarı değişiyorsa tüketici depolarda da taranır (`<paket-öneki>::`).
+**Kullanım taraması (zorunlu, koddan önce):** değişen her paylaşılan bileşen, sınıf, view/lang/config anahtarı, CSS kuralı, JS fonksiyonu için tüm kullanım yerleri. Paket anahtarı değişiyorsa tüketici depolarda da taranır (`<paket-öneki>`).
 
 | Öğe | Komut | Kullanım yerleri | Listede mi / neden dışarıda |
 |---|---|---|---|
@@ -70,10 +70,12 @@ Listede olmayan dosya değiştirilmez. Geliştirici gerekirse DURUR; koordinatö
 
 Hepsi depo kökünden; kendi worktree, kendi port, kendi DB. Paylaşılan DB ve ana ağacın önizleme portu yasak.
 
-- Kırmızı-önce: `<yalnız testleri içeren commit'te çalışan test komutu>` → beklenen kırmızı
-- Dilim testi: `<test komutu --filter …>`
+Yığına özgü komutlar `{{…}}` yer tutucularıdır; `slice-method.json` → `stack-profile` doldurur (`stacks/<yığın>/profile.json` kopyası).
+
+- Kırmızı-önce: `{{test_command}} <dilim seçicisi>` yalnız-test commit'inde → beklenen kırmızı
+- Dilim testi: `{{test_command}} <dilim seçicisi>`
 - Kapı: `scripts/gate.sh <kendi worktree yolu>`
-- Standart: `scripts/standards-check.sh <kendi worktree yolu>`
+- Standart: `{{standards_check}}` · Statik analiz: `{{static_analysis}}` · Sınır: `{{boundary_check}}`
 - Tarayıcı (varsa): `<APP_ORIGIN=http://127.0.0.1:<port> …>`
 
 ## Kullanıcı senaryoları (yalnız bu dilimin yeni senaryosu)

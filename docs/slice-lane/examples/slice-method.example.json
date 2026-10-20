@@ -1,7 +1,8 @@
 {
   "$schema": "../../../schemas/slice-method.schema.json",
   "method_version": "0.1.1",
-  "project": "example-laravel-app",
+  "project": "{{project}}",
+  "stack-profile": "scripts/stack-profile.json",
   "slices_dir": "docs/slices",
   "evidence_dir": "docs/slices/evidence",
   "invariants": "docs/slices/_invariants.md",
@@ -12,15 +13,15 @@
   "gate": {
     "require_clean_tree": true,
     "commands": [
-      { "name": "phpunit", "run": "php vendor/bin/phpunit -c phpunit.l1.xml" },
-      { "name": "phpstan", "run": "php vendor/bin/phpstan analyse --no-progress" },
-      { "name": "standards", "run": "scripts/standards-check.sh {tree}" },
-      { "name": "boundaries", "run": "php scripts/check-module-boundaries.php --modules-dir=app/Modules --baseline=scripts/module-boundaries.json" },
-      { "name": "browser-smoke", "run": "APP_ORIGIN=http://127.0.0.1:{port} npm run test:smoke", "full_only": true }
+      { "name": "tests", "run": "{{test_command}}" },
+      { "name": "static-analysis", "run": "{{static_analysis}}" },
+      { "name": "standards", "run": "{{standards_check}}" },
+      { "name": "boundaries", "run": "{{boundary_check}}" },
+      { "name": "browser-smoke", "run": "{{browser_smoke}}", "full_only": true }
     ]
   },
   "critical_postmerge": [
-    "php vendor/bin/phpunit --filter 'Billing|Authorization|Team'"
+    "<critical test command: money, authorization, tenant groups>"
   ],
   "standards": {
     "rules": "scripts/standards/rules.json",
@@ -28,16 +29,16 @@
     "notes_dir": "scripts/standards/baseline-notes",
     "base_ref": "origin/main"
   },
-  "module_boundaries": { "modules_dir": "app/Modules", "namespace": "App\\Modules", "baseline": "scripts/module-boundaries.json" },
+  "module_boundaries": { "modules_dir": "<modules dir>", "namespace": "<module namespace>", "baseline": "scripts/module-boundaries.json" },
   "review": {
     "tam_reviewer": "codex gpt-6.1-sol (+ Claude Opus tarayıcı yürüyüşü)",
     "hafif_reviewer": "Claude Opus alt ajanı",
     "codex_model": "gpt-6.1-sol",
     "tam_domains": ["money", "permissions-tenant", "state-transitions", "migrations", "security"]
   },
-  "lanes": { "max_dev_lanes": 5, "heavy_slots": 2, "port_from": 8128, "port_to": 8139, "preview_port": 8127, "db_pattern": "example_testing_l{n}" },
-  "hot_files": ["app/Services/LifecycleService.php", "resources/js/app.js"],
+  "lanes": { "max_dev_lanes": 5, "heavy_slots": 2, "port_from": 8128, "port_to": 8139, "preview_port": 8127, "db_pattern": "{{project}}_testing_l{n}" },
+  "hot_files": ["<shared service file>", "<frontend entry file>"],
   "hosts": [
-    { "name": "bootstrap", "path": "../bootstrap", "package_prefix": "platform-" }
+    { "name": "<host app>", "path": "../<host app>", "package_prefix": "{{project}}-" }
   ]
 }

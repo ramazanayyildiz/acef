@@ -1,11 +1,12 @@
 #!/bin/bash
 # standards-check.sh [--print-baseline] [--rules <rules.json>] <tree>
 #
-# Project-agnostic standards ratchet. Engine ported from US-CRM PR #44 (scripts/standards-check.sh, itself ported from
-# b2press-rebuild TOOL-04); the rules moved out of the script into a JSON file so any app can adopt it unchanged.
+# Stack-neutral standards ratchet (core). Engine ported from the source projects' ratchets (CRM#44 and REB TOOL-04 in
+# docs/slice-lane/SOURCES.md); the rules live in a JSON file so any app can adopt the engine unchanged. Stack rules come
+# from the adapter, e.g. stacks/laravel/standards/rules.example.json.
 # Read-only: writes nothing in <tree>.
 #
-# Rules file (default <tree>/scripts/standards/rules.json; example: scripts/standards/rules.example.json):
+# Rules file (default <tree>/scripts/standards/rules.json; example: stacks/<stack>/standards/rules.example.json):
 #   scope         pathspecs for the added-line diff
 #   line_checks   [{id, mode: added|any|warn, pattern (ERE), paths[], label}]
 #       added  FAIL only when the match is on a line added/changed since the merge base; WARN on untouched lines.
@@ -13,7 +14,7 @@
 #   counters      [{id, pattern (ERE), paths[], label}]        repo-wide count of matching lines (git grep -c)
 #   command_counters [{id, run, count_regex, exclude_regex?, ok_exit?[], requires?[], label}]
 #                 runs `sh -c run` in <tree>, counts output lines matching count_regex (minus exclude_regex).
-#                 Use for Pint/PHPStan-style tools whose per-file pass/fail would fail every PR on legacy code.
+#                 Use for linters/type checkers whose per-file pass/fail would fail every PR on legacy code.
 #                 A missing tool is a FAIL, never a count of 0 (v0.1.1): ok_exit defaults to [0]; a path listed in
 #                 "requires" (relative to <tree>, e.g. vendor/bin/phpstan) must exist; exit 126/127 and output saying
 #                 "command not found", "Could not open input file" or "No such file or directory" are tool errors.
@@ -26,7 +27,7 @@
 # Finding lines: "FAIL|WARN <ID> <file>:<line> <text>" (counters: description instead of file:line); "NOTE …" lines.
 # Last line: STANDARDS PASS|FAIL fail=<n> warn=<n>
 # --print-baseline: measure counters only, print "ID=n" lines (the MERGER writes baseline.txt from this; branches
-#   write the expected delta to a per-slice notes file instead — b2press TOOL-06: shared lines conflicted on every merge).
+#   write the expected delta to a per-slice notes file instead — REB TOOL-06: shared lines conflicted on every merge).
 # Exit: 0 PASS, 1 FAIL, 2 usage/prerequisite.
 # env: STANDARDS_BASE_REF (default origin/main, else main), STANDARDS_BASELINE, STANDARDS_RULES.
 # macOS /bin/bash 3.2 compatible. git grep ERE has no \b or \s: write explicit classes.

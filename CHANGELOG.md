@@ -7,6 +7,30 @@ proven, or installed.
 Update this file whenever ACEF itself gains or changes a flow, gate, validator, hook, skill, installer behavior, workflow,
 or evidence contract. Do not use it to claim implementation status; link to the capability record for that.
 
+## ACEF-NEUTRAL-01 — stack-neutral Slice lane core + stacks/laravel adapter (2026-10-20)
+
+The Slice lane is used across stacks and projects, but the v3.0.0-alpha import carried Laravel commands and source
+project names in its core. Split into a stack-neutral core and a stack adapter. Capability record:
+`docs/ai/capabilities/slice-lane.json` (still `specified`).
+
+- Core (`method/SLICE_LANE.md`, `templates/slice/`, `schemas/`, `docs/slice-lane/`, `scripts/slice/`): stack commands
+  are placeholders `{{test_command}}`, `{{static_analysis}}`, `{{boundary_check}}`, `{{standards_check}}` (plus
+  optional keys); examples use `{{project}}`. New `schemas/stack-profile.schema.json`; `slice-method.schema.json` gains
+  `stack-profile`. `scripts/slice/gate.sh` expands `{{key}}` from the profile (`--profile`, `SLICE_STACK_PROFILE`, or
+  `stack-profile`) and refuses an undefined placeholder (exit 2); `metrics.py --profile` reads the profile's `metrics`.
+  `templates/slice/module-CLAUDE.md` and review checklist B–D are stack-neutral.
+- Adapter `stacks/laravel/`: `profile.json`, `gate.sh` (core gate + profile), `check-module-boundaries.php`,
+  `standards/` (rules, baseline, notes), `codex-review.sh`, `metrics-demo.sh` + `metrics-paths.json`,
+  `checklist-commands.md`, `templates/module-CLAUDE.md`, `examples/`, `tests/` (standards, boundaries, profile wiring).
+- Provenance: source project names appear only in `docs/slice-lane/SOURCES.md` (short names REB, CRM, JKM, LL, PLT,
+  SES), which also takes the per-project adoption status. METHOD-01 reviews, the 2026-10-19 metrics demo, and the
+  slice-method CHANGELOG move to `archive/slice-lane/`.
+- `docs/slice-lane/adoption.md` gains "Adopt in a new stack" (5 steps) and "Laravel profile".
+- `scripts/slice/selfcheck.sh` runs every `stacks/*/tests/test-*.sh` and fails if the core names a stack or source
+  project outside `SOURCES.md` and the adoption guide's "Laravel profile" section.
+- `AGENTS.md`, `method/DELIVERY_RULES.md`, `method/OPERATING_MODEL.md`: the `codex-review.sh` path now points at
+  `stacks/laravel/` (same line, line numbers unchanged).
+
 ## v3.0.0-alpha — Slice lane (2026-10-20, tag `v3.0.0-alpha`)
 
 Owner decision 2026-10-20 (METHOD-02): fold slice-method into ACEF instead of a separate repository. The Slice lane

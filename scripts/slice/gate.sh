@@ -1,16 +1,20 @@
 #!/bin/bash
-# gate.sh [--full] [--allow-dirty] [--config <slice-method.json>] <tree>
+# gate.sh [--full] [--allow-dirty] [--config <slice-method.json>] [--profile <profile.json>] <tree>
 #
-# Generic slice gate. Runs the command list a project declares in slice-method.json ("gate.commands") inside <tree>,
-# in order, and prints ONE summary line at the end. Adapted from b2press-rebuild scripts/gate.sh (TOOL-01/TOOL-02):
-# same exit codes, same "never run without an explicit tree" rule, same dirty-tree refusal.
+# Stack-neutral slice gate (core). Runs the command list a project declares in slice-method.json ("gate.commands")
+# inside <tree>, in order, and prints ONE summary line at the end. Adapted from the source project's gate (REB in
+# docs/slice-lane/SOURCES.md): same exit codes, same "never run without an explicit tree" rule, same dirty-tree refusal.
 #
 # Per command: "PASS|FAIL|SKIP <name> <seconds>s" (+ last 20 output lines on FAIL). Output of every command goes to
 #   ${GATE_LOG_DIR:-<tree>/.tmp/gate}/<name>.log
 # Last line: GATE PASS|FAIL|INCOMPLETE <sha7>[+dirty] <light|full> pass=<n> fail=<n> skip=<n> <seconds>s
 # Exit: 0 all PASS, 1 at least one FAIL, 2 usage/prerequisite, 3 no FAIL but something SKIPPED (INCOMPLETE; never success).
 #
-# Placeholders in "run": {tree} (absolute tree path), {port} (GATE_PORT, required only if a command uses it).
+# Placeholders in "run": {{<key>}} (stack profile, expanded first), then {tree} (absolute tree path) and {port}
+# (GATE_PORT, required only if a command uses it).
+# Stack profile (stacks/<stack>/profile.json, "placeholders": {key: command}): --profile, else env SLICE_STACK_PROFILE,
+# else "stack-profile" in slice-method.json (relative to the config file's directory). A {{key}} that no profile
+# defines is a usage error (exit 2), never an empty command.
 # A command with "full_only": true runs only with --full; without --full it is reported as "SKIP <name> (full only)"
 # and does NOT make the gate INCOMPLETE (it was not asked for). A command whose {port} is needed but GATE_PORT is unset
 # is SKIPPED and makes the gate INCOMPLETE.
@@ -18,14 +22,15 @@
 set -u
 
 die2() { printf '%s\n' "$*" >&2; exit 2; }
-usage() { die2 "usage: gate.sh [--full] [--allow-dirty] [--config <slice-method.json>] <tree>   (env: GATE_PORT, GATE_LOG_DIR)"; }
+usage() { die2 "usage: gate.sh [--full] [--allow-dirty] [--config <slice-method.json>] [--profile <profile.json>] <tree>   (env: GATE_PORT, GATE_LOG_DIR, SLICE_STACK_PROFILE)"; }
 
-FULL=0; ALLOW_DIRTY=0; CONFIG=""; TREE=""
+FULL=0; ALLOW_DIRTY=0; CONFIG=""; PROFILE=${SLICE_STACK_PROFILE:-}; TREE=""
 while [ $# -gt 0 ]; do
     case "$1" in
         --full) FULL=1; shift;;
         --allow-dirty) ALLOW_DIRTY=1; shift;;
         --config) [ $# -ge 2 ] || usage; CONFIG=$2; shift 2;;
+        --profile) [ $# -ge 2 ] || usage; PROFILE=$2; shift 2;;
         -h|--help) usage;;
         -*) printf 'unknown option: %s\n' "$1" >&2; usage;;
         *) [ -z "$TREE" ] || usage; TREE=$1; shift;;
@@ -44,12 +49,34 @@ if [ -n "${GATE_PORT:-}" ]; then
 fi
 
 # Read config -> TSV lines: name<TAB>full_only<TAB>timeout<TAB>require_clean<TAB>run  (run is last: may contain tabs? refused)
-PARSED=$(python3 -I - "$CONFIG" <<'PY'
-import json, sys
+[ -z "$PROFILE" ] || [ -f "$PROFILE" ] || die2 "stack profile not found: $PROFILE"
+PARSED=$(python3 -I - "$CONFIG" "$PROFILE" <<'PY'
+import json, os, re, sys
 try:
     cfg = json.load(open(sys.argv[1], encoding="utf-8"))
 except Exception as e:
     print(f"ERR config is not valid JSON: {e}"); sys.exit(0)
+prof_path = sys.argv[2]
+if not prof_path and isinstance(cfg.get("stack-profile"), str) and cfg["stack-profile"]:
+    prof_path = os.path.join(os.path.dirname(os.path.abspath(sys.argv[1])), cfg["stack-profile"])
+holders = {}
+if prof_path:
+    try:
+        prof = json.load(open(prof_path, encoding="utf-8"))
+    except Exception as e:
+        print(f"ERR stack profile {prof_path} unreadable: {e}"); sys.exit(0)
+    holders = prof.get("placeholders") if isinstance(prof.get("placeholders"), dict) else {}
+def expand(r, i):
+    def sub(m):
+        k = m.group(1)
+        v = holders.get(k)
+        if not isinstance(v, str) or not v:
+            raise KeyError(k)
+        return v
+    try:
+        return re.sub(r"\{\{([a-z0-9_]+)\}\}", sub, r)
+    except KeyError as k:
+        print(f"ERR gate.commands[{i}] uses {{{{{k.args[0]}}}}} but no stack profile defines it"); sys.exit(0)
 g = cfg.get("gate")
 if not isinstance(g, dict) or not isinstance(g.get("commands"), list) or not g["commands"]:
     print("ERR gate.commands missing or empty"); sys.exit(0)
@@ -58,7 +85,7 @@ seen = set()
 for i, c in enumerate(g["commands"]):
     if not isinstance(c, dict) or not isinstance(c.get("name"), str) or not isinstance(c.get("run"), str):
         print(f"ERR gate.commands[{i}] needs string name and run"); sys.exit(0)
-    n, r = c["name"], c["run"]
+    n, r = c["name"], expand(c["run"], i)
     if not n or any(ch in n for ch in " \t\n/") or n in seen:
         print(f"ERR gate.commands[{i}] bad or duplicate name: {n!r}"); sys.exit(0)
     if "\t" in r or "\n" in r:

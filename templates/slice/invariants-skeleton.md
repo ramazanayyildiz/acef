@@ -1,4 +1,4 @@
-# Ortak değişmezler (tüm dilimler) — <PROJE>
+# Ortak değişmezler (tüm dilimler) — {{project}}
 
 Bu belge tekrar eden kabul metinlerinin TEK yeridir. Dilim dosyaları kuralı yeniden yazmaz; yalnız `I<n>` ile atıf verir ve dilime özgü istisnayı yazar. Bir kural değişirse burada değişir.
 
@@ -33,7 +33,7 @@ Kısaltmalar: `<XX>`=`<TestSınıfı>`, `<YY>`=`<TestSınıfı>`.
 
 ## Test ve çalıştırma
 
-**I<n> Port ve DB.** Her hat kendi port aralığından (`<başlangıç>–<bitiş>`) ve kendi test DB'sinden (`<app>_testing_l<N>`) çalışır; ana önizleme portu `<port>` ve paylaşılan DB'ye yazılmaz.
+**I<n> Port ve DB.** Her hat kendi port aralığından (`<başlangıç>–<bitiş>`) ve kendi test DB'sinden (`{{project}}_testing_l<N>`) çalışır; ana önizleme portu `<port>` ve paylaşılan DB'ye yazılmaz.
 - Sabitleyen testler: <ör. test yardımcısı ana portta çıkış 2 verir>
 
-İyi değişmez örüntüleri (rebuild'den): adlandırılmış eylem / genel transition yok; rol ve kiracı kapsamı her istekte sunucuda; kilit sırası ve atomiklik; idempotentlik (ilk değer kalır); bayat sekme sürüm belirteci; iki süreçli yarış testi (zorlanmış sıra yok); yazma yollarının kapanışı tek kümeden.
+İyi değişmez örüntüleri (kaynak projeden; `docs/slice-lane/SOURCES.md`, REB): adlandırılmış eylem / genel transition yok; rol ve kiracı kapsamı her istekte sunucuda; kilit sırası ve atomiklik; idempotentlik (ilk değer kalır); bayat sekme sürüm belirteci; iki süreçli yarış testi (zorlanmış sıra yok); yazma yollarının kapanışı tek kümeden.

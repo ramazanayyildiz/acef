@@ -1,0 +1,44 @@
+{
+  "$schema": "../../../schemas/slice-method.schema.json",
+  "stack-profile": "scripts/stack-profile.json",
+  "method_version": "0.1.1",
+  "project": "example-laravel-app",
+  "slices_dir": "docs/slices",
+  "evidence_dir": "docs/slices/evidence",
+  "invariants": "docs/slices/_invariants.md",
+  "locks_file": "docs/slices/locks.md",
+  "backlog_file": "docs/backlog.md",
+  "interventions_file": "docs/slices/interventions.json",
+  "selfcheck": "scripts/standards-check.sh .",
+  "gate": {
+    "require_clean_tree": true,
+    "commands": [
+      { "name": "phpunit", "run": "{{test_command}} -c phpunit.l1.xml" },
+      { "name": "phpstan", "run": "{{static_analysis}}" },
+      { "name": "standards", "run": "{{standards_check}}" },
+      { "name": "boundaries", "run": "{{boundary_check}} --modules-dir=app/Modules --baseline=scripts/module-boundaries.json" },
+      { "name": "browser-smoke", "run": "{{browser_smoke}}", "full_only": true }
+    ]
+  },
+  "critical_postmerge": [
+    "php vendor/bin/phpunit --filter 'Billing|Authorization|Team'"
+  ],
+  "standards": {
+    "rules": "scripts/standards/rules.json",
+    "baseline": "scripts/standards/baseline.txt",
+    "notes_dir": "scripts/standards/baseline-notes",
+    "base_ref": "origin/main"
+  },
+  "module_boundaries": { "modules_dir": "app/Modules", "namespace": "App\\Modules", "baseline": "scripts/module-boundaries.json" },
+  "review": {
+    "tam_reviewer": "codex gpt-6.1-sol (+ Claude Opus tarayıcı yürüyüşü)",
+    "hafif_reviewer": "Claude Opus alt ajanı",
+    "codex_model": "gpt-6.1-sol",
+    "tam_domains": ["money", "permissions-tenant", "state-transitions", "migrations", "security"]
+  },
+  "lanes": { "max_dev_lanes": 5, "heavy_slots": 2, "port_from": 8128, "port_to": 8139, "preview_port": 8127, "db_pattern": "example_testing_l{n}" },
+  "hot_files": ["app/Services/LifecycleService.php", "resources/js/app.js"],
+  "hosts": [
+    { "name": "bootstrap", "path": "../bootstrap", "package_prefix": "platform-" }
+  ]
+}

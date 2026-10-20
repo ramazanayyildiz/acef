@@ -69,7 +69,7 @@ original contract. Native work is outside this policy because installation is no
 different mapped provider records it once with `active-run --routing-provider <id>`; the effort it binds is a claim the
 launcher has to honor when opening the session.
 Slice lane exception: Slice lane work is outside this policy; its reviewer model comes from `REVIEW_MODEL` / `slice-method.json` via
-`scripts/slice/codex-review.sh`.
+`stacks/laravel/codex-review.sh`.
 
 **Surface declaration is lane-independent for admitted ACEF work.** Every admitted work item declares at intake
 which user-facing surface delivers it (`ui`, `admin`, `api`, `cli`, `queue`, …) or records `surface: none` with a

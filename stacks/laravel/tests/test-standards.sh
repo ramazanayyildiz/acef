@@ -2,7 +2,8 @@
 # Self-test for standards-check.sh: a new violation must FAIL, an untouched legacy violation must only WARN,
 # a counter above baseline must FAIL. Works in a throwaway git repo under $TMPDIR.
 set -u
-HERE=$(cd "$(dirname "$0")/.." && pwd -P)
+# The engine is the stack-neutral core (scripts/slice/standards-check.sh); this adapter test feeds it Laravel-style rules.
+HERE=$(cd "$(dirname "$0")/../../../scripts/slice" && pwd -P)
 T=$(mktemp -d "${TMPDIR:-/tmp}/sm-std.XXXXXX"); trap 'rm -rf "$T"' EXIT
 ok=0; bad=0
 check() { if [ "$1" = "$2" ]; then echo "ok   $3"; ok=$((ok+1)); else echo "FAIL $3 (got $1, want $2)"; bad=$((bad+1)); fi; }

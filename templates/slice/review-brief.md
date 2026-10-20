@@ -16,7 +16,7 @@ Rol: bağımsız inceleyici. Geliştiriciyle aynı oturum değilsin. **Farklı m
 3. **Kırmızı-önce:** `<test-sha>`'yı checkout et, testler kırmızı (A3).
 4. **K maddeleri:** K1..Kn tek tek PASS / FAIL + kanıt (komut çıktısı özeti veya dosya:satır).
 5. **Mutasyon:** yeni/değişen **her kural için 3–5 mutasyon** (kuralı boz → hangi test kırmızı); geliştiricinin her mutasyonunu kendin yeniden uygula + en az bir kendi mutasyonun; her biri için kanıt dosyası; sonunda geri al ve `git status --short` boş (A4). Kuralı bozup test yeşil kalıyorsa bu bir test boşluğu bulgusudur.
-6. **Kontrol listesi:** A her zaman; B paket view/lang/config değişince (**hostlarda `<paket-öneki>::` include taraması — B28**); C UI/rota/config/migration dokunuşunda; D TAM sınıfında; E paylaşılan sözleşmede. Uygulanmayan madde "uygulanmaz: <neden>".
+6. **Kontrol listesi:** A her zaman; B paket view/lang/config değişince (**hostlarda `<paket-öneki>` include taraması — B28**); C UI/rota/config/migration dokunuşunda; D TAM sınıfında; E paylaşılan sözleşmede. Uygulanmayan madde "uygulanmaz: <neden>".
 7. **Gerçek tarayıcı:** dilimin senaryolarını giriş noktasından (URL/menü) kullanıcı gibi, 1280 ve 390 px; ekran görüntüsü. Betik yeşili tek başına yetmez.
 8. **Karar:** PASS | REVISE. REVISE ise bulgular tablosu (≤10 satır); bloklamayan bulgu backlog adayı olarak işaretlenir.
 9. **Etiket adayı** (paket/sürüm dilimlerinde): "evet / hayır" ve tek cümle neden. Bu açık bir yargıdır; boş bırakılmaz.
@@ -41,7 +41,7 @@ Paylaşılan DB, ana ağacın önizleme portu, `git stash`, push, merge, başka 
 
 ## TAM eki — yetki, kiracı, para, durum, güvenlik
 
-Kaynak: Jakomeet `.claude/skills/security-audit/` — bu ek o metnin Türkçe çevirisi/türevidir. Lisans: MIT, Copyright (c) 2025-2026 Cloudflare, Inc.; tam metin `LICENSES/security-audit-MIT.txt` (bu bildirim kopyalarla birlikte taşınır). Tam denetim iş akışı DEĞİL; yalnız bulgu disiplini.
+Kaynak: `security-audit` becerisi (JKM-SA, `docs/slice-lane/SOURCES.md`) — bu ek o metnin Türkçe çevirisi/türevidir. Lisans: MIT, Copyright (c) 2025-2026 Cloudflare, Inc.; tam metin `LICENSES/security-audit-MIT.txt` (bu bildirim kopyalarla birlikte taşınır). Tam denetim iş akışı DEĞİL; yalnız bulgu disiplini.
 
 **Bulgu ancak şunların hepsi adlandırılırsa geçerlidir:** düşük güvenli ilke (aktör), kabul edilen girdi/eylem, amaçlanan kontrol, aşılan sınır, etkilenen ilke/kaynak, somut gözlenen sonuç. "En iyi uygulama eksik", tahmin edilen dağıtım davranışı, kendine etki → bulgu değil.
 

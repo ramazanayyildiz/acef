@@ -1,0 +1,33 @@
+{
+  "$schema": "../../schemas/stack-profile.schema.json",
+  "stack": "laravel",
+  "profile_version": "1.0.0",
+  "description": "Laravel / PHP adapter for the stack-neutral Slice lane core. Fills the {{placeholders}} used by templates/slice/*, docs/slice-lane/examples/slice-method.example.json and scripts/slice/gate.sh. Commands run from the root of the lane's own worktree; {tree} and {port} are expanded by gate.sh after the placeholder.",
+  "placeholders": {
+    "test_command": "php vendor/bin/phpunit",
+    "test_filter": "php vendor/bin/phpunit --filter",
+    "static_analysis": "php vendor/bin/phpstan analyse --no-progress",
+    "boundary_check": "php scripts/check-module-boundaries.php",
+    "standards_check": "scripts/standards-check.sh {tree}",
+    "route_list": "php artisan route:list --json",
+    "app_shell": "php artisan tinker --execute",
+    "migrate_roundtrip": "php artisan migrate && php artisan migrate:rollback",
+    "dependency_check": "composer validate --strict",
+    "browser_smoke": "APP_ORIGIN=http://127.0.0.1:{port} npm run test:smoke"
+  },
+  "files": {
+    "stacks/laravel/check-module-boundaries.php": "scripts/check-module-boundaries.php",
+    "stacks/laravel/standards/rules.example.json": "scripts/standards/rules.json",
+    "stacks/laravel/standards/baseline.example.txt": "scripts/standards/baseline.txt",
+    "stacks/laravel/standards/baseline-notes/README.md": "scripts/standards/baseline-notes/README.md",
+    "stacks/laravel/codex-review.sh": "scripts/codex-review.sh",
+    "stacks/laravel/profile.json": "scripts/stack-profile.json",
+    "stacks/laravel/templates/module-CLAUDE.md": "app/Modules/<Module>/CLAUDE.md",
+    "stacks/laravel/examples/slice-method.example.json": "slice-method.json"
+  },
+  "checklist_commands": "stacks/laravel/checklist-commands.md",
+  "metrics": {
+    "paths": "stacks/laravel/metrics-paths.json",
+    "evidence_dir_strip_phase_prefix": true
+  }
+}
