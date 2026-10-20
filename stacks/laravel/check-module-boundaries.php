@@ -6,8 +6,9 @@ declare(strict_types=1);
 /**
  * Module boundary guard.
  *
- * Origin: Jakomeet scripts/check-module-boundaries.php (PR #94, commit b1f605b83e65a527d447652d4e989fb88b770540;
- * Jakomeet composer.json license: MIT). Copied into slice-method v0.1.0 with one generalisation: --namespace=
+ * Origin: JKM scripts/check-module-boundaries.php (PR #94, commit b1f605b83e65a527d447652d4e989fb88b770540; MIT
+ * licence per that project's package manifest; see docs/slice-lane/SOURCES.md). Laravel adapter of the Slice lane
+ * (stacks/laravel/); copied into slice-method v0.1.0 with one generalisation: --namespace=
  * (default App\Modules) so apps with another module namespace can use it unchanged. Behaviour is otherwise identical.
  *
  * Scans PHP files under app/Modules/<Name>/ and builds the module -> module

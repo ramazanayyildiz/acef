@@ -29,8 +29,10 @@ Tarih / süre: <YYYY-MM-DD>, başlangıç <hh:mm>, bitiş <hh:mm>
 | Komut | Beklenen | Gerçek |
 |---|---|---|
 | `scripts/gate.sh <kendi worktree>` | `GATE PASS` | <son satır> |
-| `scripts/standards-check.sh <kendi worktree>` | `STANDARDS PASS` | <son satır> |
-| <dilim testi> | OK | <…> |
+| `{{standards_check}}` (kendi worktree) | `STANDARDS PASS` | <son satır> |
+| `{{static_analysis}}` | <yeni bulgu yok> | <son satır> |
+| `{{boundary_check}}` | <yeni kenar yok> | <son satır> |
+| `{{test_command}}` <dilim seçicisi> | OK | <…> |
 
 ## Mutasyonlar (uygulandı, geri alındı)
 
@@ -40,19 +42,19 @@ Tarih / süre: <YYYY-MM-DD>, başlangıç <hh:mm>, bitiş <hh:mm>
 
 ## İnceleme öncesi öz-denetim
 
-Kaynak: Jakomeet `docs/bmad/pre-review-selfcheck.md` (deterministik grep kuralları; FAIL çıkışı 1, WARN yalnız basılır). Projenin kendi öz-denetim komutu `slice-method.json` → `selfcheck` alanında; yoksa aşağıdaki satırlar elle doldurulur. FAIL varken inceleme istenmez.
+Kaynak: JKM inceleme öncesi öz-denetimi (`docs/slice-lane/SOURCES.md`; deterministik grep kuralları; FAIL çıkışı 1, WARN yalnız basılır). Yığına özgü kalıplar yığın profilinden gelir (`stacks/<yığın>/checklist-commands.md`). Projenin kendi öz-denetim komutu `slice-method.json` → `selfcheck` alanında; yoksa aşağıdaki satırlar elle doldurulur. FAIL varken inceleme istenmez.
 
 | Kural | Önem | Kontrol (komut) | Sonuç |
 |---|---|---|---|
-| İş mantığı UI katmanında yok (transaction, mail, forceFill) | FAIL | `scripts/standards-check.sh <ağaç>` (GATE-LW1 ve benzeri) | <…> |
+| İş mantığı UI katmanında yok (transaction, mail, toplu atama) | FAIL | `{{standards_check}}` (UI katmanı kuralları) | <…> |
 | Çift gönderim koruması (submit/complete eylemlerinde kilit/bayrak) | FAIL | `git grep -n` <proje kalıbı> | <…> |
 | Doğrulama kuralı olan her bileşende mesajlar var | FAIL | <proje kalıbı> | <…> |
 | Hata kodu çakışması (aynı kod >3 dosyada) | FAIL | <proje kalıbı> | <…> |
 | Servis içinde doğrudan sorgu: depoya taşındı ya da gerekçesi yazıldı | WARN | standart kapısı sayaç satırı | <…> |
-| Kiracı kapsamı atlatma (`withoutGlobalScope` vb.) yeni yerde yok; varsa güvenlik sınırı yazılı | WARN | `git grep -n withoutGlobalScope` | <…> |
-| Yeni `route('…')` adları kayıtlı; yeni view'lar var | FAIL | `templates/review-checklist.md` C1, C8 komutları | <…> |
+| Kiracı kapsamı atlatma yeni yerde yok; varsa güvenlik sınırı yazılı | WARN | `git grep -n '<kapsam atlatma kalıbı>'` | <…> |
+| Yeni rota adları kayıtlı; yeni görünümler var | FAIL | `templates/review-checklist.md` C1, C8 komutları | <…> |
 | İzinli liste dışında dosya yok | FAIL | `git diff --name-only <taban>..HEAD` | <…> |
-| Migration `down()` var ve host tablosunu silmez (ya da neden güvenli olmadığı yazılı) | FAIL | `git grep -n "function down" -- database/migrations` | <…> |
+| Göçün geri alma adımı var ve host tablosunu silmez (ya da neden güvenli olmadığı yazılı) | FAIL | `git grep -n '<geri alma kalıbı>' -- <göç dizini>` | <…> |
 
 ## Bilinmeyenler ve koordinatöre sorular
 

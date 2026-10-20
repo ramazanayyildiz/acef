@@ -1,21 +1,24 @@
 #!/bin/bash
-# metrics-demo.sh — regenerate docs/slice-lane/metrics-2026-10-19.md from the demo inputs. Run with NO env vars to reproduce the
-# committed document (defaults below are the inputs it was made from).
+# metrics-demo.sh — regenerate archive/slice-lane/metrics-2026-10-19.md (a provenance record) from the demo inputs.
+# Run with NO env vars to reproduce the committed document: the inputs are read from metrics-paths.json next to this
+# file (the "metrics path config" of this adapter); env REBUILD, PLATFORM, SESSION_SLICES (set to "" to skip), OUT,
+# PIN_REBUILD, PIN_PLATFORM override them.
 # Pinned inputs: backlogs are read from the pinned commits (git show), so later backlog commits do not change the output.
 # Slice files and reviews are read from the working tree (metrics.py also reads their git history); if <repo>/docs/slices
 # differs from the pin, a WARNING goes to stderr and the output may differ from the committed document.
-# The session section reads the coordinator's scratchpad (git-less, not pinnable): it is a snapshot; the default path is
-# below, and if that directory is gone the section is left out and a WARNING is printed.
-# Override with env: REBUILD, PLATFORM, SESSION_SLICES (set to "" to skip), OUT, PIN_REBUILD, PIN_PLATFORM.
+# The session section reads the coordinator's scratchpad (git-less, not pinnable): it is a snapshot; if that directory
+# is gone the section is left out and a WARNING is printed.
 set -u
-HERE=$(cd "$(dirname "$0")/../.." && pwd -P)   # acef repo root (this file: scripts/slice/metrics-demo.sh)
-R=${REBUILD:-/Users/ramazanayyildiz/CODE/OPA/b2press-rebuild/.worktrees/docs-view}
-P=${PLATFORM:-/Users/ramazanayyildiz/CODE/OPA/platform}
-S=${SESSION_SLICES-/private/tmp/claude-501/-Users-ramazanayyildiz-CODE-OPA-modularous/30ddcf96-0d03-4cf4-8022-c5e07d16bdda/scratchpad/slices}
-PR=${PIN_REBUILD:-056662ba21549663c2451520b398aa19180b04b3}
-PP=${PIN_PLATFORM:-9acdde3c3631b928851d36ee0d27f816bcebc5b5}
-OUT=${OUT:-$HERE/docs/slice-lane/metrics-2026-10-19.md}
-M="python3 -I $HERE/scripts/slice/metrics.py"
+STACK=$(cd "$(dirname "$0")" && pwd -P)       # stacks/laravel
+HERE=$(cd "$STACK/../.." && pwd -P)           # acef repo root
+cfg() { python3 -I -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))[sys.argv[2]])' "$STACK/metrics-paths.json" "$1"; }
+R=${REBUILD:-$(cfg rebuild)}
+P=${PLATFORM:-$(cfg platform)}
+S=${SESSION_SLICES-$(cfg session_slices)}
+PR=${PIN_REBUILD:-$(cfg pin_rebuild)}
+PP=${PIN_PLATFORM:-$(cfg pin_platform)}
+OUT=${OUT:-$HERE/$(cfg out)}
+M="python3 -I $HERE/scripts/slice/metrics.py --profile $STACK/profile.json"
 [ -d "$R/docs/slices" ] || { echo "rebuild slices not found: $R/docs/slices" >&2; exit 2; }
 [ -d "$P/docs/slices" ] || { echo "platform slices not found: $P/docs/slices" >&2; exit 2; }
 RS=$(git -C "$R" rev-parse --short=9 "$PR") || exit 2; PS=$(git -C "$P" rev-parse --short=9 "$PP") || exit 2
@@ -30,7 +33,7 @@ set -e
 cat <<EOF
 # Ölçüm demosu — 2026-10-19
 
-\`scripts/slice/metrics.py\` iki demo girdisinde (rebuild ve platform) ve ek olarak koordinatör oturumunun git dışı dilim dosyalarında koşturuldu. Aşağıdaki sayılar betiğin çıktısıdır; elle düzeltilmedi. Okunamayan ya da kaynağı olmayan değer "doğrulanmadı"dır. Yeniden üretmek: \`scripts/slice/metrics-demo.sh\` (ortam değişkeni gerekmez).
+\`scripts/slice/metrics.py\` iki demo girdisinde (rebuild ve platform) ve ek olarak koordinatör oturumunun git dışı dilim dosyalarında koşturuldu. Aşağıdaki sayılar betiğin çıktısıdır; elle düzeltilmedi. Okunamayan ya da kaynağı olmayan değer "doğrulanmadı"dır. Yeniden üretmek: \`stacks/laravel/metrics-demo.sh\` (ortam değişkeni gerekmez).
 
 Kaynak commit'ler (sabitlenmiş): rebuild \`$RS\`, platform \`$PS\`; backlog'lar bu commit'lerden okunur, dilim dizinleri bu commit'lerle aynı değilse betik uyarır. Oturum bölümü koordinatörün scratchpad'inden (\`SESSION_SLICES\`, varsayılan yol betikte) okunur; git dışıdır, sabitlenemez, belge üretildiği anın görüntüsüdür.
 

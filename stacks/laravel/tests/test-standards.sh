@@ -2,7 +2,8 @@
 # Self-test for standards-check.sh: a new violation must FAIL, an untouched legacy violation must only WARN,
 # a counter above baseline must FAIL. Works in a throwaway git repo under $TMPDIR.
 set -u
-HERE=$(cd "$(dirname "$0")/.." && pwd -P)
+# The engine is the stack-neutral core (scripts/slice/standards-check.sh); this adapter test feeds it Laravel-style rules.
+HERE=$(cd "$(dirname "$0")/../../../scripts/slice" && pwd -P)
 T=$(mktemp -d "${TMPDIR:-/tmp}/sm-std.XXXXXX"); trap 'rm -rf "$T"' EXIT
 ok=0; bad=0
 check() { if [ "$1" = "$2" ]; then echo "ok   $3"; ok=$((ok+1)); else echo "FAIL $3 (got $1, want $2)"; bad=$((bad+1)); fi; }
@@ -41,7 +42,7 @@ out=$(STANDARDS_BASE_REF=main "$HERE/standards-check.sh" "$T"); rc=$?
 check "$rc" 1 "phpstan missing (requires) -> rc=1"
 printf '%s\n' "$out" | grep -q '^FAIL GATE-STAN required tool missing: vendor/bin/phpstan' && check 1 1 "missing tool named in FAIL line" || check 0 1 "missing tool named in FAIL line"
 stan_rules '{ "id": "GATE-STAN", "run": "php vendor/bin/phpstan analyse --error-format=raw", "count_regex": "\\.php:[0-9]+:", "ok_exit": [0, 1], "label": "stan" }'
-STANDARDS_BASE_REF=main "$HERE/standards-check.sh" "$T" >/dev/null; check "$?" 1 "phpstan missing without requires (php: Could not open input file) -> rc=1"
+STANDARDS_BASE_REF=main "$HERE/standards-check.sh" --profile "$HERE/../../stacks/laravel/profile.json" "$T" >/dev/null; check "$?" 1 "phpstan missing without requires (php: Could not open input file, from the laravel profile) -> rc=1"
 stan_rules '{ "id": "GATE-STAN", "run": "no-such-tool-xyz analyse", "count_regex": "x", "label": "stan" }'
 STANDARDS_BASE_REF=main "$HERE/standards-check.sh" "$T" >/dev/null; check "$?" 1 "command not found -> rc=1"
 stan_rules '{ "id": "GATE-STAN", "run": "sh -c \"echo a.php:1:e; exit 1\"", "count_regex": "\\.php:[0-9]+:", "label": "stan" }'

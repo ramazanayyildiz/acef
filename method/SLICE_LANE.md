@@ -5,18 +5,21 @@
 > self-tested scripts; the `/acef` front door selects it in prose, but no installer, hook, or validator routes to or
 > enforces it).
 > Source: slice-method `2a3ba48` (tag `v0.1.1` = `3951843` plus the METHOD-01 review records), imported unchanged
-> under `templates/slice/`, `scripts/slice/`, `docs/slice-lane/`, `schemas/slice-*.schema.json`, `LICENSES/`.
+> at `v3.0.0-alpha`, then split (ACEF-NEUTRAL-01) into a stack-neutral core and stack adapters under `stacks/`.
+> Source projects, commits, and short names (REB, CRM, JKM, LL, PLT, SES): `docs/slice-lane/SOURCES.md`.
 
-The Slice lane is the development flow distilled in `b2press-rebuild` after the heavy ACEF flow was retired there for
-attended work on 2026-10-07, adopted by US-CRM, and run by the coordinator in the 2026-10-19 platform session. It is a
-set of templates, a few scripts, and rules. It has no runtime dependency, no typed run state, and no orchestration
-engine. The full Turkish source text is `docs/slice-lane/README.md`; this page is the English canonical summary with
-acef paths.
+The Slice lane is the development flow distilled in a source project (REB) after the heavy ACEF flow was retired there
+for attended work on 2026-10-07, adopted by a second project (CRM), and run by the coordinator in the 2026-10-19
+session (PLT). It is a set of templates, a few scripts, and rules. It has no runtime dependency, no typed run state, no
+orchestration engine, and no stack: test, analysis, boundary, and standards commands are the placeholders
+`{{test_command}}`, `{{static_analysis}}`, `{{boundary_check}}`, `{{standards_check}}`, filled by a stack profile
+(see "Stack profiles"). The full Turkish source text is `docs/slice-lane/README.md`; this page is the English canonical
+summary with acef paths.
 
 ## Why this lane exists
 
-`b2press-rebuild observations/ACEF_EVAL_REPORT.md` (commit `056662ba2`, "Nihai yargı", 2026-10-08) measured ACEF
-against a native flow on the same product:
+The source project's evaluation report (REB `observations/ACEF_EVAL_REPORT.md`, commit `056662ba2`, "Nihai yargı",
+2026-10-08) measured ACEF against a native flow on the same product:
 
 - Product quality was equal: 7/7 ACEF slices PASS (one after a REVISE round); both native comparison candidates PASS.
 - ACEF caught 1 real defect in 7 slices (P03-EDIT-03: typed evidence re-run on a clean tree exposed a flaky race test).
@@ -74,14 +77,15 @@ backlog -> slice file -> own worktree + port + DB    ->  clean-tree re-run      
    (`--untracked-files=no`); check untracked files separately with `git status --short`.
 4. **Independent review** in a separate session (`templates/slice/review-brief.md` +
    `templates/slice/review-checklist.md`). Verify the claims, not the report. Re-apply every developer mutation and add
-   at least one own mutation. When a package view/lang/config key changes, scan the hosts for includes (B28).
+   at least one own mutation. When a package view/lang/config key changes, scan the hosts for includes
+   (checklist B1).
    Verdict: PASS | REVISE.
 5. **REVISE** → fix inside the same allowed list → **targeted re-review in a new session**
    (`templates/slice/review-r2.md`): only the previous findings plus the fix diff.
 6. **Closing note** (`templates/slice/closing-note.md`): verdict, commits, durations, REVISE rounds, escaped defect,
    explicit tag-candidate judgement, deferred backlog IDs, cleanup. `scripts/slice/metrics.py` reads these fields.
 7. **Merge** with `git merge --no-ff`: into `main` only on the owner's word; into owner-approved work branches after
-   PASS and a green post-merge run. Post-merge: `gate.sh`, `standards-check.sh`, affected tests, the project's
+   PASS and a green post-merge run. Post-merge: `gate.sh`, `{{standards_check}}`, affected tests, the project's
    critical set (`slice-method.json` → `critical_postmerge`). The full suite runs only for shared-infrastructure
    changes and at phase/group close.
 8. **Phase/group close**: exploration tour (`templates/slice/exploration-tour.md`) by another model family, as a user,
@@ -119,7 +123,7 @@ Always required, in both classes — the core this lane keeps from ACEF:
 
 ## Parallel lanes
 
-- At most **5 development lanes** and **2 heavy test/browser slots** (single-slot tools such as Dusk/E2E: 1). Lane
+- At most **5 development lanes** and **2 heavy test/browser slots** (single-slot tools such as browser E2E suites: 1). Lane
   count = number of slices that are independent right now; dependent slices run in sequence.
 - Every lane: own worktree, own port (`lanes.port_from–port_to`), **own test DB** (`lanes.db_pattern`, the name contains
   `testing`), own `TMPDIR`. The owner's preview port and DB belong to the owner only.
@@ -140,47 +144,73 @@ Always required, in both classes — the core this lane keeps from ACEF:
 - Put production data into the repo, evidence, chat, or an external service.
 - Leave an exception unwritten (a standards deviation missing from the slice's compliance table = REVISE).
 
+## Stack profiles
+
+The core never names a language, framework, or tool. Every stack-specific command in the templates, the example
+`slice-method.json`, and the gate is a placeholder:
+
+| Placeholder | Meaning |
+|---|---|
+| `{{test_command}}` | the project's automated tests (with a selector for the slice's tests) |
+| `{{static_analysis}}` | type checker / linter whose findings gate a merge |
+| `{{boundary_check}}` | module/package dependency ratchet (`true` when the stack has none, said so in the profile) |
+| `{{standards_check}}` | standards ratchet: the core engine `scripts/slice/standards-check.sh` with the stack's rules |
+| `{{project}}` | the application's name in examples (DB patterns, package prefixes) |
+
+A stack profile (`stacks/<stack>/profile.json`, schema `schemas/stack-profile.schema.json`) fills the four command
+placeholders plus optional keys used by the review checklist (`route_list`, `app_shell`, `migrate_roundtrip`,
+`browser_smoke`, …). An application points at its copy with `slice-method.json` → `"stack_profile"`;
+`scripts/slice/gate.sh` expands `{{key}}` in `gate.commands[].run` from it (or from `--profile` /
+`SLICE_STACK_PROFILE`) and resolves every command before running any: an undefined or empty key, a key that is not
+lower snake_case, or a `{{…}}` left after expansion exits 2. `scripts/slice/standards-check.sh` adds the profile's
+`standards.tool_error_patterns` to its tool-error wording; `scripts/slice/metrics.py --profile` reads the profile's
+`metrics` object; `scripts/slice/selfcheck.sh` runs an adapter only when its `selfcheck.requires` toolchain is present
+(or `--stack <name>`). Adding a stack: `docs/slice-lane/adoption.md` ("Adopt in a new stack").
+
 ## Files in acef
 
 ```text
 method/SLICE_LANE.md                 this page
 templates/slice/                     slice, dev-report, review-brief (+ TAM annex), review-checklist (A–E), review-r2,
                                      closing-note, invariants-skeleton, locks, module-CLAUDE, exploration-tour
-scripts/slice/gate.sh                runs slice-method.json gate.commands; one summary line; exit 0/1/2/3
-scripts/slice/standards-check.sh     standards ratchet; rules in <app>/scripts/standards/rules.json
-scripts/slice/standards/             rules.example.json, baseline.example.txt, baseline-notes/
-scripts/slice/check-module-boundaries.php  module dependency ratchet (Jakomeet PR #94, --namespace generalised)
+scripts/slice/gate.sh                runs slice-method.json gate.commands, {{placeholders}} from the stack profile;
+                                     one summary line; exit 0/1/2/3
+scripts/slice/standards-check.sh     standards ratchet engine; rules from the stack adapter
 scripts/slice/codex-review.sh        read-only review call with a required model (other model family)
-scripts/slice/metrics.py             measurement table from slice/review files and git history
-scripts/slice/metrics-demo.sh        regenerates docs/slice-lane/metrics-2026-10-19.md
-scripts/slice/selfcheck.sh           the lane's own gate (syntax, templates, self-tests, metrics fixture)
-scripts/slice/tests/                 gate, standards, boundaries self-tests + metrics fixture
-schemas/slice-method.schema.json     project declaration (slice-method.json)
+scripts/slice/metrics.py             measurement table from slice/review files and git history (--profile)
+scripts/slice/selfcheck.sh           the lane's own gate: syntax, templates, core + adapter self-tests, metrics
+                                     fixture, and a scan that the core names no stack or source project
+scripts/slice/tests/                 gate (incl. placeholders), codex-review, selfcheck self-tests + metrics fixture
+schemas/slice-method.schema.json     project declaration (slice-method.json, incl. "stack_profile")
+schemas/stack-profile.schema.json    stack profile (the four required placeholders)
 schemas/slice-interventions.schema.json  intervention log
-docs/slice-lane/                     README (Turkish source), adoption, open-questions, metrics-2026-10-19,
-                                     CHANGELOG (v0.1.0, v0.1.1), METHOD-01 reviews, SOURCES, examples/
+docs/slice-lane/                     README (Turkish source), adoption (incl. "Adopt in a new stack"), open-questions,
+                                     SOURCES (the only place source projects are named), examples/
+stacks/<stack>/                      adapter: profile.json, gate.sh wrapper, boundary checker, standards rules,
+                                     checklist commands, examples, tests (list: the adapter's README)
+archive/slice-lane/                  METHOD-01 reviews, metrics demo 2026-10-19, slice-method CHANGELOG (provenance)
 LICENSES/security-audit-MIT.txt      Cloudflare MIT text for the TAM annex derivative
 ```
 
-The scripts are written to be copied into an application's `scripts/`; their defaults (for example
-`check-module-boundaries.php` → `<app>/scripts/module-boundaries.json`) assume that app layout, and the self-tests pass
-explicit paths. The scripts are not installed by `scripts/install-acef-tools`.
+The scripts are written to be copied into an application's `scripts/`; their defaults assume that app layout, and the
+self-tests pass explicit paths. The scripts are not installed by `scripts/install-acef-tools`.
 
 ## Adoption in an application
 
 ```sh
-ACEF=/path/to/acef
+ACEF=/path/to/acef; STACK=$ACEF/stacks/<stack>
 cp -R $ACEF/templates/slice <app>/docs/slices/_templates
-cp $ACEF/docs/slice-lane/examples/slice-method.example.json <app>/slice-method.json   # edit paths and commands
+cp $ACEF/docs/slice-lane/examples/slice-method.example.json <app>/slice-method.json   # {{project}}, paths, commands
+cp $STACK/profile.json <app>/scripts/stack-profile.json                              # "stack_profile" points here
 cp $ACEF/scripts/slice/{gate.sh,standards-check.sh,codex-review.sh,metrics.py} <app>/scripts/
-cp $ACEF/scripts/slice/standards/rules.example.json <app>/scripts/standards/rules.json
+cp $STACK/standards/rules.example.json <app>/scripts/standards/rules.json            # + the adapter's other files
 <app>/scripts/standards-check.sh --print-baseline <app> > <app>/scripts/standards/baseline.txt   # merger, clean main
 <app>/scripts/gate.sh <own worktree path>
-python3 -I <app>/scripts/metrics.py <app>/docs/slices --backlog <app>/docs/backlog.md
+python3 -I <app>/scripts/metrics.py <app>/docs/slices --backlog <app>/docs/backlog.md --profile <app>/scripts/stack-profile.json
 ```
 
-Per-application status (b2press-rebuild, US-CRM, Jakomeet, Live Learning, platform, unusual-saas-bootstrap):
-`docs/slice-lane/adoption.md`. The lane's own gate: `bash scripts/slice/selfcheck.sh`.
+Adoption status of the source projects at import: `docs/slice-lane/SOURCES.md` ("Adoption status at import"). The
+lane's own gate: `bash scripts/slice/selfcheck.sh`.
 
 ## Enforcement honesty
 
@@ -191,22 +221,22 @@ closing-note gate exists. No ACEF hook or validator enforces this lane.
 
 ## Planned (v0.2) and open (v0.1.2)
 
-Planned from the measurement demo (`docs/slice-lane/open-questions.md`, `docs/slice-lane/metrics-2026-10-19.md`):
+Planned from the measurement demo (`docs/slice-lane/open-questions.md`, `archive/slice-lane/metrics-2026-10-19.md`):
 
 1. **Closing-note gate** — `scripts/slice/closing-check.sh <slice>` before merge: closing-note fields filled without
-   placeholders and `Durum: KAPANDI`, otherwise no merge (rebuild: only 3 of 25 closing headings were filled).
+   placeholders and `Durum: KAPANDI`, otherwise no merge (REB: only 3 of 25 closing headings were filled).
 2. **REVISE reason enum** — a fixed `reason` column in review findings: `ürün-hatası | test-boşluğu | spec-metni |
-   izinli-liste | ortam | standart`; `metrics.py` prints the distribution (175 REVISE reports in the rebuild are
+   izinli-liste | ortam | standart`; `metrics.py` prints the distribution (175 REVISE reports in REB are
    unreadable by reason today).
 3. **Time/token header** — line 3 of every review report: `Süre: <min> · Token: <in>/<out> | ölçülmedi`; `metrics.py`
    reads it instead of the git-timestamp proxy.
 
-Open low-severity items from `docs/slice-lane/METHOD-01-review-r2.md` (non-blocking, v0.1.2):
+Open low-severity items from `archive/slice-lane/METHOD-01-review-r2.md` (non-blocking, v0.1.2):
 
-- **R1** — `docs/slice-lane/SOURCES.md` Live Learning row: give the last commit per file (docs/standards `7cf9936`,
+- **R1** — `docs/slice-lane/SOURCES.md` LL row: give the last commit per file (docs/standards `7cf9936`,
   gate `9f953e4`, standards-check `7bf90faa`, baseline `fad01981`).
-- **R2** — `docs/slice-lane/open-questions.md` #8 and `adoption.md`: cite `COORDINATOR-STATE-2026-10-19.md:29` and
-  `OVERNIGHT-2026-10-17.md:81` for the Live Learning push claim.
+- **R2** — `docs/slice-lane/open-questions.md` #8 and `SOURCES.md` ("Adoption status at import"): cite `COORDINATOR-STATE-2026-10-19.md:29` and
+  `OVERNIGHT-2026-10-17.md:81` for the LL push claim.
 - **R3** — `scripts/slice/standards-check.sh`: apply the "No such file or directory" heuristic only when `count_regex`
   matched nothing; add review case E to the self-test.
 - **R4** — `LICENSES/security-audit-MIT.txt` carries a provenance header, so SOURCES' "(aynen)" is inaccurate: move the

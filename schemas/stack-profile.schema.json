@@ -1,0 +1,111 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://acef.local/schemas/stack-profile.schema.json",
+  "title": "Slice lane stack profile (stacks/<stack>/profile.json)",
+  "description": "Fills the stack-neutral placeholders of the Slice lane core ({{test_command}}, {{static_analysis}}, {{boundary_check}}, {{standards_check}}, plus optional stack-specific keys). scripts/slice/gate.sh expands {{key}} in slice-method.json gate commands from 'placeholders'. A placeholder the profile does not define is a gate usage error, never an empty command.",
+  "type": "object",
+  "required": [
+    "stack",
+    "profile_version",
+    "placeholders"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "stack": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]*$",
+      "description": "Directory name under stacks/."
+    },
+    "profile_version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$"
+    },
+    "description": {
+      "type": "string"
+    },
+    "placeholders": {
+      "type": "object",
+      "required": [
+        "test_command",
+        "static_analysis",
+        "boundary_check",
+        "standards_check"
+      ],
+      "propertyNames": {
+        "pattern": "^[a-z0-9_]+$"
+      },
+      "additionalProperties": {
+        "type": "string",
+        "minLength": 1
+      },
+      "properties": {
+        "test_command": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Runs the project's automated tests."
+        },
+        "static_analysis": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Type checker / linter whose findings gate a merge."
+        },
+        "boundary_check": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Module/package dependency ratchet. Use 'true' and say so in the profile description when the stack has none."
+        },
+        "standards_check": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Standards ratchet (usually scripts/standards-check.sh {tree} with stack rules)."
+        }
+      }
+    },
+    "files": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      },
+      "description": "Adapter file (acef path) -> destination in the application."
+    },
+    "checklist_commands": {
+      "type": "string",
+      "description": "Stack commands for review-checklist items that need them."
+    },
+    "metrics": {
+      "type": "object",
+      "description": "Stack- or project-specific metrics inputs (paths config)."
+    },
+    "standards": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "tool_error_patterns": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "description": "Extra ERE patterns that mark a command counter's output as a tool error (e.g. the runtime's 'file not found' wording), on top of the core's 'command not found' and 'No such file or directory'."
+        }
+      }
+    },
+    "selfcheck": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "requires": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "description": "Commands that must run ('<cmd> --version' exits 0) for scripts/slice/selfcheck.sh to run this adapter's tests; otherwise the adapter is SKIPPED unless --stack <name> forces it."
+        }
+      }
+    }
+  }
+}

@@ -2,7 +2,8 @@
 # codex-review.sh [--dry-run] [--workdir <review worktree>] <brief.md> <out.md>
 #
 # Reviewer invocation pattern for an independent review by a different model family (TAM class).
-# Simplified from b2press-rebuild scripts/codex-review.sh: the model is REQUIRED (no default model, so a report always
+# Stack-neutral core script (any stack copies it to <app>/scripts/). Simplified from the source project's review
+# wrapper (REB in docs/slice-lane/SOURCES.md): the model is REQUIRED (no default model, so a report always
 # names what reviewed it), the sandbox is read-only, the brief goes in on stdin only, and a missing verdict is a TOOL
 # ERROR, never a pass. The brief is built from templates/review-brief.md (+ review-checklist.md).
 #
@@ -13,7 +14,7 @@
 # Exit: 0 verdict PASS, 1 verdict REVISE, 2 usage/prerequisite, 3 TOOL ERROR (codex failed, no output, or no verdict line).
 # Last line: CODEX-REVIEW model=<M> verdict=<PASS|REVISE|NONE> exit=<codex rc> <seconds>s out=<out.md>
 # A read-only sandbox cannot run mutations or a browser: pair it with a second reviewer (Claude session) for those,
-# as b2press did ("Codex source+mutation proposals, Sonnet/Opus browser walk").
+# as the source project did ("Codex source+mutation proposals, Sonnet/Opus browser walk").
 set -u
 die2() { printf '%s\n' "$*" >&2; exit 2; }
 usage() { die2 "usage: REVIEW_MODEL=<model> codex-review.sh [--dry-run] [--workdir <dir>] <brief.md> <out.md>"; }
