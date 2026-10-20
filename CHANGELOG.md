@@ -33,6 +33,9 @@ project names in its core. Split into a stack-neutral core and a stack adapter. 
   (`--stack <name>` forces it, `--scan-only` runs only the scan) and its neutrality scan now covers `scripts/slice`,
   stack tool names (php, phpstan, blade, eloquent, octane, …), source backlog ids, and source ports; `metrics.py`
   no longer strips phase prefixes unless the profile asks. New tests: `test-codex-review.sh`, `test-selfcheck.sh`.
+- Review round R2 (PR #1, Codex): the gate also rejects control characters (NUL included) in runs and profile values
+  and malformed braces (`{{{key}}}`, unbalanced `{{`/`}}`); `selfcheck.sh --stack` normalises a trailing slash and
+  refuses a path or an unknown stack (exit 2); the neutrality scan exempts exact paths, not basenames.
 - `scripts/slice/selfcheck.sh` runs every `stacks/*/tests/test-*.sh` and fails if the core names a stack or source
   project outside `SOURCES.md` and the adoption guide's "Laravel profile" section.
 - `scripts/slice/codex-review.sh` stays in the core (no stack dependency); `AGENTS.md`, `method/DELIVERY_RULES.md`,

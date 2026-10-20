@@ -22,8 +22,10 @@ while [ $# -gt 0 ]; do
     case "$1" in
         --scan-only) SCAN_ONLY=1; shift;;
         --stack) [ $# -ge 2 ] || { echo "usage: selfcheck.sh [--scan-only] [--stack <name>]..." >&2; exit 2; }
-                 [ -d "stacks/$2" ] || { echo "no such stack: stacks/$2" >&2; exit 2; }
-                 FORCE="$FORCE$2 "; shift 2;;
+                 NAME=$2; while [ "${NAME%/}" != "$NAME" ]; do NAME=${NAME%/}; done   # "laravel/" -> "laravel"
+                 case "$NAME" in ''|*/*|.|..) echo "--stack takes a stack name under stacks/, not a path: $2" >&2; exit 2;; esac
+                 [ -f "stacks/$NAME/profile.json" ] || { echo "no such stack: stacks/$NAME (no profile.json)" >&2; exit 2; }
+                 FORCE="$FORCE$NAME "; shift 2;;
         *) echo "usage: selfcheck.sh [--scan-only] [--stack <name>]..." >&2; exit 2;;
     esac
 done
@@ -35,8 +37,10 @@ fail() { printf 'FAIL %s\n' "$1"; bad=$((bad + 1)); }
 WORDS='jakomeet|b2press|rebuild|unusualspace|us-crm|laravel|livewire|(^|[^a-z])php([^a-z]|$)|phpunit|phpstan|blade|eloquent|octane|artisan|composer'
 IDS='(^|[^A-Za-z0-9-])B(7|27|28|40)([^0-9]|$)|CACHE_DRIVER|CACHE_STORE|(^|[^0-9])81(2[7-9]|3[0-9])([^0-9]|$)'
 CORE="method/SLICE_LANE.md templates/slice schemas docs/slice-lane scripts/slice"
+# Exemptions are exact paths (never basenames): a planted templates/slice/x/adoption.md is scanned like any file.
+EXEMPT='^(docs/slice-lane/SOURCES\.md|docs/slice-lane/adoption\.md|scripts/slice/selfcheck\.sh|scripts/slice/tests/test-selfcheck\.sh):'
 # shellcheck disable=SC2086
-LEAKS=$(grep -rnIiE "$WORDS|$IDS" $CORE --exclude=SOURCES.md --exclude=adoption.md --exclude=selfcheck.sh --exclude=test-selfcheck.sh)
+LEAKS=$(grep -rnIiE "$WORDS|$IDS" $CORE | grep -vE "$EXEMPT")
 ADOPT=$(awk -v f=docs/slice-lane/adoption.md '/^## /{s=($0=="## Laravel profile")} !s{print f ":" NR ":" $0}' docs/slice-lane/adoption.md \
     | grep -iE "$WORDS|$IDS")
 [ -z "$LEAKS$ADOPT" ] && pass "core names no stack, stack tool, or source project" || {

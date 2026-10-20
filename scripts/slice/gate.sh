@@ -14,7 +14,8 @@
 # (GATE_PORT, required only if a command uses it).
 # Stack profile (stacks/<stack>/profile.json, "placeholders": {key: command}): --profile, else env SLICE_STACK_PROFILE,
 # else "stack_profile" in slice-method.json (relative to the config file's directory). A {{key}} that no profile
-# defines (or defines empty), a key that is not lower snake_case, a {{…}} left after expansion, a bad or duplicate
+# defines (or defines empty), a key that is not lower snake_case, malformed braces ({{{key}}}, unbalanced {{ or }}),
+# a control character (NUL included) in a run or a profile value, a {{…}} left after expansion, a bad or duplicate
 # name, or an empty run in ANY command is a usage error (exit 2) before any command runs, never an empty command.
 # A command with "full_only": true runs only with --full; without --full it is reported as "SKIP <name> (full only)"
 # and does NOT make the gate INCOMPLETE (it was not asked for). A command whose {port} is needed but GATE_PORT is unset
@@ -77,13 +78,22 @@ if prof_path:
     if not isinstance(prof, dict) or not isinstance(prof.get("placeholders"), dict):
         err(f"stack profile {prof_path} has no placeholders object")
     holders = prof["placeholders"]
-KEY = re.compile(r"\{\{([a-z0-9_]+)\}\}")
+KEY = re.compile(r"(?<!\{)\{\{([a-z0-9_]+)\}\}(?!\})")
+CTRL = re.compile(r"[\x00-\x1f\x7f]")
 def expand(r, i):
+    if CTRL.search(r):
+        err(f"gate.commands[{i}] run contains a control character")
+    rest = KEY.sub("", r)
+    if "{{" in rest or "}}" in rest:
+        err(f"gate.commands[{i}] has malformed placeholder braces (only {{{{lower_snake_key}}}} is allowed)")
     missing = []
     def sub(m):
         v = holders.get(m.group(1))
         if not isinstance(v, str) or not v.strip():
             missing.append(m.group(1))
+            return ""
+        if CTRL.search(v):
+            missing.append(m.group(1) + " (control character in value)")
             return ""
         return v
     out = KEY.sub(sub, r)
