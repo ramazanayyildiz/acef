@@ -1,6 +1,6 @@
 #!/bin/bash
 # Self-test for gate.sh: PASS, FAIL, full_only SKIP, {port} without GATE_PORT -> INCOMPLETE (exit 3), dirty refusal,
-# {{placeholder}} expansion from a stack profile (--profile and "stack-profile"), undefined placeholder refused.
+# {{placeholder}} expansion from a stack profile (--profile and "stack_profile"), undefined placeholder refused.
 set -u
 HERE=$(cd "$(dirname "$0")/.." && pwd -P)
 ROOT=$(cd "$HERE/../.." && pwd -P)
@@ -72,12 +72,15 @@ smj "c['gate']['commands']=[{'name':'a','run':'{{test_command}}'},{'name':'b','r
 gate_case 2 "kebab {{test-command}} -> exit 2" --profile "$T.prof/p.json" "$T"
 smj "c['gate']['commands']=[{'name':'a','run':'{{test_command}}'},{'name':'b','run':'{{nested}}'}]"
 gate_case 2 "profile value with a leftover {{…}} -> exit 2" --profile "$T.prof/p.json" "$T"
-# shipped core example + shipped Laravel profile without browser_smoke (light and --full)
-python3 -c "import json,sys;c=json.load(open(sys.argv[1]));c.pop('stack_profile',None);c.pop('stack-profile',None);json.dump(c,open('slice-method.json','w'))" "$ROOT/docs/slice-lane/examples/slice-method.example.json"
+# shipped core example + every shipped adapter profile without browser_smoke (light and --full)
+python3 -c "import json,sys;c=json.load(open(sys.argv[1]));c.pop('stack_profile',None);c.pop('stack_profile',None);json.dump(c,open('slice-method.json','w'))" "$ROOT/docs/slice-lane/examples/slice-method.example.json"
 git commit -qam shipped >/dev/null
-python3 -c "import json,sys;p=json.load(open(sys.argv[1]));del p['placeholders']['browser_smoke'];json.dump(p,open(sys.argv[2],'w'))" "$ROOT/stacks/laravel/profile.json" "$T.prof/laravel-no-smoke.json"
-gate_case 2 "core example + laravel profile minus browser_smoke -> exit 2" --profile "$T.prof/laravel-no-smoke.json" "$T"
-gate_case 2 "same with --full -> exit 2" --full --profile "$T.prof/laravel-no-smoke.json" "$T"
+for sp in "$ROOT"/stacks/*/profile.json; do   # every shipped adapter profile, minus one key the core example uses
+    st=$(basename "$(dirname "$sp")")
+    python3 -c "import json,sys;p=json.load(open(sys.argv[1]));p['placeholders'].pop('browser_smoke',None);json.dump(p,open(sys.argv[2],'w'))" "$sp" "$T.prof/$st-no-smoke.json"
+    gate_case 2 "core example + shipped $st profile minus browser_smoke -> exit 2" --profile "$T.prof/$st-no-smoke.json" "$T"
+    gate_case 2 "same with --full -> exit 2" --full --profile "$T.prof/$st-no-smoke.json" "$T"
+done
 printf '{ "stack": "node-example", "profile_version": "1.0.0", "placeholders": { "test_command": "npm test --silent", "boundary_check": "true", "standards_check": "scripts/standards-check.sh {tree}", "browser_smoke": "npm run smoke" } }\n' > "$T.prof/node-no-stan.json"
 gate_case 2 "core example + node profile minus static_analysis -> exit 2" --profile "$T.prof/node-no-stan.json" "$T"
 echo "test-gate: ok=$ok fail=$bad"; [ "$bad" -eq 0 ]

@@ -25,7 +25,7 @@ backlog → dilim dosyası →  kendi worktree + port + DB   →   temiz ağaçt
 1. **Dilim** (`templates/slice.md`, ≤150 satır): görev, numaralı sınanabilir kabul maddeleri (K1…), kapsam dışı, izinli dosya listesi (`git grep` kullanım taramasıyla), "Standart uyumu", "Boyut ve derinlik", inceleme sınıfı. Belirsiz ürün sorusu varsa dilim yazılmaz; sahibe sorulur.
 2. **Geliştirici** kendi worktree'sinde, kendi port ve DB'siyle çalışır. Davranış değişiyorsa önce kırmızı test (yalnız-test commit'i ayrı). İzinli listeyi aşmaz: durur, koordinatör listeyi dilimin "Ekler" bölümüne **tarihle** yazar. `templates/dev-report.md` (öz-denetim bölümü dahil). Kendini PASS ilan etmez.
 3. **Temiz ağaçta yeniden koşu**: aday commit'in ayrı worktree'si, `git status --short` boş, dev raporundaki komutlar → beklenen → gerçek. Not: `scripts/gate.sh` yalnız izlenen dosyalardaki değişikliği kirli sayar (`--untracked-files=no`, kaynak projeyle aynı); izlenmeyen dosyaların yokluğunu `git status --short` ile ayrıca doğrula. ACEF'in yakaladığı tek gerçek hata (geliştiricide yeşil, temiz ağaçta kırmızı) böyle yakalandı.
-4. **Bağımsız inceleme** ayrı oturumda (`templates/review-brief.md` + `templates/review-checklist.md`). İddiaları doğrula, raporu değil. Geliştiricinin mutasyonlarını yeniden uygula + kendi bir mutasyonun. Paket anahtarı değiştiyse hostlarda include taraması (B28). Rapor: PASS | REVISE.
+4. **Bağımsız inceleme** ayrı oturumda (`templates/review-brief.md` + `templates/review-checklist.md`). İddiaları doğrula, raporu değil. Geliştiricinin mutasyonlarını yeniden uygula + kendi bir mutasyonun. Paket anahtarı değiştiyse hostlarda include taraması (checklist B1). Rapor: PASS | REVISE.
 5. **REVISE** → aynı izinli listede düzeltme → **hedefli yeniden inceleme ayrı bir oturumda** (`templates/review-r2.md`): yalnız önceki bulgular + düzeltme diff'i.
 6. **Kapanış notu** (`templates/closing-note.md`): karar, commit'ler, süreler, REVISE turu, kaçan hata, açık "etiket adayı" yargısı, ertelenen backlog kimlikleri, temizlik. `scripts/metrics.py` bu alanları okur.
 7. **Merge**: `git merge --no-ff`. `main`'e yalnız sahibin sözüyle; sahibin yazılı izin verdiği iş dallarına (ör. `<proje>` için yazılı dal politikasındaki entegrasyon dalı) koordinatör PASS + yeşil postmerge sonrası beklemeden. Postmerge: `scripts/gate.sh`, `{{standards_check}}`, etkilenen testler, projenin kritik seti (`slice-method.json` → `critical_postmerge`). Tam takım yalnız ortak altyapı değişiminde ve faz/grup kapanışında.
@@ -90,17 +90,18 @@ templates/slice/
   module-CLAUDE.md               modül ajan kuralları (yığından bağımsız iskelet)
   exploration-tour.md            faz kapanışı keşif turu brief'i
 schemas/
-  slice-method.schema.json       proje bildirimi (stack-profile alanı dahil)
+  slice-method.schema.json       proje bildirimi (stack_profile alanı dahil)
   stack-profile.schema.json      yığın profili: {{test_command}}, {{static_analysis}}, {{boundary_check}}, {{standards_check}}
   slice-interventions.schema.json  müdahale kaydı
 scripts/slice/                   çekirdek betikler (yığından bağımsız)
   gate.sh                        slice-method.json komut listesini koşar; {{…}} yer tutucularını profilden açar
   standards-check.sh             standart ratchet motoru; kurallar yığın adaptöründen
+  codex-review.sh                farklı model ailesiyle salt okunur inceleme çağrısı
   metrics.py                     dilim/inceleme/git geçmişinden ölçüm tablosu; profilin metrics bölümünü okur
   selfcheck.sh                   kapı: çekirdek + her stacks/*/tests öz testi + çekirdek yığın-adı taraması
-  tests/                         gate öz testi + metrics fikstürü
+  tests/                         gate, codex-review, selfcheck öz testleri + metrics fikstürü
 stacks/<yığın>/                  yığın adaptörü: profile.json, gate.sh sarmalayıcısı, sınır bekçisi, standart kuralları,
-                                 inceleme çağrısı, checklist komutları, örnekler, öz testler
+                                 checklist komutları, örnekler, öz testler
 archive/slice-lane/              METHOD-01 incelemeleri, ölçüm demosu 2026-10-19, slice-method CHANGELOG (kaynak kaydı)
 ```
 
@@ -113,7 +114,7 @@ ACEF=/path/to/acef; STACK=$ACEF/stacks/<yığın>
 cp -R $ACEF/templates/slice <app>/docs/slices/_templates
 cp $ACEF/docs/slice-lane/examples/slice-method.example.json <app>/slice-method.json   # {{project}}, yollar
 cp $STACK/profile.json <app>/scripts/stack-profile.json
-cp $ACEF/scripts/slice/{gate.sh,standards-check.sh,metrics.py} <app>/scripts/
+cp $ACEF/scripts/slice/{gate.sh,standards-check.sh,codex-review.sh,metrics.py} <app>/scripts/
 <app>/scripts/gate.sh <kendi worktree yolu>
 python3 -I <app>/scripts/metrics.py <app>/docs/slices --backlog <app>/docs/backlog.md --profile <app>/scripts/stack-profile.json
 ```

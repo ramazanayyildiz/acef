@@ -45,7 +45,7 @@ Every admitted semantic actor dispatch must bind the role-calibrated model and r
 `acef-next`. Do not omit these fields and inherit the conductor runtime. New Fix and Standard runs bind
 `modelRoutingContract: admitted-role-routing-v1`; Full retains its compiled routing and Native remains outside ACEF.
 Slice lane exception: Slice lane actors are not admitted and bind no `acef-next` runtime; the reviewer model comes from
-`REVIEW_MODEL` / `slice-method.json` via `stacks/laravel/codex-review.sh` (another model family is mandatory for money and
+`REVIEW_MODEL` / `slice-method.json` via `scripts/slice/codex-review.sh` (another model family is mandatory for money and
 migration slices).
 
 Every new admitted run belongs to one stable parent objective. Pass `--objective-id` and `--objective-scope` when

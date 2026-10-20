@@ -15,7 +15,7 @@ Reads (never writes):
                                CANDIDATES per slice
 
 Stack profile (--profile, else env SLICE_STACK_PROFILE; optional): its "metrics" object may set
-  evidence_dir_strip_phase_prefix (bool, default true) — also look for evidence/<ID without "P<nn>-">/ when
+  evidence_dir_strip_phase_prefix (bool, default false) — also look for evidence/<ID without "P<nn>-">/ when
   evidence/<ID>/ is missing (a naming convention of the source project, REB in docs/slice-lane/SOURCES.md).
 
 Honesty rules (from the source evaluation report, "Yöntem"; REB in docs/slice-lane/SOURCES.md): a number is printed only when it was read or computed from a
@@ -160,7 +160,7 @@ def load_profile_metrics(path: str | None) -> dict:
     return m if isinstance(m, dict) else {}
 
 
-def collect(slices_dir: str, use_git: bool, backlog: str | None, strip_phase_prefix: bool = True) -> list:
+def collect(slices_dir: str, use_git: bool, backlog: str | None, strip_phase_prefix: bool = False) -> list:
     d = os.path.abspath(slices_dir)
     names = sorted(f for f in os.listdir(d) if f.endswith(".md"))
     # A slice id is upper-case with at least one hyphen (ADMIN-01, P04-ASSIGN-01, PAY-REVOLUT, BOOT-FIX-02);
@@ -340,7 +340,7 @@ def main(argv=None) -> int:
     except (OSError, ValueError) as e:
         print(f"stack profile unreadable: {e}", file=sys.stderr)
         return 2
-    sl = collect(a.slices_dir, not a.no_git, a.backlog, bool(pm.get("evidence_dir_strip_phase_prefix", True)))
+    sl = collect(a.slices_dir, not a.no_git, a.backlog, bool(pm.get("evidence_dir_strip_phase_prefix", False)))
     sys.stdout.write(render(sl, a.label or os.path.abspath(a.slices_dir), a.format, a.summary_only))
     return 0
 

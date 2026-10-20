@@ -7,7 +7,7 @@
 # exit code is the core gate's: 0 PASS, 1 FAIL, 2 usage/prerequisite, 3 INCOMPLETE.
 # A later --profile on the command line, or SLICE_STACK_PROFILE, wins over this default.
 # In an application the core gate is usually copied as scripts/gate.sh and slice-method.json carries
-# "stack-profile": "scripts/stack-profile.json" instead; this wrapper is for running from an acef checkout.
+# "stack_profile": "scripts/stack-profile.json" instead; this wrapper is for running from an acef checkout.
 # Env: SLICE_CORE_GATE (default <acef>/scripts/slice/gate.sh).
 set -u
 HERE=$(cd "$(dirname "$0")" && pwd -P)

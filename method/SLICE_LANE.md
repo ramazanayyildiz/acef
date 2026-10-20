@@ -77,7 +77,8 @@ backlog -> slice file -> own worktree + port + DB    ->  clean-tree re-run      
    (`--untracked-files=no`); check untracked files separately with `git status --short`.
 4. **Independent review** in a separate session (`templates/slice/review-brief.md` +
    `templates/slice/review-checklist.md`). Verify the claims, not the report. Re-apply every developer mutation and add
-   at least one own mutation. When a package view/lang/config key changes, scan the hosts for includes (B28).
+   at least one own mutation. When a package view/lang/config key changes, scan the hosts for includes
+   (checklist B1).
    Verdict: PASS | REVISE.
 5. **REVISE** → fix inside the same allowed list → **targeted re-review in a new session**
    (`templates/slice/review-r2.md`): only the previous findings plus the fix diff.
@@ -100,7 +101,7 @@ backlog -> slice file -> own worktree + port + DB    ->  clean-tree re-run      
 | Reviewer | clean tree, acceptance items, mutations, browser, checklist, verdict | fixes product code, merges |
 
 Developer and reviewer are never the same session. Without subagents, run the steps in order but use a separate
-session or the stack adapter's `codex-review.sh` (`stacks/<stack>/`) for the review.
+session or `scripts/slice/codex-review.sh` for the review.
 
 ## Review classes (by domain, not by line count)
 
@@ -158,10 +159,13 @@ The core never names a language, framework, or tool. Every stack-specific comman
 
 A stack profile (`stacks/<stack>/profile.json`, schema `schemas/stack-profile.schema.json`) fills the four command
 placeholders plus optional keys used by the review checklist (`route_list`, `app_shell`, `migrate_roundtrip`,
-`browser_smoke`, …). An application points at its copy with `slice-method.json` → `"stack-profile"`;
+`browser_smoke`, …). An application points at its copy with `slice-method.json` → `"stack_profile"`;
 `scripts/slice/gate.sh` expands `{{key}}` in `gate.commands[].run` from it (or from `--profile` /
-`SLICE_STACK_PROFILE`) and refuses an undefined placeholder with exit 2. `scripts/slice/metrics.py --profile` reads
-the profile's `metrics` object. Adding a stack: `docs/slice-lane/adoption.md` ("Adopt in a new stack").
+`SLICE_STACK_PROFILE`) and resolves every command before running any: an undefined or empty key, a key that is not
+lower snake_case, or a `{{…}}` left after expansion exits 2. `scripts/slice/standards-check.sh` adds the profile's
+`standards.tool_error_patterns` to its tool-error wording; `scripts/slice/metrics.py --profile` reads the profile's
+`metrics` object; `scripts/slice/selfcheck.sh` runs an adapter only when its `selfcheck.requires` toolchain is present
+(or `--stack <name>`). Adding a stack: `docs/slice-lane/adoption.md` ("Adopt in a new stack").
 
 ## Files in acef
 
@@ -172,17 +176,18 @@ templates/slice/                     slice, dev-report, review-brief (+ TAM anne
 scripts/slice/gate.sh                runs slice-method.json gate.commands, {{placeholders}} from the stack profile;
                                      one summary line; exit 0/1/2/3
 scripts/slice/standards-check.sh     standards ratchet engine; rules from the stack adapter
+scripts/slice/codex-review.sh        read-only review call with a required model (other model family)
 scripts/slice/metrics.py             measurement table from slice/review files and git history (--profile)
 scripts/slice/selfcheck.sh           the lane's own gate: syntax, templates, core + adapter self-tests, metrics
                                      fixture, and a scan that the core names no stack or source project
-scripts/slice/tests/                 gate self-test (incl. placeholders) + metrics fixture
-schemas/slice-method.schema.json     project declaration (slice-method.json, incl. "stack-profile")
+scripts/slice/tests/                 gate (incl. placeholders), codex-review, selfcheck self-tests + metrics fixture
+schemas/slice-method.schema.json     project declaration (slice-method.json, incl. "stack_profile")
 schemas/stack-profile.schema.json    stack profile (the four required placeholders)
 schemas/slice-interventions.schema.json  intervention log
 docs/slice-lane/                     README (Turkish source), adoption (incl. "Adopt in a new stack"), open-questions,
                                      SOURCES (the only place source projects are named), examples/
 stacks/<stack>/                      adapter: profile.json, gate.sh wrapper, boundary checker, standards rules,
-                                     review call, checklist commands, examples, tests (list: the adapter's README)
+                                     checklist commands, examples, tests (list: the adapter's README)
 archive/slice-lane/                  METHOD-01 reviews, metrics demo 2026-10-19, slice-method CHANGELOG (provenance)
 LICENSES/security-audit-MIT.txt      Cloudflare MIT text for the TAM annex derivative
 ```
@@ -196,8 +201,8 @@ self-tests pass explicit paths. The scripts are not installed by `scripts/instal
 ACEF=/path/to/acef; STACK=$ACEF/stacks/<stack>
 cp -R $ACEF/templates/slice <app>/docs/slices/_templates
 cp $ACEF/docs/slice-lane/examples/slice-method.example.json <app>/slice-method.json   # {{project}}, paths, commands
-cp $STACK/profile.json <app>/scripts/stack-profile.json                              # "stack-profile" points here
-cp $ACEF/scripts/slice/{gate.sh,standards-check.sh,metrics.py} <app>/scripts/
+cp $STACK/profile.json <app>/scripts/stack-profile.json                              # "stack_profile" points here
+cp $ACEF/scripts/slice/{gate.sh,standards-check.sh,codex-review.sh,metrics.py} <app>/scripts/
 cp $STACK/standards/rules.example.json <app>/scripts/standards/rules.json            # + the adapter's other files
 <app>/scripts/standards-check.sh --print-baseline <app> > <app>/scripts/standards/baseline.txt   # merger, clean main
 <app>/scripts/gate.sh <own worktree path>

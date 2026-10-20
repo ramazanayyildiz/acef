@@ -70,7 +70,7 @@ Listede olmayan dosya değiştirilmez. Geliştirici gerekirse DURUR; koordinatö
 
 Hepsi depo kökünden; kendi worktree, kendi port, kendi DB. Paylaşılan DB ve ana ağacın önizleme portu yasak.
 
-Yığına özgü komutlar `{{…}}` yer tutucularıdır; `slice-method.json` → `stack-profile` doldurur (`stacks/<yığın>/profile.json` kopyası).
+Yığına özgü komutlar `{{…}}` yer tutucularıdır; `slice-method.json` → `stack_profile` doldurur (`stacks/<yığın>/profile.json` kopyası).
 
 - Kırmızı-önce: `{{test_command}} <dilim seçicisi>` yalnız-test commit'inde → beklenen kırmızı
 - Dilim testi: `{{test_command}} <dilim seçicisi>`

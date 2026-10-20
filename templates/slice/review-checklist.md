@@ -1,6 +1,6 @@
 # İnceleme kontrol listesi
 
-`review-brief.md` bu dosyayı zorunlu kılar. Her madde ya kanıtıyla işaretlenir ya da "uygulanmaz: <neden>" yazılır; boş madde = eksik inceleme. Kanıt dosyaları `<evidence>/<SLICE-ID>/review/` altına. Komutlar yığından bağımsızdır: yığına özgü komutlar `{{…}}` yer tutucularıdır ve `slice-method.json` → `stack-profile` doldurur; projeye özgü yollar `<…>`. Bir yığının hazır karşılıkları adaptördedir (`stacks/<yığın>/checklist-commands.md`). Kaynak: 2026-10-19 incelemelerinin gerçekten yakaladıkları (bkz. `SOURCES.md`).
+`review-brief.md` bu dosyayı zorunlu kılar. Her madde ya kanıtıyla işaretlenir ya da "uygulanmaz: <neden>" yazılır; boş madde = eksik inceleme. Kanıt dosyaları `<evidence>/<SLICE-ID>/review/` altına. Komutlar yığından bağımsızdır: yığına özgü komutlar `{{…}}` yer tutucularıdır ve `slice-method.json` → `stack_profile` doldurur; projeye özgü yollar `<…>`. Bir yığının hazır karşılıkları adaptördedir (`stacks/<yığın>/checklist-commands.md`). Kaynak: 2026-10-19 incelemelerinin gerçekten yakaladıkları (bkz. `SOURCES.md`).
 
 Hangi katman: **A** her dilimde · **B** paket view/lang/config anahtarı değişince · **C** şablon/host hijyeni (UI, rota, config, migration dokunuşunda) · **D** TAM sınıfı (yetki/kiracı/para/durum/göç/güvenlik) · **E** paylaşılan sözleşme değişince.
 
@@ -19,7 +19,7 @@ Hangi katman: **A** her dilimde · **B** paket view/lang/config anahtarı deği�
 
 | # | Madde | Kanıt |
 |---|---|---|
-| B1 | Tüketici depolarda include ve atıflar (B28; kaynak kaçak: paket görünüm adı değişti, hosttaki bir şablon kırıldı) | her host için `git -C <host> grep -n "<paket-öneki>"` → `B1-hosts.txt` (dosya:satır) |
+| B1 | Tüketici depolarda include ve atıflar (kaynak kaçak: paket görünüm adı değişti, hosttaki bir şablon kırıldı) | her host için `git -C <host> grep -n "<paket-öneki>"` → `B1-hosts.txt` (dosya:satır) |
 | B2 | Hostlara yayınlanmış (kopyalanmış) paket dosyaları | `git -C <host> ls-files '<yayınlanmış görünüm yolu>/*' '<yayınlanmış çeviri yolu>/*' '<yayınlanmış config yolu>'` → `B2-published.txt` |
 | B3 | Eski anahtar/ad geriye uyumlu duruyor ya da kırılma kayda geçti | dilimdeki K maddesi + host testi adı |
 
@@ -32,10 +32,10 @@ Hangi katman: **A** her dilimde · **B** paket view/lang/config anahtarı deği�
 | C3 | Rol başına bağlantı taraması: render edilen sayfalardaki her aynı-site `<a href>` o kullanıcıyla GET → 200 (302 de kırmızı) | feature test adı (ör. `DashboardLinksTest`) + boş tarama yakalayan `assertNotEmpty` |
 | C4 | 390 px'te yatay taşma yok, rol başına | tarayıcı: `document.documentElement.scrollWidth <= 390` → `C4-390-<rol>.png` + değer |
 | C5 | Silinen kodun statik analiz baseline girdileri temizlendi; yeni yok sayma yok | `git diff <taban>..<aday> -- <statik analiz baseline dosyası>` yalnız silme; `{{static_analysis}}` eşleşmeyen yok sayma uyarısı vermiyor |
-| C6 | Env/config adı kayması (ör. `CACHE_DRIVER` ↔ `CACHE_STORE`) | `git grep -n '<env okuma kalıbı>' -- <config dizini>` ↔ `.env.example`, test ortamı config'i → `C6-env.txt` |
-| C7 | Rota izin haritası ile yetki politikası aynı izinleri istiyor (B40) | değişen her rota için izin haritası değeri ↔ politika satırı (`<politika>::<yetenek>`) tablosu |
+| C6 | Env/config adı kayması (ör. `<ESKİ_ENV_ADI>` ↔ `<YENİ_ENV_ADI>`) | `git grep -n '<env okuma kalıbı>' -- <config dizini>` ↔ `.env.example`, test ortamı config'i → `C6-env.txt` |
+| C7 | Rota izin haritası ile yetki politikası aynı izinleri istiyor | değişen her rota için izin haritası değeri ↔ politika satırı (`<politika>::<yetenek>`) tablosu |
 | C8 | Rotaların işaret ettiği görünümler var | görünüm varlık döngüsü ya da `{{route_list}}` + `git grep '<görünüm çağrısı kalıbı>'` → `C8-views.txt` |
-| C9 | Göçün geri alma adımı host tablosunu silmez/bozmaz (B7) | `{{migrate_roundtrip}}` (no-op göç → geri alma) → tablo + index yerinde; test adı |
+| C9 | Göçün geri alma adımı host tablosunu silmez/bozmaz | `{{migrate_roundtrip}}` (no-op göç → geri alma) → tablo + index yerinde; test adı |
 
 ## D — TAM sınıfı: yetki, kiracı, para, durum, güvenlik
 

@@ -2,8 +2,8 @@
 # codex-review.sh [--dry-run] [--workdir <review worktree>] <brief.md> <out.md>
 #
 # Reviewer invocation pattern for an independent review by a different model family (TAM class).
-# Lives in the Laravel adapter (stacks/laravel/) but has no PHP dependency; any stack can copy it. Simplified from the
-# source project's review wrapper (REB in docs/slice-lane/SOURCES.md): the model is REQUIRED (no default model, so a report always
+# Stack-neutral core script (any stack copies it to <app>/scripts/). Simplified from the source project's review
+# wrapper (REB in docs/slice-lane/SOURCES.md): the model is REQUIRED (no default model, so a report always
 # names what reviewed it), the sandbox is read-only, the brief goes in on stdin only, and a missing verdict is a TOOL
 # ERROR, never a pass. The brief is built from templates/review-brief.md (+ review-checklist.md).
 #

@@ -1,9 +1,9 @@
 #!/bin/bash
-# standards-check.sh [--print-baseline] [--rules <rules.json>] <tree>
+# standards-check.sh [--print-baseline] [--rules <rules.json>] [--profile <stack profile.json>] <tree>
 #
 # Stack-neutral standards ratchet (core). Engine ported from the source projects' ratchets (CRM#44 and REB TOOL-04 in
 # docs/slice-lane/SOURCES.md); the rules live in a JSON file so any app can adopt the engine unchanged. Stack rules come
-# from the adapter, e.g. stacks/laravel/standards/rules.example.json.
+# from the adapter (stacks/<stack>/standards/rules.example.json).
 # Read-only: writes nothing in <tree>.
 #
 # Rules file (default <tree>/scripts/standards/rules.json; example: stacks/<stack>/standards/rules.example.json):
@@ -16,10 +16,12 @@
 #                 runs `sh -c run` in <tree>, counts output lines matching count_regex (minus exclude_regex).
 #                 Use for linters/type checkers whose per-file pass/fail would fail every PR on legacy code.
 #                 A missing tool is a FAIL, never a count of 0 (v0.1.1): ok_exit defaults to [0]; a path listed in
-#                 "requires" (relative to <tree>, e.g. vendor/bin/phpstan) must exist; exit 126/127 and output saying
-#                 "command not found", "Could not open input file" or "No such file or directory" are tool errors.
-#                 Tools that exit 1 when they find something (PHPStan) must say so with "ok_exit": [0, 1] AND list
-#                 their binary in "requires".
+#                 "requires" (relative to <tree>, e.g. the tool's binary) must exist; exit 126/127 and output saying
+#                 "command not found" or "No such file or directory" are tool errors, plus the stack profile's
+#                 "standards": {"tool_error_patterns": [ERE, …]} (a runtime's own "file not found" wording).
+#                 Tools that exit 1 when they find something (type checkers) must say so with "ok_exit": [0, 1] AND
+#                 list their binary in "requires".
+# Stack profile: --profile, else env SLICE_STACK_PROFILE, else "stack_profile" in <tree>/slice-method.json (optional).
 # Counters and command_counters are frozen in the baseline file ("ID=<n>" lines, default
 # <tree>/scripts/standards/baseline.txt). Above baseline = FAIL. Counters only go down.
 # Comment lines (//, *, #, /*, {{--, <!--) are skipped by line checks (not by counters).
@@ -37,16 +39,17 @@ set -f
 c_err() { printf '%s\n' "$*" >&2; }
 die2() { c_err "$*"; exit 2; }
 
-PRINT=0; RULES=${STANDARDS_RULES:-}; TREE=""
+PRINT=0; RULES=${STANDARDS_RULES:-}; PROFILE=${SLICE_STACK_PROFILE:-}; TREE=""
 while [ $# -gt 0 ]; do
     case "$1" in
         --print-baseline) PRINT=1; shift;;
         --rules) [ $# -ge 2 ] || die2 "--rules needs a path"; RULES=$2; shift 2;;
-        -*) die2 "usage: standards-check.sh [--print-baseline] [--rules <rules.json>] <tree>";;
-        *) [ -z "$TREE" ] || die2 "usage: standards-check.sh [--print-baseline] [--rules <rules.json>] <tree>"; TREE=$1; shift;;
+        --profile) [ $# -ge 2 ] || die2 "--profile needs a path"; PROFILE=$2; shift 2;;
+        -*) die2 "usage: standards-check.sh [--print-baseline] [--rules <rules.json>] [--profile <profile.json>] <tree>";;
+        *) [ -z "$TREE" ] || die2 "usage: standards-check.sh [--print-baseline] [--rules <rules.json>] [--profile <profile.json>] <tree>"; TREE=$1; shift;;
     esac
 done
-[ -n "$TREE" ] || die2 "usage: standards-check.sh [--print-baseline] [--rules <rules.json>] <tree>"
+[ -n "$TREE" ] || die2 "usage: standards-check.sh [--print-baseline] [--rules <rules.json>] [--profile <profile.json>] <tree>"
 [ -d "$TREE" ] || die2 "tree not found: $TREE"
 TREE=$(cd "$TREE" && pwd -P)
 [ "$(git -C "$TREE" rev-parse --show-toplevel </dev/null 2>/dev/null)" = "$TREE" ] || die2 "$TREE is not the root of a git working tree"
@@ -55,6 +58,29 @@ RULES=${RULES:-$TREE/scripts/standards/rules.json}
 BASELINE=${STANDARDS_BASELINE:-$TREE/scripts/standards/baseline.txt}
 [ "$PRINT" = 1 ] || [ -f "$BASELINE" ] || die2 "baseline file not found: $BASELINE"
 command -v python3 >/dev/null 2>&1 || die2 "python3 not found"
+[ -z "$PROFILE" ] || [ -f "$PROFILE" ] || die2 "stack profile not found: $PROFILE"
+# tool-error wording: generic shell messages + the stack profile's own patterns
+TOOLERR=$(python3 -I - "$PROFILE" "$TREE/slice-method.json" <<'PY'
+import json, os, sys
+pats = ["command not found", "No such file or directory"]
+prof = sys.argv[1]
+if not prof and os.path.isfile(sys.argv[2]):
+    try:
+        sp = json.load(open(sys.argv[2], encoding="utf-8")).get("stack_profile")
+        if isinstance(sp, str) and sp:
+            prof = os.path.join(os.path.dirname(sys.argv[2]), sp)
+    except Exception:
+        pass
+if prof and os.path.isfile(prof):
+    try:
+        extra = (json.load(open(prof, encoding="utf-8")).get("standards") or {}).get("tool_error_patterns") or []
+    except Exception as e:
+        print(f"ERR stack profile unreadable: {e}"); sys.exit(0)
+    pats += [p for p in extra if isinstance(p, str) and p and "\n" not in p]
+print("|".join(pats))
+PY
+)
+case "$TOOLERR" in ERR*) die2 "${TOOLERR#ERR }";; esac
 
 WORK=$(mktemp -d "${TMPDIR:-/tmp}/standards-check.XXXXXX") || die2 "cannot create a temp directory"
 trap 'rm -rf "$WORK"' EXIT
@@ -142,7 +168,7 @@ while IFS="$TAB" read -r ID RUN CRE XRE OKS LABEL REQS; do
     fi
     OUT=$(cd "$TREE" && sh -c "$RUN" </dev/null 2>&1); RC=$?
     OKRC=0; for v in $OKS; do [ "$RC" = "$v" ] && OKRC=1; done
-    if [ "$RC" = 126 ] || [ "$RC" = 127 ] || printf '%s\n' "$OUT" | grep -Eq 'command not found|Could not open input file|No such file or directory'; then
+    if [ "$RC" = 126 ] || [ "$RC" = 127 ] || printf '%s\n' "$OUT" | grep -Eq -- "$TOOLERR"; then
         printf '%s\t%s\t%s\n' "$ID" "ERR" "tool error (exit $RC): $(printf '%s' "$OUT" | grep -v '^[[:space:]]*$' | head -n 1 | cut -c1-120)" >>"$WORK/measured"
     elif [ "$OKRC" = 1 ]; then
         N=$(printf '%s\n' "$OUT" | grep -E -- "$CRE" | grep -Evc -- "$XRE")

@@ -2,7 +2,7 @@
   "$schema": "../../../schemas/slice-method.schema.json",
   "method_version": "0.1.1",
   "project": "{{project}}",
-  "stack-profile": "scripts/stack-profile.json",
+  "stack_profile": "scripts/stack-profile.json",
   "slices_dir": "docs/slices",
   "evidence_dir": "docs/slices/evidence",
   "invariants": "docs/slices/_invariants.md",
@@ -13,11 +13,27 @@
   "gate": {
     "require_clean_tree": true,
     "commands": [
-      { "name": "tests", "run": "{{test_command}}" },
-      { "name": "static-analysis", "run": "{{static_analysis}}" },
-      { "name": "standards", "run": "{{standards_check}}" },
-      { "name": "boundaries", "run": "{{boundary_check}}" },
-      { "name": "browser-smoke", "run": "{{browser_smoke}}", "full_only": true }
+      {
+        "name": "tests",
+        "run": "{{test_command}}"
+      },
+      {
+        "name": "static-analysis",
+        "run": "{{static_analysis}}"
+      },
+      {
+        "name": "standards",
+        "run": "{{standards_check}}"
+      },
+      {
+        "name": "boundaries",
+        "run": "{{boundary_check}}"
+      },
+      {
+        "name": "browser-smoke",
+        "run": "{{browser_smoke}}",
+        "full_only": true
+      }
     ]
   },
   "critical_postmerge": [
@@ -29,16 +45,40 @@
     "notes_dir": "scripts/standards/baseline-notes",
     "base_ref": "origin/main"
   },
-  "module_boundaries": { "modules_dir": "<modules dir>", "namespace": "<module namespace>", "baseline": "scripts/module-boundaries.json" },
-  "review": {
-    "tam_reviewer": "codex gpt-6.1-sol (+ Claude Opus tarayıcı yürüyüşü)",
-    "hafif_reviewer": "Claude Opus alt ajanı",
-    "codex_model": "gpt-6.1-sol",
-    "tam_domains": ["money", "permissions-tenant", "state-transitions", "migrations", "security"]
+  "module_boundaries": {
+    "modules_dir": "<modules dir>",
+    "namespace": "<module namespace>",
+    "baseline": "scripts/module-boundaries.json"
   },
-  "lanes": { "max_dev_lanes": 5, "heavy_slots": 2, "port_from": 8128, "port_to": 8139, "preview_port": 8127, "db_pattern": "{{project}}_testing_l{n}" },
-  "hot_files": ["<shared service file>", "<frontend entry file>"],
+  "review": {
+    "tam_reviewer": "<other model family reviewer> (+ <browser walk reviewer>)",
+    "hafif_reviewer": "<independent reviewer session>",
+    "codex_model": "<review-model>",
+    "tam_domains": [
+      "money",
+      "permissions-tenant",
+      "state-transitions",
+      "migrations",
+      "security"
+    ]
+  },
+  "lanes": {
+    "max_dev_lanes": 5,
+    "heavy_slots": 2,
+    "port_from": 41001,
+    "port_to": 41010,
+    "preview_port": 41000,
+    "db_pattern": "{{project}}_testing_l{n}"
+  },
+  "hot_files": [
+    "<shared service file>",
+    "<frontend entry file>"
+  ],
   "hosts": [
-    { "name": "<host app>", "path": "../<host app>", "package_prefix": "{{project}}-" }
+    {
+      "name": "<host app>",
+      "path": "../<host app>",
+      "package_prefix": "{{project}}-"
+    }
   ]
 }

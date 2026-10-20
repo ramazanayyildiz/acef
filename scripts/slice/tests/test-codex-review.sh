@@ -10,5 +10,5 @@ REVIEW_MODEL=x "$HERE/codex-review.sh" --dry-run "$ROOT/templates/slice/review-b
 check "$?" 0 "dry-run is read-only"
 env -u REVIEW_MODEL SLICE_METHOD_CONFIG=/nonexistent "$HERE/codex-review.sh" --dry-run "$ROOT/templates/slice/review-brief.md" /dev/null >/dev/null 2>&1
 check "$?" 2 "refuses without a model"
-[ ! -e "$ROOT/stacks/laravel/codex-review.sh" ]; check "$?" 0 "no adapter copy left in stacks/laravel"
+n=$(ls "$ROOT"/stacks/*/codex-review.sh 2>/dev/null | wc -l | tr -d ' '); check "$n" 0 "no adapter keeps its own copy"
 echo "test-codex-review: ok=$ok fail=$bad"; [ "$bad" -eq 0 ]

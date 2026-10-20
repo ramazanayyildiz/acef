@@ -20,7 +20,6 @@
     "stacks/laravel/standards/rules.example.json": "scripts/standards/rules.json",
     "stacks/laravel/standards/baseline.example.txt": "scripts/standards/baseline.txt",
     "stacks/laravel/standards/baseline-notes/README.md": "scripts/standards/baseline-notes/README.md",
-    "stacks/laravel/codex-review.sh": "scripts/codex-review.sh",
     "stacks/laravel/profile.json": "scripts/stack-profile.json",
     "stacks/laravel/templates/module-CLAUDE.md": "app/Modules/<Module>/CLAUDE.md",
     "stacks/laravel/examples/slice-method.example.json": "slice-method.json"
@@ -29,5 +28,15 @@
   "metrics": {
     "paths": "stacks/laravel/metrics-paths.json",
     "evidence_dir_strip_phase_prefix": true
+  },
+  "standards": {
+    "tool_error_patterns": [
+      "Could not open input file"
+    ]
+  },
+  "selfcheck": {
+    "requires": [
+      "php"
+    ]
   }
 }

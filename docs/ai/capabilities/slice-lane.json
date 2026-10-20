@@ -54,15 +54,17 @@
     "cli": [
       "scripts/slice/gate.sh",
       "scripts/slice/standards-check.sh",
+      "scripts/slice/codex-review.sh",
       "scripts/slice/metrics.py",
       "stacks/laravel/gate.sh",
       "stacks/laravel/check-module-boundaries.php",
-      "stacks/laravel/codex-review.sh",
       "stacks/laravel/metrics-demo.sh"
     ],
     "tests": [
       "scripts/slice/selfcheck.sh",
       "scripts/slice/tests/test-gate.sh",
+      "scripts/slice/tests/test-codex-review.sh",
+      "scripts/slice/tests/test-selfcheck.sh",
       "stacks/laravel/tests/test-standards.sh",
       "stacks/laravel/tests/test-boundaries.sh",
       "stacks/laravel/tests/test-profile.sh"
@@ -74,13 +76,13 @@
     "Evidence for the lane's value is one product (REB in docs/slice-lane/SOURCES.md), one team, one model family, small sample (ACEF_EVAL_REPORT.md at 056662ba2); escaped defects were not measured.",
     "scripts/slice/ and schemas/slice-*.schema.json + schemas/stack-profile.schema.json fall inside sourceRuntimeDigest (scripts/lib/acef-installation.js), so installed target repos see a changed ACEF source digest and need update-acef-installation; install-acef-tools copies the slice schemas into .acef/schemas/ but no slice script.",
     "Open v0.1.2 items R1-R4 (archive/slice-lane/METHOD-01-review-r2.md) and the three v0.2 items (closing-note gate, REVISE reason enum, time/token header) are not implemented.",
-    "Stack split (ACEF-NEUTRAL-01): one adapter exists (stacks/laravel). The core's placeholders are proven by scripts/slice/tests/test-gate.sh and stacks/laravel/tests/test-profile.sh; no second stack has been adopted, so the 'Adopt in a new stack' steps are untested outside Laravel. stacks/laravel/codex-review.sh has no PHP dependency and could move back to the core. The acceptance grep hits only the required 'Laravel profile' section of docs/slice-lane/adoption.md; selfcheck enforces that boundary."
+    "Stack split (ACEF-NEUTRAL-01): one adapter exists (stacks/laravel). The core's placeholders are proven by scripts/slice/tests/test-gate.sh and stacks/laravel/tests/test-profile.sh; no second stack is committed (the R1 review built a throwaway Node adapter and ran it without php). The acceptance grep hits only the required 'Laravel profile' section of docs/slice-lane/adoption.md; selfcheck's neutrality scan (wider word list, scripts/slice included) enforces that boundary."
   ],
   "evidence": [
     {
       "layer": "tests",
       "ref": "scripts/slice/selfcheck.sh",
-      "note": "2026-10-20 on branch acef-neutral-01 (ACEF-NEUTRAL-01): SELFCHECK PASS ok=94 fail=0, incl. scripts/slice/tests/test-gate.sh ok=11 (placeholder expansion), stacks/laravel/tests/test-standards.sh ok=12, test-boundaries.sh ok=4, test-profile.sh ok=6, and the core neutrality scan. stacks/laravel/metrics-demo.sh reproduces the REB sections of archive/slice-lane/metrics-2026-10-19.md line for line (PLT working tree has moved past its pin, as the script warns)."
+      "note": "2026-10-20, branch acef-neutral-01 after review round R1: SELFCHECK PASS ok=96 fail=0 with php present (test-gate ok=32, test-codex-review ok=4, test-selfcheck ok=21, stacks/laravel test-standards ok=12, test-boundaries ok=4, test-profile ok=4). With a php shim that exits 127: 'SKIP stack laravel', SELFCHECK PASS ok=82; with --stack laravel: SELFCHECK FAIL (4). stacks/laravel/metrics-demo.sh still reproduces the REB sections of archive/slice-lane/metrics-2026-10-19.md line for line."
     },
     {
       "layer": "tests",

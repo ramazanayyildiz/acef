@@ -363,7 +363,7 @@ abstract tier per provider; the default provider is the policy's `activeProvider
 provider with `acef-state active-run --routing-provider <id>` (recorded as `routingProvider`). The reasoning effort is a
 recorded claim, not an enforcement: the launcher must open the actor session at that effort.
 Slice lane exception: Slice lane work is outside this policy; its reviewer model comes from `REVIEW_MODEL` / `slice-method.json` via
-`stacks/laravel/codex-review.sh`.
+`scripts/slice/codex-review.sh`.
 
 Guarded is not a fourth workflow and does not silently turn ACEF Fix or ACEF Standard into Full BMAD. It only adds
 assurance controls. `full-bmad + guarded` runs one Full lifecycle with the Guarded deltas; it does not repeat readiness,

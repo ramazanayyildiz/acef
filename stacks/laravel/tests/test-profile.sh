@@ -1,7 +1,6 @@
 #!/bin/bash
 # Self-test for the Laravel adapter wiring: profile.json fills the four core placeholders, stacks/laravel/gate.sh
-# expands them through the core gate in a throwaway app, the example slice-method.json names the profile, and
-# codex-review.sh still refuses to run without a model.
+# expands them through the core gate in a throwaway app, and the example slice-method.json names the profile.
 set -u
 HERE=$(cd "$(dirname "$0")/.." && pwd -P)    # stacks/laravel
 ROOT=$(cd "$HERE/../.." && pwd -P)           # acef root
@@ -17,8 +16,8 @@ extra = [k for k in p if k not in s["properties"]]
 sys.exit(1 if missing or extra or p["stack"] != "laravel" else 0)
 PY
 check "$?" 0 "profile.json fills test_command, static_analysis, boundary_check, standards_check"
-python3 -I -c 'import json,sys; c=json.load(open(sys.argv[1])); sys.exit(0 if c.get("stack-profile") else 1)' "$HERE/examples/slice-method.example.json"
-check "$?" 0 "example slice-method.json sets stack-profile"
+python3 -I -c 'import json,sys; c=json.load(open(sys.argv[1])); sys.exit(0 if c.get("stack_profile") else 1)' "$HERE/examples/slice-method.example.json"
+check "$?" 0 "example slice-method.json sets stack_profile"
 # throwaway app: fake phpunit/phpstan so the placeholders run without a real Laravel install
 cd "$T" && git init -q -b main && git config user.email t@t && git config user.name t
 printf '.tmp/\n' > .gitignore
@@ -30,8 +29,4 @@ J
 git add .gitignore slice-method.json vendor && git commit -qm base
 env -u SLICE_STACK_PROFILE "$HERE/gate.sh" "$T" >/dev/null; check "$?" 0 "laravel gate expands {{test_command}} -> php vendor/bin/phpunit"
 env -u SLICE_STACK_PROFILE "$HERE/gate.sh" --full "$T" >/dev/null; check "$?" 1 "laravel gate expands {{static_analysis}} (fake phpstan exits 1)"
-REVIEW_MODEL=x "$HERE/codex-review.sh" --dry-run "$ROOT/templates/slice/review-brief.md" /dev/null | grep -q -- "-s read-only"
-check "$?" 0 "codex-review.sh dry-run read-only"
-env -u REVIEW_MODEL SLICE_METHOD_CONFIG=/nonexistent "$HERE/codex-review.sh" --dry-run "$ROOT/templates/slice/review-brief.md" /dev/null >/dev/null 2>&1
-check "$?" 2 "codex-review.sh refuses without model"
 echo "test-profile: ok=$ok fail=$bad"; [ "$bad" -eq 0 ]

@@ -13,8 +13,9 @@
 # Placeholders in "run": {{<key>}} (stack profile, expanded first), then {tree} (absolute tree path) and {port}
 # (GATE_PORT, required only if a command uses it).
 # Stack profile (stacks/<stack>/profile.json, "placeholders": {key: command}): --profile, else env SLICE_STACK_PROFILE,
-# else "stack-profile" in slice-method.json (relative to the config file's directory). A {{key}} that no profile
-# defines is a usage error (exit 2), never an empty command.
+# else "stack_profile" in slice-method.json (relative to the config file's directory). A {{key}} that no profile
+# defines (or defines empty), a key that is not lower snake_case, a {{…}} left after expansion, a bad or duplicate
+# name, or an empty run in ANY command is a usage error (exit 2) before any command runs, never an empty command.
 # A command with "full_only": true runs only with --full; without --full it is reported as "SKIP <name> (full only)"
 # and does NOT make the gate INCOMPLETE (it was not asked for). A command whose {port} is needed but GATE_PORT is unset
 # is SKIPPED and makes the gate INCOMPLETE.
@@ -50,52 +51,73 @@ fi
 
 # Read config -> TSV lines: name<TAB>full_only<TAB>timeout<TAB>require_clean<TAB>run  (run is last: may contain tabs? refused)
 [ -z "$PROFILE" ] || [ -f "$PROFILE" ] || die2 "stack profile not found: $PROFILE"
+# The whole command list is validated and every placeholder resolved BEFORE anything runs: on any error the parser
+# prints only one "ERR …" line and the gate exits 2 without executing a command (R1/F1 of PR #1).
 PARSED=$(python3 -I - "$CONFIG" "$PROFILE" <<'PY'
 import json, os, re, sys
+def err(msg):
+    print(f"ERR {msg}"); sys.exit(0)
 try:
     cfg = json.load(open(sys.argv[1], encoding="utf-8"))
 except Exception as e:
-    print(f"ERR config is not valid JSON: {e}"); sys.exit(0)
+    err(f"config is not valid JSON: {e}")
+if not isinstance(cfg, dict):
+    err("config must be a JSON object")
 prof_path = sys.argv[2]
-if not prof_path and isinstance(cfg.get("stack-profile"), str) and cfg["stack-profile"]:
-    prof_path = os.path.join(os.path.dirname(os.path.abspath(sys.argv[1])), cfg["stack-profile"])
+if not prof_path and "stack_profile" in cfg:
+    if not isinstance(cfg["stack_profile"], str) or not cfg["stack_profile"]:
+        err("stack_profile must be a non-empty path")
+    prof_path = os.path.join(os.path.dirname(os.path.abspath(sys.argv[1])), cfg["stack_profile"])
 holders = {}
 if prof_path:
     try:
         prof = json.load(open(prof_path, encoding="utf-8"))
     except Exception as e:
-        print(f"ERR stack profile {prof_path} unreadable: {e}"); sys.exit(0)
-    holders = prof.get("placeholders") if isinstance(prof.get("placeholders"), dict) else {}
+        err(f"stack profile {prof_path} unreadable: {e}")
+    if not isinstance(prof, dict) or not isinstance(prof.get("placeholders"), dict):
+        err(f"stack profile {prof_path} has no placeholders object")
+    holders = prof["placeholders"]
+KEY = re.compile(r"\{\{([a-z0-9_]+)\}\}")
 def expand(r, i):
+    missing = []
     def sub(m):
-        k = m.group(1)
-        v = holders.get(k)
-        if not isinstance(v, str) or not v:
-            raise KeyError(k)
+        v = holders.get(m.group(1))
+        if not isinstance(v, str) or not v.strip():
+            missing.append(m.group(1))
+            return ""
         return v
-    try:
-        return re.sub(r"\{\{([a-z0-9_]+)\}\}", sub, r)
-    except KeyError as k:
-        print(f"ERR gate.commands[{i}] uses {{{{{k.args[0]}}}}} but no stack profile defines it"); sys.exit(0)
+    out = KEY.sub(sub, r)
+    if missing:
+        err(f"gate.commands[{i}] uses {{{{{missing[0]}}}}} but the stack profile does not define it (or it is empty)")
+    left = re.search(r"\{\{[^}]*\}\}|\{\{|\}\}", out)
+    if left:
+        err(f"gate.commands[{i}] has an unresolved placeholder {left.group(0)!r} after expansion (keys are lower snake_case; profile values are not expanded again)")
+    return out
 g = cfg.get("gate")
 if not isinstance(g, dict) or not isinstance(g.get("commands"), list) or not g["commands"]:
-    print("ERR gate.commands missing or empty"); sys.exit(0)
+    err("gate.commands missing or empty")
 clean = "1" if g.get("require_clean_tree", True) else "0"
-seen = set()
+seen, rows = set(), []
 for i, c in enumerate(g["commands"]):
     if not isinstance(c, dict) or not isinstance(c.get("name"), str) or not isinstance(c.get("run"), str):
-        print(f"ERR gate.commands[{i}] needs string name and run"); sys.exit(0)
-    n, r = c["name"], expand(c["run"], i)
+        err(f"gate.commands[{i}] needs string name and run")
+    n = c["name"]
     if not n or any(ch in n for ch in " \t\n/") or n in seen:
-        print(f"ERR gate.commands[{i}] bad or duplicate name: {n!r}"); sys.exit(0)
+        err(f"gate.commands[{i}] bad or duplicate name: {n!r}")
+    r = expand(c["run"], i)
+    if not r.strip():
+        err(f"gate.commands[{i}] run is empty")
     if "\t" in r or "\n" in r:
-        print(f"ERR gate.commands[{i}] run must be one line without tabs"); sys.exit(0)
+        err(f"gate.commands[{i}] run must be one line without tabs")
     seen.add(n)
     t = c.get("timeout_s", 0)
-    print("\t".join([n, "1" if c.get("full_only") else "0", str(int(t) if isinstance(t, int) else 0), clean, r]))
+    rows.append("\t".join([n, "1" if c.get("full_only") else "0", str(int(t) if isinstance(t, int) else 0), clean, r]))
+print("\n".join(rows))
 PY
 )
-case "$PARSED" in ERR*) die2 "${PARSED#ERR }";; esac
+ERRLINE=$(printf '%s\n' "$PARSED" | grep -m1 '^ERR ' || true)
+[ -z "$ERRLINE" ] || die2 "${ERRLINE#ERR }"
+[ -n "$PARSED" ] || die2 "gate.commands could not be read"
 
 REQUIRE_CLEAN=$(printf '%s\n' "$PARSED" | head -n 1 | cut -f4)
 DIRTYTAG=""

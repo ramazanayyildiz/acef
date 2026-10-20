@@ -29,7 +29,7 @@ core templates carried before ACEF-NEUTRAL-01 (provenance: `docs/slice-lane/SOUR
 | C1 | `git grep -ohE "route\('[^']+'" -- resources app/Modules \| sort -u` ↔ `php artisan route:list --json` (difference 0) |
 | C2 | `Route::has` loop over `config/route_permissions.php` and `navigation` config (architecture test or `php artisan tinker --execute`) |
 | C5 | `git diff <base>..<candidate> -- phpstan-baseline.neon` deletions only; PHPStan prints no "Ignored error pattern … was not matched" |
-| C6 | `git grep -n "env('" -- config` ↔ `.env.example`, `phpunit*.xml` |
+| C6 | `git grep -n "env('" -- config` ↔ `.env.example`, `phpunit*.xml` (e.g. `CACHE_DRIVER` ↔ `CACHE_STORE`) |
 | C7 | `config/route_permissions.php` value ↔ `Policy::<ability>` line, per changed route |
 | C8 | `View::exists` loop, or `route:list` + `git grep "view('"` |
 | C9 | no-op `migrate` → `migrate:rollback`: table and index still there; `down()` never drops a host table |

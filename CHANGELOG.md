@@ -16,20 +16,27 @@ project names in its core. Split into a stack-neutral core and a stack adapter. 
 - Core (`method/SLICE_LANE.md`, `templates/slice/`, `schemas/`, `docs/slice-lane/`, `scripts/slice/`): stack commands
   are placeholders `{{test_command}}`, `{{static_analysis}}`, `{{boundary_check}}`, `{{standards_check}}` (plus
   optional keys); examples use `{{project}}`. New `schemas/stack-profile.schema.json`; `slice-method.schema.json` gains
-  `stack-profile`. `scripts/slice/gate.sh` expands `{{key}}` from the profile (`--profile`, `SLICE_STACK_PROFILE`, or
-  `stack-profile`) and refuses an undefined placeholder (exit 2); `metrics.py --profile` reads the profile's `metrics`.
+  `stack_profile`. `scripts/slice/gate.sh` expands `{{key}}` from the profile (`--profile`, `SLICE_STACK_PROFILE`, or
+  `stack_profile`) and refuses an undefined placeholder (exit 2); `metrics.py --profile` reads the profile's `metrics`.
   `templates/slice/module-CLAUDE.md` and review checklist B–D are stack-neutral.
 - Adapter `stacks/laravel/`: `profile.json`, `gate.sh` (core gate + profile), `check-module-boundaries.php`,
-  `standards/` (rules, baseline, notes), `codex-review.sh`, `metrics-demo.sh` + `metrics-paths.json`,
+  `standards/` (rules, baseline, notes), `metrics-demo.sh` + `metrics-paths.json`,
   `checklist-commands.md`, `templates/module-CLAUDE.md`, `examples/`, `tests/` (standards, boundaries, profile wiring).
 - Provenance: source project names appear only in `docs/slice-lane/SOURCES.md` (short names REB, CRM, JKM, LL, PLT,
   SES), which also takes the per-project adoption status. METHOD-01 reviews, the 2026-10-19 metrics demo, and the
   slice-method CHANGELOG move to `archive/slice-lane/`.
 - `docs/slice-lane/adoption.md` gains "Adopt in a new stack" (5 steps) and "Laravel profile".
+- Review round R1 (PR #1): the gate resolves every command before running any (an undefined/empty key, a
+  non-snake_case key, a leftover `{{…}}`, or a bad/duplicate name at any index exits 2; before, only index 0 did);
+  the slice-method key is `stack_profile`; `codex-review.sh` stays in the core; `standards-check.sh` takes
+  stack-specific tool-error wording from the profile; `selfcheck.sh` skips an adapter whose toolchain is missing
+  (`--stack <name>` forces it, `--scan-only` runs only the scan) and its neutrality scan now covers `scripts/slice`,
+  stack tool names (php, phpstan, blade, eloquent, octane, …), source backlog ids, and source ports; `metrics.py`
+  no longer strips phase prefixes unless the profile asks. New tests: `test-codex-review.sh`, `test-selfcheck.sh`.
 - `scripts/slice/selfcheck.sh` runs every `stacks/*/tests/test-*.sh` and fails if the core names a stack or source
   project outside `SOURCES.md` and the adoption guide's "Laravel profile" section.
-- `AGENTS.md`, `method/DELIVERY_RULES.md`, `method/OPERATING_MODEL.md`: the `codex-review.sh` path now points at
-  `stacks/laravel/` (same line, line numbers unchanged).
+- `scripts/slice/codex-review.sh` stays in the core (no stack dependency); `AGENTS.md`, `method/DELIVERY_RULES.md`,
+  `method/OPERATING_MODEL.md` are unchanged.
 
 ## v3.0.0-alpha — Slice lane (2026-10-20, tag `v3.0.0-alpha`)
 
