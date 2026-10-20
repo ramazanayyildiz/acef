@@ -9,6 +9,9 @@
 #   ${GATE_LOG_DIR:-<tree>/.tmp/gate}/<name>.log
 # Last line: GATE PASS|FAIL|INCOMPLETE <sha7>[+dirty] <light|full> pass=<n> fail=<n> skip=<n> <seconds>s
 # Exit: 0 all PASS, 1 at least one FAIL, 2 usage/prerequisite, 3 no FAIL but something SKIPPED (INCOMPLETE; never success).
+# Clean tree (unless "require_clean_tree": false or --allow-dirty, which tags the summary +dirty): no tracked change and
+# no untracked file that .gitignore does not cover ("??" in git status), submodules included whatever their "ignore"
+# setting. Only the gate's own log dir is exempt.
 #
 # Placeholders in "run": {{<key>}} (stack profile, expanded first), then {tree} (absolute tree path) and {port}
 # (GATE_PORT, required only if a command uses it).
@@ -130,17 +133,22 @@ ERRLINE=$(printf '%s\n' "$PARSED" | grep -m1 '^ERR ' || true)
 [ -n "$PARSED" ] || die2 "gate.commands could not be read"
 
 REQUIRE_CLEAN=$(printf '%s\n' "$PARSED" | head -n 1 | cut -f4)
+LOGDIR=${GATE_LOG_DIR:-$TREE/.tmp/gate}
+mkdir -p "$LOGDIR" || die2 "cannot create log dir: $LOGDIR"
+LOGDIR=$(cd "$LOGDIR" && pwd -P)
+# Clean = no tracked change AND no untracked, non-ignored file ("??"). The gate's own log dir is the only exclusion.
+set -- .
+case "$LOGDIR/" in "$TREE"/?*) set -- . ":(exclude,top,literal)${LOGDIR#"$TREE"/}";; esac
 DIRTYTAG=""
-DIRTY=$(git -C "$TREE" status --porcelain --untracked-files=no </dev/null)
+DIRTY=$(git -C "$TREE" status --porcelain --untracked-files=all --ignore-submodules=none -- "$@" </dev/null)
 if [ -n "$DIRTY" ]; then
     if [ "$REQUIRE_CLEAN" = 1 ] && [ "$ALLOW_DIRTY" != 1 ]; then
-        printf 'dirty tree (tracked files); pass --allow-dirty to run anyway:\n' >&2; printf '%s\n' "$DIRTY" | head -n 20 >&2; exit 2
+        printf 'dirty tree (changed or untracked files); commit, remove or .gitignore them, or pass --allow-dirty to run anyway:\n' >&2
+        printf '%s\n' "$DIRTY" | head -n 20 >&2; exit 2
     fi
     DIRTYTAG="+dirty"
 fi
 SHA7=$(git -C "$TREE" rev-parse --short=7 HEAD </dev/null)
-LOGDIR=${GATE_LOG_DIR:-$TREE/.tmp/gate}
-mkdir -p "$LOGDIR" || die2 "cannot create log dir: $LOGDIR"
 
 run_with_timeout() { # <seconds> <cmd>; 0 seconds = no timeout
     if [ "$1" -gt 0 ] && command -v timeout >/dev/null 2>&1; then timeout "$1" sh -c "$2"

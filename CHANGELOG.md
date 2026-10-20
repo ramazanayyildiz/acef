@@ -7,6 +7,41 @@ proven, or installed.
 Update this file whenever ACEF itself gains or changes a flow, gate, validator, hook, skill, installer behavior, workflow,
 or evidence contract. Do not use it to claim implementation status; link to the capability record for that.
 
+## ACEF-FIX-02 — Slice lane review/gate hardening (2026-10-20)
+
+Findings from the adoption review (Codex) plus R5 of PR #1. Each fix has a red-first test (separate commit).
+Capability record: `docs/ai/capabilities/slice-lane.json` (unchanged).
+
+- `scripts/slice/codex-review.sh`: every run writes to a fresh temp file next to `<out.md>`; only a non-empty report
+  replaces `<out.md>`, so a report from an earlier run is never read as this run's verdict (no output = exit 3,
+  `<out.md>` untouched). The verdict is parsed strictly: Karar/Verdict/Decision lines must read exactly
+  `PASS` or `REVISE` (optionally `**bold**`); "NOT PASS", "PASSED", or the unfilled "PASS | REVISE" = exit 3.
+- `scripts/slice/gate.sh`: the clean-tree check also fails on untracked files that `.gitignore` does not cover
+  (`git status --porcelain --untracked-files=all`); only the gate's own log dir is exempt, so a second run in a
+  project without `.tmp/` in `.gitignore` is not refused.
+- `scripts/slice/standards-check.sh` (R5): a `stack_profile` in `slice-method.json` that is empty, not a string, or
+  not a readable file exits 2 instead of silently running without the profile.
+- `stacks/laravel`: `{{migrate_roundtrip}}` is now `scripts/migrate-roundtrip.sh` (new `migrate-roundtrip.sh`,
+  mapped in `profile.json` "files"): `migrate`, then `migrate:rollback --step=<n>` with n = migrations that run
+  applied (`migrate:status` "Ran" rows after − before), so an earlier batch is never rolled back; n = 0 exits 3
+  without a rollback. Needs the two-column `migrate:status` output (Laravel 10+, later 9.x). `checklist-commands.md` (C9) and the adapter README follow.
+- Docs: `method/SLICE_LANE.md`, `docs/slice-lane/README.md`, and `templates/slice/review-brief.md` describe the new
+  dirty-tree rule and the exact verdict line.
+- Review round R1 (PR #3): verdict lines inside fenced code (``` / ~~~) are ignored, every remaining verdict line
+  must be valid and agree (a fenced `Verdict: PASS` example before the real `Verdict: REVISE` exited 0), bold must be
+  paired (`**PASS`, `**Verdict: PASS` = exit 3), a `#` heading label is accepted, and the report is parsed before it
+  replaces `<out.md>`. `migrate-roundtrip.sh` passes `--database=`, `--path=`, `--realpath` to status, migrate and
+  rollback (`--force` to migrate and rollback, `--schema-path=` to migrate), refuses any other argument (exit 2), adds
+  `--no-ansi` to every call, counts only rows newer than the pre-run newest batch, and refuses (exit 3) a fresh
+  database with a schema dump or new rows spanning several batches. The gate's dirty check adds
+  `--ignore-submodules=none`. Red tests in their own commit.
+- Review round R2 (PR #3): Laravel loads a schema dump whenever no migration has run, an existing but empty
+  migrations table included, so `migrate-roundtrip.sh` now refuses (exit 3, before `migrate`) whenever the pre-run
+  status has zero Ran rows, dump file or not (a configured dump path is not visible to the script).
+- Tests: `test-codex-review.sh` (fake codex: stale output, verdict forms), `test-gate.sh` (untracked/ignored files,
+  repeated run without `.gitignore`), new `test-standards-check.sh`, new `stacks/laravel/tests/test-migrate-roundtrip.sh`
+  (fake `php`; lives in the adapter because the core neutrality scan forbids stack words under `scripts/slice/`).
+
 ## fix(schema): accept prerelease method_version (2026-10-20)
 
 `slice-method.schema.json` `method_version` now accepts semver prerelease/build (`3.0.0-beta`); partial versions such as `3.0` stay rejected. Shipped examples updated to `3.0.0-beta`; new `scripts/slice/tests/test-method-version.sh`. `stack-profile.schema.json` has no `method_version` (its `profile_version` is unchanged).

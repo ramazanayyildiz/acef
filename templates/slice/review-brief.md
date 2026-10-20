@@ -31,6 +31,8 @@ Karar: **PASS | REVISE**
 Tarih: <YYYY-MM-DD> · Aday `<sha>` · Taban `<sha>` · Model: <ad> · Süre: <dk> · Ortam: <worktree, DB, port>
 ```
 
+Karar satırı tam olarak `Karar: **PASS**` ya da `Karar: **REVISE**` olur; biçim örneklerini ``` bloğuna koy. `scripts/slice/codex-review.sh` blok dışındaki her karar satırının bu biçimde ve aynı olmasını ister; başka her biçimi ("NOT PASS", doldurulmamış "PASS | REVISE", çelişen satırlar) araç hatası sayar.
+
 Bulgu tablosu: `| # | Önem | Blok | Dosya:satır | Yeniden üretim ve kanıt | Öneri |`. Ürün koduna dokunma; mutasyonlar geri alınır. Depolara rapor dışında yazma yok.
 
 ## Yasaklar

@@ -16,7 +16,7 @@ core templates carried before ACEF-NEUTRAL-01 (provenance: `docs/slice-lane/SOUR
 | `{{standards_check}}` | `scripts/standards-check.sh {tree}` with `scripts/standards/rules.json` from `standards/rules.example.json` |
 | `{{route_list}}` | `php artisan route:list --json` |
 | `{{app_shell}}` | `php artisan tinker --execute` |
-| `{{migrate_roundtrip}}` | `php artisan migrate && php artisan migrate:rollback` |
+| `{{migrate_roundtrip}}` | `scripts/migrate-roundtrip.sh [--database=<conn>] [--path=…] [--realpath] [--force] [--schema-path=…]` (from `migrate-roundtrip.sh`): `php artisan migrate`, then `php artisan migrate:rollback --step=<n>`, n = rows newer than the newest batch before the run; arguments reach status, migrate and rollback alike, all calls `--no-ansi`; any other argument exits 2; nothing applied, zero Ran rows before the run (missing or empty migrations table: a schema dump could load), or new rows in more than one batch exit 3 without a rollback. Laravel 10+ (two-column `migrate:status`) |
 | `{{dependency_check}}` | `composer validate --strict` |
 | `{{browser_smoke}}` | `APP_ORIGIN=http://127.0.0.1:{port} npm run test:smoke` |
 
@@ -32,7 +32,7 @@ core templates carried before ACEF-NEUTRAL-01 (provenance: `docs/slice-lane/SOUR
 | C6 | `git grep -n "env('" -- config` ↔ `.env.example`, `phpunit*.xml` (e.g. `CACHE_DRIVER` ↔ `CACHE_STORE`) |
 | C7 | `config/route_permissions.php` value ↔ `Policy::<ability>` line, per changed route |
 | C8 | `View::exists` loop, or `route:list` + `git grep "view('"` |
-| C9 | no-op `migrate` → `migrate:rollback`: table and index still there; `down()` never drops a host table |
+| C9 | Order: (1) migrate the lane DB from the BASE worktree first (`php artisan migrate` there), (2) then run `scripts/migrate-roundtrip.sh` from the SLICE tree against that DB. Running `migrate` from the slice tree first applies the slice's own migrations, and the check then exits 3 (nothing to apply). The script rolls back only the slice's migrations (`--step=<n>`), never an earlier batch; afterwards host table and index still there; `down()` never drops a host table |
 | D2 | Octane workers, queue workers: request-scoped cache, static state, generation/invalidation |
 | D3 | cross-tenant matrix covers HTML + JSON + Livewire payloads |
 
