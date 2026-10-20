@@ -79,8 +79,9 @@ backlog -> slice file -> own worktree + port + DB    ->  clean-tree re-run      
    `templates/slice/review-checklist.md`). Verify the claims, not the report. Re-apply every developer mutation and add
    at least one own mutation. When a package view/lang/config key changes, scan the hosts for includes
    (checklist B1).
-   Verdict: PASS | REVISE — the report's first verdict line is exactly one of them; `scripts/slice/codex-review.sh`
-   reads anything else ("NOT PASS", the unfilled "PASS | REVISE") as a tool error, never a pass.
+   Verdict: PASS | REVISE — every verdict line outside fenced code reads exactly one of them, and they agree;
+   `scripts/slice/codex-review.sh` reads anything else ("NOT PASS", the unfilled "PASS | REVISE", disagreeing lines)
+   as a tool error, never a pass.
 5. **REVISE** → fix inside the same allowed list → **targeted re-review in a new session**
    (`templates/slice/review-r2.md`): only the previous findings plus the fix diff.
 6. **Closing note** (`templates/slice/closing-note.md`): verdict, commits, durations, REVISE rounds, escaped defect,

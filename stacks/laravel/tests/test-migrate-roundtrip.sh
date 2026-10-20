@@ -27,7 +27,7 @@ case "$1" in
     done < "$S";;
   migrate)
     touch "$S.table"; m=$(awk '$2>m{m=$2} END{print m+0}' "$S")
-    awk -v nb=$((m+1)) '{ if ($2==0) $2=nb; print }' "$S" > "$S.new" && mv "$S.new" "$S";;
+    awk -v nb=$((m+1)) -v sp="${FAKE_SPLIT:-0}" '{ if ($2==0) { $2=nb; if (sp) nb++ } print }' "$S" > "$S.new" && mv "$S.new" "$S";;
   migrate:rollback) :;;
   *) exit 64;;
 esac
@@ -51,12 +51,12 @@ roundtrip() { # <state lines> <table exists 0|1> [args to the placeholder...] ->
 rb() { grep '^migrate:rollback' "$T/log" 2>/dev/null | tr '\n' ';'; }
 roundtrip $'old_a 1\nold_b 1\nold_c 2\nnew_x 0\n' 1; rc=$?
 check "$rc" 0 "earlier batches + 1 pending -> round trip passes"
-check "$(rb)" "migrate:rollback --step=1;" "rolls back only the 1 migration it applied (--step=1), not batch 2"
+check "$(rb)" "migrate:rollback --no-ansi --step=1;" "rolls back only the 1 migration it applied (--step=1), not batch 2"
 roundtrip $'old_a 1\nnew_x 0\nnew_y 0\n' 1
-check "$(rb)" "migrate:rollback --step=2;" "2 pending -> --step=2"
+check "$(rb)" "migrate:rollback --no-ansi --step=2;" "2 pending -> --step=2"
 roundtrip $'new_x 0\nnew_y 0\nnew_z 0\n' 0; rc=$?
 check "$rc" 0 "no migrations table yet -> passes"
-check "$(rb)" "migrate:rollback --step=3;" "no migrations table yet -> --step=3 (everything this run applied)"
+check "$(rb)" "migrate:rollback --no-ansi --step=3;" "no migrations table yet -> --step=3 (everything this run applied)"
 roundtrip $'old_a 1\nold_b 2\n' 1; rc=$?
 [ "$rc" -ne 0 ]; check "$?" 0 "nothing pending -> non-zero (the round trip did not happen)"
 check "$(rb)" "" "nothing pending -> no rollback at all"
@@ -84,4 +84,7 @@ check "$rc" 3 "no migrations table + a schema dump -> exit 3 (dump rows would be
 grep -q '^migrate\( \|$\)' "$T/log" 2>/dev/null; check "$?" 1 "schema dump case: migrate never runs"
 roundtrip $'old_a 1\nnew_x 0\n' 1; check "$?" 0 "schema dump + existing migrations table -> normal round trip"
 rm -rf "$T/app/database"
+FAKE_SPLIT=1 roundtrip $'old_a 1\nnew_x 0\nnew_y 0\n' 1; rc=$?
+check "$rc" 3 "new rows in more than one batch -> exit 3"
+check "$(rb)" "" "new rows in more than one batch -> no rollback"
 echo "test-migrate-roundtrip: ok=$ok fail=$bad"; [ "$bad" -eq 0 ]

@@ -14,7 +14,7 @@ Capability record: `docs/ai/capabilities/slice-lane.json` (unchanged).
 
 - `scripts/slice/codex-review.sh`: every run writes to a fresh temp file next to `<out.md>`; only a non-empty report
   replaces `<out.md>`, so a report from an earlier run is never read as this run's verdict (no output = exit 3,
-  `<out.md>` untouched). The verdict is parsed strictly: the first Karar/Verdict/Decision line must be exactly
+  `<out.md>` untouched). The verdict is parsed strictly: Karar/Verdict/Decision lines must read exactly
   `PASS` or `REVISE` (optionally `**bold**`); "NOT PASS", "PASSED", or the unfilled "PASS | REVISE" = exit 3.
 - `scripts/slice/gate.sh`: the clean-tree check also fails on untracked files that `.gitignore` does not cover
   (`git status --porcelain --untracked-files=all`); only the gate's own log dir is exempt, so a second run in a
@@ -27,6 +27,14 @@ Capability record: `docs/ai/capabilities/slice-lane.json` (unchanged).
   without a rollback. Needs the two-column `migrate:status` output (Laravel 10+, later 9.x). `checklist-commands.md` (C9) and the adapter README follow.
 - Docs: `method/SLICE_LANE.md`, `docs/slice-lane/README.md`, and `templates/slice/review-brief.md` describe the new
   dirty-tree rule and the exact verdict line.
+- Review round R1 (PR #3): verdict lines inside fenced code (``` / ~~~) are ignored, every remaining verdict line
+  must be valid and agree (a fenced `Verdict: PASS` example before the real `Verdict: REVISE` exited 0), bold must be
+  paired (`**PASS`, `**Verdict: PASS` = exit 3), a `#` heading label is accepted, and the report is parsed before it
+  replaces `<out.md>`. `migrate-roundtrip.sh` passes `--database=`, `--path=`, `--realpath` to status, migrate and
+  rollback (`--force` to migrate and rollback, `--schema-path=` to migrate), refuses any other argument (exit 2), adds
+  `--no-ansi` to every call, counts only rows newer than the pre-run newest batch, and refuses (exit 3) a fresh
+  database with a schema dump or new rows spanning several batches. The gate's dirty check adds
+  `--ignore-submodules=none`. Red tests in their own commit.
 - Tests: `test-codex-review.sh` (fake codex: stale output, verdict forms), `test-gate.sh` (untracked/ignored files,
   repeated run without `.gitignore`), new `test-standards-check.sh`, new `stacks/laravel/tests/test-migrate-roundtrip.sh`
   (fake `php`; lives in the adapter because the core neutrality scan forbids stack words under `scripts/slice/`).
