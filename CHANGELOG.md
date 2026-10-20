@@ -7,6 +7,22 @@ proven, or installed.
 Update this file whenever ACEF itself gains or changes a flow, gate, validator, hook, skill, installer behavior, workflow,
 or evidence contract. Do not use it to claim implementation status; link to the capability record for that.
 
+## Slice evidence reuse and canonical references (2026-10-20)
+
+Documentation/templates only, based on main `bdee785`: one canonical record per execution and one verdict per required
+reviewer/round. Bind evidence to commands/results/logs, candidate/main/merge-base, test/standards and relevant
+dependency/DB/fixture/toolchain/environment versions. Reuse a valid independent broad run by reference; invalidate
+affected evidence after changes, and broaden checks when impact cannot be bounded. Same SHA or range-diff alone
+does not establish validity. Never relabel an old run as a new one.
+
+The first independent clean run, independent review and its required targeted checks remain. Reviewer counts/model
+requirements, HAFİF/TAM, mutation dose, applicable browser acceptance, stronger high-risk repeats and merge gates do
+not change. Slice/checklist/closing summaries reference evidence/verdicts rather than copying logs/findings. Existing
+report names, verdict syntax, metrics closing fields and cost fields remain; unmeasured values are not estimated.
+No runtime, schema, installer, automation or metric consumer changes; no measured savings claimed.
+
+Capability record: `docs/ai/capabilities/slice-evidence-reuse.json` (`documented-only`).
+
 ## ACEF-FIX-03 — no false PASS from zero tests or invalid regex; applicability and cost fields (2026-10-20)
 
 On top of `e7afe40` (`fix/slice-fail-closed-20261020`, entry below), which already refuses string booleans in gate

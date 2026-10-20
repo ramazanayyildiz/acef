@@ -6,12 +6,13 @@ Rol: bağımsız inceleyici. Geliştiriciyle aynı oturum değilsin. **Farklı m
 
 - Dilim: `<slices-dizini>/<SLICE-ID>.md` · Dev raporu: `<slices-dizini>/<SLICE-ID>-dev-report.md`
 - Taban `<taban-sha>` · Aday `<aday-sha>` · Yalnız-test commit'i `<test-sha>`
+- İlk bağımsız temiz koşu: `<kanonik kayıt bağlantısı>` (koordinatör/inceleyici, geliştirici değil); main `<sha>`, merge-base `<sha>`; test/standart/config, bağımlılık, DB/fixture, toolchain ve ilgili ortam bağları `<kayıt/başlık bağlantısı>`
 - Sınıf: TAM | HAFİF · Ortam: kendi worktree `<yol>`, port `<port>`, DB `<lane DB>` (paylaşılan DB ve ana önizleme portu YASAK)
 - Değişmezler: `<invariants-dosyası>` · Kontrol listesi: `templates/review-checklist.md`
 
 ## Adımlar
 
-1. **Temiz ağaç:** ayrı worktree, `git status --short` boş. Dev raporundaki komutları yeniden koş → komut / beklenen / gerçek tablosu (checklist A1). Fark varsa ilk bulgu odur.
+1. **Temiz ağaç:** ayrı worktree, `git status --short` boş. Dev raporundaki her komutun ilk bağımsız temiz koşusu zorunlu (checklist A1). Kendin koş veya koordinatörün bağımsız kaydının kaynağını, bağlarını ve kapsamını doğrula; eksik/geçersiz kanıtı yeniden üret. Geçerli geniş koşuyu yalnız aynı rapor için tekrarlama (`method/SLICE_LANE.md` "Evidence validity and reuse"). Aynı SHA veya `range-diff` tek başına yetmez; etki sınırlanamıyorsa geniş koşu gerekir. Kendi bağımsız değerlendirmeni ve aşağıdaki zorunlu hedefli kontrolleri yap; TAM/yüksek riskteki açık tekrar yükümlülükleri korunur. Fark varsa ilk bulgu odur.
 2. **İzinli liste:** `git diff --name-only <taban>..<aday>` (A2). Liste dışı dosya = REVISE, ancak dilimin "Ekler" bölümünde tarihli koordinatör eki varsa geçerli.
 3. **Kırmızı-önce:** `<test-sha>`'yı checkout et, testler kırmızı (A3).
 4. **K maddeleri:** K1..Kn tek tek PASS / FAIL + kanıt (komut çıktısı özeti veya dosya:satır).
@@ -32,6 +33,8 @@ Tarih: <YYYY-MM-DD> · Aday `<sha>` · Taban `<sha>` · Model: <ad> · Süre: <d
 ```
 
 Karar satırı tam olarak `Karar: **PASS**` ya da `Karar: **REVISE**` olur; biçim örneklerini ``` bloğuna koy. `scripts/slice/codex-review.sh` blok dışındaki her karar satırının bu biçimde ve aynı olmasını ister; başka her biçimi ("NOT PASS", doldurulmamış "PASS | REVISE", çelişen satırlar) araç hatası sayar.
+
+Bu dosya bu inceleyicinin bu turdaki kanonik kararıdır; diğer zorunlu inceleyicilerin kararları ayrıdır. Komut / beklenen / gerçek tablosunda her kendi koşun için kimlik, exit/test sayısı, ham log ve yukarıdaki bağları kaydet; K/checklist/özetler aynı kayda atıf verir. Yeniden kullanılan kaydın eski bağlarını değiştirme; güncel aday/taban/ortam ve etkilenmeme gerekçesini atfa ekle. NOT_RUN, sıfır test veya başarısız/eksik komut test PASS'ı değildir; eksik zorunlu kanıtla PASS verilmez.
 
 Bulgu tablosu: `| # | Önem | Blok | Dosya:satır | Yeniden üretim ve kanıt | Öneri |`. Ürün koduna dokunma; mutasyonlar geri alınır. Depolara rapor dışında yazma yok.
 

@@ -11,16 +11,18 @@ Uygulanabilirlik (açık kural):
 
 İnceleyici dilim ve dev raporundaki gerekçeyi doğrular; uygulanabilir kontrol atlanmaz. TAM şartları değişmez.
 
+Kanıt atıfları `method/SLICE_LANE.md` "Evidence validity and reuse" kuralına tabidir: her koşunun tek kaydı, komut/sonuç/exit/test sayısı/log ve aday/main/merge-base/test/standart/ilgili ortam bağları vardır. A1'deki ilk bağımsız temiz koşu geliştirici raporuyla ikame edilmez. Geçerli geniş koşuyu A5 veya başka bir özet için yeniden üretme; kendi zorunlu hedefli kontrollerini yap. Değişim etkilenen kanıtı geçersizleştirir; etki sınırlanamıyorsa geniş koşu gerekir. TAM/yüksek risk tekrarları korunur.
+
 ## A — Her dilim
 
 | # | Madde | Kanıt (komut / dosya) |
 |---|---|---|
-| A1 | Temiz ağaçta yeniden koşu: aday commit'in AYRI worktree'si, `git status --short` boş, dev raporundaki her komut | `git worktree add --detach <yol> <aday>`; tablo komut → beklenen → gerçek → `A1-rerun.txt` |
+| A1 | İlk bağımsız temiz koşu: aday commit'in AYRI worktree'si, `git status --short` boş, dev raporundaki her komut; koordinatör veya inceleyici koşar | `git worktree add --detach <yol> <aday>`; komut → beklenen → gerçek → `A1-rerun.txt` veya doğrulanan kanonik kayıt; çalıştıran, bağlar, kapsam, güncel geçerlilik gerekçesi |
 | A2 | İzinli liste dışında değişiklik yok | `git diff --name-only <taban>..<aday>` ile dilimin izinli listesi karşılaştırması → `A2-allowed.txt` |
 | A3 | Kırmızı-önce kanıtı: yalnız-test commit'i ürün kodsuz kırmızı | `git checkout <test-sha> && <dilim testi>` → kırmızı sayısı → `A3-red-first.txt` |
 | A4 | Geliştiricinin her mutasyonu inceleyici tarafından YENİDEN uygulandı + inceleyicinin kendi en az bir mutasyonu (TAM: kural başına 3–5; HAFİF: davranış değişikliği başına bir); HAFİF'te yeni/değişen davranış yoksa gerekçeli uygulanmaz | her biri için `<evidence>/…/review/mutations/M<n>.txt` (diff + kırmızı test çıktısı); sonda `git status --short` boş; ya da inceleyicinin doğruladığı uygulanmaz gerekçesi |
-| A5 | Kapı, standart, statik analiz, sınır | `scripts/gate.sh <worktree>` son satır; `{{standards_check}}`, `{{static_analysis}}`, `{{boundary_check}}` son satırları |
-| A6 | İddiaları doğrula, raporu değil: dev raporundaki her "yapıldı/geçti" cümlesi kendi komutunla | rapor içinde iddia → kendi kanıtın tablosu |
+| A5 | Kapı, standart, statik analiz, sınır; geçerli bağımsız A1 kaydını aynı sonuç için tekrar üretme | `scripts/gate.sh <worktree>`, `{{standards_check}}`, `{{static_analysis}}`, `{{boundary_check}}` kanonik kayıtlarına atıf; geçersiz/eksik olan veya açıkça yeniden istenen kontrol yeniden koşulur |
+| A6 | İddiaları doğrula, raporu değil: her "yapıldı/geçti" iddiasını bağımsız değerlendir; zorunlu hedefli kontroller kendi komutunla | iddia → kendi kanıtın veya geçerliliğini doğruladığın bağımsız geniş koşu kaydı; bağlantı tek başına doğrulama değildir |
 
 ## B — Paket anahtarı değişti (görünüm, çeviri, config, rota adı)
 
