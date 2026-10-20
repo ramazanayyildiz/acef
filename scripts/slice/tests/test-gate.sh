@@ -104,6 +104,29 @@ smj "c['gate']['commands']=[{'name':'a','run':'{{test_command}}'},{'name':'b','r
 gate_case 2 "triple braces {{{key}}} -> exit 2" --profile "$T.prof/c.json" "$T"
 smj "c['gate']['commands']=[{'name':'a','run':'{{test_command}}'},{'name':'b','run':'echo {{test_command}}}'}]"
 gate_case 2 "unbalanced closing braces -> exit 2" --profile "$T.prof/c.json" "$T"
+# ---- Control fields must match the schema, never Python truthiness/coercion ----
+for value in "'false'" 0 None '[]'; do
+    smj "c['gate']={'commands':[{'name':'a','run':'touch $T.prof/ran'},{'name':'must-fail','run':'false','full_only':$value}]}"
+    gate_case 2 "non-boolean full_only $value refused before execution" "$T"
+done
+for value in "'false'" 0 None; do
+    smj "c['gate']={'require_clean_tree':$value,'commands':[{'name':'a','run':'touch $T.prof/ran'}]}"
+    gate_case 2 "non-boolean require_clean_tree $value refused" "$T"
+done
+for value in "'5'" True 0 -1 1.5 None; do
+    smj "c['gate']={'commands':[{'name':'a','run':'touch $T.prof/ran'},{'name':'b','run':'true','timeout_s':$value}]}"
+    gate_case 2 "invalid timeout_s $value refused before execution" "$T"
+done
+for value in "'Bad'" "'.'" "'x\\r'" "'x\\x00'" 7; do
+    smj "c['gate']={'commands':[{'name':'a','run':'touch $T.prof/ran'},{'name':$value,'run':'true'}]}"
+    gate_case 2 "invalid name $value refused before execution" "$T"
+done
+smj "c['gate']={'commands':[{'name':'a','run':'touch $T.prof/ran','full_ony':True}]}"
+gate_case 2 "misspelled command control field refused" "$T"
+smj "c['gate']={'require_clean_tre':True,'commands':[{'name':'a','run':'touch $T.prof/ran'}]}"
+gate_case 2 "misspelled gate control field refused" "$T"
+smj "c['gate']={'require_clean_tree':False,'commands':[{'name':'must-fail','run':'false','full_only':False,'timeout_s':1}]}"
+gate_case 1 "valid false boolean runs failing command" "$T"
 # shipped core example + every shipped adapter profile without browser_smoke (light and --full)
 python3 -c "import json,sys;c=json.load(open(sys.argv[1]));c.pop('stack_profile',None);c.pop('stack_profile',None);json.dump(c,open('slice-method.json','w'))" "$ROOT/docs/slice-lane/examples/slice-method.example.json"
 git commit -qam shipped >/dev/null
