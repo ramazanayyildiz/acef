@@ -150,6 +150,16 @@ printf '{ "stack": "t", "profile_version": "1.0.0", "placeholders": { "test_comm
 gate_case 2 "invalid zero_tests_patterns regex -> exit 2" --profile "$T.prof/zbad.json" "$T"
 printf '{ "stack": "t", "profile_version": "1.0.0", "placeholders": { "test_command": "touch %s/ran" }, "gate": { "zero_tests_patterns": "No tests" } }\n' "$T.prof" > "$T.prof/zstr.json"
 gate_case 2 "zero_tests_patterns that is not a list -> exit 2" --profile "$T.prof/zstr.json" "$T"
+# ---- R1 of PR #4: combined zero-tests ERE, lone {port} skip, ANSI inside the phrase ----
+printf '{ "stack": "t", "profile_version": "1.0.0", "placeholders": { "test_command": "touch %s/ran" }, "gate": { "zero_tests_patterns": ["(zero) \\\\1"] } }\n' "$T.prof" > "$T.prof/zback.json"
+smj "c['gate']={'commands':[{'name':'tests','run':'{{test_command}}'}]}"
+gate_case 2 "patterns valid alone but invalid combined (backreference) -> exit 2 (was: zero-tests check off, GATE PASS)" --profile "$T.prof/zback.json" "$T"
+smj "c['gate']={'commands':[{'name':'smoke','run':'echo {port}'}]}"
+out=$(env -u GATE_PORT "$HERE/gate.sh" "$T" 2>&1); rc=$?
+check "$rc" 3 "only command skipped for a missing GATE_PORT -> INCOMPLETE exit 3 (documented skip)"
+printf '%s\n' "$out" | tail -n 1 | grep -q '^GATE INCOMPLETE .* pass=0 fail=0 skip=1 ' && check 1 1 "summary says GATE INCOMPLETE skip=1" || check 0 1 "summary says GATE INCOMPLETE skip=1"
+smj "c['gate']={'commands':[{'name':'tests','run':'printf \"No tests \\\\033[33mexecuted!\\\\033[0m\\\\n\"'}]}"
+"$HERE/gate.sh" "$T" >/dev/null 2>&1; check "$?" 1 "ANSI colour inside 'No tests executed!' -> still FAIL"
 # shipped core example + every shipped adapter profile without browser_smoke (light and --full)
 python3 -c "import json,sys;c=json.load(open(sys.argv[1]));c.pop('stack_profile',None);c.pop('stack_profile',None);json.dump(c,open('slice-method.json','w'))" "$ROOT/docs/slice-lane/examples/slice-method.example.json"
 git commit -qam shipped >/dev/null

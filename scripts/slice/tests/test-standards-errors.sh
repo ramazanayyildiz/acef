@@ -45,4 +45,8 @@ rules '{"scope":["*.txt"],"line_checks":[{"id":"BROKEN-LC","mode":"any","pattern
 NAMES=BROKEN-LC run_case 2 "unbalanced ( in a line check -> exit 2"
 rules '{"counters":[{"id":"BROKEN-CT","pattern":"a{2,1}","paths":["*.txt"],"label":"x"}]}'
 NAMES=BROKEN-CT run_case 2 "invalid repeat in a counter -> exit 2"
+# R4 of PR #4: each tool_error_pattern is checked on its own ("[" and "]" join into a valid class)
+rules '{"counters":[{"id":"BAD","pattern":"absent","paths":["*.txt"],"label":"no match"}]}'
+printf '{"standards":{"tool_error_patterns":["[","]"]}}\n' > profile.json
+run_case 2 "tool_error_patterns [\"[\", \"]\"] (valid only when joined) refused" --profile "$T/profile.json"
 echo "test-standards-errors: ok=$ok fail=$bad"; [ "$bad" -eq 0 ]
