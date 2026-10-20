@@ -1,6 +1,8 @@
 #!/bin/bash
 # Self-test for gate.sh: PASS, FAIL, full_only SKIP, {port} without GATE_PORT -> INCOMPLETE (exit 3), dirty refusal,
 # untracked non-ignored files refused (ACEF-FIX-02), {{placeholder}} expansion from a stack profile (--profile and "stack_profile"), undefined placeholder refused.
+# ACEF-FIX-03: a gate that ran no command is FAIL, never PASS; a command whose output says zero tests ran is FAIL unless
+# it carries "allow_empty": true (a JSON boolean); the profile's gate.zero_tests_patterns extend the core pattern.
 set -u
 HERE=$(cd "$(dirname "$0")/.." && pwd -P)
 ROOT=$(cd "$HERE/../.." && pwd -P)
@@ -127,6 +129,27 @@ smj "c['gate']={'require_clean_tre':True,'commands':[{'name':'a','run':'touch $T
 gate_case 2 "misspelled gate control field refused" "$T"
 smj "c['gate']={'require_clean_tree':False,'commands':[{'name':'must-fail','run':'false','full_only':False,'timeout_s':1}]}"
 gate_case 1 "valid false boolean runs failing command" "$T"
+# ---- ACEF-FIX-03: zero commands ran / zero tests executed ----
+printf '{ "stack": "t", "profile_version": "1.0.0", "placeholders": { "test_command": "touch %s/ran" } }\n' "$T.prof" > "$T.prof/z.json"
+smj "c['gate']={'commands':[{'name':'tests','run':'{{test_command}}','full_only':True}]}"
+out=$(env -u SLICE_STACK_PROFILE "$HERE/gate.sh" --profile "$T.prof/z.json" "$T" 2>&1); rc=$?
+check "$rc" 1 "light gate whose every command is full_only (nothing ran) -> FAIL exit 1 (was GATE PASS pass=0)"
+printf '%s\n' "$out" | tail -n 1 | grep -q '^GATE FAIL .* pass=0 fail=0 ' && check 1 1 "summary says GATE FAIL pass=0 fail=0" || check 0 1 "summary says GATE FAIL pass=0 fail=0"
+smj "c['gate']={'commands':[{'name':'tests','run':'echo No tests executed!'}]}"
+out=$("$HERE/gate.sh" "$T" 2>&1); rc=$?
+check "$rc" 1 "command printing 'No tests executed!' with exit 0 -> FAIL"
+printf '%s\n' "$out" | grep -q '^FAIL tests .*zero tests' && check 1 1 "FAIL line says zero tests" || check 0 1 "FAIL line says zero tests"
+smj "c['gate']={'commands':[{'name':'tests','run':'echo No tests executed!','allow_empty':True}]}"
+"$HERE/gate.sh" "$T" >/dev/null 2>&1; check "$?" 0 "same command with allow_empty: true -> PASS"
+smj "c['gate']={'commands':[{'name':'tests','run':'{{test_command}}','allow_empty':'true'}]}"
+gate_case 2 "allow_empty given as the string \"true\" -> exit 2" --profile "$T.prof/z.json" "$T"
+printf '{ "stack": "t", "profile_version": "1.0.0", "placeholders": { "test_command": "echo 0 specs run" }, "gate": { "zero_tests_patterns": ["^0 specs run$"] } }\n' > "$T.prof/zt.json"
+smj "c['gate']={'commands':[{'name':'tests','run':'{{test_command}}'}]}"
+"$HERE/gate.sh" --profile "$T.prof/zt.json" "$T" >/dev/null 2>&1; check "$?" 1 "stack profile gate.zero_tests_patterns match -> FAIL"
+printf '{ "stack": "t", "profile_version": "1.0.0", "placeholders": { "test_command": "touch %s/ran" }, "gate": { "zero_tests_patterns": ["foo("] } }\n' "$T.prof" > "$T.prof/zbad.json"
+gate_case 2 "invalid zero_tests_patterns regex -> exit 2" --profile "$T.prof/zbad.json" "$T"
+printf '{ "stack": "t", "profile_version": "1.0.0", "placeholders": { "test_command": "touch %s/ran" }, "gate": { "zero_tests_patterns": "No tests" } }\n' "$T.prof" > "$T.prof/zstr.json"
+gate_case 2 "zero_tests_patterns that is not a list -> exit 2" --profile "$T.prof/zstr.json" "$T"
 # shipped core example + every shipped adapter profile without browser_smoke (light and --full)
 python3 -c "import json,sys;c=json.load(open(sys.argv[1]));c.pop('stack_profile',None);c.pop('stack_profile',None);json.dump(c,open('slice-method.json','w'))" "$ROOT/docs/slice-lane/examples/slice-method.example.json"
 git commit -qam shipped >/dev/null
