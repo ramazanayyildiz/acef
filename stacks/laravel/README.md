@@ -9,7 +9,7 @@ stack-neutral: stack commands appear as `{{test_command}}`, `{{static_analysis}}
 | `profile.json` | fills the placeholders (schema: `schemas/stack-profile.schema.json`) | `scripts/stack-profile.json` (`slice-method.json` → `"stack_profile"`) |
 | `gate.sh` | runs the core `scripts/slice/gate.sh` with `--profile profile.json` (from an acef checkout) | — (apps copy the core gate) |
 | `check-module-boundaries.php` | module → module dependency ratchet (`--namespace`, `--modules-dir`) | `scripts/check-module-boundaries.php` |
-| `migrate-roundtrip.sh` | `{{migrate_roundtrip}}` (checklist C9): `migrate`, then `migrate:rollback --step=<n>` for only what that run applied; `--database=`/`--path=`/`--force` pass through; n = 0 exits 3 | `scripts/migrate-roundtrip.sh` |
+| `migrate-roundtrip.sh` | `{{migrate_roundtrip}}` (checklist C9): `migrate`, then `migrate:rollback --step=<n>` for only what that run applied; `--database=`/`--path=`/`--force` pass through; n = 0 exits 3. Order: migrate the lane DB from the BASE worktree first, then run the check from the slice tree (migrating from the slice tree first applies the slice's migrations and the check exits 3) | `scripts/migrate-roundtrip.sh` |
 | `standards/` | Laravel rules for the core standards engine, baseline example, per-slice notes README | `scripts/standards/` |
 | `checklist-commands.md` | Laravel commands for review checklist B–D and the dev-report self-check | read by reviewers |
 | `templates/module-CLAUDE.md` | filled-in module rules (Livewire, `DB::`, `route.permission`) | `app/Modules/<Module>/CLAUDE.md` |

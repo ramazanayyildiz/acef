@@ -32,7 +32,7 @@ core templates carried before ACEF-NEUTRAL-01 (provenance: `docs/slice-lane/SOUR
 | C6 | `git grep -n "env('" -- config` ↔ `.env.example`, `phpunit*.xml` (e.g. `CACHE_DRIVER` ↔ `CACHE_STORE`) |
 | C7 | `config/route_permissions.php` value ↔ `Policy::<ability>` line, per changed route |
 | C8 | `View::exists` loop, or `route:list` + `git grep "view('"` |
-| C9 | `scripts/migrate-roundtrip.sh` on a database at the base schema (the slice's migrations pending): rolls back only those (`--step=<n>`), never an earlier batch; afterwards host table and index still there; `down()` never drops a host table |
+| C9 | Order: (1) migrate the lane DB from the BASE worktree first (`php artisan migrate` there), (2) then run `scripts/migrate-roundtrip.sh` from the SLICE tree against that DB. Running `migrate` from the slice tree first applies the slice's own migrations, and the check then exits 3 (nothing to apply). The script rolls back only the slice's migrations (`--step=<n>`), never an earlier batch; afterwards host table and index still there; `down()` never drops a host table |
 | D2 | Octane workers, queue workers: request-scoped cache, static state, generation/invalidation |
 | D3 | cross-tenant matrix covers HTML + JSON + Livewire payloads |
 
