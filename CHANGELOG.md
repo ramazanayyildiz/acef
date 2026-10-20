@@ -7,6 +7,10 @@ proven, or installed.
 Update this file whenever ACEF itself gains or changes a flow, gate, validator, hook, skill, installer behavior, workflow,
 or evidence contract. Do not use it to claim implementation status; link to the capability record for that.
 
+## fix(schema): accept prerelease method_version (2026-10-20)
+
+`slice-method.schema.json` `method_version` now accepts semver prerelease/build (`3.0.0-beta`); partial versions such as `3.0` stay rejected. Shipped examples updated to `3.0.0-beta`; new `scripts/slice/tests/test-method-version.sh`. `stack-profile.schema.json` has no `method_version` (its `profile_version` is unchanged).
+
 ## ACEF-NEUTRAL-01 — stack-neutral Slice lane core + stacks/laravel adapter (2026-10-20)
 
 The Slice lane is used across stacks and projects, but the v3.0.0-alpha import carried Laravel commands and source
