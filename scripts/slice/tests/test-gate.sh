@@ -72,6 +72,16 @@ smj "c['gate']['commands']=[{'name':'a','run':'{{test_command}}'},{'name':'b','r
 gate_case 2 "kebab {{test-command}} -> exit 2" --profile "$T.prof/p.json" "$T"
 smj "c['gate']['commands']=[{'name':'a','run':'{{test_command}}'},{'name':'b','run':'{{nested}}'}]"
 gate_case 2 "profile value with a leftover {{…}} -> exit 2" --profile "$T.prof/p.json" "$T"
+# ---- R2 (Codex): control characters and malformed braces ----
+printf '{ "stack": "t", "profile_version": "1.0.0", "placeholders": { "test_command": "touch %s/ran", "nul": "\\u0000", "ctl": "true\\u0007" } }\n' "$T.prof" > "$T.prof/c.json"
+smj "c['gate']['commands']=[{'name':'a','run':'{{test_command}}'},{'name':'b','run':'{{nul}}'}]"
+gate_case 2 "profile value that is a NUL byte -> exit 2" --profile "$T.prof/c.json" "$T"
+smj "c['gate']['commands']=[{'name':'a','run':'{{test_command}}'},{'name':'b','run':'{{ctl}}'}]"
+gate_case 2 "profile value with a control character -> exit 2" --profile "$T.prof/c.json" "$T"
+smj "c['gate']['commands']=[{'name':'a','run':'{{test_command}}'},{'name':'b','run':'{{{test_command}}}'}]"
+gate_case 2 "triple braces {{{key}}} -> exit 2" --profile "$T.prof/c.json" "$T"
+smj "c['gate']['commands']=[{'name':'a','run':'{{test_command}}'},{'name':'b','run':'echo {{test_command}}}'}]"
+gate_case 2 "unbalanced closing braces -> exit 2" --profile "$T.prof/c.json" "$T"
 # shipped core example + every shipped adapter profile without browser_smoke (light and --full)
 python3 -c "import json,sys;c=json.load(open(sys.argv[1]));c.pop('stack_profile',None);c.pop('stack_profile',None);json.dump(c,open('slice-method.json','w'))" "$ROOT/docs/slice-lane/examples/slice-method.example.json"
 git commit -qam shipped >/dev/null

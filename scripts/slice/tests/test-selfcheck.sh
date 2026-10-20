@@ -35,6 +35,13 @@ expect_scan_fail templates/slice/review-checklist.md "| X | host include (B28) |
 expect_scan_fail templates/slice/review-checklist.md "| X | env drift CACHE_DRIVER |" "CACHE_DRIVER example rejected"
 expect_scan_fail docs/slice-lane/examples/slice-method.example.json '"preview_port": 8127' "source port 8127 rejected"
 expect_scan_fail docs/slice-lane/adoption.md 'optional `{{test_filter}}`' "adoption names a {{key}} no core file uses"
+# R7 (Codex): exclusions are paths, not basenames
+fresh; mkdir -p "$T/r/templates/slice/x"; printf 'uses laravel and php\n' > "$T/r/templates/slice/x/adoption.md"
+out=$(bash "$T/r/scripts/slice/selfcheck.sh" --scan-only 2>&1); rc=$?
+[ "$rc" -ne 0 ] && printf '%s\n' "$out" | grep -qF 'templates/slice/x/adoption.md:' && check 1 1 "a planted templates/slice/x/adoption.md is scanned" || check 0 1 "a planted templates/slice/x/adoption.md is scanned (rc=$rc)"
+fresh; printf 'uses laravel\n' > "$T/r/scripts/slice/tests/fixtures/selfcheck.sh"
+bash "$T/r/scripts/slice/selfcheck.sh" --scan-only >/dev/null 2>&1; rc=$?
+[ "$rc" -ne 0 ] && check 1 1 "a planted fixtures/selfcheck.sh is scanned" || check 0 1 "a planted fixtures/selfcheck.sh is scanned"
 # F2: php present but broken (exit 127) -> the laravel adapter is skipped, the core still runs and passes
 mkdir -p "$T/shim"; printf '#!/bin/sh\nexit 127\n' > "$T/shim/php"; chmod +x "$T/shim/php"
 fresh
@@ -44,4 +51,9 @@ printf '%s\n' "$out" | grep -q '^SKIP stack laravel' && check 1 1 "skip line nam
 printf '%s\n' "$out" | grep -q 'scripts/slice/tests/test-gate.sh' && check 1 1 "core tests still run" || check 0 1 "core tests still run"
 PATH="$T/shim:$PATH" bash "$T/r/scripts/slice/selfcheck.sh" --stack laravel >/dev/null 2>&1; rc=$?
 [ "$rc" -ne 0 ] && check 1 1 "--stack laravel without php fails" || check 0 1 "--stack laravel without php fails"
+# R3 (Codex): --stack with a trailing slash still forces the stack; an unknown stack is a usage error
+PATH="$T/shim:$PATH" bash "$T/r/scripts/slice/selfcheck.sh" --stack laravel/ >/dev/null 2>&1; rc=$?
+[ "$rc" -ne 0 ] && check 1 1 "--stack laravel/ (trailing slash) forces the stack -> fails without php" || check 0 1 "--stack laravel/ (trailing slash) forces the stack -> fails without php"
+bash "$T/r/scripts/slice/selfcheck.sh" --stack no-such-stack >/dev/null 2>&1; check "$?" 2 "--stack <unknown> -> exit 2"
+bash "$T/r/scripts/slice/selfcheck.sh" --stack ../stacks/laravel >/dev/null 2>&1; check "$?" 2 "--stack with a path -> exit 2"
 echo "test-selfcheck: ok=$ok fail=$bad"; [ "$bad" -eq 0 ]
