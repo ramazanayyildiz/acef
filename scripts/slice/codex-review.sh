@@ -9,9 +9,15 @@
 #
 # Model: env REVIEW_MODEL, else "review.codex_model" from ${SLICE_METHOD_CONFIG:-./slice-method.json}.
 # Command (what actually runs):
-#   codex exec --skip-git-repo-check -c 'model="<M>"' -s read-only [-C <workdir>] -o <out.md> - < <brief.md>
+#   codex exec --skip-git-repo-check -c 'model="<M>"' -s read-only [-C <workdir>] -o <fresh temp file> - < <brief.md>
+# Every run writes to a fresh temp file next to <out.md>; only a non-empty report replaces <out.md>, so a report left
+# by an earlier run is never read as this run's verdict. Empty or missing output = TOOL ERROR, <out.md> untouched.
+# Verdict line: the FIRST line whose label is Karar/Verdict/Decision (any case, optionally **bold**) must be exactly
+#   <label>: PASS | <label>: REVISE   (value upper-case, optionally **bold**: "Karar: **PASS**", "**Verdict:** REVISE")
+# Anything else on that line ("NOT PASS", "PASSED", the unfilled "PASS | REVISE") is NONE -> TOOL ERROR.
 # Env: CODEX_BIN (default codex), REVIEW_TIMEOUT seconds (default 3600; needs timeout/gtimeout to be enforced).
-# Exit: 0 verdict PASS, 1 verdict REVISE, 2 usage/prerequisite, 3 TOOL ERROR (codex failed, no output, or no verdict line).
+# Exit: 0 verdict PASS, 1 verdict REVISE, 2 usage/prerequisite, 3 TOOL ERROR (codex failed, no output, or no valid
+#   verdict line).
 # Last line: CODEX-REVIEW model=<M> verdict=<PASS|REVISE|NONE> exit=<codex rc> <seconds>s out=<out.md>
 # A read-only sandbox cannot run mutations or a browser: pair it with a second reviewer (Claude session) for those,
 # as the source project did ("Codex source+mutation proposals, Sonnet/Opus browser walk").
@@ -43,20 +49,29 @@ CODEX=${CODEX_BIN:-codex}
 TMO=${REVIEW_TIMEOUT:-3600}
 set -- exec --skip-git-repo-check -c "model=\"$MODEL\"" -s read-only
 [ -z "$WD" ] || set -- "$@" -C "$WD"
-set -- "$@" -o "$OUT" -
-if [ "$DRY" = 1 ]; then printf '%s' "$CODEX"; printf ' %q' "$@"; printf ' < %q\n' "$BRIEF"; exit 0; fi
+if [ "$DRY" = 1 ]; then
+    printf '%s' "$CODEX"; printf ' %q' "$@" -o; printf ' <fresh-temp-file> -'; printf ' < %q   (then moved to %q)\n' "$BRIEF" "$OUT"; exit 0
+fi
 command -v "$CODEX" >/dev/null 2>&1 || die2 "codex binary not found: $CODEX"
+[ -d "$(dirname "$OUT")" ] || die2 "output directory not found: $(dirname "$OUT")"
+OUTDIR=$(cd "$(dirname "$OUT")" && pwd -P)   # absolute: codex -C <workdir> must not re-anchor a relative -o path
+TMP=$(mktemp "$OUTDIR/.codex-review.XXXXXX") || die2 "cannot create a temp file in $OUTDIR"
+trap 'rm -f "$TMP"' EXIT
+set -- "$@" -o "$TMP" -
 T0=$(date +%s)
 if command -v timeout >/dev/null 2>&1; then timeout "$TMO" "$CODEX" "$@" <"$BRIEF"; RC=$?
 elif command -v gtimeout >/dev/null 2>&1; then gtimeout "$TMO" "$CODEX" "$@" <"$BRIEF"; RC=$?
 else "$CODEX" "$@" <"$BRIEF"; RC=$?; fi
 DT=$(( $(date +%s) - T0 ))
 VERDICT=NONE
-if [ -s "$OUT" ]; then
-    LINE=$(grep -m1 -iE '^(\*\*)?(karar|verdict|decision)(\*\*)?[[:space:]]*:' "$OUT" || true)
-    case "$(printf '%s' "$LINE" | tr '[:lower:]' '[:upper:]')" in
-        *REVISE*) VERDICT=REVISE;; *PASS*) VERDICT=PASS;;
-    esac
+if [ -s "$TMP" ]; then
+    mv -f "$TMP" "$OUT" || { printf 'cannot write %s\n' "$OUT" >&2; exit 3; }
+    LINE=$(grep -m1 -iE '^(\*\*)?(karar|verdict|decision)(\*\*)?[[:space:]]*:' "$OUT" | tr -d '\r' || true)
+    if printf '%s\n' "$LINE" | grep -qE '^(\*\*)?[A-Za-z]+(\*\*)?[[:space:]]*:[[:space:]]*(\*\*)?[[:space:]]*(PASS|REVISE)[[:space:]]*(\*\*)?[[:space:]]*$'; then
+        case "$LINE" in *REVISE*) VERDICT=REVISE;; *) VERDICT=PASS;; esac
+    fi
+else
+    printf 'no output from the model this run; %s left untouched\n' "$OUT" >&2
 fi
 printf 'CODEX-REVIEW model=%s verdict=%s exit=%s %ss out=%s\n' "$MODEL" "$VERDICT" "$RC" "$DT" "$OUT"
 [ "$RC" -eq 0 ] || exit 3

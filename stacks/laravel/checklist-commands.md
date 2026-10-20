@@ -16,7 +16,7 @@ core templates carried before ACEF-NEUTRAL-01 (provenance: `docs/slice-lane/SOUR
 | `{{standards_check}}` | `scripts/standards-check.sh {tree}` with `scripts/standards/rules.json` from `standards/rules.example.json` |
 | `{{route_list}}` | `php artisan route:list --json` |
 | `{{app_shell}}` | `php artisan tinker --execute` |
-| `{{migrate_roundtrip}}` | `php artisan migrate && php artisan migrate:rollback` |
+| `{{migrate_roundtrip}}` | `scripts/migrate-roundtrip.sh` (from `migrate-roundtrip.sh`): `php artisan migrate`, then `php artisan migrate:rollback --step=<n>` with n = migrations that run applied (`migrate:status` "Ran" rows after − before); n = 0 exits 3 without a rollback. Laravel 10+ (two-column `migrate:status`) |
 | `{{dependency_check}}` | `composer validate --strict` |
 | `{{browser_smoke}}` | `APP_ORIGIN=http://127.0.0.1:{port} npm run test:smoke` |
 
@@ -32,7 +32,7 @@ core templates carried before ACEF-NEUTRAL-01 (provenance: `docs/slice-lane/SOUR
 | C6 | `git grep -n "env('" -- config` ↔ `.env.example`, `phpunit*.xml` (e.g. `CACHE_DRIVER` ↔ `CACHE_STORE`) |
 | C7 | `config/route_permissions.php` value ↔ `Policy::<ability>` line, per changed route |
 | C8 | `View::exists` loop, or `route:list` + `git grep "view('"` |
-| C9 | no-op `migrate` → `migrate:rollback`: table and index still there; `down()` never drops a host table |
+| C9 | `scripts/migrate-roundtrip.sh` on a database at the base schema (the slice's migrations pending): rolls back only those (`--step=<n>`), never an earlier batch; afterwards host table and index still there; `down()` never drops a host table |
 | D2 | Octane workers, queue workers: request-scoped cache, static state, generation/invalidation |
 | D3 | cross-tenant matrix covers HTML + JSON + Livewire payloads |
 

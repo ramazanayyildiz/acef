@@ -21,7 +21,8 @@
 #                 "standards": {"tool_error_patterns": [ERE, …]} (a runtime's own "file not found" wording).
 #                 Tools that exit 1 when they find something (type checkers) must say so with "ok_exit": [0, 1] AND
 #                 list their binary in "requires".
-# Stack profile: --profile, else env SLICE_STACK_PROFILE, else "stack_profile" in <tree>/slice-method.json (optional).
+# Stack profile: --profile, else env SLICE_STACK_PROFILE, else "stack_profile" in <tree>/slice-method.json (optional;
+#   a path that is given but is not a readable file is exit 2, never a silent run without the profile).
 # Counters and command_counters are frozen in the baseline file ("ID=<n>" lines, default
 # <tree>/scripts/standards/baseline.txt). Above baseline = FAIL. Counters only go down.
 # Comment lines (//, *, #, /*, {{--, <!--) are skipped by line checks (not by counters).
@@ -66,12 +67,17 @@ pats = ["command not found", "No such file or directory"]
 prof = sys.argv[1]
 if not prof and os.path.isfile(sys.argv[2]):
     try:
-        sp = json.load(open(sys.argv[2], encoding="utf-8")).get("stack_profile")
-        if isinstance(sp, str) and sp:
-            prof = os.path.join(os.path.dirname(sys.argv[2]), sp)
+        cfg = json.load(open(sys.argv[2], encoding="utf-8"))
     except Exception:
-        pass
-if prof and os.path.isfile(prof):
+        cfg = None   # slice-method.json itself is the gate's business; here it only points at the profile
+    if isinstance(cfg, dict) and "stack_profile" in cfg:
+        sp = cfg["stack_profile"]
+        if not isinstance(sp, str) or not sp:
+            print("ERR stack_profile in slice-method.json must be a non-empty path"); sys.exit(0)
+        prof = os.path.join(os.path.dirname(sys.argv[2]), sp)
+        if not os.path.isfile(prof):
+            print(f"ERR stack profile not found: {prof} (stack_profile in slice-method.json)"); sys.exit(0)
+if prof:
     try:
         extra = (json.load(open(prof, encoding="utf-8")).get("standards") or {}).get("tool_error_patterns") or []
     except Exception as e:
