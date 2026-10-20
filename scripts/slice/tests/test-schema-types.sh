@@ -52,7 +52,7 @@ v "$SM" "$EX" "d['gate']['require_clean_tree']='false'" 2>/dev/null; check "$?" 
 v "$SM" "$EX" "d['gate']['commands'][0]['timeout_s']='60'" 2>/dev/null; check "$?" 1 "schema: timeout_s \"60\" (string) rejected"
 v "$SM" "$EX" "d['gate']['commands'][0]['allow_empty']=True"; check "$?" 0 "schema: allow_empty true accepted"
 v "$SM" "$EX" "d['gate']['commands'][0]['allow_empty']='true'" 2>/dev/null; check "$?" 1 "schema: allow_empty \"true\" (string) rejected"
-P0=$ROOT/stacks/laravel/profile.json
+for P0 in "$ROOT"/stacks/*/profile.json; do break; done   # any shipped adapter profile
 v "$SP" "$P0" "d['gate']={'zero_tests_patterns':['^0 specs run\$']}"; check "$?" 0 "schema: profile gate.zero_tests_patterns accepted"
 v "$SP" "$P0" "d['gate']={'zero_tests_patterns':'No tests'}" 2>/dev/null; check "$?" 1 "schema: profile gate.zero_tests_patterns as a string rejected"
 v "$SP" "$P0" "d['metrics']['evidence_dir_strip_phase_prefix']='false'" 2>/dev/null; check "$?" 1 "schema: profile metrics.evidence_dir_strip_phase_prefix \"false\" (string) rejected"

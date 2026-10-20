@@ -7,6 +7,31 @@ proven, or installed.
 Update this file whenever ACEF itself gains or changes a flow, gate, validator, hook, skill, installer behavior, workflow,
 or evidence contract. Do not use it to claim implementation status; link to the capability record for that.
 
+## ACEF-FIX-03 — no false PASS from zero tests or invalid regex; applicability and cost fields (2026-10-20)
+
+On top of `e7afe40` (`fix/slice-fail-closed-20261020`, entry below), which already refuses string booleans in gate
+controls and fails on regex errors. Red-first: tests in a separate commit.
+
+- `gate.sh`: a gate in which no command ran is `GATE FAIL` (was `GATE PASS pass=0`, e.g. every command `full_only` in a
+  light run). A command that exits 0 but whose output says zero tests ran (core ERE `[Nn]o tests (executed|found|ran)`
+  plus the stack profile's `gate.zero_tests_patterns`) is FAIL unless it carries `"allow_empty": true`; `allow_empty`
+  must be a JSON boolean, and an invalid zero-tests pattern is exit 2.
+- `standards-check.sh`: every rule ERE (`pattern`, `count_regex`, `exclude_regex`) is compiled before anything is
+  measured; an invalid one is exit 2 naming the rule (was exit 1 via a FAIL line in `e7afe40`; zero findings before it).
+- Schemas: `allow_empty`; stack profile `gate.zero_tests_patterns` and `metrics.evidence_dir_strip_phase_prefix`
+  (boolean). `metrics.py` refuses a string boolean there (exit 2) instead of reading `"false"` as true.
+  `scripts/slice/tests/test-schema-types.sh` validates the shipped examples and profiles with a small stdlib validator.
+- Method/templates: browser/real-UI checks only when the slice touches UI (route, view, component), in both classes;
+  3–5 mutations per rule only for TAM, HAFİF one mutation per behaviour change; the targeted re-review after REVISE runs
+  in the SAME reviewer session (`AGENTS.md`, `DELIVERY_RULES.md`, `OPERATING_MODEL.md` exception sentences updated, line
+  numbers kept). New "Cost accounting" section in `method/SLICE_LANE.md` and a "Maliyet" block in
+  `templates/slice/dev-report.md` (wall time and token totals per role and per slice; `ölçülmedi` when not measured).
+- `docs/slice-lane/TEST-RUN.md`: owner walkthrough for a first real run (prerequisites, 8 steps with proving output, cost
+  fields, three failure drills); its "## Bootstrap example (Laravel)" section is the only part exempt from the
+  neutrality scan (`selfcheck.sh` + test).
+
+Capability record: `docs/ai/capabilities/slice-lane.json` (still `specified`).
+
 ## fix(slice): validate gate control types and preserve regex errors (2026-10-20)
 
 Follow-up to `fix/gate-review-hardening` at `8bbb745`; its review-wrapper and migration changes are retained.

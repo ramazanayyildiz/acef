@@ -377,7 +377,7 @@ closeout validates focused red, green, revert-proof, and—when user-facing—pr
 enforces four commits maximum, five product files, 50 product-line churn, four evidence runs, zero framework failures,
 and a 30-minute hard stop. Process Judge and the Full BMAD review stack are not part of this contract.
 Slice lane exception: the single review cycle and the Fix counters (commits, files, lines, evidence runs, 30-minute stop) do not
-apply to the Slice lane: the re-review after REVISE runs in a new session and may repeat, size is bounded by the
+apply to the Slice lane: the re-review after REVISE runs in the same reviewer session and may repeat, size is bounded by the
 ≤150-line slice and its allowed-file list, and an agent is checked at 90 minutes.
 
 The retired `direct` experiment is not a BMAD flow. Existing `ACEF_DIRECT_RUN.json` records remain readable only so

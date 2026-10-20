@@ -59,7 +59,7 @@ backlog -> slice file -> own worktree + port + DB    ->  clean-tree re-run      
  scan, review class)     report, never declares PASS                                   1280/390, checklist A–E)
                                          ┌──────────── REVISE <─────────────────────────────┤
                                          v                                                  v PASS
-                 fix inside the same allowed list -> targeted re-review (NEW session, r2) -> closing note
+                 fix inside the same allowed list -> targeted re-review (SAME reviewer session, r2) -> closing note
                                                                                          -> merge --no-ff on the owner's
                                                                                             word or written branch policy
                                                                                          -> post-merge: gate + critical set
@@ -74,7 +74,9 @@ backlog -> slice file -> own worktree + port + DB    ->  clean-tree re-run      
    The developer never declares PASS.
 3. **Clean-tree re-run**: a separate worktree of the candidate commit, `git status --short` empty, every command from
    the dev report → expected → actual. `scripts/slice/gate.sh` treats tracked changes AND untracked files that
-   `.gitignore` does not cover as dirty (only its own log dir is exempt).
+   `.gitignore` does not cover as dirty (only its own log dir is exempt). It never reports PASS when no command ran or
+   when a command's output says zero tests ran (unless that command has `"allow_empty": true`), and a control field
+   given as a string (`"false"`) is a usage error (exit 2).
 4. **Independent review** in a separate session (`templates/slice/review-brief.md` +
    `templates/slice/review-checklist.md`). Verify the claims, not the report. Re-apply every developer mutation and add
    at least one own mutation when mutations apply (see "Review classes"). When a package view/lang/config key changes, scan the hosts for includes
@@ -82,8 +84,11 @@ backlog -> slice file -> own worktree + port + DB    ->  clean-tree re-run      
    Verdict: PASS | REVISE — every verdict line outside fenced code reads exactly one of them, and they agree;
    `scripts/slice/codex-review.sh` reads anything else ("NOT PASS", the unfilled "PASS | REVISE", disagreeing lines)
    as a tool error, never a pass.
-5. **REVISE** → fix inside the same allowed list → **targeted re-review in a new session**
-   (`templates/slice/review-r2.md`): only the previous findings plus the fix diff.
+5. **REVISE** → fix inside the same allowed list → **targeted re-review in the same reviewer session**
+   (`templates/slice/review-r2.md`): only the previous findings plus the fix diff. The reviewer who raised the findings
+   checks them with its context intact; it is still never the developer's session. Only when that session is gone
+   (context limit, crash) does a new reviewer session read the previous report plus the fix diff, and the r2 header
+   says so.
 6. **Closing note** (`templates/slice/closing-note.md`): verdict, commits, durations, REVISE rounds, escaped defect,
    explicit tag-candidate judgement, deferred backlog IDs, cleanup. `scripts/slice/metrics.py` reads these fields.
 7. **Merge** with `git merge --no-ff`: into `main` only on the owner's word; into owner-approved work branches after
@@ -91,7 +96,7 @@ backlog -> slice file -> own worktree + port + DB    ->  clean-tree re-run      
    critical set (`slice-method.json` → `critical_postmerge`). The full suite runs only for shared-infrastructure
    changes and at phase/group close.
 8. **Phase/group close**: exploration tour (`templates/slice/exploration-tour.md`) by another model family, as a user,
-   personas × 1280/390 (a HAFİF group without a UI flow records a reasoned browser N/A). A group with an open blocking finding is not closed.
+   personas × 1280/390 (a group that touches no UI records a reasoned browser N/A). A group with an open blocking finding is not closed.
 
 ## Roles
 
@@ -109,13 +114,20 @@ session or `scripts/slice/codex-review.sh` for the review.
 
 | Class | When | What |
 |---|---|---|
-| **TAM** (full) | money, permissions/tenant, state transitions, migrations, security; hot/shared files | separate session; another model family (Codex) **mandatory for money and migration slices**, recommended for other TAM; a second reviewer for browser and mutations; **3–5 mutations per new or changed rule**; real browser 1280/390 including error paths; checklist A–E; TAM annex (finding discipline, Cloudflare MIT derivative) |
-| **HAFİF** (light) | test-only, docs, tooling, catalogue screens, translations | one independent review; mutations when behaviour/rules change, browser evidence when a UI flow is affected (reasoned N/A otherwise, below); checklist A (+ B/C when relevant); similar small slices may be combined |
+| **TAM** (full) | money, permissions/tenant, state transitions, migrations, security; hot/shared files | separate session; another model family (Codex) **mandatory for money and migration slices**, recommended for other TAM; a second reviewer for browser and mutations; **3–5 mutations per new or changed rule**; real browser 1280/390 including error paths when the slice touches UI; checklist A–E; TAM annex (finding discipline, Cloudflare MIT derivative) |
+| **HAFİF** (light) | test-only, docs, tooling, catalogue screens, translations | one independent review; **one mutation per behaviour change**; browser evidence when the slice touches UI (reasoned N/A otherwise, below); checklist A (+ B/C when relevant); similar small slices may be combined |
 
-For HAFİF, no new or changed behaviour/rule means mutations are `not applicable: <reason>`; no affected UI flow means
-browser evidence is `not applicable: <reason>`. Record each applicability decision in the slice and dev report; the
-independent reviewer confirms it in the review. A skipped applicable check is never N/A. These exceptions do not
-relax TAM requirements, including the mandatory different model family for money and migration slices.
+Applicability (both classes):
+
+- **Browser / real-UI check** only when the slice touches UI: a route, a view/template, or a UI component. Otherwise it
+  is `not applicable: no route/view/component touched`.
+- **Mutations:** 3–5 per new or changed rule only for TAM. HAFİF: one mutation per behaviour change; no new or changed
+  behaviour means `not applicable: <reason>`.
+- **Re-review** after REVISE runs in the same reviewer session (step 5), not a new one.
+
+Record each applicability decision in the slice and dev report; the independent reviewer confirms it in the review. A
+skipped applicable check is never N/A. These exceptions do not relax TAM requirements, including the mandatory
+different model family for money and migration slices.
 
 Always required, in both classes — the core this lane keeps from ACEF:
 
@@ -123,9 +135,11 @@ Always required, in both classes — the core this lane keeps from ACEF:
 2. a scanned allowed-file list (dated additions only);
 3. a clean-tree re-run of every claimed command before review;
 4. an independent reviewer in a separate session (never the developer's);
-5. when applicable, 3–5 mutations per new or changed behaviour/rule, each with an evidence file, re-applied by the reviewer plus one of their own; otherwise the HAFİF applicability reason above;
-6. real-browser evidence of the affected UI scenario from its real entry point; otherwise the HAFİF applicability reason above;
-7. a targeted re-review in a new session after REVISE;
+5. mutations — TAM 3–5 per new or changed rule, HAFİF one per behaviour change — each with an evidence file, re-applied
+   by the reviewer plus one of their own; otherwise the applicability reason above;
+6. real-browser evidence of the new scenario from its real entry point when the slice touches UI; otherwise the
+   applicability reason above;
+7. a targeted re-review in the same reviewer session after REVISE;
 8. a closing note with the fixed fields.
 
 ## Parallel lanes
@@ -140,6 +154,23 @@ Always required, in both classes — the core this lane keeps from ACEF:
   writes the shared standards baseline and the CHANGELOG.
 - An agent past 90 minutes is checked; without progress it is restarted with a narrowed task and logged in
   `interventions.json` (`schemas/slice-interventions.schema.json`).
+
+## Cost accounting
+
+The lane's cost is measured per slice, not estimated. The dev report's "Maliyet" section
+(`templates/slice/dev-report.md`) carries:
+
+| Field | Who fills it | What |
+|---|---|---|
+| `Duvar-saati-geliştirme-dk` | developer | wall-clock minutes from the developer's start to the dev report |
+| `Duvar-saati-dilim-dk` | coordinator, at close | wall-clock minutes from the slice file to the closing note (all rounds) |
+| `Token-geliştirici`, `Token-inceleme`, `Token-koordinatör` | each role, own session | `<in>/<out>` totals as the client or API reports them (re-review included in `Token-inceleme`) |
+| `Token-toplam` | coordinator, at close | sum of the three |
+| `Ölçüm-kaynağı` | whoever fills a number | where it came from (client usage command, API usage, log) |
+
+A value that was not measured is written `ölçülmedi`, never guessed. The closing note's `Süre-geliştirme-dk` and
+`Süre-inceleme-dk` stay what `scripts/slice/metrics.py` reads; the cost fields let a phase compare the lane's real cost
+(wall time and tokens per slice) with the v2 lanes'.
 
 ## Never
 
@@ -170,7 +201,8 @@ placeholders plus optional keys used by the review checklist (`route_list`, `app
 `scripts/slice/gate.sh` expands `{{key}}` in `gate.commands[].run` from it (or from `--profile` /
 `SLICE_STACK_PROFILE`) and resolves every command before running any: an undefined or empty key, a key that is not
 lower snake_case, or a `{{…}}` left after expansion exits 2. `scripts/slice/standards-check.sh` adds the profile's
-`standards.tool_error_patterns` to its tool-error wording; `scripts/slice/metrics.py --profile` reads the profile's
+`standards.tool_error_patterns` to its tool-error wording (an invalid rule or profile pattern is exit 2); `gate.sh` adds
+`gate.zero_tests_patterns` to its zero-tests check; `scripts/slice/metrics.py --profile` reads the profile's
 `metrics` object; `scripts/slice/selfcheck.sh` runs an adapter only when its `selfcheck.requires` toolchain is present
 (or `--stack <name>`). Adding a stack: `docs/slice-lane/adoption.md` ("Adopt in a new stack").
 
@@ -187,11 +219,13 @@ scripts/slice/codex-review.sh        read-only review call with a required model
 scripts/slice/metrics.py             measurement table from slice/review files and git history (--profile)
 scripts/slice/selfcheck.sh           the lane's own gate: syntax, templates, core + adapter self-tests, metrics
                                      fixture, and a scan that the core names no stack or source project
-scripts/slice/tests/                 gate (incl. placeholders), codex-review, selfcheck self-tests + metrics fixture
+scripts/slice/tests/                 gate (incl. placeholders, zero tests), codex-review, standards-check (incl. regex errors),
+                                     schema types, selfcheck self-tests + metrics fixture
 schemas/slice-method.schema.json     project declaration (slice-method.json, incl. "stack_profile")
 schemas/stack-profile.schema.json    stack profile (the four required placeholders)
 schemas/slice-interventions.schema.json  intervention log
-docs/slice-lane/                     README (Turkish source), adoption (incl. "Adopt in a new stack"), open-questions,
+docs/slice-lane/                     README (Turkish source), adoption (incl. "Adopt in a new stack"), TEST-RUN (owner
+                                     walkthrough for a first real run), open-questions,
                                      SOURCES (the only place source projects are named), examples/
 stacks/<stack>/                      adapter: profile.json, gate.sh wrapper, boundary checker, standards rules,
                                      checklist commands, examples, tests (list: the adapter's README)
@@ -222,8 +256,8 @@ lane's own gate: `bash scripts/slice/selfcheck.sh`.
 ## Enforcement honesty
 
 In `method/RULE_ENFORCEMENT_MAP.md` terms: the gate, standards ratchet, and module-boundary ratchet are **machinery**
-inside the application; the independent reviewer and the targeted re-review are **shards** (fresh sessions with a
-brief); the allowed-file list, the "never" list, and the closing note are **documentation-only** until the planned
+inside the application; the independent reviewer is a **shard** (a fresh session with a brief) and the targeted re-review
+continues that shard; the allowed-file list, the "never" list, and the closing note are **documentation-only** until the planned
 closing-note gate exists. No ACEF hook or validator enforces this lane.
 
 ## Planned (v0.2) and open (v0.1.2)
@@ -273,7 +307,7 @@ where native ends, for attended work that would otherwise be admitted. Rows mark
 | `method/DELIVERY_RULES.md:111`, `:113` | small feature → ACEF Standard; large feature/epic → ACEF Full by default | attended features and epics run as slices grouped into phases with an exploration tour | `method/DELIVERY_RULES.md:116` |
 | `method/GUARDED_LANE.md:15`, `:97` | at epic scope ACEF Full is the default; non-Full Guarded epics need typed human approval | attended risky epics run as TAM slices without typed approval records | `method/GUARDED_LANE.md:17`, `:101` |
 | `method/OPERATING_MODEL.md:42` ¹, `:329` ¹ | admission: contained work native, everything needing controls admitted to ACEF | same question as `AGENTS.md:9/31` | `method/OPERATING_MODEL.md:45`, `:331` |
-| `method/OPERATING_MODEL.md:375` | Fix: the same reviewer may do one delta recheck; one review cycle | the lane's re-review runs in a **new** session and may repeat | `method/OPERATING_MODEL.md:379` |
+| `method/OPERATING_MODEL.md:375` | Fix: the same reviewer may do one delta recheck; one review cycle | the lane's re-review runs in the same reviewer session but may repeat (no cycle cap) | `method/OPERATING_MODEL.md:379` |
 | `method/OPERATING_MODEL.md:378` | Fix: 30-minute hard stop, 4 commits, 5 files, 50 lines | the lane checks an agent at 90 minutes; size is bounded by the ≤150-line slice and the allowed list, not by counters | `method/OPERATING_MODEL.md:379` |
 | `method/BMAD_V2_LANE.md:6` | small/ongoing work uses ACEF Standard | see `DELIVERY_RULES.md:56` | `method/BMAD_V2_LANE.md:8` |
 | `README.md:169` ("Install & use", step 3) | `/acef` selects Fix, Standard, or Full for admitted work | the front door (`skills/acef/SKILL.md`) did not know the Slice lane | `README.md:172`; front door: `skills/acef/SKILL.md:34` (step 2) and `:45` ("Slice lane selection", read before the admission short-circuit) |

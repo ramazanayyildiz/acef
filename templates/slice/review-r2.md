@@ -1,6 +1,6 @@
 # <SLICE-ID> — hedefli yeniden inceleme (r<n>)
 
-Ayrı oturum (ilk incelemeyi yapan oturum değil; geliştirici hiç değil). Kapsam YALNIZ önceki turun bulguları + düzeltme diff'i. Tam inceleme tekrarlanmaz; değişmeyen ve önceki turda temiz ağaçta kanıtlanmış aşamalar yeniden koşulmaz.
+Aynı inceleyici oturumu (bulguları yazan oturum bağlamıyla devam eder; geliştiricinin oturumu asla değil). O oturum kaybolduysa (bağlam sınırı, çökme) yeni inceleyici oturumu önceki raporu + düzeltme diff'ini okur ve bunu buraya yazar: <aynı oturum | yeni oturum: neden>. Kapsam YALNIZ önceki turun bulguları + düzeltme diff'i. Tam inceleme tekrarlanmaz; değişmeyen ve önceki turda temiz ağaçta kanıtlanmış aşamalar yeniden koşulmaz.
 
 Karar: **PASS | REVISE**
 Tarih: <YYYY-MM-DD> · Önceki inceleme: `<sha>` (`<SLICE-ID>-review.md`) · Aday: `<yeni sha>` · Worktree: `<yol>`, DB `<lane DB>`, port `<port>`
@@ -14,7 +14,7 @@ Tarih: <YYYY-MM-DD> · Önceki inceleme: `<sha>` (`<SLICE-ID>-review.md`) · Ada
 |---|---|---|
 | R1 | KAPANDI / AÇIK / KABUL | <…> |
 
-3. **Düzeltmeyi sabitleyen test:** düzeltmeyi geri al (mutasyon) → hangi test kırmızı; geri al, `git status --short` boş. HAFİF'te yeni/değişen davranış/kural yoksa "uygulanmaz: <neden>" gerekçesini doğrula. Etkilenen UI akışı yoksa tarayıcı da gerekçeli uygulanmaz; uygulanabilir kontroller ve TAM şartları korunur.
+3. **Düzeltmeyi sabitleyen test:** düzeltmeyi geri al (mutasyon) → hangi test kırmızı; geri al, `git status --short` boş. HAFİF'te davranış değişikliği başına bir mutasyon; yeni/değişen davranış yoksa "uygulanmaz: <neden>" gerekçesini doğrula. Düzeltme UI'a (rota, görünüm, bileşen) dokunmuyorsa tarayıcı da gerekçeli uygulanmaz; uygulanabilir kontroller ve TAM şartları korunur.
 4. **Gerileme:** düzeltmenin dokunduğu alanın testleri + kapı: `scripts/gate.sh <worktree>` → <son satır>.
 5. **Geliştiricinin yeni iddiaları:** yalnız doğrula, düzeltme isteme; yeni iş backlog'a.
 

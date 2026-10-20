@@ -36,13 +36,13 @@ Tarih / süre: <YYYY-MM-DD>, başlangıç <hh:mm>, bitiş <hh:mm>
 
 ## Mutasyonlar (uygulandı, geri alındı)
 
-HAFİF'te yeni/değişen davranış/kural yoksa dilimdeki "uygulanmaz: <neden>" gerekçesini burada yaz; inceleyici doğrular. Uygulanabilir mutasyon atlanmaz.
+TAM: yeni/değişen kural başına 3–5 mutasyon. HAFİF: davranış değişikliği başına bir mutasyon; yeni/değişen davranış yoksa dilimdeki "uygulanmaz: <neden>" gerekçesini burada yaz; inceleyici doğrular. Uygulanabilir mutasyon atlanmaz.
 
 | M | Bozulan kural | Kırmızı olan test | Kanıt dosyası |
 |---|---|---|---|
 | M1 | <…> | <…> | `<evidence>/mutations/M1.txt` |
 
-Tarayıcı kanıtı: <senaryo + ekran görüntüleri | HAFİF'te etkilenen UI akışı yoksa dilimdeki "uygulanmaz: <neden>">; inceleyici doğrular.
+Tarayıcı kanıtı: <senaryo + ekran görüntüleri | dilim UI'a (rota, görünüm/şablon, UI bileşeni) dokunmuyorsa dilimdeki "uygulanmaz: <neden>">; inceleyici doğrular.
 
 ## İnceleme öncesi öz-denetim
 
@@ -59,6 +59,18 @@ Kaynak: JKM inceleme öncesi öz-denetimi (`docs/slice-lane/SOURCES.md`; determi
 | Yeni rota adları kayıtlı; yeni görünümler var | FAIL | `templates/review-checklist.md` C1, C8 komutları | <…> |
 | İzinli liste dışında dosya yok | FAIL | `git diff --name-only <taban>..HEAD` | <…> |
 | Göçün geri alma adımı var ve host tablosunu silmez (ya da neden güvenli olmadığı yazılı) | FAIL | `git grep -n '<geri alma kalıbı>' -- <göç dizini>` | <…> |
+
+## Maliyet
+
+Yöntemin maliyetini ölçmek için (`method/SLICE_LANE.md` "Cost accounting"). Ölçülmeyen alan `ölçülmedi` yazılır, tahmin edilmez. Geliştirici kendi satırlarını doldurur; inceleme, koordinatör ve toplam satırlarını koordinatör kapanıştan önce tamamlar.
+
+- Duvar-saati-geliştirme-dk: <n | ölçülmedi>  (geliştiricinin başlangıcı → bu rapor)
+- Duvar-saati-dilim-dk: <n | ölçülmedi>  (dilim dosyası → kapanış notu, tüm turlar; koordinatör)
+- Token-geliştirici: <giriş>/<çıkış> | ölçülmedi
+- Token-inceleme: <giriş>/<çıkış> | ölçülmedi  (inceleme + aynı oturumdaki yeniden inceleme)
+- Token-koordinatör: <giriş>/<çıkış> | ölçülmedi
+- Token-toplam: <giriş>/<çıkış> | ölçülmedi
+- Ölçüm-kaynağı: <istemci kullanım komutu | API kullanım kaydı | günlük>
 
 ## Bilinmeyenler ve koordinatöre sorular
 
