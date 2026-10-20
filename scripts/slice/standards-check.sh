@@ -32,6 +32,8 @@
 # --print-baseline: measure counters only, print "ID=n" lines (the MERGER writes baseline.txt from this; branches
 #   write the expected delta to a per-slice notes file instead — REB TOOL-06: shared lines conflicted on every merge).
 # Exit: 0 PASS, 1 FAIL, 2 usage/prerequisite.
+# An invalid ERE in a rule (pattern, count_regex, exclude_regex) is exit 2 naming the rule, checked before anything is
+# measured (ACEF-FIX-03); a git grep error at run time still makes that rule FAIL, never a zero count.
 # env: STANDARDS_BASE_REF (default origin/main, else main), STANDARDS_BASELINE, STANDARDS_RULES.
 # macOS /bin/bash 3.2 compatible. git grep ERE has no \b or \s: write explicit classes.
 set -u
@@ -145,6 +147,13 @@ PY
 )
 [ -z "$ERR" ] || die2 "rules: $ERR"
 TAB=$(printf '\t')
+# every rule pattern must compile before anything is measured (exit 2 names the rule)
+re_ok() { valid_ere "$3" || die2 "rules: $1: invalid $2 (ERE) '$3': $(grep_error)"; }
+while IFS="$TAB" read -r ID _M PAT _P; do [ -z "$ID" ] || re_ok "$ID" pattern "$PAT"; done <"$WORK/lines.tsv"
+while IFS="$TAB" read -r ID PAT _P _L; do [ -z "$ID" ] || re_ok "$ID" pattern "$PAT"; done <"$WORK/counters.tsv"
+while IFS="$TAB" read -r ID _R CRE XRE _O _L _Q; do
+    [ -n "$ID" ] || continue; re_ok "$ID" count_regex "$CRE"; re_ok "$ID" exclude_regex "$XRE"
+done <"$WORK/cmds.tsv"
 
 BASE_REF=${STANDARDS_BASE_REF:-}
 if [ -n "$BASE_REF" ]; then

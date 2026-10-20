@@ -23,7 +23,7 @@
       "required": ["commands"],
       "additionalProperties": false,
       "properties": {
-        "require_clean_tree": { "type": "boolean", "default": true },
+        "require_clean_tree": { "type": "boolean", "default": true, "description": "JSON boolean; dize \"false\" gate.sh'de çıkış 2." },
         "commands": {
           "type": "array",
           "minItems": 1,
@@ -35,6 +35,7 @@
               "name": { "type": "string", "pattern": "^[a-z0-9][a-z0-9_-]*$" },
               "run": { "type": "string", "description": "Ağaç kökünde `sh -c` ile çalışır. Önce {{anahtar}} yığın profilinden açılır (tanımsızsa kapı çıkış 2), sonra {tree} ve {port}." },
               "full_only": { "type": "boolean", "default": false, "description": "Yalnız `gate.sh --full` ile koşar." },
+              "allow_empty": { "type": "boolean", "default": false, "description": "Komut çıkış 0 verip çıktısı sıfır test koştuğunu söylese de (çekirdek kalıp + profil gate.zero_tests_patterns) PASS sayılır. Yoksa böyle bir koşu FAIL'dir. Dize \"true\"/\"false\" kabul edilmez: gate.sh çıkış 2." },
               "timeout_s": { "type": "integer", "minimum": 1 }
             }
           }
