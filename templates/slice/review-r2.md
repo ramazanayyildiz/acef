@@ -14,7 +14,7 @@ Tarih: <YYYY-MM-DD> · Önceki inceleme: `<sha>` (`<SLICE-ID>-review.md`) · Ada
 |---|---|---|
 | R1 | KAPANDI / AÇIK / KABUL | <…> |
 
-3. **Düzeltmeyi sabitleyen test:** düzeltmeyi geri al (mutasyon) → hangi test kırmızı; geri al, `git status --short` boş.
+3. **Düzeltmeyi sabitleyen test:** düzeltmeyi geri al (mutasyon) → hangi test kırmızı; geri al, `git status --short` boş. HAFİF'te yeni/değişen davranış/kural yoksa "uygulanmaz: <neden>" gerekçesini doğrula. Etkilenen UI akışı yoksa tarayıcı da gerekçeli uygulanmaz; uygulanabilir kontroller ve TAM şartları korunur.
 4. **Gerileme:** düzeltmenin dokunduğu alanın testleri + kapı: `scripts/gate.sh <worktree>` → <son satır>.
 5. **Geliştiricinin yeni iddiaları:** yalnız doğrula, düzeltme isteme; yeni iş backlog'a.
 

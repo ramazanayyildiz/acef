@@ -36,9 +36,13 @@ Tarih / süre: <YYYY-MM-DD>, başlangıç <hh:mm>, bitiş <hh:mm>
 
 ## Mutasyonlar (uygulandı, geri alındı)
 
+HAFİF'te yeni/değişen davranış/kural yoksa dilimdeki "uygulanmaz: <neden>" gerekçesini burada yaz; inceleyici doğrular. Uygulanabilir mutasyon atlanmaz.
+
 | M | Bozulan kural | Kırmızı olan test | Kanıt dosyası |
 |---|---|---|---|
 | M1 | <…> | <…> | `<evidence>/mutations/M1.txt` |
+
+Tarayıcı kanıtı: <senaryo + ekran görüntüleri | HAFİF'te etkilenen UI akışı yoksa dilimdeki "uygulanmaz: <neden>">; inceleyici doğrular.
 
 ## İnceleme öncesi öz-denetim
 

@@ -90,6 +90,9 @@ case "$TOOLERR" in ERR*) die2 "${TOOLERR#ERR }";; esac
 
 WORK=$(mktemp -d "${TMPDIR:-/tmp}/standards-check.XXXXXX") || die2 "cannot create a temp directory"
 trap 'rm -rf "$WORK"' EXIT
+valid_ere() { grep -E -e "$1" /dev/null 2>"$WORK/grep-error"; [ "$?" -le 1 ]; }
+grep_error() { head -n 1 "$WORK/grep-error" | tr '\t\r\n' '   '; }
+valid_ere "$TOOLERR" || die2 "tool_error_patterns: invalid ERE: $(grep_error)"
 
 # ---- rules -> TSV files (python, no third-party modules) ----
 ERR=$(python3 -I - "$RULES" "$WORK" <<'PY'
@@ -154,19 +157,30 @@ MB=$(git -C "$TREE" merge-base "$BASE_REF" HEAD </dev/null 2>/dev/null) || MB=""
 FAILN=0; WARNN=0
 emit() { printf '%s %s %s\n' "$1" "$2" "$3"; if [ "$1" = FAIL ]; then FAILN=$((FAILN + 1)); else WARNN=$((WARNN + 1)); fi; }
 note() { printf 'NOTE %s\n' "$*"; }
-G() { git -C "$TREE" grep --untracked "$@" </dev/null 2>/dev/null; }
+G() { git -C "$TREE" grep --untracked "$@" </dev/null 2>"$WORK/grep-error"; }
 base_of() { grep -E "^$1=[0-9]+([[:space:]]+#.*)?$" "$BASELINE" | tail -n 1 | sed 's/^[^=]*=//; s/[^0-9].*//'; }
 
 # ---- counters ----
-count_pat() { local pat=$1; shift; G -cE -e "$pat" -- "$@" | awk -F: '{ s += $NF } END { print s + 0 }'; }
 : >"$WORK/measured"
 while IFS="$TAB" read -r ID PAT PATHS LABEL; do
     [ -n "$ID" ] || continue
     # shellcheck disable=SC2086
-    printf '%s\t%s\t%s\n' "$ID" "$(count_pat "$PAT" $PATHS)" "$LABEL" >>"$WORK/measured"
+    HITS=$(G -cE -e "$PAT" -- $PATHS); RC=$?
+    if [ "$RC" -gt 1 ]; then
+        printf '%s\tERR\tgit grep error (exit %s): %s\n' "$ID" "$RC" "$(grep_error)" >>"$WORK/measured"
+    else
+        N=$(printf '%s\n' "$HITS" | awk -F: '{ s += $NF } END { print s + 0 }')
+        printf '%s\t%s\t%s\n' "$ID" "$N" "$LABEL" >>"$WORK/measured"
+    fi
 done <"$WORK/counters.tsv"
 while IFS="$TAB" read -r ID RUN CRE XRE OKS LABEL REQS; do
     [ -n "$ID" ] || continue
+    if ! valid_ere "$CRE"; then
+        printf '%s\tERR\tinvalid count_regex: %s\n' "$ID" "$(grep_error)" >>"$WORK/measured"; continue
+    fi
+    if ! valid_ere "$XRE"; then
+        printf '%s\tERR\tinvalid exclude_regex: %s\n' "$ID" "$(grep_error)" >>"$WORK/measured"; continue
+    fi
     MISSING=""
     for r in $REQS; do [ -e "$TREE/$r" ] || MISSING="$MISSING $r"; done
     if [ -n "$MISSING" ]; then
@@ -174,10 +188,20 @@ while IFS="$TAB" read -r ID RUN CRE XRE OKS LABEL REQS; do
     fi
     OUT=$(cd "$TREE" && sh -c "$RUN" </dev/null 2>&1); RC=$?
     OKRC=0; for v in $OKS; do [ "$RC" = "$v" ] && OKRC=1; done
-    if [ "$RC" = 126 ] || [ "$RC" = 127 ] || printf '%s\n' "$OUT" | grep -Eq -- "$TOOLERR"; then
+    printf '%s\n' "$OUT" | grep -Eq -- "$TOOLERR" 2>"$WORK/grep-error"; TOOLRC=$?
+    if [ "$TOOLRC" -gt 1 ]; then
+        printf '%s\tERR\ttool-error grep failed: %s\n' "$ID" "$(grep_error)" >>"$WORK/measured"
+    elif [ "$RC" = 126 ] || [ "$RC" = 127 ] || [ "$TOOLRC" = 0 ]; then
         printf '%s\t%s\t%s\n' "$ID" "ERR" "tool error (exit $RC): $(printf '%s' "$OUT" | grep -v '^[[:space:]]*$' | head -n 1 | cut -c1-120)" >>"$WORK/measured"
     elif [ "$OKRC" = 1 ]; then
-        N=$(printf '%s\n' "$OUT" | grep -E -- "$CRE" | grep -Evc -- "$XRE")
+        printf '%s\n' "$OUT" | grep -E -- "$CRE" >"$WORK/matches" 2>"$WORK/grep-error"; GREPRC=$?
+        if [ "$GREPRC" -gt 1 ]; then
+            printf '%s\tERR\tcount_regex grep failed: %s\n' "$ID" "$(grep_error)" >>"$WORK/measured"; continue
+        fi
+        N=$(grep -Evc -- "$XRE" "$WORK/matches" 2>"$WORK/grep-error"); GREPRC=$?
+        if [ "$GREPRC" -gt 1 ]; then
+            printf '%s\tERR\texclude_regex grep failed: %s\n' "$ID" "$(grep_error)" >>"$WORK/measured"; continue
+        fi
         printf '%s\t%s\t%s\n' "$ID" "$N" "$LABEL" >>"$WORK/measured"
     else
         printf '%s\t%s\t%s\n' "$ID" "ERR" "command exited $RC: $(printf '%s' "$OUT" | grep -v '^[[:space:]]*$' | tail -n 1 | cut -c1-120)" >>"$WORK/measured"
@@ -214,7 +238,8 @@ note "BASE ref=$BASE_REF merge-base=$(git -C "$TREE" rev-parse --short=8 "$MB" <
 while IFS="$TAB" read -r ID MODE PAT PATHS; do
     [ -n "$ID" ] || continue
     # shellcheck disable=SC2086
-    HITS=$(G -nE -e "$PAT" -- $PATHS)
+    HITS=$(G -nE -e "$PAT" -- $PATHS); RC=$?
+    if [ "$RC" -gt 1 ]; then emit FAIL "$ID" "git grep error (exit $RC): $(grep_error)"; continue; fi
     while IFS= read -r l; do
         [ -n "$l" ] || continue
         file=${l%%:*}; rest=${l#*:}; lineno=${rest%%:*}; text=${rest#*:}

@@ -15,6 +15,7 @@
       "README.md#v3 — Slice lane (2026-10-20)",
       "CHANGELOG.md#v3.0.0-alpha — Slice lane (2026-10-20, tag v3.0.0-alpha)",
       "CHANGELOG.md#ACEF-NEUTRAL-01 — stack-neutral Slice lane core + stacks/laravel adapter (2026-10-20)",
+      "CHANGELOG.md#fix(slice): validate gate control types and preserve regex errors (2026-10-20)",
       "docs/slice-lane/README.md",
       "docs/slice-lane/adoption.md",
       "docs/slice-lane/open-questions.md",
@@ -64,6 +65,7 @@
       "scripts/slice/selfcheck.sh",
       "scripts/slice/tests/test-gate.sh",
       "scripts/slice/tests/test-codex-review.sh",
+      "scripts/slice/tests/test-standards-errors.sh",
       "scripts/slice/tests/test-selfcheck.sh",
       "stacks/laravel/tests/test-standards.sh",
       "stacks/laravel/tests/test-boundaries.sh",
@@ -79,6 +81,11 @@
     "Stack split (ACEF-NEUTRAL-01): one adapter exists (stacks/laravel). The core's placeholders are proven by scripts/slice/tests/test-gate.sh and stacks/laravel/tests/test-profile.sh; no second stack is committed (the R1 review built a throwaway Node adapter and ran it without php). The acceptance grep hits only the required 'Laravel profile' section of docs/slice-lane/adoption.md; selfcheck's neutrality scan (wider word list, scripts/slice included) enforces that boundary."
   ],
   "evidence": [
+    {
+      "layer": "tests",
+      "ref": "scripts/slice/selfcheck.sh",
+      "note": "2026-10-20, fix/slice-fail-closed-20261020 on top of fix/gate-review-hardening at 8bbb745: the remaining regressions failed against that base's scripts (test-gate ok=52 fail=38; test-standards-errors ok=4 fail=11). After gate control-type validation and regex/tool-error propagation, bash scripts/slice/selfcheck.sh --stack laravel passed ok=105 fail=0, including core and adapter tests. No external model/API call; the upstream review wrapper and adapter files were unchanged by this follow-up."
+    },
     {
       "layer": "tests",
       "ref": "scripts/slice/selfcheck.sh",

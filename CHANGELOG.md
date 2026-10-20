@@ -7,6 +7,23 @@ proven, or installed.
 Update this file whenever ACEF itself gains or changes a flow, gate, validator, hook, skill, installer behavior, workflow,
 or evidence contract. Do not use it to claim implementation status; link to the capability record for that.
 
+## fix(slice): validate gate control types and preserve regex errors (2026-10-20)
+
+Follow-up to `fix/gate-review-hardening` at `8bbb745`; its review-wrapper and migration changes are retained.
+
+- `gate.sh` validates gate/command control fields before executing any command: booleans remain booleans, a supplied
+  timeout is an integer >=1, names match the schema, and unknown control fields fail instead of being silently coerced.
+  In particular, the string `"false"` cannot skip a required command through `full_only`.
+- `standards-check.sh` distinguishes grep exit 1 (no match) from tool/regex errors in counters, line checks,
+  command count/exclusion filters, and profile tool-error patterns. A failed measurement cannot become a zero baseline.
+- HAFİF browser checks have a reasoned N/A when no UI flow is affected; mutations have a reasoned N/A when no
+  behaviour/rule changes. The slice and dev report record it and the independent reviewer confirms it. Method docs and
+  templates agree; TAM safeguards, the re-review session policy, and measurement infrastructure are unchanged.
+- Local regressions: extended `scripts/slice/tests/test-gate.sh` and new `scripts/slice/tests/test-standards-errors.sh`;
+  both use throwaway repositories and no external model/API call.
+
+Capability record: `docs/ai/capabilities/slice-lane.json` (still `specified`; standalone scripts, no lifecycle enforcement).
+
 ## ACEF-FIX-02 — Slice lane review/gate hardening (2026-10-20)
 
 Findings from the adoption review (Codex) plus R5 of PR #1. Each fix has a red-first test (separate commit).

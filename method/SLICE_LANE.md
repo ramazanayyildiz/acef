@@ -77,7 +77,7 @@ backlog -> slice file -> own worktree + port + DB    ->  clean-tree re-run      
    `.gitignore` does not cover as dirty (only its own log dir is exempt).
 4. **Independent review** in a separate session (`templates/slice/review-brief.md` +
    `templates/slice/review-checklist.md`). Verify the claims, not the report. Re-apply every developer mutation and add
-   at least one own mutation. When a package view/lang/config key changes, scan the hosts for includes
+   at least one own mutation when mutations apply (see "Review classes"). When a package view/lang/config key changes, scan the hosts for includes
    (checklist B1).
    Verdict: PASS | REVISE — every verdict line outside fenced code reads exactly one of them, and they agree;
    `scripts/slice/codex-review.sh` reads anything else ("NOT PASS", the unfilled "PASS | REVISE", disagreeing lines)
@@ -91,7 +91,7 @@ backlog -> slice file -> own worktree + port + DB    ->  clean-tree re-run      
    critical set (`slice-method.json` → `critical_postmerge`). The full suite runs only for shared-infrastructure
    changes and at phase/group close.
 8. **Phase/group close**: exploration tour (`templates/slice/exploration-tour.md`) by another model family, as a user,
-   personas × 1280/390. A group with an open blocking finding is not closed.
+   personas × 1280/390 (a HAFİF group without a UI flow records a reasoned browser N/A). A group with an open blocking finding is not closed.
 
 ## Roles
 
@@ -110,7 +110,12 @@ session or `scripts/slice/codex-review.sh` for the review.
 | Class | When | What |
 |---|---|---|
 | **TAM** (full) | money, permissions/tenant, state transitions, migrations, security; hot/shared files | separate session; another model family (Codex) **mandatory for money and migration slices**, recommended for other TAM; a second reviewer for browser and mutations; **3–5 mutations per new or changed rule**; real browser 1280/390 including error paths; checklist A–E; TAM annex (finding discipline, Cloudflare MIT derivative) |
-| **HAFİF** (light) | test-only, docs, tooling, catalogue screens, translations | one independent review; at least 3 mutations when a rule changes; the relevant browser flow; checklist A (+ B/C when relevant); similar small slices may be combined |
+| **HAFİF** (light) | test-only, docs, tooling, catalogue screens, translations | one independent review; mutations when behaviour/rules change, browser evidence when a UI flow is affected (reasoned N/A otherwise, below); checklist A (+ B/C when relevant); similar small slices may be combined |
+
+For HAFİF, no new or changed behaviour/rule means mutations are `not applicable: <reason>`; no affected UI flow means
+browser evidence is `not applicable: <reason>`. Record each applicability decision in the slice and dev report; the
+independent reviewer confirms it in the review. A skipped applicable check is never N/A. These exceptions do not
+relax TAM requirements, including the mandatory different model family for money and migration slices.
 
 Always required, in both classes — the core this lane keeps from ACEF:
 
@@ -118,8 +123,8 @@ Always required, in both classes — the core this lane keeps from ACEF:
 2. a scanned allowed-file list (dated additions only);
 3. a clean-tree re-run of every claimed command before review;
 4. an independent reviewer in a separate session (never the developer's);
-5. 3–5 mutations per new or changed rule, each with an evidence file, re-applied by the reviewer plus one of their own;
-6. real-browser evidence of the new scenario from its real entry point;
+5. when applicable, 3–5 mutations per new or changed behaviour/rule, each with an evidence file, re-applied by the reviewer plus one of their own; otherwise the HAFİF applicability reason above;
+6. real-browser evidence of the affected UI scenario from its real entry point; otherwise the HAFİF applicability reason above;
 7. a targeted re-review in a new session after REVISE;
 8. a closing note with the fixed fields.
 

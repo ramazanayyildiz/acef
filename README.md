@@ -43,9 +43,12 @@ were not measured.
 
 **What the Slice lane keeps.** Numbered acceptance items; an allowed-file list from a usage scan; a re-run of every
 claimed command on a clean tree before review; an independent reviewer in a separate session (another model family for
-money and migration slices); 3–5 mutations per new or changed rule; real-browser evidence (1280 and 390 px); a targeted
+money and migration slices); 3–5 mutations per new or changed behaviour/rule; real-browser evidence (1280 and 390 px); a targeted
 re-review in a new session after REVISE; a closing note with fixed fields. What it drops: admission, typed run state,
 `acef-state`/`acef-next`, ledgers, preflight artifacts, and gate records.
+
+For HAFİF, mutations are a reasoned N/A when no behaviour/rule changes, and browser evidence is a reasoned N/A when
+no UI flow is affected. The slice and dev report record the reason; the independent reviewer confirms it. TAM requirements remain intact.
 
 **Where it applies.** The Slice lane is the default for attended single-team work. The v2 Fix/Standard/Full + Guarded
 lanes stay intact for unattended, multi-session, or multi-worker delivery. The Slice lane sits beside admission (owner

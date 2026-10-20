@@ -109,13 +109,23 @@ def expand(r, i):
 g = cfg.get("gate")
 if not isinstance(g, dict) or not isinstance(g.get("commands"), list) or not g["commands"]:
     err("gate.commands missing or empty")
+if set(g) - {"commands", "require_clean_tree"}:
+    err("gate has an unknown control field")
+if "require_clean_tree" in g and type(g["require_clean_tree"]) is not bool:
+    err("gate.require_clean_tree must be a boolean")
 clean = "1" if g.get("require_clean_tree", True) else "0"
 seen, rows = set(), []
 for i, c in enumerate(g["commands"]):
     if not isinstance(c, dict) or not isinstance(c.get("name"), str) or not isinstance(c.get("run"), str):
         err(f"gate.commands[{i}] needs string name and run")
+    if set(c) - {"name", "run", "full_only", "timeout_s"}:
+        err(f"gate.commands[{i}] has an unknown control field")
+    if "full_only" in c and type(c["full_only"]) is not bool:
+        err(f"gate.commands[{i}] full_only must be a boolean")
+    if "timeout_s" in c and (type(c["timeout_s"]) is not int or c["timeout_s"] < 1):
+        err(f"gate.commands[{i}] timeout_s must be an integer >= 1")
     n = c["name"]
-    if not n or any(ch in n for ch in " \t\n/") or n in seen:
+    if not re.fullmatch(r"[a-z0-9][a-z0-9_-]*", n) or n in seen:
         err(f"gate.commands[{i}] bad or duplicate name: {n!r}")
     r = expand(c["run"], i)
     if not r.strip():
@@ -124,7 +134,7 @@ for i, c in enumerate(g["commands"]):
         err(f"gate.commands[{i}] run must be one line without tabs")
     seen.add(n)
     t = c.get("timeout_s", 0)
-    rows.append("\t".join([n, "1" if c.get("full_only") else "0", str(int(t) if isinstance(t, int) else 0), clean, r]))
+    rows.append("\t".join([n, "1" if c.get("full_only", False) else "0", str(t), clean, r]))
 print("\n".join(rows))
 PY
 )

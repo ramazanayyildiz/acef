@@ -25,11 +25,11 @@ backlog → dilim dosyası →  kendi worktree + port + DB   →   temiz ağaçt
 1. **Dilim** (`templates/slice.md`, ≤150 satır): görev, numaralı sınanabilir kabul maddeleri (K1…), kapsam dışı, izinli dosya listesi (`git grep` kullanım taramasıyla), "Standart uyumu", "Boyut ve derinlik", inceleme sınıfı. Belirsiz ürün sorusu varsa dilim yazılmaz; sahibe sorulur.
 2. **Geliştirici** kendi worktree'sinde, kendi port ve DB'siyle çalışır. Davranış değişiyorsa önce kırmızı test (yalnız-test commit'i ayrı). İzinli listeyi aşmaz: durur, koordinatör listeyi dilimin "Ekler" bölümüne **tarihle** yazar. `templates/dev-report.md` (öz-denetim bölümü dahil). Kendini PASS ilan etmez.
 3. **Temiz ağaçta yeniden koşu**: aday commit'in ayrı worktree'si, `git status --short` boş, dev raporundaki komutlar → beklenen → gerçek. Not: `scripts/gate.sh` izlenen dosyalardaki değişikliği VE `.gitignore` dışındaki izlenmeyen dosyaları kirli sayar (ACEF-FIX-02; kaynak projedeki `--untracked-files=no` kaldırıldı; yalnız gate'in kendi log dizini muaf). ACEF'in yakaladığı tek gerçek hata (geliştiricide yeşil, temiz ağaçta kırmızı) böyle yakalandı.
-4. **Bağımsız inceleme** ayrı oturumda (`templates/review-brief.md` + `templates/review-checklist.md`). İddiaları doğrula, raporu değil. Geliştiricinin mutasyonlarını yeniden uygula + kendi bir mutasyonun. Paket anahtarı değiştiyse hostlarda include taraması (checklist B1). Rapor: PASS | REVISE.
+4. **Bağımsız inceleme** ayrı oturumda (`templates/review-brief.md` + `templates/review-checklist.md`). İddiaları doğrula, raporu değil. Uygulanabilir mutasyonlarda geliştiricinin mutasyonlarını yeniden uygula + kendi bir mutasyonun (HAFİF uygulanabilirliği aşağıda). Paket anahtarı değiştiyse hostlarda include taraması (checklist B1). Rapor: PASS | REVISE.
 5. **REVISE** → aynı izinli listede düzeltme → **hedefli yeniden inceleme ayrı bir oturumda** (`templates/review-r2.md`): yalnız önceki bulgular + düzeltme diff'i.
 6. **Kapanış notu** (`templates/closing-note.md`): karar, commit'ler, süreler, REVISE turu, kaçan hata, açık "etiket adayı" yargısı, ertelenen backlog kimlikleri, temizlik. `scripts/metrics.py` bu alanları okur.
 7. **Merge**: `git merge --no-ff`. `main`'e yalnız sahibin sözüyle; sahibin yazılı izin verdiği iş dallarına (ör. `<proje>` için yazılı dal politikasındaki entegrasyon dalı) koordinatör PASS + yeşil postmerge sonrası beklemeden. Postmerge: `scripts/gate.sh`, `{{standards_check}}`, etkilenen testler, projenin kritik seti (`slice-method.json` → `critical_postmerge`). Tam takım yalnız ortak altyapı değişiminde ve faz/grup kapanışında.
-8. **Faz/grup kapanışı**: keşif turu (`templates/exploration-tour.md`): farklı model ailesi, kullanıcı gibi, personalar × 1280/390. Engelleyici bulgu açıkken grup kapanmaz.
+8. **Faz/grup kapanışı**: keşif turu (`templates/exploration-tour.md`): farklı model ailesi, kullanıcı gibi, personalar × 1280/390 (UI akışı olmayan HAFİF grupta tarayıcı gerekçeli uygulanmaz). Engelleyici bulgu açıkken grup kapanmaz.
 
 ## Roller
 
@@ -47,7 +47,9 @@ Geliştirici ve inceleyici asla aynı oturum değildir. Ortamında alt ajan yoks
 | Sınıf | Ne zaman | Ne |
 |---|---|---|
 | **TAM** | para, yetki/kiracı, durum geçişi, göç, güvenlik; sıcak/paylaşılan dosya | ayrı oturum; farklı model ailesi (Codex) **para ve göç dilimlerinde zorunlu**, diğer TAM'da önerilir; tarayıcı ve mutasyon için ikinci inceleyici; yeni/değişen kural başına 3–5 mutasyon; gerçek tarayıcı 1280/390 ve hata yolları; checklist A–E; TAM eki (bulgu disiplini) |
-| **HAFİF** | test-only, belge, araç, katalog ekranı, çeviri | tek bağımsız inceleme; kural değişiyorsa en az 3 mutasyon; ilgili tarayıcı akışı; checklist A (+ ilgiliyse B/C); benzer küçük dilimler birleştirilebilir |
+| **HAFİF** | test-only, belge, araç, katalog ekranı, çeviri | tek bağımsız inceleme; davranış/kural değişiyorsa 3–5 mutasyon, etkilenen UI akışı varsa tarayıcı (aksi halde aşağıdaki gerekçeli uygulanmaz); checklist A (+ ilgiliyse B/C); benzer küçük dilimler birleştirilebilir |
+
+HAFİF'te yeni/değişen davranış/kural yoksa mutasyon, etkilenen UI akışı yoksa tarayıcı "uygulanmaz: <neden>" olur. Her gerekçe dilime ve dev raporuna yazılır; bağımsız inceleyici doğrulayıp incelemeye kaydeder. Uygulanabilir kontrol atlanmaz. TAM şartları, özellikle para ve göçte farklı model ailesi zorunluluğu değişmez.
 
 İkisinde de zorunlu: numaralı K maddeleri, taranmış izinli liste, temiz ağaçta yeniden koşu, bağımsız inceleyici, yeni senaryonun gerçek kanıtı.
 
