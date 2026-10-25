@@ -74,15 +74,23 @@ backlog -> slice file -> own worktree + port + DB    ->  simplify pass (2b)     
    list in the slice's dated "Ekler" section. Report: `templates/slice/dev-report.md` (with the pre-review self-check).
    The developer never declares PASS.
 2b. **Simplify pass** (coordinator, after the dev report, before the clean-tree re-run; added 2026-10-27 from
-   CursorPanel practice). A fresh-context pass over the branch diff with four read-only lenses — reuse (helpers the
+   CursorPanel practice). A fresh-context pass over the branch diff with five read-only lenses — reuse (helpers the
    codebase already has, re-implemented), simplification (redundant state, copy-paste with variation, dead branches,
    duplicated tests), efficiency (repeated I/O, N+1, lock scope, work on hot paths), altitude (a symptom patched on
-   shared infrastructure instead of the mechanism) — then ONE behaviour-preserving commit applying the accepted
-   findings and a written list of the skipped ones. Skipped by rule: anything that changes a promised acceptance
+   shared infrastructure instead of the mechanism), cut (additions the accepted requirements do not need:
+   unrequested behaviour, options or configuration, speculative extension points, redundant abstraction, demonstrably
+   unused code; each reported as `file:line · what · which acceptance item it lacks · usage evidence · confidence`) —
+   then ONE behaviour-preserving commit applying the accepted findings, only when at least one finding is accepted
+   (never a manufactured cleanup commit), and a written list of the skipped ones. A cut is accepted only when the
+   slice owner confirms it is unrequested; uncertain or behaviour-changing removals go to the skip list. Skipped by rule: anything that changes a promised acceptance
    item, weakens a security rule or lies outside the diff (worth keeping → backlog ID). It is quality, not a bug hunt,
    and never replaces the review; a finding that turns out to be a defect goes back to the developer as a fix round
    before the review starts. The allowed list is unchanged; the pass re-runs the touched suites and refreshes any
-   contract hashes it invalidates. Measured basis: CursorPanel 2026-10-26/27, three passes on three slices (core
+   contract hashes it invalidates. Budget: about 15 minutes for all five lenses; report unfinished coverage instead
+   of stretching it. When: always on FULL (TAM) slices; on LIGHT (HAFİF) slices above about 150 changed lines or when
+   the diff touches a shared helper, repeated I/O or a new abstraction (line count is a cost heuristic, not a risk
+   class). The skip list and the 2b commit SHA are inputs of the independent review (`templates/slice/review-brief.md`),
+   because the reviewer sees a diff the pass changed. Measured basis: CursorPanel 2026-10-26/27, three passes on three slices (core
    #150, #155, #157): two real duplicate pre-boot readers the slice had missed, one data-loss defect (CSV export
    paged by id while sorted by date), about 10–15 minutes per pass.
 3. **Clean-tree re-run**: a separate worktree of the candidate commit, `git status --short` empty, every command from

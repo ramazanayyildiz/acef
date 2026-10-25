@@ -7,6 +7,27 @@ proven, or installed.
 Update this file whenever ACEF itself gains or changes a flow, gate, validator, hook, skill, installer behavior, workflow,
 or evidence contract. Do not use it to claim implementation status; link to the capability record for that.
 
+## Unreleased — 2b cut lens, security checklist rows, maintenance scan pilot (2026-10-25)
+
+Owner decision 2026-10-25 (Ram), after proposals from the JakoMeet/CRM, B2Press and Foundation sessions, reviewed by
+Claude Fable and Codex gpt-6-astra:
+- **2b changes:**
+  - a fifth **cut** lens (unrequested behaviour, speculative extension points, redundant abstraction, unused code; a cut
+    needs the slice owner's confirmation);
+  - a ~15 min budget;
+  - a commit only when a finding is accepted;
+  - on LIGHT also when the diff touches a shared helper, repeated I/O or a new abstraction;
+  - the skip list and the 2b SHA are review inputs.
+- **Review checklist:**
+  - **A7** security triage on every slice, LIGHT included (one "yes" without a D answer reclassifies the slice to TAM);
+  - **D3** widened to tenant identity across caches, queues, exports, files and derived copies;
+  - new **D7** authorization trace, including async paths and the weakest parallel path;
+  - new **D8** data exposure;
+  - an unresolved critical security question blocks closure.
+- `method/MAINTENANCE_SCAN.md`: pilot contract (not a lane) for release-gate and finished-repo scans. Mechanical checks
+  run first; one module reviewer from a different model family; no fixes inside the scan; budgets and stop rule;
+  promotion only after measured runs.
+
 ## Unreleased — Slice lane: simplify pass (2026-10-27)
 
 Owner decision 2026-10-27 (CursorPanel): a **simplify pass** (step 2b in `method/SLICE_LANE.md`, Turkish in
