@@ -49,6 +49,37 @@ decision; nothing promotes automatically. The lane sits beside admission (owner 
 through ACEF admission, typed approvals, `acef-next` model binding, or the Fix counters. Truly tiny contained work still
 takes the native short-circuit of `AGENTS.md`; the Slice lane starts where that ends (see "Reconciled v2 statements").
 
+### Sizing from the diff, not the name (owner decision 2026-10-25)
+
+Agents repeatedly sized work by its title ("theme polish" became a slice for a three-line change) and applied full
+ceremony to tiny fixes, although the rule already allowed a short path. Sizing is therefore a recorded, fact-based
+decision, not a judgement call:
+
+1. **Intake card** (`templates/slice/intake-card.md`): before any work the agent records six facts — expected files
+   and directories; money; permissions/tenant; personal data; schema/migration/lock or race path; reversibility.
+   Facts only, no recommendation.
+2. **Route** from the facts with the routing table, not from the task name. Any risk fact → TAM; no risk fact and a
+   small, single-surface, reversible change → **native** (no slice, no ACEF state, focused verification only);
+   otherwise HAFİF. The decision is one visible line before work starts — `Yol: native | HAFİF | TAM — <reason>` —
+   so the owner can overrule it.
+3. **The route sets the ceremony.** Reviewer count, test scope (docs-only checks / affected tests and neighbours /
+   full suite at checkpoints), required evidence files and documents are derived from the route through
+   `method/control-dosing.json`, not chosen per task. A lighter route must reach the test runner too: a docs-only
+   closing never runs the application suite.
+4. **The diff confirms the route.** Before merge the actual diff is classified with the same facts (the A7 triage
+   questions of `templates/slice/review-checklist.md`). A diff that needs a heavier route than declared stops and is
+   re-routed; a heavy route on a trivial diff is reported as over-ceremony. Every route decision and correction is
+   logged, so sizing errors become measurable.
+
+### Outcome first (owner decision 2026-10-25)
+
+Work is planned around **outcomes the owner can try** (for example: create project → create task → assign →
+complete → persisted), not around prerequisite slices. Slices are the internal parts of an outcome:
+- Prerequisites ship with the first outcome that needs them, not as a long chain of separately packaged slices.
+- The real user journey is tried in a real browser early, before extensive backend proof.
+- Affected checks run during development; the full gate and independent review run at integration points.
+- The progress record shows usable outcomes first and infrastructure progress separately.
+
 ## Flow
 
 ```
@@ -74,15 +105,23 @@ backlog -> slice file -> own worktree + port + DB    ->  simplify pass (2b)     
    list in the slice's dated "Ekler" section. Report: `templates/slice/dev-report.md` (with the pre-review self-check).
    The developer never declares PASS.
 2b. **Simplify pass** (coordinator, after the dev report, before the clean-tree re-run; added 2026-10-27 from
-   CursorPanel practice). A fresh-context pass over the branch diff with four read-only lenses — reuse (helpers the
+   CursorPanel practice). A fresh-context pass over the branch diff with five read-only lenses — reuse (helpers the
    codebase already has, re-implemented), simplification (redundant state, copy-paste with variation, dead branches,
    duplicated tests), efficiency (repeated I/O, N+1, lock scope, work on hot paths), altitude (a symptom patched on
-   shared infrastructure instead of the mechanism) — then ONE behaviour-preserving commit applying the accepted
-   findings and a written list of the skipped ones. Skipped by rule: anything that changes a promised acceptance
+   shared infrastructure instead of the mechanism), cut (additions the accepted requirements do not need:
+   unrequested behaviour, options or configuration, speculative extension points, redundant abstraction, demonstrably
+   unused code; each reported as `file:line · what · which acceptance item it lacks · usage evidence · confidence`) —
+   then ONE behaviour-preserving commit applying the accepted findings, only when at least one finding is accepted
+   (never a manufactured cleanup commit), and a written list of the skipped ones. A cut is accepted only when the
+   slice owner confirms it is unrequested; uncertain or behaviour-changing removals go to the skip list. Skipped by rule: anything that changes a promised acceptance
    item, weakens a security rule or lies outside the diff (worth keeping → backlog ID). It is quality, not a bug hunt,
    and never replaces the review; a finding that turns out to be a defect goes back to the developer as a fix round
    before the review starts. The allowed list is unchanged; the pass re-runs the touched suites and refreshes any
-   contract hashes it invalidates. Measured basis: CursorPanel 2026-10-26/27, three passes on three slices (core
+   contract hashes it invalidates. Budget: about 15 minutes for all five lenses; report unfinished coverage instead
+   of stretching it. When: always on FULL (TAM) slices; on LIGHT (HAFİF) slices above about 150 changed lines or when
+   the diff touches a shared helper, repeated I/O or a new abstraction (line count is a cost heuristic, not a risk
+   class). The skip list and the 2b commit SHA are inputs of the independent review (`templates/slice/review-brief.md`),
+   because the reviewer sees a diff the pass changed. Measured basis: CursorPanel 2026-10-26/27, three passes on three slices (core
    #150, #155, #157): two real duplicate pre-boot readers the slice had missed, one data-loss defect (CSV export
    paged by id while sorted by date), about 10–15 minutes per pass.
 3. **Clean-tree re-run**: a separate worktree of the candidate commit, `git status --short` empty, every command from
@@ -104,6 +143,10 @@ backlog -> slice file -> own worktree + port + DB    ->  simplify pass (2b)     
    checks them with its context intact; it is still never the developer's session. Only when that session is gone
    (context limit, crash) does a new reviewer session read the previous report plus the fix diff, and the r2 header
    says so.
+   **Round caps** (owner decision 2026-10-25, from B2Press practice): after a second REVISE the coordinator stops
+   patching and decides — redesign, split, narrow the scope or simplify; a reviewer's suggested fix is a hypothesis,
+   not a specification. From round 3 on, only money, data, permission or flow-breaking findings block; everything else
+   becomes a backlog row.
 6. **Closing note** (`templates/slice/closing-note.md`): verdict, commits, durations, REVISE rounds, escaped defect,
    explicit tag-candidate judgement, deferred backlog IDs, cleanup. `scripts/slice/metrics.py` reads these fields.
 7. **Merge** with `git merge --no-ff`: into `main` only on the owner's word; into owner-approved work branches after
