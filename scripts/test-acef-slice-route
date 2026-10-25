@@ -59,6 +59,9 @@ branchWith("view", ["resources/views/x.blade.php", "resources/css/a.css"]);
 branchWith("migration", ["database/migrations/2026_10_25_000000_add.php"]);
 branchWith("pay", ["app/Services/PaymentService.php"]);
 branchWith("wide", ["a/1.js", "a/2.js", "a/3.js", "a/4.js", "a/5.js"]);
+// look-alike names that are not risk paths (tuned against a real Laravel tree)
+branchWith("lookalike", ["app/Services/ObservationService.php", "resources/js/Delegate.js", "app/Http/Controllers/AuthorController.php"]);
+branchWith("auth", ["app/Http/Controllers/Auth/LoginController.php"]);
 const logFile = path.join(tmp, "route-log.jsonl");
 const check = (head, declared) => py(["check", "--repo", repo, "--base", "main", "--head", head, "--declared", declared,
   "--profile", profile, "--log", logFile], repo);
@@ -72,10 +75,13 @@ assert.deepEqual(Object.keys(JSON.parse(r.stdout).evidence), ["schema"]);
 r = check("pay", "native"); assert.equal(r.status, 1); assert.equal(JSON.parse(r.stdout).required, "TAM");
 r = check("wide", "native"); assert.equal(r.status, 1); assert.equal(JSON.parse(r.stdout).required, "HAFIF");
 r = check("wide", "HAFIF"); assert.equal(r.status, 0);
+r = check("lookalike", "native"); assert.equal(r.status, 0, "Observation/Delegate/Author are not risk paths");
+assert.deepEqual(JSON.parse(r.stdout).evidence, {});
+r = check("auth", "HAFIF"); assert.equal(r.status, 1); assert.deepEqual(Object.keys(JSON.parse(r.stdout).evidence), ["permissions"]);
 r = py(["check", "--repo", repo, "--base", "main", "--declared", "BIG"], repo); assert.equal(r.status, 2);
 
 const lines = fs.readFileSync(logFile, "utf8").trim().split("\n").map((l) => JSON.parse(l));
-assert.equal(lines.length, 7, "every check is logged");
+assert.equal(lines.length, 9, "every check is logged");
 assert.ok(lines.every((l) => l.at && l.verdict));
 
 fs.rmSync(tmp, { recursive: true, force: true });
