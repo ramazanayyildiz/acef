@@ -7,6 +7,20 @@ proven, or installed.
 Update this file whenever ACEF itself gains or changes a flow, gate, validator, hook, skill, installer behavior, workflow,
 or evidence contract. Do not use it to claim implementation status; link to the capability record for that.
 
+## Unreleased — Test budget, contract set, rule cost and expiry (2026-10-25)
+
+Owner decision 2026-10-25, from two hosts that independently cut their full-suite runs from 2–4 per slice:
+- **`method/SLICE_LANE.md` "Test budget".** The developer and the reviewer never run the full suite. Integration runs
+  one full suite on the final head merged with main (TAM) or one per batch (HAFİF). A nightly full suite, full race and
+  all browser scripts run on main and are compared night to night. Affected tests are chosen by a script, which falls
+  back to a wider set on unmapped files. The suite runs on the production OS at least nightly.
+- **`contract_tests`** in `slice-method.json`: the cross-cutting tests a slice in those areas runs on its final head,
+  instead of a full suite per round.
+- **`method/FEEDBACK_LOOP.md`.** Every rule added after an incident states its cost (for example "+1 full suite per
+  round") and a review date, and is kept, narrowed or removed with numbers.
+- Pending measurement, about a week, both hosts: the affected-tests script (or `route.py` printing the list) and runner
+  settings (worker cap, batch size, slow-first).
+
 ## Unreleased — route.py: size and test fixes from the first host run (2026-10-25)
 
 - **Log failures no longer look like a stop.** A failed decision-log write printed the verdict and then exited 1, the

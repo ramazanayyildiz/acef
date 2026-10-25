@@ -71,6 +71,31 @@ decision, not a judgement call:
    re-routed; a heavy route on a trivial diff is reported as over-ceremony. Every route decision and correction is
    logged, so sizing errors become measurable.
 
+### Test budget (owner decision 2026-10-25)
+
+Two hosts arrived at the same rules independently, after running the full suite 2–4 times per slice: every
+incident added a full run and none was ever removed. How much testing runs, who runs it and when is part of the
+method, not a per-host habit:
+
+| Stage | Runs | Full suite |
+|---|---|---|
+| Developer, while iterating | affected tests (the slice's classes and pins) + the slice's browser scripts | never |
+| Developer, before review | affected + the touched module's tests + the slice's race tests when a lock path is touched + the **contract set** on the final head | never |
+| Reviewer | own focused tests, mutations, the slice's race tests | never |
+| Integration, TAM | one full suite on the final head **merged with current main**, before the merge lands | once per merge |
+| Integration, HAFİF | affected tests; one full suite per batch | once per batch |
+| Nightly on main | full suite + full race + all browser scripts; compared with the previous night | once a day |
+
+- **Contract set** (`slice-method.json` → `contract_tests`): a short host-defined list of cross-cutting tests
+  (authorization matrix, event/listener registration, audit contract, architecture). A slice touching those areas
+  runs the set on its final head. Before, hosts ran a full suite per review round for this.
+- **Selection by script, not by judgement.** The affected tests come from a script that maps changed files to tests.
+  An unmapped application file makes it fall back to a wider set ("run more", never "run less").
+- **Why TAM keeps a pre-merge full run:** a conflict between two merges is caught before money or data code reaches
+  main, not the next morning. For HAFİF work, the nightly run catches it.
+- **Run the suite on the production OS at least nightly.** One host's first Linux run exposed three macOS-only test
+  assumptions: directory order, a missing CLI tool, and an unfaked outbound call.
+
 ### Outcome first (owner decision 2026-10-25)
 
 Work is planned around **outcomes the owner can try** (for example: create project → create task → assign →
