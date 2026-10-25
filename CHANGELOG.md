@@ -7,6 +7,15 @@ proven, or installed.
 Update this file whenever ACEF itself gains or changes a flow, gate, validator, hook, skill, installer behavior, workflow,
 or evidence contract. Do not use it to claim implementation status; link to the capability record for that.
 
+## Unreleased — Slice lane: simplify pass (2026-10-27)
+
+Owner decision 2026-10-27 (CursorPanel): a **simplify pass** (step 2b in `method/SLICE_LANE.md`, Turkish in
+`docs/slice-lane/README.md`) runs after the developer report and before the clean-tree re-run and the independent
+review. Four read-only lenses (reuse, simplification, efficiency, altitude), one behaviour-preserving commit, a written
+skip list; defects it surfaces return to the developer first. Measured on three CursorPanel slices (#150, #155, #157):
+two missed duplicate readers and one data-loss defect, ~10–15 min per pass. Templates unchanged; the dev report's
+pre-review self-check may reference the pass's commit.
+
 ## v3.0.0-alpha — Slice lane (2026-10-20, tag `v3.0.0-alpha`)
 
 Owner decision 2026-10-20 (METHOD-02): fold slice-method into ACEF instead of a separate repository. The Slice lane
