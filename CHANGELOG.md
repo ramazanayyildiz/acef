@@ -9,6 +9,10 @@ or evidence contract. Do not use it to claim implementation status; link to the 
 
 ## Unreleased — route.py: size and test fixes from the first host run (2026-10-25)
 
+- **Log failures no longer look like a stop.** A failed decision-log write printed the verdict and then exited 1, the
+  ROUTE_UP code. Now the write is caught, `LOG_FAILED` goes to stderr, and the exit is 2 (operational). ROUTE_UP keeps
+  exit 1. Found by Codex reviewing B2Press METHOD-05.
+
 From B2Press running `route.py check` read-only over six merged slices:
 - **Size counts code, not evidence.** Docs paths and the new `routing.exclude_paths` no longer count for size. Before,
   one slice counted 909 files because of its evidence folder and could never be native.
