@@ -7,6 +7,17 @@ proven, or installed.
 Update this file whenever ACEF itself gains or changes a flow, gate, validator, hook, skill, installer behavior, workflow,
 or evidence contract. Do not use it to claim implementation status; link to the capability record for that.
 
+## Unreleased — route.py: size and test fixes from the first host run (2026-10-25)
+
+From B2Press running `route.py check` read-only over six merged slices:
+- **Size counts code, not evidence.** Docs paths and the new `routing.exclude_paths` no longer count for size. Before,
+  one slice counted 909 files because of its evidence folder and could never be native.
+- **Tests count as tests.** Risk rules apply to code only; `routing.test_paths` (core default: `tests/`, `__tests__/`,
+  `*.test.*`, `*.spec.*`; the Laravel profile adds its test-file suffix) are exempt. A tests-only slice touching a
+  payment test is no longer forced to TAM.
+- **Host rules extend the stack's by default.** `routing.risk_paths_mode: "extend" | "replace"`. Before, naming a fact
+  in `slice-method.json` silently dropped the stack patterns for that fact.
+
 ## Unreleased — Route script and diff check (2026-10-25)
 
 Owner decision 2026-10-25: sizing is enforced by a script, not left to prose. `scripts/slice/route.py card` turns the

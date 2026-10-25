@@ -123,6 +123,9 @@
       "properties": {
         "native_max_files": { "type": "integer", "minimum": 0 },
         "docs_paths": { "type": "array", "items": { "type": "string" } },
+        "test_paths": { "type": "array", "items": { "type": "string" } },
+        "exclude_paths": { "type": "array", "items": { "type": "string" } },
+        "risk_paths_mode": { "type": "string", "enum": ["extend", "replace"] },
         "risk_paths": {
           "type": "object",
           "additionalProperties": false,
