@@ -26,6 +26,11 @@ agent that uses ACEF for its pros and cons; this page turns that habit into a bo
 
 ## Rules
 
+- **Every rule added after an incident carries its cost and an expiry.** Write what it adds (for example "+1 full suite
+  per review round"), the incident it answers, and a review date about two to four weeks out. On that date the digest
+  keeps it, narrows it or removes it with numbers. Rules that only ever get added are how hosts reached 2–4 full suites
+  per slice.
+
 - Agent self-reports are evidence of a problem, not proof of a cause. Confirm causes in the record (diffs, logs,
   timings) before changing the method.
 - Change the smallest thing that removes the cost. Do not add a new pass when tightening an existing one is enough.
