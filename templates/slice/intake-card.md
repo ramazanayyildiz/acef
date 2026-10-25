@@ -1,0 +1,31 @@
+# Giriş kartı — <iş kimliği>
+
+İşe başlamadan önce doldurulur. Yalnız gerçekler; öneri ya da yorum yazılmaz. Yol, gerçeklerden yönlendirme tablosuyla
+çıkar (`method/SLICE_LANE.md`, "Sizing from the diff, not the name"). İş adı boyut kanıtı değildir.
+
+| # | Gerçek | Cevap | Kanıt |
+|---|---|---|---|
+| G1 | Beklenen dosyalar ve klasörler | <liste, ~sayı> | `git grep` / yol listesi |
+| G2 | Para (tutar, ödeme, iade, fatura, kredi) | evet / hayır | <dosya ya da gerekçe> |
+| G3 | Yetki, rol, kiracı (rota, politika, kapı, middleware, sorgu kapsamı) | evet / hayır | <…> |
+| G4 | Kişisel veri, token, kimlik bilgisi, dışa aktarım | evet / hayır | <…> |
+| G5 | Şema/migration, kilit, yarış testi yolu, kuyruk | evet / hayır | <…> |
+| G6 | Geri alınabilir, tek yüzeyli değişiklik (tek ekran/bileşen/belge) | evet / hayır | <…> |
+
+**Yönlendirme tablosu**
+
+| Koşul | Yol |
+|---|---|
+| G2–G5'ten herhangi biri "evet" | **TAM** |
+| G2–G5 hepsi "hayır", G6 "evet" ve G1 küçük (yaklaşık ≤3 dosya) | **native** (dilim yok, ACEF durumu yok, yalnız odaklı doğrulama) |
+| Diğer her durum | **HAFİF** |
+
+Proje kendi eşiklerini ve risk yollarını teknoloji yığını profilinde tutar (`stacks/<stack>/`).
+
+**Karar satırı (işe başlamadan önce, sahip görebilsin):**
+
+`Yol: native | HAFİF | TAM — <gerçeklere dayanan tek cümle>`
+
+**Sonda:** birleşmeden önce gerçek diff aynı gerçeklerle yeniden sınıflanır (checklist A7). Diff daha ağır bir yol
+gerektiriyorsa iş durur ve yeniden yönlendirilir. Ağır yolda önemsiz bir diff ise gereksiz ritüel olarak not edilir.
+İki durum da kayda geçer.

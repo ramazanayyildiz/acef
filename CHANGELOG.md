@@ -7,6 +7,25 @@ proven, or installed.
 Update this file whenever ACEF itself gains or changes a flow, gate, validator, hook, skill, installer behavior, workflow,
 or evidence contract. Do not use it to claim implementation status; link to the capability record for that.
 
+## Unreleased — Sizing from facts, outcome-first planning, round caps, feedback loop (2026-10-25)
+
+Owner decision 2026-10-25, from the owner's collected agent notes (13–24 Oct) and the B2Press/Foundation/CursorPanel
+sessions.
+- **Sizing from the diff, not the name.** A new `templates/slice/intake-card.md` records six facts (files, money,
+  permissions/tenant, personal data, schema/migration/lock, reversibility). A routing table turns them into native,
+  HAFİF or TAM, and a one-line `Yol:` decision is visible before work. The route sets the reviewer count, the test
+  scope and the evidence through `method/control-dosing.json`; a docs-only closing never runs the application suite.
+  Before merge the diff is re-classified with the A7 questions, and corrections are logged. The routing script and
+  the diff check ship separately.
+- **Outcome first.** Plan around outcomes the owner can try. Prerequisites ship with the first outcome that needs
+  them. Try the real browser early; run affected checks during development and the full gate at integration.
+- **Round caps.** After a second REVISE, redesign, split, narrow or simplify. A reviewer's fix is a hypothesis. From
+  round 3, only money, data, permission or flow-breaking findings block.
+- **Slice template.** Every acceptance item cites its source (answer number or spec line). A shape budget (lines per
+  file, new classes, reuse-first list) and the route line are added.
+- **`method/FEEDBACK_LOOP.md`.** A weekly digest groups observations by failure mode and proposes at most three rule
+  changes. The owner decides; each change is measured and reverted if it shows no effect.
+
 ## Unreleased — 2b cut lens, security checklist rows, maintenance scan pilot (2026-10-25)
 
 Owner decision 2026-10-25 (Ram), after proposals from the JakoMeet/CRM, B2Press and Foundation sessions, reviewed by
