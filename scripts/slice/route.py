@@ -12,8 +12,10 @@
 
 Routing table: any risk fact (money, permissions, personal data, schema/lock) -> TAM; no risk fact, reversible,
 single surface and at most `native_max_files` files -> native; otherwise HAFIF. A docs-only diff is native.
-Path rules ("routing.risk_paths", regular expressions per fact) come from the stack profile and may be extended or
-overridden in slice-method.json "routing". Path rules are a floor, not proof of safety: a reviewer still answers A7.
+Path rules ("routing.risk_paths", regular expressions per fact) come from the stack profile; slice-method.json "routing"
+extends them (or replaces them per fact with "risk_paths_mode": "replace"). Size counts only files that are not docs
+or "exclude_paths" (generated evidence); risk rules apply to code, not to "test_paths". Path rules are a floor, not
+proof of safety: a reviewer still answers A7.
 """
 import json
 import os
@@ -24,7 +26,17 @@ from datetime import datetime, timezone
 
 RANK = {"native": 0, "HAFIF": 1, "TAM": 2}
 FACTS = ["money", "permissions", "personal_data", "schema"]
-DEFAULT_ROUTING = {"native_max_files": 3, "docs_paths": [r"(^|/)docs/", r"\.md$", r"\.txt$"], "risk_paths": {}}
+DEFAULT_ROUTING = {
+    "native_max_files": 3,
+    "docs_paths": [r"(^|/)docs/", r"\.md$", r"\.txt$"],
+    # tests count as tests: a risk word in a test file name is not a risk fact (stacks add their own test patterns)
+    "test_paths": [r"(^|/)tests?/", r"(^|/)__tests__/", r"\.(test|spec)\.[A-Za-z]+$"],
+    # never counted for size (generated evidence, lock files); docs paths are not counted either
+    "exclude_paths": [],
+    "risk_paths": {},
+    # "extend" (default): host patterns add to the stack's; "replace": host patterns replace them per fact
+    "risk_paths_mode": "extend",
+}
 
 
 def die(msg, code=2):
@@ -51,6 +63,12 @@ def routing_config(config_path, profile_path):
         profile = load_json(profile_file if os.path.isabs(profile_file) else os.path.join(base, profile_file))
         merge(cfg, profile.get("routing", {}))
     merge(cfg, method.get("routing", {}))
+    for key in ("docs_paths", "test_paths", "exclude_paths"):
+        for pattern in cfg[key]:
+            try:
+                re.compile(pattern)
+            except re.error as exc:
+                die(f"bad pattern in routing.{key}: {pattern} ({exc})")
     for fact, patterns in cfg["risk_paths"].items():
         if fact not in FACTS:
             die(f"unknown fact in routing.risk_paths: {fact}")
@@ -63,10 +81,18 @@ def routing_config(config_path, profile_path):
 
 
 def merge(target, source):
+    mode = source.get("risk_paths_mode", target.get("risk_paths_mode", "extend"))
+    if mode not in ("extend", "replace"):
+        die(f"routing.risk_paths_mode must be extend or replace, got {mode!r}")
     for key, value in source.items():
         if key == "risk_paths":
             for fact, patterns in value.items():
-                target["risk_paths"][fact] = list(patterns)
+                if mode == "extend":
+                    target["risk_paths"][fact] = list(dict.fromkeys(target["risk_paths"].get(fact, []) + list(patterns)))
+                else:
+                    target["risk_paths"][fact] = list(patterns)
+        elif key in ("test_paths", "exclude_paths", "docs_paths") and mode == "extend":
+            target[key] = list(dict.fromkeys(target.get(key, []) + list(value)))
         else:
             target[key] = value
 
@@ -145,19 +171,26 @@ def cmd_check(args):
         die("usage: route.py check --base <ref> --declared native|HAFIF|TAM [--head HEAD] [--repo .]")
     cfg = routing_config(args.get("config"), args.get("profile"))
     files = changed_files(args.get("repo", "."), args["base"], args.get("head", "HEAD"))
-    docs = [re.compile(p) for p in cfg["docs_paths"]]
-    docs_only = bool(files) and all(any(p.search(f) for p in docs) for f in files)
+    def matcher(key):
+        pats = [re.compile(p) for p in cfg[key]]
+        return lambda f: any(p.search(f) for p in pats)
+
+    is_doc, is_test, is_excluded = matcher("docs_paths"), matcher("test_paths"), matcher("exclude_paths")
+    counted = [f for f in files if not is_doc(f) and not is_excluded(f)]
+    code = [f for f in counted if not is_test(f)]
     facts, evidence = {}, {}
     for fact in FACTS:
         pats = [re.compile(p) for p in cfg["risk_paths"].get(fact, [])]
-        hit = [f for f in files if not any(d.search(f) for d in docs) and any(p.search(f) for p in pats)]
+        hit = [f for f in code if any(p.search(f) for p in pats)]
         facts[fact] = bool(hit)
         if hit:
             evidence[fact] = hit[:5]
-    if docs_only:
+    if not counted:
         required, reason = "native", "docs-only diff"
     else:
-        required, reason = decide(facts, len(files), True, True, cfg["native_max_files"])
+        required, reason = decide(facts, len(counted), True, True, cfg["native_max_files"])
+        if not code:
+            reason += " (tests only)"
     if RANK[required] > RANK[declared]:
         verdict, code = "ROUTE_UP", 1
     elif RANK[declared] == RANK["TAM"] and required == "native":
@@ -165,7 +198,7 @@ def cmd_check(args):
     else:
         verdict, code = "OK", 0
     result = {"kind": "check", "declared": declared, "required": required, "verdict": verdict, "reason": reason,
-              "files": len(files), "evidence": evidence}
+              "files": len(files), "counted": len(counted), "evidence": evidence}
     print(json.dumps(result, ensure_ascii=False))
     if verdict == "ROUTE_UP":
         print(f"ROUTE_UP: declared {declared}, the diff needs {required} ({reason}); stop and re-route", file=sys.stderr)
