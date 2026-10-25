@@ -264,6 +264,8 @@ scripts/slice/gate.sh                runs slice-method.json gate.commands, {{pla
 scripts/slice/standards-check.sh     standards ratchet engine; rules from the stack adapter
 scripts/slice/codex-review.sh        read-only review call with a required model (other model family)
 scripts/slice/metrics.py             measurement table from slice/review files and git history (--profile)
+scripts/slice/route.py               route from intake facts ("card") and the diff check against the declared route
+                                     ("check": ROUTE_UP stops, OVER_CEREMONY warns); path rules: stack profile "routing"
 scripts/slice/selfcheck.sh           the lane's own gate: syntax, templates, core + adapter self-tests, metrics
                                      fixture, and a scan that the core names no stack or source project
 scripts/slice/tests/                 gate (incl. placeholders, zero tests), codex-review, standards-check (incl. regex errors),

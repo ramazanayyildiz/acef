@@ -85,6 +85,25 @@
       }
     },
     "hot_files": { "type": "array", "items": { "type": "string" } },
+    "routing": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Route sizing rules for scripts/slice/route.py (2026-10-25). risk_paths: regular expressions per risk fact; a floor, not proof of safety.",
+      "properties": {
+        "native_max_files": { "type": "integer", "minimum": 0 },
+        "docs_paths": { "type": "array", "items": { "type": "string" } },
+        "risk_paths": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "money": { "type": "array", "items": { "type": "string" } },
+            "permissions": { "type": "array", "items": { "type": "string" } },
+            "personal_data": { "type": "array", "items": { "type": "string" } },
+            "schema": { "type": "array", "items": { "type": "string" } }
+          }
+        }
+      }
+    },
     "hosts": {
       "type": "array",
       "description": "Paylaşılan sözleşme değişince salt okunur taranacak diğer uygulamalar (checklist B1, E1).",
