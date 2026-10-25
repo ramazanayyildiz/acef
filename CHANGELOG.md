@@ -7,6 +7,29 @@ proven, or installed.
 Update this file whenever ACEF itself gains or changes a flow, gate, validator, hook, skill, installer behavior, workflow,
 or evidence contract. Do not use it to claim implementation status; link to the capability record for that.
 
+## Unreleased — Installer: profiles, deterministic record, remembered selection, Slice kit (2026-10-25)
+
+Owner decision 2026-10-25, from the selective Foundation install (21 files instead of about 170) and its gap list.
+- **Deterministic record.** `docs/ai/ACEF_INSTALLATION.json` no longer stores the absolute source path, the branch or
+  install times. Those move to the self-ignored `.acef/local/installation.local.json`, and readers overlay it.
+  `updateCommand` is portable: `node "$ACEF_SOURCE/scripts/update-acef-installation" --repo . …`. A repeat install of
+  the same selection leaves the record byte-identical.
+- **Profiles.** `--profile slice|core|full`:
+  - slice = one tool (default codex), the skills acef, acef-adapter, acef-router and map-codebase, and the Slice kit;
+    no `.acef` runtime and no BMAD guard;
+  - core = tools + skills, no guard;
+  - full = the previous behaviour.
+- **Remembered selection.** `update-acef-installation` reuses the recorded profile, tools, skills and skills directory.
+  A record without a profile is treated as `full`, so existing hosts update exactly as before.
+- **`--skills-dir`** for one tool (for example `.agents/skills`).
+- **`scripts/install-acef-slice-kit`.** Templates, a method snapshot stamped with the source commit, and the four
+  slice scripts, tracked by hash: a host-edited copy is kept and reported. `slice-method.json` and the stack profile
+  are written only when missing.
+- **CI** now also runs `scripts/test-install-acef-*`, which the `test-acef-*` glob skipped. New
+  `scripts/test-acef-install-profiles`.
+- **Host migration (one-time, optional).** B2Press and CursorPanel can move to the slice profile with
+  `install-acef-skills --profile slice --tool …` plus `install-acef-slice-kit`, then commit the new record. Nothing
+  changes until a host opts in.
 ## Unreleased — Sizing from facts, outcome-first planning, round caps, feedback loop (2026-10-25)
 
 Owner decision 2026-10-25, from the owner's collected agent notes (13–24 Oct) and the B2Press/Foundation/CursorPanel

@@ -18,5 +18,14 @@ jobs:
             echo "== $f =="
             node "$f"
           done
+      - name: Installer tests (scripts/test-install-acef-*)
+        run: |
+          n=0
+          for f in scripts/test-install-acef-*; do
+            echo "== $f =="
+            node "$f"
+            n=$((n+1))
+          done
+          test "$n" -gt 0
       - name: closeout verify — integration check (cli delivery fixture)
         run: node tests/fixtures/closeout-delivery/run.js

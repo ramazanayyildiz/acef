@@ -15,6 +15,12 @@ const defaultSkills = [
   "spec-readiness",
 ];
 const reviewLensSkills = ["bug-hunter", "implementation-shape-review"];
+// Profiles (owner decision 2026-10-25): slice = one tool, the four skills the Slice lane needs; core/full = all tools.
+const profiles = {
+  slice: { tools: ["codex"], skills: ["acef", "acef-adapter", "acef-router", "map-codebase"] },
+  core: { tools: ["all"], skills: defaultSkills },
+  full: { tools: ["all"], skills: defaultSkills },
+};
 
 const toolSkillDirs = {
   codex: [".codex", "skills"],
@@ -23,7 +29,7 @@ const toolSkillDirs = {
 };
 
 function usage() {
-  console.log(`Usage: scripts/install-acef-skills --repo <path> [--tool codex|claude|opencode|all] [--skill name ...] [--review-lenses] [--all-core]
+  console.log(`Usage: scripts/install-acef-skills --repo <path> [--profile slice|core|full] [--tool codex|claude|opencode|all] [--skill name ...] [--skills-dir <dir>] [--review-lenses] [--all-core]
 
 Installs ACEF skills repo-locally. Defaults:
   --tool all
@@ -39,8 +45,10 @@ Examples:
 function parseArgs(argv) {
   const opts = {
     repo: "",
-    tools: ["all"],
+    tools: null,
     skills: [],
+    skillsDir: "",
+    profile: "",
     reviewLenses: false,
     allCore: false,
   };
@@ -50,7 +58,12 @@ function parseArgs(argv) {
     if (arg === "--repo" || arg === "--target") {
       opts.repo = argv[++i];
     } else if (arg === "--tool") {
-      opts.tools = [argv[++i]];
+      opts.tools = [...(opts.tools || []), argv[++i]];
+    } else if (arg === "--profile") {
+      opts.profile = argv[++i];
+      if (!profiles[opts.profile]) throw new Error(`Unknown profile: ${opts.profile} (slice|core|full)`);
+    } else if (arg === "--skills-dir") {
+      opts.skillsDir = argv[++i];
     } else if (arg === "--skill") {
       opts.skills.push(argv[++i]);
     } else if (arg === "--all-core") {
@@ -67,6 +80,10 @@ function parseArgs(argv) {
 
   if (!opts.repo) throw new Error("--repo is required");
   opts.repo = path.resolve(opts.repo);
+  if (!opts.tools) opts.tools = opts.profile ? [...profiles[opts.profile].tools] : ["all"];
+  if (opts.skillsDir && (opts.tools.includes("all") || opts.tools.length !== 1)) {
+    throw new Error("--skills-dir needs exactly one --tool");
+  }
   return opts;
 }
 
@@ -118,7 +135,8 @@ function selectedSkills(opts) {
       .filter((name) => fs.existsSync(path.join(sourceSkillsDir, name, "SKILL.md")))
       .sort();
   }
-  const selected = opts.skills.length ? [...opts.skills] : [...defaultSkills];
+  const base = opts.profile ? profiles[opts.profile].skills : defaultSkills;
+  const selected = opts.skills.length ? [...opts.skills] : [...base];
   if (opts.reviewLenses) selected.push(...reviewLensSkills);
   return [...new Set(selected)].sort();
 }
@@ -134,8 +152,14 @@ for (const skill of skills) {
   if (errors.length) throw new Error(`Invalid skill metadata for ${skill}: ${errors.join("; ")}`);
 }
 
+const skillsDirs = {};
 for (const tool of tools) {
-  const targetBase = path.join(opts.repo, ...toolSkillDirs[tool]);
+  const relativeBase = opts.skillsDir ? opts.skillsDir : path.join(...toolSkillDirs[tool]);
+  if (path.isAbsolute(relativeBase) || relativeBase.split(/[\\/]/).includes("..")) {
+    throw new Error(`--skills-dir must be a path inside the repo: ${relativeBase}`);
+  }
+  skillsDirs[tool] = relativeBase.split(path.sep).join("/");
+  const targetBase = path.join(opts.repo, relativeBase);
   for (const skill of skills) {
     copyDir(path.join(sourceSkillsDir, skill), path.join(targetBase, skill));
   }
@@ -147,6 +171,7 @@ for (const tool of tools) {
 console.log(`Updated ACEF installation manifest: ${writeInstallationManifest(opts.repo, repoRoot, "skills", {
   tools,
   skills,
+  skillsDirs,
   reviewLenses: opts.reviewLenses,
   allCore: opts.allCore,
-})}`);
+}, opts.profile || null)}`);

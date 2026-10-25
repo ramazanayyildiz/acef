@@ -3,7 +3,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { inspectRunAuthorization } = require("./lib/acef-run-authorization");
 const { displayName } = require("./lib/acef-execution-policy");
-const { installationFreshnessFailures } = require("./lib/acef-installation");
+const { installationFreshnessFailures, readInstallationManifest } = require("./lib/acef-installation");
 const { loadObjective, objectiveFailures } = require("./lib/acef-objective-supervisor");
 const validatorModule = fs.existsSync(path.join(__dirname, "acef-process-validator.cjs"))
   ? "./acef-process-validator.cjs" : "./acef-process-validator";
@@ -53,11 +53,11 @@ function loadInstallation(repo) {
   const filePath = path.join(repo, "docs", "ai", "ACEF_INSTALLATION.json");
   if (!fs.existsSync(filePath)) return { path: "docs/ai/ACEF_INSTALLATION.json", exists: false, record: null, error: null };
   try {
-    const record = JSON.parse(fs.readFileSync(filePath, "utf8"));
+    // committed record + machine-local overlay (.acef/local); sourcePath is local and may be absent on a fresh clone
+    const record = readInstallationManifest(repo);
     const missing = [];
     if (record.schema !== "acef.installation.v1") missing.push("schema");
     if (!record.acefVersion?.sourceCommit) missing.push("acefVersion.sourceCommit");
-    if (!record.acefVersion?.sourcePath) missing.push("acefVersion.sourcePath");
     if (!record.updateCommand) missing.push("updateCommand");
     if (!record.components || !Object.keys(record.components).length) missing.push("components");
     if (missing.length) throw new Error(`missing required field(s): ${missing.join(", ")}`);
