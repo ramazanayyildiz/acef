@@ -39,5 +39,14 @@
     "requires": [
       "php"
     ]
+  },
+  "routing": {
+    "native_max_files": 3,
+    "risk_paths": {
+      "schema": ["(^|/)database/migrations/", "\\.sql$", "(^|/)database/schema/"],
+      "money": ["(?i)(payment|invoice|refund|billing|checkout|ledger|wallet)", "(^|/|[a-z])(Credit|Price|Vat)[A-Z_./]", "(^|/)(credit|price|vat)[-_./]", "VAT"],
+      "permissions": ["(?i)(^|/)(policies|middleware|authorization|gates?|auth)/", "(?i)(^|/)routes/", "(^|/|[a-z])(Permission|Capabilit|Role[A-Z]|Gate[A-Z.]|Auth(?!or)[A-Z.])[^/]*\\.php$", "(^|/)config/(auth|permission)"],
+      "personal_data": ["(?i)(export|erasure|gdpr|personal|anonymi[sz]|retention)", "(^|/)app/Models/User\\.php$"]
+    }
   }
 }

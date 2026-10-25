@@ -143,7 +143,7 @@ backlog -> slice file -> own worktree + port + DB    ->  simplify pass (2b)     
    checks them with its context intact; it is still never the developer's session. Only when that session is gone
    (context limit, crash) does a new reviewer session read the previous report plus the fix diff, and the r2 header
    says so.
-   **Round caps** (owner decision 2026-10-25, from B2Press practice): after a second REVISE the coordinator stops
+   **Round caps** (owner decision 2026-10-25, from host practice): after a second REVISE the coordinator stops
    patching and decides — redesign, split, narrow the scope or simplify; a reviewer's suggested fix is a hypothesis,
    not a specification. From round 3 on, only money, data, permission or flow-breaking findings block; everything else
    becomes a backlog row.
@@ -307,6 +307,8 @@ scripts/slice/gate.sh                runs slice-method.json gate.commands, {{pla
 scripts/slice/standards-check.sh     standards ratchet engine; rules from the stack adapter
 scripts/slice/codex-review.sh        read-only review call with a required model (other model family)
 scripts/slice/metrics.py             measurement table from slice/review files and git history (--profile)
+scripts/slice/route.py               route from intake facts ("card") and the diff check against the declared route
+                                     ("check": ROUTE_UP stops, OVER_CEREMONY warns); path rules: stack profile "routing"
 scripts/slice/selfcheck.sh           the lane's own gate: syntax, templates, core + adapter self-tests, metrics
                                      fixture, and a scan that the core names no stack or source project
 scripts/slice/tests/                 gate (incl. placeholders, zero tests), codex-review, standards-check (incl. regex errors),

@@ -1,0 +1,88 @@
+#!/usr/bin/env node
+// scripts/slice/route.py: route from intake facts, and the diff check against the declared route (2026-10-25).
+const assert = require("node:assert/strict");
+const cp = require("node:child_process");
+const fs = require("node:fs");
+const os = require("node:os");
+const path = require("node:path");
+
+const root = path.resolve(__dirname, "..");
+const route = path.join(root, "scripts", "slice", "route.py");
+const profile = path.join(root, "stacks", "laravel", "profile.json");
+const py = (args, cwd) => cp.spawnSync("python3", [route, ...args], { cwd, encoding: "utf8" });
+const git = (cwd, ...args) => cp.execFileSync("git", args, { cwd, stdio: ["ignore", "pipe", "pipe"] });
+
+const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "acef-route-"));
+
+// card -> route line
+function card(rows) {
+  const file = path.join(tmp, `card-${Math.random().toString(36).slice(2)}.md`);
+  const body = rows.map(([g, v]) => `| ${g} | x | ${v} | - |`).join("\n");
+  fs.writeFileSync(file, `| # | Gerçek | Cevap | Kanıt |\n|---|---|---|---|\n${body}\n`);
+  return file;
+}
+const base = [["G1", "2 dosya"], ["G2", "hayır"], ["G3", "hayır"], ["G4", "hayır"], ["G5", "hayır"], ["G6", "evet"]];
+let r = py(["card", card(base)], tmp);
+assert.equal(r.status, 0, r.stderr);
+assert.match(r.stdout, /^Yol: native — /);
+r = py(["card", card(base.map(([g, v]) => [g, g === "G2" ? "evet" : v]))], tmp);
+assert.match(r.stdout, /^Yol: TAM — risk fact: money/);
+r = py(["card", card(base.map(([g, v]) => [g, g === "G1" ? "9 dosya" : v]))], tmp);
+assert.match(r.stdout, /^Yol: HAFIF — /);
+r = py(["card", card(base.map(([g, v]) => [g, g === "G6" ? "hayır" : v]))], tmp);
+assert.match(r.stdout, /^Yol: HAFIF — /, "not reversible -> not native");
+r = py(["card", card(base.filter(([g]) => g !== "G4"))], tmp);
+assert.equal(r.status, 2, "a card with a missing fact is refused");
+
+// diff check
+const repo = path.join(tmp, "repo");
+fs.mkdirSync(repo);
+git(repo, "init", "-q", "-b", "main");
+git(repo, "config", "user.email", "t@t");
+git(repo, "config", "user.name", "t");
+fs.writeFileSync(path.join(repo, "README.md"), "x\n");
+git(repo, "add", "-A");
+git(repo, "commit", "-qm", "base");
+const write = (rel, text = "x\n") => {
+  fs.mkdirSync(path.dirname(path.join(repo, rel)), { recursive: true });
+  fs.writeFileSync(path.join(repo, rel), text);
+};
+function branchWith(name, files) {
+  git(repo, "checkout", "-q", "-b", name, "main");
+  for (const f of files) write(f);
+  git(repo, "add", "-A");
+  git(repo, "commit", "-qm", name);
+  git(repo, "checkout", "-q", "main");
+}
+branchWith("docs", ["docs/a.md", "CHANGELOG.md"]);
+branchWith("view", ["resources/views/x.blade.php", "resources/css/a.css"]);
+branchWith("migration", ["database/migrations/2026_10_25_000000_add.php"]);
+branchWith("pay", ["app/Services/PaymentService.php"]);
+branchWith("wide", ["a/1.js", "a/2.js", "a/3.js", "a/4.js", "a/5.js"]);
+// look-alike names that are not risk paths (tuned against a real Laravel tree)
+branchWith("lookalike", ["app/Services/ObservationService.php", "resources/js/Delegate.js", "app/Http/Controllers/AuthorController.php"]);
+branchWith("auth", ["app/Http/Controllers/Auth/LoginController.php"]);
+const logFile = path.join(tmp, "route-log.jsonl");
+const check = (head, declared) => py(["check", "--repo", repo, "--base", "main", "--head", head, "--declared", declared,
+  "--profile", profile, "--log", logFile], repo);
+
+r = check("docs", "native"); assert.equal(r.status, 0); assert.equal(JSON.parse(r.stdout).verdict, "OK");
+r = check("docs", "TAM"); assert.equal(r.status, 0); assert.equal(JSON.parse(r.stdout).verdict, "OVER_CEREMONY");
+r = check("view", "native"); assert.equal(r.status, 0); assert.equal(JSON.parse(r.stdout).required, "native");
+r = check("migration", "HAFIF"); assert.equal(r.status, 1, "a migration declared HAFIF must stop");
+assert.equal(JSON.parse(r.stdout).verdict, "ROUTE_UP");
+assert.deepEqual(Object.keys(JSON.parse(r.stdout).evidence), ["schema"]);
+r = check("pay", "native"); assert.equal(r.status, 1); assert.equal(JSON.parse(r.stdout).required, "TAM");
+r = check("wide", "native"); assert.equal(r.status, 1); assert.equal(JSON.parse(r.stdout).required, "HAFIF");
+r = check("wide", "HAFIF"); assert.equal(r.status, 0);
+r = check("lookalike", "native"); assert.equal(r.status, 0, "Observation/Delegate/Author are not risk paths");
+assert.deepEqual(JSON.parse(r.stdout).evidence, {});
+r = check("auth", "HAFIF"); assert.equal(r.status, 1); assert.deepEqual(Object.keys(JSON.parse(r.stdout).evidence), ["permissions"]);
+r = py(["check", "--repo", repo, "--base", "main", "--declared", "BIG"], repo); assert.equal(r.status, 2);
+
+const lines = fs.readFileSync(logFile, "utf8").trim().split("\n").map((l) => JSON.parse(l));
+assert.equal(lines.length, 9, "every check is logged");
+assert.ok(lines.every((l) => l.at && l.verdict));
+
+fs.rmSync(tmp, { recursive: true, force: true });
+console.log("test-acef-slice-route: OK");

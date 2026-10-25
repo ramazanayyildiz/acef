@@ -59,7 +59,7 @@ Bulgu disiplini `review-brief.md` "TAM eki"ndedir (sınır + ilke + sonuç; `con
 | D4 | İkinci bağlantı / transaction yarışı: iki süreç, zorlanmış sıra yok | yarış testi adı; hangi DB'de koştu (SQLite / MySQL) |
 | D5 | Para: tutar, para birimi, idempotentlik, çift ödeme, geri ödeme yolu | ilgili test adları; kritik postmerge setinde mi |
 | D6 | Gerçek tarayıcı 1280 ve 390, hata yolları (403, 419, 422, 503, çevrimdışı) | ekran görüntüleri + eylem günlüğü |
-| D7 | Yetki izi: değişen her giriş noktası için aktör → eylem → kaynak → sunucu tarafı politika; doğrudan istek ve asenkron yürütme (iş, komut, kuyruk) dahil. Aynı hassas etkiye ulaşan her yol (rota, komut, iş, Livewire eylemi, API) aynı kontrolü yapıyor; kimliksiz, yetkisiz ve yetkisi geri alınmış aktör reddediliyor | yol × kontrol tablosu, yollar arası fark 0 → `D7-paths.txt`; ret testleri |
+| D7 | Yetki izi: değişen her giriş noktası için aktör → eylem → kaynak → sunucu tarafı politika; doğrudan istek ve asenkron yürütme (iş, komut, kuyruk) dahil. Aynı hassas etkiye ulaşan her yol (rota, komut, iş, sunucu bileşeni eylemi, API) aynı kontrolü yapıyor; kimliksiz, yetkisiz ve yetkisi geri alınmış aktör reddediliyor | yol × kontrol tablosu, yollar arası fark 0 → `D7-paths.txt`; ret testleri |
 | D8 | Veri açığa çıkması: yanıtlar, loglar, hata mesajları, dışa aktarımlar, depolama ve dış çağrılar boyunca hassas alanlar; alıcı yetkisi, alan en aza indirme, saklama/silme kuralları | alan × çıkış noktası tablosu → `D8-exposure.txt` |
 
 ## E — Host etkisi (paylaşılan sözleşme değişince)

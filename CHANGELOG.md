@@ -7,6 +7,17 @@ proven, or installed.
 Update this file whenever ACEF itself gains or changes a flow, gate, validator, hook, skill, installer behavior, workflow,
 or evidence contract. Do not use it to claim implementation status; link to the capability record for that.
 
+## Unreleased — Route script and diff check (2026-10-25)
+
+Owner decision 2026-10-25: sizing is enforced by a script, not left to prose. `scripts/slice/route.py card` turns the
+intake card's six facts into `Yol: native | HAFIF | TAM — <reason>`. `scripts/slice/route.py check --base <ref>
+--declared <route>` classifies the real diff with path rules per risk fact (money, permissions, personal data,
+schema): **ROUTE_UP** (exit 1) when the diff needs a heavier route, **OVER_CEREMONY** (warning) for TAM on a docs-only
+diff. Decisions append to a JSONL log, so sizing errors become measurable. Path rules are a floor, not proof:
+reviewers still answer A7.
+- `routing` is added to both schemas; `stacks/laravel/profile.json` ships default risk paths. Hosts may extend them in
+  `slice-method.json`.
+- Tests: `scripts/test-acef-slice-route`; `selfcheck.sh` passes (116/116, neutrality scan clean).
 ## Unreleased — Installer: profiles, deterministic record, remembered selection, Slice kit (2026-10-25)
 
 Owner decision 2026-10-25, from the selective Foundation install (21 files instead of about 170) and its gap list.
