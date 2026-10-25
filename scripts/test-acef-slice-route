@@ -93,6 +93,14 @@ assert.equal(withHost("pay").status, 1, "extend keeps the stack's payment patter
 fs.writeFileSync(path.join(repo, "slice-method.json"), JSON.stringify({ routing: { risk_paths_mode: "replace", risk_paths: { money: ["(^|/)Ledgerish/"] } } }));
 assert.equal(withHost("pay").status, 0, "replace drops the stack's payment pattern for that fact");
 fs.rmSync(path.join(repo, "slice-method.json"));
+// a failed log write is an operational error (2), never ROUTE_UP (1); the verdict is still printed
+const blocker = path.join(tmp, "blocker"); fs.writeFileSync(blocker, "x");
+const badLog = (head, declared) => py(["check", "--repo", repo, "--base", "main", "--head", head, "--declared", declared,
+  "--profile", profile, "--log", path.join(blocker, "log.jsonl")], repo);
+r = badLog("docs", "TAM"); assert.equal(r.status, 2); assert.equal(JSON.parse(r.stdout).verdict, "OVER_CEREMONY");
+assert.match(r.stderr, /LOG_FAILED/);
+r = badLog("migration", "HAFIF"); assert.equal(r.status, 1, "ROUTE_UP still stops when the log fails");
+r = py(["card", card(base), "--log", path.join(blocker, "log.jsonl")], tmp); assert.equal(r.status, 2); assert.match(r.stdout, /^Yol: native/);
 r = py(["check", "--repo", repo, "--base", "main", "--declared", "BIG"], repo); assert.equal(r.status, 2);
 
 const lines = fs.readFileSync(logFile, "utf8").trim().split("\n").map((l) => JSON.parse(l));

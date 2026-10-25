@@ -8,7 +8,8 @@
   route.py check --base <ref> --declared native|HAFIF|TAM [--head HEAD] [--repo .] [--config slice-method.json]
                  [--profile <stack-profile.json>] [--log <jsonl>]
       Classifies the actual diff with the same facts (path rules) and compares it with the declared route.
-      Exit 0 OK, 0 with OVER_CEREMONY warning, 1 ROUTE_UP (the diff needs a heavier route), 2 usage/config error.
+      Exit 0 OK, 0 with OVER_CEREMONY warning, 1 ROUTE_UP (the diff needs a heavier route), 2 usage/config error or a
+      failed decision-log write (the verdict JSON is still printed; ROUTE_UP keeps exit 1).
 
 Routing table: any risk fact (money, permissions, personal data, schema/lock) -> TAM; no risk fact, reversible,
 single surface and at most `native_max_files` files -> native; otherwise HAFIF. A docs-only diff is native.
@@ -107,12 +108,18 @@ def decide(facts, files, reversible, single_surface, native_max):
 
 
 def log(path, entry):
+    """Append to the decision log. Returns False (with a warning) on I/O failure; never raises."""
     if not path:
-        return
-    os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
+        return True
     entry = {"at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"), **entry}
-    with open(path, "a", encoding="utf-8") as fh:
-        fh.write(json.dumps(entry, ensure_ascii=False) + "\n")
+    try:
+        os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
+        with open(path, "a", encoding="utf-8") as fh:
+            fh.write(json.dumps(entry, ensure_ascii=False) + "\n")
+        return True
+    except OSError as exc:
+        print(f"route.py: LOG_FAILED could not write the decision log {path}: {exc}", file=sys.stderr)
+        return False
 
 
 YES = re.compile(r"^\s*(evet|yes)\b", re.I)
@@ -152,8 +159,8 @@ def cmd_card(args):
     facts, files, reversible = parse_card(args["card"])
     route, reason = decide(facts, files, reversible, reversible, cfg["native_max_files"])
     print(f"Yol: {route} — {reason}")
-    log(args.get("log"), {"kind": "card", "card": args["card"], "route": route, "reason": reason, "facts": facts, "files": files})
-    return 0
+    logged = log(args.get("log"), {"kind": "card", "card": args["card"], "route": route, "reason": reason, "facts": facts, "files": files})
+    return 0 if logged else 2
 
 
 def changed_files(repo, base, head):
@@ -205,7 +212,9 @@ def cmd_check(args):
     elif verdict == "OVER_CEREMONY":
         print(f"OVER_CEREMONY: declared TAM for a {required} diff ({reason}); consider a lighter route next time",
               file=sys.stderr)
-    log(args.get("log"), result)
+    # ROUTE_UP (1) always wins; otherwise a failed log write is an operational error (2), never a "stop" (1)
+    if not log(args.get("log"), result) and code == 0:
+        return 2
     return code
 
 
