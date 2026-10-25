@@ -33,11 +33,61 @@ function manifestPath(targetRepo) {
   return path.join(targetRepo, "docs", "ai", "ACEF_INSTALLATION.json");
 }
 
+// Machine-specific install facts (absolute source path, install times) live outside the committed record so the record
+// is identical on every machine and every reinstall of the same selection (hosts that pin inventories stop churning).
+const LOCAL_DIR = path.join(".acef", "local");
+const LOCAL_FILE = "installation.local.json";
+
+function localMetadataPath(targetRepo) {
+  return path.join(targetRepo, LOCAL_DIR, LOCAL_FILE);
+}
+
+function readLocalMetadata(targetRepo) {
+  const filePath = localMetadataPath(targetRepo);
+  if (!fs.existsSync(filePath)) return null;
+  try {
+    return JSON.parse(fs.readFileSync(filePath, "utf8"));
+  } catch {
+    return null;
+  }
+}
+
+function writeLocalMetadata(targetRepo, sourceRoot) {
+  const dir = path.join(targetRepo, LOCAL_DIR);
+  fs.mkdirSync(dir, { recursive: true });
+  // self-ignoring directory: never committed, whatever the host .gitignore says
+  fs.writeFileSync(path.join(dir, ".gitignore"), "*\n");
+  const now = new Date().toISOString();
+  const existing = readLocalMetadata(targetRepo) || {};
+  const next = {
+    schema: "acef.installation.local.v1",
+    sourcePath: sourceRoot,
+    installedAt: existing.installedAt || now,
+    lastUpdatedAt: now,
+  };
+  fs.writeFileSync(localMetadataPath(targetRepo), `${JSON.stringify(next, null, 2)}\n`);
+  return next;
+}
+
+// Committed record plus the local overlay. Older records that still carry sourcePath/timestamps keep working.
 function readInstallationManifest(targetRepo) {
   const filePath = manifestPath(targetRepo);
   if (!fs.existsSync(filePath)) return null;
-  const raw = fs.readFileSync(filePath, "utf8");
-  return JSON.parse(raw);
+  const manifest = JSON.parse(fs.readFileSync(filePath, "utf8"));
+  const local = readLocalMetadata(targetRepo);
+  if (local) {
+    manifest.acefVersion = { ...(manifest.acefVersion || {}) };
+    if (!manifest.acefVersion.sourcePath && local.sourcePath) manifest.acefVersion.sourcePath = local.sourcePath;
+    if (!manifest.installedAt && local.installedAt) manifest.installedAt = local.installedAt;
+    if (!manifest.lastUpdatedAt && local.lastUpdatedAt) manifest.lastUpdatedAt = local.lastUpdatedAt;
+  }
+  return manifest;
+}
+
+function readCommittedManifest(targetRepo) {
+  const filePath = manifestPath(targetRepo);
+  if (!fs.existsSync(filePath)) return null;
+  return JSON.parse(fs.readFileSync(filePath, "utf8"));
 }
 
 function digestFiles(root, relativePaths) {
@@ -111,70 +161,76 @@ function shellQuote(value) {
   return /^[A-Za-z0-9_./:@%+=,-]+$/.test(text) ? text : `'${text.replaceAll("'", `'\\''`)}'`;
 }
 
-function updateCommand(sourceRoot, targetRepo, components, invocation = {}) {
-  const argv = [
-    "node",
-    path.join(sourceRoot, "scripts", "update-acef-installation"),
-    "--repo",
-    targetRepo,
-  ];
+// Portable: no absolute paths. Run from the host repo root with ACEF_SOURCE pointing at an ACEF checkout.
+function updateCommand(sourceRoot, targetRepo, components, invocation = {}, profile = null) {
+  const argv = ["--repo", "."];
+  if (profile && profile !== "full") argv.push("--profile", profile);
   if (invocation.allWorktrees === true) argv.push("--all-worktrees");
   if (components?.skills?.reviewLenses === true) argv.push("--review-lenses");
   if (components?.skills?.allCore === true) argv.push("--all-core");
   if (components?.bmadGuard?.globalDispatcher === true) argv.push("--global-dispatcher");
-  return argv.map(shellQuote).join(" ");
+  return ['node "$ACEF_SOURCE/scripts/update-acef-installation"', ...argv.map(shellQuote)].join(" ");
 }
 
 function rewriteInstallationUpdateCommand(targetRepo, sourceRoot, invocation = {}) {
   const filePath = manifestPath(targetRepo);
-  const manifest = readInstallationManifest(targetRepo);
+  const manifest = readCommittedManifest(targetRepo);
   if (!manifest || manifest.schema !== "acef.installation.v1") {
     throw new Error(`cannot rewrite updateCommand without a valid ACEF installation manifest: ${filePath}`);
   }
-  manifest.updateCommand = updateCommand(sourceRoot, targetRepo, manifest.components, invocation);
+  manifest.updateCommand = updateCommand(sourceRoot, targetRepo, manifest.components, invocation, manifest.profile);
   fs.writeFileSync(filePath, `${JSON.stringify(manifest, null, 2)}\n`);
   return filePath;
 }
 
-function writeInstallationManifest(targetRepo, sourceRoot, componentName, componentDetails = {}) {
+const MACHINE_FIELDS = ["installedAt", "lastUpdatedAt"];
+
+function stripMachineFields(record) {
+  const clean = { ...record };
+  for (const field of MACHINE_FIELDS) delete clean[field];
+  return clean;
+}
+
+// profile: "slice" | "core" | "full". null keeps the recorded one; a record without a profile is "full" (legacy).
+function writeInstallationManifest(targetRepo, sourceRoot, componentName, componentDetails = {}, profile = null) {
   const filePath = manifestPath(targetRepo);
-  const now = new Date().toISOString();
-  const existing = readInstallationManifest(targetRepo) || {
-    schema: "acef.installation.v1",
-    installedAt: now,
-    components: {},
-  };
+  const existing = stripMachineFields(readCommittedManifest(targetRepo) || { schema: "acef.installation.v1", components: {} });
   const source = sourceInfo(sourceRoot);
+  const existingComponents = {};
+  for (const [name, details] of Object.entries(existing.components || {})) existingComponents[name] = stripMachineFields(details);
   const components = {
-    ...(existing.components || {}),
+    ...existingComponents,
     [componentName]: {
-      installedAt: now,
       sourceCommit: source.sourceCommit,
       sourceShortCommit: source.sourceShortCommit,
       sourceTreeState: source.sourceTreeState,
       ...componentDetails,
     },
   };
+  const effectiveProfile = profile || existing.profile || null;
   const next = {
     ...existing,
     schema: "acef.installation.v1",
+    ...(effectiveProfile ? { profile: effectiveProfile } : {}),
     acefVersion: {
-      sourcePath: source.sourcePath,
       sourceCommit: source.sourceCommit,
       sourceShortCommit: source.sourceShortCommit,
-      sourceBranch: source.sourceBranch,
       sourceTreeState: source.sourceTreeState,
     },
-    lastUpdatedAt: now,
-    updateCommand: updateCommand(sourceRoot, targetRepo, components),
+    updateCommand: updateCommand(sourceRoot, targetRepo, components, {}, effectiveProfile),
     components,
   };
+  writeLocalMetadata(targetRepo, sourceRoot);
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
   fs.writeFileSync(filePath, `${JSON.stringify(next, null, 2)}\n`);
   return filePath;
 }
 
 module.exports = {
+  localMetadataPath,
+  readCommittedManifest,
+  readLocalMetadata,
+  writeLocalMetadata,
   installationFreshnessFailures,
   installedRuntimeDigest,
   manifestPath,

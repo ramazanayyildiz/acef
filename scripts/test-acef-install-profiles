@@ -1,0 +1,94 @@
+#!/usr/bin/env node
+// Install profiles, deterministic installation record, remembered selection, Slice lane kit (owner decision 2026-10-25).
+const assert = require("node:assert/strict");
+const cp = require("node:child_process");
+const fs = require("node:fs");
+const os = require("node:os");
+const path = require("node:path");
+
+const root = path.resolve(__dirname, "..");
+const run = (script, args, env = {}) => cp.execFileSync(process.execPath, [path.join(root, "scripts", script), ...args], {
+  cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, ...env },
+});
+function tempRepo() {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "acef-profiles-"));
+  cp.execFileSync("git", ["init", "-q", dir]);
+  return dir;
+}
+const exists = (repo, rel) => fs.existsSync(path.join(repo, rel));
+const record = (repo) => JSON.parse(fs.readFileSync(path.join(repo, "docs", "ai", "ACEF_INSTALLATION.json"), "utf8"));
+const recordText = (repo) => fs.readFileSync(path.join(repo, "docs", "ai", "ACEF_INSTALLATION.json"), "utf8");
+
+// 1. slice profile: one tool, four skills, the kit; no runtime tools, no other tools' skill folders
+{
+  const repo = tempRepo();
+  run("install-acef-skills", ["--repo", repo, "--profile", "slice"]);
+  run("install-acef-slice-kit", ["--repo", repo, "--stack", "laravel"]);
+  for (const skill of ["acef", "acef-adapter", "acef-router", "map-codebase"]) assert.ok(exists(repo, `.codex/skills/${skill}/SKILL.md`), skill);
+  assert.ok(!exists(repo, ".codex/skills/acef-test-bootstrap"), "slice profile must not install acef-test-bootstrap");
+  assert.ok(!exists(repo, ".claude/skills") && !exists(repo, ".opencode/skills"), "slice profile installs one tool");
+  assert.ok(!exists(repo, ".acef/bin"), "slice profile installs no runtime tools");
+  for (const rel of ["docs/slices/_templates/slice.md", "docs/slices/_templates/review-checklist.md", "docs/slices/_templates/SLICE_LANE.md",
+    "scripts/gate.sh", "scripts/standards-check.sh", "scripts/codex-review.sh", "scripts/metrics.py",
+    "scripts/stack-profile.json", "slice-method.json"]) assert.ok(exists(repo, rel), rel);
+  assert.match(fs.readFileSync(path.join(repo, "docs/slices/_templates/SLICE_LANE.md"), "utf8"), /^<!-- ACEF method snapshot from acef@/);
+  const r = record(repo);
+  assert.equal(r.profile, "slice");
+  assert.deepEqual(r.components.skills.tools, ["codex"]);
+  assert.equal(r.components.skills.skillsDirs.codex, ".codex/skills");
+  // 2. deterministic committed record: no machine paths or install times
+  for (const field of ["installedAt", "lastUpdatedAt"]) assert.ok(!(field in r), `record must not carry ${field}`);
+  assert.ok(!("sourcePath" in r.acefVersion), "record must not carry an absolute source path");
+  assert.ok(!recordText(repo).includes(root), "record must not contain the ACEF checkout path");
+  assert.ok(!recordText(repo).includes(repo), "record must not contain the host path");
+  assert.match(r.updateCommand, /^node "\$ACEF_SOURCE\/scripts\/update-acef-installation" --repo \. --profile slice/);
+  assert.equal(fs.readFileSync(path.join(repo, ".acef/local/.gitignore"), "utf8"), "*\n");
+  assert.equal(JSON.parse(fs.readFileSync(path.join(repo, ".acef/local/installation.local.json"), "utf8")).sourcePath, root);
+  const before = recordText(repo);
+  run("install-acef-skills", ["--repo", repo, "--profile", "slice"]);
+  run("install-acef-slice-kit", ["--repo", repo]);
+  assert.equal(recordText(repo), before, "a repeat install of the same selection must not change the record");
+
+  // 3. update keeps the selection: no tools, no guard, same skills, same stack
+  const edited = path.join(repo, "docs/slices/_templates/slice.md");
+  fs.writeFileSync(edited, "host edit\n");
+  const out = run("update-acef-installation", ["--repo", repo]);
+  assert.ok(!exists(repo, ".acef/bin"), "update must not add runtime tools to a slice install");
+  assert.ok(!exists(repo, ".claude/skills"), "update must not add other tools");
+  assert.ok(!/bmad/i.test(fs.readdirSync(repo).join(" ")) && !exists(repo, ".codex/hooks.json"), "update must not add the BMAD guard");
+  assert.equal(record(repo).profile, "slice");
+  assert.equal(record(repo).components.sliceKit.stack, "laravel");
+  // 4. host-edited ACEF file is kept and reported
+  assert.equal(fs.readFileSync(edited, "utf8"), "host edit\n");
+  assert.match(out, /KEPT_HOST_EDIT docs\/slices\/_templates\/slice\.md/);
+  // host config is never overwritten
+  fs.writeFileSync(path.join(repo, "slice-method.json"), "{\"project\":\"mine\"}\n");
+  run("update-acef-installation", ["--repo", repo]);
+  assert.equal(fs.readFileSync(path.join(repo, "slice-method.json"), "utf8"), "{\"project\":\"mine\"}\n");
+}
+
+// 5. custom skills directory is recorded and reused by update
+{
+  const repo = tempRepo();
+  run("install-acef-skills", ["--repo", repo, "--profile", "slice", "--tool", "codex", "--skills-dir", ".agents/skills"]);
+  assert.ok(exists(repo, ".agents/skills/acef/SKILL.md"));
+  assert.ok(!exists(repo, ".codex/skills"));
+  run("update-acef-installation", ["--repo", repo]);
+  assert.ok(!exists(repo, ".codex/skills"), "update must reuse the recorded skills directory");
+  assert.equal(record(repo).components.skills.skillsDirs.codex, ".agents/skills");
+  assert.throws(() => run("install-acef-skills", ["--repo", repo, "--skills-dir", "../outside", "--tool", "codex"]));
+}
+
+// 6. a legacy record without a profile keeps full behaviour (runtime tools come back on update)
+{
+  const repo = tempRepo();
+  run("install-acef-skills", ["--repo", repo, "--tool", "codex"]);
+  const legacy = record(repo);
+  delete legacy.profile;
+  fs.writeFileSync(path.join(repo, "docs/ai/ACEF_INSTALLATION.json"), `${JSON.stringify(legacy, null, 2)}\n`);
+  run("update-acef-installation", ["--repo", repo]);
+  assert.ok(exists(repo, ".acef/bin"), "legacy (no profile) update must stay a full update");
+  assert.equal(record(repo).profile, "full");
+}
+
+console.log("test-acef-install-profiles: OK");

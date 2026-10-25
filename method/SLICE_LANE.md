@@ -285,6 +285,20 @@ self-tests pass explicit paths. The scripts are not installed by `scripts/instal
 
 ## Adoption in an application
 
+Since 2026-10-25 the kit installs with one command and updates safely. The record keeps the selection; an update
+replaces only ACEF files the host has not edited (edited ones are kept and reported) and never overwrites host
+configuration:
+
+```sh
+node $ACEF/scripts/install-acef-skills --repo <app> --profile slice            # one tool (default codex) + 4 skills
+node $ACEF/scripts/install-acef-slice-kit --repo <app> --stack <stack>          # templates, method snapshot, scripts
+ACEF_SOURCE=$ACEF node $ACEF/scripts/update-acef-installation --repo <app>    # later: same selection, no BMAD guard
+```
+
+`--skills-dir <dir>` (with one `--tool`) installs skills where the host's agent reads them (for example
+`.agents/skills`). `docs/ai/ACEF_INSTALLATION.json` holds no machine paths or install times; those live in the
+self-ignored `.acef/local/`. The manual steps below remain the reference for what the installer does:
+
 ```sh
 ACEF=/path/to/acef; STACK=$ACEF/stacks/<stack>
 cp -R $ACEF/templates/slice <app>/docs/slices/_templates
