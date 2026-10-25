@@ -23,6 +23,7 @@ Kanıt atıfları `method/SLICE_LANE.md` "Evidence validity and reuse" kuralına
 | A4 | Geliştiricinin her mutasyonu inceleyici tarafından YENİDEN uygulandı + inceleyicinin kendi en az bir mutasyonu (TAM: kural başına 3–5; HAFİF: davranış değişikliği başına bir); HAFİF'te yeni/değişen davranış yoksa gerekçeli uygulanmaz | her biri için `<evidence>/…/review/mutations/M<n>.txt` (diff + kırmızı test çıktısı); sonda `git status --short` boş; ya da inceleyicinin doğruladığı uygulanmaz gerekçesi |
 | A5 | Kapı, standart, statik analiz, sınır; geçerli bağımsız A1 kaydını aynı sonuç için tekrar üretme | `scripts/gate.sh <worktree>`, `{{standards_check}}`, `{{static_analysis}}`, `{{boundary_check}}` kanonik kayıtlarına atıf; geçersiz/eksik olan veya açıkça yeniden istenen kontrol yeniden koşulur |
 | A6 | İddiaları doğrula, raporu değil: her "yapıldı/geçti" iddiasını bağımsız değerlendir; zorunlu hedefli kontroller kendi komutunla | iddia → kendi kanıtın veya geçerliliğini doğruladığın bağımsız geniş koşu kaydı; bağlantı tek başına doğrulama değildir |
+| A7 | Güvenlik ön elemesi (HAFİF dahil her dilim): (a) diff bir rota, politika, kapı, middleware, sorgu kapsamı ya da dışa aktarım ekliyor/değiştiriyor mu? (b) kişisel veri, para, token ya da kimlik bilgisi içeren bir alanı okuyor/yazıyor mu? (c) başka bir kiracı ya da rol yeni yola ulaşabilir mi? D satırı cevabı olmadan bir "evet" → dilim TAM'a yeniden sınıflanır, inceleme durur | üç cevap, her biri `dosya:satır` ya da "hayır: <neden>" → `A7-triage.txt` |
 
 ## B — Paket anahtarı değişti (görünüm, çeviri, config, rota adı)
 
@@ -48,16 +49,18 @@ Kanıt atıfları `method/SLICE_LANE.md` "Evidence validity and reuse" kuralına
 
 ## D — TAM sınıfı: yetki, kiracı, para, durum, güvenlik
 
-Bulgu disiplini `review-brief.md` "TAM eki"ndedir (sınır + ilke + sonuç; `confirmed` / `needs_validation` / `rejected`).
+Bulgu disiplini `review-brief.md` "TAM eki"ndedir (sınır + ilke + sonuç; `confirmed` / `needs_validation` / `rejected`). D3, D7, D8 için her uygulanabilir maddede doğrulanmış `dosya:satır`, önem, somut etki, güven ve kanıt yazılır; doğrulanmış bulgu ile hipotez ayrılır, uygulanamazlık gerekçesiyle yazılır. Süre dolduğunda çözülmemiş kritik soru otomatik geçiş olmaz, kapanışı durdurur.
 
 | # | Madde | Kanıt |
 |---|---|---|
 | D1 | Açık kalma (fail-open) izi: her dal, istisna, eksik/bozuk dosya, büyük-küçük harf, boş değer → reddediyor mu | dal başına test adı ya da `D1-trace.md` (dosya:satır → sonuç) |
 | D2 | Uzun ömürlü süreç (kalıcı uygulama sunucusu işçisi, kuyruk işçisi): istek içi cache, statik durum, nesil/geçersizleme | test ya da `needs_validation` + eksik bilgi |
-| D3 | Kiracılar arası istek matrisi: aktör × kaynak × eylem; başka kiracı 404/403, veri sızmaz (HTML + JSON + sunucu bileşeni yükü) | matris testi adı + hücre sayısı |
+| D3 | Kiracılar arası istek matrisi: aktör × kaynak × eylem; başka kiracı 404/403, veri sızmaz (HTML + JSON + sunucu bileşeni yükü). Kiracı kimliği okuma, yazma, ilişki, önbellek, kuyruk, dışa aktarım ve dosyalar boyunca izlenir; çağıranın verdiği kimlik başka kiracının kaynağını seçemez. Türetilmiş kopyalar (önbellek, arama indeksi, dışa aktarım, kuyruk yükü, log, mail) aynı kiracı/rol bağını taşır ve silme/iptalde temizlenir | matris testi adı + hücre sayısı; kopya başına bağın `dosya:satır`'ı ya da test adı → `D3-copies.txt` |
 | D4 | İkinci bağlantı / transaction yarışı: iki süreç, zorlanmış sıra yok | yarış testi adı; hangi DB'de koştu (SQLite / MySQL) |
 | D5 | Para: tutar, para birimi, idempotentlik, çift ödeme, geri ödeme yolu | ilgili test adları; kritik postmerge setinde mi |
 | D6 | Gerçek tarayıcı 1280 ve 390, hata yolları (403, 419, 422, 503, çevrimdışı) | ekran görüntüleri + eylem günlüğü |
+| D7 | Yetki izi: değişen her giriş noktası için aktör → eylem → kaynak → sunucu tarafı politika; doğrudan istek ve asenkron yürütme (iş, komut, kuyruk) dahil. Aynı hassas etkiye ulaşan her yol (rota, komut, iş, sunucu bileşeni eylemi, API) aynı kontrolü yapıyor; kimliksiz, yetkisiz ve yetkisi geri alınmış aktör reddediliyor | yol × kontrol tablosu, yollar arası fark 0 → `D7-paths.txt`; ret testleri |
+| D8 | Veri açığa çıkması: yanıtlar, loglar, hata mesajları, dışa aktarımlar, depolama ve dış çağrılar boyunca hassas alanlar; alıcı yetkisi, alan en aza indirme, saklama/silme kuralları | alan × çıkış noktası tablosu → `D8-exposure.txt` |
 
 ## E — Host etkisi (paylaşılan sözleşme değişince)
 

@@ -6,6 +6,7 @@ Rol: bağımsız inceleyici. Geliştiriciyle aynı oturum değilsin. **Farklı m
 
 - Dilim: `<slices-dizini>/<SLICE-ID>.md` · Dev raporu: `<slices-dizini>/<SLICE-ID>-dev-report.md`
 - Taban `<taban-sha>` · Aday `<aday-sha>` · Yalnız-test commit'i `<test-sha>`
+- Sadeleştirme geçişi (2b): commit `<2b-sha veya "commit yok">` · atlananlar listesi `<bağlantı>` (inceleyici geçişin değiştirdiği diff'i görür; atlanan bir bulgu güvenlik ya da kabul maddesiyle ilgiliyse incelemede ayrıca bakılır)
 - İlk bağımsız temiz koşu: `<kanonik kayıt bağlantısı>` (koordinatör/inceleyici, geliştirici değil); main `<sha>`, merge-base `<sha>`; test/standart/config, bağımlılık, DB/fixture, toolchain ve ilgili ortam bağları `<kayıt/başlık bağlantısı>`
 - Sınıf: TAM | HAFİF · Ortam: kendi worktree `<yol>`, port `<port>`, DB `<lane DB>` (paylaşılan DB ve ana önizleme portu YASAK)
 - Değişmezler: `<invariants-dosyası>` · Kontrol listesi: `templates/review-checklist.md`

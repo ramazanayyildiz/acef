@@ -18,6 +18,68 @@ reviewers still answer A7.
 - `routing` is added to both schemas; `stacks/laravel/profile.json` ships default risk paths. Hosts may extend them in
   `slice-method.json`.
 - Tests: `scripts/test-acef-slice-route`; `selfcheck.sh` passes (116/116, neutrality scan clean).
+## Unreleased — Installer: profiles, deterministic record, remembered selection, Slice kit (2026-10-25)
+
+Owner decision 2026-10-25, from the selective Foundation install (21 files instead of about 170) and its gap list.
+- **Deterministic record.** `docs/ai/ACEF_INSTALLATION.json` no longer stores the absolute source path, the branch or
+  install times. Those move to the self-ignored `.acef/local/installation.local.json`, and readers overlay it.
+  `updateCommand` is portable: `node "$ACEF_SOURCE/scripts/update-acef-installation" --repo . …`. A repeat install of
+  the same selection leaves the record byte-identical.
+- **Profiles.** `--profile slice|core|full`:
+  - slice = one tool (default codex), the skills acef, acef-adapter, acef-router and map-codebase, and the Slice kit;
+    no `.acef` runtime and no BMAD guard;
+  - core = tools + skills, no guard;
+  - full = the previous behaviour.
+- **Remembered selection.** `update-acef-installation` reuses the recorded profile, tools, skills and skills directory.
+  A record without a profile is treated as `full`, so existing hosts update exactly as before.
+- **`--skills-dir`** for one tool (for example `.agents/skills`).
+- **`scripts/install-acef-slice-kit`.** Templates, a method snapshot stamped with the source commit, and the four
+  slice scripts, tracked by hash: a host-edited copy is kept and reported. `slice-method.json` and the stack profile
+  are written only when missing.
+- **CI** now also runs `scripts/test-install-acef-*`, which the `test-acef-*` glob skipped. New
+  `scripts/test-acef-install-profiles`.
+- **Host migration (one-time, optional).** B2Press and CursorPanel can move to the slice profile with
+  `install-acef-skills --profile slice --tool …` plus `install-acef-slice-kit`, then commit the new record. Nothing
+  changes until a host opts in.
+## Unreleased — Sizing from facts, outcome-first planning, round caps, feedback loop (2026-10-25)
+
+Owner decision 2026-10-25, from the owner's collected agent notes (13–24 Oct) and the B2Press/Foundation/CursorPanel
+sessions.
+- **Sizing from the diff, not the name.** A new `templates/slice/intake-card.md` records six facts (files, money,
+  permissions/tenant, personal data, schema/migration/lock, reversibility). A routing table turns them into native,
+  HAFİF or TAM, and a one-line `Yol:` decision is visible before work. The route sets the reviewer count, the test
+  scope and the evidence through `method/control-dosing.json`; a docs-only closing never runs the application suite.
+  Before merge the diff is re-classified with the A7 questions, and corrections are logged. The routing script and
+  the diff check ship separately.
+- **Outcome first.** Plan around outcomes the owner can try. Prerequisites ship with the first outcome that needs
+  them. Try the real browser early; run affected checks during development and the full gate at integration.
+- **Round caps.** After a second REVISE, redesign, split, narrow or simplify. A reviewer's fix is a hypothesis. From
+  round 3, only money, data, permission or flow-breaking findings block.
+- **Slice template.** Every acceptance item cites its source (answer number or spec line). A shape budget (lines per
+  file, new classes, reuse-first list) and the route line are added.
+- **`method/FEEDBACK_LOOP.md`.** A weekly digest groups observations by failure mode and proposes at most three rule
+  changes. The owner decides; each change is measured and reverted if it shows no effect.
+
+## Unreleased — 2b cut lens, security checklist rows, maintenance scan pilot (2026-10-25)
+
+Owner decision 2026-10-25 (Ram), after proposals from the JakoMeet/CRM, B2Press and Foundation sessions, reviewed by
+Claude Fable and Codex gpt-6-astra:
+- **2b changes:**
+  - a fifth **cut** lens (unrequested behaviour, speculative extension points, redundant abstraction, unused code; a cut
+    needs the slice owner's confirmation);
+  - a ~15 min budget;
+  - a commit only when a finding is accepted;
+  - on LIGHT also when the diff touches a shared helper, repeated I/O or a new abstraction;
+  - the skip list and the 2b SHA are review inputs.
+- **Review checklist:**
+  - **A7** security triage on every slice, LIGHT included (one "yes" without a D answer reclassifies the slice to TAM);
+  - **D3** widened to tenant identity across caches, queues, exports, files and derived copies;
+  - new **D7** authorization trace, including async paths and the weakest parallel path;
+  - new **D8** data exposure;
+  - an unresolved critical security question blocks closure.
+- `method/MAINTENANCE_SCAN.md`: pilot contract (not a lane) for release-gate and finished-repo scans. Mechanical checks
+  run first; one module reviewer from a different model family; no fixes inside the scan; budgets and stop rule;
+  promotion only after measured runs.
 
 ## Unreleased — Slice lane: simplify pass (2026-10-27)
 

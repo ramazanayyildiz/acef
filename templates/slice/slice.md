@@ -34,10 +34,10 @@ Yazılmamış istisna = REVISE. Belge kayması: davranış/izin/kapsam değişti
 
 ## Kabul maddeleri
 
-Numaralı, tek tek sınanabilir: koşul + beklenen gözlem + kanıt (test adı / komut / senaryo adımı). Değişmez testlerini yeniden yazma.
+Numaralı, tek tek sınanabilir: koşul + beklenen gözlem + kanıt (test adı / komut / senaryo adımı) + **kaynak** (sahibin cevap numarası, spec satırı ya da karar; kaynağı olmayan madde yazılmaz, sahibe sorulur). Değişmez testlerini yeniden yazma.
 
-- K1 <…> — kanıt: `<TestAdı::test_…>`
-- K2 <…> — kanıt: <…>
+- K1 <…> — kanıt: `<TestAdı::test_…>` — kaynak: <cevap no / spec satırı>
+- K2 <…> — kanıt: <…> — kaynak: <…>
 
 Mutasyonlar (TAM: yeni/değişen her kural için 3–5; HAFİF: davranış değişikliği başına bir; inceleyici hepsini yeniden uygular + kendi bir tanesini ekler). Yeni/değişen davranış yoksa "uygulanmaz: <neden>" yaz; inceleyici doğrular:
 - M1 <kuralı boz> → <kırmızı olması gereken test>
@@ -86,6 +86,8 @@ Giriş noktası (URL/menü) → eylem → ekranda görülmesi gereken. İnceleyi
 
 ## Boyut ve derinlik
 
+- Giriş kartı: `<bağlantı>` · **Yol: native | HAFİF | TAM — <tek cümle gerekçe>** (gerçeklerden, iş adından değil)
+- Şekil bütçesi: dosya başına en fazla ~<n> satır; en fazla <n> yeni sınıf; önce yeniden kullanılacaklar: <mevcut yardımcı/sınıf listesi>. Aşılıyorsa geliştirici durur, koordinatöre sorar.
 - Boyut: ürün kodu ~<n> satır; paylaşılan bileşen/JS/CSS: var/yok; sıcak dosyalar: <liste/yok>
 - **Sınıf: TAM | HAFİF.** TAM = para, yetki/kiracı, durum geçişi, göç, güvenlik ya da sıcak/paylaşılan dosya. HAFİF = test-only, belge, araç, katalog ekranı, çeviri.
 - TAM: ayrı oturum + farklı model ailesi (para ve göçte zorunlu, diğer TAM'da önerilir) + kural başına 3–5 mutasyon + UI'a dokunuyorsa gerçek tarayıcı 1280/390 + `templates/review-checklist.md` A–E.

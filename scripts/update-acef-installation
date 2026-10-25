@@ -2,12 +2,16 @@
 const cp = require("node:child_process");
 const fs = require("node:fs");
 const path = require("node:path");
-const { rewriteInstallationUpdateCommand } = require("./lib/acef-installation");
+const { readCommittedManifest, readInstallationManifest, rewriteInstallationUpdateCommand } = require("./lib/acef-installation");
 
 const defaultSourceRoot = path.resolve(__dirname, "..");
 
 function usage() {
-  console.log(`Usage: scripts/update-acef-installation --repo <path> [--all-worktrees] [--review-lenses] [--all-core] [--global-dispatcher]
+  console.log(`Usage: scripts/update-acef-installation --repo <path> [--profile slice|core|full] [--all-worktrees] [--review-lenses] [--all-core] [--global-dispatcher]
+
+Profiles: slice = recorded skills (default codex + 4 skills) and the Slice lane kit, no .acef tools, no BMAD guard;
+core = tools + skills, no BMAD guard; full = tools + skills + BMAD guard (also used when the record has no profile).
+Without --profile the recorded profile and the recorded tool/skill selection are reused.
 
 Refreshes a target repo from this ACEF checkout:
   1. repo-local ACEF tools, schemas, workflows, and support libraries
@@ -25,6 +29,7 @@ function parseArgs(argv) {
     allCore: false,
     globalDispatcher: false,
     allWorktrees: false,
+    profile: "",
   };
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
@@ -36,6 +41,9 @@ function parseArgs(argv) {
       opts.allCore = true;
     } else if (arg === "--global-dispatcher") {
       opts.globalDispatcher = true;
+    } else if (arg === "--profile") {
+      opts.profile = argv[++index] || "";
+      if (!["slice", "core", "full"].includes(opts.profile)) throw new Error(`Unknown profile: ${opts.profile}`);
     } else if (arg === "--all-worktrees") {
       opts.allWorktrees = true;
     } else if (arg === "-h" || arg === "--help") {
@@ -54,11 +62,13 @@ function resolveSourceRoot(targetRepo) {
   const directInstaller = path.join(defaultSourceRoot, "scripts", "install-acef-tools");
   if (fs.existsSync(directInstaller)) return defaultSourceRoot;
 
-  const manifestPath = path.join(targetRepo, "docs", "ai", "ACEF_INSTALLATION.json");
-  if (!fs.existsSync(manifestPath)) {
+  if (process.env.ACEF_SOURCE && fs.existsSync(path.join(process.env.ACEF_SOURCE, "scripts", "install-acef-tools"))) {
+    return path.resolve(process.env.ACEF_SOURCE);
+  }
+  const manifest = readInstallationManifest(targetRepo);
+  if (!manifest) {
     throw new Error("cannot locate ACEF source checkout; missing docs/ai/ACEF_INSTALLATION.json");
   }
-  const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
   const sourcePath = manifest.acefVersion?.sourcePath;
   if (!sourcePath || !fs.existsSync(path.join(sourcePath, "scripts", "install-acef-tools"))) {
     throw new Error("ACEF_INSTALLATION.json does not point at a usable ACEF source checkout");
@@ -87,15 +97,33 @@ function targetWorktrees(repo, allWorktrees) {
   return [...new Set(targets)];
 }
 
+// Re-apply exactly what was selected before (owner decision 2026-10-25): a selective install must never silently
+// grow into a full one. A record without a profile is a legacy full install and keeps the old behaviour.
 function updateTarget(sourceRoot, targetRepo, opts) {
-  run(sourceRoot, "install-acef-tools", ["--repo", targetRepo]);
-  const skillArgs = ["--repo", targetRepo];
-  if (opts.reviewLenses) skillArgs.push("--review-lenses");
-  if (opts.allCore) skillArgs.push("--all-core");
+  const record = readCommittedManifest(targetRepo) || {};
+  const profile = opts.profile || record.profile || "full";
+  const recorded = record.components?.skills || {};
+  if (profile !== "slice") run(sourceRoot, "install-acef-tools", ["--repo", targetRepo]);
+  const skillArgs = ["--repo", targetRepo, "--profile", profile];
+  const tools = recorded.tools && recorded.tools.length ? recorded.tools : null;
+  if (tools && !opts.profile) for (const tool of tools) skillArgs.push("--tool", tool);
+  if (recorded.skills && recorded.skills.length && !opts.profile && !opts.allCore) for (const skill of recorded.skills) skillArgs.push("--skill", skill);
+  const dirs = recorded.skillsDirs || {};
+  if (tools && tools.length === 1 && !opts.profile) {
+    const fallback = { codex: ".codex/skills", claude: ".claude/skills", opencode: ".opencode/skills" }[tools[0]];
+    if (dirs[tools[0]] && dirs[tools[0]] !== fallback) skillArgs.push("--skills-dir", dirs[tools[0]]);
+  }
+  if (opts.reviewLenses || recorded.reviewLenses === true) skillArgs.push("--review-lenses");
+  if (opts.allCore || recorded.allCore === true) skillArgs.push("--all-core");
   run(sourceRoot, "install-acef-skills", skillArgs);
-  const guardArgs = ["--repo", targetRepo];
-  if (opts.globalDispatcher) guardArgs.push("--global-dispatcher");
-  run(sourceRoot, "install-acef-bmad-guard", guardArgs);
+  if (profile === "slice" || record.components?.sliceKit) {
+    run(sourceRoot, "install-acef-slice-kit", ["--repo", targetRepo]);
+  }
+  if (profile === "full") {
+    const guardArgs = ["--repo", targetRepo];
+    if (opts.globalDispatcher) guardArgs.push("--global-dispatcher");
+    run(sourceRoot, "install-acef-bmad-guard", guardArgs);
+  }
   rewriteInstallationUpdateCommand(targetRepo, sourceRoot, { allWorktrees: opts.allWorktrees });
   console.log(`UPDATED_WORKTREE ${targetRepo}`);
 }
