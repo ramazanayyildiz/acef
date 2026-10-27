@@ -1,0 +1,302 @@
+#!/usr/bin/env python3
+"""acef-retro: the owner's weekly retro, prepared without the owner, decided by the owner (method/FEEDBACK_LOOP.md).
+
+Usage:
+  acef-retro --project <p> | --all [--week YYYY-Www] [--repo <host> [--config <json>]] [--print] [--force]
+  acef-retro --project <p> | --all [--week YYYY-Www] --answer 1=accept --answer "2=reject:<why>" --answer "3=defer:<why>"
+
+Collects the window (an ISO week, default the last 7 days up to now) from the central store (ACEF_FEEDBACK_DIR): log
+entries, alerts opened / reopened / resolved / overdue / unowned, rules past their review date; and from each host repo
+(registered by acef-detect in hosts/<project>.json, or --repo): closed work by route class, merges per day, cycle time
+(first own commit to merge, git timestamps) against the expected time of its class, REVISE rounds, worktrees with no own
+commit. Writes retros/<YYYY>-W<ww>.md (--all) or retros/<YYYY>-W<ww>-<project>.md with five sections and an owner
+decision table; at most five proposals. Numbers from a fallback or a proxy say so; what was not measured says
+"unknown". An existing retro is never overwritten (owner answers live in it) unless --force.
+--answer records the owner's decision by proposal number in the same file.
+"""
+import argparse
+import datetime as dt
+import importlib.machinery
+import importlib.util
+import json
+import re
+import statistics
+import sys
+from pathlib import Path
+
+HERE = Path(__file__).resolve().parent
+
+
+def load_source(name: str, path: Path):
+    loader = importlib.machinery.SourceFileLoader(name, str(path))
+    spec = importlib.util.spec_from_loader(name, loader)
+    module = importlib.util.module_from_spec(spec)
+    loader.exec_module(module)
+    return module
+
+
+detect = load_source("acef_detect", HERE / "acef-detect")
+note, lib = detect.note, detect._lib
+MAX_PROPOSALS = 5
+SCOPE_LAYER = {"method": "acef", "runner": "host", "host": "host"}
+
+
+def window(week: str, now: dt.datetime):
+    if week:
+        match = re.match(r"^(\d{4})-W(\d{2})$", week)
+        if not match:
+            sys.exit("acef-retro: --week looks like 2026-W44")
+        start = dt.date.fromisocalendar(int(match.group(1)), int(match.group(2)), 1)
+        end = start + dt.timedelta(days=6)
+    else:
+        end = now.astimezone().date()
+        start = end - dt.timedelta(days=6)
+    year, wk, _ = end.isocalendar()
+    lo = dt.datetime.combine(start, dt.time(0, 0)).astimezone().astimezone(note.UTC)
+    hi = min(dt.datetime.combine(end + dt.timedelta(days=1), dt.time(0, 0)).astimezone().astimezone(note.UTC), now)
+    return start, end, lo, hi, f"{year}-W{wk:02d}"
+
+
+def target(base: Path, label: str, project: str) -> Path:
+    return base / "retros" / (f"{label}.md" if not project else f"{label}-{project}.md")
+
+
+def projects_of(base: Path, args) -> list:
+    if args.project:
+        return [args.project]
+    names = {p.stem for p in (base / "log").glob("*.md")} | {p.stem for p in (base / "alerts").glob("*.jsonl")}
+    return sorted(names)
+
+
+def host_ctx(base: Path, project: str, args, now):
+    repo, config = args.repo, args.config
+    if not repo:
+        reg = base / "hosts" / f"{project}.json"
+        if reg.exists():
+            data = json.loads(reg.read_text())
+            repo, config = data.get("repo", ""), data.get("config", "")
+    if not repo or not Path(repo).is_dir():
+        return None
+    cfg = detect.load_config(Path(repo), config)
+    return detect.Ctx(Path(repo), cfg, "retro", {}, now, {}, {})
+
+
+def fmt_min(value) -> str:
+    if value is None:
+        return "unknown"
+    return f"{value // 60} h {value % 60:02d} min" if value >= 60 else f"{value} min"
+
+
+def collect_host(ctx, lo, hi, days):
+    out = {"closed": [], "by_class": {}, "cycle": {}, "merges_per_day": None, "revise": {}, "no_commit": [],
+           "notes": []}
+    if ctx is None:
+        out["notes"].append("no host repo registered (run acef-detect once, or pass --repo): host numbers unknown")
+        return out
+    hist = lib.history(ctx, days + 31)
+    if not hist["available"]:
+        out["notes"].append(f"no git history for {lib.main_ref(ctx)}: host numbers unknown")
+        return out
+    closed = [c for c in lib.closed_work(ctx, days + 30) if lo <= c["merged"] < hi]
+    reference = [c for c in lib.closed_work(ctx, 30) if c["merged"] < hi]
+    out["closed"] = closed
+    for c in closed:
+        out["by_class"].setdefault(c["cls"], []).append(c)
+    for cls, rows in out["by_class"].items():
+        known = [r["minutes"] for r in rows if r["minutes"] is not None]
+        expected, how = lib.expected_minutes(ctx, cls, reference) if cls != "unknown" else (None, "no class")
+        out["cycle"][cls] = {"n": len(rows), "known": len(known),
+                             "median": int(statistics.median(known)) if known else None,
+                             "expected": expected, "how": how}
+    out["merges_per_day"] = round(len(closed) / max(1, days), 1)
+    if ctx.sources.get("reviews"):
+        ctx_items = [i for i in lib.items(ctx, "reviews", days * 24 + 24) if lo <= i.when < hi]
+        for work_id, rounds in lib.rounds_by_id(ctx_items).items():
+            revised = {r.round for r in rounds if r.verdict == "REVISE"}
+            out["revise"][work_id] = len(revised)
+    else:
+        out["notes"].append("no reviews source configured: REVISE rounds unknown")
+    for wt in lib.worktrees(ctx):
+        path, head, branch = wt.get("worktree", ""), wt.get("HEAD", ""), wt.get("branch", "")
+        git_file = Path(path) / ".git"
+        if Path(path).resolve() == ctx.repo.resolve():
+            continue
+        if branch and head in hist["chain_set"] and git_file.is_file() and lo <= lib.mtime(git_file) < hi:
+            out["no_commit"].append(Path(path).name)
+    return out
+
+
+def build(base: Path, projects: list, args, now) -> str:
+    start, end, lo, hi, label = window(args.week, now)
+    days = (end - start).days + 1
+    rules = sorted((base / "rules").glob("R-*.md"))
+    rule_text = {r.stem: r.read_text(errors="replace") for r in rules}
+
+    def covering(ids, extra=""):
+        hits = [name for name, text in rule_text.items()
+                if any(i in text for i in ids) or (extra and extra in text)]
+        return ", ".join(hits) or "none"
+
+    good, repeats, overdue, notes = [], [], [], []
+    for project in projects:
+        entries = []
+        log = base / "log" / f"{project}.md"
+        if log.exists():
+            entries = [e for e in note.read_log(log)[0]
+                       if start.isoformat() <= e["date"] <= end.isoformat() and not e["what"].startswith("retag-of:")]
+        events = note.read_alert_events(base / "alerts" / f"{project}.jsonl")
+        in_window = [e for e in events if e["event"] != "poll" and lo <= note.parse_ts(e["ts"]) < hi]
+        polls = [e for e in events if e["event"] == "poll" and lo <= note.parse_ts(e["ts"]) < hi]
+        states = note.alert_states(events, hi)
+        opened = [e for e in in_window if e["event"] in ("open", "reopen")]
+        resolved = [e for e in in_window if e["event"] == "resolve"]
+        acked = [e for e in in_window if e["event"] in ("ack", "defer")]
+        host = collect_host(host_ctx(base, project, args, hi), lo, hi, days)
+        cycle = "; ".join(
+            f"{cls} {c['n']} (median {fmt_min(c['median'])} over {c['known']} with a known start vs expected "
+            f"{fmt_min(c['expected'])}, {c['how']})" for cls, c in sorted(host["cycle"].items())) or "none"
+        revise = host["revise"]
+        good.append(f"| {project} | {len(host['closed'])} | {cycle} | "
+                    f"{host['merges_per_day'] if host['merges_per_day'] is not None else 'unknown'} | "
+                    f"{(str(round(sum(revise.values()) / len(revise), 1)) + f' ({len(revise)} reviewed)') if revise else 'unknown'} | "
+                    f"{len(opened)} opened / {len(resolved)} resolved / {len(acked)} acked or deferred · "
+                    f"{len(polls)} polls | {len(entries)} |")
+        notes += [f"{project}: {n}" for n in host["notes"]]
+        if host["no_commit"]:
+            notes.append(f"{project}: worktrees created in the window with no own commit (proxy for sessions that "
+                         f"produced nothing): {', '.join(sorted(host['no_commit'])[:10])}")
+        groups = {}
+        for e in entries:
+            original = re.match(r"repeat-of:(\S+)", e["what"])
+            key = e["tags"].split(",")[0]
+            g = groups.setdefault(key, {"ids": [], "minutes": 0, "example": None, "origins": set()})
+            g["ids"].append(e["id"])
+            g["minutes"] += note.minutes(e["cost"])
+            if original:
+                g["origins"].add(original.group(1))
+            elif g["example"] is None:
+                g["example"] = e
+        for key, g in groups.items():
+            if len(g["ids"]) >= 2 or g["origins"]:
+                ex = g["example"] or next(e for e in entries if e["id"] == g["ids"][0])
+                repeats.append({"count": len(g["ids"]), "what": f"{project} log, mode `{key}`",
+                                "ids": g["ids"] + sorted(g["origins"]),
+                                "example": f"{ex['id']}: {ex['what'][:160]}",
+                                "cost": f"{g['minutes']} min logged" if g["minutes"] else "cost not logged",
+                                "rule": covering(g["ids"] + sorted(g["origins"])),
+                                "layer": SCOPE_LAYER.get(next((t for t in ex["tags"].split(",") if t in SCOPE_LAYER),
+                                                              ""), "acef or host (coordinator decides)")})
+        by_detector = {}
+        for e in opened:
+            by_detector.setdefault(states.get(e["id"], {}).get("detector", e.get("detector", "?")), []).append(e)
+        for det, rows in by_detector.items():
+            if len(rows) >= 2:
+                ex = states.get(rows[0]["id"], {})
+                repeats.append({"count": len(rows), "what": f"{project} alerts, detector `{det}`",
+                                "ids": sorted({r["id"] for r in rows}),
+                                "example": f"{rows[0]['id']}: {ex.get('subject', '?')} — {ex.get('summary', '')[:140]}",
+                                "cost": "see alert losses" if any(states.get(r["id"], {}).get("note") for r in rows)
+                                else "no loss recorded", "rule": covering([], det), "layer": "acef or host"})
+        loops = sorted(k for k, v in revise.items() if v >= 3)
+        if loops:
+            repeats.append({"count": len(loops), "what": f"{project} review, 3+ REVISE rounds", "ids": loops,
+                            "example": loops[0], "cost": "rounds", "rule": covering([], "REVISE"),
+                            "layer": "acef (review brief) or host"})
+        for a in states.values():
+            if a["status"] == "open" and (a["overdue"] or a["owner"] in ("", "?", "none")):
+                overdue.append(f"- {a['id']} [{a['detector']}] {a['subject']} — owner {a['owner'] or 'NONE'}, "
+                               f"ack by {a['ack_by']}{' (OVERDUE)' if a['overdue'] else ''}: {a['summary'][:140]}")
+    repeats.sort(key=lambda r: r["count"], reverse=True)
+    past = [f"- {name} (review-by {when})" for name, when in note.rules_past_review(base, end.isoformat())]
+    out = [f"# ACEF weekly retro {label}{' — ' + projects[0] if args.project else ''}", "",
+           f"Prepared: {now.astimezone().date().isoformat()} (acef-retro: data only; the coordinator writes the "
+           f"judgment parts, the owner decides by number)",
+           f"Window: {start.isoformat()} .. {end.isoformat()}", f"Through: {end.isoformat()}",
+           f"Projects: {', '.join(projects) or 'none'}", "Status: draft", "",
+           "## 1. What went well (numbers)", "",
+           "| project | merges into main naming a work id | by route class: cycle time vs expected | per day | REVISE rounds per reviewed item | alerts | log entries |",
+           "|---|---|---|---|---|---|---|", *good, "",
+           "Cycle time = first own commit to merge on main (git timestamps, wall clock, not self-reported). Expected = "
+           "median of the same class over 30 days, or the fixed fallback (native 60, HAFIF 180, TAM 480 min) below "
+           "5 samples.", *([""] + [f"- {n}" for n in notes] if notes else []), "",
+           "<!-- coordinator: one or two sentences on what went well, citing the numbers above. -->", "",
+           "## 2. What repeats", ""]
+    if repeats:
+        out += [f"- **{r['what']}** — {r['count']}x · example {r['example']} · {r['cost']} · covered by rule: "
+                f"{r['rule']} · evidence: {', '.join(r['ids'][:8])}" for r in repeats]
+    else:
+        out.append("- nothing repeated in the window")
+    out += ["", "## 3. Overdue or unowned alerts", "", *(overdue or ["- none"]), "",
+            "## 4. Rules past their review date", "", *(past or ["- none"]), "",
+            f"## 5. Proposed changes (at most {MAX_PROPOSALS}; the owner answers by number)", "",
+            "<!-- coordinator: rewrite, merge or delete the candidates; keep at most five. Each needs evidence ids, a "
+            "target layer (acef / stack / host), the expected effect and how it will be measured. -->", ""]
+    candidates = repeats[:MAX_PROPOSALS]
+    for n, r in enumerate(candidates, 1):
+        out.append(f"{n}. Candidate from {r['what']} — change: <coordinator> · evidence: {', '.join(r['ids'][:8])} · "
+                   f"layer: {r['layer']} · expected effect: <coordinator> · measured by: count of the same "
+                   f"{'alerts' if 'alerts' in r['what'] else 'entries'} next week (now {r['count']})")
+    if not candidates:
+        out.append("1. <coordinator, or delete: no repeats this week>")
+    out += ["", "## Owner decisions", "", "| # | decision (accept / reject / defer) | note | date |", "|---|---|---|---|"]
+    out += [f"| {n} | pending | | |" for n in range(1, max(1, len(candidates)) + 1)]
+    return "\n".join(out) + "\n"
+
+
+def record_answers(path: Path, answers: list, today: str):
+    text = path.read_text()
+    for raw in answers:
+        match = re.match(r"^(\d+)=(accept|reject|defer)(?::(.*))?$", raw.strip())
+        if not match:
+            sys.exit(f"acef-retro: an answer looks like 2=accept, 3=reject:<why> or 4=defer:<why>, not {raw!r}")
+        n, decision, why = match.group(1), match.group(2), (match.group(3) or "").replace("|", "/").strip()
+        row = re.compile(rf"(?m)^\| {n} \| [^|\n]*\| [^|\n]*\| [^|\n]*\|$")
+        if not row.search(text):
+            sys.exit(f"acef-retro: proposal {n} has no row in {path}")
+        text = row.sub(f"| {n} | {decision} | {why} | {today} |", text)
+    rows = re.findall(r"(?m)^\| \d+ \| (\w+) \|", text.split("## Owner decisions", 1)[-1])
+    if rows and "pending" not in rows:
+        text = re.sub(r"(?m)^Status: .*$", "Status: decided", text, count=1)
+    path.write_text(text)
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(prog="acef-retro", description=__doc__.split("\n\n")[0])
+    who = parser.add_mutually_exclusive_group(required=True)
+    who.add_argument("--project", default="")
+    who.add_argument("--all", action="store_true")
+    parser.add_argument("--week", default="")
+    parser.add_argument("--repo", default="")
+    parser.add_argument("--config", default="")
+    parser.add_argument("--print", action="store_true", help="print instead of writing")
+    parser.add_argument("--force", action="store_true", help="overwrite an existing retro (loses owner answers)")
+    parser.add_argument("--answer", action="append", default=[])
+    args = parser.parse_args()
+    if args.project and not note.PROJECT.match(args.project):
+        sys.exit("acef-retro: project must be lowercase letters, digits and dashes")
+    if args.repo and args.all:
+        sys.exit("acef-retro: --repo goes with --project")
+    base, now = note.ensure_store(), note.now_utc()
+    label = window(args.week, now)[4]
+    path = target(base, label, args.project)
+    if args.answer:
+        if not path.exists():
+            sys.exit(f"acef-retro: no retro {path}")
+        record_answers(path, args.answer, now.astimezone().date().isoformat())
+        print(path)
+        return 0
+    text = build(base, projects_of(base, args), args, now)
+    if args.print:
+        print(text, end="")
+        return 0
+    if path.exists() and not args.force:
+        print(f"acef-retro: {path} exists (owner answers live in it); use --force to rebuild", file=sys.stderr)
+        print(path)
+        return 1
+    path.write_text(text)
+    print(path)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
