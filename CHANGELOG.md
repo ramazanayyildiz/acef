@@ -137,6 +137,19 @@ landed in; Manager-driven Codex panes counted as 99 owner hours; machine inciden
   New checks: the repro end to end (a failed Codex command), 120 generated fields with a long block crossing the cut
   at different offsets and nested keywords (no line the full-text pass redacts survives; it fails on 72ec5e9), and
   10 MB fields under 1 s.
+- **Fifth confirmation round (Codex, PR #27: 1 P1, a regression from the speed-up):** the fast path matched
+  case-sensitively on `.lower()`, but `re.IGNORECASE` also folds `ı` (U+0131), `İ` (U+0130), `ſ` (U+017F) and the
+  Kelvin sign onto ASCII letters, so `prıvate key: <value>` leaked. Decisions on a line use the IGNORECASE patterns
+  again; the fast search only finds candidate lines, on a copy folded with `str.translate` (ASCII upper case plus
+  the four characters re folds onto ASCII letters, one character to one, so positions stay put). It is a superset
+  filter: it cannot say "no" where the IGNORECASE pattern says "yes". The property test then found a second gap of the
+  same family: `json.dumps` escaped `ı` to `\u0131` before redaction (tool-input summaries, MCP errors); every dump
+  that feeds redaction now keeps non-ASCII text. New checks: the fold table equals what `re` folds onto ASCII
+  letters over every code point; a differential test over 4 seeds (about 14,500 keyword lines with fold characters,
+  fullwidth letters and combining marks) where the fast path never keeps a line an independent IGNORECASE regex or
+  the per-line IGNORECASE reference redacts; probes with `ı`, `ſ`, `K`, `İ` in the property test. All fail on
+  df349b2. Lookalikes from other scripts (a Cyrillic `о` in `tоken`) are not folded by IGNORECASE either and stay a
+  known limit.
 - Tests: 46 checks on synthetic fixtures; the property test now covers 56 secrets in 37 forms (comment-then-value,
   five YAML block scalars, dotenv continuation, a quoted value over two lines). Runtime on the pilot day: about 20 s
   (parse 12 s, git/gh 4 s) for 3.8 GB under load. A scan of the real pilot-day output finds no email, key block,

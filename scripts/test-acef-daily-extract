@@ -409,6 +409,10 @@ def property_fixture(root):
     forms.append("-----BEGIN PRIVATE KEY-----\n" + "\n".join(pem_body) + "\n-----END PRIVATE KEY-----")
     forms.append("-----BEGIN RSA PRIVATE KEY-----\n" + "\n".join(w() for _ in range(3)))   # unterminated PEM
     forms.append(f"cat /tmp/password-{w()}.txt")                               # file names
+    forms.append(f"pr\u0131vate key: {w()}")                                    # IGNORECASE folds: dotless i,
+    forms.append(f"pa\u017f\u017fword: {w()}")                                  # long s, Kelvin sign, dotted I
+    forms.append(f"api_\u212aey={w()}")
+    forms.append(f"cL\u0130ent_secret={w()}")
     forms.append(f"mail {w()}@example.org")
     one = [f.replace("\n", " ") for f in forms]
     tokname = w()
@@ -684,6 +688,76 @@ try:
     check(f"P1 monotone blocks: a keyword line at every position inside a block ({len(block_family())} shapes) "
           "never shortens it; r6 and r7", not survivors and "Cedar47Maple" not in r6 and "CanaryMint79" not in r7
           and r6.endswith("ok: 1") and r7.endswith("next: 1"), (survivors[:2], r6, r7))
+    # P1 r9: keyword detection is at least as broad as the IGNORECASE patterns. (a) The fold table equals what re
+    # folds onto ASCII letters over every code point; (b) differential: on random inputs with Unicode case-fold
+    # characters, every line an independent IGNORECASE keyword regex hits is redacted, and every line the plain
+    # per-line reference (IGNORECASE, no fast path) redacts is redacted by the fast path.
+    import sys as sys_mod
+    folds = {}
+    letter = re.compile("[a-z]", re.IGNORECASE)
+    for u in range(sys_mod.maxunicode + 1):
+        if 0xD800 <= u <= 0xDFFF or u < 128:
+            continue
+        if letter.fullmatch(chr(u)):
+            folds[chr(u)] = next(a for a in "abcdefghijklmnopqrstuvwxyz" if re.fullmatch(a, chr(u), re.IGNORECASE))
+    fold_ok = getattr(mod, "FOLD_EXTRA", None) == folds
+    kw_ref = re.compile(r"passw(?:or)?d|\bpwd\b|\bpass\s*[=:]|secret|token|api[_-]?key|apikey|authori[sz]ation|"
+                        r"bearer|private[ _-]?key|client[_-]?secret|database_url|credential|access[_-]?key|"
+                        r"auth[_-]?key", re.IGNORECASE)
+    words = ["password", "passwd", "secret", "token", "api_key", "apikey", "authorization", "bearer", "private key",
+             "client_secret", "database_url", "credential", "access-key", "auth_key", "pwd", "pass="]
+    weird = ["\u0131", "\u0130", "\u017f", "\u212a", "\ufb00", "\uff21", "\uff53", "\u0301", "\u00e9", "\u00df",
+             "\u01c5", "\u2126"]
+
+    def mutate(word, rng):
+        out = []
+        for ch in word:
+            r = rng.random()
+            if r < 0.2 and ch == "i":
+                out.append(rng.choice(["\u0131", "\u0130", "I"]))
+            elif r < 0.2 and ch == "s":
+                out.append(rng.choice(["\u017f", "S"]))
+            elif r < 0.2 and ch == "k":
+                out.append(rng.choice(["\u212a", "K"]))
+            elif r < 0.35:
+                out.append(ch.upper())
+            else:
+                out.append(ch)
+            if rng.random() < 0.03:
+                out.append(rng.choice(weird))
+        return "".join(out)
+    import random as random_r9
+    missed, diff, kw_lines = [], [], 0
+    for seed in range(4):
+        rng = random_r9.Random(100 + seed)
+        for _ in range(1500):
+            lines = []
+            for _ in range(rng.randint(1, 12)):
+                ind, r = " " * rng.choice([0, 2, 4]), rng.random()
+                if r < 0.45:
+                    lines.append(ind + mutate(rng.choice(words), rng) + rng.choice([": ", ": |", "=", "", ": x"]) +
+                                 rng.choice(["", "Cedar47Maple", "'q"]))
+                elif r < 0.55:
+                    lines.append("")
+                else:
+                    lines.append(ind + "v" + "".join(rng.choice(weird + list("abc ")) for _ in range(rng.randint(0, 10))))
+            text = "\n".join(lines)
+            fast = mod._redact_lines(text).split("\n")
+            st = mod._Block()
+            ref = [st.step(ln_, None, True, True, True) for ln_ in lines]
+            for i, ln_ in enumerate(lines):
+                if kw_ref.search(ln_):
+                    kw_lines += 1
+                    if fast[i] == ln_:
+                        missed.append(ln_)
+                if ref[i] != ln_ and fast[i] == ln_:
+                    diff.append(ln_)
+    check(f"P1 r9: case folding is at least as broad as IGNORECASE (fold table matches re over every code point; "
+          f"{kw_lines} keyword lines with \u0131 \u0130 \u017f \u212a and other fold characters over 4 seeds; fast path "
+          "never keeps a line the per-line IGNORECASE reference redacts); 'pr\u0131vate key' probe",
+          fold_ok and not missed and not diff and kw_lines > 1000 and
+          "Cedar47Maple" not in mod.redact("pr\u0131vate key: Cedar47Maple\nok"),
+          (fold_ok, missed[:5], diff[:5]))
     # P1 r8: the bounding cut never shortens a block. For every field, no line the full-text line pass redacts
     # survives redact_field (exact head, carried state into the tail); the repro does not reach extract.json.
     viol, total = [], 0

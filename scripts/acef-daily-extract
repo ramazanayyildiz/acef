@@ -158,7 +158,20 @@ SECRET_CTX_RE = re.compile(
     r"passw(?:or)?d|\bpwd\b|\bpass\s*[=:]|secret|token|api[_-]?key|apikey|authori[sz]ation|bearer|"
     r"private[ _-]?key|-----BEGIN|client[_-]?secret|database_url|credential|access[_-]?key|auth[_-]?key",
     re.IGNORECASE)
-# whole-text pre-checks run case-sensitively on s.lower() (one C pass) instead of IGNORECASE over megabytes
+# Candidate search runs case-sensitively on a FOLDED copy (one str.translate pass) instead of IGNORECASE over
+# megabytes. The fold maps every character that re.IGNORECASE treats as an ASCII letter to that lowercase letter,
+# one character to one, so positions stay put and the case-sensitive search finds every place the IGNORECASE
+# pattern matches (a superset filter). Decisions on a candidate line always use the IGNORECASE patterns. Python's
+# re folds four non-ASCII characters onto ASCII letters; test-acef-daily-extract recomputes this from re over every
+# code point, so a Python change fails the test instead of leaking.
+FOLD_EXTRA = {"\u0130": "i", "\u0131": "i", "\u017f": "s", "\u212a": "k"}     # İ ı ſ K (Kelvin)
+FOLD = str.maketrans({**{chr(c): chr(c + 32) for c in range(65, 91)}, **FOLD_EXTRA})
+
+
+def _fold(s):
+    return s.translate(FOLD)
+
+
 SECRET_CTX_LOWER = re.compile(SECRET_CTX_RE.pattern)
 DBCLI_LOWER = re.compile(r"\b(?:mysql\w*|mariadb\w*|psql|pg_dump|pg_restore)\b")
 DBCLI_RE = re.compile(r"\b(?:mysql\w*|mariadb\w*|psql|pg_dump|pg_restore)\b", re.IGNORECASE)
@@ -210,15 +223,13 @@ def _redact_pem(s):
 
 
 def _secret_span(line, ctx=True, db=True, url=True, low=None):
-    """(start, end) of the earliest secret context on a line, or None. The flags skip checks the whole text
-    already ruled out. low is line.lower(): case-sensitive patterns on it are much faster than IGNORECASE; when
-    lowercasing changed the length (some non-ASCII letters), positions would drift, so the original is searched."""
+    """(start, end) of the earliest secret context on a line, or None, decided by the IGNORECASE patterns on the
+    original line. The flags skip checks the whole-text superset filter already ruled out; low is unused."""
     best = None
-    same = low is not None and len(low) == len(line)
-    m = (SECRET_CTX_LOWER.search(low) if same else SECRET_CTX_RE.search(line)) if ctx else None
+    m = SECRET_CTX_RE.search(line) if ctx else None
     if m:
         best = (m.start(), m.end())
-    d = (DBCLI_LOWER.search(low) if same else DBCLI_RE.search(line)) if db else None
+    d = DBCLI_RE.search(line) if db else None
     if d:
         p = DBPASS_RE.search(line, d.end())
         if p and (best is None or p.start() < best[0]):
@@ -294,13 +305,11 @@ def _redact_lines(s, start=None):
     at or below the baseline that no rule claims, or BLOCK_CAP lines after the most recent keyword line.
     Speed: the text between blocks is copied as slices; Python only walks candidate lines (a keyword, a database
     client, a URL) and the lines a block claims, and every pattern's next hit is cached so nothing is rescanned."""
-    low = s.lower()
+    low = _fold(s)                                  # same length as s: positions line up
     ctx, db, url = bool(SECRET_CTX_LOWER.search(low)), bool(DBCLI_LOWER.search(low)), "://" in s and "@" in s
     st = start or _Block()
     if not (ctx or db or url or st.active):
-        return s                                    # no secret context anywhere
-    if len(low) != len(s):                          # lowercasing moved positions: walk every line
-        return "\n".join(st.step(ln, None, ctx, db, url) for ln in s.split("\n"))
+        return s                                    # no secret context anywhere (superset filter said no)
     n, inf = len(s), len(s) + 1
 
     def srch(rx, pos):
@@ -387,7 +396,7 @@ def redact_field(s):
             lo = 0
             break
         lo = prev
-    window = s[lo:tstart].lower()
+    window = _fold(s[lo:tstart])
     carried = _Block()
     if SECRET_CTX_LOWER.search(window) or DBCLI_LOWER.search(window) or "://" in window:
         carried.active, carried.base, carried.first, carried.cont, carried.k = True, -1, True, False, 0
@@ -692,12 +701,12 @@ def parse_claude(path, since, until, kind):
                     name, inp = c.get("name") or "", c.get("input") or {}
                     cmd = inp.get("command") or inp.get("cmd") or ""
                     if not isinstance(cmd, str):
-                        cmd = redact_field(json.dumps(cmd))[:300]
+                        cmd = redact_field(json.dumps(cmd, ensure_ascii=False))[:300]
                     if inp.get("run_in_background"):
                         cmd += "  [run_in_background]"
                     # only what the result needs: tool name, a bounded command, a short input summary
                     pending[c.get("id")] = (name, redact_field(cmd)[:4000], t, ln,
-                                            redact_field(json.dumps(inp))[:300] if not cmd else "")
+                                            redact_field(json.dumps(inp, ensure_ascii=False))[:300] if not cmd else "")
                     if not win:
                         continue
                     if name in ("Agent", "Task"):
@@ -800,7 +809,7 @@ def _fc_output(o):
     "Exit code: N" line, or a list of input_text parts."""
     if isinstance(o, list):
         o = text_of(o)
-    o = o if isinstance(o, str) else json.dumps(o)
+    o = o if isinstance(o, str) else json.dumps(o, ensure_ascii=False)
     try:
         j = json.loads(o)
         if isinstance(j, dict) and ("output" in j or "metadata" in j or "exit_code" in j):
@@ -987,7 +996,7 @@ def parse_codex(path, since, until, kind_unused=None):
             elif itype == "McpToolCall" and it.get("status") == "failed":
                 err = it.get("error")
                 s.fails.append({"t": t, "line": ln, "tool": f"mcp:{it.get('server')}/{it.get('tool')}", "cmd": "",
-                                "err": clip(json.dumps(err) if err else "failed", ERR_CHARS)})
+                                "err": clip(json.dumps(err, ensure_ascii=False) if err else "failed", ERR_CHARS)})
             elif itype == "Extension" and it.get("kind") == "clock.sleep":
                 s.waits["sleep_s"] += (it.get("durationMs") or 0) / 1000.0
                 s.waits["sleep_calls"] += 1
