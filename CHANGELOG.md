@@ -188,6 +188,51 @@ for the pilot; the owner reviews the pilot before anything is scheduled.
   (wired).
 - Not changed: rules, the weekly retro, `acef-note`. The daily review reports and carries repeats to the weekly retro;
   it never changes rules.
+## Unreleased — Per-role models in the routing policy: Opus review on anthropic (2026-10-27)
+
+Why: the routing policy mapped each role to one of three execution classes, and Development shared
+`semantic-critical` with Patch Assurance and both Judges. On anthropic a host could not run Development on Sonnet and
+review on Opus inside the policy, so hosts that moved their work into ACEF routing (BMAD Full roles, Fix/Standard under
+`admitted-role-routing-v1`) silently lost the Opus reviews their coordinators used to dispatch, and those reviews had
+caught that day's serious money bugs. Owner decision 2026-10-27 (Ram). Replaces the "three-class limit" described in the
+beta.8 model-choice entry.
+- **Policy** `method/model-routing-policy-v1.json`: optional per-provider `roleModels` (role → model, wins over the
+  class mapping; `null` = use the class). anthropic ships `patch-assurance`, `process-judge` and
+  `epic-process-judge` → `claude-opus-5-5`; conductor, atdd, development and code-review stay `claude-sonnet-5-5`
+  through their class. OpenAI unchanged (`gpt-6.1-sol` for every role, effort by role tier, no `roleModels`).
+  `policyId` → `role-models-2026-10-27`; the anthropic and top-level `note` fields describe the mechanism.
+- **Schema** `schemas/model-routing-policy-v1.schema.json`: `roleModels` is a pure addition, so the id stays v1 and
+  every v1 policy without it loads and resolves exactly as before. `schemas/active-run-v2.schema.json`: optional
+  `routingRoleModels`.
+- **One resolver** `scripts/lib/acef-model-routing.js`: `resolveRoleRuntime` picks the model in this order: the run's
+  host override for the role (active-run `routingRoleModels`) → the policy's `roleModels` → `models[executionClass]`;
+  effort always comes from the role's `reasoningTier`. The result carries `modelSource` (`run-override`, `role`,
+  `class`). Validation rejects an unknown or alias role key in `roleModels` on every provider, not only the active one,
+  and unsafe model ids. Consumers pass `runRoutingSelection(activeRun)` instead of the provider string:
+  `acef-state` (actor binding, capsule-supervisor actor binding, recovery review, review capsule), `acef-supervisor`
+  (launcher), `acef-next`, `acef-process-validator` (actor-separation runtime check) and the BMAD hard-wall hook (which
+  falls back to the provider string when an older installed library lacks the helper). None reads `models[class]`
+  directly. The experiment harness pins the policy by sha256 only and is unchanged.
+- **Run override** `acef-state active-run --routing-role-model <role>=<model>` (repeatable; merges by role on same-run
+  updates, `<role>=` clears; validated against the policy roles) records `routingRoleModels`.
+- **Hosts**: `update-acef-installation` merges `.acef/model-routing-policy.json` three-way as before. A host without
+  `roleModels` gains ACEF's defaults; a host's own per-role values, including a `null` opt-out, are kept and reported
+  as overrides. **Effect: after the update, hosts running admitted roles on anthropic routing move Patch Assurance,
+  the Process Judge and the Epic Process Judge from Sonnet to Opus. Cost note: review roles only;** Development, ATDD,
+  the Conductor and Code Review stay on Sonnet unless a host overrides them. A host that does not want this sets those
+  roles to `null` in its `roleModels`. The hard-wall reads the installed `.acef/bin/lib` copy, so the new routing takes
+  effect on the host's next install/update.
+- **Docs**: `method/MODEL_CHOICE.md` replaces the known-limitation paragraph with the mechanism and the default table;
+  `method/BMAD_V2_LANE.md`, `method/DELIVERY_RULES.md`, `method/OPERATING_MODEL.md`, `skills/acef/SKILL.md`, the lane
+  reference, and the `model-choice` / `provider-neutral-model-routing` capability records follow. `selfcheck.sh` needs
+  the mechanism in MODEL_CHOICE.md.
+- **Tests**: `test-acef-model-routing` (default anthropic/openai table, resolution order, `null` fallback, unknown key
+  rejection on an inactive provider, v1 without `roleModels` unchanged, schema declares the field),
+  `test-acef-process-validator` (hard-wall accepts Opus for Patch Assurance and rejects Sonnet; a run override wins),
+  `test-acef-quick-fix-single-review` (validator actor-separation follows a run override),
+  `test-acef-active-run-continuity` (`--routing-role-model` record, keep, clear, alias rejection, actor binding),
+  `test-acef-host-file-preservation` (per-role values and a `null` opt-out survive an update; an untouched host gains
+  the defaults).
 
 ## v3.0.0-beta.8 — One model-choice rule for Claude and Codex agents (2026-10-27)
 

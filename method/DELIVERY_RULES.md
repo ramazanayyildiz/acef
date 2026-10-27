@@ -67,7 +67,9 @@ All admitted semantic actors use the provider-neutral role routing policy, not t
 from the calibrated route, and actor registration verifies the same binding. Existing in-flight runs retain their
 original contract. Native work is outside this policy because installation is not admission. A run that must use a
 different mapped provider records it once with `active-run --routing-provider <id>`; the effort it binds is a claim the
-launcher has to honor when opening the session.
+launcher has to honor when opening the session. A run can change one role's model with
+`active-run --routing-role-model <role>=<model>`; the policy's per-role `roleModels` and class mapping apply otherwise
+(`method/MODEL_CHOICE.md`).
 Slice lane exception: Slice lane work is outside this policy; its reviewer model comes from `REVIEW_MODEL` / `slice-method.json` via
 `scripts/slice/codex-review.sh`.
 

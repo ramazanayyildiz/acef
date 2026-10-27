@@ -148,6 +148,19 @@ try {
   assert.match(`${overpoweredActor.stdout}${overpoweredActor.stderr}`, /actor runtime must be gpt-6\.1-sol\/high/);
   fs.writeFileSync(developerActorPath, `${JSON.stringify(developerActor, null, 2)}\n`);
 
+  // A run per-role override is the expected runtime for that role: the validator accepts it and rejects the class model.
+  const activeRunPath = path.join(repo, "docs", "ai", "ACEF_ACTIVE_RUN.json");
+  const activeRunBytes = fs.readFileSync(activeRunPath, "utf8");
+  fs.writeFileSync(activeRunPath, `${JSON.stringify({ ...JSON.parse(activeRunBytes), routingRoleModels: { development: "host-dev-model" } }, null, 2)}\n`);
+  const classModelActor = validatorRun("actor-separation");
+  assert.notEqual(classModelActor.status, 0, "actor-separation accepted the class model over the run per-role model");
+  assert.match(`${classModelActor.stdout}${classModelActor.stderr}`, /actor runtime must be host-dev-model\/high/);
+  fs.writeFileSync(developerActorPath, `${JSON.stringify({ ...developerActor, model: "host-dev-model" }, null, 2)}\n`);
+  const perRoleActor = validatorRun("actor-separation");
+  assert.equal(perRoleActor.status, 0, `actor-separation rejected the run per-role model:\n${perRoleActor.stdout}${perRoleActor.stderr}`);
+  fs.writeFileSync(developerActorPath, `${JSON.stringify(developerActor, null, 2)}\n`);
+  fs.writeFileSync(activeRunPath, activeRunBytes);
+
   lifecycle.quickFix.completedAt = "2026-08-06T10:31:00.000Z";
   write("docs/ai/ACEF_LIGHTWEIGHT_RUN.json", `${JSON.stringify(lifecycle, null, 2)}\n`);
   const overtime = validatorRun("quick-fix-closeout");

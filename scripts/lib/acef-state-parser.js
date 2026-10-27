@@ -196,6 +196,14 @@ function validateActiveRunRecord(record) {
       && (typeof record.routingProvider !== "string" || !/^[A-Za-z0-9._-]+$/.test(record.routingProvider))) {
       throw new Error("active run routingProvider must be a safe provider id");
     }
+    if (record.routingRoleModels !== undefined) {
+      const entries = record.routingRoleModels && typeof record.routingRoleModels === "object" && !Array.isArray(record.routingRoleModels)
+        ? Object.entries(record.routingRoleModels) : null;
+      if (!entries?.length || entries.some(([role, model]) => !/^[a-z0-9-]+$/.test(role)
+        || typeof model !== "string" || !/^[A-Za-z0-9._:/-]+$/.test(model))) {
+        throw new Error("active run routingRoleModels must map role ids to safe model ids");
+      }
+    }
     if (record.lightweightStateContract !== undefined) {
       requireEnum(record, "lightweightStateContract", ["lightweight-state-v1"], "active run");
       if (!["quick-fix", "lightweight"].includes(record.workflowId)) {

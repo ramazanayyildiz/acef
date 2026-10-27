@@ -156,7 +156,10 @@ try {
     fs.writeFileSync(path.join(acef, policyRel), `${JSON.stringify(value, null, 2)}\n`);
   };
   const updateFrom = (repoDir) => cp.execFileSync(process.execPath, [path.join(acef, "scripts", "update-acef-installation"), "--repo", repoDir], { cwd: acef, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
-  setPolicy((value) => { value.providers.openai.models.orchestration = "old-orchestration"; value.providers.openai.models["semantic-critical"] = "old-critical"; });
+  const shippedRoleModels = JSON.parse(source(policyRel)).providers.anthropic.roleModels;
+  assert.ok(shippedRoleModels, "ACEF ships anthropic roleModels");
+  // ACEF v1 here is the pre-roleModels policy: no per-role models on any provider.
+  setPolicy((value) => { value.providers.openai.models.orchestration = "old-orchestration"; value.providers.openai.models["semantic-critical"] = "old-critical"; delete value.providers.anthropic.roleModels; });
   acefGit("add", "-A"); acefGit("commit", "-qm", "ACEF v1 policy");
   const base = acefGit("rev-parse", "HEAD");
   const upgraded = fs.mkdtempSync(path.join(os.tmpdir(), "acef-host-files-"));
@@ -166,6 +169,16 @@ try {
   const hostPolicy = JSON.parse(read(upgraded, POLICY));
   hostPolicy.providers.openai.models["semantic-critical"] = "host-critical";
   write(upgraded, POLICY, `${JSON.stringify(hostPolicy, null, 2)}\n`);
+  // Hosts installed from the pre-roleModels ACEF: one untouched, one that already named its own per-role models
+  // (including a null opt-out that returns a role to its class mapping).
+  const plainHost = fs.mkdtempSync(path.join(os.tmpdir(), "acef-host-files-"));
+  const roleHost = fs.mkdtempSync(path.join(os.tmpdir(), "acef-host-files-"));
+  dirs.push(plainHost, roleHost);
+  for (const dir of [plainHost, roleHost]) { cp.execFileSync("git", ["init", "-q", dir]); updateFrom(dir); }
+  assert.equal(JSON.parse(read(plainHost, POLICY)).providers.anthropic.roleModels, undefined);
+  const roleHostPolicy = JSON.parse(read(roleHost, POLICY));
+  roleHostPolicy.providers.anthropic.roleModels = { "patch-assurance": "host-review-model", "process-judge": null, development: "claude-opus-5-5" };
+  write(roleHost, POLICY, `${JSON.stringify(roleHostPolicy, null, 2)}\n`);
   // a fork install: same ACEF v1 plus a fork-only policy commit on a side branch
   acefGit("checkout", "-q", "-b", "fork");
   setPolicy((value) => { value.providers.openai.models.orchestration = "fork-orchestration"; });
@@ -176,7 +189,7 @@ try {
   updateFrom(forkInstall);
   acefGit("checkout", "-q", base);
   acefGit("checkout", "-q", "-b", "next");
-  setPolicy((value) => { value.providers.openai.models.orchestration = "new-orchestration"; value.providers.openai.models["semantic-critical"] = "new-critical"; });
+  setPolicy((value) => { value.providers.openai.models.orchestration = "new-orchestration"; value.providers.openai.models["semantic-critical"] = "new-critical"; value.providers.anthropic.roleModels = shippedRoleModels; });
   acefGit("commit", "-qam", "ACEF v2 policy");
   const upgradeOut = updateFrom(upgraded);
   const upgradedPolicy = JSON.parse(read(upgraded, POLICY)).providers.openai.models;
@@ -184,6 +197,27 @@ try {
   assert.equal(upgradedPolicy["semantic-critical"], "host-critical", "a host-changed value is kept");
   assert.match(upgradeOut, /kept host overrides \.acef\/model-routing-policy\.json: providers\.openai\.models\.semantic-critical/);
   assert.match(upgradeOut, /upgraded untouched ACEF values \.acef\/model-routing-policy\.json: providers\.openai\.models\.orchestration/);
+  // 7b. Per-role models across the same upgrade. An untouched host gains ACEF's roleModels (Patch Assurance and the
+  //     Judges move to Opus on anthropic); a host's own per-role values, including a null opt-out, survive.
+  const { loadModelRoutingPolicy, resolveRoleRuntime } = require(path.join(root, "scripts", "lib", "acef-model-routing"));
+  const plainOut = updateFrom(plainHost);
+  assert.match(plainOut, /added new keys \.acef\/model-routing-policy\.json: [^\n]*providers\.anthropic\.roleModels/);
+  assert.deepEqual(JSON.parse(read(plainHost, POLICY)).providers.anthropic.roleModels, shippedRoleModels);
+  const plainLoaded = loadModelRoutingPolicy(plainHost).record;
+  assert.equal(resolveRoleRuntime(plainLoaded, "patch-assurance", "anthropic").model, "claude-opus-5-5");
+  assert.equal(resolveRoleRuntime(plainLoaded, "development", "anthropic").model, "claude-sonnet-5-5");
+  const roleOut = updateFrom(roleHost);
+  const roleAfter = JSON.parse(read(roleHost, POLICY)).providers.anthropic.roleModels;
+  assert.equal(roleAfter["patch-assurance"], "host-review-model", "a host per-role model survives the update");
+  assert.equal(roleAfter["process-judge"], null, "a host null opt-out survives the update");
+  assert.equal(roleAfter.development, "claude-opus-5-5", "a host-only per-role key survives the update");
+  assert.equal(roleAfter["epic-process-judge"], "claude-opus-5-5", "a per-role default the host did not name is added");
+  assert.match(roleOut, /kept host overrides \.acef\/model-routing-policy\.json: [^\n]*providers\.anthropic\.roleModels\.patch-assurance/);
+  assert.match(roleOut, /kept host overrides \.acef\/model-routing-policy\.json: [^\n]*providers\.anthropic\.roleModels\.process-judge/);
+  const roleLoaded = loadModelRoutingPolicy(roleHost).record;
+  assert.equal(resolveRoleRuntime(roleLoaded, "patch-assurance", "anthropic").model, "host-review-model");
+  assert.equal(resolveRoleRuntime(roleLoaded, "process-judge", "anthropic").model, "claude-sonnet-5-5");
+  assert.equal(resolveRoleRuntime(roleLoaded, "development", "anthropic").model, "claude-opus-5-5");
   const forkOut2 = updateFrom(forkInstall);
   assert.equal(JSON.parse(read(forkInstall, POLICY)).providers.openai.models.orchestration, "fork-orchestration", "fork values are host choices");
   assert.match(forkOut2, /no ACEF baseline/);

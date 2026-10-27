@@ -53,7 +53,9 @@ roles while removing model work from lifecycle bookkeeping:
 - Model routing is role-based and provider-neutral. Mechanical actions use no model; the conductor uses
   `orchestration/medium`; unmeasured semantic roles retain `semantic-critical/high`. V327-CAL-001 qualified Code
   Review as `semantic-standard/medium` on the active OpenAI mapping. Other providers require a complete mapping and
-  provider-specific calibration before they can certify work.
+  provider-specific calibration before they can certify work. A provider may name a model for one role
+  (`roleModels`, for example anthropic Patch Assurance and both Judges on Opus) and a run may override one role with
+  `active-run --routing-role-model`; the tier, and so the effort, still comes from the role.
 
 Treat this runtime as `enforced`, not `proven` or a default. V3.34 passed the live product, lifecycle, cost,
 blind-product, and exact-transcript reanalysis checks while its immutable automated row remains failed. The reviewed

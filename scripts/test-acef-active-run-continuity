@@ -128,4 +128,34 @@ const base = (runId) => ["active-run", "--run-id", runId, "--workflow-id", "ligh
   assert.equal(stillOpenai.status, 0, `${stillOpenai.stdout}${stillOpenai.stderr}`);
   console.log("WP-11 routing provider ok");
 }
+
+// ---------- per-role models: run override recorded on the active run ----------
+{
+  const repo = initRepo();
+  const actorArgs = (id, model) => ["actor", "--id", id, "--story", "Story cont", "--phase", "development", "--role", "developer",
+    "--client", "claude-code", "--model", model, "--effort", "high", "--context-profile", "worker"];
+  const alias = run(repo, [...base("RUN-r"), "--phase", "development", "--routing-provider", "anthropic", "--routing-role-model", "developer=claude-opus-5-5"]);
+  assert.equal(alias.status, 1, "an alias role key must be rejected");
+  assert.match(alias.stderr, /unknown role developer/);
+  const malformed = run(repo, [...base("RUN-r"), "--phase", "development", "--routing-role-model", "development"]);
+  assert.equal(malformed.status, 1);
+  assert.match(malformed.stderr, /expects <role>=<model>/);
+  const start = run(repo, [...base("RUN-r"), "--phase", "development", "--routing-provider", "anthropic", "--routing-role-model", "development=claude-opus-5-5"]);
+  assert.equal(start.status, 0, `${start.stdout}${start.stderr}`);
+  assert.deepEqual(json(repo, "docs/ai/ACEF_ACTIVE_RUN.json").routingRoleModels, { development: "claude-opus-5-5" });
+  const keep = run(repo, [...base("RUN-r"), "--phase", "development", "--next-allowed-step", "write_failing_tests"]);
+  assert.equal(keep.status, 0, `${keep.stdout}${keep.stderr}`);
+  assert.deepEqual(json(repo, "docs/ai/ACEF_ACTIVE_RUN.json").routingRoleModels, { development: "claude-opus-5-5" }, "same-run update dropped routingRoleModels");
+  const sonnet = run(repo, actorArgs("dev-sonnet", "claude-sonnet-5-5"));
+  assert.equal(sonnet.status, 1, "the class model was accepted over the run per-role override");
+  assert.match(sonnet.stderr, /must bind calibrated runtime claude-opus-5-5\/high/);
+  const opus = run(repo, actorArgs("dev-opus", "claude-opus-5-5"));
+  assert.equal(opus.status, 0, `${opus.stdout}${opus.stderr}`);
+  const clear = run(repo, [...base("RUN-r"), "--phase", "development", "--routing-role-model", "development="]);
+  assert.equal(clear.status, 0, `${clear.stdout}${clear.stderr}`);
+  assert.equal(json(repo, "docs/ai/ACEF_ACTIVE_RUN.json").routingRoleModels, undefined, "<role>= must clear the run override");
+  const back = run(repo, actorArgs("dev-sonnet-2", "claude-sonnet-5-5"));
+  assert.equal(back.status, 0, `${back.stdout}${back.stderr}`);
+  console.log("per-role run override ok");
+}
 console.log("acef active-run continuity tests passed");

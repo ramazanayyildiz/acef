@@ -123,6 +123,7 @@ need templates/slice/closing-note.md 'Dedektör:'
 need templates/slice/dev-report.md 'ACEF-gözlem:'
 # Model choice (owner decision 2026-10-27, method/MODEL_CHOICE.md): one class table for Claude and Codex, effort, waiting
 need method/MODEL_CHOICE.md '| critical |' '| mechanical |' '| light |' 'gpt-6.1-terra' '## Effort' '## Waiting' 'acef-note add'
+need method/MODEL_CHOICE.md 'roleModels' '--routing-role-model' 'Cost note: review roles only'
 need templates/slice/intake-card.md 'Model: <sınıf> → <model> (MODEL_CHOICE.md)' 'Effort:'
 need templates/slice/review-brief.md 'Model: <sınıf> → <model> (MODEL_CHOICE.md)' 'Effort:'
 need templates/slice/dev-report.md 'Effort:'

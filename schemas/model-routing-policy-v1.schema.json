@@ -43,6 +43,17 @@
               "semantic-critical": { "type": "string", "minLength": 1 }
             }
           },
+          "roleModels": {
+            "description": "Optional per-role model over the class mapping. Keys are role ids from roles; null uses the class mapping. The reasoning tier still comes from the role.",
+            "type": "object",
+            "propertyNames": { "pattern": "^[a-z0-9-]+$" },
+            "additionalProperties": {
+              "anyOf": [
+                { "type": "string", "minLength": 1, "pattern": "^[A-Za-z0-9._:/-]+$" },
+                { "type": "null" }
+              ]
+            }
+          },
           "reasoning": {
             "type": "object",
             "additionalProperties": { "type": "string", "enum": ["low", "medium", "high", "xhigh", "max"] }

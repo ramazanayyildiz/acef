@@ -2130,6 +2130,33 @@ try {
     cwd: partialHook,
     tool_input: { task_name: "standard-developer", model: "claude-sonnet-5-5", reasoning_effort: "high", prompt: "Implement the bounded change" },
   }, "allow");
+  // Per-role models: on anthropic, Patch Assurance resolves to Opus through roleModels while Development stays Sonnet.
+  providerRun.workerRole = "patch-assurance";
+  fs.writeFileSync(path.join(partialHook, "docs", "ai", "ACEF_ACTIVE_RUN.json"), JSON.stringify(providerRun, null, 2));
+  expectHookDecision("per-role model rejects the class model for Patch Assurance", {
+    tool_name: "Agent",
+    cwd: partialHook,
+    tool_input: { task_name: "patch-assurance", model: "claude-sonnet-5-5", reasoning_effort: "high", prompt: "Assure the patch" },
+  }, "deny", {}, ["patch-assurance", "model=claude-opus-5-5", "reasoning_effort=high"]);
+  expectHookDecision("per-role model accepts Opus for Patch Assurance", {
+    tool_name: "Agent",
+    cwd: partialHook,
+    tool_input: { task_name: "patch-assurance", model: "claude-opus-5-5", reasoning_effort: "high", prompt: "Assure the patch" },
+  }, "allow");
+  providerRun.routingRoleModels = { "patch-assurance": "host-review-model" };
+  fs.writeFileSync(path.join(partialHook, "docs", "ai", "ACEF_ACTIVE_RUN.json"), JSON.stringify(providerRun, null, 2));
+  expectHookDecision("run per-role override rejects the policy per-role model", {
+    tool_name: "Agent",
+    cwd: partialHook,
+    tool_input: { task_name: "patch-assurance", model: "claude-opus-5-5", reasoning_effort: "high", prompt: "Assure the patch" },
+  }, "deny", {}, ["model=host-review-model", "reasoning_effort=high"]);
+  expectHookDecision("run per-role override accepts its model", {
+    tool_name: "Agent",
+    cwd: partialHook,
+    tool_input: { task_name: "patch-assurance", model: "host-review-model", reasoning_effort: "high", prompt: "Assure the patch" },
+  }, "allow");
+  delete providerRun.routingRoleModels;
+  delete providerRun.workerRole;
   delete providerRun.routingProvider;
   fs.writeFileSync(path.join(partialHook, "docs", "ai", "ACEF_ACTIVE_RUN.json"), JSON.stringify(providerRun, null, 2));
   const preRoutingRun = JSON.parse(fs.readFileSync(path.join(partialHook, "docs", "ai", "ACEF_ACTIVE_RUN.json"), "utf8"));

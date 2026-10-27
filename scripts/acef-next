@@ -6,7 +6,7 @@ const { inspectRunAuthorization } = require("./lib/acef-run-authorization");
 const { displayName } = require("./lib/acef-execution-policy");
 const { installationFreshnessFailures } = require("./lib/acef-installation");
 const { loadObjective, objectiveFailures } = require("./lib/acef-objective-supervisor");
-const { loadModelRoutingPolicy, resolveActorRuntime } = require("./lib/acef-model-routing");
+const { loadModelRoutingPolicy, resolveActorRuntime, runRoutingSelection } = require("./lib/acef-model-routing");
 const validatorModule = fs.existsSync(path.join(__dirname, "acef-process-validator.cjs"))
   ? "./acef-process-validator.cjs" : "./acef-process-validator";
 const { FULL_V3_DISPATCH_CHECKS, evaluateProcessChecks } = require(validatorModule);
@@ -113,7 +113,7 @@ function routedRuntime(repo, activeRun, roleOverride) {
       loadModelRoutingPolicy(repo).record,
       roleOverride || activeRun.workerRole || "",
       activeRun.activePhase || "",
-      activeRun.routingProvider || null,
+      runRoutingSelection(activeRun),
     );
   } catch {
     return null;

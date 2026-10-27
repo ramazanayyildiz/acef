@@ -72,7 +72,7 @@ function loadModelRouting(repoRoot) {
   if (!libraryPath) throw new Error("ACEF model routing library is not installed");
   const library = require(libraryPath);
   const policy = library.loadModelRoutingPolicy(repoRoot).record;
-  return { policy, resolveActorRuntime: library.resolveActorRuntime };
+  return { policy, resolveActorRuntime: library.resolveActorRuntime, runRoutingSelection: library.runRoutingSelection };
 }
 
 function readActiveRunRecord(repoRoot) {
@@ -450,8 +450,11 @@ function admittedModelRoutingRestricted(repoRoot, payload, toolName, input, comm
   const activeRun = readActiveRunRecord(repoRoot);
   if (!activeRun || activeRun.status !== "active" || activeRun.modelRoutingContract !== "admitted-role-routing-v1") return "";
   try {
-    const { policy, resolveActorRuntime } = loadModelRouting(repoRoot);
-    const expected = resolveActorRuntime(policy, activeRun.workerRole || "", activeRun.activePhase || "", activeRun.routingProvider || null);
+    const { policy, resolveActorRuntime, runRoutingSelection } = loadModelRouting(repoRoot);
+    // The library resolves the per-role model (run override, policy roleModels, class). An older installed library
+    // without runRoutingSelection only knows the provider string.
+    const selection = runRoutingSelection ? runRoutingSelection(activeRun) : (activeRun.routingProvider || null);
+    const expected = resolveActorRuntime(policy, activeRun.workerRole || "", activeRun.activePhase || "", selection);
     const actual = spawnRuntime(toolName, input, command);
     if (actual.model !== expected.model || actual.effort !== expected.reasoningEffort) {
       return `ACEF model routing: ${activeRun.workflowId} ${expected.role} dispatch must set model=${expected.model} and reasoning_effort=${expected.reasoningEffort}; received model=${actual.model || "inherited/unspecified"} reasoning_effort=${actual.effort || "inherited/unspecified"}.`;

@@ -1,6 +1,6 @@
 {
   "capabilityId": "provider-neutral-model-routing",
-  "requestedIntent": "Select model and reasoning effort by ACEF role while allowing equivalent runtimes from additional LLM providers to be mapped without changing lifecycle semantics.",
+  "requestedIntent": "Select model and reasoning effort by ACEF role while allowing equivalent runtimes from additional LLM providers to be mapped without changing lifecycle semantics. A provider may also name a model per role (roleModels) over its class mapping, and a run may override one role's model (active-run routingRoleModels); one shared resolver applies run override, then policy roleModels, then the class mapping.",
   "status": "enforced",
   "requiredLayers": ["docs", "schema", "cli", "hook", "validator", "tests", "installer"],
   "implementedLayers": {
@@ -14,7 +14,8 @@
     ],
     "schema": [
       "schemas/model-routing-policy-v1.schema.json",
-      "method/model-routing-policy-v1.json"
+      "method/model-routing-policy-v1.json",
+      "schemas/active-run-v2.schema.json#routingRoleModels"
     ],
     "cli": [
       "scripts/lib/acef-model-routing.js",
@@ -23,12 +24,14 @@
       "scripts/acef-supervisor#modelPolicy",
       "scripts/acef-next#routedRuntime",
       "scripts/acef-state#writeActor",
-      "scripts/acef-state#writeReviewCapsule"
+      "scripts/acef-state#writeReviewCapsule",
+      "scripts/acef-state#mergedRoutingRoleModels"
     ],
     "hook": [
       "claude-plugins/acef-bmad-guard/hooks/acef-bmad-hard-wall.mjs#admittedModelRoutingRestricted"
     ],
     "validator": [
+      "scripts/acef-process-validator#checkTypedActorSeparation",
       "scripts/acef-state#writeActor",
       "scripts/lib/acef-execution-assurance-experiment.js#validateManifest",
       "scripts/acef-execution-assurance-experiment#modelRoutingPolicy"
@@ -40,6 +43,8 @@
       "scripts/test-acef-quick-fix-single-review",
       "scripts/test-acef-capsule-supervisor",
       "scripts/test-acef-execution-assurance-experiment",
+      "scripts/test-acef-active-run-continuity",
+      "scripts/test-acef-host-file-preservation",
       "docs/experiments/execution-assurance-v327/results/blind-judge.json"
     ],
     "installer": [
@@ -49,7 +54,7 @@
     ]
   },
   "limitations": [
-    "The calibrated mapping is OpenAI-only (V327-CAL-001 on gpt-5.6-sol; the 2026-10-27 remap to gpt-6.1-sol is not recalibrated). The anthropic mapping (Sonnet for every class, owner decision 2026-10-27) has no role-specific calibration evidence.",
+    "The calibrated mapping is OpenAI-only (V327-CAL-001 on gpt-5.6-sol; the 2026-10-27 remap to gpt-6.1-sol is not recalibrated). The anthropic mapping (Sonnet for every class, with Patch Assurance and both Judges on Opus through roleModels; owner decision 2026-10-27) has no role-specific calibration evidence.",
     "Pre-dispatch enforcement is versioned as admitted-role-routing-v1 on new Fix and Standard runs; existing in-flight runs retain their original contract. Native work remains outside ACEF model routing, while Full capsule-supervisor dispatch keeps its existing compiled enforcement.",
     "V327-CAL-001 qualifies medium only for Code Review on one held-out authorization defect. It does not lower ATDD, Development, Patch Assurance, or Process Judge floors.",
     "V3.28 exercised the complete role-routed matrix across four cycle-0 story PASS gates, typed Epic PASS, hard-budget PASS, and a zero-finding high-effort blind product PASS. Its immutable process row still failed on a repaired outer-scorer false negative, so the capability remains enforced rather than proven.",
@@ -62,7 +67,9 @@
     { "layer": "tests", "ref": "scripts/test-acef-capsule-supervisor" },
     { "layer": "tests", "ref": "docs/experiments/execution-assurance-v327/REHEARSAL_RESULT.md" },
     { "layer": "tests", "ref": "docs/experiments/execution-assurance-v328/REHEARSAL_RESULT.md" },
-    { "layer": "installer", "ref": "scripts/test-install-acef-tools" }
+    { "layer": "installer", "ref": "scripts/test-install-acef-tools" },
+    { "layer": "installer", "ref": "scripts/test-acef-host-file-preservation" },
+    { "layer": "tests", "ref": "scripts/test-acef-active-run-continuity" }
   ],
   "createdAt": "2026-08-04"
 }

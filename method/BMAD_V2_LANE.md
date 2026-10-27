@@ -63,7 +63,9 @@ roles while removing model work from lifecycle bookkeeping:
   `orchestration/medium`; unmeasured ATDD, Development, Patch Assurance, and Judge roles remain
   `semantic-critical/high`. V327-CAL-001 qualified Code Review as `semantic-standard/medium` by a blind comparison
   against the same held-out HIGH defect. `method/model-routing-policy-v1.json` maps those abstract tiers to the active
-  provider; another provider must add a complete mapping and earn its own calibration evidence.
+  provider; another provider must add a complete mapping and earn its own calibration evidence. A provider may name a
+  model for one role (`roleModels`, for example anthropic Patch Assurance and both Judges on Opus) and a run may
+  override one role with `active-run --routing-role-model`; the tier, and so the effort, still comes from the role.
 
 This runtime is `enforced`, not `proven` or a default. V3.34 passed the live product, lifecycle, cost, blind-product,
 and exact-transcript reanalysis checks, while its immutable automated row remains failed under the frozen no-rewrite
