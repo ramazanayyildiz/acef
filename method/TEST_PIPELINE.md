@@ -70,6 +70,14 @@ Every status assertion on a user-visible runtime path should be paired with a co
 the body is correct. `assertOk()` alone is not enough; a page returning raw JSON, fallback HTML, or an error shell can
 still be `200`.
 
+What the content assertion verifies (clarified 2026-10-27, `method/PRODUCT_LANGUAGE.md`): the information and behaviour
+the user needs — the expected data, the resulting state, and the elements found by `data-testid` or accessible role and
+name. It does not assert process, evidence or disclaimer sentences ("source-backed", "unverified", "per review"); a
+test that pins such a sentence keeps it on the screen. Adding text to a screen so that a test can find it is a defect:
+add a `data-testid` or assert the data instead. A required user-facing message (a pending approval, a clashing
+appointment) is asserted by its presence and its condition, not by locking the exact wording unless the wording itself
+is the requirement.
+
 A discovered runtime-smoke gap is a test gap: write the failing real-entrypoint test first, then fix.
 
 ## Surface-realism gate
@@ -92,6 +100,9 @@ supporting implementation artifact.
 UI-visible claims cannot close on non-UI evidence alone. Unit, feature, or isolated component tests may support the
 claim, but they do not replace a browser/screen-level smoke when the requirement is that a human can use a visible
 surface.
+
+That screen-level evidence shows a human can do the job on the surface (reach it, see the needed data, act, see the
+result); it is not met by putting assertable status or evidence text on the screen (`method/PRODUCT_LANGUAGE.md`).
 
 ## Pattern-first round trip
 

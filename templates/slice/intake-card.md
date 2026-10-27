@@ -28,6 +28,12 @@ betiğe dönüşmüş dersler listede çıkmaz.
 
 `Bilinen tuzaklar: <kimlikler | yok> @<acef-note version çıktısı>`
 
+**Hedef kullanıcı (koordinatör; G6 ya da G1 bir ekrana, görünüme ya da UI metnine dokunuyorsa):** profil hostun
+`user_profiles` dosyasından (`slice-method.json`), görev o profilin "Geldiği iş" listesinden. UI'a dokunmuyorsa
+"UI yok: uygulanmaz". Kural: `method/PRODUCT_LANGUAGE.md`.
+
+`Hedef kullanıcı: <profil> · Bu ekranda yapacağı iş: <görev>`
+
 **Karar satırı (işe başlamadan önce, sahip görebilsin):**
 
 `Yol: native | HAFİF | TAM — <gerçeklere dayanan tek cümle>`

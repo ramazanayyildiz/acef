@@ -2,7 +2,7 @@
 
 `review-brief.md` bu dosyayı zorunlu kılar. Her madde ya kanıtıyla işaretlenir ya da "uygulanmaz: <neden>" yazılır; boş madde = eksik inceleme. Kanıt dosyaları `<evidence>/<SLICE-ID>/review/` altına. Komutlar yığından bağımsızdır: yığına özgü komutlar `{{…}}` yer tutucularıdır ve `slice-method.json` → `stack_profile` doldurur; projeye özgü yollar `<…>`. Bir yığının hazır karşılıkları adaptördedir (`stacks/<yığın>/checklist-commands.md`). Kaynak: 2026-10-19 incelemelerinin gerçekten yakaladıkları (bkz. `SOURCES.md`).
 
-Hangi katman: **A** her dilimde · **B** paket view/lang/config anahtarı değişince · **C** şablon/host hijyeni (UI, rota, config, migration dokunuşunda) · **D** TAM sınıfı (yetki/kiracı/para/durum/göç/güvenlik) · **E** paylaşılan sözleşme değişince.
+Hangi katman: **A** her dilimde · **B** paket view/lang/config anahtarı değişince · **C** şablon/host hijyeni (UI, rota, config, migration dokunuşunda) · **D** TAM sınıfı (yetki/kiracı/para/durum/göç/güvenlik) · **E** paylaşılan sözleşme değişince · **F** kullanıcıya görünen metin ya da ekran değişince.
 
 Uygulanabilirlik (açık kural):
 - **Tarayıcı / gerçek UI** (C4, D6 ve senaryo yürüyüşü) yalnız dilim UI'a dokunuyorsa: rota, görünüm/şablon ya da UI bileşeni. Dokunmuyorsa "uygulanmaz: rota/görünüm/bileşen yok".
@@ -68,3 +68,16 @@ Bulgu disiplini `review-brief.md` "TAM eki"ndedir (sınır + ilke + sonuç; `con
 |---|---|---|
 | E1 | Diğer uygulamalarda değişen sözleşmenin (sınıf, arayüz, config anahtarı, rota adı, event) kullanımı — SALT OKUNUR | `git -C <app> grep -n "<sembol>"` her uygulama için → `E1-hosts.txt` (dosya:satır) |
 | E2 | Kırılacak host yerleri için backlog satırı ya da geçiş dilimi | B-kimlikleri |
+
+## F — Hedef kullanıcı ve ekran dili (kullanıcıya görünen metin ya da ekran değişince)
+
+Kural: `method/PRODUCT_LANGUAGE.md`. Hedef kullanıcı ve görev dilimdeki `Hedef kullanıcı: <profil> · Bu ekranda yapacağı iş: <görev>` satırından; profil hostun `user_profiles` dosyasından. "Kafa karıştırabilecek terimler" bir ipucu listesidir, yasak değil: bağlamında doğru kelime bulgu değildir.
+
+| # | Madde | Kanıt |
+|---|---|---|
+| F1 | Hedef kullanıcı burada asıl işini yapabiliyor mu; hangi öğe bu işe hizmet etmiyor? | görev adımları → her ekranda işe hizmet etmeyen öğe listesi (yoksa "yok") → `F1-task.md` + ekran görüntüsü |
+| F2 | Ekranda süreç/geliştirme/kanıt metni yok (kaynak notu, doğrulanmamış/çıkarım etiketi, UNKNOWN, test/inceleme atfı, model çekincesi) | görünen metin listesi ya da ekran görüntüsü; varsa `dosya:satır` |
+| F3 | Yeni her uyarı gerekçeli: kullanıcı şimdi bir şey bilmeli ya da yapmalı mı; mevcut metinle birleşebilir mi. Gerekli bilgi (bekleyen onay, çakışan randevu, eski fiyat) kısa ve sade gösteriliyor | yeni uyarı başına tek satır gerekçe |
+| F4 | Ham ajan notu render edilmiyor: kullanıcıya görünen metin ile ajan çalışma notu ayrı alanlarda; ajanın yazdığı kayıtlar (görev başlığı/açıklaması, özet) yalnız kullanıcıya dönük alanla gösteriliyor | alan → görünüm `dosya:satır` tablosu |
+| F5 | Testler süreç/çekince cümlesi değil, gerekli bilgi ve davranışı doğruluyor (veri, durum, `data-testid`/rol seçicileri); test bulabilsin diye ekrana metin eklenmemiş | değişen içerik doğrulamalarının listesi (`method/TEST_PIPELINE.md` "Real runtime smoke") |
+| F6 | İsteğe bağlı ipucu çıktısı incelendi; her uyarı ya düzeltildi ya da "bağlamında doğru: <neden>" | `scripts/ui-copy-hints.py --base <taban>` çıktısı → `F6-hints.txt` (yalnız uyarır; "uygulanmaz: betik kurulu değil" geçerli) |

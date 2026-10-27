@@ -91,6 +91,18 @@ need templates/slice/slice.md '{{test_command}}' '{{static_analysis}}' '{{bounda
 need schemas/slice-method.schema.json '"stack_profile"'
 need docs/slice-lane/adoption.md '## Adopt in a new stack' '## Laravel profile'
 need templates/slice/exploration-tour.md 'FINDINGS: <n>' '390×844'
+# Product language (owner decision 2026-10-27, method/PRODUCT_LANGUAGE.md): target-user line, profiles, section F, goal tour
+TU='Hedef kullanıcı: <profil> · Bu ekranda yapacağı iş: <görev>'
+need templates/slice/intake-card.md "$TU"
+need templates/slice/slice.md "$TU"
+need templates/slice/review-brief.md "$TU" 'Hedef kullanıcı burada asıl işini yapabiliyor mu'
+need templates/slice/review-checklist.md '## F —' 'Hedef kullanıcı burada asıl işini yapabiliyor mu' 'Ham ajan notu' 'yasak değil'
+need templates/slice/user-profiles.md '## Profil: <ad' '### Kim' '### Geldiği iş' '### Bildikleri' '### Kullandığı kelimeler' '### Kafa karıştırabilecek terimler' '### Cihaz ve bağlam' '### İhtiyaçları' 'Son gerçek kullanımla karşılaştırma:' 'Profil yetki rolü değildir' 'yasak listesi DEĞİLDİR'
+need templates/slice/user-goal-tour.md 'GÖREV: TAMAMLANDI' 'gerçek kullanıcı testi DEĞİLDİR' 'Gerçek dış eylem yok' 'Verilmeyenler:' 'Görevi bitirmek dış eylem izni vermez' '390×844'
+need templates/slice/exploration-tour.md 'user-goal-tour.md'
+need schemas/slice-method.schema.json '"user_profiles"'
+need method/PRODUCT_LANGUAGE.md 'need to know or do something now' 'raw agent notes' 'not real user testing'
+need method/TEST_PIPELINE.md 'Every status assertion on a user-visible runtime path should be paired with a content or negative assertion' 'UI-visible claims cannot close on non-UI evidence alone' 'Adding text to a screen so that a test can find it is a defect'
 
 # CHANGELOG rule (AGENTS.md "Changelog"): a branch that changes method, scripts, templates, schemas or skills against
 # the merge base with origin/main (committed, uncommitted or untracked) also changes CHANGELOG.md. No origin/main or
