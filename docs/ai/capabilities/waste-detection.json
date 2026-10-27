@@ -12,7 +12,8 @@
     "docs": [
       "method/FEEDBACK_LOOP.md#Detection loop (2026-10-27)",
       "method/WEEKLY_RETRO.md",
-      "CHANGELOG.md#Unreleased — Waste detection and weekly retro (2026-10-27)"
+      "CHANGELOG.md#Unreleased — Waste detection and weekly retro (2026-10-27)",
+      "CHANGELOG.md#Unreleased — acef-detect speed and stale acks (2026-10-27)"
     ],
     "artifact": [
       "templates/slice/closing-note.md",
@@ -44,7 +45,9 @@
     "A source that keeps failing keeps its detector's alerts from resolving (SOURCE_ERROR every poll) until the source is repaired; this is deliberate.",
     "Each detector needs host sources; an unconfigured one prints SKIP. On the first host the machine detector has no local slot event log (runner slots live on the runners), and no review report carries a finding-class field, so the review_loop class rule has no data.",
     "Durations are wall clock from git timestamps and file times (nights and weekends included); cycle-time starts are unknown when a branch began before the history window.",
-    "Tests (slow or flaky suites) are not covered in this first version."
+    "Tests (slow or flaky suites) are not covered in this first version.",
+    "The run-item index trusts a file whose mtime_ns and size are unchanged; a rewrite that keeps both (for example a restored backup with its old times) is served from the index until the next change. Running items are never indexed. Deleting alerts/<project>.index.json or --no-cache forces fresh reads.",
+    "Stale acks need a breach observation: acks made before this version carry no breach record and become stale only after a later poll still sees them breaching after the recheck time; an acked alert that is only UNSEEN is never marked stale (the weekly retro still lists it as acked and open)."
   ],
   "evidence": [
     {
@@ -66,6 +69,26 @@
       "layer": "cli",
       "ref": "scripts/test-install-acef-tools",
       "note": "2026-10-27: install-acef-tools installs acef-detect, acef-retro and the core detectors; the installed acef-detect --list runs without writing bytecode."
+    },
+    {
+      "layer": "tests",
+      "ref": "scripts/test-acef-detect",
+      "note": "2026-10-27 speed + stale acks: 178 checks passed (+27): index written only to the store and only for finished items; warm index, --no-cache and a corrupt index give the same findings; a changed result file is reread; one git log of main and one for every worktree head per poll (GIT_TRACE); batched own commits equal git log main..<head>; each history window equals its own git log --since; mention index equals the old regex on edge cases; timing line under --quiet and TIME lines with --timing; ACKED-STALE after 24 h under --quiet and in due, UNSEEN ack not stale, re-ack starts a new period, --recheck-hours and stale_ack_hours honoured. The new checks fail on main 5ea8c73."
+    },
+    {
+      "layer": "tests",
+      "ref": "scripts/test-acef-retro",
+      "note": "2026-10-27: 49 checks passed (+4): acked-but-open alerts listed with age, slice and STALE; a fresh ack not STALE; acked alerts not in the overdue list; due prints ACKED-STALE for the stale ack only."
+    },
+    {
+      "layer": "tests",
+      "ref": "scripts/test-acef-note",
+      "note": "2026-10-27: 30 checks passed (+6): ACKED-STALE only for an ack still breaching after the recheck time, --recheck-hours needs --slice, a new ack starts a new period, --recheck-hours 2 re-asks after two hours."
+    },
+    {
+      "layer": "cli",
+      "ref": "B2Press read-only measurement (real polls into a copy of the store)",
+      "note": "2026-10-27: unloaded main 1.2-1.75 s -> 0.53-0.56 s (empty index) / 0.45-0.48 s (warm index); under taskpolicy -b (load 11-21) main 5.2-6.1 s -> 2.1-2.4 s / 1.8-2.0 s. Git subprocesses 28 -> 5; file reads 3142 -> 1344 -> 1. Findings identical to main and across empty/warm/no-cache index."
     }
   ],
   "createdAt": "2026-10-27"

@@ -7,6 +7,57 @@ proven, or installed.
 Update this file in the same PR whenever ACEF itself gains or changes a flow, gate, validator, hook, skill, installer behavior, workflow,
 or evidence contract. Do not use it to claim implementation status; link to the capability record for that.
 
+## Unreleased — acef-detect speed and stale acks (2026-10-27)
+
+Why: on the first host (B2Press) `acef-detect` was reported at about 24 s in the coordinator's real 15-minute loop
+while dry runs took 1.5–2.9 s; the alert log shows 7.7 s for the first real poll (24 alerts opened) and 1.6–2.1 s
+after it. Profiling showed the time scales with work volume, which machine load multiplies: 28 subprocesses per poll
+(five `git log` of main, one per history window, and one `git log main..<head>` per worktree), about 2,600 run-item
+loads and 3,100 file reads (the same `codex-*` directories read once per detector and window), and `mentions()`
+re-scanning main's history with a new regex 243 times. Under background QoS (`taskpolicy -b`, load average 11–21)
+main took 5.2–7.8 s per poll. Separately, the coordinator acked all 24 first alerts to their own slices as "tracked
+waits"; an ack silenced an alert for good, so a long wait could disappear from view. Owner decision 2026-10-27 (Ram
+approved this change).
+- **One poll, shared reads** (`scripts/detectors/_lib.py`): one `git log` of main over the widest window (at least 60
+  days), each window an exact view of it (commits reachable from the tip through commits inside the window, as
+  `git log --since` walks); one `git log <heads> --not <main>` for every worktree head, each head's own commits taken
+  from it (falls back to one query per head if the batch fails); glob listings, directory listings, file reads and
+  run items read once per poll for every detector and window; `mentions()` is a token index lookup (same matches as
+  the old regex, checked on edge cases). Only successful reads are cached: a failed read raises `SourceError` for
+  every caller, so PR #22's read contract holds (failed source → SOURCE_ERROR/UNSEEN, nothing resolves; a missing
+  field is unknown; nothing written to the host).
+- **Persistent index** in the store, `alerts/<project>.index.json`: finished run items (started/finished/status and
+  facts derived from the result file: verdict, non-blank result, finding-class matches), keyed on the mtime_ns and
+  size of the directory and of its stamp, status and result files. A changed file means a fresh read; running items
+  are always read; rows not seen in a poll are dropped. `--no-cache` ignores it; a corrupt index is ignored.
+- **Alert writes:** new alert ids are counted once per poll instead of rereading the whole log for every opened
+  alert; the poll count per alert uses a binary search.
+- **Timing:** every run ends with `acef-detect <s> s (git <n> call(s) <s> s, <n> run item(s), <n> dir(s) listed,
+  <n> file(s) read, index <hits> hit(s) / <misses> miss(es))`, also under `--quiet`; `--timing` adds
+  `TIME <detector> <ms> ms` per detector (a detector that first touches a shared source carries its cost).
+- **Measured on B2Press** (read-only; real polls into a copy of the store; wall time incl. interpreter start):
+  unloaded main 1.2–1.75 s → branch 0.53–0.56 s with an empty index, 0.45–0.48 s with a warm one; under
+  `taskpolicy -b` main 5.2–6.1 s → branch 2.1–2.4 s empty index, 1.8–2.0 s warm. Git subprocesses 28 → 5, file
+  reads 3,142 → 1,344 (empty index) → 1 (warm). Findings identical to main on the live repo, and identical with an
+  empty index, a warm index and `--no-cache`. The 24 s itself was not reproduced; the lever is work volume, so load
+  multiplies less.
+- **Stale acks:** each poll event lists the acked alerts its detectors still saw breaching (`breaching`). An acked
+  alert still seen breaching `stale_ack_hours` (new host config key, default 24 h wall clock) after its ack prints
+  `ALERT <id> ACKED-STALE` in `acef-detect` (also under `--quiet`) and `ALERT ACKED-STALE: <id> … acked <n> h ago to
+  slice <id>` in `acef-note due`, and `acef-note alerts` marks it `STALE`, until the owner acks again (a new period;
+  `ack --slice <id> --recheck-hours N` sets this ack's period), defers or resolves. An acked alert that is only
+  UNSEEN is not stale (no observation is not a breach). `acef-retro` section 3 lists every acked-but-open alert with
+  its open age, time since the ack, slice, last observed breach and STALE mark. B2Press's 24 existing acks carry no
+  breach record yet; they become stale only after a poll on this version still sees them 24 h after their ack.
+- Docs: `method/FEEDBACK_LOOP.md` (speed, timing line, "An ack is not an end"), `method/WEEKLY_RETRO.md`.
+- Tests: `scripts/test-acef-detect` 178 checks (+27: index written to the store only and for finished items only,
+  warm index vs `--no-cache` same findings, corrupt index ignored, a changed result file reread, one `git log` of main
+  and one for all heads per poll (GIT_TRACE), batched own commits equal `git log main..<head>`, every history window
+  equals its own `git log --since`, mention index equals the regex, timing line under `--quiet`, `TIME` lines with
+  `--timing`, stale ack under `--quiet` and in `due`, UNSEEN ack not stale, re-ack, `--recheck-hours`,
+  `stale_ack_hours` from config, `breaching` in the poll event); `scripts/test-acef-retro` 49 (+4);
+  `scripts/test-acef-note` 30 (+6). The new detect checks fail on main.
+
 ## v3.0.0-beta.7 — Product language, end-user profiles and user-goal tours (2026-10-27)
 
 Why: in two hosts, agents filled end-user screens with process and evidence text and stacked warnings ("kaynak

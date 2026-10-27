@@ -140,7 +140,7 @@ def build(base: Path, projects: list, args, now) -> str:
                 if any(i in text for i in ids) or (extra and extra in text)]
         return ", ".join(hits) or "none"
 
-    good, repeats, overdue, notes = [], [], [], []
+    good, repeats, overdue, notes, acked_open = [], [], [], [], []
     for project in projects:
         entries = []
         log = base / "log" / f"{project}.md"
@@ -206,6 +206,9 @@ def build(base: Path, projects: list, args, now) -> str:
             repeats.append({"count": len(loops), "what": f"{project} review, 3+ REVISE rounds", "ids": loops,
                             "example": loops[0], "cost": "rounds", "rule": covering([], "REVISE"),
                             "layer": "acef (review brief) or host"})
+        for a in sorted(states.values(), key=lambda a: a["acked_at"] or a["opened"]):
+            if a["status"] == "acked":   # an ack is a promise to work on it, not a resolution: keep it in view
+                acked_open.append(acked_line(a, hi))
         for a in states.values():
             if a["status"] == "open" and (a["overdue"] or a["owner"] in ("", "?", "none")):
                 overdue.append(f"- {a['id']} [{a['detector']}] {a['subject']} — owner {a['owner'] or 'NONE'}, "
@@ -231,6 +234,8 @@ def build(base: Path, projects: list, args, now) -> str:
     else:
         out.append("- nothing repeated in the window")
     out += ["", "## 3. Overdue or unowned alerts", "", *(overdue or ["- none"]), "",
+            "Acked, still open (an ack names the slice that owns the wait; it does not end it):", "",
+            *(acked_open or ["- none"]), "",
             "## 4. Rules past their review date", "", *(past or ["- none"]), "",
             f"## 5. Proposed changes (at most {MAX_PROPOSALS}; the owner answers by number)", "",
             "<!-- coordinator: rewrite, merge or delete the candidates; keep at most five. Each needs evidence ids, a "
@@ -245,6 +250,16 @@ def build(base: Path, projects: list, args, now) -> str:
     out += ["", "## Owner decisions", "", "| # | decision (accept / reject / defer) | note | date |", "|---|---|---|---|"]
     out += [f"| {n} | pending | | |" for n in range(1, max(1, len(candidates)) + 1)]
     return "\n".join(out) + "\n"
+
+
+def acked_line(a: dict, at: dt.datetime) -> str:
+    """One acked-but-open alert: how long it has been open, how long since the ack, the slice, and whether the
+    detector still saw it breaching after the recheck time (STALE)."""
+    opened = fmt_min(int((at - note.parse_ts(a["since"])).total_seconds() // 60))
+    acked = fmt_min(int((at - note.parse_ts(a["acked_at"])).total_seconds() // 60)) if a["acked_at"] else "unknown"
+    seen = f", last seen breaching {a['last_breach']}" if a.get("last_breach") else ", no poll recorded a breach"
+    return (f"- {a['id']} [{a['detector']}] {a['subject']} — slice {a['slice'] or '?'}, open {opened}, acked {acked} "
+            f"ago{seen}{' — STALE: re-ask the owner' if a.get('stale') else ''}: {a['summary'][:120]}")
 
 
 def record_answers(path: Path, answers: list, today: str):

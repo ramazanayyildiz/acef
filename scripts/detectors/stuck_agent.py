@@ -61,7 +61,7 @@ def detect(ctx):
             # neither: no start stamp and no finish -> no evidence either way, the alert stays open (UNSEEN)
             attempts = item.attempts[-s["repeat_fail"]:]
             tails = {tail_line(a) for a in attempts}
-            has_result = bool(item.result.strip())
+            has_result = item.has_result
             if has_result:
                 ctx.clear(f"{item.name}:repeat")   # a result was produced
                 continue

@@ -40,9 +40,9 @@ def detect(ctx):
             merged_ids.add(work_id)   # its tip is in main: positively no longer open
             continue
         open_ids.add(work_id)
-        own = _lib.git(ctx, "log", "--format=%ct%x09%s", f"{_lib.main_ref(ctx)}..{head}").splitlines()
+        own = _lib.own_commits(ctx, head)   # one git log for every worktree head, shared by the poll
         if own:
-            start = _lib.ts(min(int(line.split("\t", 1)[0]) for line in own))
+            start = _lib.ts(min(ct for ct, _ in own))
         else:
             git_file = _lib.Path(path) / ".git"
             start = _lib.mtime(git_file) if git_file.exists() else None
@@ -55,7 +55,7 @@ def detect(ctx):
             if found:
                 cls = CLASS_NAMES.get(found.group(1).upper(), "unknown")
         if cls == "unknown":
-            cls = _lib.route_class(ctx, " ".join(line.split("\t", 1)[-1] for line in own))
+            cls = _lib.route_class(ctx, " ".join(subject for _, subject in own))
         if cls == "unknown":
             unknown.append(work_id)
             continue

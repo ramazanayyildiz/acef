@@ -39,15 +39,23 @@ until the owner asked, and a whole day could be lost. Detection runs **during th
 
 - **When:** the coordinator's ~15-minute check runs `.acef/bin/acef-detect --repo . --quiet` (installed by
   `install-acef-tools`, or `scripts/acef-detect` from the ACEF checkout;
-  target under 5 s, no tests, no network, a few git calls and stat-only scans). It prints only new, reopened and
-  overdue alerts; without `--quiet` it also prints `OK`, `SKIP <name> (no source: …)`, `WATCH` and `INFO` lines.
-  `--dry-run` writes nothing; `--list` shows the detectors with their headers.
+  target under 5 s, no tests, no network, a few git calls and stat-only scans). It prints only new, reopened,
+  overdue and stale-acked alerts; without `--quiet` it also prints `OK`, `SKIP <name> (no source: …)`, `WATCH` and
+  `INFO` lines. Every run ends with a timing line (`acef-detect 1.8 s (git 5 call(s) …, index … hit(s))`), also under
+  `--quiet`; `--timing` adds one `TIME <detector> <ms>` line each. `--dry-run` writes nothing; `--list` shows the
+  detectors with their headers.
+- **Speed:** a poll reads each source once, whatever the number of detectors and windows: one `git log` of main over
+  the widest window (each window is an exact view of it), one `git log <heads> --not <main>` for every worktree head,
+  and each glob, directory and file once. Finished run items are kept in `alerts/<project>.index.json` in the store
+  (never the host), keyed on the mtime and size of the directory and of its stamp, status and result files; a row whose
+  files changed is read again, running items are always read. `--no-cache` ignores the index; the findings are the
+  same with or without it. The index is a cache: deleting it costs one slower poll.
 - **Detectors:** one small file each, core in `scripts/detectors/`, host-specific in `<host>/.acef/detectors/`. The
   header names the question, source, rule, default threshold, owner, scope (`acef`, `stack:<x>`, `host:<name>`) and
   kind (budget, ratio, age, trend, absence); `detect(ctx)` returns findings. Core: `stuck_agent`, `waiting_work`,
   `machine`, `review_loop`, `forgotten_session`, `inactive_improvement`, `size_ratio`. Tests are not in this version.
 - **Host config:** `slice-method.json` → `detectors` (or `--config <json>`): `project` (the store's project name),
-  `owners`, `working_hours` (default 09–18 Monday–Friday, local time), `ack_hours` (4), `overdue_polls` (2), `sources`
+  `owners`, `working_hours` (default 09–18 Monday–Friday, local time), `ack_hours` (4), `overdue_polls` (2), `stale_ack_hours` (24), `sources`
   (where the host keeps run directories, reviews, developer reports, the merge queue, the slot event log, `main_ref`),
   `thresholds` per detector, `disabled`. A detector whose source is not configured prints `SKIP`; it never guesses.
 - **Measurements, not self-reports:** durations come from git timestamps and from the files runs leave behind (start
@@ -68,6 +76,13 @@ until the owner asked, and a whole day could be lost. Detection runs **during th
   share one lock per project, so a key never gets two alerts. `acef-note due` prints `ALERT OPEN` once an alert has stayed unacked
   for more than two polls and `ALERT OVERDUE` once its ack deadline has passed; overdue and unowned alerts go to the
   owner's weekly retro. `acef-note alerts` lists the states.
+- **An ack is not an end:** `ack --slice` says which slice owns the wait; it does not make the wait invisible. Each
+  poll records which acked alerts its detectors still saw breaching. When an acked alert is still seen breaching
+  `stale_ack_hours` (host config, default 24 h wall clock) after the ack, `acef-detect` prints
+  `ALERT <id> ACKED-STALE` (also under `--quiet`) and `acef-note due` prints `ALERT ACKED-STALE: <id> … acked <n> h
+  ago to slice <id>` until the owner acks again (a new period; `--recheck-hours N` sets a different one for this ack),
+  defers with a date and reason, or resolves it. An acked alert that is only UNSEEN (no observation) is not stale.
+  The weekly retro lists every acked-but-open alert with its age, slice, last observed breach and STALE mark.
 - **Central log:** only real losses are also written there by `acef-detect`: 30 minutes or more lost (also when an open
   alert crosses 30 minutes later, once), lost results, an improvement merged but not in effect (later: a rule breach,
   an escaped defect). The first loss of a detector is a new

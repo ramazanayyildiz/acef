@@ -2,7 +2,7 @@
 """acef-detect: waste detectors for a 15-minute coordinator loop (method/FEEDBACK_LOOP.md "Detection loop").
 
 Usage:
-  acef-detect --repo <host> [--config <json>] [--quiet] [--dry-run] [--only a,b] [--list]
+  acef-detect --repo <host> [--config <json>] [--quiet] [--dry-run] [--only a,b] [--list] [--timing] [--no-cache]
 
 Runs every detector in scripts/detectors/*.py (core, files starting with "_" are helpers) and <host>/.acef/detectors/*.py
 (host). Each detector is one small file: a docstring header (Question, Source, Rule, Threshold, Owner, Scope, Kind,
@@ -14,16 +14,27 @@ improvement, a rule breach) are also written to the central log, deduplicated wi
 
 Config: <host>/slice-method.json "detectors", overlaid by --config (a JSON file that is either the whole
 slice-method shape or just the "detectors" object). Keys: project, owners {detector|default: owner}, working_hours
-{start, end, days}, ack_hours (4), overdue_polls (2), sources {...}, thresholds {detector: {...}}, disabled [...].
+{start, end, days}, ack_hours (4), overdue_polls (2), stale_ack_hours (24), sources {...}, thresholds {detector: {...}},
+disabled [...].
 A detector whose source is not configured prints "SKIP <name> (no source: <key>)".
 
 Cheap by design: no tests, no network, a few git calls, stat-only directory scans. Never writes into the host repo.
+One poll shares its reads across detectors (one git log of main, one git log for every worktree head, each directory
+and file read once). Finished run items are kept in a persistent index in the store (alerts/<project>.index.json,
+keyed on the files' mtime and size) so the next poll does not reread them; --no-cache ignores the index. Every run
+ends with a timing line ("acef-detect 2.1 s ..."), also under --quiet; --timing adds one TIME line per detector.
+
+Acked alerts are not silenced forever: each poll records which acked alerts it still saw breaching, and an alert
+still breaching stale_ack_hours (24) after its ack prints ALERT <id> ACKED-STALE (here and in acef-note due) until the
+owner acks it again, defers or resolves it.
 Exit 0 (alerts or not), 2 usage/config error, 3 a detector crashed (the others still ran), 4 the alert log could not
 be read or written (I/O or decode error): SOURCE_ERROR alert log is printed, findings are listed as NOT RECORDED,
 nothing is opened or resolved; the loop sees exit 4 and someone repairs the store.
 """
 import sys
+import time
 
+T0 = time.monotonic()
 sys.dont_write_bytecode = True   # loading detectors must never leave __pycache__ in the host (or the ACEF checkout)
 
 import argparse  # noqa: E402
@@ -32,7 +43,6 @@ import importlib.util
 import json
 import os
 import re
-import time
 import traceback
 from contextlib import contextmanager
 from pathlib import Path
@@ -95,6 +105,7 @@ def load_config(repo: Path, config_path: str = "") -> dict:
     cfg["working_hours"] = deep_merge(note.DEFAULT_WORKING_HOURS, cfg.get("working_hours") or {})
     cfg.setdefault("ack_hours", 4)
     cfg.setdefault("overdue_polls", 2)
+    cfg.setdefault("stale_ack_hours", note.DEFAULT_STALE_ACK_HOURS)
     return cfg
 
 
@@ -200,6 +211,9 @@ def run(args) -> int:
     saved = read_state(state_path)
     det_state = saved.get("detectors", {})
     started, cache, crashed, lines = time.monotonic(), {}, False, []
+    index_path = base / "alerts" / f"{project}.index.json"
+    index = None if args.no_cache else load_index(index_path)
+    timings = []
     only = {x.strip() for x in args.only.split(",") if x.strip()}
     disabled = set(cfg.get("disabled") or [])
     results = []
@@ -216,7 +230,7 @@ def run(args) -> int:
             crashed = True
             continue
         ctx = Ctx(repo, cfg, name, getattr(module, "DEFAULTS", {}), now, det_state.setdefault(name, {}), cache)
-        ctx.store = base
+        ctx.store, ctx.index = base, index
         ctx.open_since = {a["subject"]: note.parse_ts(a["since"]) for a in snapshot.values()
                           if a["detector"] == name and a["status"] != "resolved"}
         ctx.open_subjects = set(ctx.open_since)
@@ -234,7 +248,9 @@ def run(args) -> int:
                 traceback.print_exc()
             crashed = True
             continue
-        results.append((name, header, ctx, findings, int((time.monotonic() - t0) * 1000)))
+        ms = int((time.monotonic() - t0) * 1000)
+        timings.append((name, ms))
+        results.append((name, header, ctx, findings, ms))
     # 2. one lock across read state -> decide -> append, so parallel polls cannot open the same key twice
     opened = 0
     if log_error:
@@ -251,10 +267,16 @@ def run(args) -> int:
                 saved["detectors"] = {**saved.get("detectors", {}), **det_state}
                 opened = apply(args, cfg, base, project, now, results, saved, lines)
                 elapsed = int((time.monotonic() - started) * 1000)
-                note.append_alert_event(base, project, {"event": "poll", "ms": elapsed, "opened": opened}, held=True)
+                poll = {"event": "poll", "ms": elapsed, "opened": opened, "stale_ack_hours": cfg["stale_ack_hours"]}
+                if saved.get("_breaching"):
+                    poll["breaching"] = saved["_breaching"]
+                saved.pop("_breaching", None)
+                note.append_alert_event(base, project, poll, held=True)
                 tmp = state_path.with_suffix(".json.tmp")
                 tmp.write_text(json.dumps(saved, sort_keys=True))
                 os.replace(tmp, state_path)
+                if index is not None and (index.dirty or set(index.seen) != set(index.rows)):
+                    save_index(index_path, index)
         except (OSError, UnicodeDecodeError) as exc:
             return alert_log_failure(project, now, f"{exc.__class__.__name__}: {exc}", results, lines, args)
     if not args.dry_run:
@@ -267,10 +289,40 @@ def run(args) -> int:
     print(f"acef-detect {project} {note.iso(now)}{' (dry run, nothing written)' if args.dry_run else ''}: "
           f"{opened} new/reopened alert(s), {elapsed} ms")
     for line in lines:
-        if args.quiet and not re.match(r"^(ALERT \S+ (NEW|REOPEN|OVERDUE)|ERROR|SOURCE_ERROR)", line):
+        if args.quiet and not re.match(r"^(ALERT \S+ (NEW|REOPEN|OVERDUE|ACKED-STALE)|ERROR|SOURCE_ERROR)", line):
             continue
         print(line)
+    if args.timing:
+        for name, ms in timings:
+            print(f"TIME {name} {ms} ms")
+    print(timing_line(cache, index))
     return 3 if crashed else 0
+
+
+def timing_line(cache: dict, index) -> str:
+    """Wall time of the whole run (interpreter start excluded) and where the shared reads went."""
+    st = cache.get("_stats", {})
+    idx = (f", index {index.hits} hit(s) / {index.misses} miss(es)" if index is not None else ", index off")
+    return (f"acef-detect {time.monotonic() - T0:.1f} s (git {st.get('git_calls', 0)} call(s) "
+            f"{st.get('git_ms', 0) / 1000:.1f} s, {st.get('items', 0)} run item(s), {st.get('dirs', 0)} dir(s) listed, "
+            f"{st.get('reads', 0)} file(s) read{idx})")
+
+
+def load_index(path: Path):
+    """The persistent run-item index; a missing, unreadable or other-version file starts an empty one (it is only a
+    cache: every row is checked against the files' mtime and size before use)."""
+    try:
+        data = json.loads(path.read_text()) if path.exists() else {}
+    except (OSError, ValueError, UnicodeDecodeError):
+        data = {}
+    rows = data.get("rows") if isinstance(data, dict) and data.get("version") == _lib.Index.VERSION else {}
+    return _lib.Index(rows if isinstance(rows, dict) else {})
+
+
+def save_index(path: Path, index):
+    tmp = path.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(index.dump(), sort_keys=True))
+    os.replace(tmp, path)
 
 
 def alert_log_failure(project, now, error, results, lines, args) -> int:
@@ -310,8 +362,13 @@ def apply(args, cfg, base, project, now, results, saved, lines) -> int:
         if a.get("note"):
             loss_origin.setdefault(a["detector"], a["note"])
     pending, new_pending, opened = saved.get("pending", {}), {}, 0
+    next_n = [sum(1 for e in events if e["event"] == "open")]   # ids are counted once, not by rereading the log
+    breaching = []
 
     def append(event):
+        if event["event"] == "open" and write:
+            next_n[0] += 1
+            event = {**event, "id": f"{project}-A{next_n[0]}"}
         return note.append_alert_event(base, project, event, held=True) if write else event
 
     for name, header, ctx, findings, ms in results:
@@ -337,8 +394,18 @@ def apply(args, cfg, base, project, now, results, saved, lines) -> int:
                     append({"event": "loss", "id": existing["id"], "note": logged, "loss_min": loss})
                     existing["note"] = logged
                 tag = "OVERDUE" if existing["overdue"] else existing["status"].upper()
+                extra = ""
+                if existing["status"] == "acked":
+                    breaching.append(existing["id"])
+                    hours = existing.get("recheck_hours")
+                    hours = cfg["stale_ack_hours"] if hours is None else hours   # this poll's config, not the last's
+                    if existing.get("acked_at") and now >= note.parse_ts(existing["acked_at"]) + note.dt.timedelta(
+                            hours=hours):
+                        tag = "ACKED-STALE"
+                        extra = (f" (acked {existing['acked_at']} to slice {existing['slice'] or '?'}, still breaching "
+                                 f"after {hours:g} h; ack again, defer or resolve)")
                 lines.append(f"ALERT {existing['id']} {tag} [{name}] {subject} — {f['summary']}"
-                             f"{' (loss logged ' + logged + ')' if logged else ''}")
+                             f"{' (loss logged ' + logged + ')' if logged else ''}{extra}")
                 continue
             if existing and existing.get("defer_expired"):
                 ack_by = existing["ack_by"]   # the deadline runs from the deferral's expiry, not from this poll
@@ -384,6 +451,7 @@ def apply(args, cfg, base, project, now, results, saved, lines) -> int:
             lines.append(f"INFO {name}: {text}")
         lines.append(f"OK   {name} ({len(findings)} finding{'s' if len(findings) != 1 else ''}, {ms} ms)")
     saved["pending"] = new_pending
+    saved["_breaching"] = sorted(set(breaching))
     return opened
 
 
@@ -412,6 +480,9 @@ def main() -> int:
     parser.add_argument("--dry-run", action="store_true", help="write nothing to the store")
     parser.add_argument("--only", default="", help="comma-separated detector names")
     parser.add_argument("--list", action="store_true", help="list detectors with their headers")
+    parser.add_argument("--timing", action="store_true", help="also print one TIME line per detector")
+    parser.add_argument("--no-cache", action="store_true",
+                        help="ignore the persistent run-item index in the store (read every run item fresh)")
     return run(parser.parse_args())
 
 

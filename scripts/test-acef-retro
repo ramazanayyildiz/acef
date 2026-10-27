@@ -118,7 +118,15 @@ try:
           # resolved exactly at the window's end (Monday 00:00, excluded from W40): W40 still shows it open
           {"ts": "2026-10-02T10:00:00Z", "event": "open", "id": "demo-A5", "detector": "machine", "subject": "idle:y",
            "key": "machine:idle:y", "owner": "merge-operator", "summary": "edge", "ack_by": "2026-10-02T14:00:00Z"},
-          {"ts": "2026-10-05T00:00:00Z", "event": "resolve", "id": "demo-A5", "evidence": "at the boundary"}]
+          {"ts": "2026-10-05T00:00:00Z", "event": "resolve", "id": "demo-A5", "evidence": "at the boundary"},
+          # acked to a slice 30 h ago and still seen breaching by a later poll: listed, STALE; acked 1 h ago: listed only
+          {"ts": iso(ago(31 * 60)), "event": "open", "id": "demo-A6", "detector": "waiting_work", "subject": "W-6",
+           "key": "waiting_work:W-6", "owner": "merge-operator", "summary": "accepted 9 h", "ack_by": iso(ago(29 * 60))},
+          {"ts": iso(ago(30 * 60)), "event": "ack", "id": "demo-A6", "slice": "MERGE-W6"},
+          {"ts": iso(ago(90)), "event": "open", "id": "demo-A7", "detector": "size_ratio", "subject": "W-7",
+           "key": "size_ratio:W-7", "owner": "coordinator", "summary": "TAM open 20 h", "ack_by": iso(ago(-60))},
+          {"ts": iso(ago(60)), "event": "ack", "id": "demo-A7", "slice": "W-7"},
+          {"ts": iso(ago(40)), "event": "poll", "breaching": ["demo-A6", "demo-A7"]}]
     (STORE / "alerts/demo.jsonl").write_text("".join(json.dumps(e) + "\n" for e in ev))
 
     rc, due = tool(NOTE, "due")
@@ -147,6 +155,16 @@ try:
     check("overdue alert listed", re.search(r"- demo-A1 \[stuck_agent\] run-a — owner coordinator, .*\(OVERDUE\)", text), text)
     check("unowned alert listed", re.search(r"- demo-A3 \[waiting_work\] W-1 — owner NONE", text), text)
     check("resolved alert not listed as overdue", "- demo-A2" not in text, text)
+    check("acked-but-open alerts listed with age, slice and STALE",
+          re.search(r"- demo-A6 \[waiting_work\] W-6 — slice MERGE-W6, open \d+ h \d+ min, acked (29|30) h \d+ min ago, "
+                    r"last seen breaching \S+ — STALE", text), text)
+    check("a fresh ack is listed, not STALE",
+          re.search(r"- demo-A7 \[size_ratio\] W-7 — slice W-7, open .*acked (59 min|1 h 00 min) ago", text)
+          and not re.search(r"- demo-A7 .*STALE", text), text)
+    check("acked alerts are not in the overdue list", not re.search(r"- demo-A6 \[waiting_work\] W-6 — owner", text), text)
+    rc, due = tool(NOTE, "due")
+    check("due prints ALERT ACKED-STALE for the stale ack only",
+          "ALERT ACKED-STALE: demo-A6 [waiting_work] W-6" in due and "ACKED-STALE: demo-A7" not in due, due)
     check("rules past review listed", "- R-1.md (review-by 2000-01-01)" in text, text)
     proposals = re.findall(r"(?m)^\d+\. Candidate", text)
     check(f"at most five proposals ({len(proposals)})", 1 <= len(proposals) <= 5, text)
@@ -155,7 +173,7 @@ try:
               for line in re.findall(r"(?m)^\d+\. Candidate.*$", text)), text)
     check("owner decision rows pending", len(re.findall(r"(?m)^\| \d \| pending \|", text)) == len(proposals), text)
     check("worktree with no own commit reported", "wt-idle" in text, text)
-    check("alerts and polls counted", re.search(r"\d+ opened / 1 resolved / 0 acked or deferred · 2 polls", text), text)
+    check("alerts and polls counted", re.search(r"\d+ opened / 1 resolved / 2 acked or deferred · 3 polls", text), text)
 
     rc, out = tool(RETRO, "--project", "demo", "--repo", str(HOST), "--config", str(cfg))
     check("existing retro is not overwritten", rc == 1 and "exists" in out, out)

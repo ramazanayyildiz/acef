@@ -766,6 +766,164 @@ try:
         os.chmod(HOST / "left2", 0o755)
     check("r5-5 leftover behind an unreadable parent: SOURCE_ERROR leftovers, not CLEARED",
           "SOURCE_ERROR forgotten_session leftovers" in o and f"CLEARED {l_id}" not in o, o)
+
+    # ------------------------------------------------------------ speed: shared reads, persistent index, timing
+    STORE_C = TMP / "store-cache"
+    ENV_C = {**ENV, "ACEF_FEEDBACK_DIR": str(STORE_C)}
+
+    def body(text):
+        """Output without the timing numbers (ms in OK lines and the header, the closing timing line)."""
+        return "\n".join(re.sub(r"\d+ ms", "N ms", l) for l in text.splitlines()
+                         if not re.match(r"^acef-detect \d+\.\d s ", l))
+
+    rc, cold = run(config=CFG, env=ENV_C)   # real poll: builds the index
+    index_file = STORE_C / "alerts" / "demo.index.json"
+    check("speed: a real poll writes the run-item index in the store, not the host",
+          rc in (0, 3) and index_file.exists() and not list(HOST.glob("**/*.index.json")), cold)
+    rows = json.loads(index_file.read_text()).get("rows", {}) if index_file.exists() else {}
+    check("speed: only finished run items are indexed",
+          rows and all(r.get("finished") for r in rows.values()) and not any("/run-a\t" in k for k in rows), rows)
+    rc_w, warm = run("--dry-run", config=CFG, env=ENV_C, now=NOW + dt.timedelta(minutes=1))
+    rc_n, nocache = run("--dry-run", "--no-cache", config=CFG, env=ENV_C, now=NOW + dt.timedelta(minutes=1))
+    hits = re.search(r"index (\d+) hit", warm)
+    check("speed: the warm poll uses the index", hits and int(hits.group(1)) > 0, warm)
+    check("speed: same findings with and without the index (warm vs --no-cache)",
+          rc_w == rc_n and body(warm) == body(nocache) and "index off" in nocache, f"{warm}\n----\n{nocache}")
+    shutil.copy(index_file, TMP / "index.bak")
+    index_file.write_text("{not json")
+    rc_b, broken = run("--dry-run", config=CFG, env=ENV_C, now=NOW + dt.timedelta(minutes=1))
+    check("speed: a corrupt index is ignored (same findings)", rc_b == rc_n and body(broken) == body(nocache), broken)
+    shutil.copy(TMP / "index.bak", index_file)
+
+    # an indexed finished review whose report changes is read again (mtime/size signature)
+    put(HOST / "idx/codex-IDX-1-1/started", iso(ago(100)) + "\n", 100)
+    put(HOST / "idx/codex-IDX-1-1/report.md", "Verdict: ACCEPT\n", 90)
+    put(HOST / "idx/codex-IDX-1-1/finished", iso(ago(90)) + "\n", 90)
+    for r_ in (2, 3):
+        put(HOST / f"idx/codex-IDX-1-{r_}/started", iso(ago(100 - r_)) + "\n", 100 - r_)
+        put(HOST / f"idx/codex-IDX-1-{r_}/report.md", "Verdict: REVISE\n", 90 - r_)
+        put(HOST / f"idx/codex-IDX-1-{r_}/finished", iso(ago(90 - r_)) + "\n", 90 - r_)
+    ic = det_cfg("idx", {"reviews": {"glob": "idx/codex-*", "result_file": "report.md",
+                                     "id_regex": "^codex-(?P<id>.+?)-(?P<round>\\d+)$"}})
+    rc, o = run("--only", "review_loop", config=ic, env=ENV_C)
+    check("speed: index fixture has two REVISE rounds, no alert yet", "[review_loop] IDX-1" not in o, o)
+    put(HOST / "idx/codex-IDX-1-1/report.md", "Verdict: REVISE\n", 80)   # same size, new mtime
+    rc, o = run("--only", "review_loop", config=ic, env=ENV_C, now=NOW + dt.timedelta(minutes=1))
+    check("speed: a changed result file is reread, not served from the index",
+          bool(re.search(r"ALERT \S+ NEW \[review_loop\] IDX-1 — 3 REVISE rounds", o)), o)
+
+    # shared git: one git log of main for every history window, one for every worktree head
+    trace = TMP / "git-trace.txt"
+    rc, o = run("--dry-run", config=CFG, env={**ENV_C, "GIT_TRACE": str(trace)}, now=NOW + dt.timedelta(minutes=2))
+    cmds = [l for l in trace.read_text().splitlines() if "trace: built-in: git" in l] if trace.exists() else []
+    logs = [l.split("trace: built-in: git ", 1)[1] for l in cmds if "trace: built-in: git log " in l]
+    since_logs = [l for l in logs if "--since=" in l]
+    head_logs = [l for l in logs if re.search(r"(^| )--not( |$)", l)]
+    per_head = [l for l in logs if re.search(r"(^| )'?main\.\.[0-9a-f]+", l)]
+    check("speed: one git log of main per poll (all history windows share it)", len(since_logs) == 1,
+          "\n".join(since_logs))
+    check("speed: one git log for every worktree head, none per head", len(head_logs) == 1 and not per_head,
+          "\n".join(head_logs + per_head))
+
+    # the batched own-commit query gives what `git log main..<head>` gives for each worktree
+    sys.dont_write_bytecode = True
+    sys.path.insert(0, str(HERE / "detectors"))
+    import _lib as lib   # noqa: E402
+
+    class FakeCtx:
+        def __init__(self):
+            self.repo, self.cache, self.now = HOST, {}, NOW
+            self.sources = {"main_ref": "main"}
+
+    fctx = FakeCtx()
+    heads = [w.get("HEAD") for w in lib.worktrees(fctx) if w.get("branch")]
+    same = all(sorted(lib.own_commits(fctx, h)) == sorted(
+        (int(l.split("\t", 1)[0]), l.split("\t", 1)[1]) for l in git("log", "--format=%ct%x09%s", f"main..{h}").splitlines())
+        for h in heads)
+    check(f"speed: batched own commits equal git log main..<head> for {len(heads)} worktree(s)", heads and same)
+    # history views: each window equals its own `git log --since`
+    views_ok = True
+    for days in (1, 2, 3, 30, 90):
+        since = (NOW - dt.timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        own = {l.split("\t")[0] for l in git("log", "main", f"--since={since}", "--format=%H%x09%ct").splitlines()}
+        views_ok = views_ok and set(lib.history(fctx, days)["commits"]) == own
+    check("speed: every history window equals its own git log --since", views_ok)
+    # the mention index answers exactly what the old regex answered
+    subjects = ["Merge FOO-1: x", "Merge FOO-1-r2 into main", "Merge XFOO-1", "Merge foo-12 (light)", "Merge FOO-1A",
+                "Merge (FOO-1) and BAR-2-3", "Merge 'slice/foo-1'", "Merge FOO--1", "Merge -FOO-1"]
+    hist = {"chain": [f"s{i}" for i in range(len(subjects))],
+            "commits": {f"s{i}": (["p", "q"], 1000 + i, s) for i, s in enumerate(subjects)}}
+    idx = lib._mention_index(hist)
+    agree = True
+    for wid in ("FOO-1", "FOO-12", "XFOO-1", "FOO-1A", "BAR-2", "BAR-2-3", "FOO", "FOO-", "-FOO-1", "SLICE"):
+        rx = re.compile(r"(?<![A-Z0-9-])" + re.escape(wid) + r"(?![A-Z0-9])")
+        want = sorted(hist["commits"][s][1] for s in hist["chain"] if rx.search(hist["commits"][s][2].upper()))
+        agree = agree and sorted(idx.get(wid, [])) == want
+    check("speed: mention index equals the regex on edge-case subjects", agree, json.dumps(idx, sort_keys=True))
+
+    rc, q = run("--quiet", "--dry-run", config=CFG, env=ENV_C, now=NOW + dt.timedelta(minutes=3))
+    check("timing: --quiet ends with 'acef-detect <s> s' and the shared-read counts",
+          bool(re.search(r"^acef-detect \d+\.\d s \(git \d+ call\(s\) .*file\(s\) read, index ", q, re.M)), q)
+    check("timing: --quiet has no TIME lines", "TIME " not in q, q)
+    rc, t = run("--timing", "--dry-run", config=CFG, env=ENV_C, now=NOW + dt.timedelta(minutes=3))
+    ran = set(re.findall(r"^OK   (\S+) ", t, re.M))
+    timed = set(re.findall(r"^TIME (\S+) \d+ ms$", t, re.M))
+    check("timing: --timing prints one TIME line per detector that ran", ran and ran == timed, t)
+
+    # ------------------------------------------------------------ acked alerts do not hide a long wait
+    STORE_S = TMP / "store-stale"
+    ENV_S = {**ENV, "ACEF_FEEDBACK_DIR": str(STORE_S)}
+    put(HOST / "stale/run-S/started", iso(ago(300)) + "\n", 300)
+    put(HOST / "stale/run-S/out.log", "working\n", 240)
+    settle(HOST / "stale/run-S", 240)
+    put(HOST / "stale/run-U/started", iso(ago(300)) + "\n", 300)
+    put(HOST / "stale/run-U/out.log", "working\n", 240)
+    settle(HOST / "stale/run-U", 240)
+    sc = det_cfg("st", {"agent_runs": "stale/*"})
+    T = lambda h: NOW + dt.timedelta(hours=h)   # noqa: E731
+    rc, o = run("--only", "stuck_agent", config=sc, env=ENV_S)
+    s_id, u_id = alert_id(o, "stuck_agent", "run-S"), alert_id(o, "stuck_agent", "run-U")
+    check("stale: two stuck runs open alerts", bool(s_id and u_id), o)
+    note("ack", s_id, "--slice", "FIX-S", now=T(0.1), env=ENV_S)
+    note("ack", u_id, "--slice", "FIX-U", now=T(0.1), env=ENV_S)
+    rc, o = run("--only", "stuck_agent", "--quiet", config=sc, env=ENV_S, now=T(2))
+    rc, d = note("due", now=T(2), env=ENV_S)
+    check("stale: an ack inside 24 h stays quiet", "ACKED-STALE" not in o and "ACKED-STALE" not in d, o + d)
+    shutil.rmtree(HOST / "stale/run-U")   # run-U's evidence is gone: UNSEEN from now on, never "still breaching"
+    rc, o = run("--only", "stuck_agent", "--quiet", config=sc, env=ENV_S, now=T(25))
+    check("stale: still breaching 24 h after the ack prints ACKED-STALE under --quiet",
+          bool(re.search(rf"^ALERT {s_id} ACKED-STALE \[stuck_agent\] run-S .*slice FIX-S", o, re.M)), o)
+    rc, d = note("due", now=T(25.1), env=ENV_S)
+    check("stale: due prints ALERT ACKED-STALE with age and slice",
+          bool(re.search(rf"ALERT ACKED-STALE: {s_id} \[stuck_agent\] run-S — owner \S+, acked 2[45] h ago to slice "
+                         rf"FIX-S", d)), d)
+    check("stale: an acked alert that is only UNSEEN is not stale", f"ACKED-STALE: {u_id} " not in d, d)
+    rc, al = note("alerts", now=T(25.1), env=ENV_S)
+    check("stale: alerts marks it STALE", bool(re.search(rf"^{s_id} acked slice FIX-S STALE", al, re.M)), al)
+    note("ack", s_id, "--slice", "FIX-S", now=T(25.2), env=ENV_S)
+    rc, o = run("--only", "stuck_agent", "--quiet", config=sc, env=ENV_S, now=T(26))
+    rc, d = note("due", now=T(26), env=ENV_S)
+    check("stale: acking again starts a new period", "ACKED-STALE" not in o and f"ACKED-STALE: {s_id}" not in d, o + d)
+    rc_bad, _ = note("ack", s_id, "--defer", "2099-01-01", "--reason", "x", "--recheck-hours", "2", now=T(26), env=ENV_S)
+    check("stale: --recheck-hours goes only with --slice", rc_bad != 0)
+    note("ack", s_id, "--slice", "FIX-S", "--recheck-hours", "1", now=T(26.1), env=ENV_S)
+    rc, o = run("--only", "stuck_agent", "--quiet", config=sc, env=ENV_S, now=T(27.5))
+    check("stale: ack --recheck-hours 1 re-asks after one hour", f"ALERT {s_id} ACKED-STALE" in o, o)
+    sc2 = TMP / "st2.json"
+    sc2.write_text(json.dumps({"project": "st", "stale_ack_hours": 3, "sources": {"main_ref": "main",
+                                                                                   "agent_runs": "stale/*"}}))
+    note("ack", s_id, "--slice", "FIX-S", now=T(28), env=ENV_S)
+    rc, o = run("--only", "stuck_agent", "--quiet", config=sc2, env=ENV_S, now=T(30))
+    check("stale: stale_ack_hours 3 from the host config is not stale after 2 h", "ACKED-STALE" not in o, o)
+    rc, o = run("--only", "stuck_agent", "--quiet", config=sc2, env=ENV_S, now=T(31.5))
+    rc, d = note("due", now=T(31.5), env=ENV_S)
+    check("stale: stale_ack_hours 3 from the host config re-asks after 3 h",
+          f"ALERT {s_id} ACKED-STALE" in o and f"ACKED-STALE: {s_id}" in d, o + d)
+    polls = [json.loads(l) for l in (STORE_S / "alerts/st.jsonl").read_text().splitlines()]
+    polls = [e for e in polls if e["event"] == "poll"]
+    check("stale: each poll records the acked alerts it still saw breaching",
+          polls and s_id in (polls[-1].get("breaching") or []) and u_id not in (polls[-1].get("breaching") or []),
+          json.dumps(polls[-1:]))
 finally:
     subprocess.run(["git", "worktree", "prune"], cwd=HOST, capture_output=True)
     shutil.rmtree(TMP, ignore_errors=True)
