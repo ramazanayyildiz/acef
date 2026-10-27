@@ -1,0 +1,1017 @@
+#!/usr/bin/env python3
+"""acef-daily-extract: stage 1 of the daily session review (pilot). Deterministic, no model.
+
+Usage:
+  acef-daily-extract [--since <local ISO>] [--until <local ISO>] [--store <dir>] [--claude-dir <dir>]
+                     [--codex-dir <dir>] [--label YYYY-MM-DD] [--budget-tokens 40000] [--repeat-min 3] [--jobs N]
+
+Reads Claude Code transcripts (<claude-dir>/<project>/<session>.jsonl and <session>/subagents/agent-*.jsonl) and Codex
+sessions (<codex-dir>/YYYY/MM/DD/*.jsonl) that have at least one event inside the window (default: yesterday 00:00 to
+today 00:00, local time). Extracts signals only, never whole transcripts: owner messages (truncated, with a correction
+hint), status asks, interrupts, failed tool calls and repeats, waits, test runs, review verdicts, commits and merges,
+context size and tokens, compactions and hand-offs, subagents. Signals are clipped to the window; a session's start and
+end are its full span.
+
+Writes <store>/daily/<label>/extract.json (all sessions, compact) and <store>/daily/<label>/<project>.md (one digest per
+project, trimmed to the token budget with the strongest signals kept and a "Trimmed" line for what was cut). The store
+defaults to ACEF_FEEDBACK_DIR, else ~/CODE/acef-feedback; it is local and private. Every string is redacted (keys,
+tokens, passwords, connection strings, emails) before it is written. Files that cannot be read are listed as
+UNREADABLE with the reason, never skipped. Nothing is written into host repos, ~/.claude or ~/.codex. The daily review
+reports; it never changes rules (method/FEEDBACK_LOOP.md, method/WEEKLY_RETRO.md).
+"""
+import sys
+
+sys.dont_write_bytecode = True
+
+import argparse
+import collections
+import datetime as dt
+import json
+import multiprocessing
+import os
+import re
+import subprocess
+import time
+from pathlib import Path
+
+GAP_S = 30 * 60            # a new activity block starts after 30 idle minutes (same as the session dashboard)
+MSG_CHARS = 300
+CMD_CHARS = 160
+ERR_CHARS = 200
+
+# Claude record types that carry no signal we use (and are most of the bytes); skipped before json.loads.
+SKIP_PREFIXES = tuple('{"type":"%s"' % t for t in (
+    "api-request-blob", "api-request", "api-request-shape", "queue-operation", "file-history-snapshot",
+    "file-history-delta", "last-prompt", "mode", "permission-mode", "atis-latch", "history-suppression",
+    "bridge-session", "frame-link", "artifact-", "isolation-latch", "tools-used"))
+ATTACH_RE = re.compile(r'"attachment":\{"type":"')
+
+HUMAN_SOURCES = {"typed", "sdk", "queued"}
+CORRECTION_WORDS = [
+    # Turkish
+    "hayır", "hayir", "yanlış", "yanlis", "anlamadım", "anlamadin", "anlamıyorsun", "neden", "niye", "niçin", "yine",
+    "gene", "tekrar", "dur", "durdur", "olmadı", "olmamış", "olmuyor", "hala", "hâlâ", "bozuk", "bozdun", "bozuldu",
+    "çalışmıyor", "calismiyor", "sorun", "saçma", "demedim", "dedim", "söyledim", "istemedim", "yapma", "geri al",
+    "kaybettin", "unuttun", "takıldı", "takildi",
+    # English
+    "no", "wrong", "stop", "why", "again", "still", "broken", "doesn't work", "not working", "i said", "i told",
+    "didn't ask", "don't", "undo", "revert", "mistake",
+]
+CORRECTION_RE = re.compile(r"(?<![\wçğıöşüâ])(" + "|".join(re.escape(w) for w in CORRECTION_WORDS) + r")(?![\wçğıöşüâ])",
+                           re.IGNORECASE)
+STATUS_RE = re.compile(r"^\s*(nedir durum|ne durumda|durum ne|durum\??$|son durum|nedir son durum|ne kaldı|ne kaldi|"
+                       r"noldu|ne oldu|ne bitti|nerdeyiz|nerede kaldık|status|what'?s the status|where are we)",
+                       re.IGNORECASE)
+CONTINUATION = "This session is being continued from a previous conversation"
+INTERRUPT = "[Request interrupted by user"
+
+TEST_RE = re.compile(r"((?<![\w.-])(phpunit|paratest|pest|vitest|jest|pytest)(?![\w.-])|artisan test|node --test|bun test|"
+                     r"npm (run )?test|pnpm (run )?test|yarn test|playwright test|selfcheck\.sh|test-[\w-]+|"
+                     r"composer (run )?test|go test|cargo test|run-tests?|remote-(test|run)\.sh|lane-guard)", re.IGNORECASE)
+TEST_FAIL_RE = re.compile(r"(FAILURES!|ERRORS!|Tests:\s+[^\n]*\d+ failed|\b[1-9]\d* (failed|failing)\b|# fail [1-9]|"
+                          r"SELFCHECK FAIL|\bFAIL\b\s+\S|\b(Errors|Failures): [1-9]|Error: Process completed with exit code [1-9])")
+TEST_PASS_RE = re.compile(r"(OK \(\d+ tests?|Tests:\s+[^\n]*\d+ passed|\b\d+ passed\b|# pass \d+|SELFCHECK PASS|"
+                          r"All tests passed|\bok=\d+ fail=0\b)")
+TEST_LINE_RE = re.compile(r"^.*(Tests:|OK \(|FAILURES!|ERRORS!|passed|failed|SELFCHECK|# (pass|fail)|ok=\d+).*$",
+                          re.MULTILINE)
+COMMIT_RE = re.compile(r"\bgit\s+(-C\s+\S+\s+|-c\s+\S+\s+)*(commit|merge|cherry-pick|push)(?![\w-])|\bgh pr merge\b")
+MERGE_OUT_RE = re.compile(r"Merge made by|Fast-forward|Automatic merge went well|Merged pull request|was already merged|"
+                          r"Squashed and merged|Merged")
+PUSH_OUT_RE = re.compile(r"\S+ -> \S+|\* \[new branch\]")
+RELAY_RE = re.compile(r"^\W*(manager|coordinator|koordinat\w*|root|lead|orchestrator)\b[^:\n]{0,40}:|^[^:\n]{0,40}\(claude",
+                      re.IGNORECASE)
+MSG_RE = re.compile(r"""-[a-z]*m\s+["']([^"'\n]{3,120})""")
+REF_RE = re.compile(r"^.*?/(\.claude/projects|\.codex/sessions)/")
+CD_RE = re.compile(r"(?:^|[;&|(]\s*)cd\s+([~/][^\s;&|)]+)")
+SHA_RE = re.compile(r"\[([\w./+-]+)(?: \(root-commit\))? ([0-9a-f]{7,12})\]")
+SLEEP_RE = re.compile(r"\bsleep\s+(\d+(?:\.\d+)?)")
+REVIEW_RE = re.compile(r"\b(review|reviewer|VERDICT|inceleme|incele)\b", re.IGNORECASE)
+VERDICT_RE = re.compile(r"VERDICT\s*[:=]\s*\**\s*([A-Z_]+)")
+BENIGN_EXIT1 = re.compile(r"^\s*(\S*/)?(rg|grep|egrep|fgrep|test|\[|diff|cmp|git diff|git grep|pgrep|which)\b")
+
+# ---------------------------------------------------------------- redaction (applied to every string at write time)
+REDACTIONS = [
+    (re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----.*?-----END [A-Z ]*PRIVATE KEY-----", re.S), "<redacted-key>"),
+    (re.compile(r"\b[\w.+-]+@[\w-]+(\.[\w-]+)+\b"), "<email>"),
+    (re.compile(r"\b([a-z][a-z0-9+.-]*://)[^/\s:@]+:[^/\s@]+@", re.I), r"\1<redacted>@"),
+    (re.compile(r"\b(sk|rk|pk)[-_](live|test|proj|ant)?[-_]?[A-Za-z0-9_-]{16,}"), "<redacted-token>"),
+    (re.compile(r"\b(ghp|gho|ghu|ghs|ghr|github_pat)_[A-Za-z0-9_]{16,}"), "<redacted-token>"),
+    (re.compile(r"\bxox[abprs]-[A-Za-z0-9-]{10,}"), "<redacted-token>"),
+    (re.compile(r"\bAKIA[0-9A-Z]{16}\b"), "<redacted-token>"),
+    (re.compile(r"\bAIza[0-9A-Za-z_-]{30,}"), "<redacted-token>"),
+    (re.compile(r"\beyJ[\w-]{8,}\.[\w-]{8,}\.[\w-]{4,}"), "<redacted-jwt>"),
+    (re.compile(r"\b(Bearer|Basic|token)\s+[A-Za-z0-9._~+/=-]{12,}", re.I), r"\1 <redacted>"),
+    (re.compile(r"(?i)\b([\w-]*(password|passwd|pwd|secret|token|api[_-]?key|apikey|access[_-]?key|private[_-]?key|"
+                r"client[_-]?secret|auth[_-]?key|credentials?)[\w-]*)(\"?'?\s*[:=]\s*[\"']?)([^\s\"',;}&]+)"),
+     r"\1\3<redacted>"),
+    (re.compile(r"(\bmysql\w*\b[^\n]*?\s)-p(?=\S)\S+"), r"\1-p<redacted>"),
+]
+LONG_TOKEN = re.compile(r"(?<![\w/-])[A-Za-z0-9_\-]{40,}")
+
+
+def _long_token(m):
+    w = m.group(0)
+    # opaque high-entropy strings only: mixed case and digits, few dashes (path-like project dirs have many)
+    if w.count("-") <= 2 and re.search(r"[A-Z]", w) and re.search(r"[a-z]", w) and re.search(r"\d", w):
+        return "<redacted-token>"
+    return w
+
+
+def redact(s):
+    if not isinstance(s, str) or not s:
+        return s
+    for rx, rep in REDACTIONS:
+        s = rx.sub(rep, s)
+    return LONG_TOKEN.sub(_long_token, s)
+
+
+def redact_obj(o):
+    if isinstance(o, str):
+        return redact(o)
+    if isinstance(o, list):
+        return [redact_obj(x) for x in o]
+    if isinstance(o, dict):
+        return {k: redact_obj(v) for k, v in o.items()}
+    return o
+
+
+# ---------------------------------------------------------------- helpers
+def parse_ts(s):
+    if not s:
+        return None
+    try:
+        if isinstance(s, (int, float)):
+            return float(s) / (1000.0 if s > 1e11 else 1.0)
+        return dt.datetime.fromisoformat(s.replace("Z", "+00:00")).timestamp()
+    except (ValueError, TypeError):
+        return None
+
+
+def hhmm(t):
+    return dt.datetime.fromtimestamp(t).strftime("%H:%M") if t else "?"
+
+
+def short(s, n):
+    s = re.sub(r"\s+", " ", s or "").strip()
+    return s if len(s) <= n else s[: n - 1] + "…"
+
+
+def text_of(content):
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        out = []
+        for c in content:
+            if isinstance(c, dict):
+                if c.get("type") in ("text", "input_text", "output_text") and isinstance(c.get("text"), str):
+                    out.append(c["text"])
+                elif c.get("type") == "tool_result":
+                    out.append(text_of(c.get("content")))
+            elif isinstance(c, str):
+                out.append(c)
+        return " ".join(out)
+    return ""
+
+
+def norm_key(s):
+    s = re.sub(r"[0-9a-f]{7,}", "#", s or "")
+    s = re.sub(r"\d+", "N", s)
+    s = re.sub(r"/[\w./-]+", "/P", s)
+    return short(s, 110)
+
+
+def intervals(ts):
+    out = []
+    for t in sorted(ts):
+        if out and t - out[-1][1] <= GAP_S:
+            out[-1][1] = t
+        else:
+            out.append([t, t])
+    return out
+
+
+def strip_pasted(t):
+    t = re.sub(r"</?pasted_content[^>]*>", " ", t)
+    return t.strip()
+
+
+def human_msg(t, ln, txt):
+    if RELAY_RE.search(txt[:120]):
+        knd, hits = "relayed", []           # an agent writing into the pane (e.g. a manager), not the owner
+    elif STATUS_RE.search(txt) and len(txt) < 120:
+        knd, hits = "status", []
+    else:
+        hits = correction_hits(txt[:1500])
+        knd = "correction?" if hits else "other"
+    return {"t": t, "line": ln, "text": short(txt, MSG_CHARS), "hits": hits, "kind": knd}
+
+
+def correction_hits(t):
+    return sorted({m.group(1).lower() for m in CORRECTION_RE.finditer(t)})
+
+
+def commit_event(cmd, out, is_err):
+    """A commit, merge or push only when the output (or a clean exit) shows it happened."""
+    if is_err or not COMMIT_RE.search(cmd):
+        return None
+    shas = [m.group(2) for m in SHA_RE.finditer(out)]
+    kinds = set(m.group(2) or "merge" for m in COMMIT_RE.finditer(cmd))
+    if "merge" in kinds and (MERGE_OUT_RE.search(out) or ("Already up to date" not in out)):
+        kind = "merge"
+    elif "commit" in kinds or "cherry-pick" in kinds:
+        if "nothing to commit" in out or "no changes added" in out:
+            return None
+        kind = "commit"
+    elif "push" in kinds and PUSH_OUT_RE.search(out):
+        kind = "push"
+    else:
+        return None
+    return {"cmd": short(cmd, CMD_CHARS), "sha": shas[:3], "ok": True, "merge": kind == "merge", "kind": kind}
+
+
+def test_outcome(cmd, out, is_error):
+    o = out or ""
+    line = ""
+    m = list(TEST_LINE_RE.finditer(o[-6000:]))
+    if m:
+        line = short(m[-1].group(0), 140)
+    if TEST_FAIL_RE.search(o):
+        return "fail", line
+    if TEST_PASS_RE.search(o) and not is_error:
+        return "pass", line
+    if is_error and line:
+        return "error", line
+    if "run_in_background" in cmd or "Command running in background" in o or "backgroundTaskId" in cmd:
+        return "background", line
+    return "unknown", line
+
+
+def add_cmd_signals(s, t, ln, cmd, out, is_err):
+    for m in CD_RE.finditer(cmd):
+        s.cd_dirs[m.group(1)] += 1
+    if TEST_RE.search(cmd):
+        res, summ = test_outcome(cmd, out, is_err)
+        if res == "unknown":
+            s.test_like += 1
+        else:
+            s.tests.append({"t": t, "line": ln, "cmd": short(cmd, CMD_CHARS), "result": res, "summary": summ})
+    ev = commit_event(cmd, out, is_err)
+    if ev:
+        ev.update(t=t, line=ln)
+        s.commits.append(ev)
+
+
+class Sig:
+    """Signals for one session, clipped to [since, until)."""
+
+    def __init__(self, since, until):
+        self.since, self.until = since, until
+        self.ts_all = []
+        self.ts_win = []
+        self.human = []          # {t, line, text, hits, kind}
+        self.interrupts = []
+        self.fails = []          # {t, line, tool, cmd, err}
+        self.tests = []          # {t, line, cmd, result, summary}
+        self.commits = []        # {t, line, cmd, sha, ok}
+        self.waits = {"sleep_s": 0, "sleep_calls": 0, "monitor_calls": 0, "notifications": 0, "long_turns": [],
+                      "idle_gaps": []}
+        self.compactions = []    # {t, pre, post, trigger}
+        self.continuations = 0
+        self.api_errors = 0
+        self.agents = []         # Agent tool calls in this session {t, type, model, desc}
+        self.reviews = []        # {t, kind, verdict}
+        self.prs = []
+        self.cd_dirs = collections.Counter()
+        self.test_like = 0
+
+    def inwin(self, t):
+        return t is not None and self.since <= t < self.until
+
+
+# ---------------------------------------------------------------- Claude
+def parse_claude(path, since, until, kind):
+    s = Sig(since, until)
+    meta = {"path": path, "tool": "claude", "kind": kind, "cwds": collections.Counter(), "models": collections.Counter(),
+            "title": "", "branch": "", "cost_usd": None, "out_tokens": 0, "ctx_end": 0, "ctx_max": 0, "lines": 0,
+            "bad_lines": 0, "first_prompt": "", "effort": collections.Counter()}
+    pending = {}            # tool_use id -> (name, cmd, t, line)
+    seen_req = set()
+    with open(path, "r", encoding="utf-8", errors="replace") as fh:
+        for ln, line in enumerate(fh, 1):
+            meta["lines"] += 1
+            if not line.strip() or line.startswith(SKIP_PREFIXES):
+                continue
+            if ATTACH_RE.search(line[:300]):
+                continue
+            try:
+                d = json.loads(line)
+            except ValueError:
+                meta["bad_lines"] += 1
+                continue
+            typ = d.get("type")
+            t = parse_ts(d.get("timestamp"))
+            if typ in ("ai-title", "custom-title"):
+                meta["title"] = d.get("customTitle") or d.get("aiTitle") or meta["title"]
+                continue
+            if typ == "cost-state":
+                meta["cost_usd"] = d.get("totalCostUSD")
+                continue
+            if typ == "pr-link":
+                if s.inwin(t):
+                    s.prs.append({"t": t, "pr": d.get("prNumber"), "repo": d.get("prRepository")})
+                continue
+            if typ not in ("user", "assistant", "system"):
+                continue
+            if t is None:
+                continue
+            if d.get("cwd"):
+                meta["cwds"][d["cwd"]] += 1
+            if d.get("gitBranch"):
+                meta["branch"] = d["gitBranch"]
+            s.ts_all.append(t)
+            win = s.inwin(t)
+            if win:
+                s.ts_win.append(t)
+            msg = d.get("message") if isinstance(d.get("message"), dict) else {}
+            if typ == "system":
+                st = d.get("subtype")
+                if not win:
+                    continue
+                if st == "compact_boundary":
+                    cm = d.get("compactMetadata") or {}
+                    s.compactions.append({"t": t, "line": ln, "pre": cm.get("preTokens"), "post": cm.get("postTokens"),
+                                          "trigger": cm.get("trigger")})
+                elif st == "api_error":
+                    s.api_errors += 1
+                elif st == "turn_duration" and (d.get("durationMs") or 0) >= 20 * 60 * 1000:
+                    s.waits["long_turns"].append({"t": t, "line": ln, "min": round(d["durationMs"] / 60000)})
+                elif st == "agents_killed":
+                    s.fails.append({"t": t, "line": ln, "tool": "system", "cmd": "agents_killed", "err": "agents killed"})
+                continue
+            if typ == "assistant":
+                model = msg.get("model")
+                if model and not model.startswith("<"):
+                    meta["models"][model] += 1
+                if d.get("effort"):
+                    meta["effort"][d["effort"]] += 1
+                u = msg.get("usage") or {}
+                rid = d.get("requestId") or msg.get("id")
+                if u and rid not in seen_req:
+                    seen_req.add(rid)
+                    ctx = (u.get("input_tokens") or 0) + (u.get("cache_read_input_tokens") or 0) + \
+                          (u.get("cache_creation_input_tokens") or 0)
+                    meta["ctx_end"] = ctx
+                    meta["ctx_max"] = max(meta["ctx_max"], ctx)
+                    if win:
+                        meta["out_tokens"] += u.get("output_tokens") or 0
+                for c in msg.get("content") or []:
+                    if not isinstance(c, dict) or c.get("type") != "tool_use":
+                        continue
+                    name, inp = c.get("name") or "", c.get("input") or {}
+                    cmd = inp.get("command") or inp.get("cmd") or ""
+                    if not isinstance(cmd, str):
+                        cmd = json.dumps(cmd)[:300]
+                    if inp.get("run_in_background"):
+                        cmd += "  [run_in_background]"
+                    pending[c.get("id")] = (name, cmd, t, ln, inp)
+                    if not win:
+                        continue
+                    if name in ("Agent", "Task"):
+                        s.agents.append({"t": t, "line": ln, "type": inp.get("subagent_type") or "",
+                                         "model": inp.get("model") or "", "desc": short(inp.get("description"), 70)})
+                    elif name == "Monitor":
+                        s.waits["monitor_calls"] += 1
+                    if name == "Bash" and cmd:
+                        for m in SLEEP_RE.finditer(cmd):
+                            s.waits["sleep_s"] += float(m.group(1))
+                            s.waits["sleep_calls"] += 1
+                continue
+            # user
+            content = msg.get("content")
+            if isinstance(content, list) and any(isinstance(c, dict) and c.get("type") == "tool_result" for c in content):
+                if not win:
+                    continue
+                tur = d.get("toolUseResult") if isinstance(d.get("toolUseResult"), dict) else {}
+                for c in content:
+                    if not isinstance(c, dict) or c.get("type") != "tool_result":
+                        continue
+                    name, cmd, t0, ln0, inp = pending.pop(c.get("tool_use_id"), ("?", "", t, ln, {}))
+                    out = (tur.get("stdout") or "") + "\n" + (tur.get("stderr") or "") if tur else text_of(c.get("content"))
+                    if not out.strip():
+                        out = text_of(c.get("content"))
+                    is_err = bool(c.get("is_error"))
+                    if is_err:
+                        benign = name == "Bash" and BENIGN_EXIT1.search(cmd or "") and "Exit code 1" in out[:40]
+                        if not benign:
+                            s.fails.append({"t": t, "line": ln, "tool": name, "cmd": short(cmd, CMD_CHARS) or
+                                            short(json.dumps(inp)[:300], CMD_CHARS), "err": short(out, ERR_CHARS)})
+                    if name == "Bash" and cmd:
+                        add_cmd_signals(s, t, ln, cmd, out, is_err)
+                        if REVIEW_RE.search(cmd) and re.search(r"\bcodex\b", cmd):
+                            v = VERDICT_RE.search(out)
+                            s.reviews.append({"t": t, "line": ln, "kind": "codex-from-claude",
+                                              "verdict": v.group(1) if v else ""})
+                continue
+            if d.get("isMeta"):
+                continue
+            txt = text_of(content).strip()
+            if not txt:
+                continue
+            if txt.startswith(CONTINUATION):
+                if win:
+                    s.continuations += 1
+                continue
+            if INTERRUPT in txt[:80]:
+                if win:
+                    s.interrupts.append({"t": t, "line": ln})
+                continue
+            src = d.get("promptSource")
+            if txt.startswith("<task-notification"):
+                if win:
+                    s.waits["notifications"] += 1
+                continue
+            if kind == "subagent":
+                if not meta["first_prompt"]:
+                    meta["first_prompt"] = short(txt, 200)
+                continue
+            if src not in HUMAN_SOURCES:
+                continue
+            txt = strip_pasted(txt)
+            if txt.startswith("<") or not txt:
+                continue
+            if not meta["first_prompt"]:
+                meta["first_prompt"] = short(txt, 200)
+            if not win:
+                continue
+            s.human.append(human_msg(t, ln, txt))
+    return finish(s, meta)
+
+
+# ---------------------------------------------------------------- Codex
+def parse_codex(path, since, until, kind_unused=None):
+    s = Sig(since, until)
+    meta = {"path": path, "tool": "codex", "kind": "codex", "cwds": collections.Counter(), "models": collections.Counter(),
+            "title": "", "branch": "", "cost_usd": None, "out_tokens": 0, "ctx_end": 0, "ctx_max": 0, "lines": 0,
+            "bad_lines": 0, "first_prompt": "", "effort": collections.Counter(), "meta_cwd": "", "originator": "",
+            "session_id": "", "verdicts": [], "ctx_window": None, "cmd_cwds": collections.Counter()}
+    first_user = True
+    prev_out = 0
+    with open(path, "r", encoding="utf-8", errors="replace") as fh:
+        for ln, line in enumerate(fh, 1):
+            meta["lines"] += 1
+            if not line.strip():
+                continue
+            try:
+                d = json.loads(line)
+            except ValueError:
+                meta["bad_lines"] += 1
+                continue
+            typ = d.get("type")
+            p = d.get("payload") if isinstance(d.get("payload"), dict) else {}
+            t = parse_ts(d.get("timestamp"))
+            if typ == "session_meta":
+                meta["meta_cwd"] = p.get("cwd") or ""
+                meta["originator"] = p.get("originator") or ""
+                meta["session_id"] = p.get("id") or ""
+                continue
+            if typ == "turn_context":
+                if p.get("model"):
+                    meta["models"][p["model"]] += 1
+                eff = p.get("effort") or ((p.get("collaboration_mode") or {}).get("settings") or {}).get("reasoning_effort")
+                if eff:
+                    meta["effort"][eff] += 1
+                if p.get("cwd"):
+                    meta["cwds"][p["cwd"]] += 1
+                continue
+            if typ == "compacted":
+                if s.inwin(t):
+                    s.compactions.append({"t": t, "line": ln, "pre": None, "post": None, "trigger": "codex"})
+                continue
+            if typ not in ("event_msg", "response_item"):
+                continue
+            if t is None:
+                continue
+            s.ts_all.append(t)
+            win = s.inwin(t)
+            if win:
+                s.ts_win.append(t)
+            pt = p.get("type")
+            if typ == "event_msg" and pt == "token_count":
+                info = p.get("info") or {}
+                tot = info.get("total_token_usage") or {}
+                last = info.get("last_token_usage") or {}
+                if last.get("input_tokens"):
+                    meta["ctx_end"] = last["input_tokens"]
+                    meta["ctx_max"] = max(meta["ctx_max"], last["input_tokens"])
+                if tot.get("output_tokens") is not None:
+                    if win:
+                        meta["out_tokens"] += max(0, tot["output_tokens"] - prev_out)
+                    prev_out = tot["output_tokens"]
+                meta["ctx_window"] = info.get("model_context_window") or meta["ctx_window"]
+                continue
+            if typ == "event_msg" and pt == "task_complete":
+                msg = p.get("last_agent_message") or ""
+                v = VERDICT_RE.search(msg)
+                if v and win:
+                    meta["verdicts"].append({"t": t, "line": ln, "verdict": v.group(1)})
+                continue
+            if not (typ == "event_msg" and pt == "item_completed"):
+                continue
+            it = p.get("item") or {}
+            itype = it.get("type")
+            if itype == "UserMessage":
+                txt = strip_pasted(text_of(it.get("content")).strip())
+                if not txt:
+                    continue
+                if first_user:
+                    first_user = False
+                    meta["first_prompt"] = short(txt, 200)
+                    meta["is_review"] = bool(REVIEW_RE.search(txt[:4000]))
+                    if meta["originator"] == "codex_exec":
+                        continue
+                if not win or meta["originator"] == "codex_exec" or txt.startswith("<"):
+                    continue
+                s.human.append(human_msg(t, ln, txt))
+                continue
+            if not win:
+                continue
+            if itype == "CommandExecution":
+                cmdl = it.get("command")
+                cmd = cmdl[-1] if isinstance(cmdl, list) and cmdl else str(cmdl or "")
+                cwd = (it.get("cwd") or "").replace("file://", "")
+                if cwd:
+                    meta["cmd_cwds"][cwd] += 1
+                out = it.get("aggregated_output") or ""
+                code = it.get("exit_code")
+                is_err = code not in (0, None)
+                if is_err and not (code == 1 and BENIGN_EXIT1.search(cmd)):
+                    s.fails.append({"t": t, "line": ln, "tool": "exec", "cmd": short(cmd, CMD_CHARS),
+                                    "err": short(f"exit {code}: " + out[-400:], ERR_CHARS)})
+                for m in SLEEP_RE.finditer(cmd):
+                    s.waits["sleep_s"] += float(m.group(1))
+                    s.waits["sleep_calls"] += 1
+                add_cmd_signals(s, t, ln, cmd, out, is_err)
+            elif itype == "McpToolCall" and it.get("status") == "failed":
+                err = it.get("error")
+                s.fails.append({"t": t, "line": ln, "tool": f"mcp:{it.get('server')}/{it.get('tool')}", "cmd": "",
+                                "err": short(json.dumps(err)[:400] if err else "failed", ERR_CHARS)})
+            elif itype == "Extension" and it.get("kind") == "clock.sleep":
+                s.waits["sleep_s"] += (it.get("durationMs") or 0) / 1000.0
+                s.waits["sleep_calls"] += 1
+            elif itype == "ContextCompaction":
+                s.compactions.append({"t": t, "line": ln, "pre": None, "post": None, "trigger": "codex-item"})
+    for v in meta.pop("verdicts"):
+        s.reviews.append({"t": v["t"], "line": v["line"], "kind": "codex-review" if meta.get("is_review") else "codex",
+                          "verdict": v["verdict"]})
+    meta["kind"] = "codex-exec" if meta["originator"] == "codex_exec" else "codex-tui"
+    return finish(s, meta)
+
+
+def finish(s, meta):
+    if meta["lines"] and meta["bad_lines"] >= meta["lines"]:
+        return {"path": meta["path"], "unreadable": f"none of {meta['lines']} line(s) parsed as JSON"}
+    if not s.ts_all:
+        return {"path": meta["path"], "empty": True}
+    if not s.ts_win:
+        return {"path": meta["path"], "outside": True}
+    iv = intervals(s.ts_win)
+    gaps = []
+    for a, b in zip(iv, iv[1:]):
+        gaps.append({"from": a[1], "to": b[0], "min": round((b[0] - a[1]) / 60)})
+    s.waits["idle_gaps"] = sorted(gaps, key=lambda g: -g["min"])[:5]
+    out = {
+        "path": meta["path"], "tool": meta["tool"], "kind": meta["kind"], "title": short(meta["title"], 90),
+        "branch": meta["branch"], "start": min(s.ts_all), "end": max(s.ts_all), "win_start": min(s.ts_win),
+        "win_end": max(s.ts_win), "active_min": round(sum(b - a for a, b in iv) / 60 + len(iv) * 1),
+        "blocks": len(iv), "models": dict(meta["models"].most_common(3)), "effort": dict(meta["effort"].most_common(3)),
+        "cwd": meta["cwds"].most_common(1)[0][0] if meta["cwds"] else meta.get("meta_cwd", ""),
+        "meta_cwd": meta.get("meta_cwd", ""), "cmd_cwd": meta["cmd_cwds"].most_common(1)[0][0] if meta.get("cmd_cwds") else "",
+        "first_prompt": meta["first_prompt"], "is_review": meta.get("is_review", False),
+        "cost_usd": meta["cost_usd"], "out_tokens": meta["out_tokens"], "ctx_end": meta["ctx_end"],
+        "ctx_max": meta["ctx_max"], "ctx_window": meta.get("ctx_window"), "lines": meta["lines"],
+        "bad_lines": meta["bad_lines"], "human": s.human, "interrupts": s.interrupts, "fails": s.fails,
+        "tests": s.tests, "commits": s.commits, "waits": s.waits, "compactions": s.compactions,
+        "continuations": s.continuations, "api_errors": s.api_errors, "agents": s.agents, "reviews": s.reviews,
+        "prs": list({(x["pr"], x["repo"]): x for x in s.prs}.values()), "test_like_no_outcome": s.test_like,
+        "cd_dirs": dict(s.cd_dirs.most_common(8)),
+    }
+    return out
+
+
+def work(job):
+    path, kind, since, until = job
+    try:
+        if kind == "codex":
+            r = parse_codex(path, since, until)
+        else:
+            r = parse_claude(path, since, until, kind)
+        return r
+    except Exception as e:  # noqa: BLE001 - every failure is reported, never skipped
+        return {"path": path, "unreadable": f"{type(e).__name__}: {short(str(e), 160)}"}
+
+
+# ---------------------------------------------------------------- discovery
+def discover(claude_dir, codex_dir, since, until):
+    jobs = []
+    if claude_dir.is_dir():
+        for proj in sorted(claude_dir.iterdir()):
+            if not proj.is_dir():
+                continue
+            for f in proj.glob("*.jsonl"):
+                jobs.append((str(f), "main"))
+            for f in proj.glob("*/subagents/*.jsonl"):
+                jobs.append((str(f), "subagent"))
+    if codex_dir.is_dir():
+        day = dt.date.fromtimestamp(since) - dt.timedelta(days=1)
+        last = dt.date.fromtimestamp(until)
+        while day <= last:
+            dd = codex_dir / f"{day.year:04d}" / f"{day.month:02d}" / f"{day.day:02d}"
+            if dd.is_dir():
+                for f in dd.glob("*.jsonl"):
+                    jobs.append((str(f), "codex"))
+            day += dt.timedelta(days=1)
+    out, size = [], 0
+    unreadable = []
+    for p, k in jobs:
+        try:
+            st = os.stat(p)
+        except OSError as e:
+            unreadable.append({"path": p, "unreadable": f"stat: {e.strerror}"})
+            continue
+        if st.st_mtime < since:
+            continue
+        out.append((p, k, since, until))
+        size += st.st_size
+    return out, size, unreadable
+
+
+# ---------------------------------------------------------------- project mapping
+_repo_cache = {}
+
+
+def repo_of(cwd):
+    if not cwd:
+        return None
+    if cwd in _repo_cache:
+        return _repo_cache[cwd]
+    name = None
+    if os.path.isdir(cwd):
+        try:
+            r = subprocess.run(["git", "-C", cwd, "rev-parse", "--path-format=absolute", "--git-common-dir"],
+                               capture_output=True, text=True, timeout=8)
+            if r.returncode == 0 and r.stdout.strip():
+                common = r.stdout.strip()
+                root = os.path.dirname(common) if common.endswith("/.git") else common
+                name = os.path.basename(root)
+        except (OSError, subprocess.SubprocessError):
+            pass
+    if not name:
+        m = re.search(r"/([^/]+)/\.worktrees/", cwd + "/") or re.search(r"/Volumes/devwork/([^/]+)/", cwd + "/")
+        if m:
+            name = m.group(1)
+    _repo_cache[cwd] = name
+    return name
+
+
+def project_for(r, parent_proj=None):
+    if r["kind"] == "subagent" and parent_proj:
+        return parent_proj
+    for c in (r.get("cwd"), r.get("cmd_cwd"), r.get("meta_cwd")):
+        n = repo_of(c)
+        if n:
+            return n
+    c = r.get("cwd") or r.get("meta_cwd") or ""
+    return os.path.basename(c.rstrip("/")) or "unknown"
+
+
+# ---------------------------------------------------------------- digest
+def sid(r):
+    p = Path(r["path"])
+    if r["kind"] == "subagent":
+        return "S:" + p.stem.replace("agent-", "")[:8]
+    if r["tool"] == "codex":
+        return "X:" + p.stem[-12:]
+    return "C:" + p.stem[:8]
+
+
+def fmt_k(n):
+    return f"{round(n / 1000)}k" if n else "0"
+
+
+def dedupe_tests(tests):
+    seen, out = collections.Counter(), []
+    for r, x in sorted(tests, key=lambda z: z[1]["t"]):
+        if x["result"] not in ("fail", "error"):
+            continue
+        k = (r["path"], norm_key(x["summary"] or x["cmd"]))
+        seen[k] += 1
+        if seen[k] == 1:
+            out.append((r, x))
+    return out
+
+
+def build_digest(project, rows, unread, window_txt, budget_chars, repeat_min):
+    rows = sorted(rows, key=lambda r: r["win_start"])
+    mains = [r for r in rows if r["kind"] == "main"]
+    subs = [r for r in rows if r["kind"] == "subagent"]
+    cx_exec = [r for r in rows if r["kind"] == "codex-exec"]
+    cx_tui = [r for r in rows if r["kind"] == "codex-tui"]
+    allf = [(r, f) for r in rows for f in r["fails"]]
+    tests = [(r, x) for r in rows for x in r["tests"]]
+    commits = [(r, x) for r in rows for x in r["commits"] if x["ok"]]
+    reviews = [(r, x) for r in rows for x in r["reviews"]]
+    human = [(r, h) for r in rows for h in r["human"]]
+    comp = [(r, c) for r in rows for c in r["compactions"]]
+    active = round(sum(r["active_min"] for r in rows if r["kind"] in ("main", "codex-tui")) / 60, 1)
+    agent_min = round(sum(r["active_min"] for r in rows if r["kind"] in ("subagent", "codex-exec")) / 60, 1)
+    tcount = collections.Counter(x["result"] for _, x in tests)
+    kcount = collections.Counter(x.get("kind", "commit") for _, x in commits)
+    vcount = collections.Counter(x["verdict"] or "no verdict in output" for _, x in reviews)
+    big_ctx = [r for r in rows if (r["ctx_max"] or 0) >= 300_000 or any((c.get("pre") or 0) >= 300_000
+                                                                         for c in r["compactions"])]
+    cost = sum(r["cost_usd"] or 0 for r in rows if r["tool"] == "claude" and r["kind"] == "main")
+    head = [
+        f"# Daily digest: {project}",
+        "",
+        f"Window {window_txt}. Signals are clipped to the window; correction flags are hints, not verdicts. "
+        "Text is truncated and redacted. Refs: `C:` main Claude session, `S:` subagent, `X:` Codex; `@L<n>` is the "
+        "transcript line (see Refs at the end).",
+        "",
+        "## Totals",
+        f"- sessions: {len(mains)} main, {len(subs)} subagent, {len(cx_exec)} codex exec, {len(cx_tui)} codex tui; "
+        f"owner-facing active {active} h, agent active {agent_min} h",
+        f"- owner messages: {sum(1 for _, h in human if h['kind'] != 'relayed')} "
+        f"({sum(1 for _, h in human if h['kind'] == 'correction?')} flagged correction?, "
+        f"{sum(1 for _, h in human if h['kind'] == 'status')} status asks; plus "
+        f"{sum(1 for _, h in human if h['kind'] == 'relayed')} relayed by an agent); interrupts "
+        f"{sum(len(r['interrupts']) for r in rows)}",
+        f"- tool failures: {len(allf)}; api errors {sum(r['api_errors'] for r in rows)}",
+        f"- tests: {len(tests)} runs with an outcome ({', '.join(f'{k} {v}' for k, v in tcount.most_common()) or 'none'}); "
+        f"{sum(r['test_like_no_outcome'] for r in rows)} test-like commands without a readable outcome",
+        f"- reviews: {len(reviews)} verdicts ({', '.join(f'{k} {v}' for k, v in vcount.most_common()) or 'none'})",
+        f"- git: {kcount['commit']} commits, {kcount['merge']} merges, {kcount['push']} pushes (from command output); "
+        f"PR links "
+        f"{sum(len(r['prs']) for r in rows)}",
+        f"- waits: sleep {round(sum(r['waits']['sleep_s'] for r in rows) / 60)} min in "
+        f"{sum(r['waits']['sleep_calls'] for r in rows)} calls; Monitor {sum(r['waits']['monitor_calls'] for r in rows)}; "
+        f"task notifications {sum(r['waits']['notifications'] for r in rows)}",
+        f"- hand-offs: {len(comp)} compactions, {sum(r['continuations'] for r in rows)} continuation messages; "
+        f"sessions with context >= 300k: {len(big_ctx)}",
+        f"- Claude main-session cost (cost-state, whole session, may span days): ${cost:.0f}",
+    ]
+    if unread:
+        head.append(f"- UNREADABLE: {len(unread)} (listed below)")
+    sections = []   # (priority, title, header_lines, items)  lower priority number = keep longer
+
+    def ref(r, line=None):
+        return f"{sid(r)}" + (f"@L{line}" if line else "")
+
+    # sessions table (main + tui), always kept
+    srows = []
+    for r in mains + cx_tui:
+        kids = [x for x in subs if Path(x["path"]).parent.parent.name == Path(r["path"]).stem]
+        srows.append(
+            f"| {sid(r)} | {hhmm(r['win_start'])}-{hhmm(r['win_end'])} | {r['active_min']} | "
+            f"{short(r['title'] or r['first_prompt'], 70)} | {','.join(r['models'])[:30]} | "
+            f"{len(r['human'])}/{sum(1 for h in r['human'] if h['kind'] == 'correction?')}/"
+            f"{sum(1 for h in r['human'] if h['kind'] == 'status')} | {len(r['fails'])} | {len(kids)} | "
+            f"{fmt_k(r['ctx_max'])} | {len(r['compactions'])} | {', '.join(r.get('repos', []))[:60]} |")
+    sections.append((0, "Sessions (main and codex tui)",
+                     ["| ref | window | act min | title / first prompt | model | msgs/corr?/status | fails | subagents | "
+                      "ctx max | compact | repos touched (cd) |", "|---|---|---|---|---|---|---|---|---|---|---|"], srows))
+    # human messages: corrections first, then other, then status
+    order = {"correction?": 0, "other": 1, "status": 2, "relayed": 3}
+    hitems = [f"- {ref(r, h['line'])} {hhmm(h['t'])} [{h['kind']}{(': ' + ','.join(h['hits'])) if h['hits'] else ''}] "
+              f"{h['text']}" for r, h in sorted(human, key=lambda x: (order[x[1]['kind']], x[1]['t']))]
+    interrupts = [f"- {ref(r, i['line'])} {hhmm(i['t'])} interrupted by owner" for r in rows for i in r["interrupts"]]
+    sections.append((1, "Owner messages (correction? first, then other, status asks, relayed by an agent) and interrupts", [],
+                     interrupts + hitems))
+    # repeated failures
+    groups = collections.defaultdict(list)
+    for r, f in allf:
+        groups[(f["tool"], norm_key(f["cmd"]) or norm_key(f["err"][:80]))].append((r, f))
+    rep = sorted([g for g in groups.values() if len(g) >= repeat_min], key=lambda g: -len(g))
+    ritems = [f"- x{len(g)} {g[0][1]['tool']}: `{g[0][1]['cmd'] or '-'}` → {short(g[-1][1]['err'], 160)} "
+              f"(refs {', '.join(sorted({ref(r, f['line']) for r, f in g[:4]}))})" for g in rep]
+    sections.append((2, f"Repeated failures (same tool + normalised command >= {repeat_min})", [], ritems))
+    # test runs
+    tsum = []
+    for r in rows:
+        c = collections.Counter(x["result"] for x in r["tests"])
+        if c:
+            last = r["tests"][-1]
+            tsum.append(f"- {ref(r)} pass {c['pass']}, fail {c['fail']}, error {c['error']}, background "
+                        f"{c['background']}; last {hhmm(last['t'])} {last['result'].upper()} {last['summary'][:90]}")
+    sections.append((0, "Test runs per session (red runs can be intended: red-first tests, mutation checks)", [], tsum))
+    titems = [f"- {ref(r, x['line'])} {hhmm(x['t'])} {x['result'].upper()} `{short(x['cmd'], 100)}`"
+              + (f" → {x['summary']}" if x["summary"] else "")
+              for r, x in dedupe_tests(tests)]
+    sections.append((4, "Failed test runs", [], titems))
+    # reviews
+    vitems = []
+    for r in rows:
+        if r["reviews"]:
+            vs = " → ".join(v["verdict"] or "?" for v in r["reviews"])
+            vitems.append(f"- {ref(r)} {hhmm(r['win_start'])} {r['kind']} {','.join(r['effort']) or ''} rounds "
+                          f"{len(r['reviews'])}: {vs} | {short(r['first_prompt'], 110)}")
+    sections.append((3, "Review verdicts", [], vitems))
+    # commits
+    citems = []
+    for r in rows:
+        cs = [x for x in r["commits"] if x["ok"]]
+        if not cs:
+            continue
+        kc = collections.Counter(x.get("kind", "commit") for x in cs)
+        msgs = []
+        for x in cs:
+            m = MSG_RE.search(x["cmd"])
+            if m and x.get("kind") in ("merge", "commit"):
+                msgs.append(short(m.group(1), 70))
+        msgs = list(dict.fromkeys(msgs))
+        citems.append(f"- {ref(r)} {hhmm(cs[0]['t'])}-{hhmm(cs[-1]['t'])} commits {kc['commit']}, merges {kc['merge']}, "
+                      f"pushes {kc['push']}; shas {','.join(sh for x in cs for sh in x['sha'])[:90]}; messages: "
+                      + " | ".join(msgs[:8]) + (f" (+{len(msgs) - 8})" if len(msgs) > 8 else ""))
+    for r in rows:
+        if r["prs"]:
+            citems.append(f"- {ref(r)} PR links: " + ", ".join(f"{p['repo']}#{p['pr']}" for p in r["prs"][:12]))
+    sections.append((4, "Git activity per session (from command output; main-branch truth is git log)", [], citems))
+    # waits + context
+    witems = []
+    for r in rows:
+        w = r["waits"]
+        g = [x for x in w["idle_gaps"] if x["min"] >= 45]
+        if w["sleep_s"] >= 300 or w["monitor_calls"] >= 3 or w["notifications"] >= 10 or w["long_turns"] or g:
+            witems.append(f"- {ref(r)} sleep {round(w['sleep_s'] / 60)} min/{w['sleep_calls']} calls, Monitor "
+                          f"{w['monitor_calls']}, notifications {w['notifications']}, long turns "
+                          f"{[lt['min'] for lt in w['long_turns']][:5]}, idle gaps "
+                          f"{[hhmm(x['from']) + '+' + str(x['min']) + 'm' for x in g][:4]}")
+    sections.append((5, "Long waits (sleep >= 5 min, Monitor >= 3, notifications >= 10, turns >= 20 min, gaps >= 45 min)",
+                     [], witems))
+    xitems = [f"- {ref(r, c['line'])} {hhmm(c['t'])} compaction {c['trigger']} pre {fmt_k(c['pre'] or 0)} → post "
+              f"{fmt_k(c['post'] or 0)}" for r, c in comp]
+    xitems += [f"- {ref(r)} context max {fmt_k(r['ctx_max'])} end {fmt_k(r['ctx_end'])}" for r in big_ctx]
+    sections.append((5, "Hand-offs and large context", [], xitems))
+    # subagents and codex exec
+    aitems = [f"- {sid(r)} parent {('C:' + Path(r['path']).parent.parent.name[:8])} {hhmm(r['win_start'])} "
+              f"{r['active_min']}m {','.join(r['models'])[:24]} fails {len(r['fails'])} ctx {fmt_k(r['ctx_max'])} | "
+              f"{short(r['title'] or r['first_prompt'], 100)}" for r in subs]
+    sections.append((6, "Subagents", [], aitems))
+    eitems = [f"- {sid(r)} {hhmm(r['win_start'])} {r['active_min']}m {','.join(r['models'])} "
+              f"{','.join(r['effort'])} {'review' if r['is_review'] else 'task'} fails {len(r['fails'])} tests "
+              f"{len(r['tests'])} | {short(r['first_prompt'], 100)}" for r in cx_exec]
+    sections.append((6, "Codex exec sessions", [], eitems))
+    # single failures
+    singles = [f"- {ref(r, f['line'])} {hhmm(f['t'])} {f['tool']}: `{short(f['cmd'], 90) or '-'}` → {short(f['err'], 120)}"
+               for g in groups.values() if len(g) < repeat_min for r, f in g]
+    sections.append((7, "Other tool failures", [], singles))
+    tail = []
+    if unread:
+        tail += ["", "## UNREADABLE"] + [f"- {u['path']}: {u['unreadable']}" for u in unread]
+    tail += ["", "## Refs (paths relative to ~/.claude/projects or ~/.codex/sessions)"] + [
+        f"- {sid(r)} {REF_RE.sub('', r['path'])}" for r in rows]
+
+    caps = {"Failed test runs": 50, "Other tool failures": 40, "Owner messages": 120, "Subagents": 60,
+            "Codex exec sessions": 90}
+    kept = {i: min(len(sec[3]), next((v for k, v in caps.items() if sec[1].startswith(k)), 10 ** 6))
+            for i, sec in enumerate(sections)}
+
+    def render():
+        out = list(head)
+        for i, (pri, title, hdr, items) in enumerate(sections):
+            out += ["", f"## {title}"]
+            if not items:
+                out.append("- none")
+                continue
+            out += hdr + items[: kept[i]]
+            if kept[i] < len(items):
+                out.append(f"- trimmed: kept {kept[i]} of {len(items)}")
+        return "\n".join(out + tail) + "\n"
+
+    text = render()
+    while len(text) > budget_chars:
+        cand = [i for i, s in enumerate(sections) if kept[i] > 5 and s[0] > 0]
+        if not cand:
+            break
+        i = max(cand, key=lambda j: (sections[j][0], kept[j]))
+        kept[i] = max(5, kept[i] // 2)
+        text = render()
+    trimmed = {sections[i][1]: (kept[i], len(sections[i][3])) for i in kept if kept[i] < len(sections[i][3])}
+    if trimmed:
+        text = text.replace("\n## Sessions", "\n- Trimmed to budget: " + "; ".join(
+            f"{k.split(' (')[0]} {a}/{b}" for k, (a, b) in trimmed.items()) + "\n\n## Sessions", 1)
+    return text, trimmed
+
+
+# ---------------------------------------------------------------- main
+def local_midnight(d):
+    return dt.datetime(d.year, d.month, d.day).astimezone().timestamp()
+
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
+    ap.add_argument("--since")
+    ap.add_argument("--until")
+    ap.add_argument("--store", default=os.environ.get("ACEF_FEEDBACK_DIR") or str(Path.home() / "CODE/acef-feedback"))
+    ap.add_argument("--claude-dir", default=str(Path.home() / ".claude/projects"))
+    ap.add_argument("--codex-dir", default=str(Path.home() / ".codex/sessions"))
+    ap.add_argument("--label")
+    ap.add_argument("--budget-tokens", type=int, default=40000)
+    ap.add_argument("--repeat-min", type=int, default=3)
+    ap.add_argument("--jobs", type=int, default=min(8, os.cpu_count() or 2))
+    a = ap.parse_args()
+    t0 = time.time()
+    today = dt.date.today()
+    until = dt.datetime.fromisoformat(a.until).astimezone().timestamp() if a.until else local_midnight(today)
+    since = dt.datetime.fromisoformat(a.since).astimezone().timestamp() if a.since else \
+        local_midnight(today - dt.timedelta(days=1))
+    if since >= until:
+        sys.exit("--since must be before --until")
+    label = a.label or dt.datetime.fromtimestamp(until - 1).strftime("%Y-%m-%d")
+    if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", label):
+        sys.exit("--label must be YYYY-MM-DD")
+    jobs, size, unreadable = discover(Path(a.claude_dir), Path(a.codex_dir), since, until)
+    if a.jobs > 1 and len(jobs) > 4:
+        with multiprocessing.Pool(a.jobs) as pool:
+            res = pool.map(work, jobs, chunksize=1)
+    else:
+        res = [work(j) for j in jobs]
+    parse_s = time.time() - t0
+    rows = []
+    for r in res:
+        if r.get("unreadable"):
+            unreadable.append(r)
+        elif not r.get("empty") and not r.get("outside"):
+            rows.append(r)
+    # projects: main sessions first so subagents inherit their parent's project
+    proj_of_main = {}
+    for r in rows:
+        if r["kind"] == "main":
+            r["project"] = project_for(r)
+            proj_of_main[Path(r["path"]).stem] = r["project"]
+    for r in rows:
+        if r["kind"] != "main":
+            r["project"] = project_for(r, proj_of_main.get(Path(r["path"]).parent.parent.name))
+    for r in rows:
+        rc = collections.Counter()
+        for d_, n in r.get("cd_dirs", {}).items():
+            nm = repo_of(os.path.expanduser(d_))
+            if nm:
+                rc[nm] += n
+        r["repos"] = [k for k, _ in rc.most_common(3)]
+    for u in unreadable:
+        p = Path(u["path"])
+        u["project"] = (proj_of_main.get(p.parent.parent.name) if "subagents" in p.parts else None) or "unknown"
+    window_txt = (f"{dt.datetime.fromtimestamp(since).strftime('%Y-%m-%d %H:%M')} to "
+                  f"{dt.datetime.fromtimestamp(until).strftime('%Y-%m-%d %H:%M')} local")
+    outdir = Path(a.store) / "daily" / label
+    outdir.mkdir(parents=True, exist_ok=True)
+    rows = redact_obj(rows)
+    unreadable = redact_obj(unreadable)
+    by = collections.defaultdict(list)
+    for r in rows:
+        by[r["project"]].append(r)
+    projects = {}
+    for p in sorted(by, key=lambda k: -sum(r["active_min"] for r in by[k])):
+        prs = by[p]
+        unr = [u for u in unreadable if u["project"] == p]
+        text, trimmed = build_digest(p, prs, unr, window_txt, a.budget_tokens * 4, a.repeat_min)
+        text = redact(text)
+        fname = re.sub(r"[^\w.-]", "_", p) + ".md"
+        (outdir / fname).write_text(text, encoding="utf-8")
+        projects[p] = {
+            "digest": fname, "digest_chars": len(text), "digest_tokens_est": len(text) // 4,
+            "trimmed": {k: f"{x}/{y}" for k, (x, y) in trimmed.items()},
+            "sessions": collections.Counter(r["kind"] for r in prs),
+            "active_min_owner": sum(r["active_min"] for r in prs if r["kind"] in ("main", "codex-tui")),
+            "active_min_agents": sum(r["active_min"] for r in prs if r["kind"] in ("subagent", "codex-exec")),
+            "owner_msgs": sum(len(r["human"]) for r in prs),
+            "corrections_flagged": sum(1 for r in prs for h in r["human"] if h["kind"] == "correction?"),
+            "status_asks": sum(1 for r in prs for h in r["human"] if h["kind"] == "status"),
+            "fails": sum(len(r["fails"]) for r in prs), "tests": sum(len(r["tests"]) for r in prs),
+            "test_fails": sum(1 for r in prs for x in r["tests"] if x["result"] in ("fail", "error")),
+            "reviews": sum(len(r["reviews"]) for r in prs),
+            "commits": sum(1 for r in prs for x in r["commits"] if x["ok"]),
+            "compactions": sum(len(r["compactions"]) for r in prs),
+        }
+    orphan = [u for u in unreadable if u["project"] not in by]
+    if orphan:
+        text = "# Daily digest: unreadable sessions\n\n" + "\n".join(f"- {u['path']}: {u['unreadable']}" for u in orphan) + "\n"
+        (outdir / "_unreadable.md").write_text(redact(text), encoding="utf-8")
+    runtime = round(time.time() - t0, 1)
+    index = {
+        "window": {"since": since, "until": until, "text": window_txt, "label": label},
+        "generated": dt.datetime.now().astimezone().isoformat(timespec="seconds"),
+        "runtime_s": runtime, "parse_s": round(parse_s, 1), "files_scanned": len(jobs), "bytes_scanned": size,
+        "sessions_in_window": len(rows), "unreadable": unreadable, "projects": projects, "sessions": rows,
+    }
+    (outdir / "extract.json").write_text(json.dumps(index, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+    print(f"acef-daily-extract {label}: {len(jobs)} file(s), {size / 1e9:.2f} GB scanned, {len(rows)} session(s) in "
+          f"window, {len(unreadable)} unreadable, {runtime} s → {outdir}")
+    for p, v in projects.items():
+        print(f"  {p}: {dict(v['sessions'])} digest {v['digest_tokens_est']} tok"
+              + (f" trimmed {v['trimmed']}" if v["trimmed"] else ""))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

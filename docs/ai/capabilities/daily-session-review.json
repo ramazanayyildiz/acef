@@ -1,0 +1,40 @@
+{
+  "capabilityId": "daily-session-review",
+  "requestedIntent": "Owner request 2026-10-27 (Ram): a daily review, separate from the weekly retro, that reads what happened in the agent sessions (what finished, what dragged on, where agents got stuck, what went well, what to look at first tomorrow). It never changes rules; it reports and carries repeating problems to the weekly retro. Stage 1 is a deterministic extractor of signals from Claude Code and Codex transcripts; stage 2 is one model pass per project over the digest.",
+  "status": "wired",
+  "requiredLayers": [
+    "docs",
+    "cli",
+    "tests"
+  ],
+  "implementedLayers": {
+    "docs": [
+      "CHANGELOG.md#Unreleased — Daily session review: stage-1 extractor (pilot) (2026-10-27)"
+    ],
+    "cli": [
+      "scripts/acef-daily-extract"
+    ],
+    "tests": [
+      "scripts/test-acef-daily-extract"
+    ]
+  },
+  "limitations": [
+    "Pilot: stage 2 (the per-project analysis) was run by hand once; there is no method page, schedule or prompt file yet, pending the owner's review of the pilot.",
+    "Signals are heuristics: correction flags are keyword hints, test outcomes come from output lines, git activity from command output; main-branch truth stays git log.",
+    "Codex exec sessions are not linked to the Claude session that started them; Claude subagents are linked by folder.",
+    "Not wired into CI: like the other Python tools (acef-note, acef-retro, acef-detect), the test runs by hand (python3 -I scripts/test-acef-daily-extract)."
+  ],
+  "evidence": [
+    {
+      "layer": "tests",
+      "ref": "scripts/test-acef-daily-extract",
+      "note": "2026-10-27: 21 checks passed on a synthetic fixture built by the test (no real transcript content)."
+    },
+    {
+      "layer": "cli",
+      "ref": "~/CODE/acef-feedback/daily/2026-10-27/",
+      "note": "2026-10-27 pilot: 537 files, 3.6 GB, 529 sessions in the last 24 h read in about 10-14 s; 0 unreadable; digests 0.4k-20k tokens per project."
+    }
+  ],
+  "createdAt": "2026-10-27"
+}

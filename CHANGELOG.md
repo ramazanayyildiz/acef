@@ -7,6 +7,33 @@ proven, or installed.
 Update this file in the same PR whenever ACEF itself gains or changes a flow, gate, validator, hook, skill, installer behavior, workflow,
 or evidence contract. Do not use it to claim implementation status; link to the capability record for that.
 
+## Unreleased — Daily session review: stage-1 extractor (pilot) (2026-10-27)
+
+Why: the weekly retro (`method/WEEKLY_RETRO.md`) counts records but does not read what happened in the agent
+sessions. Ram asked on 2026-10-27 for a daily review that does: what finished, what dragged on, where agents got stuck,
+what went well, what to look at first tomorrow. One day holds about 230 Claude Code transcripts (with subagents) and 300
+Codex sessions, about 3.5 GB, too much for a model to read raw, so the review has two stages. This entry ships stage 1
+for the pilot; the owner reviews the pilot before anything is scheduled.
+- **`scripts/acef-daily-extract`** (Python, no model): reads every Claude Code session, subagent and Codex session with
+  an event in the window (default yesterday 00:00 to today 00:00 local; `--since/--until`), maps it to a project from its
+  cwd (git common dir, so worktrees fold into their repo; removed worktrees by path pattern; subagents inherit their
+  parent's project), and extracts signals only: owner messages truncated to 300 characters with a correction hint
+  (keyword list, a hint not a verdict), status asks and messages relayed by an agent kept apart, interrupts, failed tool
+  calls and repeats (same tool and normalised command three times or more), sleeps, Monitor calls, task notifications,
+  long turns and idle gaps, test runs with an outcome line, Codex review verdicts, commits, merges and pushes seen in
+  command output, PR links, context size and output tokens, compactions and continuations, subagents with their
+  model. Writes `daily/<date>/extract.json` and one Markdown digest per project in the central store
+  (`ACEF_FEEDBACK_DIR`); nothing goes into host repos, `~/.claude` or `~/.codex`. Every string is redacted (keys,
+  tokens, passwords, connection strings, emails) before it is written; account ids are never read. Files that cannot be
+  read are listed as UNREADABLE with the reason. Digests are trimmed to a token budget (default 40k) with the weakest
+  sections cut first and a "Trimmed" line saying what was cut.
+- **Test** `scripts/test-acef-daily-extract` builds a synthetic fixture (no real transcript text) and checks 21 points.
+- **Pilot numbers** (last 24 h on 2026-10-27): 537 files, 3.6 GB, 529 sessions in the window, about 10–14 s wall time,
+  0 unreadable, digests 0.4k–20k tokens per project. Capability record: `docs/ai/capabilities/daily-session-review.json`
+  (wired).
+- Not changed: rules, the weekly retro, `acef-note`. The daily review reports and carries repeats to the weekly retro;
+  it never changes rules.
+
 ## v3.0.0-beta.8 — One model-choice rule for Claude and Codex agents (2026-10-27)
 
 Why: model choice lived in three places that disagreed (the owner's global rule, project decisions, and

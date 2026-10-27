@@ -1,0 +1,212 @@
+#!/usr/bin/env python3
+"""test-acef-daily-extract: stage 1 of the daily session review runs on a small synthetic fixture built here (no real
+transcript content): one Claude main session with a subagent, one Codex exec review, one unreadable file. Checks the
+window clipping, session types and parent link, project mapping from a removed worktree path, owner corrections /
+status asks / interrupts, repeated failures, tests, review verdicts, commits, waits, compactions and context, the
+skipped record types, redaction, UNREADABLE listing, budget trimming, and that the input folders are not written."""
+import hashlib
+import json
+import os
+import shutil
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+
+HERE = Path(__file__).resolve().parent
+TOOL = HERE / "acef-daily-extract"
+TMP = Path(os.path.realpath(tempfile.mkdtemp(prefix="acef-daily-extract-test-")))
+CLAUDE, CODEX, STORE = TMP / "claude", TMP / "codex", TMP / "store"
+CWD = "/nonexistent-acef-fixture/demo/.worktrees/login-fix"   # removed worktree: project comes from the path pattern
+ENV = {**os.environ, "TZ": "UTC"}
+ok = bad = 0
+
+
+def check(name, cond, detail=""):
+    global ok, bad
+    if cond:
+        ok += 1
+        print(f"ok   {name}")
+    else:
+        bad += 1
+        print(f"FAIL {name}" + (f"\n    {str(detail)[:2000]}" if detail else ""))
+
+
+def ts(hh, mm, day=26):
+    return f"2026-10-{day:02d}T{hh:02d}:{mm:02d}:00.000Z"
+
+
+def jl(path, rows, raw=()):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "w", encoding="utf-8") as fh:
+        for r in rows:
+            fh.write(json.dumps(r) + "\n")
+        for line in raw:
+            fh.write(line + "\n")
+
+
+def base(t, typ):
+    return {"parentUuid": "p", "isSidechain": False, "type": typ, "uuid": "u", "timestamp": t, "userType": "external",
+            "entrypoint": "cli", "cwd": CWD, "sessionId": "s", "version": "0", "gitBranch": "feat/login"}
+
+
+def user(t, text, source="typed"):
+    d = base(t, "user")
+    d.update(message={"role": "user", "content": text}, promptSource=source)
+    return d
+
+
+def bash(t, tid, cmd, req, ctx=1000):
+    d = base(t, "assistant")
+    d.update(requestId=req, effort="medium", message={
+        "model": "claude-sonnet-5-5", "id": req, "role": "assistant",
+        "usage": {"input_tokens": 10, "cache_read_input_tokens": ctx, "cache_creation_input_tokens": 0,
+                  "output_tokens": 50},
+        "content": [{"type": "tool_use", "id": tid, "name": "Bash", "input": {"command": cmd}}]})
+    return d
+
+
+def result(t, tid, out, err=False):
+    d = base(t, "user")
+    d.update(message={"role": "user", "content": [{"type": "tool_result", "tool_use_id": tid, "content": out,
+                                                    "is_error": err}]},
+             toolUseResult={"stdout": out, "stderr": "", "interrupted": False, "isImage": False})
+    return d
+
+
+def build():
+    sid = "11111111-2222-3333-4444-555555555555"
+    proj = CLAUDE / "-nonexistent-acef-fixture-demo"
+    main = [
+        user(ts(9, 0, 25), "OUTSIDE-WINDOW message from the day before"),
+        user(ts(10, 0), "fix the login page please"),
+        bash(ts(10, 1), "t1", "cd /tmp && vendor/bin/phpunit --filter Login", "r1"),
+        result(ts(10, 2), "t1", "PHPUnit\n\nOK (3 tests, 5 assertions)"),
+    ]
+    for i in range(3):                                           # the same build failure three times
+        main += [bash(ts(10, 10 + i), f"f{i}", "npm run build", f"rf{i}"),
+                 result(ts(10, 10 + i, ), f"f{i}", "Exit code 2\nsrc/login.ts(4,1): error TS1005", err=True)]
+    main += [
+        user(ts(10, 20), "hayır, yanlış dosyayı düzelttin"),
+        user(ts(10, 21), "nedir durum"),
+        user(ts(10, 22), "[Request interrupted by user]"),
+        user(ts(10, 23), "use key sk-test-ABCDEFGHIJKLMNOPQRSTUV123 and mail fixture.person@example.org", source="sdk"),
+        user(ts(10, 24), "<task-notification>background job done</task-notification>", source="system"),
+        bash(ts(10, 30), "c1", "git commit -m 'feat: login fix'", "rc1"),
+        result(ts(10, 31), "c1", "[feat/login abc1234] feat: login fix\n 1 file changed"),
+        bash(ts(10, 40), "w1", "sleep 600; tail -1 run.log", "rw1", ctx=350000),
+        result(ts(10, 50), "w1", "done"),
+    ]
+    agent = base(ts(11, 0), "assistant")
+    agent.update(requestId="ra", message={"model": "claude-sonnet-5-5", "id": "ra", "role": "assistant", "content": [
+        {"type": "tool_use", "id": "a1", "name": "Agent",
+         "input": {"description": "Run the login tests", "subagent_type": "general-purpose", "model": "sonnet",
+                   "prompt": "x"}}]})
+    comp = base(ts(12, 0), "system")
+    comp.update(subtype="compact_boundary", compactMetadata={"trigger": "auto", "preTokens": 400000, "postTokens": 20000})
+    main += [agent, comp, {"type": "ai-title", "aiTitle": "Login fix", "sessionId": sid}]
+    jl(proj / f"{sid}.jsonl", main, raw=['{"type":"api-request-blob","hash":"h","message":{"content":"BLOBMARKER"}}'])
+    sub = [user(ts(11, 1), "You are a test runner. Run the login tests.", source=None),
+           bash(ts(11, 2), "s1", "pytest tests/test_login.py", "rs1"),
+           result(ts(11, 3), "s1", "F..\n1 failed, 2 passed in 0.3s", err=True)]
+    jl(proj / sid / "subagents" / "agent-a1b2c3d4e5.jsonl", sub)
+    (proj / sid / "subagents" / "agent-a1b2c3d4e5.meta.json").write_text(json.dumps(
+        {"agentType": "general-purpose", "description": "Run the login tests", "model": "sonnet"}))
+    # Codex exec review
+    def ev(t, payload, typ="event_msg"):
+        return {"timestamp": t, "type": typ, "payload": payload}
+    cx = [
+        {"timestamp": ts(13, 0), "type": "session_meta", "payload": {
+            "id": "cx-1", "cwd": CWD, "originator": "codex_exec", "creator_account_id": "ACCOUNT-SHOULD-NOT-LEAK"}},
+        {"timestamp": ts(13, 0), "type": "turn_context", "payload": {"model": "gpt-6.1-sol", "effort": "medium",
+                                                                     "cwd": CWD}},
+        ev(ts(13, 1), {"type": "item_completed", "item": {"type": "UserMessage", "content": [
+            {"type": "text", "text": "Review this diff. End with VERDICT: ACCEPT or REVISE."}]}}),
+        ev(ts(13, 2), {"type": "item_completed", "item": {
+            "type": "CommandExecution", "command": ["/bin/zsh", "-lc", "composer test"], "cwd": "file://" + CWD,
+            "exit_code": 2, "aggregated_output": "FAILURES!\nTests: 4, Assertions: 9, Failures: 1."}}),
+        ev(ts(13, 3), {"type": "item_completed", "item": {"type": "Extension", "kind": "clock.sleep",
+                                                          "durationMs": 120000}}),
+        ev(ts(13, 4), {"type": "token_count", "info": {"total_token_usage": {"output_tokens": 900},
+                                                        "last_token_usage": {"input_tokens": 50000},
+                                                        "model_context_window": 475000}}),
+        ev(ts(13, 5), {"type": "task_complete", "last_agent_message": "VERDICT: REVISE\n- one blocking item"}),
+    ]
+    jl(CODEX / "2026" / "10" / "26" / "rollout-2026-10-26T13-00-00-cx-1.jsonl", cx)
+    jl(CODEX / "2026" / "10" / "26" / "rollout-2026-10-26T14-00-00-broken.jsonl", [], raw=["not json", "{broken"])
+    for f in list(CLAUDE.rglob("*.jsonl")) + list(CODEX.rglob("*.jsonl")):
+        os.utime(f, (1_900_000_000, 1_900_000_000))     # mtime after the window start (the prefilter)
+
+
+def tree_hash(root):
+    h = hashlib.sha256()
+    for f in sorted(root.rglob("*")):
+        h.update(str(f).encode())
+        if f.is_file():
+            h.update(f.read_bytes())
+    return h.hexdigest()
+
+
+def run(*extra):
+    return subprocess.run([sys.executable, "-I", str(TOOL), "--claude-dir", str(CLAUDE), "--codex-dir", str(CODEX),
+                           "--store", str(STORE), "--since", "2026-10-26T00:00", "--until", "2026-10-27T00:00",
+                           "--jobs", "1", *extra], env=ENV, capture_output=True, text=True)
+
+
+try:
+    build()
+    before = tree_hash(CLAUDE) + tree_hash(CODEX)
+    p = run()
+    check("exit 0", p.returncode == 0, p.stdout + p.stderr)
+    out = STORE / "daily" / "2026-10-26"
+    idx = json.loads((out / "extract.json").read_text())
+    md = (out / "demo.md").read_text()
+    alltext = "".join(f.read_text() for f in out.iterdir())
+    kinds = sorted(s["kind"] for s in idx["sessions"])
+    check("session types", kinds == ["codex-exec", "main", "subagent"], kinds)
+    check("project from removed worktree path, subagent inherits", {s["project"] for s in idx["sessions"]} == {"demo"},
+          [s["project"] for s in idx["sessions"]])
+    check("subagent linked to parent", "parent C:11111111" in md, md)
+    main = next(s for s in idx["sessions"] if s["kind"] == "main")
+    check("window clipping: signals inside only, span is the full session",
+          not any("OUTSIDE-WINDOW" in h["text"] for h in main["human"]) and "OUTSIDE-WINDOW" not in md
+          and main["start"] < idx["window"]["since"] <= main["win_start"])
+    kinds_h = [h["kind"] for h in main["human"]]
+    check("owner messages: correction, status, other; subagent prompt and notifications not counted",
+          kinds_h == ["other", "correction?", "status", "other"], kinds_h)
+    corr = next(h for h in main["human"] if h["kind"] == "correction?")
+    check("correction hits", {"hayır", "yanlış"} <= set(corr["hits"]), corr)
+    check("interrupt", len(main["interrupts"]) == 1)
+    check("repeated failure x3", "x3 Bash: `npm run build`" in md, md)
+    check("tests: phpunit pass, pytest fail, codex composer fail",
+          [x["result"] for s in idx["sessions"] for x in s["tests"]].count("pass") == 1 and
+          "1 failed, 2 passed" in md and "Failures: 1." in md, md)
+    check("review verdict REVISE from codex exec", "codex-exec medium rounds 1: REVISE" in md, md)
+    check("commit sha", "commits 1, merges 0" in md and "abc1234" in md, md)
+    check("waits: sleep 600 s + codex clock 120 s", "sleep 12 min in 2 calls" in md, md)
+    check("compaction and large context", "pre 400k" in md and "context >= 300k: 1" in md, md)
+    check("subagent spawn recorded", main["agents"] and main["agents"][0]["model"] == "sonnet")
+    check("skipped record types never read", "BLOBMARKER" not in alltext)
+    check("redaction: key and email", "sk-test-ABCDEF" not in alltext and "fixture.person@example.org" not in alltext
+          and "<email>" in alltext and "<redacted-token>" in alltext)
+    check("account ids never extracted", "ACCOUNT-SHOULD-NOT-LEAK" not in alltext)
+    check("unreadable listed with reason", any("broken" in u["path"] and "parsed as JSON" in u["unreadable"]
+                                               for u in idx["unreadable"]) and "broken" in alltext, idx["unreadable"])
+    check("inputs untouched", tree_hash(CLAUDE) + tree_hash(CODEX) == before)
+    # budget trimming: many distinct failures, tiny budget
+    sid = "11111111-2222-3333-4444-555555555555"
+    f = CLAUDE / "-nonexistent-acef-fixture-demo" / f"{sid}.jsonl"
+    with open(f, "a", encoding="utf-8") as fh:
+        for i in range(20):
+            fh.write(json.dumps(bash(ts(15, i), f"x{i}", f"tool{chr(97 + i)} --flag", f"rx{i}")) + "\n")
+            fh.write(json.dumps(result(ts(15, i), f"x{i}", f"Exit code 3\nerror {chr(97 + i)}", err=True)) + "\n")
+    os.utime(f, (1_900_000_000, 1_900_000_000))
+    p = run("--budget-tokens", "900")
+    md2 = (out / "demo.md").read_text()
+    check("trimmed to budget, says what was cut", p.returncode == 0 and "Trimmed to budget:" in md2 and
+          "trimmed: kept" in md2 and "x3 Bash" in md2, md2[:3000])
+finally:
+    shutil.rmtree(TMP, ignore_errors=True)
+
+print(f"test-acef-daily-extract: {ok} passed, {bad} failed")
+sys.exit(1 if bad else 0)
