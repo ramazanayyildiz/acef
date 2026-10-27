@@ -14,13 +14,20 @@ const { FLOOR_KEYS, validateModelRoutingPolicy } = require("./acef-model-routing
 const INSTALLED_POLICY = ".acef/model-routing-policy.json";
 const DOCS_OVERRIDE = "docs/ai/ACEF_MODEL_ROUTING_POLICY.json";
 
-function readJson(file) {
+// "missing" and "present but unusable" are different outcomes: a file that exists must parse to a JSON object.
+function readJsonObject(file, label) {
+  if (!fs.existsSync(file)) return { missing: true, record: null, error: null };
+  let value;
   try {
-    const value = JSON.parse(fs.readFileSync(file, "utf8"));
-    return value && typeof value === "object" && !Array.isArray(value) ? value : null;
-  } catch {
-    return null;
+    value = JSON.parse(fs.readFileSync(file, "utf8"));
+  } catch (error) {
+    return { missing: false, record: null, error: `${label} is not valid JSON (${error.message})` };
   }
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    const kind = value === null ? "null" : Array.isArray(value) ? "an array" : `a ${typeof value}`;
+    return { missing: false, record: null, error: `${label} must be a JSON object, found ${kind}` };
+  }
+  return { missing: false, record: value, error: null };
 }
 
 // Migration for installs of the unreleased 9269a8c shape, which carried modelRank/reviewModelFloors inside the routing
@@ -46,8 +53,12 @@ function routingPreflight(sourceRoot, targetRepo) {
   const floorsPath = path.join(sourceRoot, "method", "model-review-floors-v1.json");
   const sourcePolicyPath = path.join(sourceRoot, "method", "model-routing-policy-v1.json");
   if (!fs.existsSync(floorsPath) || !fs.existsSync(sourcePolicyPath)) return { violations: [], invalid: [], checked: [], moved: [] };
-  const floors = validateReviewFloors(JSON.parse(fs.readFileSync(floorsPath, "utf8")));
-  const source = JSON.parse(fs.readFileSync(sourcePolicyPath, "utf8"));
+  const floorsRead = readJsonObject(floorsPath, `ACEF floors ${floorsPath}`);
+  if (floorsRead.error) throw new Error(`ACEF update stopped before any write: ${floorsRead.error}`);
+  const floors = validateReviewFloors(floorsRead.record);
+  const sourceRead = readJsonObject(sourcePolicyPath, `ACEF routing policy ${sourcePolicyPath}`);
+  if (sourceRead.error) throw new Error(`ACEF update stopped before any write: ${sourceRead.error}`);
+  const source = sourceRead.record;
   const checked = [];
   const violations = [];
   const invalid = [];
@@ -58,15 +69,24 @@ function routingPreflight(sourceRoot, targetRepo) {
       invalid.push({ file, message: error.message });
     }
   };
-  const host = readJson(path.join(targetRepo, INSTALLED_POLICY));
+  const hostRead = readJsonObject(path.join(targetRepo, INSTALLED_POLICY), INSTALLED_POLICY);
+  if (hostRead.error) invalid.push({ file: INSTALLED_POLICY, message: hostRead.error });
+  const host = hostRead.record;
   const moved = host ? stripMovedFloorKeys(host) : [];
   const baseline = host ? installedSourceBaseline(targetRepo, sourceRoot, "tools", "method/model-routing-policy-v1.json") : null;
   if (baseline) stripMovedFloorKeys(baseline);
-  const merged = host ? mergeHostConfig(host, source, baseline).result : source;
   checked.push(INSTALLED_POLICY);
-  validate(merged, INSTALLED_POLICY);
-  violations.push(...policyFloorViolations(merged, floors, INSTALLED_POLICY));
-  const override = readJson(path.join(targetRepo, DOCS_OVERRIDE));
+  if (!hostRead.error) {
+    const merged = host ? mergeHostConfig(host, source, baseline).result : source;
+    validate(merged, INSTALLED_POLICY);
+    violations.push(...policyFloorViolations(merged, floors, INSTALLED_POLICY));
+  }
+  const overrideRead = readJsonObject(path.join(targetRepo, DOCS_OVERRIDE), DOCS_OVERRIDE);
+  if (overrideRead.error) {
+    checked.push(DOCS_OVERRIDE);
+    invalid.push({ file: DOCS_OVERRIDE, message: overrideRead.error });
+  }
+  const override = overrideRead.record;
   if (override) {
     checked.push(DOCS_OVERRIDE);
     validate(override, DOCS_OVERRIDE);

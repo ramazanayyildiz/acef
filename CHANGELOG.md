@@ -239,7 +239,8 @@ beta.8 model-choice entry.
   installed, including full validation of both. A violation or an invalid policy stops the update with the host
   byte-identical and lists each role, model, floor and the exact `roleModelExemptions` line to add if Ram approves.
   (A host policy that fails validation used to be kept with a log line while the runtime was replaced; it now stops
-  the update.) Installs of the unreleased round-2 shape (9269a8c) migrate: `modelRank`/`reviewModelFloors` are removed
+  the update; so does an installed policy or docs override that exists but is not a JSON object, such as malformed
+  JSON, `null`, an array, a number or a string.) Installs of the unreleased round-2 shape (9269a8c) migrate: `modelRank`/`reviewModelFloors` are removed
   from `.acef/model-routing-policy.json` and reported as moved to `.acef/model-review-floors.json`.
 - **One model id grammar** `MODEL_ID_SOURCE` (`[A-Za-z0-9._:/-]+`) for the policy, both schemas, the active-run parser
   and the hard-wall shell parser, so `anthropic/claude-opus-5-5`-style ids resolve and dispatch alike. Persisted

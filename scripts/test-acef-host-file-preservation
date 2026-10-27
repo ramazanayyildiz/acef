@@ -321,6 +321,27 @@ try {
   assert.throws(() => updateFrom(badDocs), (error) => { badErr = `${error.stderr}`; return true; });
   assert.match(badErr, /update stopped before any write[\s\S]*routing policy would not validate:\n- docs\/ai\/ACEF_MODEL_ROUTING_POLICY\.json: model routing policy acefReviewFloors is not allowed/);
   assert.deepEqual(snapshot(badDocs), badBefore, "an invalid docs override leaves the host byte-identical");
+  // A policy file that exists but is not a JSON object stops the update before any write, for both the installed
+  // policy and the docs override (review of 0fe1e02): malformed JSON, null, [], a number, a string.
+  const unusable = [["{ not json", /is not valid JSON/], ["null", /must be a JSON object, found null/], ["[]", /must be a JSON object, found an array/],
+    ["42", /must be a JSON object, found a number/], ["\"policy\"", /must be a JSON object, found a string/]];
+  const unusableHost = freshHost();
+  const installedPolicyBytes = read(unusableHost, POLICY);
+  for (const rel of [POLICY, "docs/ai/ACEF_MODEL_ROUTING_POLICY.json"]) {
+    for (const [bytes, pattern] of unusable) {
+      fs.mkdirSync(path.dirname(path.join(unusableHost, rel)), { recursive: true });
+      write(unusableHost, rel, `${bytes}\n`);
+      const before = snapshot(unusableHost);
+      let stderr = "";
+      assert.throws(() => updateFrom(unusableHost), (error) => { stderr = `${error.stderr}`; return true; }, `${rel} ${bytes} must stop the update`);
+      assert.match(stderr, /update stopped before any write[\s\S]*routing policy would not validate/, `${rel} ${bytes}`);
+      assert.match(stderr, new RegExp(`- ${rel.replace(/[./]/g, (c) => `\\${c}`)}: ${rel.replace(/[./]/g, (c) => `\\${c}`)} ${pattern.source}`), `${rel} ${bytes} names the file`);
+      assert.deepEqual(snapshot(unusableHost), before, `${rel} ${bytes} leaves the host byte-identical`);
+    }
+    if (rel === POLICY) write(unusableHost, POLICY, installedPolicyBytes);
+    else fs.rmSync(path.join(unusableHost, rel));
+  }
+  updateFrom(unusableHost);
   const forkOut2 = updateFrom(forkInstall);
   assert.equal(JSON.parse(read(forkInstall, POLICY)).providers.openai.models.orchestration, "fork-orchestration", "fork values are host choices");
   assert.match(forkOut2, /no ACEF baseline/);
