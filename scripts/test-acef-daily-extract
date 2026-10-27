@@ -326,6 +326,18 @@ def property_fixture(root):
     a = chunk(8)
     secrets.append(a)
     forms.append(f"password: |2-\n{a}\nok")                                    # value line not indented
+    a = chunk(8)
+    secrets.append(a)
+    forms.append(f"db:\n  password:\napi_key: |2-\n  {a}\nok: 1")              # header as first continuation, dedent
+    a, b, c = chunk(8), chunk(8), chunk(8)
+    secrets += [a, b, c]
+    forms.append(f"x:\n  token: |\n    {a}\n  secret: >-\n      {b}\npassword: |\n {c}\nok")   # consecutive, mixed indent
+    a, b = chunk(8), chunk(8)
+    secrets += [a, b]
+    forms.append(f"password: |\ntoken: |\n  {a}\n    client_secret: >\n      {b}\nok")    # nested headers in a block
+    a, b = chunk(8), chunk(8)
+    secrets += [a, b]
+    forms.append(f"  a:\n    password: |\n      {a}\n  api_key: >\n    {b}\nnext: 1")     # a header that dedents
     forms.append(f"use sk-proj-{w()} now")                                     # tokens anywhere
     forms.append(f"ghp_{w()}")
     forms.append(f"xoxb-{w()}")

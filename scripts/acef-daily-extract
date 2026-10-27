@@ -248,35 +248,34 @@ def _indent(line):
 
 
 def _redact_lines(s):
-    """A line with secret context loses everything from the keyword on. Below it, (a) every line indented deeper
-    than the keyword line is redacted whatever the inline value was, and (b) the first non-empty line is redacted
-    too when the value may continue there (_opens_block) or the line ends with a backslash; backslash continuations
-    carry on. At most BLOCK_CAP lines below one keyword line."""
+    """One pass. A line with secret context loses everything from the keyword on and starts a block, replacing any
+    block in progress: below it, (a) every line indented deeper than it is redacted whatever the inline value was,
+    and (b) the first non-empty line is redacted too when the value may continue there (_opens_block); backslash
+    continuations carry on; at most BLOCK_CAP lines. Every line is checked for secret context, consumed or not: a
+    keyword line inside a block is redacted whole and becomes the new header (new baseline, rules, cap)."""
     ctx, db, url = bool(SECRET_CTX_RE.search(s)), bool(DBCLI_RE.search(s)), "://" in s and "@" in s
     if not (ctx or db or url):
         return s                                    # no secret context anywhere: nothing to do line by line
-    lines, out, i = s.split("\n"), [], 0
-    while i < len(lines):
-        line = lines[i]
-        span = _secret_span(line, ctx, db, url) if line.strip() else None
-        i += 1
-        if not span:
+    out = []
+    active, base, first, cont, k = False, 0, False, False, 0
+    for line in s.split("\n"):
+        blank = not line.strip()
+        in_block = active and k < BLOCK_CAP
+        consumed = in_block and not blank and (first or cont or _indent(line) > base)
+        span = None if blank else _secret_span(line, ctx, db, url)
+        if span:
+            out.append(MARK if consumed else line[: span[0]] + MARK)
+            active, base, k = True, _indent(line), 0
+            first, cont = _opens_block(line[span[1]:]), line.rstrip().endswith("\\")
+        elif consumed:
+            out.append(MARK)
+            first, cont, k = False, line.rstrip().endswith("\\"), k + 1
+        elif in_block and blank:
             out.append(line)
-            continue
-        out.append(line[: span[0]] + MARK)
-        first = _opens_block(line[span[1]:])
-        base, cont, k = _indent(line), line.rstrip().endswith("\\"), 0
-        while i < len(lines) and k < BLOCK_CAP:
-            nxt = lines[i]
-            if not nxt.strip():
-                out.append(nxt)
-            elif first or cont or _indent(nxt) > base:
-                out.append(MARK)
-                first, cont = False, nxt.rstrip().endswith("\\")
-            else:
-                break
-            i += 1
             k += 1
+        else:
+            active = False
+            out.append(line)
     return "\n".join(out)
 
 

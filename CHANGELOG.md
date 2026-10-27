@@ -107,6 +107,13 @@ landed in; Manager-driven Codex panes counted as 99 owner hours; machine inciden
   The property test adds `|2-`, `>1+`, `|-2`, `!!str |`, `&pw |`, `!secret >-`, an alias, flow mappings and an
   unindented value line (73 secrets in 46 forms); on the previous commit it finds the leaks. Pilot day: no secret
   pattern in the output, and 24 of 4,645 digest lines carry a marker (unchanged).
+- **Second confirmation round (Codex, PR #27: 1 P1):** a keyword line consumed as the continuation of an earlier
+  secret block did not start its own context (`db:\n  password:\napi_key: |2-\n  <value>` kept the value). The block
+  logic is now one pass: every line is checked for secret context, consumed or not; a keyword line inside a block is
+  redacted whole and becomes the new header (new indent baseline, rules (a) and (b) from it, cap restarted). The
+  property test adds a header as the first continuation line, consecutive headers at mixed indents, nested headers
+  inside a block and a header that dedents (81 secrets in 50 forms); on the previous commit it finds the leak.
+  Pilot day: no secret pattern in the output; 23 of 4,647 digest lines carry a marker.
 - Tests: 46 checks on synthetic fixtures; the property test now covers 56 secrets in 37 forms (comment-then-value,
   five YAML block scalars, dotenv continuation, a quoted value over two lines). Runtime on the pilot day: about 20 s
   (parse 12 s, git/gh 4 s) for 3.8 GB under load. A scan of the real pilot-day output finds no email, key block,
