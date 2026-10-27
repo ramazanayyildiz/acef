@@ -8,6 +8,7 @@ import datetime as dt_mod
 import hashlib
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -255,6 +256,147 @@ def build():
     os.utime(pp / f"{pid}.jsonl", (1_700_000_000, 1_700_000_000))   # the idle parent: before the window
 
 
+def property_fixture(root):
+    """Secrets in many forms, each placed in every input field the extractor reads. Returns the secret values that
+    must never appear (no 6+ char substring) in any written file or file name."""
+    import random
+    rng = random.Random(7)
+    up, low, dig = "GHJKLMNPQRSTUVWXYZ", "ghjkmnpqrstuvwxyz", "23456789"
+
+    def chunk(n):    # every 6-window has upper case letters outside hex, so hashes and words never collide
+        return "".join(rng.choice((up, low, dig)[i % 3]) for i in range(n))
+    secrets = []
+
+    def v3():
+        a, b, c = chunk(6), chunk(6), chunk(6)
+        secrets.append(f"{a} {b} {c}")
+        return a, b, c
+
+    def w():
+        x = chunk(24)
+        secrets.append(x)
+        return x
+    forms = []
+    for q in ('"', "'"):
+        a, b, c = v3()
+        forms.append(f"password={q}{a} {b} {c}{q} rest")
+    forms.append(f"password={w()} rest")
+    a, b, c = v3()
+    forms.append(f'password="{a} {b} {c}')                                   # unterminated quote
+    a, b, c = v3()
+    forms.append(json.dumps({"password": f"{a} {b} {c}"}))
+    a, b, c = chunk(6), chunk(6), chunk(6)
+    secrets += [a, b, c]
+    forms.append(json.dumps({"password": f'{a} "{b}" {c}'}))                 # nested escaped quotes
+    a, b, c = v3()
+    forms.append(json.dumps(json.dumps({"api_key": f"{a} {b} {c}"})))         # JSON in JSON
+    a, b, c = v3()
+    forms.append(f"secret: {a} {b} {c}")
+    forms.append(f"client_secret={w()}")
+    forms.append(f"DATABASE_URL=postgres://app:{w()}@db.local/app")
+    a, b, c = v3()
+    forms.append(f'mysql -u root -p"{a} {b} {c}" app')                        # CLI flags
+    forms.append(f"mysql -p{w()} app")
+    forms.append(f"psql --password={w()} app")
+    a, b, c = v3()
+    forms.append(f"mysqldump -p'{a} {b} {c}' db")
+    forms.append(f"git clone https://deploy:{w()}@example.net/repo.git")       # URL credentials, no keyword
+    forms.append(f"Authorization: Bearer {w()}")
+    forms.append(f"token: {w()}")
+    forms.append(f"X-Api-Key: {w()}")
+    a, b, c = v3()
+    forms.append(f"password:\n  {a} {b} {c}\nnext")                             # YAML value on the next line
+    forms.append(f"use sk-proj-{w()} now")                                     # tokens anywhere
+    forms.append(f"ghp_{w()}")
+    forms.append(f"xoxb-{w()}")
+    ak = "".join(rng.choice(up + dig) for _ in range(16))
+    secrets.append(ak)
+    forms.append(f"key AKIA{ak} here")
+    forms.append(f"AIza{w()}{w()}")
+    forms.append(f"jwt eyJ{w()}.{w()}.{w()}")
+    pem_body = [w() for _ in range(3)]
+    forms.append("-----BEGIN PRIVATE KEY-----\n" + "\n".join(pem_body) + "\n-----END PRIVATE KEY-----")
+    forms.append("-----BEGIN RSA PRIVATE KEY-----\n" + "\n".join(w() for _ in range(3)))   # unterminated PEM
+    forms.append(f"cat /tmp/password-{w()}.txt")                               # file names
+    forms.append(f"mail {w()}@example.org")
+    one = [f.replace("\n", " ") for f in forms]
+    tokname = w()
+    # Claude main session: owner messages, title, branch, cwd, tool inputs and outputs, tests, commits, cd paths
+    pc = root / "claude" / "-nonexistent-prop"
+    sid = "33333333-4444-5555-6666-777777777777"
+    rows = [dict(user(ts(9, 0), forms[0]), cwd="/nonexistent-acef-fixture/prop/.worktrees/w", gitBranch=one[1])]
+    rows.append({"type": "ai-title", "aiTitle": one[2], "sessionId": "s"})
+    rows.append({"type": "pr-link", "sessionId": "s", "prNumber": 1, "prRepository": one[3], "timestamp": ts(9, 1)})
+    for i, (f, o) in enumerate(zip(forms, one)):
+        hh, mm = 10 + i // 30, (i * 2) % 60
+        rows += [say(ts(hh, mm), "Running it.", f"pa{i}"), user(ts(hh, mm), f"{f}"),
+                 bash(ts(hh, mm), f"pb{i}", f"echo go; {f}", f"pb{i}"),
+                 result(ts(hh, mm), f"pb{i}", f"Exit code 2\nfailed: {f}", err=True),
+                 bash(ts(hh, mm), f"pt{i}", "vendor/bin/phpunit --filter X", f"pt{i}"),
+                 result(ts(hh, mm), f"pt{i}", f"FAILURES!\nTests: 1, Failures: 1. {o}", err=True),
+                 bash(ts(hh, mm), f"pc{i}", f"cd /tmp/{o.split()[0]} && git commit -m '{o}'", f"pc{i}"),
+                 result(ts(hh, mm), f"pc{i}", "[main abc1234] x")]
+        tool = base(ts(hh, mm), "assistant")
+        tool.update(requestId=f"pw{i}", message={"model": "m", "id": f"pw{i}", "role": "assistant", "content": [
+            {"type": "tool_use", "id": f"pw{i}", "name": "Write", "input": {"file_path": "/tmp/x", "content": f}},
+            {"type": "tool_use", "id": f"pg{i}", "name": "Agent", "input": {"description": o, "prompt": f}}]})
+        rows += [tool, result(ts(hh, mm), f"pw{i}", f"error: {f}", err=True)]
+    jl(pc / f"{sid}.jsonl", rows)
+    # Codex: exec with a review prompt, failing commands with secrets in command and output tail, MCP errors;
+    # an older-format owner pane; a session file and a project dir named after a token
+    ev_ = lambda t, pl, typ="event_msg": {"timestamp": t, "type": typ, "payload": pl}  # noqa: E731
+    cxs = [{"timestamp": ts(13, 0), "type": "session_meta", "payload": {
+        "id": "p-1", "cwd": "/nonexistent-acef-fixture/prop/.worktrees/w", "originator": "codex_exec"}},
+        ev_(ts(13, 0), {"type": "item_completed", "item": {"type": "UserMessage", "content": [
+            {"type": "text", "text": "Review. VERDICT: ACCEPT or REVISE. " + forms[4]}]}})]
+    tui = [{"timestamp": ts(14, 0), "type": "session_meta", "payload": {
+        "id": "p-2", "cwd": "/nonexistent-acef-fixture/prop/.worktrees/w", "originator": "codex_cli_rs"}}]
+    for i, (f, o) in enumerate(zip(forms, one)):
+        t = ts(13, 1 + i % 58)
+        cxs.append(ev_(t, {"type": "item_completed", "item": {
+            "type": "CommandExecution", "command": ["bash", "-lc", f"run {f}"], "cwd": "file:///tmp",
+            "exit_code": 1, "aggregated_output": "x" * 500 + "\n" + f + "\n" + "y " * 100}}))
+        cxs.append(ev_(t, {"type": "item_completed", "item": {
+            "type": "McpToolCall", "server": "s", "tool": "t", "status": "failed", "error": {"message": f}}}))
+        tui.append(ev_(ts(14, 1 + i % 58), {"type": "user_message", "message": f}))
+        tui.append(ev_(ts(14, 1 + i % 58), {"type": "function_call", "name": "shell", "call_id": f"q{i}",
+                                            "arguments": json.dumps({"command": ["bash", "-lc", f]})},
+                       typ="response_item"))
+        tui.append(ev_(ts(14, 1 + i % 58), {"type": "function_call_output", "call_id": f"q{i}", "output": json.dumps(
+            {"output": f, "exit_code": 3})}, typ="response_item"))
+    jl(root / "codex" / "2026" / "10" / "26" / "rollout-2026-10-26T13-00-00-p-1.jsonl", cxs)
+    jl(root / "codex" / "2026" / "10" / "26" / f"rollout-sk-proj-{tokname}.jsonl", tui)
+    tokproj = w()
+    jl(root / "claude" / f"-nonexistent-sk-proj-{tokproj}" / "44444444-5555-6666-7777-888888888888.jsonl",
+       [dict(user(ts(15, 0), "hello"), cwd=f"/nonexistent/sk-proj-{tokproj}/.worktrees/w")])
+    for f in (root / "claude").rglob("*.jsonl"):
+        os.utime(f, (1_900_000_000, 1_900_000_000))
+    for f in (root / "codex").rglob("*.jsonl"):
+        os.utime(f, (1_900_000_000, 1_900_000_000))
+    # git subjects in a repo the session works in, mem-guard lines, store lines
+    repo = root / "prop-repo"
+    repo.mkdir()
+    g = lambda *a_, at=None: subprocess.run(  # noqa: E731
+        ["git", "-c", "user.name=t", "-c", "user.email=t@t", *a_], cwd=repo, check=True, capture_output=True,
+        env={**ENV, "GIT_CONFIG_GLOBAL": "/dev/null", **({"GIT_AUTHOR_DATE": at, "GIT_COMMITTER_DATE": at} if at else {})})
+    g("init", "-q", "-b", "main")
+    g("commit", "-q", "--allow-empty", "-m", "init", at="2026-10-26T01:00:00Z")
+    for i, o in enumerate(one):
+        g("commit", "-q", "--allow-empty", "-m", f"Merge slice/p{i}: {o} (#{i + 1})", at=f"2026-10-26T02:{i:02d}:00Z")
+    rows2 = [dict(user(ts(16, 0), "work"), cwd="/nonexistent-acef-fixture/prop/.worktrees/w")]
+    for i in range(2):
+        rows2 += [bash(ts(16, 1 + i), f"pr{i}", f"cd {repo} && git status", f"pr{i}"), result(ts(16, 1 + i), f"pr{i}", "ok")]
+    jl(pc / "55555555-6666-7777-8888-999999999999.jsonl", rows2)
+    os.utime(pc / "55555555-6666-7777-8888-999999999999.jsonl", (1_900_000_000, 1_900_000_000))
+    mem = root / "mem.log"
+    mem.write_text("".join(f"2026-10-26 10:{i % 60:02d}:00 STOPPED pid {i} (1G) project=prop cwd=/tmp/x cmd=node {o}\n"
+                           for i, o in enumerate(one)))
+    (root / "store" / "log").mkdir(parents=True)
+    (root / "store" / "log" / "prop.md").write_text("".join(
+        f"prop-{i} | 2026-10-26 | tooling | 5min | {o} | fix {o} | ref {o}\n" for i, o in enumerate(one)))
+    return secrets, mem
+
+
 def tree_hash(root):
     h = hashlib.sha256()
     for f in sorted(root.rglob("*")):
@@ -292,7 +434,7 @@ try:
     written = {f.name: f.read_text() for f in out.rglob("*") if f.is_file()}
     check("P1 redaction before truncation: no key body from a pasted PEM over 300 chars or a key tail",
           oldc and not any("keybodymarker" in v or "keybodytail" in v for v in written.values()) and
-          "<redacted-key>" in "".join(written.values()), [k for k, v in written.items() if "keybody" in v])
+          "<redacted>" in "".join(written.values()), [k for k, v in written.items() if "keybody" in v])
     check("P1 keys sanitized: no email in a cd_dirs key", not any("person@example.org" in v for v in written.values())
           and oldc and any("<email>" in k for k in oldc[0]["cd_dirs"]), oldc and oldc[0]["cd_dirs"])
     check("P2 older Codex shapes: owner message once, shell failure and test, owner pane",
@@ -316,7 +458,13 @@ try:
     kid = [s for s in idx["sessions"] if s["kind"] == "subagent" and "c1c2c3c4c5" in s["path"]]
     check("P2 child of a parent idle before the window keeps the parent's project",
           len(kid) == 1 and kid[0]["project"] == "parentproj", kid and kid[0]["project"])
-    check("subagent linked to parent", "parent C:11111111" in md, md)
+    sub_row = next(s for s in idx["sessions"] if s["kind"] == "subagent" and s["project"] == "demo")
+    main_row = next(s for s in idx["sessions"] if s["kind"] == "main" and s["project"] == "demo")
+    check("subagent linked to parent by hashed refs (no file-name text)",
+          sub_row.get("parent_ref") and sub_row.get("parent_ref") == main_row.get("ref") and
+          f"parent {main_row.get('ref')}" in md and re.fullmatch(r"C:[0-9a-f]{10}", main_row.get("ref") or "") and
+          "11111111" not in md and idx.get("refs", {}).get(main_row.get("ref"), "").endswith(".jsonl"),
+          (sub_row.get("parent_ref"), main_row.get("ref")))
     main = next(s for s in idx["sessions"] if s["kind"] == "main")
     check("window clipping: signals inside only, span is the full session",
           not any("OUTSIDE-WINDOW" in h["text"] for h in main["human"]) and "OUTSIDE-WINDOW" not in md
@@ -342,7 +490,7 @@ try:
     check("subagent spawn recorded", main["agents"] and main["agents"][0]["model"] == "sonnet")
     check("skipped record types never read", "BLOBMARKER" not in alltext)
     check("redaction: key and email", "sk-test-ABCDEF" not in alltext and "fixture.person@example.org" not in alltext
-          and "<email>" in alltext and "<redacted-token>" in alltext)
+          and "<email>" in alltext and "<redacted>" in alltext)
     check("account ids never extracted", "ACCOUNT-SHOULD-NOT-LEAK" not in alltext)
     check("unreadable listed with reason", any("broken" in u["path"] and "parsed as JSON" in u["unreadable"]
                                                for u in idx["unreadable"]) and "broken" in alltext, idx["unreadable"])
@@ -393,6 +541,43 @@ try:
     tracemalloc.stop()
     check("P2 pending calls completed before the window are dropped (bounded memory)",
           row.get("pending_open") == 0 and peak < 8 * 1024 * 1024, (row.get("pending_open"), peak))
+    # D. property test: every secret form in every input field; no 6+ char substring of any secret is written
+    PROP = TMP / "prop"
+    secrets, pmem = property_fixture(PROP)
+    pp = subprocess.run([sys.executable, "-I", str(TOOL), "--claude-dir", str(PROP / "claude"), "--codex-dir",
+                         str(PROP / "codex"), "--store", str(PROP / "store"), "--since", "2026-10-26T00:00",
+                         "--until", "2026-10-27T00:00", "--jobs", "1", "--no-gh", "--mem-guard-log", str(pmem)],
+                        env=ENV, capture_output=True, text=True)
+    pout = PROP / "store" / "daily" / "2026-10-26"
+    pfiles = [f for f in pout.rglob("*") if f.is_file()]
+    pblob = "\n".join(f.name + "\n" + f.read_text() for f in pfiles) + pp.stdout + pp.stderr
+    leaks = sorted({sec[i:i + 6] for sec in secrets for i in range(len(sec) - 5) if sec[i:i + 6] in pblob})
+    pidx = json.loads((pout / "extract.json").read_text()) if (pout / "extract.json").exists() else {}
+    seen = {"msgs": sum(len(x["human"]) for x in pidx.get("sessions", [])),
+            "fails": sum(len(x["fails"]) for x in pidx.get("sessions", [])),
+            "mem": len(pidx.get("memguard", [])), "store": len(pidx.get("store_entries", [])),
+            "merges": sum(len(f["items"]) for fl in pidx.get("finished", {}).values() for f in fl)}
+    nform = seen["mem"]
+    check(f"D property: {len(secrets)} secrets in {nform} forms x every input field, no 6-char substring written "
+          f"(inputs reached the output: {seen})",
+          pp.returncode == 0 and not leaks and nform >= 25 and seen["store"] == nform and seen["merges"] == nform
+          and seen["msgs"] >= 2 * nform and seen["fails"] >= 5 * nform, (leaks[:20], pp.stderr[-2000:], seen))
+
+    def walk(o, path="$"):
+        if isinstance(o, dict):
+            for k, v in o.items():
+                yield path + ".key", k
+                yield from walk(v, path + "." + str(k)[:20])
+        elif isinstance(o, list):
+            for i, v in enumerate(o):
+                yield from walk(v, f"{path}[{i}]")
+        elif isinstance(o, str):
+            yield path, o
+    dirty = [(p_, v) for p_, v in walk(pidx) for sec in secrets for i in range(len(sec) - 5) if sec[i:i + 6] in v]
+    check("C write gate: every key and value of extract.json is clean", pidx and not dirty, dirty[:5])
+    check("B no file-name text in refs: every session ref is a hash", pidx and all(
+        re.fullmatch(r"[CSX]:[0-9a-f]{10}", x.get("ref", "")) for x in pidx["sessions"]),
+        [x.get("ref") for x in pidx.get("sessions", [])][:5])
     # default window: yesterday 09:00 to today 09:00 local (TZ=UTC here)
     p2 = subprocess.run([sys.executable, "-I", str(TOOL), "--claude-dir", str(TMP / "none"), "--codex-dir",
                          str(TMP / "none"), "--store", str(TMP / "store2"), "--mem-guard-log", str(MEM), "--no-gh"],

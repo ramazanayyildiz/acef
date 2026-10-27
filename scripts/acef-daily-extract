@@ -34,6 +34,7 @@ sys.dont_write_bytecode = True
 import argparse
 import collections
 import datetime as dt
+import hashlib
 import json
 import multiprocessing
 import os
@@ -112,7 +113,6 @@ RELAY_RE = re.compile(r"^\W*(manager|coordinator|koordinat\w*|root|lead|orchestr
                       re.IGNORECASE)
 MSG_RE = re.compile(r"""-[a-z]*m\s+["']([^"'\n]{3,120})""")
 SLICE_RE = re.compile(r"\b([A-Z][A-Z0-9]{1,15}(?:-[A-Z0-9]{1,15}){1,4}-\d{1,3}[a-z]?)\b")
-REF_RE = re.compile(r"^.*?/(\.claude/projects|\.codex/sessions)/")
 CD_RE = re.compile(r"(?:^|[;&|(]\s*)cd\s+([~/][^\s;&|)'\"]+)")
 GITC_RE = re.compile(r"\bgit\s+-C\s+([~/][^\s;&|)'\"]+)")
 SHA_RE = re.compile(r"\[([\w./+-]+)(?: \(root-commit\))? ([0-9a-f]{7,12})\]")
@@ -133,42 +133,65 @@ def verdict_of(msg):
 BENIGN_EXIT1 = re.compile(r"^\s*(\S*/)?(rg|grep|egrep|fgrep|test|\[|diff|cmp|git diff|git grep|pgrep|which)\b")
 
 # ---------------------------------------------------------------- redaction (applied to every string at write time)
-REDACTIONS = [
-    (re.compile(r"-----BEGIN [A-Z0-9 ]*KEY-----.*?-----END [A-Z0-9 ]*KEY-----", re.S), "<redacted-key>"),
-    (re.compile(r"-----BEGIN [A-Z0-9 ]*KEY-----.*", re.S), "<redacted-key>"),          # unterminated: to the end
-    (re.compile(r"^.*?-----END [A-Z0-9 ]*KEY-----", re.S), "<redacted-key>"),          # tail slice: from the start
-    (re.compile(r"\b[\w.+-]+@[\w-]+(\.[\w-]+)+\b"), "<email>"),
-    (re.compile(r"\b([a-z][a-z0-9+.-]*://)[^/\s:@]+:[^/\s@]+@", re.I), r"\1<redacted>@"),
-    (re.compile(r"\b(sk|rk|pk)[-_](live|test|proj|ant)?[-_]?[A-Za-z0-9_-]{16,}"), "<redacted-token>"),
-    (re.compile(r"\b(ghp|gho|ghu|ghs|ghr|github_pat)_[A-Za-z0-9_]{16,}"), "<redacted-token>"),
-    (re.compile(r"\bxox[abprs]-[A-Za-z0-9-]{10,}"), "<redacted-token>"),
-    (re.compile(r"\bAKIA[0-9A-Z]{16}\b"), "<redacted-token>"),
-    (re.compile(r"\bAIza[0-9A-Za-z_-]{30,}"), "<redacted-token>"),
-    (re.compile(r"\beyJ[\w-]{8,}\.[\w-]{8,}\.[\w-]{4,}"), "<redacted-jwt>"),
-    (re.compile(r"\b(Bearer|Basic|token)\s+[A-Za-z0-9._~+/=-]{12,}", re.I), r"\1 <redacted>"),
-    (re.compile(r"(?i)\b([\w-]*(?:password|passwd|pwd|secret|token|api[_-]?key|apikey|access[_-]?key|"
-                r"private[_-]?key|client[_-]?secret|auth[_-]?key|authorization|credentials?)[\w-]*)"
-                r"((?:\\?[\"'])?\s*[:=]\s*)"
-                r"(\\\"(?:(?!\\\").)*\\\"|\"(?:[^\"\\]|\\.)*\"|'(?:[^'\\]|\\.)*'|[^\s\"',;}&]+)"),
-     r"\1\2<redacted>"),
-    (re.compile(r"(\bmysql\w*\b[^\n]*?\s)-p(?=\S)\S+"), r"\1-p<redacted>"),
+# Two layers. (1) Full-token patterns that are secrets wherever they appear: key blocks, known token prefixes, JWTs,
+# emails, opaque high-entropy strings. (2) Secret CONTEXT: a line that names a secret (password, token, -p after a
+# database client, user:pass@ in a URL, ...) loses everything from that point to the end of the line, and the next
+# line too when nothing follows the keyword (a YAML-style value below it). Layer 2 does not parse values, so no
+# quoting style, escape or missing quote can let a value through; it over-redacts on purpose (the digest is read for
+# gist). Markers carry no secret keyword, so redaction is idempotent.
+MARK = "<redacted>"
+TOKEN_PATTERNS = [
+    re.compile(r"-----BEGIN [A-Z0-9 ]*KEY-----.*?-----END [A-Z0-9 ]*KEY-----", re.S),
+    re.compile(r"-----BEGIN [A-Z0-9 ]*KEY-----.*", re.S),          # unterminated: to the end of the text
+    re.compile(r"^.*?-----END [A-Z0-9 ]*KEY-----", re.S),          # a tail that starts inside a key: from the start
+    re.compile(r"\b(sk|rk|pk)[-_][A-Za-z0-9_-]{12,}"),
+    re.compile(r"\b(ghp|gho|ghu|ghs|ghr|github_pat)_[A-Za-z0-9_]{12,}"),
+    re.compile(r"\bxox[abprs]-[A-Za-z0-9-]{8,}"),
+    re.compile(r"\bAKIA[0-9A-Z]{12,}"),
+    re.compile(r"\bAIza[0-9A-Za-z_-]{20,}"),
+    re.compile(r"\beyJ[\w-]{6,}\.[\w-]{6,}(\.[\w-]*)?"),
 ]
-LONG_TOKEN = re.compile(r"(?<![\w/-])[A-Za-z0-9_\-]{40,}")
+EMAIL_RE = re.compile(r"(?<![\w.+-])[\w.+-]{1,64}@[\w-]+(\.[\w-]+)+")
+SECRET_CTX_RE = re.compile(
+    r"passw(?:or)?d|\bpwd\b|\bpass\s*[=:]|secret|token|api[_-]?key|apikey|authori[sz]ation|bearer|"
+    r"private[ _-]?key|-----BEGIN|client[_-]?secret|database_url|credential|access[_-]?key|auth[_-]?key|"
+    r"\b(?:mysql\w*|mariadb\w*|psql|pg_dump|pg_restore)\b[^\n]{0,400}?\s-p(?=\S)|"
+    r"(?<![a-z0-9+.-])[a-z][a-z0-9+.-]{0,30}://[^\s/@]*:[^\s@]*@", re.IGNORECASE)
+EMPTY_REST_RE = re.compile(r"^[\s:=\"'{}\[\],|>-]*$")
+LONG_TOKEN = re.compile(r"(?<![\w/-])[A-Za-z0-9_\-]{32,}")
 
 
 def _long_token(m):
     w = m.group(0)
     # opaque high-entropy strings only: mixed case and digits, few dashes (path-like project dirs have many)
     if w.count("-") <= 2 and re.search(r"[A-Z]", w) and re.search(r"[a-z]", w) and re.search(r"\d", w):
-        return "<redacted-token>"
+        return MARK
     return w
+
+
+def _redact_lines(s):
+    out, carry = [], False
+    for line in s.split("\n"):
+        if carry:
+            carry = False
+            if line.strip():
+                out.append(MARK)
+                continue
+        m = SECRET_CTX_RE.search(line)
+        if m:
+            carry = bool(EMPTY_REST_RE.match(line[m.end():]))
+            line = line[:m.start()] + MARK
+        out.append(line)
+    return "\n".join(out)
 
 
 def redact(s):
     if not isinstance(s, str) or not s:
         return s
-    for rx, rep in REDACTIONS:
-        s = rx.sub(rep, s)
+    for rx in TOKEN_PATTERNS:
+        s = rx.sub(MARK, s)
+    s = _redact_lines(s)
+    s = EMAIL_RE.sub("<email>", s)
     return LONG_TOKEN.sub(_long_token, s)
 
 
@@ -802,7 +825,7 @@ def finish(s, meta):
         "cwd": meta["cwds"].most_common(1)[0][0] if meta["cwds"] else meta.get("meta_cwd", ""),
         "meta_cwd": meta.get("meta_cwd", ""), "cmd_cwd": meta["cmd_cwds"].most_common(1)[0][0] if meta.get("cmd_cwds") else "",
         "first_prompt": meta["first_prompt"], "is_review": meta.get("is_review", False),
-        "cost_usd": meta["cost_usd"], "out_tokens": meta["out_tokens"], "ctx_end": meta["ctx_end"],
+        "cost_usd": meta["cost_usd"], "out_tok": meta["out_tokens"], "ctx_end": meta["ctx_end"],
         "ctx_max": meta["ctx_max"], "ctx_window": meta.get("ctx_window"), "lines": meta["lines"],
         "bad_lines": meta["bad_lines"], "human": s.human, "interrupts": s.interrupts, "fails": s.fails,
         "tests": s.tests, "commits": s.commits, "waits": s.waits, "compactions": s.compactions,
@@ -1069,13 +1092,21 @@ def store_tags(store):
 
 
 # ---------------------------------------------------------------- digest
+def ref_of(path, kind):
+    """A session id for output: a kind prefix and a hash of the transcript path, never text taken from the path or
+    its contents. extract.json keeps the ref -> path table (redacted) for opening a transcript."""
+    prefix = "S:" if kind == "subagent" else "X:" if kind.startswith("codex") else "C:"
+    return prefix + hashlib.sha256(str(path).encode("utf-8", "surrogateescape")).hexdigest()[:10]
+
+
+def parent_path(path):
+    """The main transcript a subagent belongs to: <project>/<session>/subagents/agent-*.jsonl -> <project>/<session>.jsonl"""
+    par = Path(path).parent.parent
+    return str(par.parent / (par.name + ".jsonl"))
+
+
 def sid(r):
-    p = Path(r["path"])
-    if r["kind"] == "subagent":
-        return "S:" + p.stem.replace("agent-", "")[:8]
-    if r["tool"] == "codex":
-        return "X:" + p.stem[-12:]
-    return "C:" + p.stem[:8]
+    return r["ref"]
 
 
 def fmt_k(n):
@@ -1170,7 +1201,7 @@ def build_digest(project, rows, unread, window_txt, budget_chars, repeat_min, ex
     # sessions table (main + tui), always kept
     srows = []
     for r in mains + cx_tui + cx_agent:
-        kids = [x for x in subs if Path(x["path"]).parent.parent.name == Path(r["path"]).stem]
+        kids = [x for x in subs if x.get("parent_ref") == r["ref"]]
         tag = "[agent-driven pane] " if r["kind"] == "codex-tui-agent" else ""
         srows.append(
             f"| {sid(r)} | {hhmm(r['win_start'])}-{hhmm(r['win_end'])} | {r['active_min']} | "
@@ -1293,7 +1324,7 @@ def build_digest(project, rows, unread, window_txt, budget_chars, repeat_min, ex
     xitems += [f"- {ref(r)} context max {fmt_k(r['ctx_max'])} end {fmt_k(r['ctx_end'])}" for r in big_ctx]
     sections.append((5, "Hand-offs and large context", [], xitems))
     # subagents and codex exec
-    aitems = [f"- {sid(r)} parent {('C:' + Path(r['path']).parent.parent.name[:8])} {hhmm(r['win_start'])} "
+    aitems = [f"- {sid(r)} parent {r.get('parent_ref')} {hhmm(r['win_start'])} "
               f"{r['active_min']}m {','.join(r['models'])[:24]} fails {len(r['fails'])} ctx {fmt_k(r['ctx_max'])} | "
               f"{clip(r['title'] or r['first_prompt'], 100)}" for r in subs]
     sections.append((6, "Subagents", [], aitems))
@@ -1307,7 +1338,7 @@ def build_digest(project, rows, unread, window_txt, budget_chars, repeat_min, ex
     sections.append((7, "Other tool failures", [], singles))
     tail = []
     if unread:
-        tail += ["", "## UNREADABLE"] + [f"- {u['path']}: {u['unreadable']}" for u in unread]
+        tail += ["", "## UNREADABLE (paths: extract.json, refs)"] + [f"- {u['ref']}: {u['unreadable']}" for u in unread]
     sp = extra.get("store_project") or project
     tags = extra.get("tags") or []
     tail += ["", "## Proposed acef-note lines (stage 2 writes here; proposals only, never executed)",
@@ -1317,8 +1348,8 @@ def build_digest(project, rows, unread, window_txt, budget_chars, repeat_min, ex
              f"  `acef-note add {sp} --tags <tag>[,<tag>] --what \"<what happened>\" --fix \"<proposal>\" "
              "--cost <n>min --ref <session ref or sha>`",
              "- proposals: none yet"]
-    tail += ["", "## Refs (paths relative to ~/.claude/projects or ~/.codex/sessions)"] + [
-        f"- {sid(r)} {REF_RE.sub('', r['path'])}" for r in rows]
+    tail += ["", "## Refs", "- Session refs are hashes. To open a transcript, look the ref up in extract.json "
+             "(`refs`: ref -> path) and read only the line range you need."]
 
     caps = {"Unclassified red test runs": 50, "Finished on the default branch": 200, "Other tool failures": 40, "Owner messages": 120, "Subagents": 60,
             "Codex exec sessions": 90}
@@ -1455,6 +1486,17 @@ def main():
     for u in unreadable:
         p = Path(u["path"])
         u["project"] = (proj_of_main.get(p.parent.parent.name) if "subagents" in p.parts else None) or "unknown"
+    refs = {}
+    for r in rows:
+        r["ref"] = ref_of(r["path"], r["kind"])
+        refs[r["ref"]] = r["path"]
+        if r["kind"] == "subagent":
+            r["parent_ref"] = ref_of(parent_path(r["path"]), "main")
+    for u in unreadable:
+        kind = "codex" if "/.codex/" in u["path"] or "rollout-" in Path(u["path"]).name else \
+            "subagent" if "subagents" in Path(u["path"]).parts else "main"
+        u["ref"] = ref_of(u["path"], kind)
+        refs[u["ref"]] = u["path"]
     window_txt = (f"{dt.datetime.fromtimestamp(since).strftime('%Y-%m-%d %H:%M')} to "
                   f"{dt.datetime.fromtimestamp(until).strftime('%Y-%m-%d %H:%M')} local")
     outdir = Path(a.store) / "daily" / label
@@ -1491,10 +1533,13 @@ def main():
             "finished": finished_by.get(p, []), "memguard": mem_by.get(p, []), "store": notes_by.get(p, []),
             "store_project": to_store[p], "tags": tags})
         text = redact(text)
-        fname = re.sub(r"[^\w.-]", "_", p) + ".md"
+        # a file name is output too: from the redacted project name, with a hash when redaction changed it
+        rp = redact(p)
+        fname = (re.sub(r"[^\w.-]", "_", rp) if rp == p else
+                 "project-" + hashlib.sha256(p.encode("utf-8", "surrogateescape")).hexdigest()[:10]) + ".md"
         write_out(outdir / fname, text)
         projects[p] = {
-            "digest": fname, "digest_chars": len(text), "digest_tokens_est": len(text) // 4,
+            "digest": fname, "digest_chars": len(text), "digest_tok_est": len(text) // 4,
             "trimmed": {k: f"{x}/{y}" for k, (x, y) in trimmed.items()},
             "sessions": collections.Counter(r["kind"] for r in prs),
             "active_min_owner": sum(r["active_min"] for r in prs if r["kind"] in OWNER_KINDS),
@@ -1523,23 +1568,24 @@ def main():
         write_out(outdir / "_other.md", "\n".join(lines) + "\n")
     orphan = [u for u in unreadable if u["project"] not in by]
     if orphan:
-        text = "# Daily digest: unreadable sessions\n\n" + "\n".join(f"- {u['path']}: {u['unreadable']}" for u in orphan) + "\n"
+        text = "# Daily digest: unreadable sessions (paths: extract.json, refs)\n\n" + "\n".join(
+            f"- {u['ref']}: {u['unreadable']}" for u in orphan) + "\n"
         write_out(outdir / "_unreadable.md", text)
     runtime = round(time.time() - t0, 1)
     index = {
         "window": {"since": since, "until": until, "text": window_txt, "label": label},
         "generated": dt.datetime.now().astimezone().isoformat(timespec="seconds"),
         "runtime_s": runtime, "parse_s": round(parse_s, 1), "git_s": round(git_s, 1), "files_scanned": len(jobs),
-        "bytes_scanned": size, "memguard": mem, "memguard_error": mem_err, "store_entries": notes,
+        "bytes_scanned": size, "refs": refs, "memguard": mem, "memguard_error": mem_err, "store_entries": notes,
         "finished": finished_by,
         "sessions_in_window": len(rows), "unreadable": unreadable, "projects": projects, "sessions": rows,
     }
     write_out(outdir / "extract.json", index)
-    print(f"acef-daily-extract {label}: {len(jobs)} file(s), {size / 1e9:.2f} GB scanned, {len(rows)} session(s) in "
-          f"window, {len(unreadable)} unreadable, {runtime} s → {outdir}")
+    print(redact(f"acef-daily-extract {label}: {len(jobs)} file(s), {size / 1e9:.2f} GB scanned, {len(rows)} session(s) in "
+          f"window, {len(unreadable)} unreadable, {runtime} s → {outdir}"))
     for p, v in projects.items():
-        print(f"  {p}: {dict(v['sessions'])} digest {v['digest_tokens_est']} tok"
-              + (f" trimmed {v['trimmed']}" if v["trimmed"] else ""))
+        print(redact(f"  {p}: {dict(v['sessions'])} digest {v['digest_tok_est']} tok"
+                     + (f" trimmed {v['trimmed']}" if v["trimmed"] else "")))
     return 0
 
 

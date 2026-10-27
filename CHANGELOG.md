@@ -63,9 +63,32 @@ landed in; Manager-driven Codex panes counted as 99 owner hours; machine inciden
   - P2: a top-level `exit_code` in a function_call_output counts, as well as `metadata.exit_code`.
   - P2: owner messages are deduplicated only as the same event in two shapes (item and event, identical full text,
     within 10 s, paired once); two messages of the same shape always count.
-- Tests: 41 checks on synthetic fixtures; the four r2 checks and the seven r1 checks each fail on the commit before
-  their fix. Runtime on the pilot day: about 22 s (parse 12 s under load, git/gh 5 s) for 3.77 GB. A scan of the
-  real pilot-day output finds no email, key block, sk-/gh-/xox/AKIA/AIza token, JWT, bearer token or password value.
+- **Review r3 (Codex, PR #27: 4 P1) and a redesign, so a leak needs a structural bug, not a missed quoting style**
+  (coordinator decision; over-redaction is accepted for a private gist digest):
+  - **Line-level redaction of secret context:** a line naming a secret (password/passwd/pwd/pass=, secret, token,
+    api_key, authorization, bearer, private key, BEGIN … KEY, client_secret, DATABASE_URL, credentials, `-p<x>`
+    after mysql/mariadb/psql/pg_dump, `scheme://user:pass@`) loses everything from that point to the end of the line,
+    and the next line when nothing follows the keyword. No value is parsed, so unterminated quotes, nested escapes,
+    JSON in JSON and CLI quoting cannot leak. Full-token patterns (key blocks, sk-/gh*_/xox/AKIA/AIza, JWT, emails,
+    opaque high-entropy strings) stay as a second layer that applies anywhere. Markers carry no keyword (`<redacted>`,
+    `<email>`), so redaction is idempotent; JSON keys of the index were renamed off keywords (`out_tok`,
+    `digest_tok_est`). Every pattern is linear (anchored starts, bounded repeats): 0.07 s or less on 260 KB worst cases.
+  - **Identifiers are never text:** session refs are `C:`/`S:`/`X:` plus the first 10 hex of sha256 of the transcript
+    path; subagents link to their parent by ref; digests no longer list paths, and `extract.json` keeps the
+    ref -> path table (redacted). A digest file name comes from the redacted project name, or a hash when redaction
+    changed it. stdout lines are redacted too.
+  - **One write gate** (`write_out`) redacts every key and value of every written object or text; text is shortened
+    only by `clip()`/`tail_clip()` after redaction.
+  - **Property test:** 40 generated secrets in 29 forms (quoted, unquoted, unterminated, nested escapes, JSON in JSON,
+    key=value, YAML next line, CLI flags, URLs, tokens, PEM, file names, emails) placed in every input field (owner
+    messages, titles, branch, PR repo, tool inputs and outputs, test summaries, commit messages, cd paths, Agent
+    descriptions, Codex commands and output tails, MCP errors, older Codex shapes, git subjects, mem-guard and store
+    lines, session file and project names); no 6-character substring of any secret appears in any written file, file
+    name or stdout, and a walk over every key and value of `extract.json` finds none. On the previous commit the same
+    test finds more than 20 leaked fragments.
+- Tests: 44 checks on synthetic fixtures. Runtime on the pilot day: about 18 s (parse 9 s, git/gh 4 s) for 3.8 GB. A
+  scan of the real pilot-day output finds no email, key block, known token prefix, JWT, secret-context value or URL
+  credential; 24 of 4,639 digest lines carry a redaction marker.
 
 ## Unreleased — Daily session review: stage-1 extractor (pilot) (2026-10-27)
 
