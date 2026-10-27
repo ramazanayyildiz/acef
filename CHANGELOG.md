@@ -7,7 +7,7 @@ proven, or installed.
 Update this file in the same PR whenever ACEF itself gains or changes a flow, gate, validator, hook, skill, installer behavior, workflow,
 or evidence contract. Do not use it to claim implementation status; link to the capability record for that.
 
-## Unreleased — Host product-review origin is binding (2026-10-27)
+## v3.0.0-beta.6 — Host product-review origin is binding (2026-10-27)
 
 Found by the first host's Codex host-safety review of its beta.5 update: `run.productReviewOrigin` (or the active run's)
 overrode the host-owned `.acef/product-review-policy.json` `browserOrigin`, so a report from another local port passed
