@@ -79,6 +79,8 @@ approved this change).
   checked at use against the shape their consumer expects (`findall` against the regex's group count; verdict a
   string or null; `nonblank` a bool); a mismatch recomputes from the file, never a crash. Docs: the index is a speed
   cache, not a source of truth; `--no-cache` is the reference. `scripts/test-acef-detect` 194 checks (+6).
+- **Review r4 fix (Codex, one P2):** any failure to decode or validate the index file (also `RecursionError` on
+  deeply nested corrupt JSON) starts an empty index instead of aborting the poll. `scripts/test-acef-detect` 195 checks (+1).
 
 ## v3.0.0-beta.7 — Product language, end-user profiles and user-goal tours (2026-10-27)
 

@@ -311,14 +311,16 @@ def timing_line(cache: dict, index) -> str:
 def load_index(path: Path):
     """The persistent run-item index; a missing, unreadable or other-version file starts an empty one (it is only a
     cache: every row is checked against the files' mtime and size before use)."""
+    # it is only a cache: ANY failure to decode or validate it (incl. RecursionError on deeply nested corrupt JSON)
+    # starts an empty index, never a crash (review r4)
     try:
         data = json.loads(path.read_text()) if path.exists() else {}
-    except (OSError, ValueError, UnicodeDecodeError):
-        data = {}
-    rows = data.get("rows") if isinstance(data, dict) and data.get("version") == _lib.Index.VERSION else {}
-    rows = rows if isinstance(rows, dict) else {}
-    # a malformed row is dropped here and is a cache miss at use (Index.restore): never a crash
-    return _lib.Index({k: r for k, r in rows.items() if isinstance(k, str) and _lib.Index.restore(r, k) is not None})
+        rows = data.get("rows") if isinstance(data, dict) and data.get("version") == _lib.Index.VERSION else {}
+        rows = rows if isinstance(rows, dict) else {}
+        # a malformed row is dropped here and is a cache miss at use (Index.restore): never a crash
+        return _lib.Index({k: r for k, r in rows.items() if isinstance(k, str) and _lib.Index.restore(r, k) is not None})
+    except Exception:
+        return _lib.Index({})
 
 
 def save_index(path: Path, index):

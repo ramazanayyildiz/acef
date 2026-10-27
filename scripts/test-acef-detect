@@ -793,6 +793,10 @@ try:
     index_file.write_text("{not json")
     rc_b, broken = run("--dry-run", config=CFG, env=ENV_C, now=NOW + dt.timedelta(minutes=1))
     check("speed: a corrupt index is ignored (same findings)", rc_b == rc_n and body(broken) == body(nocache), broken)
+    index_file.write_text('{"version": 2, "rows": ' + "[" * 100000 + "]" * 100000 + "}")
+    rc_d, deep = run("--dry-run", config=CFG, env=ENV_C, now=NOW + dt.timedelta(minutes=1))
+    check("codex-r4 a deeply nested corrupt index (RecursionError) is ignored, never a crash",
+          rc_d == rc_n and body(deep) == body(nocache) and "Traceback" not in deep, deep[-800:])
     shutil.copy(TMP / "index.bak", index_file)
 
     # an indexed finished review whose report changes is read again (mtime/size signature)
