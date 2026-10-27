@@ -35,6 +35,27 @@ try {
   assert.notEqual(applicationTreeDigest(repo, "HEAD", ["app/**/*.php"]), applicationTreeDigest(repo, "HEAD~1", ["app/**/*.php"]), "non-ASCII file under a typed globstar");
   // Full-tree identity ignores control records even when their names are quoted.
   const fullBefore = applicationTreeDigest(repo, "HEAD");
+  {
+    // A file name containing a newline must not forge record boundaries: one file "app/a\n100644 blob <B>\tapp/b"
+    // holding A must not hash like the two files app/a (A) and app/b (B).
+    const pair = fs.mkdtempSync(path.join(os.tmpdir(), "acef-scoped-pair-"));
+    const forged = fs.mkdtempSync(path.join(os.tmpdir(), "acef-scoped-forged-"));
+    try {
+      const run = (dir, ...args) => cp.execFileSync("git", args, { cwd: dir, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
+      for (const dir of [pair, forged]) { run(dir, "init", "-q"); run(dir, "config", "user.email", "fixture@example.invalid"); run(dir, "config", "user.name", "Fixture"); fs.mkdirSync(path.join(dir, "app")); }
+      fs.writeFileSync(path.join(pair, "app", "a"), "A"); fs.writeFileSync(path.join(pair, "app", "b"), "B");
+      run(pair, "add", "app"); run(pair, "commit", "-qm", "pair");
+      const blobB = run(pair, "rev-parse", "HEAD:app/b");
+      const forgedName = path.join(forged, "app", `a\n100644 blob ${blobB}\tapp`, "b"); // tree path "app/a\n100644 blob <B>\tapp/b"
+      fs.mkdirSync(path.dirname(forgedName), { recursive: true }); fs.writeFileSync(forgedName, "A");
+      run(forged, "add", "app"); run(forged, "commit", "-qm", "forged");
+      assert.notEqual(globTreeDigest(forged, "HEAD", ["app/*"]), globTreeDigest(pair, "HEAD", ["app/*"]), "a newline in a name must not collide with two files");
+      // ASCII-only scopes keep their previous digest (plain newline framing).
+      const listing = run(pair, "ls-tree", "-r", "--full-tree", "HEAD");
+      const legacy = crypto.createHash("sha256").update(`app/*\0${listing.split("\n").join("\n")}`).digest("hex");
+      assert.equal(globTreeDigest(pair, "HEAD", ["app/*"]), legacy, "ASCII-only scope digest is unchanged");
+    } finally { fs.rmSync(pair, { recursive: true, force: true }); fs.rmSync(forged, { recursive: true, force: true }); }
+  }
   write("docs/ai/runs/Çalışma.md", "control"); git("add", "docs"); git("commit", "-qm", "non-ascii control record");
   assert.equal(applicationTreeDigest(repo, "HEAD"), fullBefore, "a non-ASCII control path is still a control path");
   assert.equal(unquotedTreePath("100644 blob abc\t\"app/\\304\\260\\305\\237lem.php\""), "app/İşlem.php");

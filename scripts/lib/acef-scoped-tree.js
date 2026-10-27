@@ -24,7 +24,19 @@ function globTreeDigest(repo, commit, scopes) {
   // unchanged for ASCII paths, so existing digests of ASCII-only scopes stay valid.
   const output = cp.execFileSync("git", ["ls-tree", "-r", "-z", "--full-tree", commit], { cwd: repo, encoding: "utf8", maxBuffer: 256 * 1024 * 1024 });
   const entries = output.split("\0").filter(Boolean).filter((line) => matchers.some((matcher) => matcher.test(line.slice(line.indexOf("\t") + 1))));
-  return crypto.createHash("sha256").update(`${scopes.join("\n")}\0${entries.join("\n")}`).digest("hex");
+  return crypto.createHash("sha256").update(scopedTreePayload(scopes, entries)).digest("hex");
+}
+
+// Newline framing is unambiguous only while no scope or path contains a newline (git paths never contain NUL), and it
+// keeps every existing digest of such scopes valid. A name with a newline could otherwise forge record boundaries
+// ("app/a\n100644 blob <B>\tapp/b" would hash like two files), so those scopes switch to a NUL-framed, versioned
+// payload. The two forms cannot collide: the framed one carries a NUL inside its first field, the plain one cannot.
+function scopedTreePayload(scopes, entries) {
+  const unsafe = (value) => /[\n\0]/.test(value);
+  if (!scopes.some(unsafe) && !entries.some((entry) => entry.slice(entry.indexOf("\t") + 1).includes("\n"))) {
+    return `${scopes.join("\n")}\0${entries.join("\n")}`;
+  }
+  return `acef.scoped-tree.v2\0${JSON.stringify(scopes)}\0${entries.map((entry) => `${Buffer.byteLength(entry)}:${entry}`).join("\0")}`;
 }
 
 // Path of one default (quoted) `git ls-tree` line, unquoted: "\"app/\\304\\260.php\"" -> "app/İ.php".
@@ -42,4 +54,4 @@ function unquotedTreePath(line) {
   }
   return Buffer.from(bytes).toString("utf8");
 }
-module.exports = { globTreeDigest, unquotedTreePath };
+module.exports = { globTreeDigest, scopedTreePayload, unquotedTreePath };

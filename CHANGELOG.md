@@ -46,7 +46,9 @@ have removed three gates its own ACEF fork carries and upstream lacked, and over
 - **Non-ASCII paths in the scoped identity** (review finding on this PR): glob scopes list files with
   `git ls-tree -z`, because git quotes non-ASCII names by default and `app/**` missed e.g. `app/İşlem.php`, so a
   change to it kept the old digest. The hashed text is unchanged for ASCII paths, so their existing digests stay
-  valid; scopes containing non-ASCII files get a new digest once. The full-tree identity filters control records on
+  valid; scopes containing non-ASCII files get a new digest once. Because `-z` output is unquoted, a scope whose
+  scopes or paths contain a newline is hashed with a NUL-framed, versioned payload instead (a name such as
+  `app/a\n100644 blob <B>\tapp/b` could otherwise hash like two files); all other digests keep the plain form. The full-tree identity filters control records on
   the unquoted path (its hashed text is unchanged).
 - Tests: `scripts/test-acef-product-review`, `scripts/test-acef-product-review-accounting`,
   `scripts/test-acef-canonical-root` (ported), `scripts/test-acef-host-file-preservation` (new; policy upgrade vs
