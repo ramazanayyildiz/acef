@@ -50,7 +50,14 @@ function productReviewFailures(repo, run, activeRun, treeDigest) {
     const reviewedAt = Date.parse(report.reviewedAt);
     if (!Number.isFinite(reviewedAt) || reviewedAt < Date.parse(reviewer.createdAt) || reviewedAt > Date.now() + 60000) throw new Error("invalid product review timestamp");
     const origin = String(report.browser?.origin || "").replace(/\/$/, "");
-    const expectedOrigin = run.productReviewOrigin || activeRun?.productReviewOrigin || hostPinnedOrigin(repo);
+    // The host policy is binding: a run or active-run origin may narrow nothing and override nothing. Any run pin that
+    // differs from the host pin is refused; without a host pin, the run pins must agree with each other.
+    const norm = (value) => String(value).replace(/\/$/, "");
+    const hostOrigin = hostPinnedOrigin(repo);
+    const runPins = [run.productReviewOrigin, activeRun?.productReviewOrigin].filter((value) => value !== undefined && value !== null && value !== "");
+    if (hostOrigin !== undefined && runPins.some((pin) => norm(pin) !== norm(hostOrigin))) throw new Error("productReviewOrigin conflicts with the host product-review policy");
+    if (hostOrigin === undefined && new Set(runPins.map(norm)).size > 1) throw new Error("run and active run productReviewOrigin disagree");
+    const expectedOrigin = hostOrigin !== undefined ? hostOrigin : runPins[0];
     if (expectedOrigin !== undefined && !LOOPBACK_ORIGIN.test(String(expectedOrigin))) throw new Error("productReviewOrigin must be a local http origin");
     if (report.browser?.status !== "VERIFIED" || !LOOPBACK_ORIGIN.test(origin)
       || (expectedOrigin !== undefined && origin !== String(expectedOrigin).replace(/\/$/, ""))) throw new Error("running local browser was not verified");
