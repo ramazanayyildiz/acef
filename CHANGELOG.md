@@ -7,7 +7,7 @@ proven, or installed.
 Update this file in the same PR whenever ACEF itself gains or changes a flow, gate, validator, hook, skill, installer behavior, workflow,
 or evidence contract. Do not use it to claim implementation status; link to the capability record for that.
 
-## Unreleased — Product language, end-user profiles and user-goal tours (2026-10-27)
+## v3.0.0-beta.7 — Product language, end-user profiles and user-goal tours (2026-10-27)
 
 Why: in two hosts, agents filled end-user screens with process and evidence text and stacked warnings ("kaynak
 dayanaklı", "teyitsiz", "UNKNOWN", disclaimers), building for the reviewer and the owner instead of the end user.
@@ -47,7 +47,7 @@ once a run pinned it. Now the host pin is binding: a run or active-run origin th
 ("conflicts with the host product-review policy"); without a host pin, a run and active-run pin that disagree are
 refused. Test: `scripts/test-acef-product-review` (fails without the fix). Owner decision 2026-10-27 (beta.5 rollout).
 
-## Unreleased — Host fork gates ported upstream; updates keep host-modified files (2026-10-27)
+## v3.0.0-beta.5 — Host fork gates ported upstream; updates keep host-modified files (2026-10-27)
 
 Owner decision 2026-10-27: roll `v3.0.0-beta.4` out to every host. One host held its update because the updater would
 have removed three gates its own ACEF fork carries and upstream lacked, and overwrote its host-local model choices.
@@ -94,7 +94,7 @@ have removed three gates its own ACEF fork carries and upstream lacked, and over
   `scripts/test-acef-canonical-root` (ported), `scripts/test-acef-host-file-preservation` (new; policy upgrade vs
   host override, fork install, stale `.cjs`), non-ASCII scope cases in `scripts/test-acef-product-review`.
 
-## Unreleased — Waste detection and weekly retro (2026-10-27)
+## v3.0.0-beta.7 — Waste detection and weekly retro (2026-10-27)
 
 Owner decision 2026-10-27 (Ram approved the first version): recurring waste — stuck agents, finished work waiting,
 idle or contended runners, review loops, forgotten sessions, improvements merged but not in effect — went unnoticed
@@ -180,7 +180,7 @@ retro with at most five proposals).
 - **`install-acef-tools`** installs `acef-detect`, `acef-retro` and `scripts/detectors/` into `.acef/bin/` (host
   detectors stay in `.acef/detectors/`); `scripts/test-install-acef-tools` runs the installed `acef-detect --list`.
 
-## Unreleased — Changelog rule and feedback-log capability record (2026-10-27)
+## v3.0.0-beta.5 — Changelog rule and feedback-log capability record (2026-10-27)
 
 Owner decision 2026-10-27: "is it written that CHANGELOG must be updated?" It was not; only this file's header said so.
 - `AGENTS.md` → **Changelog**: every PR touching method/scripts/templates/schemas/skills adds an entry here (what, date,

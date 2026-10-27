@@ -59,6 +59,27 @@ statements"), and `/acef` picks the Slice lane for attended work.
 **Planned for v0.2.** A closing-note gate before merge; a fixed REVISE reason enum in review findings; a time/token
 header line in every review report. Four low-severity v0.1.2 items (R1–R4) are open.
 
+## Feedback, monitoring and product language (2026-10-27)
+
+Added in v3.0.0-beta.4 to beta.7 on the owner's decision; details in `CHANGELOG.md`, rules in `method/`.
+
+- **Central feedback log** (`scripts/acef-note`, store `~/CODE/acef-feedback`, `method/FEEDBACK_LOOP.md`): every host
+  writes observations as one-line entries; coordinators read at most five at intake, review brief and before shared
+  infrastructure changes; `acef-note version`/`check` skip the log when nothing changed.
+- **Version check** (`scripts/acef-version-check --repo <host>`): at session start a host learns it is behind and which
+  CHANGELOG sections to read. Every framework PR adds a CHANGELOG entry (AGENTS.md "Changelog"); bundles are tagged.
+- **Updates keep host changes**: the installers replace a file only if the host never changed it, and merge the model
+  routing policy three-way.
+- **Waste detection during the day** (`scripts/acef-detect`, `scripts/detectors/`): stuck agents, waiting work, idle or
+  contended runners, review loops, forgotten sessions, inactive improvements and overrunning work raise alerts with an
+  owner and a deadline in the coordinator's 15-minute loop. A failed source read never closes an alert.
+- **Weekly retro** (`scripts/acef-retro`, `method/WEEKLY_RETRO.md`): numbers, repeats, overdue alerts and at most five
+  numbered proposals; the owner answers by number.
+- **Product language** (`method/PRODUCT_LANGUAGE.md`, `templates/slice/user-profiles.md`,
+  `templates/slice/user-goal-tour.md`): screens are for the end user; evidence stays in reports; each host defines its
+  users; user-goal tours are a pre-check, not real user testing. Pilot on one screen before rollout
+  (`docs/slice-lane/product-language-pilot.md`).
+
 ## Core idea
 
 Generic AI development frameworks are useful, but they fall short on real codebases because they don't know:
