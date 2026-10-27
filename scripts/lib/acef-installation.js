@@ -128,6 +128,7 @@ function sourceRuntimeDigest(sourceRoot) {
     ...recursiveFiles(sourceRoot, "workflows"),
     "method/control-dosing.json",
     "method/model-routing-policy-v1.json",
+    "method/model-review-floors-v1.json",
   ];
   return digestFiles(sourceRoot, paths);
 }
@@ -139,6 +140,7 @@ function installedRuntimeDigest(targetRepo) {
     ...recursiveFiles(targetRepo, ".acef/workflows"),
     ".acef/control-dosing.json",
     ".acef/model-routing-policy.json",
+    ".acef/model-review-floors.json",
   ];
   return digestFiles(targetRepo, paths);
 }
@@ -349,7 +351,10 @@ function createOwnedFileWriter(targetRepo, sourceRoot, componentName) {
         return "unchanged";
       }
       const base = baseline(rel, opts);
-      if (base.hash !== current) {
+      if (opts.acefOwned && base.hash !== current) {
+        // ACEF-owned content (for example the review floors) is never kept as a host copy.
+        console.log(`reset host-modified ACEF-owned ${rel}`);
+      } else if (base.hash !== current) {
         kept.push({ path: rel, reason: base.hash ? "host-modified" : base.reason });
         // Record only a hash ACEF really installed, so the next update still sees the host edit.
         if (base.hash) files[rel] = base.hash;

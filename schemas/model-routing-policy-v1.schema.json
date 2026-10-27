@@ -38,10 +38,27 @@
             "additionalProperties": false,
             "required": ["orchestration", "semantic-standard", "semantic-critical"],
             "properties": {
-              "orchestration": { "type": "string", "minLength": 1 },
-              "semantic-standard": { "type": "string", "minLength": 1 },
-              "semantic-critical": { "type": "string", "minLength": 1 }
+              "orchestration": { "type": "string", "minLength": 1, "pattern": "^[A-Za-z0-9._:/-]+$" },
+              "semantic-standard": { "type": "string", "minLength": 1, "pattern": "^[A-Za-z0-9._:/-]+$" },
+              "semantic-critical": { "type": "string", "minLength": 1, "pattern": "^[A-Za-z0-9._:/-]+$" }
             }
+          },
+          "roleModels": {
+            "description": "Optional per-role model over the class mapping. Keys are role ids from roles; null uses the class mapping. The reasoning tier still comes from the role.",
+            "type": "object",
+            "propertyNames": { "pattern": "^[a-z0-9-]+$" },
+            "additionalProperties": {
+              "anyOf": [
+                { "type": "string", "minLength": 1, "pattern": "^[A-Za-z0-9._:/-]+$" },
+                { "type": "null" }
+              ]
+            }
+          },
+          "roleModelExemptions": {
+            "description": "Host owner exemption per review role: a reason that allows that role's policy model below its floor.",
+            "type": "object",
+            "propertyNames": { "enum": ["code-review", "patch-assurance", "process-judge", "epic-process-judge"] },
+            "additionalProperties": { "type": "string", "minLength": 1 }
           },
           "reasoning": {
             "type": "object",

@@ -10,6 +10,7 @@ const {
   writeInstallationManifest,
 } = require("./lib/acef-installation");
 const { validateModelRoutingPolicy } = require("./lib/acef-model-routing");
+const { assertRoutingPreflight, stripMovedFloorKeys } = require("./lib/acef-routing-preflight");
 
 const repoRoot = path.resolve(__dirname, "..");
 const tools = [
@@ -125,11 +126,25 @@ function mergeModelRoutingPolicy(targetRepo) {
   if (!fs.existsSync(source)) return "";
   const target = rel(".acef", "model-routing-policy.json");
   const baseline = installedSourceBaseline(targetRepo, repoRoot, "tools", rel("method", "model-routing-policy-v1.json"));
+  // modelRank/reviewModelFloors (and acefReviewFloors) moved to the ACEF-owned floors file; drop them from the host copy.
+  const hostPath = path.join(targetRepo, target);
+  if (fs.existsSync(hostPath)) {
+    let host = null;
+    try { host = JSON.parse(fs.readFileSync(hostPath, "utf8")); } catch {}
+    const moved = host ? stripMovedFloorKeys(host) : [];
+    if (moved.length) {
+      fs.writeFileSync(hostPath, `${JSON.stringify(host, null, 2)}\n`);
+      console.log(`moved to .acef/model-review-floors.json (removed from ${target}): ${moved.join(", ")}`);
+    }
+  }
+  if (baseline) stripMovedFloorKeys(baseline);
   mergeHostJson(targetRepo, target, fs.readFileSync(source), validateModelRoutingPolicy, baseline);
   return target;
 }
 
 const opts = parseArgs(process.argv.slice(2));
+// Review floors are checked before anything is written: a rejected install leaves the host byte-identical.
+assertRoutingPreflight(repoRoot, opts.repo);
 const writer = createOwnedFileWriter(opts.repo, repoRoot, "tools");
 console.log(`Installed ACEF runtime package boundary: ${writeRuntimePackage(writer)}`);
 for (const tool of tools) {
@@ -148,6 +163,11 @@ for (const schema of copyDirectoryFiles("schemas", rel(".acef", "schemas"), writ
 const controlDosing = copySingle(rel("method", "control-dosing.json"), rel(".acef", "control-dosing.json"), writer);
 if (controlDosing) {
   console.log(`Installed control dosing manifest: ${controlDosing}`);
+}
+const reviewFloorsSource = path.join(repoRoot, "method", "model-review-floors-v1.json");
+if (fs.existsSync(reviewFloorsSource)) {
+  writer.write(rel(".acef", "model-review-floors.json"), fs.readFileSync(reviewFloorsSource), { sourceRel: rel("method", "model-review-floors-v1.json"), acefOwned: true });
+  console.log(`Installed ACEF-owned review floors: ${rel(".acef", "model-review-floors.json")}`);
 }
 const modelRoutingPolicy = mergeModelRoutingPolicy(opts.repo);
 if (modelRoutingPolicy) {

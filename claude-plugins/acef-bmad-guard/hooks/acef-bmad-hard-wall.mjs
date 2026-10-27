@@ -72,7 +72,15 @@ function loadModelRouting(repoRoot) {
   if (!libraryPath) throw new Error("ACEF model routing library is not installed");
   const library = require(libraryPath);
   const policy = library.loadModelRoutingPolicy(repoRoot).record;
-  return { policy, resolveActorRuntime: library.resolveActorRuntime };
+  const selectionPath = path.join(path.dirname(libraryPath), "acef-routing-selection.js");
+  if (!exists(selectionPath)) throw new Error(`ACEF routing compatibility gate ${selectionPath} is not installed; run update-acef-installation`);
+  const { routingSelectionFor } = require(selectionPath);
+  return {
+    policy,
+    resolveActorRuntime: library.resolveActorRuntime,
+    routingSelectionFor,
+    modelIdSource: library.MODEL_ID_SOURCE || "[A-Za-z0-9._-]+",
+  };
 }
 
 function readActiveRunRecord(repoRoot) {
@@ -429,14 +437,16 @@ function structuredSpawnTool(toolName) {
   return /(?:^|\.)(?:Task|Agent|spawn_agent)$/i.test(toolName || "");
 }
 
-function spawnRuntime(toolName, input, command) {
+// Shell dispatches carry the model as a flag; the id grammar comes from the routing library (MODEL_ID_SOURCE) so a
+// model the policy accepts can be read back here. The narrow fallback only serves an older library.
+function spawnRuntime(toolName, input, command, modelIdSource = "[A-Za-z0-9._-]+") {
   if (structuredSpawnTool(toolName)) {
     return {
       model: String(input?.model || "").trim(),
       effort: String(input?.reasoning_effort || input?.reasoningEffort || input?.effort || input?.thinking || "").trim(),
     };
   }
-  const model = String(command || "").match(/(?:^|\s)(?:--model|-m)\s+([A-Za-z0-9._-]+)|(?:^|\s)model=([A-Za-z0-9._-]+)/i);
+  const model = String(command || "").match(new RegExp(`(?:^|\\s)(?:--model|-m)\\s+(${modelIdSource})|(?:^|\\s)model=(${modelIdSource})`, "i"));
   const effort = String(command || "").match(/(?:^|\s)--(?:reasoning-effort|effort)\s+([A-Za-z0-9._-]+)|(?:^|\s)(?:reasoning_effort|effort)=([A-Za-z0-9._-]+)/i);
   return {
     model: String(model?.[1] || model?.[2] || "").trim(),
@@ -450,9 +460,11 @@ function admittedModelRoutingRestricted(repoRoot, payload, toolName, input, comm
   const activeRun = readActiveRunRecord(repoRoot);
   if (!activeRun || activeRun.status !== "active" || activeRun.modelRoutingContract !== "admitted-role-routing-v1") return "";
   try {
-    const { policy, resolveActorRuntime } = loadModelRouting(repoRoot);
-    const expected = resolveActorRuntime(policy, activeRun.workerRole || "", activeRun.activePhase || "", activeRun.routingProvider || null);
-    const actual = spawnRuntime(toolName, input, command);
+    const { policy, resolveActorRuntime, routingSelectionFor, modelIdSource } = loadModelRouting(repoRoot);
+    // The library resolves the per-role model (run override, policy roleModels, class) and enforces review floors;
+    // the compatibility gate throws instead of dropping per-role routing when the installed library is older.
+    const expected = resolveActorRuntime(policy, activeRun.workerRole || "", activeRun.activePhase || "", routingSelectionFor(policy, activeRun));
+    const actual = spawnRuntime(toolName, input, command, modelIdSource);
     if (actual.model !== expected.model || actual.effort !== expected.reasoningEffort) {
       return `ACEF model routing: ${activeRun.workflowId} ${expected.role} dispatch must set model=${expected.model} and reasoning_effort=${expected.reasoningEffort}; received model=${actual.model || "inherited/unspecified"} reasoning_effort=${actual.effort || "inherited/unspecified"}.`;
     }

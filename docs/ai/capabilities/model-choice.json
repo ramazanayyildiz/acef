@@ -35,21 +35,27 @@
       "scripts/test-install-acef-tools",
       "scripts/test-acef-install-profiles",
       "scripts/slice/selfcheck.sh",
-      "scripts/slice/tests/test-selfcheck.sh"
+      "scripts/slice/tests/test-selfcheck.sh",
+      "scripts/test-acef-host-file-preservation"
     ]
   },
   "limitations": [
     "Wired, not enforced: nothing stops an ordinary Claude Code subagent or Codex run from using a higher class or effort than the table gives. Only actors admitted through ACEF routing (Full roles, Fix/Standard dispatches under admitted-role-routing-v1) are checked by the hard-wall hook, and they follow the routing policy, not the table.",
     "Claude Code subagent effort comes from the agent definition frontmatter; ACEF ships no agent definitions per class, so the Claude effort levels apply only where a host defines them.",
     "The gpt-6.1-sol mapping is carried over from the V327-CAL-001 calibration of gpt-5.6-sol without recalibration.",
-    "The routing policy has three execution classes and its anthropic mapping is Sonnet for every class (owner decision 2026-10-27). Development cannot run on Sonnet with an Opus review inside the policy: Patch Assurance and both Judges share semantic-critical with Development. A host that wants Opus review dispatches it through its own process.",
+    "Admitted roles on anthropic follow per-role models: development, ATDD, the Conductor and Code Review resolve to Sonnet through their class; Patch Assurance and both Judges resolve to Opus through roleModels (owner decision 2026-10-27; cost note: review roles only). A host changes a role in its policy copy or per run with acef-state active-run --routing-role-model; review roles never go below the ACEF-owned floors (method/model-review-floors-v1.json) without a recorded owner exemption.",
     "Effect not measured: no host has recorded model and effort per report yet, so the weekly retro has no effort comparison."
   ],
   "evidence": [
     {
       "layer": "tests",
       "ref": "scripts/test-acef-model-routing",
-      "note": "2026-10-27: openai roles resolve to gpt-6.1-sol; every anthropic role resolves to claude-sonnet-5-5; policy note names MODEL_CHOICE.md."
+      "note": "2026-10-27: openai roles resolve to gpt-6.1-sol; every anthropic class maps to claude-sonnet-5-5 (per-role Opus defaults: see the roleModels entry below); policy note names MODEL_CHOICE.md."
+    },
+    {
+      "layer": "tests",
+      "ref": "scripts/test-acef-model-routing",
+      "note": "2026-10-27 roleModels: anthropic development, atdd, conductor and code-review resolve to claude-sonnet-5-5 (class); patch-assurance, process-judge and epic-process-judge resolve to claude-opus-5-5 (roleModels); openai stays gpt-6.1-sol for every role."
     }
   ],
   "createdAt": "2026-10-27"

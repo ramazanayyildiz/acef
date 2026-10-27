@@ -1,7 +1,7 @@
 {
   "schema": "acef.model-routing-policy.v1",
-  "policyId": "model-choice-2026-10-27",
-  "note": "Binds every actor admitted through ACEF routing (Full capsule-supervisor roles and Fix/Standard dispatches under admitted-role-routing-v1); here the policy wins over method/MODEL_CHOICE.md. Free choices (ordinary Claude Code subagents, Codex runs and tours that ACEF routing does not admit) follow method/MODEL_CHOICE.md. Mechanical, light and browser-tour work has no role here.",
+  "policyId": "role-models-2026-10-27",
+  "note": "Binds every actor admitted through ACEF routing (Full capsule-supervisor roles and Fix/Standard dispatches under admitted-role-routing-v1); here the policy wins over method/MODEL_CHOICE.md. Free choices (ordinary Claude Code subagents, Codex runs and tours that ACEF routing does not admit) follow method/MODEL_CHOICE.md. Mechanical, light and browser-tour work has no role here. A provider may name a model per role (roleModels) over its class mapping; see method/MODEL_CHOICE.md.",
   "activeProvider": "openai",
   "roles": {
     "conductor": {
@@ -61,13 +61,18 @@
         "xhigh": "xhigh",
         "max": "max"
       },
-      "note": "Codex keeps one model (sol) and varies reasoning effort by role; gpt-6.1-terra is for browser tours only and has no role here (method/MODEL_CHOICE.md). The 6.1 remap is not recalibrated."
+      "note": "Codex keeps one model (sol) and varies reasoning effort by role; gpt-6.1-terra is for browser tours only and has no role here (method/MODEL_CHOICE.md). The 6.1 remap is not recalibrated. Review roles never go below the ACEF review floors (method/model-review-floors-v1.json) without an owner exemption."
     },
     "anthropic": {
       "models": {
         "orchestration": "claude-sonnet-5-5",
         "semantic-standard": "claude-sonnet-5-5",
         "semantic-critical": "claude-sonnet-5-5"
+      },
+      "roleModels": {
+        "patch-assurance": "claude-opus-5-5",
+        "process-judge": "claude-opus-5-5",
+        "epic-process-judge": "claude-opus-5-5"
       },
       "reasoning": {
         "low": "low",
@@ -76,7 +81,7 @@
         "xhigh": "high",
         "max": "max"
       },
-      "note": "Sonnet for every class (owner decision 2026-10-27, option A: no silent cost increase for hosts that run admitted roles on anthropic). Three classes cannot put development on Sonnet and review on Opus: Code Review is semantic-standard, while Patch Assurance and both Judges share semantic-critical with Development, so overriding semantic-critical to Opus moves Development too. A host that wants Opus review records it outside this file, through its own process or dispatch. Effort is a recorded claim; the launcher must open the session at that effort. Select with active-run --routing-provider anthropic or a repo override activeProvider."
+      "note": "Sonnet for every class (owner decision 2026-10-27, option A: no silent cost increase for development). roleModels then puts Patch Assurance, the Process Judge and the Epic Process Judge on Opus (owner decision 2026-10-27, cost note: review roles only); Development, ATDD, the Conductor and Code Review stay Sonnet through their class. Resolution: run override per role, then policy roleModels, then models[executionClass]; effort always comes from the role's reasoningTier. Review roles never go below the ACEF review floors (method/model-review-floors-v1.json, installed as .acef/model-review-floors.json, ACEF-owned and loaded apart from any host policy) or, for a run override, below the policy's model; strength comes only from that file's modelRank (weakest first), and a review-role model missing from it is rejected. A lower or null review-role model needs roleModelExemptions.<role> (host policy) or active-run --routing-role-model-exemption \"<role>: <reason>\" (run). Development, ATDD and the Conductor are freely overridable. Effort is a recorded claim; the launcher must open the session at that effort. Select with active-run --routing-provider anthropic or a repo override activeProvider."
     }
   }
 }

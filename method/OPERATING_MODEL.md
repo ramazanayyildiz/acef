@@ -360,7 +360,10 @@ reasoning effort for the current role. New Fix and Standard runs bind `admitted-
 before spawn when either field is missing or differs, and actor registration checks the same binding. Existing
 in-flight runs retain their original contract. Native work remains outside ACEF model routing. The policy maps each
 abstract tier per provider; the default provider is the policy's `activeProvider`, and a run may select another mapped
-provider with `acef-state active-run --routing-provider <id>` (recorded as `routingProvider`). The reasoning effort is a
+provider with `acef-state active-run --routing-provider <id>` (recorded as `routingProvider`). A provider may name a
+model for one role (`roleModels`), and a run may override one role with `--routing-role-model <role>=<model>`
+(recorded as `routingRoleModels`); one shared resolver applies run override, then `roleModels`, then the class
+mapping, and effort always follows the role. The reasoning effort is a
 recorded claim, not an enforcement: the launcher must open the actor session at that effort.
 Slice lane exception: Slice lane work is outside this policy; its reviewer model comes from `REVIEW_MODEL` / `slice-method.json` via
 `scripts/slice/codex-review.sh`.

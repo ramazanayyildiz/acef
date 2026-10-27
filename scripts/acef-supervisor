@@ -16,6 +16,7 @@ const {
   parseWorkerScope,
 } = require("./lib/acef-state-parser");
 const { loadModelRoutingPolicy, resolveRoleRuntime } = require("./lib/acef-model-routing");
+const { routingSelectionFor } = require("./lib/acef-routing-selection");
 const { validateDurableStoryClosePackage } = require("./lib/acef-story-close");
 const { installationFreshnessFailures } = require("./lib/acef-installation");
 const { objectiveFailures } = require("./lib/acef-objective-supervisor");
@@ -211,14 +212,14 @@ function build(repo) {
     throw new Error("supervisor requires an active full-bmad/four-actor-v3/capsule-supervisor run");
   }
   const routingPolicy = loadModelRoutingPolicy(repo);
-  const provider = run.routingProvider || null;
+  const selection = routingSelectionFor(routingPolicy.record, run);
   const runtime = {
-    atdd: resolveRoleRuntime(routingPolicy.record, "atdd", provider),
-    development: resolveRoleRuntime(routingPolicy.record, "development", provider),
-    "code-review": resolveRoleRuntime(routingPolicy.record, "code-review", provider),
-    "patch-assurance": resolveRoleRuntime(routingPolicy.record, "patch-assurance", provider),
-    "story-judge": resolveRoleRuntime(routingPolicy.record, "process-judge", provider),
-    "epic-judge": resolveRoleRuntime(routingPolicy.record, "epic-process-judge", provider),
+    atdd: resolveRoleRuntime(routingPolicy.record, "atdd", selection),
+    development: resolveRoleRuntime(routingPolicy.record, "development", selection),
+    "code-review": resolveRoleRuntime(routingPolicy.record, "code-review", selection),
+    "patch-assurance": resolveRoleRuntime(routingPolicy.record, "patch-assurance", selection),
+    "story-judge": resolveRoleRuntime(routingPolicy.record, "process-judge", selection),
+    "epic-judge": resolveRoleRuntime(routingPolicy.record, "epic-process-judge", selection),
   };
   const story = run.activeStory;
   const storyKey = token(story);

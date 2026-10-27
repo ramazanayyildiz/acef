@@ -11,13 +11,55 @@ wins and the hard-wall rejects any other model or effort; for example a Standard
 though this table would say medium. The table and the effort rules below govern the free choices: ordinary Claude
 Code subagents, Codex runs and tours that ACEF routing does not admit.
 
-**Why the policy and the table differ on Claude.** For free choices the table puts critical work on Opus. The policy's
-anthropic mapping keeps every class on Sonnet (owner decision 2026-10-27), so hosts that run admitted roles on
-anthropic see no silent cost increase. This is not a contradiction: the two govern different actors. The policy has
-only three classes and cannot put development on Sonnet and review on Opus: Code Review is `semantic-standard`, while
-Patch Assurance and both Judges share `semantic-critical` with Development. Overriding `semantic-critical` to Opus
-therefore moves Development to Opus too. A host that wants an Opus review of admitted work records and dispatches it
-outside the policy file, through its own process.
+**Admitted roles on Claude: per-role models.** Each policy role has an execution class, and each provider maps the
+classes to models. A provider can also name a model for one role (`providers.<id>.roleModels`), which wins over its
+class. The model is resolved in this order, by one shared function (`resolveRoleRuntime` in
+`scripts/lib/acef-model-routing.js`) that the launcher, hard-wall, validator and `acef-state` all use:
+
+1. the run's host override for that role: `acef-state active-run --routing-role-model <role>=<model>`, recorded as
+   `routingRoleModels` on the active run (`<role>=` clears it);
+2. the policy's `roleModels` for that role (a `null` value skips to step 3);
+3. the policy's class mapping, `models[executionClass]`.
+
+Effort always comes from the role's `reasoningTier`, whichever step picked the model. Default anthropic routing
+(owner decision 2026-10-27):
+
+| Role | Claude model | Source |
+|---|---|---|
+| conductor, atdd, development | `claude-sonnet-5-5` | class |
+| code-review | `claude-sonnet-5-5` | class |
+| patch-assurance, process-judge, epic-process-judge | `claude-opus-5-5` | `roleModels` |
+
+Development stays on Sonnet unless a host overrides it. This matches the table below: critical development may stay
+on Sonnet when an Opus review follows, and Patch Assurance and the Judges are that review.
+Cost note: review roles only. Hosts that run admitted roles on anthropic see Patch Assurance and both Judges move from
+Sonnet to Opus after `update-acef-installation`; no other role changes. OpenAI/Codex is unchanged: `gpt-6.1-sol` for
+every role, effort by the role tier, and no `roleModels` by default.
+
+**No downgrade of review roles** (owner decision 2026-10-27). For `code-review`, `patch-assurance`, `process-judge`
+and `epic-process-judge` the model never goes below the ACEF floor. Floors and model strength come only from the
+ACEF-owned `method/model-review-floors-v1.json` (installed as `.acef/model-review-floors.json`, reset on every update,
+loaded apart from any host policy). Its `modelRank` lists models weakest first: anthropic `claude-sonnet-5-5` <
+`claude-opus-5-5`; openai `gpt-6.1-sol` < `gpt-6-astra` (ranking Astra does not choose it: Astra is still used only
+when Ram names it); `gpt-6.1-terra` is unranked. A review-role model missing from `modelRank` is rejected.
+- Host policy, whichever file wins (`docs/ai/ACEF_MODEL_ROUTING_POLICY.json` or `.acef/model-routing-policy.json`): each
+  review role at or above its floor, or the provider lists `roleModelExemptions.<role>` with a reason. A host can add
+  exemptions; it cannot remove or lower floors. Checked when a role resolves, and by `update-acef-installation` before
+  it writes anything: a violation stops the update, leaves the host unchanged and prints the exemption line to add.
+- Run override: at or above the policy's model, or the run records
+  `--routing-role-model-exemption "<role>: <reason>"` (stored as `routingRoleModelExemptions`, shown by `acef-next`;
+  `"<role>:"` clears it). `acef-state` refuses the write; the hard-wall and the validator refuse the dispatch.
+- `development`, `atdd` and `conductor` stay freely overridable, also with unranked models.
+
+A host changes a role permanently in its `.acef/model-routing-policy.json` (for example
+`"roleModels": { "development": "claude-opus-5-5" }`), or for one run with `--routing-role-model`. Role keys must be
+canonical policy roles (`code-review`, not `reviewer`); an unknown key fails validation, also when it is already
+stored on an active run. Model ids share one grammar (`MODEL_ID_SOURCE`: letters, digits, `.`, `_`, `-`, `:`, `/`),
+which the hard-wall also uses to read `--model` from shell dispatches. `update-acef-installation` merges the policy
+three-way, so a host's own per-role values and exemptions survive updates, and new ACEF per-role defaults the host
+never named are added. Consumers reach the routing library through `scripts/lib/acef-routing-selection.js`: if a host
+kept an older library that cannot honor per-role routing in play, they fail with an error naming the library, never
+fall back silently.
 
 ## Which model
 
@@ -82,9 +124,9 @@ defaults are corrected from data.
 
 A project's recorded decision (HANDOFF, AGENTS.md, agent memory) wins over this table for free choices. Example of a
 valid override: B2Press runs Claude developer subagents on Sonnet and reviews on Opus, including for critical slices;
-the Opus review is the critical-class step there, and B2Press dispatches it through its own process, not through the
-routing policy. For admitted roles a host can change models in its `.acef/model-routing-policy.json` (kept across ACEF
-updates), within the three-class limit described above.
+the Opus review is the critical-class step there. For admitted roles the default anthropic routing now expresses the
+same split (see per-role models above), and a host changes any single role in its `.acef/model-routing-policy.json`
+`roleModels` (kept across ACEF updates) or per run with `--routing-role-model`.
 
 ## Waiting
 

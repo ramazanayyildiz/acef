@@ -1,0 +1,30 @@
+{
+  "schema": "acef.model-review-floors.v1",
+  "note": "ACEF-owned (owner decision 2026-10-27, Ram): review roles never run below these floors without an owner exemption. update-acef-installation installs this file as .acef/model-review-floors.json and resets host edits; a host adds exemptions only, in providers.<id>.roleModelExemptions of its routing policy. modelRank lists models weakest first and is the only source of model strength; ranking a model does not choose it (gpt-6-astra is still used only when Ram names it; gpt-6.1-terra is a browser-tour model and stays unranked).",
+  "providers": {
+    "openai": {
+      "modelRank": [
+        "gpt-6.1-sol",
+        "gpt-6-astra"
+      ],
+      "reviewModelFloors": {
+        "code-review": "gpt-6.1-sol",
+        "patch-assurance": "gpt-6.1-sol",
+        "process-judge": "gpt-6.1-sol",
+        "epic-process-judge": "gpt-6.1-sol"
+      }
+    },
+    "anthropic": {
+      "modelRank": [
+        "claude-sonnet-5-5",
+        "claude-opus-5-5"
+      ],
+      "reviewModelFloors": {
+        "code-review": "claude-sonnet-5-5",
+        "patch-assurance": "claude-opus-5-5",
+        "process-judge": "claude-opus-5-5",
+        "epic-process-judge": "claude-opus-5-5"
+      }
+    }
+  }
+}
