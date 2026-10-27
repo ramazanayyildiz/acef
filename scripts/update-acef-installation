@@ -4,7 +4,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const {
   chooseUpdateProfile,
-  dropInstallationComponent,
+  persistProfileChoice,
   readCommittedManifest,
   readInstallationManifest,
   rewriteInstallationUpdateCommand,
@@ -126,7 +126,7 @@ function updateTarget(sourceRoot, targetRepo, opts) {
   const choice = chooseUpdateProfile(record, opts.profile, targetRepo);
   const profile = choice.profile;
   if (choice.warning) console.log(choice.warning);
-  if (choice.dropBmadGuard) dropInstallationComponent(targetRepo, "bmadGuard");
+  if (choice.dropBmadGuard) persistProfileChoice(targetRepo, profile, ["bmadGuard"]);
   const recorded = record.components?.skills || {};
   if (profile !== "slice") run(sourceRoot, "install-acef-tools", ["--repo", targetRepo], env);
   const skillArgs = ["--repo", targetRepo, "--profile", profile];

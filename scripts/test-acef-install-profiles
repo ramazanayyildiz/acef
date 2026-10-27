@@ -113,12 +113,14 @@ function legacyGuardedRepo() {
 {
   const repo = legacyGuardedRepo();
   for (const rel of GUARD.slice(0, 2)) fs.rmSync(path.join(repo, rel));
+  // the host replaced its pre-commit hook (no gate call); the update must leave it byte-for-byte alone
   const precommit = path.join(repo, ".git/hooks/pre-commit");
-  fs.rmSync(precommit, { force: true });
+  const hostHook = "#!/bin/sh\necho host hook\n";
+  fs.writeFileSync(precommit, hostHook, { mode: 0o755 });
   const out = run("update-acef-installation", ["--repo", repo]);
   assert.ok(out.includes(WARNING), `update must warn when it picks core:\n${out}`);
   for (const rel of GUARD.slice(0, 2)) assert.ok(!exists(repo, rel), `update must not reinstall removed ${rel}`);
-  assert.ok(!fs.existsSync(precommit), "update must not recreate the pre-commit gate call");
+  assert.equal(fs.readFileSync(precommit, "utf8"), hostHook, "update must keep the host pre-commit hook untouched");
   assert.ok(exists(repo, ".acef/bin"), "core keeps the runtime tools");
   const r = record(repo);
   assert.equal(r.profile, "core");
@@ -163,6 +165,62 @@ function legacyGuardedRepo() {
   fs.writeFileSync(path.join(other, "docs/ai/ACEF_INSTALLATION.json"), `${JSON.stringify(withCore, null, 2)}\n`);
   run("update-acef-installation", ["--repo", other]);
   assert.equal(record(other).profile, "core");
+}
+
+// 11. an installer that fails after the choice leaves profile core recorded; the retry stays core and adds no guard
+{
+  const repo = legacyGuardedRepo();
+  for (const rel of GUARD) fs.rmSync(path.join(repo, rel));
+  // make install-acef-tools fail: a file where its .acef/bin directory goes
+  fs.rmSync(path.join(repo, ".acef/bin"), { recursive: true, force: true });
+  fs.writeFileSync(path.join(repo, ".acef/bin"), "blocker\n");
+  assert.throws(() => run("update-acef-installation", ["--repo", repo]), "fixture must make the tools installer fail");
+  const mid = record(repo);
+  assert.equal(mid.profile, "core", "the choice must be recorded before any installer runs");
+  assert.ok(!("bmadGuard" in mid.components), "the guard must leave the record in the same write");
+  fs.rmSync(path.join(repo, ".acef/bin"));
+  const retry = run("update-acef-installation", ["--repo", repo]);
+  assert.ok(!retry.includes(WARNING), "the retry reads the recorded core profile");
+  for (const rel of GUARD) assert.ok(!exists(repo, rel), `retry must not reinstall ${rel}`);
+  assert.equal(record(repo).profile, "core");
+  assert.ok(exists(repo, ".acef/bin/update-acef-installation.cjs"), "retry completes the core install");
+}
+
+// 12. bmadGuard is detected by presence, not truthiness: null, false and {} still name a guard the host removed
+for (const shape of [null, false, {}]) {
+  const repo = legacyGuardedRepo();
+  const r = record(repo);
+  r.components.bmadGuard = shape;
+  fs.writeFileSync(path.join(repo, "docs/ai/ACEF_INSTALLATION.json"), `${JSON.stringify(r, null, 2)}\n`);
+  for (const rel of GUARD) fs.rmSync(path.join(repo, rel));
+  const out = run("update-acef-installation", ["--repo", repo]);
+  assert.ok(out.includes(WARNING), `bmadGuard=${JSON.stringify(shape)} must warn`);
+  for (const rel of GUARD) assert.ok(!exists(repo, rel), `bmadGuard=${JSON.stringify(shape)} must not reinstall ${rel}`);
+  assert.equal(record(repo).profile, "core");
+  assert.ok(!("bmadGuard" in record(repo).components));
+}
+
+// 13. --all-worktrees decides per worktree: recorded full stays full, a profile-less worktree without the guard goes core
+{
+  const repo = legacyGuardedRepo();
+  const git = (cwd, args) => cp.execFileSync("git", ["-C", cwd, "-c", "user.email=t@t", "-c", "user.name=t", ...args], { stdio: "ignore" });
+  git(repo, ["add", "-A"]);
+  git(repo, ["commit", "-qm", "fixture"]);
+  const wtParent = fs.mkdtempSync(path.join(os.tmpdir(), "acef-profiles-wt-"));
+  tempDirs.push(wtParent);
+  const wt = path.join(wtParent, "wt");
+  git(repo, ["worktree", "add", "-q", "-b", "wt", wt]);
+  const main = record(repo);
+  main.profile = "full";
+  fs.writeFileSync(path.join(repo, "docs/ai/ACEF_INSTALLATION.json"), `${JSON.stringify(main, null, 2)}\n`);
+  for (const rel of GUARD) fs.rmSync(path.join(wt, rel));
+  const out = run("update-acef-installation", ["--repo", repo, "--all-worktrees"]);
+  assert.equal((out.match(/no recorded profile; BMAD guard files are absent/g) || []).length, 1, "only the profile-less worktree warns");
+  for (const rel of GUARD) assert.ok(exists(repo, rel), `recorded full worktree keeps ${rel}`);
+  for (const rel of GUARD) assert.ok(!exists(wt, rel), `profile-less worktree must not get ${rel}`);
+  assert.equal(record(repo).profile, "full");
+  assert.equal(record(wt).profile, "core");
+  assert.ok(!("bmadGuard" in record(wt).components));
 }
 
 console.log("test-acef-install-profiles: OK");

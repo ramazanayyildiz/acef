@@ -243,7 +243,10 @@ const BMAD_GUARD_FILES = [
 function chooseUpdateProfile(record, explicitProfile, targetRepo, exists = null) {
   if (explicitProfile) return { profile: explicitProfile, reason: "explicit", dropBmadGuard: false };
   if (record?.profile) return { profile: record.profile, reason: "recorded", dropBmadGuard: false };
-  if (!record?.components?.bmadGuard) return { profile: "full", reason: "legacy", dropBmadGuard: false };
+  // Presence, not truthiness: a record carrying "bmadGuard": null, false or {} still names the guard.
+  const components = record?.components;
+  const listsGuard = components !== null && typeof components === "object" && Object.prototype.hasOwnProperty.call(components, "bmadGuard");
+  if (!listsGuard) return { profile: "full", reason: "legacy", dropBmadGuard: false };
   const has = exists || ((rel) => fs.existsSync(path.join(targetRepo, rel)));
   const missing = BMAD_GUARD_FILES.filter((rel) => !has(rel));
   if (missing.length) {
@@ -258,10 +261,15 @@ function chooseUpdateProfile(record, explicitProfile, targetRepo, exists = null)
   return { profile: "full", reason: "guard-present", dropBmadGuard: false };
 }
 
-function dropInstallationComponent(targetRepo, componentName) {
+// One write, before any installer runs: the chosen profile and the dropped component land together, so an installer that
+// fails or is interrupted leaves a record that a retry reads as the same choice (never "no profile, no guard" -> full).
+function persistProfileChoice(targetRepo, profile, dropComponents = []) {
   const record = readCommittedManifest(targetRepo);
-  if (!record?.components || !(componentName in record.components)) return false;
-  delete record.components[componentName];
+  if (!record) return false;
+  record.profile = profile;
+  if (record.components && typeof record.components === "object") {
+    for (const name of dropComponents) delete record.components[name];
+  }
   fs.writeFileSync(manifestPath(targetRepo), `${JSON.stringify(record, null, 2)}\n`);
   return true;
 }
@@ -506,7 +514,7 @@ module.exports = {
   BMAD_GUARD_FILES,
   chooseUpdateProfile,
   createOwnedFileWriter,
-  dropInstallationComponent,
+  persistProfileChoice,
   installedSourceBaseline,
   mergeHostConfig,
   mergeHostJson,
