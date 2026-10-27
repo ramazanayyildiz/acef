@@ -7,6 +7,14 @@ proven, or installed.
 Update this file in the same PR whenever ACEF itself gains or changes a flow, gate, validator, hook, skill, installer behavior, workflow,
 or evidence contract. Do not use it to claim implementation status; link to the capability record for that.
 
+## v3.0.0-beta.6 — Host product-review origin is binding (2026-10-27)
+
+Found by the first host's Codex host-safety review of its beta.5 update: `run.productReviewOrigin` (or the active run's)
+overrode the host-owned `.acef/product-review-policy.json` `browserOrigin`, so a report from another local port passed
+once a run pinned it. Now the host pin is binding: a run or active-run origin that differs from it is refused
+("conflicts with the host product-review policy"); without a host pin, a run and active-run pin that disagree are
+refused. Test: `scripts/test-acef-product-review` (fails without the fix). Owner decision 2026-10-27 (beta.5 rollout).
+
 ## Unreleased — Host fork gates ported upstream; updates keep host-modified files (2026-10-27)
 
 Owner decision 2026-10-27: roll `v3.0.0-beta.4` out to every host. One host held its update because the updater would

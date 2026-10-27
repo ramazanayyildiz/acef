@@ -96,7 +96,10 @@ try {
   report.browser.origin = "http://localhost:5173/"; assert.deepEqual(failures(), [], "any loopback origin passes when none is pinned"); report.browser.origin = "http://127.0.0.1:4173";
   run.productReviewOrigin = "http://127.0.0.1:9999"; assert.match(failures().join(), /browser/, "run pin must match exactly"); run.productReviewOrigin = "http://127.0.0.1:4173"; assert.deepEqual(failures(), []); delete run.productReviewOrigin;
   write(".acef/product-review-policy.json", { browserOrigin: "http://127.0.0.1:9999" }); assert.match(failures().join(), /browser/, "host policy pin must match exactly");
-  write(".acef/product-review-policy.json", { browserOrigin: "http://127.0.0.1:4173" }); assert.deepEqual(failures(), []); fs.rmSync(path.join(repo, ".acef"), { recursive: true });
+  write(".acef/product-review-policy.json", { browserOrigin: "http://127.0.0.1:4173" }); assert.deepEqual(failures(), []);
+  run.productReviewOrigin = "http://127.0.0.1:9999"; assert.match(failures().join(), /conflicts with the host/, "a run origin must not override the host policy");
+  run.productReviewOrigin = "http://127.0.0.1:4173/"; assert.deepEqual(failures(), [], "a run origin equal to the host policy is accepted"); delete run.productReviewOrigin;
+  fs.rmSync(path.join(repo, ".acef"), { recursive: true });
   report.sessionId = "dev-session"; assert.match(failures().join(), /session/); report.sessionId = "review-session";
   report.reviewerActorId = "dev"; assert.match(failures().join(), /independent/); report.reviewerActorId = "reviewer";
   report.checks.validation.status = "UNVERIFIED"; assert.match(failures().join(), /validation/); report.checks.validation.status = "PASS";
