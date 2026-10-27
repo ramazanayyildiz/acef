@@ -7,7 +7,7 @@ proven, or installed.
 Update this file in the same PR whenever ACEF itself gains or changes a flow, gate, validator, hook, skill, installer behavior, workflow,
 or evidence contract. Do not use it to claim implementation status; link to the capability record for that.
 
-## Unreleased — One model-choice rule for Claude and Codex agents (2026-10-27)
+## v3.0.0-beta.8 — One model-choice rule for Claude and Codex agents (2026-10-27)
 
 Why: model choice lived in three places that disagreed (the owner's global rule, project decisions, and
 `method/model-routing-policy-v1.json`, which still named gpt-5.6-sol, mapped every anthropic class to Sonnet and bound
@@ -47,7 +47,7 @@ usage limit; long-waiting agents (300–600k context) kept waking up to poll que
   manifests and `scripts/lib/acef-execution-assurance-experiment.js` keep gpt-5.6-sol (they bind V3.27–V3.29 runs).
   Capability record `docs/ai/capabilities/model-choice.json` (wired, not enforced for ordinary subagents).
 
-## Unreleased — acef-detect speed and stale acks (2026-10-27)
+## v3.0.0-beta.8 — acef-detect speed and stale acks (2026-10-27)
 
 Why: on the first host (B2Press) `acef-detect` was reported at about 24 s in the coordinator's real 15-minute loop
 while dry runs took 1.5–2.9 s; the alert log shows 7.7 s for the first real poll (24 alerts opened) and 1.6–2.1 s
@@ -122,7 +122,7 @@ approved this change).
 - **Review r4 fix (Codex, one P2):** any failure to decode or validate the index file (also `RecursionError` on
   deeply nested corrupt JSON) starts an empty index instead of aborting the poll. `scripts/test-acef-detect` 195 checks (+1).
 
-## Unreleased — Updates never reinstall a BMAD guard the host removed (2026-10-27)
+## v3.0.0-beta.8 — Updates never reinstall a BMAD guard the host removed (2026-10-27)
 
 Why: `update-acef-installation` treated a record without `profile` as `full` and reinstalled the BMAD guard
 (`.acef/hooks/acef-bmad-hard-wall.mjs`, `.acef/hooks/acef-precommit-gate.sh`, `.opencode/plugins/acef-bmad-hard-wall.js`)
