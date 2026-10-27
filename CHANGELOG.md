@@ -7,6 +7,40 @@ proven, or installed.
 Update this file in the same PR whenever ACEF itself gains or changes a flow, gate, validator, hook, skill, installer behavior, workflow,
 or evidence contract. Do not use it to claim implementation status; link to the capability record for that.
 
+## Unreleased — Host fork gates ported upstream; updates keep host-modified files (2026-10-27)
+
+Owner decision 2026-10-27: roll `v3.0.0-beta.4` out to every host. One host held its update because the updater would
+have removed three gates its own ACEF fork carries and upstream lacked, and overwrote its host-local model choices.
+- **Ported gates** (fork commits → upstream; every fork commit not in upstream main is ported; the fork's merge commit
+  53543e3 was a clean auto-merge of upstream d7a31ba and adds nothing):
+  - 6dcda63 opt-in `running-product-review-v1` (Standard + Guarded): terminal PASS needs a same-run independent
+    reviewer session, hash-bound browser artifacts, explicit product checks and the current scoped application tree
+    (`scripts/lib/acef-product-review.js`, called from `checkLightweightLifecycle`); glob scopes (`app/**`) now resolve
+    against tracked files in `applicationTreeDigest` of both `acef-process-validator` and `acef-state`
+    (`scripts/lib/acef-scoped-tree.js`) instead of hashing as `<missing>`, so a source change invalidates old evidence.
+  - d97a3ec `**/` also matches zero directories (root files count in the scoped identity).
+  - e006745 structured `componentReuse.reuseAudit`; actor separation, gate integrity and surface evidence accept the
+    same-run independent Code Reviewer for the opted-in run (no fictitious Process Judge).
+  - 5aaf9d7 objective accounting counts reviewed application trees and revalidates the product report on completion.
+  - 200259d `acef-state objective-control-budget`: one audited, finite control-time extension for one named next run.
+  - 3f66df7 canonical root: the BMAD hard wall, dispatcher and OpenCode plugin bind discovery to the repository that
+    holds `.acef/CANONICAL_ROOT`, so a passive lifecycle record in a subdirectory cannot pick the wrong root; the
+    updater writes the marker when it installs the guard.
+  - Made neutral on the way in: any loopback review origin is accepted unless the run, the active run or the host-owned
+    `.acef/product-review-policy.json` pins one (the fork hard-coded its own port); method doc
+    `method/RUNNING_PRODUCT_REVIEW.md`, capability `docs/ai/capabilities/running-product-review.json`. The fork's
+    pilot workflow, its model defaults and its AGENTS.md override were not ported (host configuration, not fixes).
+- **Updates keep host-modified files.** `install-acef-tools`, `install-acef-bmad-guard` and `install-acef-skills`
+  record the sha256 of every file they write (`components.<name>.files` in `docs/ai/ACEF_INSTALLATION.json`, as the
+  Slice kit already did) and replace a file only when the host copy still equals that hash; otherwise they keep it and
+  print `kept host-modified <path>`. Records without hashes compare against the file at the recorded install commit,
+  read from the recorded ACEF checkout (the updater passes it on as `ACEF_PREVIOUS_SOURCE_PATH`) or this one; with no
+  baseline the host copy is kept and reported. Skills are written file by file (no more `rm -rf` of the skill folder).
+  `.acef/model-routing-policy.json` is merged: host values are kept, only new keys are added, and an invalid merge
+  leaves the host file untouched. The Slice kit no longer records a kept host copy's hash as ACEF-installed.
+- Tests: `scripts/test-acef-product-review`, `scripts/test-acef-product-review-accounting`,
+  `scripts/test-acef-canonical-root` (ported), `scripts/test-acef-host-file-preservation` (new).
+
 ## Unreleased — Changelog rule and feedback-log capability record (2026-10-27)
 
 Owner decision 2026-10-27: "is it written that CHANGELOG must be updated?" It was not; only this file's header said so.
