@@ -927,6 +927,64 @@ try:
           rc_w == rc_n == 0 and "Traceback" not in w and "OverflowError" not in w and body(w) == body(n),
           w + "\n----\n" + n)
 
+    # review r3 (Codex): correctly typed but false facts and edited rows fail the row checksum; wrong shapes at use
+    sys.dont_write_bytecode = True
+    sys.path.insert(0, str(HERE / "detectors"))
+    import _lib as ilib   # noqa: E402
+    csum = getattr(ilib.Index, "checksum", lambda k, r: None)
+    fshape = getattr(ilib, "_findall_shape", lambda v, g: None)
+    rc, o = run("--only", "stuck_agent", config=rc_, env=ENV_C, now=NOW + dt.timedelta(minutes=8))   # fresh rep index
+    rdata = json.loads(rip.read_text()) if rip.exists() else {"version": 0, "rows": {}}
+    check("codex-r3 fixture: index rows carry a checksum", rdata["rows"] and all(
+        r.get("sum") and r.get("sum") == csum(k, r) for k, r in rdata["rows"].items()), str(rdata)[:400])
+    for r in rdata["rows"].values():
+        r.setdefault("facts", {})["nonblank"] = True   # well-typed, false: the result file is empty; old checksum kept
+    rip.write_text(json.dumps(rdata))
+    rc_w, w = run("--only", "stuck_agent", "--dry-run", config=rc_, env=ENV_C, now=NOW + dt.timedelta(minutes=9))
+    rc_n, n = run("--only", "stuck_agent", "--dry-run", "--no-cache", config=rc_, env=ENV_C,
+                  now=NOW + dt.timedelta(minutes=9))
+    check("codex-r3-1 an edited value with the old checksum is a miss (nonblank true over an empty result)",
+          f"CLEARED {r_id}" not in w and "index 0 hit(s)" in w and body(w) == body(n), w + "\n----\n" + n)
+    rc, o = run("--only", "review_loop", config=ic, env=ENV_C, now=NOW + dt.timedelta(minutes=10))  # fresh idx index
+    vdata = json.loads(ip_idx.read_text())
+    flipped = 0
+    for r in vdata["rows"].values():
+        for k_ in list(r.get("facts") or {}):
+            if k_.startswith("verdict:") and r["facts"][k_] == "REVISE":
+                r["facts"][k_] = "ACCEPT"
+                flipped += 1
+    ip_idx.write_text(json.dumps(vdata))
+    rc_w, w = run("--only", "review_loop", "--dry-run", config=ic, env=ENV_C, now=NOW + dt.timedelta(minutes=11))
+    rc_n, n = run("--only", "review_loop", "--dry-run", "--no-cache", config=ic, env=ENV_C,
+                  now=NOW + dt.timedelta(minutes=11))
+    check("codex-r3-1 a cached verdict flipped REVISE->ACCEPT with the old checksum is a miss",
+          flipped and body(w) == body(n), w + "\n----\n" + n)
+    old_fmt = {"version": 1, "rows": {k: {kk: vv for kk, vv in r.items() if kk != "sum"} for k, r in vdata["rows"].items()}}
+    ip_idx.write_text(json.dumps(old_fmt))
+    rc_w, w = run("--only", "review_loop", "--dry-run", config=ic, env=ENV_C, now=NOW + dt.timedelta(minutes=11))
+    check("codex-r3-1 an old-format (version 1) index is ignored: all misses, same as --no-cache",
+          "index 0 hit(s)" in w and body(w) == body(n), w)
+    # a findall value of the wrong shape (here with a valid checksum) is recomputed by its consumer, never a crash
+    rc, o = run("--only", "review_loop", config=ic, env=ENV_C, now=NOW + dt.timedelta(minutes=12))
+    vdata = json.loads(ip_idx.read_text())
+    shaped = 0
+    for k, r in vdata["rows"].items():
+        for k_ in list(r.get("facts") or {}):
+            if k_.startswith("findall:"):
+                r["facts"][k_] = [["security"]]
+                shaped += 1
+        r["sum"] = csum(k, r)
+    ip_idx.write_text(json.dumps(vdata))
+    rc_w, w = run("--only", "review_loop", "--dry-run", config=ic, env=ENV_C, now=NOW + dt.timedelta(minutes=13))
+    rc_n, n = run("--only", "review_loop", "--dry-run", "--no-cache", config=ic, env=ENV_C,
+                  now=NOW + dt.timedelta(minutes=13))
+    check("codex-r3-2 a findall of the wrong shape ([[\"security\"]] for a one-group regex) is recomputed: no crash",
+          shaped and rc_w == rc_n and "ERROR review_loop" not in w and "Traceback" not in w and body(w) == body(n),
+          w + "\n----\n" + n)
+    check("codex-r3-2 findall shape follows the regex's group count",
+          fshape(["a"], 1) and fshape([["a"]], 1) is False and fshape([["a", "b"]], 2)
+          and fshape([["a"]], 2) is False and fshape(["a"], 2) is False and fshape([], 0))
+
     # shared git: one git log of main for every history window, one for every worktree head
     trace = TMP / "git-trace.txt"
     rc, o = run("--dry-run", config=CFG, env={**ENV_C, "GIT_TRACE": str(trace)}, now=NOW + dt.timedelta(minutes=2))

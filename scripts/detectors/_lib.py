@@ -305,7 +305,7 @@ class Item:
         if self._index is None:
             return False
         row = self._index.rows.get(self._index_key(path, spec))
-        restored = Index.restore(row)
+        restored = Index.restore(row, self._index_key(path, spec))
         try:
             sig = _jsonable(self._signature(path, spec, entries))
         except OSError:
@@ -331,10 +331,16 @@ class Item:
             "sig": sig, "started": iso_or_empty(self.started), "finished": iso_or_empty(self.finished),
             "status": self.status, "last": iso_or_empty(self.last), "facts": self._facts})
 
-    def _fact(self, name: str, compute):
-        """A value derived from the result file, remembered in the index while the result file is unchanged."""
+    def _fact(self, name: str, compute, valid):
+        """A value derived from the result file, remembered in the index while the result file is unchanged. A
+        cached value that does not have the shape this consumer expects is recomputed (a miss, never a crash)."""
         if name in self._facts:
-            return self._facts[name]
+            try:
+                ok = bool(valid(self._facts[name]))
+            except Exception:  # noqa: BLE001  (a malformed cached value must never crash a detector)
+                ok = False
+            if ok:
+                return self._facts[name]
         value = compute()
         self._facts[name] = value
         if self._index is not None and self.finished and self.is_dir:
@@ -363,7 +369,8 @@ class Item:
     @property
     def verdict(self) -> str:
         regex = self.spec["verdict_regex"]
-        word = self._fact("verdict:" + _fact_key(regex), lambda: _first_group(regex, self.result))
+        word = self._fact("verdict:" + _fact_key(regex), lambda: _first_group(regex, self.result),
+                          lambda v: v is None or isinstance(v, str))
         if not word:
             return ""
         word = word.upper()
@@ -371,16 +378,28 @@ class Item:
 
     @property
     def has_result(self) -> bool:
-        return self._fact("nonblank", lambda: bool(self.result.strip()))
+        return self._fact("nonblank", lambda: bool(self.result.strip()), lambda v: isinstance(v, bool))
 
     def findall(self, regex: str) -> list:
         """re.findall(regex, result), remembered in the index for a finished item."""
+        groups = re.compile(regex).groups
         return self._fact("findall:" + _fact_key(regex), lambda: [m if isinstance(m, str) else list(m)
-                                                                   for m in re.findall(regex, self.result)])
+                                                                   for m in re.findall(regex, self.result)],
+                          lambda v: _findall_shape(v, groups))
 
     @property
     def when(self) -> dt.datetime:
         return self.finished or self.last
+
+
+def _findall_shape(value, groups: int) -> bool:
+    """re.findall's shape for a regex with `groups` groups: 0 or 1 -> list of str; 2+ -> list of lists of that many
+    str (stored as lists)."""
+    if not isinstance(value, list):
+        return False
+    if groups <= 1:
+        return all(isinstance(m, str) for m in value)
+    return all(isinstance(m, list) and len(m) == groups and all(isinstance(x, str) for x in m) for m in value)
 
 
 def _first_group(regex: str, text: str) -> str:
@@ -403,28 +422,43 @@ def iso_or_empty(value) -> str:
 class Index:
     """Persistent index of finished run items, kept in the central store between polls (never in the host).
 
-    rows: "<path>\t<spec hash>" -> {sig, started, finished, status, last, facts}. A row is used only when the item's
-    directory and every stamp/status/result file still have the recorded mtime_ns and size; otherwise the item is read
-    fresh and the row replaced. Rows not seen in a poll are dropped when the index is saved (no unbounded growth)."""
+    rows: "<path>\t<spec hash>" -> {sig, started, finished, status, last, facts, sum}. A row is used only when its
+    checksum matches, its fields are well-formed, and the item's directory and every stamp/status/result file still
+    have the recorded mtime_ns and size and are readable; otherwise the item is read fresh and the row replaced. Rows
+    not seen in a poll are dropped when the index is saved (no unbounded growth).
 
-    VERSION = 1
+    It is a speed cache, not a source of truth: --no-cache is the reference answer. Only acef-detect writes it, under
+    the project's alert lock. It is protected against corruption, truncation, mistaken hand edits and old formats (the
+    worst outcome is a miss); a deliberately forged row with a valid checksum is out of scope."""
+
+    VERSION = 2
+    SALT = "acef-detect run-item index v2"
+
+    @staticmethod
+    def checksum(key: str, row: dict) -> str:
+        body = {k: v for k, v in row.items() if k != "sum"}
+        canon = json.dumps([Index.SALT, key, body], sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+        return hashlib.sha256(canon.encode("ascii")).hexdigest()
 
     def __init__(self, rows: dict = None):
         self.rows, self.seen, self.hits, self.misses, self.dirty = dict(rows or {}), {}, 0, 0, False
 
     @staticmethod
-    def restore(row):
-        """(started, finished, status, last, facts) of a well-formed row, else None (a cache miss, never a crash)."""
+    def restore(row, key: str):
+        """(started, finished, status, last, facts) of a well-formed row whose checksum matches, else None (a cache
+        miss, never a crash). Any edit, corruption or old-format row fails the checksum."""
         if not isinstance(row, dict) or not isinstance(row.get("sig"), dict) or not row["sig"]:
             return None
         try:
+            if not isinstance(row.get("sum"), str) or row["sum"] != Index.checksum(key, row):
+                return None
             started, finished, last = row.get("started", ""), row["finished"], row["last"]
             status, facts = row.get("status", ""), row.get("facts") or {}
             if not all(isinstance(v, str) for v in (started, finished, last, status)) or not finished or not last \
                     or not isinstance(facts, dict) or not all(Index.valid_fact(k, v) for k, v in facts.items()):
                 return None
             return (read_iso(started) if started else None, read_iso(finished), status, read_iso(last), dict(facts))
-        except (KeyError, ValueError, TypeError, AttributeError, OverflowError):
+        except (KeyError, ValueError, TypeError, AttributeError, OverflowError, RecursionError):
             return None   # e.g. "0001-01-01T00:00:00+23:00" overflows in the UTC conversion
 
     @staticmethod
@@ -458,7 +492,12 @@ class Index:
             self.dirty = True
 
     def dump(self) -> dict:
-        return {"version": self.VERSION, "rows": self.seen}
+        """Rows with a fresh checksum (facts may have been added since the row was read or put)."""
+        rows = {}
+        for key, row in self.seen.items():
+            body = {k: v for k, v in row.items() if k != "sum"}
+            rows[key] = {**body, "sum": self.checksum(key, body)}
+        return {"version": self.VERSION, "rows": rows}
 
 
 def done_marker(path: Path, spec: dict, source: str, cache: dict = None) -> bool:

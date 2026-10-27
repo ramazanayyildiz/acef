@@ -71,6 +71,14 @@ approved this change).
   an unknown fact name is invalid), so `"nonblank": "false"` can no longer clear a repeat alert and a numeric verdict
   can no longer crash; a cached time that overflows in the UTC conversion (`0001-01-01T00:00:00+23:00`) is caught.
   Whatever the index file holds, the worst outcome is a cache miss. `scripts/test-acef-detect` 188 checks (+4).
+- **Review r3 fixes (Codex, two P2s; coordinator narrowed the invariant: protect against corruption, truncation,
+  mistaken edits and old formats; a forged row with a valid checksum is out of scope):** each index row carries a
+  sha256 checksum over a fixed salt, its key and its canonical JSON, written when the index is saved and checked on
+  load and at use; any edit (also a correctly typed but false fact such as `nonblank: true` over an empty result, or a
+  verdict flipped REVISE→ACCEPT) or an old-format row is a miss (index format version 2). Cached facts are also
+  checked at use against the shape their consumer expects (`findall` against the regex's group count; verdict a
+  string or null; `nonblank` a bool); a mismatch recomputes from the file, never a crash. Docs: the index is a speed
+  cache, not a source of truth; `--no-cache` is the reference. `scripts/test-acef-detect` 194 checks (+6).
 
 ## v3.0.0-beta.7 — Product language, end-user profiles and user-goal tours (2026-10-27)
 

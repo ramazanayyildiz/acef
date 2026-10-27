@@ -46,8 +46,8 @@
     "Each detector needs host sources; an unconfigured one prints SKIP. On the first host the machine detector has no local slot event log (runner slots live on the runners), and no review report carries a finding-class field, so the review_loop class rule has no data.",
     "Durations are wall clock from git timestamps and file times (nights and weekends included); cycle-time starts are unknown when a branch began before the history window.",
     "Tests (slow or flaky suites) are not covered in this first version.",
-    "The run-item index trusts a file whose mtime_ns and size are unchanged; a rewrite that keeps both (for example a restored backup with its old times) is served from the index until the next change. Running items are never indexed. Deleting alerts/<project>.index.json or --no-cache forces fresh reads.",
-    "Stale acks need a breach observation: acks made before this version carry no breach record and become stale only after a later poll still sees them breaching after the recheck time; an acked alert that is only UNSEEN is never marked stale (the weekly retro still lists it as acked and open)."
+    "Stale acks need a breach observation: acks made before this version carry no breach record and become stale only after a later poll still sees them breaching after the recheck time; an acked alert that is only UNSEEN is never marked stale (the weekly retro still lists it as acked and open).",
+    "The run-item index (alerts/<project>.index.json) is a speed cache, not a source of truth: --no-cache is the reference answer. Only acef-detect writes it, under the project's alert lock. Corruption, truncation, mistaken hand edits and old formats are cache misses (per-row salted sha256 checksum, shape checks at use); a deliberately forged row with a valid checksum, or a file rewritten with its old mtime_ns and size, is out of scope."
   ],
   "evidence": [
     {
@@ -99,6 +99,11 @@
       "layer": "tests",
       "ref": "scripts/test-acef-detect",
       "note": "2026-10-27 review r2 (Codex, two P2s): 188 checks passed (+4): a cached nonblank 'false' string and a numeric cached verdict are misses (same output as --no-cache, no crash, no CLEARED); an overflowing cached time is a miss and the poll runs. The three regression checks fail on bf57461."
+    },
+    {
+      "layer": "tests",
+      "ref": "scripts/test-acef-detect",
+      "note": "2026-10-27 review r3 (Codex, two P2s): 194 checks passed (+6): rows carry a checksum; an edited value with the old checksum is a miss (nonblank true over an empty result, verdict flipped REVISE->ACCEPT); a version-1 index is ignored; a findall of the wrong shape is recomputed by its consumer, no crash; findall shape follows the regex's group count. The six checks fail on 6e30731."
     }
   ],
   "createdAt": "2026-10-27"

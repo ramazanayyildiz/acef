@@ -49,7 +49,11 @@ until the owner asked, and a whole day could be lost. Detection runs **during th
   and each glob, directory and file once. Finished run items are kept in `alerts/<project>.index.json` in the store
   (never the host), keyed on the mtime and size of the directory and of its stamp, status and result files; a row whose
   files changed is read again, running items are always read. `--no-cache` ignores the index; the findings are the
-  same with or without it. The index is a cache: deleting it costs one slower poll.
+  same with or without it. The index is a speed cache, not a source of truth: `--no-cache` is the reference answer,
+  and deleting the file costs one slower poll. Only `acef-detect` writes it, under the project's alert lock; each row
+  carries a sha256 checksum (salted, over the row and its key), and each cached value is checked against the shape its
+  consumer expects. Corruption, truncation, a mistaken hand edit or an old format is a cache miss, never a crash or a
+  different answer; a deliberately forged row with a valid checksum is out of scope.
 - **Detectors:** one small file each, core in `scripts/detectors/`, host-specific in `<host>/.acef/detectors/`. The
   header names the question, source, rule, default threshold, owner, scope (`acef`, `stack:<x>`, `host:<name>`) and
   kind (budget, ratio, age, trend, absence); `detect(ctx)` returns findings. Core: `stuck_agent`, `waiting_work`,
