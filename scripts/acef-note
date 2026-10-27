@@ -324,7 +324,7 @@ def undigested(base: Path):
 def cmd_due(args):
     base = ensure_store()
     since, rows = undigested(base)
-    today = dt.date.today().isoformat()
+    today = now_utc().astimezone().date().isoformat()
     print(f"undigested entries since {since}: {len(rows)}")
     # The weekly retro (scripts/acef-retro) replaced the digest as the owner-facing step; `digest` still works.
     last = last_retro(base)
