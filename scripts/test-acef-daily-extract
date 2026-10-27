@@ -4,6 +4,7 @@ transcript content): one Claude main session with a subagent, one Codex exec rev
 window clipping, session types and parent link, project mapping from a removed worktree path, owner corrections /
 status asks / interrupts, repeated failures, tests, review verdicts, commits, waits, compactions and context, the
 skipped record types, redaction, UNREADABLE listing, budget trimming, and that the input folders are not written."""
+import datetime as dt_mod
 import hashlib
 import json
 import os
@@ -197,8 +198,41 @@ def build():
     (STORE / "log" / "demostore.md").write_text(
         "demostore-1 | 2026-10-26 | tooling | 10min | STORE-IN-WINDOW lesson | fix it | ref\n"
         "demostore-2 | 2026-10-20 | tooling | 10min | STORE-OLD lesson | fix it | ref\n")
+    # review r1 fixtures (each in its own project so the demo checks stay exact)
+    # P2-3/P2-5: an older-format Codex session (event_msg user_message, shell function_call + output) created on
+    # Oct 20 and resumed in the window; P1-1: a pasted PEM over 300 characters and a key tail in a failure output;
+    # P1-2: an email in a cd path (a dict key in extract.json)
+    oc = "/nonexistent-acef-fixture/oldcodex/.worktrees/w"
+    pem = ("-----BEGIN PRIVATE KEY-----\n" + "\n".join("keybodymarker line %d abc def ghi" % i for i in range(20))
+           + "\n-----END PRIVATE KEY-----")
+    old = [{"timestamp": ts(1, 0, 20), "type": "session_meta", "payload": {"id": "old-1", "cwd": oc,
+                                                                            "originator": "codex_cli_rs"}},
+           ev(ts(16, 0), {"type": "user_message", "message": "please run the login tests"}),
+           ev(ts(16, 0), {"type": "item_completed", "item": {"type": "UserMessage", "content": [
+               {"type": "text", "text": "please run the login tests"}]}}),
+           ev(ts(16, 1), {"type": "user_message", "message": "here is the key: " + pem}),
+           ev(ts(16, 2), {"type": "function_call", "name": "shell", "call_id": "c1", "arguments": json.dumps(
+               {"command": ["bash", "-lc", "cd /tmp/person@example.org/repo && pytest tests"]})},
+              typ="response_item"),
+           ev(ts(16, 3), {"type": "function_call_output", "call_id": "c1", "output": json.dumps(
+               {"output": "F.\n1 failed, 1 passed", "metadata": {"exit_code": 1}})}, typ="response_item"),
+           ev(ts(16, 4), {"type": "function_call", "name": "shell", "call_id": "c2", "arguments": json.dumps(
+               {"command": ["bash", "-lc", "cat key.pem"]})}, typ="response_item"),
+           ev(ts(16, 5), {"type": "function_call_output", "call_id": "c2", "output":
+               "Exit code: 3\n" + "x" * 2000 + " keybodytail abc def\n-----END RSA PRIVATE KEY-----"},
+              typ="response_item")]
+    jl(CODEX / "2026" / "10" / "20" / "rollout-2026-10-20T01-00-00-old-1.jsonl", old)
+    # P2-6: a subagent in the window whose parent went idle before it (parent file not scanned)
+    pp = CLAUDE / "-nonexistent-acef-fixture-parentproj"
+    pid = "22222222-3333-4444-5555-666666666666"
+    parent = [dict(user(ts(8, 0, 25), "start the lane"), cwd="/nonexistent-acef-fixture/parentproj/.worktrees/c")]
+    jl(pp / f"{pid}.jsonl", parent)
+    child = [dict(user(ts(11, 0), "You are a worker.", source=None), cwd="/nonexistent-acef-fixture/childcwd"),
+             dict(bash(ts(11, 1), "k1", "ls", "rk1"), cwd="/nonexistent-acef-fixture/childcwd")]
+    jl(pp / pid / "subagents" / "agent-c1c2c3c4c5.jsonl", child)
     for f in list(CLAUDE.rglob("*.jsonl")) + list(CODEX.rglob("*.jsonl")):
         os.utime(f, (1_900_000_000, 1_900_000_000))     # mtime after the window start (the prefilter)
+    os.utime(pp / f"{pid}.jsonl", (1_700_000_000, 1_700_000_000))   # the idle parent: before the window
 
 
 def tree_hash(root):
@@ -226,12 +260,29 @@ try:
     idx = json.loads((out / "extract.json").read_text())
     md = (out / "demo.md").read_text()
     alltext = "".join(f.read_text() for f in out.iterdir())
-    kinds = sorted(s["kind"] for s in idx["sessions"])
+    demo = [s for s in idx["sessions"] if s["project"] not in ("oldcodex", "parentproj")]
+    kinds = sorted(s["kind"] for s in demo)
     check("session types (manager-driven pane is agent time)",
           kinds == ["codex-exec", "codex-exec", "codex-tui-agent", "main", "subagent"], kinds)
     check("verdict at the head of the message", "REQUEST_CHANGES" in md, md)
-    check("project from removed worktree path, subagent inherits", {s["project"] for s in idx["sessions"]} == {"demo"},
+    check("project from removed worktree path, subagent inherits", {s["project"] for s in demo} == {"demo"},
           [s["project"] for s in idx["sessions"]])
+    # ---- review r1 regressions
+    oldc = [s for s in idx["sessions"] if s["project"] == "oldcodex"]
+    written = {f.name: f.read_text() for f in out.rglob("*") if f.is_file()}
+    check("P1 redaction before truncation: no key body from a pasted PEM over 300 chars or a key tail",
+          oldc and not any("keybodymarker" in v or "keybodytail" in v for v in written.values()) and
+          "<redacted-key>" in "".join(written.values()), [k for k, v in written.items() if "keybody" in v])
+    check("P1 keys sanitized: no email in a cd_dirs key", not any("person@example.org" in v for v in written.values())
+          and oldc and any("<email>" in k for k in oldc[0]["cd_dirs"]), oldc and oldc[0]["cd_dirs"])
+    check("P2 older Codex shapes: owner message once, shell failure and test, owner pane",
+          len(oldc) == 1 and len(oldc[0]["human"]) == 2 and oldc[0]["kind"] == "codex-tui" and
+          any(f["tool"] == "exec" for f in oldc[0]["fails"]) and
+          [x["result"] for x in oldc[0]["tests"]] == ["unclassified"], oldc)
+    check("P2 resumed Codex session from an older date folder is found", oldc and "/2026/10/20/" in oldc[0]["path"])
+    kid = [s for s in idx["sessions"] if s["kind"] == "subagent" and "c1c2c3c4c5" in s["path"]]
+    check("P2 child of a parent idle before the window keeps the parent's project",
+          len(kid) == 1 and kid[0]["project"] == "parentproj", kid and kid[0]["project"])
     check("subagent linked to parent", "parent C:11111111" in md, md)
     main = next(s for s in idx["sessions"] if s["kind"] == "main")
     check("window clipping: signals inside only, span is the full session",
@@ -279,6 +330,36 @@ try:
     pane = next(s for s in idx["sessions"] if s["kind"] == "codex-tui-agent")
     check("agent-driven pane counts as agent time", idx["projects"]["demo"]["active_min_owner"] == main["active_min"]
           and pane["active_min"] > 0, idx["projects"]["demo"])
+    # P1: every written file, every key: planted secrets and emails never appear, memguard_error included
+    bad_dir = TMP / "owner.person@example.net"
+    p3 = subprocess.run([sys.executable, "-I", str(TOOL), "--claude-dir", str(CLAUDE), "--codex-dir", str(CODEX),
+                         "--store", str(TMP / "store3"), "--since", "2026-10-26T00:00", "--until", "2026-10-27T00:00",
+                         "--jobs", "1", "--no-gh", "--mem-guard-log", str(bad_dir / "mem.log")], env=ENV,
+                        capture_output=True, text=True)
+    blob = "".join(f.read_text() for f in (TMP / "store3").rglob("*") if f.is_file())
+    planted = ["owner.person@example.net", "person@example.org", "fixture.person@example.org", "sk-test-ABCDEF",
+               "keybodymarker", "keybodytail", "ACCOUNT-SHOULD-NOT-LEAK"]
+    check("P1 final sanitize pass: no planted secret or email in any written file (memguard_error too)",
+          p3.returncode == 0 and not [x for x in planted if x in blob] and '"memguard_error":"' in blob,
+          [x for x in planted if x in blob] or p3.stderr)
+    # P2: pending tool calls completed before the window are dropped and hold only bounded fields
+    import importlib.machinery
+    import tracemalloc
+    mod = importlib.machinery.SourceFileLoader("ade_mod", str(TOOL)).load_module()
+    big = TMP / "big.jsonl"
+    with open(big, "w", encoding="utf-8") as fh:
+        for i in range(100):
+            d = bash(ts(5, i % 60, 26), f"b{i}", "echo " + "z" * (256 * 1024), f"rb{i}")
+            fh.write(json.dumps(d) + "\n")
+            fh.write(json.dumps(result(ts(5, i % 60, 26), f"b{i}", "ok")) + "\n")
+        fh.write(json.dumps(user(ts(12, 0), "in the window")) + "\n")
+    since_w = dt_mod.datetime(2026, 10, 26, 9, tzinfo=dt_mod.timezone.utc).timestamp()
+    tracemalloc.start()
+    row = mod.parse_claude(str(big), since_w, since_w + 86400, "main")
+    peak = tracemalloc.get_traced_memory()[1]
+    tracemalloc.stop()
+    check("P2 pending calls completed before the window are dropped (bounded memory)",
+          row.get("pending_open") == 0 and peak < 8 * 1024 * 1024, (row.get("pending_open"), peak))
     # default window: yesterday 09:00 to today 09:00 local (TZ=UTC here)
     p2 = subprocess.run([sys.executable, "-I", str(TOOL), "--claude-dir", str(TMP / "none"), "--codex-dir",
                          str(TMP / "none"), "--store", str(TMP / "store2"), "--mem-guard-log", str(MEM), "--no-gh"],

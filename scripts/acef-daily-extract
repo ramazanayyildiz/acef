@@ -134,7 +134,9 @@ BENIGN_EXIT1 = re.compile(r"^\s*(\S*/)?(rg|grep|egrep|fgrep|test|\[|diff|cmp|git
 
 # ---------------------------------------------------------------- redaction (applied to every string at write time)
 REDACTIONS = [
-    (re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----.*?-----END [A-Z ]*PRIVATE KEY-----", re.S), "<redacted-key>"),
+    (re.compile(r"-----BEGIN [A-Z0-9 ]*KEY-----.*?-----END [A-Z0-9 ]*KEY-----", re.S), "<redacted-key>"),
+    (re.compile(r"-----BEGIN [A-Z0-9 ]*KEY-----.*", re.S), "<redacted-key>"),          # unterminated: to the end
+    (re.compile(r"^.*?-----END [A-Z0-9 ]*KEY-----", re.S), "<redacted-key>"),          # tail slice: from the start
     (re.compile(r"\b[\w.+-]+@[\w-]+(\.[\w-]+)+\b"), "<email>"),
     (re.compile(r"\b([a-z][a-z0-9+.-]*://)[^/\s:@]+:[^/\s@]+@", re.I), r"\1<redacted>@"),
     (re.compile(r"\b(sk|rk|pk)[-_](live|test|proj|ant)?[-_]?[A-Za-z0-9_-]{16,}"), "<redacted-token>"),
@@ -174,8 +176,15 @@ def redact_obj(o):
     if isinstance(o, list):
         return [redact_obj(x) for x in o]
     if isinstance(o, dict):
-        return {k: redact_obj(v) for k, v in o.items()}
+        return {redact(k) if isinstance(k, str) else k: redact_obj(v) for k, v in o.items()}
     return o
+
+
+def write_out(path, data):
+    """Every file the tool writes goes through one last sanitize pass: JSON objects (keys and values) and text."""
+    text = json.dumps(redact_obj(data), ensure_ascii=False, separators=(",", ":")) if not isinstance(data, str) \
+        else redact(data)
+    Path(path).write_text(text, encoding="utf-8")
 
 
 # ---------------------------------------------------------------- helpers
@@ -195,7 +204,11 @@ def hhmm(t):
 
 
 def short(s, n):
-    s = re.sub(r"\s+", " ", s or "").strip()
+    """Redact first, then collapse and truncate: a cut must never split a secret out of its pattern (a PEM block
+    loses its END marker). Only a bounded head is redacted, so huge outputs stay cheap; an unterminated key block in
+    that head is redacted to its end."""
+    s = redact((s or "")[: max(n * 8, 4000)])
+    s = re.sub(r"\s+", " ", s).strip()
     return s if len(s) <= n else s[: n - 1] + "…"
 
 
@@ -452,7 +465,8 @@ def parse_claude(path, since, until, kind):
                         cmd = json.dumps(cmd)[:300]
                     if inp.get("run_in_background"):
                         cmd += "  [run_in_background]"
-                    pending[c.get("id")] = (name, cmd, t, ln, inp)
+                    # only what the result needs: tool name, a bounded command, a short input summary
+                    pending[c.get("id")] = (name, cmd[:4000], t, ln, json.dumps(inp)[:300] if not cmd else "")
                     if not win:
                         continue
                     if name in ("Agent", "Task"):
@@ -468,13 +482,17 @@ def parse_claude(path, since, until, kind):
             # user
             content = msg.get("content")
             if isinstance(content, list) and any(isinstance(c, dict) and c.get("type") == "tool_result" for c in content):
-                if not win:
+                if not win:                 # completed outside the window: forget the call, keep nothing
+                    for c in content:
+                        if isinstance(c, dict) and c.get("type") == "tool_result":
+                            pending.pop(c.get("tool_use_id"), None)
+                    last_event = "tool"
                     continue
                 tur = d.get("toolUseResult") if isinstance(d.get("toolUseResult"), dict) else {}
                 for c in content:
                     if not isinstance(c, dict) or c.get("type") != "tool_result":
                         continue
-                    name, cmd, t0, ln0, inp = pending.pop(c.get("tool_use_id"), ("?", "", t, ln, {}))
+                    name, cmd, t0, ln0, inp = pending.pop(c.get("tool_use_id"), ("?", "", t, ln, ""))
                     out = (tur.get("stdout") or "") + "\n" + (tur.get("stderr") or "") if tur else text_of(c.get("content"))
                     if not out.strip():
                         out = text_of(c.get("content"))
@@ -483,7 +501,7 @@ def parse_claude(path, since, until, kind):
                         benign = name == "Bash" and BENIGN_EXIT1.search(cmd or "") and "Exit code 1" in out[:40]
                         if not benign:
                             s.fails.append({"t": t, "line": ln, "tool": name, "cmd": short(cmd, CMD_CHARS) or
-                                            short(json.dumps(inp)[:300], CMD_CHARS), "err": short(out, ERR_CHARS)})
+                                            short(inp, CMD_CHARS), "err": short(out, ERR_CHARS)})
                     if name == "Bash" and cmd:
                         add_cmd_signals(s, t, ln, cmd, out, is_err, last_text)
                         if REVIEW_RE.search(cmd) and re.search(r"\bcodex\b", cmd):
@@ -531,10 +549,72 @@ def parse_claude(path, since, until, kind):
             if not win:
                 continue
             s.human.append(human_msg(t, ln, raw, after))
+    meta["pending_open"] = len(pending)
     return finish(s, meta)
 
 
 # ---------------------------------------------------------------- Codex
+SHELL_CALLS = {"shell", "exec_command", "shell_command", "local_shell", "container.exec", "run_command"}
+EXIT_RE = re.compile(r'(?:"exit_code"\s*:\s*|Exit code:\s*|exited with code\s+|Process exited with code\s+)(-?\d+)')
+
+
+def _fc_output(o):
+    """function_call_output.output: a JSON string {"output", "metadata": {"exit_code"}}, plain text with an
+    "Exit code: N" line, or a list of input_text parts."""
+    if isinstance(o, list):
+        o = text_of(o)
+    o = o if isinstance(o, str) else json.dumps(o)
+    try:
+        j = json.loads(o)
+        if isinstance(j, dict) and ("output" in j or "metadata" in j):
+            code = (j.get("metadata") or {}).get("exit_code")
+            return str(j.get("output") or ""), code
+    except ValueError:
+        pass
+    m = EXIT_RE.search(o[:400])
+    return o, int(m.group(1)) if m else None
+
+
+def codex_item(typ, pt, p, fc_pending, s, t, win):
+    """One shape for every Codex generation: item_completed items as they are; older event_msg user_message /
+    agent_message and response_item function_call + function_call_output (shell) mapped onto UserMessage,
+    AgentMessage and CommandExecution. Agent tools (sleep, wait_agent) count as waits."""
+    if typ == "event_msg" and pt == "item_completed":
+        return p.get("item") or {}
+    if typ == "event_msg" and pt == "user_message":
+        return {"type": "UserMessage", "content": p.get("message") or ""}
+    if (typ == "event_msg" and pt == "agent_message") or (typ == "response_item" and pt == "agent_message"):
+        return {"type": "AgentMessage", "content": p.get("message") or p.get("content") or ""}
+    if typ == "response_item" and pt == "message" and p.get("role") == "assistant":
+        return {"type": "AgentMessage", "content": p.get("content")}
+    if typ == "response_item" and pt == "function_call":
+        name = p.get("name") or ""
+        try:
+            args = json.loads(p.get("arguments") or "{}")
+        except ValueError:
+            args = {}
+        args = args if isinstance(args, dict) else {}
+        if name in SHELL_CALLS:
+            cmd = args.get("command") or args.get("cmd") or ""
+            if isinstance(cmd, list):
+                cmd = cmd[-1] if len(cmd) >= 3 and cmd[1] in ("-lc", "-c") else " ".join(map(str, cmd))
+            fc_pending[p.get("call_id")] = (str(cmd)[:4000], args.get("workdir") or args.get("cwd") or "")
+        elif win and name == "sleep":
+            s.waits["sleep_s"] += (args.get("duration_ms") or 0) / 1000.0
+            s.waits["sleep_calls"] += 1
+        elif win and name in ("wait_agent", "wait"):
+            s.waits["monitor_calls"] += 1
+        return None
+    if typ == "response_item" and pt == "function_call_output":
+        call = fc_pending.pop(p.get("call_id"), None)
+        if call is None:
+            return None
+        out, code = _fc_output(p.get("output"))
+        return {"type": "CommandExecution", "command": call[0], "cwd": call[1], "aggregated_output": out,
+                "exit_code": code}
+    return None
+
+
 def parse_codex(path, since, until, kind_unused=None):
     s = Sig(since, until)
     meta = {"path": path, "tool": "codex", "kind": "codex", "cwds": collections.Counter(), "models": collections.Counter(),
@@ -544,6 +624,8 @@ def parse_codex(path, since, until, kind_unused=None):
     first_user = True
     prev_out = 0
     last_event, last_text = "", ""
+    fc_pending = {}         # function_call id -> (bounded command, workdir); dropped when its output arrives
+    recent_users = {}       # the same owner message can arrive as an item and as an event: count it once
     with open(path, "r", encoding="utf-8", errors="replace") as fh:
         for ln, line in enumerate(fh, 1):
             meta["lines"] += 1
@@ -602,9 +684,9 @@ def parse_codex(path, since, until, kind_unused=None):
                 if v and win:
                     meta["verdicts"].append({"t": t, "line": ln, "verdict": v})
                 continue
-            if not (typ == "event_msg" and pt == "item_completed"):
+            it = codex_item(typ, pt, p, fc_pending, s, t, win)
+            if it is None:
                 continue
-            it = p.get("item") or {}
             itype = it.get("type")
             if itype == "AgentMessage":
                 at = text_of(it.get("content"))
@@ -616,6 +698,10 @@ def parse_codex(path, since, until, kind_unused=None):
                 txt = strip_pasted(raw)
                 if not txt:
                     continue
+                key = txt[:200]
+                if key in recent_users and abs(t - recent_users[key]) < 10:
+                    continue
+                recent_users[key] = t
                 after = last_event == "claim"
                 last_event, last_text = "owner", ""
                 if RELAY_RE.search(txt[:120]):
@@ -673,10 +759,14 @@ def parse_codex(path, since, until, kind_unused=None):
 def finish(s, meta):
     if meta["lines"] and meta["bad_lines"] >= meta["lines"]:
         return {"path": meta["path"], "unreadable": f"none of {meta['lines']} line(s) parsed as JSON"}
+    where = {"path": meta["path"], "kind": meta["kind"], "tool": meta["tool"],
+             "cwd": meta["cwds"].most_common(1)[0][0] if meta["cwds"] else meta.get("meta_cwd", ""),
+             "meta_cwd": meta.get("meta_cwd", ""),
+             "cmd_cwd": meta["cmd_cwds"].most_common(1)[0][0] if meta.get("cmd_cwds") else ""}
     if not s.ts_all:
-        return {"path": meta["path"], "empty": True}
+        return dict(where, empty=True)
     if not s.ts_win:
-        return {"path": meta["path"], "outside": True}
+        return dict(where, outside=True)
     iv = intervals(s.ts_win)
     gaps = []
     for a, b in zip(iv, iv[1:]):
@@ -698,6 +788,7 @@ def finish(s, meta):
         "prs": list({(x["pr"], x["repo"]): x for x in s.prs}.values()), "test_like_no_outcome": s.test_like,
         "cd_dirs": dict(s.cd_dirs.most_common(8)),
         "review_launches": s.review_launches, "slice_ids": meta.get("slice_ids", []),
+        "pending_open": meta.get("pending_open", 0),
     }
     return out
 
@@ -726,14 +817,10 @@ def discover(claude_dir, codex_dir, since, until):
             for f in proj.glob("*/subagents/*.jsonl"):
                 jobs.append((str(f), "subagent"))
     if codex_dir.is_dir():
-        day = dt.date.fromtimestamp(since) - dt.timedelta(days=1)
-        last = dt.date.fromtimestamp(until)
-        while day <= last:
-            dd = codex_dir / f"{day.year:04d}" / f"{day.month:02d}" / f"{day.day:02d}"
-            if dd.is_dir():
-                for f in dd.glob("*.jsonl"):
-                    jobs.append((str(f), "codex"))
-            day += dt.timedelta(days=1)
+        # every date folder: a session created on an earlier day and resumed in the window lives under its start
+        # date; the mtime prefilter below and the event timestamps decide inclusion
+        for f in codex_dir.glob("*/*/*/*.jsonl"):
+            jobs.append((str(f), "codex"))
     out, size = [], 0
     unreadable = []
     for p, k in jobs:
@@ -747,6 +834,21 @@ def discover(claude_dir, codex_dir, since, until):
         out.append((p, k, since, until))
         size += st.st_size
     return out, size, unreadable
+
+
+def first_cwd(path, max_lines=400):
+    """The first cwd recorded in a Claude transcript (read only until one is found)."""
+    try:
+        with open(path, encoding="utf-8", errors="replace") as fh:
+            for i, line in enumerate(fh):
+                if i >= max_lines:
+                    break
+                m = re.search(r'"cwd":\s*"((?:[^"\\]|\\.)*)"', line)
+                if m:
+                    return json.loads('"' + m.group(1) + '"')
+    except (OSError, ValueError):
+        pass
+    return ""
 
 
 # ---------------------------------------------------------------- project mapping
@@ -1269,12 +1371,21 @@ def main():
             unreadable.append(r)
         elif not r.get("empty") and not r.get("outside"):
             rows.append(r)
-    # projects: main sessions first so subagents inherit their parent's project
+    # projects: main sessions first so subagents inherit their parent's project. The parent map uses every scanned
+    # main session, in the window or not, and reads the cwd of a parent file that was not scanned (idle before the
+    # window), so a child is never cut off from its parent's project.
     proj_of_main = {}
-    for r in rows:
-        if r["kind"] == "main":
+    for r in res:
+        if r.get("kind") == "main" and not r.get("unreadable"):
             r["project"] = project_for(r)
             proj_of_main[Path(r["path"]).stem] = r["project"]
+    for r in rows:
+        if r["kind"] == "subagent":
+            par = Path(r["path"]).parent.parent
+            if par.name not in proj_of_main:
+                cwd = first_cwd(par.parent / (par.name + ".jsonl"))
+                if cwd:
+                    proj_of_main[par.name] = project_for({"kind": "main", "cwd": cwd})
     for r in rows:
         if r["kind"] != "main":
             r["project"] = project_for(r, proj_of_main.get(Path(r["path"]).parent.parent.name))
@@ -1357,7 +1468,7 @@ def main():
             "store_project": to_store[p], "tags": tags})
         text = redact(text)
         fname = re.sub(r"[^\w.-]", "_", p) + ".md"
-        (outdir / fname).write_text(text, encoding="utf-8")
+        write_out(outdir / fname, text)
         projects[p] = {
             "digest": fname, "digest_chars": len(text), "digest_tokens_est": len(text) // 4,
             "trimmed": {k: f"{x}/{y}" for k, (x, y) in trimmed.items()},
@@ -1385,11 +1496,11 @@ def main():
                   for e in mem_rest]
         lines += [f"- {n['id']} ({n['store_project']}) {n['date']} [{n['tags']}] {n['cost']}: {n['what']}"
                   for n in notes_rest]
-        (outdir / "_other.md").write_text(redact("\n".join(lines) + "\n"), encoding="utf-8")
+        write_out(outdir / "_other.md", "\n".join(lines) + "\n")
     orphan = [u for u in unreadable if u["project"] not in by]
     if orphan:
         text = "# Daily digest: unreadable sessions\n\n" + "\n".join(f"- {u['path']}: {u['unreadable']}" for u in orphan) + "\n"
-        (outdir / "_unreadable.md").write_text(redact(text), encoding="utf-8")
+        write_out(outdir / "_unreadable.md", text)
     runtime = round(time.time() - t0, 1)
     index = {
         "window": {"since": since, "until": until, "text": window_txt, "label": label},
@@ -1399,7 +1510,7 @@ def main():
         "finished": finished_by,
         "sessions_in_window": len(rows), "unreadable": unreadable, "projects": projects, "sessions": rows,
     }
-    (outdir / "extract.json").write_text(json.dumps(index, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+    write_out(outdir / "extract.json", index)
     print(f"acef-daily-extract {label}: {len(jobs)} file(s), {size / 1e9:.2f} GB scanned, {len(rows)} session(s) in "
           f"window, {len(unreadable)} unreadable, {runtime} s → {outdir}")
     for p, v in projects.items():

@@ -36,8 +36,24 @@ landed in; Manager-driven Codex panes counted as 99 owner hours; machine inciden
   `--repeat` hint) for stage 2 to fill. Proposals only; nothing runs them.
 - **CI:** Python tests (`test-acef-daily-extract`, `test-acef-detect`, `test-acef-retro`) run with `python3` in their
   own step, before the Node loop, which now skips them. `test-acef-capsule-supervisor-v2` is red on main; not touched.
-- Tests: 30 checks on synthetic fixtures (git repo, mem-guard log, store, Manager pane, default window). Runtime on the
-  pilot day: 12 s (parse 4 s, git/gh 3 s) for 3.7 GB.
+- **Review r1 (Codex, PR #27: 2 P1, 4 P2):**
+  - P1: text is redacted before it is truncated (a cut PEM lost its END marker and key text survived); an unterminated
+    `-----BEGIN ... KEY-----` block is redacted to the end and a tail slice up to `-----END ... KEY-----` from the start.
+  - P1: dict keys are sanitized (an email in a `cd` path stayed in a `cd_dirs` key), and every written file goes
+    through one last sanitize pass of the whole object (`memguard_error` was written raw).
+  - P2: older Codex shapes are read: `event_msg/user_message`, `agent_message`, and shell `function_call` +
+    `function_call_output` mapped onto owner messages and commands (an owner request and a failed pytest gave nothing
+    and the pane was classed as agent-driven). The same owner message arriving in two shapes counts once. Agent tools
+    `sleep` and `wait_agent` count as waits. Recent sessions (30 days) carry no shell `function_call`.
+  - P2: tool calls completed before the window leave the pending map, which keeps only a tool name, a bounded command
+    and a short input summary.
+  - P2: Codex discovery covers every date folder, so a session created earlier and resumed in the window is found; the
+    mtime prefilter and event timestamps decide.
+  - P2: the parent map uses every scanned main session, in the window or not, and reads the first cwd of a parent file
+    that was not scanned, so a child of an idle parent keeps the parent's project.
+- Tests: 37 checks on synthetic fixtures (git repo, mem-guard log, store, Manager pane, default window, and one
+  regression per review finding; the seven new checks fail on the previous commit). Runtime on the pilot day: 14 s
+  (parse 5 s, git/gh 3 s) for 3.75 GB.
 
 ## Unreleased — Daily session review: stage-1 extractor (pilot) (2026-10-27)
 
