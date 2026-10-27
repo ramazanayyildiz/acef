@@ -57,6 +57,15 @@ approved this change).
   `--timing`, stale ack under `--quiet` and in `due`, UNSEEN ack not stale, re-ack, `--recheck-hours`,
   `stale_ack_hours` from config, `breaching` in the poll event); `scripts/test-acef-retro` 49 (+4);
   `scripts/test-acef-note` 30 (+6). The new detect checks fail on main.
+- **Review r1 fixes (Codex gpt-6.1-sol, CHANGES, three P2s; each with a regression check that fails on bc8bf35):**
+  (1) configured files in subdirectories (`result_file: reports/result.md`, nested start/finish/status files) are
+  resolved at their real path for both the read and the index signature (they were looked up in the top-level
+  listing, so a nested result was never signed and a REVISE→ACCEPT change kept the cached REVISE; a nested status was
+  ignored); a signature that cannot be taken is a cache miss. (2) A cached row is used only while every file the
+  uncached path would read is still readable: `chmod 000` changes neither mtime nor size, and the warm path returned
+  the old verdict where the uncached path raises SourceError; now both report SOURCE_ERROR (PR #22 rule). (3) Each
+  index row is validated (shape, required fields, parseable times, facts a dict); a malformed row is dropped on load
+  and is a miss at use, never a crash. `scripts/test-acef-detect` 184 checks (+6).
 
 ## v3.0.0-beta.7 — Product language, end-user profiles and user-goal tours (2026-10-27)
 

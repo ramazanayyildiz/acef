@@ -198,6 +198,20 @@ def _exists(entries: dict, name: str) -> bool:
     return entry.is_file() or entry.is_dir()
 
 
+def _present(path: Path, entries: dict, name: str) -> bool:
+    """Does the configured file `name` exist under the item directory? A plain name is answered from the listing; a
+    nested one ("reports/result.md") is stat-ed at its real path. Not found is False; any other OSError propagates."""
+    if not name:
+        return False
+    if "/" not in name:
+        return _exists(entries, name)
+    try:
+        os.stat(path / name)
+    except (FileNotFoundError, NotADirectoryError):
+        return False
+    return True
+
+
 def spec_key(spec: dict) -> str:
     return json.dumps(spec, sort_keys=True)
 
@@ -236,12 +250,12 @@ class Item:
             self.last = max([ts(e.stat(follow_symlinks=False).st_mtime) for e in files] + [mtime(path)])
             started = path / spec["started_file"]
             self.started = (read_stamp(started, source, self._cache)
-                            if spec["started_file"] and _exists(entries, spec["started_file"]) else None)
+                            if _present(path, entries, spec["started_file"]) else None)
             self.finished = next((read_stamp(path / f, source, self._cache) for f in spec["finished_files"]
-                                  if _exists(entries, f)), None)
+                                  if _present(path, entries, f)), None)
             status = spec["status_file"] if spec["status_file"] else ""
             self.status = (read_text(path / status, source, self._cache).strip()
-                           if status and _exists(entries, status) else "")
+                           if _present(path, entries, status) else "")
             self.attempts = self._attempts(path, spec, entries)
             self._to_index(path, spec, entries)
         else:
@@ -261,14 +275,28 @@ class Item:
 
     # ---- persistent index (finished items only; see load_index)
     def _signature(self, path: Path, spec: dict, entries: dict) -> dict:
-        """mtime_ns and size of the directory and of every stamp, status and result file the item reads."""
+        """mtime_ns and size of the directory and of every stamp, status and result file the item reads (nested
+        names are stat-ed at their real path; a file that is not there is None). Any other OSError propagates: the
+        caller treats it as a cache miss and reads fresh, so the error surfaces as a SourceError."""
         names = [spec["started_file"], spec["status_file"], spec["result_file"], *spec["finished_files"]]
         sig = {".": _sig(os.stat(path))}
         for name in names:
             if name and name not in sig:
-                entry = entries.get(name)
-                sig[name] = _sig(entry.stat()) if entry is not None and _exists(entries, name) else None
+                if "/" in name:
+                    try:
+                        sig[name] = _sig(os.stat(path / name))
+                    except (FileNotFoundError, NotADirectoryError):
+                        sig[name] = None
+                else:
+                    entry = entries.get(name)
+                    sig[name] = _sig(entry.stat()) if entry is not None and _exists(entries, name) else None
         return sig
+
+    @staticmethod
+    def _readable(path: Path, sig: dict) -> bool:
+        """Every file the uncached path would read can still be read: a chmod changes neither mtime nor size, so a
+        cached row must not hide a read that would now fail (failed read -> SourceError, never an old answer)."""
+        return all(v is None or k == "." or os.access(path / k, os.R_OK) for k, v in sig.items())
 
     def _index_key(self, path: Path, spec: dict) -> str:
         return f"{path}\t{_fact_key(spec_key(spec))}"
@@ -277,18 +305,16 @@ class Item:
         if self._index is None:
             return False
         row = self._index.rows.get(self._index_key(path, spec))
-        if not row:
+        restored = Index.restore(row)
+        try:
+            sig = _jsonable(self._signature(path, spec, entries))
+        except OSError:
+            sig = None   # no definite signature: read fresh (and let that read raise)
+        if restored is None or sig is None or row["sig"] != sig or not self._readable(path, sig):
             self._index.misses += 1
             return False
-        if row.get("sig") != _jsonable(self._signature(path, spec, entries)):
-            self._index.misses += 1
-            return False
-        self.started = read_iso(row["started"]) if row.get("started") else None
-        self.finished = read_iso(row["finished"])
-        self.status = row.get("status", "")
-        self.last = read_iso(row["last"])
+        self.started, self.finished, self.status, self.last, self._facts = restored
         self.attempts = self._attempts(path, spec, entries)
-        self._facts = dict(row.get("facts") or {})
         self._index.hits += 1
         self._index.keep(self._index_key(path, spec), row)
         return True
@@ -297,7 +323,10 @@ class Item:
         """Only finished items are indexed: a running item's appended logs do not move any signature."""
         if self._index is None or not self.finished:
             return
-        sig = _jsonable(self._signature(path, spec, entries))
+        try:
+            sig = _jsonable(self._signature(path, spec, entries))
+        except OSError:
+            return   # no definite signature: not indexed (the item itself was read fine)
         self._index.put(self._index_key(path, spec), {
             "sig": sig, "started": iso_or_empty(self.started), "finished": iso_or_empty(self.finished),
             "status": self.status, "last": iso_or_empty(self.last), "facts": self._facts})
@@ -326,9 +355,8 @@ class Item:
             target = self.path / self.spec["result_file"] if self.is_dir and self.spec["result_file"] else (
                 None if self.is_dir else self.path)
             # no result file yet is data ("no result"); a result file that cannot be read is an error
-            plain = self.is_dir and "/" not in self.spec["result_file"]
-            exists = target is not None and (_exists(listdir(self.path, self._cache), self.spec["result_file"])
-                                             if plain else target.exists())
+            exists = target is not None and (_present(self.path, listdir(self.path, self._cache),
+                                                      self.spec["result_file"]) if self.is_dir else target.exists())
             self._result = read_text(target, self.source, self._cache) if exists else ""
         return self._result
 
@@ -383,6 +411,21 @@ class Index:
 
     def __init__(self, rows: dict = None):
         self.rows, self.seen, self.hits, self.misses, self.dirty = dict(rows or {}), {}, 0, 0, False
+
+    @staticmethod
+    def restore(row):
+        """(started, finished, status, last, facts) of a well-formed row, else None (a cache miss, never a crash)."""
+        if not isinstance(row, dict) or not isinstance(row.get("sig"), dict) or not row["sig"]:
+            return None
+        try:
+            started, finished, last = row.get("started", ""), row["finished"], row["last"]
+            status, facts = row.get("status", ""), row.get("facts") or {}
+            if not all(isinstance(v, str) for v in (started, finished, last, status)) or not finished or not last \
+                    or not isinstance(facts, dict):
+                return None
+            return (read_iso(started) if started else None, read_iso(finished), status, read_iso(last), dict(facts))
+        except (KeyError, ValueError, TypeError, AttributeError):
+            return None
 
     def keep(self, key: str, row: dict):
         self.seen[key] = row

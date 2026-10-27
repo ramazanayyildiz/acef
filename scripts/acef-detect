@@ -316,7 +316,9 @@ def load_index(path: Path):
     except (OSError, ValueError, UnicodeDecodeError):
         data = {}
     rows = data.get("rows") if isinstance(data, dict) and data.get("version") == _lib.Index.VERSION else {}
-    return _lib.Index(rows if isinstance(rows, dict) else {})
+    rows = rows if isinstance(rows, dict) else {}
+    # a malformed row is dropped here and is a cache miss at use (Index.restore): never a crash
+    return _lib.Index({k: r for k, r in rows.items() if isinstance(k, str) and _lib.Index.restore(r) is not None})
 
 
 def save_index(path: Path, index):

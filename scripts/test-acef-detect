@@ -812,6 +812,72 @@ try:
     check("speed: a changed result file is reread, not served from the index",
           bool(re.search(r"ALERT \S+ NEW \[review_loop\] IDX-1 — 3 REVISE rounds", o)), o)
 
+    # review r1 (Codex, PR #24): nested configured paths, unreadable cached sources, malformed index rows
+    for r_ in (1, 2, 3):
+        put(HOST / f"nest/codex-NEST-1-{r_}/started", iso(ago(100 - r_)) + "\n", 100 - r_)
+        put(HOST / f"nest/codex-NEST-1-{r_}/reports/result.md", "Verdict: REVISE\n", 90 - r_)
+        put(HOST / f"nest/codex-NEST-1-{r_}/finished", iso(ago(90 - r_)) + "\n", 90 - r_)
+    nc = det_cfg("nest", {"reviews": {"glob": "nest/codex-*", "result_file": "reports/result.md",
+                                      "id_regex": "^codex-(?P<id>.+?)-(?P<round>\\d+)$"}})
+    rc, o = run("--only", "review_loop", config=nc, env=ENV_C)
+    n_id = alert_id(o, "review_loop", "NEST-1")
+    nip = STORE_C / "alerts/nest.index.json"
+    nrows = json.loads(nip.read_text())["rows"] if nip.exists() else {}
+    check("codex-r1-1 a nested result file is signed in the index (not None)",
+          n_id and nrows and all(r["sig"].get("reports/result.md")
+                                 for r in nrows.values()), o + json.dumps(nrows)[:600])
+    put(HOST / "nest/codex-NEST-1-3/reports/result.md", "Verdict: ACCEPT\n", 80)   # same size, new mtime
+    rc_w, w = run("--only", "review_loop", "--dry-run", config=nc, env=ENV_C, now=NOW + dt.timedelta(minutes=1))
+    rc_n, n = run("--only", "review_loop", "--dry-run", "--no-cache", config=nc, env=ENV_C,
+                  now=NOW + dt.timedelta(minutes=1))
+    check("codex-r1-1 nested result REVISE->ACCEPT: warm index equals --no-cache and clears",
+          f"CLEARED {n_id} " in w and body(w) == body(n), w + "\n----\n" + n)
+    # a nested status file decides done/running with and without the index
+    put(HOST / "nest2/run-N1/started", iso(ago(300)) + "\n", 300)
+    put(HOST / "nest2/run-N1/meta/status", "running\n", 240)
+    put(HOST / "nest2/run-N2/started", iso(ago(300)) + "\n", 300)
+    put(HOST / "nest2/run-N2/meta/status", "done\n", 240)
+    for d_ in ("run-N1", "run-N2"):
+        settle(HOST / f"nest2/{d_}/meta", 240)
+        settle(HOST / f"nest2/{d_}", 240)
+    n2 = det_cfg("nest2", {"agent_runs": {"glob": "nest2/*", "status_file": "meta/status",
+                                          "finished_files": ["meta/finished"]}})
+    rc, o1 = run("--only", "stuck_agent", "--dry-run", config=n2, env=ENV_C)
+    rc, o2 = run("--only", "stuck_agent", "--dry-run", "--no-cache", config=n2, env=ENV_C)
+    check("codex-r1-1 nested status: running item fires, done item silent, same with and without the index",
+          "[stuck_agent] run-N1 " in o1 and "[stuck_agent] run-N2" not in o1 and body(o1) == body(o2), o1 + o2)
+
+    # an indexed result file that becomes unreadable is a SOURCE_ERROR, never the cached verdict
+    rc, o = run("--only", "review_loop", config=ic, env=ENV_C, now=NOW + dt.timedelta(minutes=2))   # verdicts indexed
+    target = HOST / "idx/codex-IDX-1-2/report.md"
+    os.chmod(target, 0)
+    try:
+        rc_w, w = run("--only", "review_loop", "--dry-run", config=ic, env=ENV_C, now=NOW + dt.timedelta(minutes=3))
+        rc_n, n = run("--only", "review_loop", "--dry-run", "--no-cache", config=ic, env=ENV_C,
+                      now=NOW + dt.timedelta(minutes=3))
+    finally:
+        os.chmod(target, 0o644)
+    check("codex-r1-2 chmod 000 on a cached result: warm poll reports SOURCE_ERROR like --no-cache",
+          "SOURCE_ERROR review_loop" in w and "SOURCE_ERROR review_loop" in n and "CLEARED" not in w
+          and "Traceback" not in w, w + "\n----\n" + n)
+
+    # malformed index rows are cache misses, never a crash
+    ip = STORE_C / "alerts/nest.index.json"
+    good = json.loads(ip.read_text()) if ip.exists() else {"version": 1, "rows": {"k": {}}}
+    keys = sorted(good["rows"]) or ["k"]
+    bad_rows = {keys[0]: [1, 2, 3], "not-a-path": "x"}
+    for k in keys[1:]:
+        bad_rows[k] = {kk: vv for kk, vv in good["rows"][k].items() if kk not in ("finished", "last")}
+    bad_rows[keys[-1]] = {**good["rows"][keys[-1]], "finished": "not a date", "facts": [1]}
+    ip.write_text(json.dumps({"version": good["version"], "rows": bad_rows}))
+    check("codex-r1-3 fixture: the index had rows to corrupt", ip.exists() and len(keys) >= 3, str(keys))
+    rc_b, b_ = run("--only", "review_loop", "--dry-run", config=nc, env=ENV_C, now=NOW + dt.timedelta(minutes=4))
+    rc_n, n = run("--only", "review_loop", "--dry-run", "--no-cache", config=nc, env=ENV_C,
+                  now=NOW + dt.timedelta(minutes=4))
+    check("codex-r1-3 malformed index rows ([1,2,3], missing or invalid fields) are misses: no crash, same findings",
+          rc_b == rc_n == 0 and "Traceback" not in b_ and "ERROR review_loop" not in b_ and body(b_) == body(n)
+          and "index 0 hit(s)" in b_, b_ + "\n----\n" + n)
+
     # shared git: one git log of main for every history window, one for every worktree head
     trace = TMP / "git-trace.txt"
     rc, o = run("--dry-run", config=CFG, env={**ENV_C, "GIT_TRACE": str(trace)}, now=NOW + dt.timedelta(minutes=2))

@@ -89,6 +89,11 @@
       "layer": "cli",
       "ref": "B2Press read-only measurement (real polls into a copy of the store)",
       "note": "2026-10-27: unloaded main 1.2-1.75 s -> 0.53-0.56 s (empty index) / 0.45-0.48 s (warm index); under taskpolicy -b (load 11-21) main 5.2-6.1 s -> 2.1-2.4 s / 1.8-2.0 s. Git subprocesses 28 -> 5; file reads 3142 -> 1344 -> 1. Findings identical to main and across empty/warm/no-cache index."
+    },
+    {
+      "layer": "tests",
+      "ref": "scripts/test-acef-detect",
+      "note": "2026-10-27 review r1 (Codex, three P2s): 184 checks passed (+6): nested result/status files signed and read at their real path (warm index equals --no-cache after REVISE->ACCEPT; nested status decides running/done), chmod 000 on an indexed result gives SOURCE_ERROR like the uncached path, malformed index rows ([1,2,3], missing or invalid fields) are misses with no crash. The five regression checks fail on bc8bf35."
     }
   ],
   "createdAt": "2026-10-27"
