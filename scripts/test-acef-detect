@@ -1,0 +1,774 @@
+#!/usr/bin/env python3
+"""test-acef-detect: every core detector fires on a fixture and stays silent on a normal-case control; the alert
+lifecycle (open, dedupe, poll count, ack, defer, reopen, overdue, resolve, recurrence) and the loss write to the central
+log. Builds a throwaway host repository and store under a temp dir (never the real ACEF_FEEDBACK_DIR)."""
+import datetime as dt
+import importlib.machinery
+import importlib.util
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+
+HERE = Path(__file__).resolve().parent
+DETECT, NOTE = HERE / "acef-detect", HERE / "acef-note"
+TMP = Path(os.path.realpath(tempfile.mkdtemp(prefix="acef-detect-test-")))
+STORE, HOST = TMP / "store", TMP / "host"
+NOW = dt.datetime.now(dt.timezone.utc).replace(microsecond=0)
+ENV = {k: v for k, v in os.environ.items() if k != "PYTHONDONTWRITEBYTECODE"}   # the scripts must stop bytecode themselves
+ENV.update({"ACEF_FEEDBACK_DIR": str(STORE), "TZ": "UTC", "GIT_CONFIG_GLOBAL": "/dev/null",
+            # some Pythons redirect bytecode to a cache prefix; point it here so a write is visible either way
+            "PYTHONPYCACHEPREFIX": str(TMP / "pyc")})
+ok = bad = 0
+
+
+def check(name, cond, detail=""):
+    global ok, bad
+    if cond:
+        ok += 1
+        print(f"ok   {name}")
+    else:
+        bad += 1
+        print(f"FAIL {name}" + (f"\n    {detail[:1500]}" if detail else ""))
+
+
+def iso(t):
+    return t.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def ago(minutes):
+    return NOW - dt.timedelta(minutes=minutes)
+
+
+def put(path, text="", minutes_ago=0):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text)
+    t = ago(minutes_ago).timestamp()
+    os.utime(path, (t, t))
+
+
+def settle(folder, minutes_ago):
+    t = ago(minutes_ago).timestamp()
+    os.utime(folder, (t, t))
+
+
+def git(*args, minutes_ago=None, cwd=HOST):
+    env = dict(ENV)
+    if minutes_ago is not None:
+        env["GIT_AUTHOR_DATE"] = env["GIT_COMMITTER_DATE"] = iso(ago(minutes_ago))
+    return subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", *args], cwd=cwd, env=env,
+                          capture_output=True, text=True, check=True).stdout
+
+
+def run(*args, now=NOW, env=None, config=None):
+    e = dict(env or ENV)
+    e["ACEF_NOW"] = iso(now)
+    cmd = [sys.executable, str(DETECT), "--repo", str(HOST)] + (["--config", str(config)] if config else []) + list(args)
+    proc = subprocess.run(cmd, env=e, capture_output=True, text=True)
+    return proc.returncode, proc.stdout + proc.stderr
+
+
+def note(*args, now=NOW, env=None):
+    e = dict(env or ENV)
+    e["ACEF_NOW"] = iso(now)
+    proc = subprocess.run([sys.executable, str(NOTE), *args], env=e, capture_output=True, text=True)
+    return proc.returncode, proc.stdout + proc.stderr
+
+
+def alert_id(out, detector, subject):
+    m = re.search(rf"ALERT (\S+) (?:NEW|REOPEN|OPEN|OVERDUE|ACKED|DEFERRED) \[{detector}\] {re.escape(subject)} ", out)
+    return m.group(1) if m else ""
+
+
+try:
+    # ------------------------------------------------------------ host repository
+    HOST.mkdir()
+    git("init", "-q", "-b", "main")
+    put(HOST / "CHANGELOG.md", "# log\n- Activation: immediate\n")
+    put(HOST / "README.md", "host\n")
+    put(HOST / "docs/slices/README.md", "work files\n")   # the configured slices_dir exists
+    git("add", "-A")
+    git("commit", "-q", "-m", "init", minutes_ago=3 * 24 * 60)
+    # merged work: WORK-3 (accepted, then merged) and WORK-12 (merged, worktree left behind)
+    for wid, made, merged in (("work-3", 300, 240), ("work-12", 180, 120)):
+        git("checkout", "-q", "-b", f"slice/{wid}")
+        put(HOST / f"{wid}.txt", wid)
+        git("add", "-A")
+        git("commit", "-q", "-m", f"{wid.upper()} change", minutes_ago=made)
+        git("checkout", "-q", "main")
+        git("merge", "-q", "--no-ff", f"slice/{wid}", "-m", f"Merge slice/{wid}: {wid.upper()} light change",
+            minutes_ago=merged)
+    # open work: WORK-10 (open 20 h, HAFIF) and WORK-11 (open 1 h)
+    for wid, made in (("work-10", 1200), ("work-11", 60)):
+        git("branch", f"slice/{wid}", "main")
+        wt = TMP / f"wt-{wid}"
+        git("worktree", "add", "-q", str(wt), f"slice/{wid}")
+        put(wt / "docs/slices" / f"{wid.upper()}.md", f"# {wid.upper()}\nYol: HAFİF — small\n")
+        git("add", "-A", cwd=wt)
+        git("commit", "-q", "-m", f"{wid.upper()} spec", minutes_ago=made, cwd=wt)
+    git("worktree", "add", "-q", str(TMP / "wt-work-12"), "slice/work-12")
+    # agent runs
+    R = HOST / "runs"
+    put(R / "run-a/started", iso(ago(90)) + "\n", 90)
+    put(R / "run-a/events-1.log", "working\n", 45)
+    settle(R / "run-a", 45)                                       # stuck: no change for 45 min
+    put(R / "run-b/started", iso(ago(10)) + "\n", 10)
+    put(R / "run-b/events-1.log", "working\n", 5)
+    settle(R / "run-b", 5)                                        # control: active
+    put(R / "run-c/started", iso(ago(200)) + "\n", 200)
+    put(R / "run-c/finished", iso(ago(150)) + "\n", 150)
+    settle(R / "run-c", 150)                                      # control: done long ago, nothing held
+    put(R / "run-d/started", iso(ago(50)) + "\n", 50)
+    for i, m in enumerate((40, 25, 10), 1):
+        put(R / f"run-d/events-{i}.log", f"try {i} at 10:{i}2\nERROR: at capacity (429)\n", m)
+    settle(R / "run-d", 10)                                       # same failure 3x, no result
+    put(R / "run-e/started", iso(ago(50)) + "\n", 50)
+    for i, (m, err) in enumerate(((40, "ERROR: a"), (25, "ERROR: b"), (10, "ERROR: c")), 1):
+        put(R / f"run-e/events-{i}.log", err + "\n", m)
+    settle(R / "run-e", 10)                                       # control: different errors
+    put(R / "run-f/started", iso(ago(200)) + "\n", 200)
+    put(R / "run-f/finished", iso(ago(120)) + "\n", 120)
+    settle(R / "run-f", 120)                                      # done 2 h ago, process still runs
+    put(R / "run-h/started", iso(ago(200)) + "\n", 200)
+    put(R / "run-h/finished", iso(ago(120)) + "\n", 120)
+    settle(R / "run-h", 120)
+    (HOST / "left/run-h-src").mkdir(parents=True)                # leftover workspace
+    # command log: same failure 3x with the same tree; control: tree changed
+    rows = [("make t", 1, "boom 12", "t1", 30), ("make t", 1, "boom 13", "t1", 20), ("make t", 1, "boom 14", "t1", 5),
+            ("make u", 1, "same", "u1", 30), ("make u", 1, "same", "u2", 20), ("make u", 1, "same", "u3", 5)]
+    put(HOST / "cmd.jsonl", "".join(json.dumps({"ts": iso(ago(m)), "cmd": c, "rc": rc, "err": e, "tree": t}) + "\n"
+                                    for c, rc, e, t, m in rows))
+    # reviews and developer reports (files; id and round in the name)
+    V = HOST / "reviews"
+    reviews = [("WORK-1", 1, "ACCEPT", 360, ""), ("WORK-2", 1, "ACCEPT", 60, ""), ("WORK-3", 1, "ACCEPT", 360, ""),
+               ("WORK-5", 1, "REVISE", 60, "Reason: spec-text"),
+               ("WORK-6", 1, "REVISE", 300, "Reason: test-gap"), ("WORK-6", 2, "REVISE", 180, "Reason: test-gap"),
+               ("WORK-6", 3, "REVISE", 60, "Reason: test-gap"),
+               ("WORK-7", 1, "REVISE", 300, ""), ("WORK-7", 2, "REVISE", 200, ""), ("WORK-7", 3, "ACCEPT", 30, ""),
+               ("WORK-8", 1, "REVISE", 100, "Reason: test-gap\nReason: spec-text"),
+               ("WORK-9", 1, "REVISE", 100, "Reason: test-gap"), ("PLAN-NOTES", 1, "ACCEPT", 600, "")]
+    for wid, rnd, verdict, m, extra in reviews:
+        put(V / f"{wid}-review-r{rnd}.md", f"# review\nVerdict: {verdict}\n{extra}\n", m)
+    put(HOST / "dev/WORK-4-dev-report.md", "report", 300)
+    put(HOST / "dev/WORK-5-dev-report.md", "report", 300)
+    put(HOST / "queue.md", "stack: WORK-2 -> WORK-7\n")
+    # slot events
+    slots = [("take", "r1", "s1", "projA", "ownerA", 120, None), ("wait", "", "", "projB", "ownerB", 40, ["r1"]),
+             ("take", "r2", "s1", "projA", "ownerC", 60, None), ("wait", "", "", "projB", "ownerD", 40, ["r2"])]
+    put(HOST / "slots.jsonl", "".join(json.dumps({"ts": iso(ago(m)), "event": ev, "host": h, "slot": sl, "project": p,
+                                                  "owner": o, **({"hosts": hs} if hs else {})}) + "\n"
+                                      for ev, h, sl, p, o, m, hs in slots))
+    put(HOST / "slots-ok.jsonl", "".join(json.dumps(r) + "\n" for r in [
+        {"ts": iso(ago(40)), "event": "wait", "owner": "ownerB", "project": "projB", "hosts": ["r1"]},
+        {"ts": iso(ago(30)), "event": "take", "host": "r1", "slot": "s2", "owner": "ownerB", "project": "projB"},
+        {"ts": iso(ago(120)), "event": "take", "host": "r1", "slot": "s1", "owner": "ownerA", "project": "projA"}]))
+    # store rules
+    (STORE / "rules").mkdir(parents=True)
+    put(STORE / "rules/R-1.md", "Incidents: x-1\nActivation: after the runner change lands\nStatus: shipped\n")
+    put(STORE / "rules/R-2.md", "Incidents: x-2\nActivation: owner: ram, nightly job on 2026-01-01\nStatus: shipped\n")
+    put(STORE / "rules/R-3.md", "Incidents: x-3\nActivation: owner: ram, from 2999-01-01\nStatus: shipped\n")
+    put(STORE / "rules/R-4.md", "Incidents: x-4\nActivation: after the move\nStatus: retired\n")
+
+    cfg = {"detectors": {
+        "project": "demo", "main_ref": "main",
+        "sources": {
+            "main_ref": "main",
+            "agent_runs": {"glob": "runs/*", "attempt_glob": "events-*.log", "result_file": "report.md"},
+            "command_log": "cmd.jsonl",
+            "reviews": {"glob": "reviews/*.md", "id_regex": r"^(?P<id>.+?)-review(?:-r(?P<round>\d+))?$"},
+            "dev_reports": "dev/*-dev-report.md", "merge_queue": "queue.md", "slot_events": "slots.jsonl",
+            "slices_dir": "docs/slices"},
+        "owners": {"default": "coordinator", "machine": "merge-operator"},
+        "thresholds": {"forgotten_session": {"leftovers": ["left/{name}-src"]},
+                       "machine": {"capacity": {"r1": 2, "r2": 1}}}}}
+    CFG = TMP / "cfg.json"
+    CFG.write_text(json.dumps(cfg))
+
+    # ------------------------------------------------------------ first poll: every detector, fixture vs control
+    holder = subprocess.Popen(["/bin/sh", "-c", "sleep 60; exit 0", str(R / "run-f")])
+    try:
+        rc, out1 = run(config=CFG)
+    finally:
+        holder.kill()
+        holder.wait()
+    check("first poll exits 0", rc == 0, out1)
+    expect = [("stuck_agent", "run-a"), ("stuck_agent", "run-d:repeat"), ("stuck_agent", "cmd:make t"),
+              ("waiting_work", "WORK-1"), ("waiting_work", "WORK-1:queue"), ("waiting_work", "WORK-4:review"),
+              ("review_loop", "WORK-6"), ("review_loop", "class:test-gap"),
+              ("forgotten_session", "run-f:process"), ("forgotten_session", "run-h:leftover"),
+              ("forgotten_session", "worktree:wt-work-12"), ("size_ratio", "WORK-10"), ("machine", "hog:r2:projA"),
+              ("inactive_improvement", "R-1:after-the-runner-change-lands")]
+    for det, subject in expect:
+        check(f"{det} fires on {subject}", bool(re.search(rf"ALERT \S+ NEW \[{det}\] {re.escape(subject)} ", out1)),
+              out1)
+    check("inactive_improvement fires on a past activation date",
+          bool(re.search(r"NEW \[inactive_improvement\] R-2:\S+ — R-2: activation date 2026-01-01 passed", out1)), out1)
+    silent = [("stuck_agent", "run-b"), ("stuck_agent", "run-e:repeat"), ("stuck_agent", "cmd:make u"),
+              ("waiting_work", "WORK-2"), ("waiting_work", "WORK-3"), ("waiting_work", "WORK-7"),
+              ("waiting_work", "WORK-5:review"), ("waiting_work", "PLAN-NOTES"), ("review_loop", "WORK-7"),
+              ("review_loop", "class:spec-text"), ("forgotten_session", "run-c"), ("forgotten_session", "worktree:wt-work-10"),
+              ("size_ratio", "WORK-11"), ("machine", "idle:ownerD"), ("inactive_improvement", "R-3"),
+              ("inactive_improvement", "R-4"), ("inactive_improvement", "CHANGELOG")]
+    for det, subject in silent:
+        check(f"{det} silent on control {subject}", not re.search(rf"\[{det}\] {re.escape(subject)}[: ]", out1), out1)
+    check("machine idle capacity waits for a second poll", "WATCH machine idle:ownerB (1/2 polls)" in out1, out1)
+    check("ack deadline printed", "ack by " in out1)
+    elapsed = int(re.search(r", (\d+) ms", out1).group(1))
+    check(f"poll under 5 s on the fixture ({elapsed} ms)", elapsed < 5000)
+
+    log = (STORE / "log/demo.md").read_text() if (STORE / "log/demo.md").exists() else ""
+    stuck_lines = [l for l in log.splitlines() if "[stuck_agent]" in l]
+    originals = [l for l in stuck_lines if "repeat-of:" not in l]
+    check("real losses written to the central log", len(stuck_lines) >= 2, log)
+    check("one original per detector, later losses are --repeat",
+          len(originals) == 1 and all(re.search(r"repeat-of:demo-\d+", l) for l in stuck_lines if l not in originals),
+          log)
+    check("loss entry carries the detector's tags and minutes", re.search(r"\| infra,runner \| \d+min \|", originals[0] if originals else ""), log)
+    check("inactive improvement past date logged", "[inactive_improvement] R-2" in log, log)
+    check("no-owner activation is not logged as a loss", "[inactive_improvement] R-1" not in log, log)
+
+    # ------------------------------------------------------------ dedupe, confirm polls, poll counting
+    rc, out2 = run(config=CFG, now=NOW + dt.timedelta(minutes=1))
+    check("second poll opens no duplicate", "NEW [stuck_agent] run-a " not in out2 and "OPEN [stuck_agent] run-a " in out2, out2)
+    check("machine idle opens on the second poll", bool(re.search(r"ALERT \S+ NEW \[machine\] idle:ownerB ", out2)), out2)
+    check("finding gone resolves its alert (process ended)", re.search(r"CLEARED \S+ \[forgotten_session\] run-f:process", out2), out2)
+    run(config=CFG, now=NOW + dt.timedelta(minutes=2))
+    rc, out4 = run(config=CFG, now=NOW + dt.timedelta(minutes=3), env=ENV)
+    rc, due = note("due", now=NOW + dt.timedelta(minutes=4))
+    a_stuck = alert_id(out1, "stuck_agent", "run-a")
+    a_wait = alert_id(out1, "waiting_work", "WORK-1")
+    a_loop = alert_id(out1, "review_loop", "WORK-6")
+    check("alert ids look like <project>-A<n>", re.match(r"^demo-A\d+$", a_stuck or "") is not None, out1)
+    check("due lists ALERT OPEN after more than 2 polls", f"ALERT OPEN: {a_stuck} [stuck_agent]" in due, due)
+    check("due says RETRO DUE without a retro", "RETRO DUE: no weekly retro yet" in due, due)
+    rc, quiet = run("--quiet", config=CFG, now=NOW + dt.timedelta(minutes=5))
+    check("--quiet prints only new/reopened/overdue alerts", all(
+        l.startswith("acef-detect ") or re.match(r"^(ALERT \S+ (NEW|REOPEN|OVERDUE)|ERROR)", l)
+        for l in quiet.strip().splitlines()), quiet)
+
+    # ------------------------------------------------------------ ack / defer / resolve
+    check("ack needs exactly one action", note("ack", a_stuck)[0] != 0)
+    check("ack refuses a bad id", note("ack", "nonsense", "--slice", "X")[0] != 0)
+    check("defer needs a reason", note("ack", a_wait, "--defer", (NOW + dt.timedelta(days=1)).date().isoformat())[0] != 0)
+    check("defer refuses a past date", note("ack", a_wait, "--defer", "2000-01-01", "--reason", "x")[0] != 0)
+    check("ack with a slice id", note("ack", a_stuck, "--slice", "FIX-STUCK-01")[0] == 0)
+    until = (NOW + dt.timedelta(days=1)).date().isoformat()
+    check("defer with date and reason", note("ack", a_wait, "--defer", until, "--reason", "runner busy")[0] == 0)
+    rc, due = note("due", now=NOW + dt.timedelta(minutes=6))
+    check("acked and deferred alerts leave due", a_stuck + " " not in due.replace("ALERT", "") and f"{a_wait} " not in due, due)
+    rc, listing = note("alerts", "--project", "demo")
+    check("alerts lists acked with the slice id", f"{a_stuck} acked slice FIX-STUCK-01" in listing, listing)
+    check("alerts lists deferred with date and reason", f"{a_wait} deferred until {until} (runner busy)" in listing, listing)
+    # resolve by evidence, then recurrence reopens the same id
+    put(R / "run-a/finished", iso(NOW) + "\n", 0)
+    rc, outr = run(config=CFG, now=NOW + dt.timedelta(minutes=10))
+    check("cleared stuck run resolves", f"CLEARED {a_stuck} [stuck_agent] run-a" in outr, outr)
+    (R / "run-a/finished").unlink()
+    settle(R / "run-a", 45)
+    rc, outr2 = run(config=CFG, now=NOW + dt.timedelta(minutes=11))
+    check("recurrence reopens the same alert id", f"ALERT {a_stuck} REOPEN [stuck_agent] run-a " in outr2, outr2)
+    later = NOW + dt.timedelta(days=4)
+    rc, due = note("due", now=later)
+    check("deferral past its date reopens", re.search(rf"ALERT (OPEN|OVERDUE): {a_wait} .*deferral to {until} passed", due), due)
+    check("unacked alert past 4 working hours is OVERDUE", f"ALERT OVERDUE: {a_loop} [review_loop]" in due, due)
+    rc, outd = run(config=CFG, now=later)
+    check("detect writes the reopen of an expired deferral", f"ALERT {a_wait} REOPEN [waiting_work] WORK-1 " in outd, outd)
+    check("manual resolve", note("ack", a_loop, "--resolve", "split into two pieces")[0] == 0)
+    rc, listing = note("alerts", "--project", "demo", "--all")
+    check("resolved alert keeps its evidence", f"{a_loop} resolved (split into two pieces)" in listing, listing)
+    events = [json.loads(l) for l in (STORE / "alerts/demo.jsonl").read_text().splitlines()]
+    check("alert log is append-only events", {e["event"] for e in events} <= {"poll", "open", "ack", "defer", "resolve", "reopen"}
+          and {"poll", "open", "ack", "defer", "resolve", "reopen"} <= {e["event"] for e in events})
+
+    # ------------------------------------------------------------ dry run, skips, host detectors, list
+    before = (STORE / "alerts/demo.jsonl").read_text()
+    rc, outdry = run("--dry-run", config=CFG, now=NOW + dt.timedelta(minutes=12))
+    check("--dry-run writes nothing", (STORE / "alerts/demo.jsonl").read_text() == before and "dry run" in outdry, outdry)
+    bare = TMP / "bare"
+    bare.mkdir()
+    empty_env = {**ENV, "ACEF_FEEDBACK_DIR": str(TMP / "store2")}
+    proc = subprocess.run([sys.executable, str(DETECT), "--repo", str(bare)], env={**empty_env, "ACEF_NOW": iso(NOW)},
+                          capture_output=True, text=True)
+    for det, why in (("machine", "no source: slot_events"), ("stuck_agent", "no source: agent_runs, command_log"),
+                     ("review_loop", "no source: reviews"), ("waiting_work", "no source: reviews"),
+                     ("size_ratio", "no source: git repository"),
+                     ("forgotten_session", "no source: agent_runs, slot_events, git worktrees"),
+                     ("inactive_improvement", "no source: store rules, changelogs, slices_dir")):
+        check(f"SKIP {det} without a source", f"SKIP {det} ({why})" in proc.stdout, proc.stdout + proc.stderr)
+    check("all-skip run exits 0", proc.returncode == 0, proc.stderr)
+    ok_cfg = TMP / "ok.json"
+    ok_cfg.write_text(json.dumps({"sources": {"slot_events": "slots-ok.jsonl"}, "project": "demo2",
+                                  "thresholds": {"machine": {"confirm_polls": 1, "capacity": {"r1": 2}}}}))
+    rc, outm = run("--only", "machine", config=ok_cfg)
+    check("machine silent when the waiter got a slot (bare detectors object as --config)",
+          rc == 0 and "OK   machine (0 findings" in outm, outm)
+    hd = HOST / ".acef/detectors"
+    hd.mkdir(parents=True)
+    (hd / "host_probe.py").write_text('"""Probe.\n\nQuestion: q?\nSource: none\nRule: always one\nThreshold: none\n'
+                                      'Owner: host-owner\nScope: host:demo\nKind: absence\n"""\n'
+                                      'def detect(ctx):\n    return [{"subject": "x", "summary": "probe"}]\n')
+    (hd / "broken.py").write_text('"""No header."""\ndef detect(ctx):\n    return []\n')
+    rc, outh = run("--only", "host_probe,broken", config=CFG, now=NOW + dt.timedelta(minutes=13))
+    check("host detector runs with its own owner", re.search(r"NEW \[host_probe\] x — probe \(owner coordinator", outh) or
+          re.search(r"NEW \[host_probe\] x — probe", outh), outh)
+    check("detector without a header is an ERROR, exit 3", rc == 3 and "ERROR broken: cannot load (header misses" in outh, outh)
+    rc, outl = run("--list", config=CFG)
+    check("--list shows the six detectors plus size ratio",
+          all(f"{n} (core" in outl for n in ("stuck_agent", "waiting_work", "machine", "review_loop",
+                                               "forgotten_session", "inactive_improvement", "size_ratio")), outl)
+
+    # ------------------------------------------------------------ working hours arithmetic
+    loader = importlib.machinery.SourceFileLoader("acef_note_t", str(NOTE))
+    spec = importlib.util.spec_from_loader("acef_note_t", loader)
+    mod = importlib.util.module_from_spec(spec)
+    os.environ["TZ"] = "UTC"
+    try:
+        import time
+        time.tzset()
+    except AttributeError:
+        pass
+    loader.exec_module(mod)
+    fri = dt.datetime(2026, 10, 23, 16, 0, tzinfo=dt.timezone.utc)
+    check("4 working hours from Friday 16:00 end Monday 11:00",
+          mod.add_working_hours(fri, 4) == dt.datetime(2026, 10, 26, 11, 0, tzinfo=dt.timezone.utc),
+          str(mod.add_working_hours(fri, 4)))
+    sat = dt.datetime(2026, 10, 24, 20, 0, tzinfo=dt.timezone.utc)
+    check("an alert opened at the weekend starts counting Monday 09:00",
+          mod.add_working_hours(sat, 4) == dt.datetime(2026, 10, 26, 13, 0, tzinfo=dt.timezone.utc),
+          str(mod.add_working_hours(sat, 4)))
+
+    # ------------------------------------------------------------ review r1 regressions (each fails without its fix)
+    # P2-1: loading host detectors (also with --list / --dry-run) leaves no __pycache__ in the host or the checkout
+    run("--list", config=CFG)
+    run("--dry-run", "--only", "host_probe", config=CFG)
+    check("no __pycache__ in the host's .acef/detectors", not (hd / "__pycache__").exists(),
+          str(list(hd.iterdir())))
+    check("no __pycache__ next to the core detectors", not (HERE / "detectors" / "__pycache__").exists())
+    leaked = [str(p_) for p_ in (TMP / "pyc").rglob("*.pyc")
+              if "detectors" in str(p_) or "acef" in p_.name] if (TMP / "pyc").exists() else []
+    check("no detector bytecode under the pycache prefix either", not leaked, "\n".join(leaked[:5]))
+
+    STORE_R = TMP / "store-r"
+    ENV_R = {**ENV, "ACEF_FEEDBACK_DIR": str(STORE_R)}
+
+    def events_of(project):
+        f = STORE_R / "alerts" / f"{project}.jsonl"
+        return [json.loads(l) for l in f.read_text().splitlines()] if f.exists() else []
+
+    # P2-2: parallel polls never open two alerts for one key. Deterministic: the test holds the project's alert lock,
+    # starts 8 polls, waits until all 8 are blocked on that lock (lsof barrier), then releases it.
+    import fcntl
+    import time as _time
+    par = TMP / "par.json"
+    par.write_text(json.dumps({**cfg["detectors"], "project": "par"}))
+    (STORE_R / "alerts").mkdir(parents=True, exist_ok=True)
+    lock_path = STORE_R / "alerts" / ".par.jsonl.lock"
+    holder_fd = open(lock_path, "w")
+    fcntl.flock(holder_fd, fcntl.LOCK_EX)
+    procs = [subprocess.Popen([sys.executable, str(DETECT), "--repo", str(HOST), "--config", str(par), "--only",
+                               "stuck_agent,size_ratio,review_loop"], env={**ENV_R, "ACEF_NOW": iso(NOW)},
+                              stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True) for _ in range(8)]
+    pids = {p_.pid for p_ in procs}
+    blocked, deadline = set(), _time.monotonic() + 60
+    while _time.monotonic() < deadline and blocked != pids:
+        got = subprocess.run(["lsof", "-t", str(lock_path)], capture_output=True, text=True).stdout.split()
+        blocked = pids & {int(x) for x in got if x.isdigit()}
+        if blocked != pids:
+            _time.sleep(0.2)
+    check("barrier: all 8 polls reached the alert lock while it was held", blocked == pids,
+          f"{len(blocked)} of 8 blocked")
+    fcntl.flock(holder_fd, fcntl.LOCK_UN)
+    holder_fd.close()
+    outputs = [p_.communicate(timeout=120)[0] for p_ in procs]
+    codes = [p_.returncode for p_ in procs]
+    check(f"every parallel poll exits 0 ({codes})", codes == [0] * 8, "\n---\n".join(outputs)[:2000])
+    opens = [e["key"] for e in events_of("par") if e["event"] == "open"]
+    check(f"8 parallel polls open each key once ({len(opens)} opens, {len(set(opens))} keys)",
+          opens and len(opens) == len(set(opens)), "\n".join(sorted(opens)))
+    ids = [e["id"] for e in events_of("par") if e["event"] == "open"]
+    check("parallel polls allocate distinct ids", len(ids) == len(set(ids)))
+    check("8 polls recorded", sum(1 for e in events_of("par") if e["event"] == "poll") == 8)
+
+    # P2-3: a reopened deferral keeps the deadline that runs from the deferral's expiry
+    dfc = TMP / "defer.json"
+    dfc.write_text(json.dumps({**cfg["detectors"], "project": "dfr"}))
+    rc, o = run("--only", "size_ratio", config=dfc, env=ENV_R)
+    did = alert_id(o, "size_ratio", "WORK-10")
+    until_d = (NOW + dt.timedelta(days=1)).date()
+    subprocess.run([sys.executable, str(NOTE), "ack", did, "--defer", until_d.isoformat(), "--reason", "later"],
+                   env={**ENV_R, "ACEF_NOW": iso(NOW)}, capture_output=True)
+    poll_at = NOW + dt.timedelta(days=5)
+    rc, o = run("--only", "size_ratio", config=dfc, env=ENV_R, now=poll_at)
+    expected = mod.iso(mod.add_working_hours(dt.datetime.combine(until_d + dt.timedelta(days=1), dt.time(0, 0),
+                                                                 tzinfo=dt.timezone.utc), 4))
+    reopen = [e for e in events_of("dfr") if e["event"] == "reopen"]
+    check("expired deferral reopens with the deadline from its expiry",
+          reopen and reopen[-1]["ack_by"] == expected and f"ack by {expected}" in o, f"{expected} vs {reopen}\n{o}")
+    rc, d = note("due", now=poll_at, env=ENV_R)
+    check("that alert is OVERDUE at the poll, not given a fresh deadline", f"ALERT OVERDUE: {did} " in d, d)
+
+    # P2-4: an active run in an old directory is still seen; aged-out or missing evidence is not recovery
+    R2 = HOST / "runs2"
+    put(R2 / "run-x/started", iso(ago(14 * 60)) + "\n", 14 * 60)
+    put(R2 / "run-x/events-1.log", "working\n", 40)          # log appended: the directory mtime does not move
+    settle(R2 / "run-x", 13 * 60)
+    put(R2 / "run-y/started", iso(ago(30)) + "\n", 30)
+    put(R2 / "run-y/events-1.log", "working\n", 15)
+    settle(R2 / "run-y", 15)
+    put(R2 / "run-z/started", iso(ago(60)) + "\n", 60)
+    put(R2 / "run-z/events-1.log", "working\n", 45)
+    settle(R2 / "run-z", 45)
+    agc = TMP / "aged.json"
+    agc.write_text(json.dumps({"project": "aged", "sources": {"agent_runs": "runs2/*", "command_log": "cmd2.jsonl"},
+                               "thresholds": {"stuck_agent": {"stuck_min": 10}}}))
+    put(HOST / "cmd2.jsonl", "".join(json.dumps({"ts": iso(ago(m)), "cmd": "make v", "rc": 2, "err": "boom"}) + "\n"
+                                     for m in (30, 20, 10)))
+    rc, o = run("--only", "stuck_agent", config=agc, env=ENV_R)
+    x_id = alert_id(o, "stuck_agent", "run-x")
+    check("active run in a directory with an old mtime is still seen (stuck)", bool(x_id), o)
+    # P2-5: failures without a tree hash do not count as "no file change"
+    check("same failure 3x without tree hashes is unknown, not an alert",
+          "[stuck_agent] cmd:make v" not in o and "file change unknown" in o, o)
+    # P2-6: an alert opened below 30 min logs its loss once when it crosses 30 min
+    y_id = alert_id(o, "stuck_agent", "run-y")
+    logf = STORE_R / "log/aged.md"
+    check("loss below 30 min is not logged at open", y_id and not any(
+        l.endswith("/run-y") for l in (logf.read_text().splitlines() if logf.exists() else [])), o)
+    rc, o2 = run("--only", "stuck_agent", config=agc, env=ENV_R, now=NOW + dt.timedelta(minutes=20))
+    rc, o3 = run("--only", "stuck_agent", config=agc, env=ENV_R, now=NOW + dt.timedelta(minutes=25))
+    logged = [e for e in events_of("aged") if e["event"] == "loss" and e["id"] == y_id]
+    log_text = logf.read_text() if logf.exists() else ""
+    y_entries = [l for l in log_text.splitlines() if l.endswith("/run-y")]
+    check("crossing 30 min while open logs the loss once",
+          len(logged) == 1 and len(y_entries) == 1 and "for 35 min" in y_entries[0], o2 + o3 + log_text)
+    # P2-4 continued: two days later run-x has aged out of the window but is still stuck: it stays open
+    shutil.rmtree(R2 / "run-z")
+    z_id = alert_id(o, "stuck_agent", "run-z")
+    rc, o4 = run("--only", "stuck_agent", config=agc, env=ENV_R, now=NOW + dt.timedelta(days=2))
+    check("aged-out run is looked up and stays open, not CLEARED", f"CLEARED {x_id}" not in o4 and
+          f"ALERT {x_id} OPEN" in o4 or f"ALERT {x_id} OVERDUE" in o4, o4)
+    check("a run that disappeared is UNSEEN, not CLEARED", f"UNSEEN {z_id} " in o4 and f"CLEARED {z_id}" not in o4, o4)
+    put(R2 / "run-x/finished", iso(NOW) + "\n", 0)
+    rc, o5 = run("--only", "stuck_agent", config=agc, env=ENV_R, now=NOW + dt.timedelta(days=2, minutes=1))
+    check("a positive observation (finished) clears it", f"CLEARED {x_id} [stuck_agent] run-x" in o5, o5)
+
+    # ------------------------------------------------------------ review r2: aged-out evidence is UNSEEN, per detector
+    def det_cfg(project, sources, thresholds=None):
+        f = TMP / f"{project}.json"
+        f.write_text(json.dumps({"project": project, "sources": {"main_ref": "main", **sources},
+                                 "thresholds": thresholds or {}}))
+        return f
+
+    def aged_case(label, project, only, cfgf, subject, later, release=None, recover_at=None):
+        rc, o = run("--only", only, config=cfgf, env=ENV_R)
+        aid = alert_id(o, only, subject)
+        check(f"{label}: fires", bool(aid), o)
+        rc, o2 = run("--only", only, config=cfgf, env=ENV_R, now=later)
+        check(f"{label}: aged-out evidence is UNSEEN, not CLEARED",
+              f"CLEARED {aid} " not in o2 and (f"UNSEEN {aid} " in o2 or f"ALERT {aid} " in o2), o2)
+        if release:
+            release()
+            rc, o3 = run("--only", only, config=cfgf, env=ENV_R, now=recover_at or later + dt.timedelta(minutes=1))
+            check(f"{label}: a positive observation clears it", f"CLEARED {aid} " in o3, o3)
+
+    # stuck_agent command rule: the first failure leaves the 12 h window
+    put(HOST / "cmd3.jsonl", "".join(json.dumps({"ts": iso(ago(m)), "cmd": "make w", "rc": 1, "err": "e", "tree": "t"})
+                                     + "\n" for m in (30, 20, 5)))
+    t_sc = NOW + dt.timedelta(hours=12, minutes=-25)
+    aged_case("stuck_agent cmd", "sc", "stuck_agent", det_cfg("sc", {"command_log": "cmd3.jsonl"}), "cmd:make w", t_sc,
+              release=lambda: open(HOST / "cmd3.jsonl", "a").write(json.dumps(
+                  {"ts": iso(t_sc), "cmd": "make w", "rc": 0, "err": "", "tree": "t2"}) + "\n"))
+
+    # review_loop: the first REVISE round and two class members leave the 7-day window
+    for wid, rnd, m, verdict in (("WORK-30", 1, 6 * 1440, "REVISE"), ("WORK-30", 2, 5 * 1440, "REVISE"),
+                                 ("WORK-30", 3, 1440, "REVISE"), ("WORK-31", 1, 6.5 * 1440, "REVISE"),
+                                 ("WORK-32", 1, 6.5 * 1440, "REVISE")):
+        put(HOST / "reviews3" / f"{wid}-review-r{rnd}.md", f"Verdict: {verdict}\nReason: flaky\n", m)
+    rl = det_cfg("rl", {"reviews": {"glob": "reviews3/*.md", "id_regex": r"^(?P<id>.+?)-review(?:-r(?P<round>\d+))?$"}})
+    t_rl = NOW + dt.timedelta(days=1, hours=12)
+    aged_case("review_loop rounds", "rl", "review_loop", rl, "WORK-30", t_rl,
+              release=lambda: put(HOST / "reviews3/WORK-30-review-r4.md", "Verdict: ACCEPT\n", -36 * 60 + 1))
+    rc, o = run("--only", "review_loop", config=rl, env=ENV_R, now=t_rl + dt.timedelta(minutes=2))
+    cid = re.search(r"(?:UNSEEN|ALERT) (\S+) .*\[review_loop\] class:flaky", o)
+    check("review_loop class: dropping below the threshold as rounds age out is UNSEEN",
+          cid and f"CLEARED {cid.group(1)}" not in o, o)
+
+    # machine hog: the take and the wait leave the 24 h window
+    put(HOST / "slots3.jsonl", "".join(json.dumps(r) + "\n" for r in [
+        {"ts": iso(ago(60)), "event": "take", "host": "r2", "slot": "s1", "project": "projA", "owner": "o1"},
+        {"ts": iso(ago(40)), "event": "wait", "project": "projB", "owner": "o2", "hosts": ["r2"]}]))
+    t_mh = NOW + dt.timedelta(hours=25)
+    aged_case("machine hog", "mh", "machine",
+              det_cfg("mh", {"slot_events": "slots3.jsonl"}, {"machine": {"capacity": {"r2": 1}}}), "hog:r2:projA",
+              t_mh, release=lambda: open(HOST / "slots3.jsonl", "a").write(json.dumps(
+                  {"ts": iso(t_mh), "event": "release", "host": "r2", "slot": "s1", "project": "projA",
+                   "owner": "o1"}) + "\n"))
+
+    # forgotten_session slot: the take leaves the window (run aged out too, looked up directly)
+    put(HOST / "runs3/run-s/started", iso(ago(200)) + "\n", 200)
+    put(HOST / "runs3/run-s/finished", iso(ago(120)) + "\n", 120)
+    settle(HOST / "runs3/run-s", 120)
+    put(HOST / "slots4.jsonl", json.dumps({"ts": iso(ago(150)), "event": "take", "host": "r1", "slot": "s1",
+                                           "project": "p", "owner": "run-s"}) + "\n")
+    t_fs = NOW + dt.timedelta(days=3)
+    aged_case("forgotten_session slot", "fs", "forgotten_session",
+              det_cfg("fs", {"agent_runs": "runs3/*", "slot_events": "slots4.jsonl"},
+                      {"forgotten_session": {"merged_worktrees": False}}), "run-s:slot:r1/s1", t_fs,
+              release=lambda: open(HOST / "slots4.jsonl", "a").write(json.dumps(
+                  {"ts": iso(t_fs), "event": "release", "host": "r1", "slot": "s1", "project": "p",
+                   "owner": "run-s"}) + "\n"))
+
+    # forgotten_session worktree: the merge leaves the 14-day history window; the worktree is still there
+    fw = det_cfg("fw", {}, {"forgotten_session": {"merged_worktrees": True}})
+    rc, o = run("--only", "forgotten_session", config=fw, env=ENV_R)
+    wid_ = alert_id(o, "forgotten_session", "worktree:wt-work-12")
+    rc, o2 = run("--only", "forgotten_session", config=fw, env=ENV_R, now=NOW + dt.timedelta(days=15))
+    check("forgotten_session worktree: merge outside the history window still counts (not CLEARED)",
+          wid_ and f"CLEARED {wid_}" not in o2 and "merged before the 14-day history window" in o2, o2)
+
+    # size_ratio: open work older than the 14-day window is not judged, so not cleared
+    git("branch", "slice/work-20", "main")
+    wt20 = TMP / "wt-work-20"
+    git("worktree", "add", "-q", str(wt20), "slice/work-20")
+    put(wt20 / "docs/slices/WORK-20.md", "# WORK-20\nYol: HAFİF\n")
+    git("add", "-A", cwd=wt20)
+    git("commit", "-q", "-m", "WORK-20 spec", minutes_ago=13 * 1440, cwd=wt20)
+    sz = det_cfg("sz", {"slices_dir": "docs/slices"})
+
+    def merge20():
+        git("merge", "-q", "--no-ff", "slice/work-20", "-m", "Merge slice/work-20: WORK-20 (light)")
+    aged_case("size_ratio", "sz", "size_ratio", sz, "WORK-20", NOW + dt.timedelta(days=2), release=merge20)
+
+    # ------------------------------------------------------------ review r3: no answer is not an answer
+    # stuck_agent: a run whose start stamp disappears has neither running nor finished evidence -> UNSEEN
+    R4 = HOST / "runs4"
+    put(R4 / "run-n/started", iso(ago(90)) + "\n", 90)
+    put(R4 / "run-n/events-1.log", "working\n", 45)
+    settle(R4 / "run-n", 45)
+    put(R4 / "run-r/started", iso(ago(50)) + "\n", 50)
+    for i, m in enumerate((40, 25, 10), 1):
+        put(R4 / f"run-r/events-{i}.log", "ERROR: quota\n", m)
+    settle(R4 / "run-r", 10)
+    sa = det_cfg("sa", {"agent_runs": {"glob": "runs4/*", "attempt_glob": "events-*.log", "result_file": "report.md"}})
+    rc, o = run("--only", "stuck_agent", config=sa, env=ENV_R)
+    n_id, r_id = alert_id(o, "stuck_agent", "run-n"), alert_id(o, "stuck_agent", "run-r:repeat")
+    check("r3 stuck_agent fixtures fire", bool(n_id and r_id), o)
+    (R4 / "run-n/started").unlink()
+    settle(R4 / "run-n", 45)
+    for i in (1, 2, 3):
+        (R4 / f"run-r/events-{i}.log").unlink()
+    settle(R4 / "run-r", 10)
+    rc, o = run("--only", "stuck_agent", config=sa, env=ENV_R, now=NOW + dt.timedelta(minutes=1))
+    check("missing start stamp is UNSEEN, not CLEARED", f"UNSEEN {n_id} " in o and f"CLEARED {n_id}" not in o, o)
+    check("missing attempt logs are UNSEEN, not CLEARED", f"UNSEEN {r_id} " in o and f"CLEARED {r_id}" not in o, o)
+    put(R4 / "run-n/finished", iso(NOW) + "\n", 0)
+    put(R4 / "run-r/report.md", "Verdict: ACCEPT\n", 0)
+    rc, o = run("--only", "stuck_agent", config=sa, env=ENV_R, now=NOW + dt.timedelta(minutes=2))
+    check("observed finish clears the stuck run", f"CLEARED {n_id} " in o, o)
+    check("a produced result clears the repeat", f"CLEARED {r_id} " in o, o)
+
+    # forgotten_session: git cannot answer the ancestry question (unknown ref, exit 128) -> UNSEEN
+    fw2 = det_cfg("fw2", {}, {"forgotten_session": {"merged_worktrees": True}})
+    rc, o = run("--only", "forgotten_session", config=fw2, env=ENV_R)
+    w2 = alert_id(o, "forgotten_session", "worktree:wt-work-12")
+    broken = TMP / "fw2-broken.json"
+    broken.write_text(json.dumps({"project": "fw2", "sources": {"main_ref": "refs/heads/no-such-branch"},
+                                  "thresholds": {"forgotten_session": {"merged_worktrees": True}}}))
+    rc, o = run("--only", "forgotten_session", config=broken, env=ENV_R, now=NOW + dt.timedelta(minutes=1))
+    check("git error (exit 128) is a SOURCE_ERROR and the alert is UNSEEN, not CLEARED",
+          w2 and f"CLEARED {w2}" not in o and f"UNSEEN {w2} " in o and "SOURCE_ERROR forgotten_session git:" in o
+          and "exit 128" in o, o)
+    wt12 = TMP / "wt-work-12"
+    put(wt12 / "more.txt", "more")
+    git("add", "-A", cwd=wt12)
+    git("commit", "-q", "-m", "WORK-12 more", cwd=wt12)
+    rc, o = run("--only", "forgotten_session", config=fw2, env=ENV_R, now=NOW + dt.timedelta(minutes=2))
+    check("git's definite 'not merged' (exit 1) clears it", f"CLEARED {w2} " in o, o)
+
+    # ------------------------------------------------------------ review r4: generic failing-source injection
+    # Every detector polls once with all sources working (alerts open), then once with every source failing at the
+    # same time: git broken (GIT_DIR), ps and git not on PATH, logs, run and review directories, the queue, the
+    # changelog, the slices directory and the store's rules unreadable. No alert may resolve; each detector says
+    # SOURCE_ERROR.
+    put(STORE_R / "rules/R-9.md", "Incidents: x-9\nActivation: after the next release\nStatus: shipped\n")
+    inj = TMP / "inj.json"
+    inj.write_text(json.dumps({**cfg["detectors"], "project": "inj"}))
+    put(HOST / "slots5.jsonl", "".join(json.dumps(r) + "\n" for r in [
+        {"ts": iso(ago(60)), "event": "take", "host": "r2", "slot": "s1", "project": "projA", "owner": "o1"},
+        {"ts": iso(ago(40)), "event": "wait", "project": "projB", "owner": "o2", "hosts": ["r2"]}]))
+    injd = json.loads(inj.read_text())
+    injd["sources"]["slot_events"] = "slots5.jsonl"
+    inj.write_text(json.dumps(injd))
+    holder2 = subprocess.Popen(["/bin/sh", "-c", "sleep 60; exit 0", str(HOST / "runs/run-f")])
+    try:
+        rc, o1 = run("--only", "stuck_agent,waiting_work,machine,review_loop,forgotten_session,inactive_improvement,size_ratio", config=inj, env=ENV_R)
+    finally:
+        holder2.kill()
+        holder2.wait()
+    before = [e for e in events_of("inj") if e["event"] == "open"]
+    dets = {"stuck_agent", "waiting_work", "machine", "review_loop", "forgotten_session", "inactive_improvement",
+            "size_ratio"}
+    check("injection baseline: every detector has an open alert", {e["detector"] for e in before} >= dets,
+          f"{sorted({e['detector'] for e in before})}\n{o1}")
+    locked_paths = [HOST / "runs", HOST / "reviews", HOST / "dev", HOST / "slots5.jsonl", HOST / "cmd.jsonl",
+                    HOST / "queue.md", HOST / "CHANGELOG.md", HOST / "docs/slices", STORE_R / "rules"]
+    modes = {p_: p_.stat().st_mode for p_ in locked_paths}
+    try:
+        for p_ in locked_paths:
+            os.chmod(p_, 0)
+        bad_env = {**ENV_R, "GIT_DIR": str(TMP / "no-such-git-dir"), "PATH": str(TMP / "no-such-bin")}
+        rc, o2 = run("--only", "stuck_agent,waiting_work,machine,review_loop,forgotten_session,inactive_improvement,size_ratio", config=inj, env=bad_env, now=NOW + dt.timedelta(minutes=1))
+    finally:
+        for p_, m in modes.items():
+            os.chmod(p_, m)
+    after = events_of("inj")
+    check("injection: the failing poll exits 0", rc == 0, o2)
+    for det in sorted(dets):
+        check(f"injection: {det} reports SOURCE_ERROR", f"SOURCE_ERROR {det} " in o2, o2)
+    check("injection: no alert resolves while sources fail",
+          "CLEARED" not in o2 and not [e for e in after if e["event"] == "resolve"], o2)
+    check("injection: open alerts print UNSEEN (source error)", "(source error this poll" in o2, o2)
+    check("injection: --quiet still shows SOURCE_ERROR lines", "SOURCE_ERROR" in run(
+        "--quiet", "--only", "forgotten_session", config=inj, env=bad_env, now=NOW + dt.timedelta(minutes=2))[1])
+    # single failures that used to read as "nothing there": ps exits 1; git fails only for `worktree list`
+    git("checkout", "-q", "-b", "slice/work-40")
+    put(HOST / "work-40.txt", "w40")
+    git("add", "-A")
+    git("commit", "-q", "-m", "WORK-40 change", minutes_ago=180)
+    git("checkout", "-q", "main")
+    git("merge", "-q", "--no-ff", "slice/work-40", "-m", "Merge slice/work-40: WORK-40 (light)", minutes_ago=120)
+    git("worktree", "add", "-q", str(TMP / "wt-work-40"), "slice/work-40")
+    fake = TMP / "fakebin"
+    fake.mkdir()
+    (fake / "ps").write_text("#!/bin/sh\nexit 1\n")
+    (fake / "git").write_text(f"#!/bin/sh\nfor a in \"$@\"; do [ \"$a\" = worktree ] && exit 1; done\n"
+                              f"exec {shutil.which('git')} \"$@\"\n")
+    os.chmod(fake / "ps", 0o755)
+    os.chmod(fake / "git", 0o755)
+    inj2 = det_cfg("inj2", {"agent_runs": "runs/*"})
+    holder3 = subprocess.Popen(["/bin/sh", "-c", "sleep 60; exit 0", str(HOST / "runs/run-f")])
+    try:
+        rc, o = run("--only", "forgotten_session", config=inj2, env=ENV_R)
+    finally:
+        holder3.kill()
+        holder3.wait()
+    pid_ = alert_id(o, "forgotten_session", "run-f:process")
+    wid40 = alert_id(o, "forgotten_session", "worktree:wt-work-40")
+    check("single-failure baseline: process and worktree alerts open", bool(pid_ and wid40), o)
+    rc, o = run("--only", "forgotten_session", config=inj2, now=NOW + dt.timedelta(minutes=1),
+                env={**ENV_R, "PATH": f"{fake}:{os.environ.get('PATH', '')}"})
+    check("ps exit 1 is a SOURCE_ERROR; the process alert does not resolve",
+          "SOURCE_ERROR forgotten_session process table" in o and f"CLEARED {pid_}" not in o, o)
+    check("a failed worktree listing is a SOURCE_ERROR; the worktree alert does not resolve",
+          "SOURCE_ERROR forgotten_session git" in o and f"CLEARED {wid40}" not in o, o)
+    rc, o = run("--only", "forgotten_session", config=inj2, env=ENV_R, now=NOW + dt.timedelta(minutes=2))
+    check("with ps working again, the gone process clears (positive observation)", f"CLEARED {pid_} " in o, o)
+
+    # a missing, null or empty rc is unknown, never success
+    for variant, extra in (("missing", {}), ("null", {"rc": None}), ("empty", {"rc": ""}), ("false", {"rc": False}),
+                           ("half", {"rc": 0.5}), ("float-string", {"rc": "0.0"})):
+        logf_ = HOST / f"cmd-rc-{variant}.jsonl"
+        put(logf_, "".join(json.dumps({"ts": iso(ago(m)), "cmd": "make k", "rc": 1, "err": "e", "tree": "t"}) + "\n"
+                           for m in (30, 20, 10)))
+        cf = det_cfg(f"rc{variant}", {"command_log": logf_.name})
+        rc, o = run("--only", "stuck_agent", config=cf, env=ENV_R)
+        kid = alert_id(o, "stuck_agent", "cmd:make k")
+        with open(logf_, "a") as fh:
+            fh.write(json.dumps({"ts": iso(ago(5)), "cmd": "make k", "err": "", "tree": "t2", **extra}) + "\n")
+        rc, o = run("--only", "stuck_agent", config=cf, env=ENV_R, now=NOW + dt.timedelta(minutes=1))
+        check(f"rc {variant}: unknown, SOURCE_ERROR, alert stays (not CLEARED)",
+              kid and f"CLEARED {kid}" not in o and "SOURCE_ERROR stuck_agent command_log" in o
+              and (f"UNSEEN {kid} " in o or f"ALERT {kid} OPEN" in o), o)
+
+    # an unreadable line in the alert log itself: nothing resolves until it is repaired
+    with open(STORE_R / "alerts/inj.jsonl", "a") as fh:
+        fh.write("{not json\n")
+    rc, o3 = run("--only", "stuck_agent,waiting_work,machine,review_loop,forgotten_session,inactive_improvement,size_ratio", config=inj, env=ENV_R, now=NOW + dt.timedelta(minutes=3))
+    check("injection: a corrupt alert-log line blocks every resolve",
+          "SOURCE_ERROR alert log: 1 unreadable line" in o3 and "CLEARED" not in o3, o3)
+
+    # ------------------------------------------------------------ review r5
+    # 1. an unreadable subtree below the glob base is an error, not a hidden newer REVISE behind an older ACCEPT
+    for d, rnd, verdict, m in (("a1", 1, "REVISE", 300), ("a2", 2, "REVISE", 240), ("a3", 3, "REVISE", 180),
+                               ("a4", 4, "ACCEPT", 120), ("a5", 5, "REVISE", 60)):
+        put(HOST / "reviews5" / d / f"WORK-50-review-r{rnd}.md", f"Verdict: {verdict}\n", m)
+    gw = det_cfg("gw", {"reviews": {"glob": "reviews5/*/*.md",
+                                    "id_regex": r"^(?P<id>.+?)-review(?:-r(?P<round>\d+))?$"}})
+    rc, o = run("--only", "review_loop", config=gw, env=ENV_R)
+    g_id = alert_id(o, "review_loop", "WORK-50")
+    os.chmod(HOST / "reviews5/a5", 0)
+    try:
+        rc, o = run("--only", "review_loop", config=gw, env=ENV_R, now=NOW + dt.timedelta(minutes=1))
+    finally:
+        os.chmod(HOST / "reviews5/a5", 0o755)
+    check("r5-1 unreadable subtree under the glob: SOURCE_ERROR, the loop alert does not resolve",
+          g_id and "SOURCE_ERROR review_loop reviews" in o and f"CLEARED {g_id}" not in o, o)
+
+    # 3. an invalid activation date is unknown for that file: no clear
+    STORE_D = TMP / "store-d"
+    ENV_D = {**ENV, "ACEF_FEEDBACK_DIR": str(STORE_D)}
+    put(STORE_D / "rules/R-7.md", "Incidents: x-7\nActivation: owner: ram, job on 2026-01-01\nStatus: shipped\n")
+    dtc = det_cfg("dt", {})
+    rc, o = run("--only", "inactive_improvement", config=dtc, env=ENV_D)
+    d_id = re.search(r"ALERT (\S+) NEW \[inactive_improvement\] R-7:", o)
+    put(STORE_D / "rules/R-7.md", "Incidents: x-7\nActivation: owner: ram, job on 2026-99-99\nStatus: shipped\n")
+    rc, o = run("--only", "inactive_improvement", config=dtc, env=ENV_D, now=NOW + dt.timedelta(minutes=1))
+    check("r5-3 invalid activation date: SOURCE_ERROR, the previous alert does not resolve",
+          d_id and "invalid activation date 2026-99-99" in o and f"CLEARED {d_id.group(1)}" not in o, o)
+
+    # 4. an unreadable or undecodable alert log: SOURCE_ERROR alert log, nothing recorded, exit 4, no traceback
+    STORE_A = TMP / "store-a"
+    ENV_A = {**ENV, "ACEF_FEEDBACK_DIR": str(STORE_A)}
+    alc = det_cfg("al", {"agent_runs": "runs4/*"})
+    run("--only", "stuck_agent", config=alc, env=ENV_A)
+    log_a = STORE_A / "alerts/al.jsonl"
+    size_before = log_a.stat().st_size
+    os.chmod(log_a, 0)
+    try:
+        rc, o = run("--only", "stuck_agent", config=alc, env=ENV_A, now=NOW + dt.timedelta(minutes=1))
+    finally:
+        os.chmod(log_a, 0o644)
+    check("r5-4 unreadable alert log: exit 4, SOURCE_ERROR alert log, no traceback",
+          rc == 4 and "SOURCE_ERROR alert log: PermissionError" in o and "Traceback" not in o, o)
+    with open(log_a, "ab") as fh:
+        fh.write(b"\xff\xfe not utf-8\n")
+    rc, o = run("--only", "stuck_agent", config=alc, env=ENV_A, now=NOW + dt.timedelta(minutes=2))
+    check("r5-4 undecodable alert log: exit 4, SOURCE_ERROR alert log, nothing appended",
+          rc == 4 and "SOURCE_ERROR alert log: UnicodeDecodeError" in o and "Traceback" not in o
+          and log_a.stat().st_size == size_before + len(b"\xff\xfe not utf-8\n"), o)
+    rc, d = note("due", env=ENV_A)
+    check("r5-4 acef-note due reports the bad alert log instead of crashing",
+          rc == 0 and "SOURCE_ERROR alert log al.jsonl" in d and "Traceback" not in d, d)
+
+    # 5. a leftover whose parent directory cleanup removed is observed gone; only permission/I-O is an error
+    put(HOST / "runs6/run-L/started", iso(ago(200)) + "\n", 200)
+    put(HOST / "runs6/run-L/finished", iso(ago(120)) + "\n", 120)
+    settle(HOST / "runs6/run-L", 120)
+    (HOST / "left2/run-L/ws").mkdir(parents=True)
+    lp = det_cfg("lp", {"agent_runs": "runs6/*"},
+                 {"forgotten_session": {"merged_worktrees": False, "leftovers": ["left2/{name}/ws"]}})
+    rc, o = run("--only", "forgotten_session", config=lp, env=ENV_R)
+    l_id = alert_id(o, "forgotten_session", "run-L:leftover")
+    shutil.rmtree(HOST / "left2/run-L")
+    rc, o = run("--only", "forgotten_session", config=lp, env=ENV_R, now=NOW + dt.timedelta(minutes=1))
+    check("r5-5 leftover removed with its parent: observed gone, CLEARED, no SOURCE_ERROR",
+          l_id and f"CLEARED {l_id} " in o and "SOURCE_ERROR" not in o, o)
+    (HOST / "left2/run-L/ws").mkdir(parents=True)
+    rc, o = run("--only", "forgotten_session", config=lp, env=ENV_R, now=NOW + dt.timedelta(minutes=2))
+    os.chmod(HOST / "left2", 0)
+    try:
+        rc, o = run("--only", "forgotten_session", config=lp, env=ENV_R, now=NOW + dt.timedelta(minutes=3))
+    finally:
+        os.chmod(HOST / "left2", 0o755)
+    check("r5-5 leftover behind an unreadable parent: SOURCE_ERROR leftovers, not CLEARED",
+          "SOURCE_ERROR forgotten_session leftovers" in o and f"CLEARED {l_id}" not in o, o)
+finally:
+    subprocess.run(["git", "worktree", "prune"], cwd=HOST, capture_output=True)
+    shutil.rmtree(TMP, ignore_errors=True)
+
+print(f"acef-detect tests: {ok} passed, {bad} failed")
+sys.exit(1 if bad else 0)

@@ -1,0 +1,419 @@
+#!/usr/bin/env python3
+"""acef-detect: waste detectors for a 15-minute coordinator loop (method/FEEDBACK_LOOP.md "Detection loop").
+
+Usage:
+  acef-detect --repo <host> [--config <json>] [--quiet] [--dry-run] [--only a,b] [--list]
+
+Runs every detector in scripts/detectors/*.py (core, files starting with "_" are helpers) and <host>/.acef/detectors/*.py
+(host). Each detector is one small file: a docstring header (Question, Source, Rule, Threshold, Owner, Scope, Kind,
+Tags) and detect(ctx) -> list of findings. A breach opens an ALERT in the central store
+(ACEF_FEEDBACK_DIR/alerts/<project>.jsonl, via acef-note); one alert per detector+subject; a finding that is gone on a
+later poll resolves its alert only when the detector positively observed it fine (ctx.clear); a subject that is merely
+missing keeps its alert open (UNSEEN). A recurrence reopens the same alert. Real losses (>= 30 min, lost results, an inactive merged
+improvement, a rule breach) are also written to the central log, deduplicated with --repeat.
+
+Config: <host>/slice-method.json "detectors", overlaid by --config (a JSON file that is either the whole
+slice-method shape or just the "detectors" object). Keys: project, owners {detector|default: owner}, working_hours
+{start, end, days}, ack_hours (4), overdue_polls (2), sources {...}, thresholds {detector: {...}}, disabled [...].
+A detector whose source is not configured prints "SKIP <name> (no source: <key>)".
+
+Cheap by design: no tests, no network, a few git calls, stat-only directory scans. Never writes into the host repo.
+Exit 0 (alerts or not), 2 usage/config error, 3 a detector crashed (the others still ran), 4 the alert log could not
+be read or written (I/O or decode error): SOURCE_ERROR alert log is printed, findings are listed as NOT RECORDED,
+nothing is opened or resolved; the loop sees exit 4 and someone repairs the store.
+"""
+import sys
+
+sys.dont_write_bytecode = True   # loading detectors must never leave __pycache__ in the host (or the ACEF checkout)
+
+import argparse  # noqa: E402
+import importlib.machinery
+import importlib.util
+import json
+import os
+import re
+import time
+import traceback
+from contextlib import contextmanager
+from pathlib import Path
+
+HERE = Path(__file__).resolve().parent
+CORE_DIR = HERE / "detectors"
+HEADER_KEYS = ("Question", "Source", "Rule", "Threshold", "Owner", "Scope", "Kind")
+KINDS = {"budget", "ratio", "age", "trend", "absence"}
+SCOPE = re.compile(r"^(acef|stack:[a-z0-9.-]+|host:[a-z0-9.-]+)$")
+LOSS_MIN = 30
+ALWAYS_LOSS = {"lost-results", "inactive-improvement", "rulebreach", "escaped"}
+
+
+def load_source(name: str, path: Path):
+    loader = importlib.machinery.SourceFileLoader(name, str(path))
+    spec = importlib.util.spec_from_loader(name, loader)
+    module = importlib.util.module_from_spec(spec)
+    loader.exec_module(module)
+    return module
+
+
+note = load_source("acef_note", HERE / "acef-note")
+sys.path.insert(0, str(CORE_DIR))
+import _lib  # noqa: E402  (scripts/detectors/_lib.py)
+
+
+class Skip(Exception):
+    pass
+
+
+def deep_merge(base: dict, over: dict) -> dict:
+    out = dict(base)
+    for key, value in (over or {}).items():
+        out[key] = deep_merge(out[key], value) if isinstance(value, dict) and isinstance(out.get(key), dict) else value
+    return out
+
+
+def load_config(repo: Path, config_path: str = "") -> dict:
+    host = {}
+    method = repo / "slice-method.json"
+    if method.exists():
+        try:
+            host = json.loads(method.read_text())
+        except ValueError as exc:
+            raise SystemExit(f"acef-detect: {method} is not JSON: {exc}")
+    cfg = deep_merge({"slices_dir": host.get("slices_dir", "")}, host.get("detectors") or {})
+    if config_path:
+        try:
+            extra = json.loads(Path(config_path).expanduser().read_text())
+        except (OSError, ValueError) as exc:
+            raise SystemExit(f"acef-detect: cannot read --config {config_path}: {exc}")
+        cfg = deep_merge(cfg, extra.get("detectors", extra) if isinstance(extra, dict) else {})
+    project = cfg.get("project") or host.get("project") or repo.name
+    cfg["project"] = re.sub(r"[^a-z0-9-]+", "-", str(project).lower()).strip("-") or "host"
+    cfg.setdefault("sources", {})
+    if cfg.get("slices_dir") and "slices_dir" not in cfg["sources"]:
+        cfg["sources"]["slices_dir"] = cfg["slices_dir"]
+    cfg.setdefault("thresholds", {})
+    cfg.setdefault("owners", {})
+    cfg["working_hours"] = deep_merge(note.DEFAULT_WORKING_HOURS, cfg.get("working_hours") or {})
+    cfg.setdefault("ack_hours", 4)
+    cfg.setdefault("overdue_polls", 2)
+    return cfg
+
+
+def parse_header(module) -> dict:
+    header = {}
+    for line in (module.__doc__ or "").splitlines():
+        match = re.match(r"^([A-Z][a-z]+):\s*(.*)$", line.strip())
+        if match:
+            header[match.group(1)] = match.group(2).strip()
+    missing = [k for k in HEADER_KEYS if not header.get(k)]
+    if missing:
+        raise ValueError(f"header misses {', '.join(missing)}")
+    if header["Kind"] not in KINDS:
+        raise ValueError(f"Kind must be one of {', '.join(sorted(KINDS))}")
+    if not SCOPE.match(header["Scope"]):
+        raise ValueError("Scope must be acef, stack:<x> or host:<name>")
+    return header
+
+
+def discover(repo: Path):
+    found = []
+    for origin, folder in (("core", CORE_DIR), ("host", repo / ".acef" / "detectors")):
+        for path in sorted(folder.glob("*.py")) if folder.is_dir() else []:
+            if not path.name.startswith("_"):
+                found.append((origin, path.stem, path))
+    return found
+
+
+class Ctx:
+    """What a detector sees: the host repo, its merged settings, the clock, cached git and a persistent state dict."""
+
+    def __init__(self, repo: Path, cfg: dict, name: str, defaults: dict, now, state: dict, cache: dict):
+        self.repo, self.cfg, self.name, self.now, self.state, self.cache = repo, cfg, name, now, state, cache
+        self.settings = deep_merge(defaults, cfg["thresholds"].get(name) or {})
+        self.sources = cfg["sources"]
+        self.info = []
+        self.Skip = Skip
+        self.cleared = set()        # subjects positively observed as fine this poll
+        self.open_subjects = set()  # subjects of this detector's alerts that are not resolved
+        self.open_since = {}        # subject -> when its alert (re)opened
+        self.source_errors = []     # "<source>: <detail>" for every source that failed this poll
+
+    def mark_error(self, source: str, detail: str = ""):
+        """A source failed or a field was unknown: findings still count, but no alert of this detector resolves."""
+        self.source_errors.append(f"{source}: {detail}" if detail else source)
+
+    @contextmanager
+    def guard(self, source: str):
+        """Run one source's part of a detector; a SourceError there is recorded and the other sources go on."""
+        try:
+            yield
+        except _lib.SourceError as exc:
+            self.mark_error(exc.source if exc.source else source, str(exc).split(": ", 1)[-1])
+
+    def clear(self, subject: str):
+        """Report a positive observation that `subject` is fine now. Only this resolves an alert: a subject that is
+        merely missing (aged out of a window, source unreadable) keeps its alert open."""
+        self.cleared.add(str(subject))
+
+    def source(self, key: str, required: bool = True):
+        value = self.sources.get(key)
+        if value in (None, "", [], {}):
+            if required:
+                raise Skip(f"no source: {key}")
+            return None
+        return value
+
+    def path(self, raw: str) -> Path:
+        return _lib.resolve(self.repo, raw)
+
+    def git(self, *args, timeout: int = 10) -> str:
+        return _lib.git(self, *args, timeout=timeout)
+
+    def note(self, text: str):
+        self.info.append(text)
+
+
+def run(args) -> int:
+    repo = Path(args.repo).expanduser().resolve()
+    if not repo.is_dir():
+        print(f"acef-detect: no such repo {repo}", file=sys.stderr)
+        return 2
+    cfg = load_config(repo, args.config)
+    project, now = cfg["project"], note.now_utc()
+    base = note.ensure_store() if not args.dry_run else note.root()
+    alerts_path = base / "alerts" / f"{project}.jsonl"
+    state_path = base / "alerts" / f"{project}.state.json"
+    detectors = discover(repo)
+    if args.list:
+        for origin, name, path in detectors:
+            try:
+                header = parse_header(load_source(f"acef_detector_{origin}_{name}", path))
+                print(f"{name} ({origin}, {header['Kind']}, {header['Scope']}, owner {header['Owner']}): "
+                      f"{header['Question']} | threshold {header['Threshold']}")
+            except Exception as exc:  # noqa: BLE001
+                print(f"{name} ({origin}): BAD HEADER {exc}")
+        return 0
+    log_error = ""
+    try:
+        snapshot = note.alert_states(note.read_alert_events(alerts_path), now)   # read-only, for open_subjects
+    except (OSError, UnicodeDecodeError) as exc:
+        snapshot, log_error = {}, f"{exc.__class__.__name__}: {exc}"
+    saved = read_state(state_path)
+    det_state = saved.get("detectors", {})
+    started, cache, crashed, lines = time.monotonic(), {}, False, []
+    only = {x.strip() for x in args.only.split(",") if x.strip()}
+    disabled = set(cfg.get("disabled") or [])
+    results = []
+    # 1. run the detectors; nothing is written yet
+    for origin, name, path in detectors:
+        if (only and name not in only) or name in disabled:
+            continue
+        t0 = time.monotonic()
+        try:
+            module = load_source(f"acef_detector_{origin}_{name}", path)
+            header = parse_header(module)
+        except Exception as exc:  # noqa: BLE001
+            lines.append(f"ERROR {name}: cannot load ({exc})")
+            crashed = True
+            continue
+        ctx = Ctx(repo, cfg, name, getattr(module, "DEFAULTS", {}), now, det_state.setdefault(name, {}), cache)
+        ctx.store = base
+        ctx.open_since = {a["subject"]: note.parse_ts(a["since"]) for a in snapshot.values()
+                          if a["detector"] == name and a["status"] != "resolved"}
+        ctx.open_subjects = set(ctx.open_since)
+        try:
+            findings = module.detect(ctx) or []
+        except Skip as exc:
+            lines.append(f"SKIP {name} ({exc})")
+            continue
+        except _lib.SourceError as exc:   # uncaught: the whole detector saw nothing this poll
+            ctx.mark_error(exc.source, str(exc).split(": ", 1)[-1])
+            findings = []
+        except Exception as exc:  # noqa: BLE001
+            lines.append(f"ERROR {name}: {exc.__class__.__name__}: {exc}")
+            if os.environ.get("ACEF_DETECT_DEBUG"):
+                traceback.print_exc()
+            crashed = True
+            continue
+        results.append((name, header, ctx, findings, int((time.monotonic() - t0) * 1000)))
+    # 2. one lock across read state -> decide -> append, so parallel polls cannot open the same key twice
+    opened = 0
+    if log_error:
+        return alert_log_failure(project, now, log_error, results, lines, args)
+    if args.dry_run:
+        try:
+            opened = apply(args, cfg, base, project, now, results, saved, lines)
+        except (OSError, UnicodeDecodeError) as exc:
+            return alert_log_failure(project, now, f"{exc.__class__.__name__}: {exc}", results, lines, args)
+    else:
+        try:
+            with note.alert_lock(base, project):
+                saved = read_state(state_path)
+                saved["detectors"] = {**saved.get("detectors", {}), **det_state}
+                opened = apply(args, cfg, base, project, now, results, saved, lines)
+                elapsed = int((time.monotonic() - started) * 1000)
+                note.append_alert_event(base, project, {"event": "poll", "ms": elapsed, "opened": opened}, held=True)
+                tmp = state_path.with_suffix(".json.tmp")
+                tmp.write_text(json.dumps(saved, sort_keys=True))
+                os.replace(tmp, state_path)
+        except (OSError, UnicodeDecodeError) as exc:
+            return alert_log_failure(project, now, f"{exc.__class__.__name__}: {exc}", results, lines, args)
+    if not args.dry_run:
+        hosts = base / "hosts"
+        hosts.mkdir(exist_ok=True)
+        (hosts / f"{project}.json").write_text(json.dumps(
+            {"repo": str(repo), "config": str(Path(args.config).expanduser().resolve()) if args.config else "",
+             "last_poll": note.iso(now)}, indent=1))
+    elapsed = int((time.monotonic() - started) * 1000)
+    print(f"acef-detect {project} {note.iso(now)}{' (dry run, nothing written)' if args.dry_run else ''}: "
+          f"{opened} new/reopened alert(s), {elapsed} ms")
+    for line in lines:
+        if args.quiet and not re.match(r"^(ALERT \S+ (NEW|REOPEN|OVERDUE)|ERROR|SOURCE_ERROR)", line):
+            continue
+        print(line)
+    return 3 if crashed else 0
+
+
+def alert_log_failure(project, now, error, results, lines, args) -> int:
+    """The alert log could not be read or written: report, record nothing, resolve nothing, exit 4."""
+    print(f"acef-detect {project} {note.iso(now)}: alert log unreadable, nothing recorded")
+    print(f"SOURCE_ERROR alert log: {error}; no alert is opened or resolved this poll")
+    for line in lines:
+        if not args.quiet or re.match(r"^(ERROR|SOURCE_ERROR)", line):
+            print(line)
+    for name, header, ctx, findings, ms in results:
+        for err in ctx.source_errors:
+            print(f"SOURCE_ERROR {name} {err}")
+        for f in findings:
+            print(f"FINDING {name} {f['subject']} — {f['summary']} (NOT RECORDED)")
+    return 4
+
+
+def read_state(path: Path) -> dict:
+    try:
+        return json.loads(path.read_text()) if path.exists() else {}
+    except ValueError:
+        return {}
+
+
+def apply(args, cfg, base, project, now, results, saved, lines) -> int:
+    """Turn findings into alert events against the current log (the caller holds the alert lock unless dry run)."""
+    write = not args.dry_run
+    events, bad = note.read_alert_events_checked(base / "alerts" / f"{project}.jsonl")
+    if bad:   # an unreadable line could be an ack or a reopen: resolve nothing until the log is repaired
+        lines.append(f"SOURCE_ERROR alert log: {bad} unreadable line(s) in alerts/{project}.jsonl; no alert resolves")
+    states = note.alert_states(events, now)
+    by_key = {}
+    for a in states.values():
+        by_key.setdefault(a["key"], a)   # first alert for a key is the one recurrences reopen
+    loss_origin = {}   # detector -> first central-log id of its losses (this poll included)
+    for a in sorted(states.values(), key=lambda a: a["opened"]):
+        if a.get("note"):
+            loss_origin.setdefault(a["detector"], a["note"])
+    pending, new_pending, opened = saved.get("pending", {}), {}, 0
+
+    def append(event):
+        return note.append_alert_event(base, project, event, held=True) if write else event
+
+    for name, header, ctx, findings, ms in results:
+        owner = cfg["owners"].get(name) or cfg["owners"].get("default") or header["Owner"]
+        seen = set()
+        for f in findings:
+            subject = str(f["subject"])
+            key = f"{name}:{subject}"
+            seen.add(key)
+            need = int(f.get("confirm_polls") or ctx.settings.get("confirm_polls") or 1)
+            count = pending.get(key, 0) + 1
+            new_pending[key] = count
+            if count < need:
+                lines.append(f"WATCH {name} {subject} ({count}/{need} polls) — {f['summary']}")
+                continue
+            existing = by_key.get(key)
+            loss = f.get("loss_min")
+            is_loss = (f.get("loss_kind") in ALWAYS_LOSS) or (isinstance(loss, (int, float)) and loss >= LOSS_MIN)
+            if existing and existing["status"] != "resolved" and not existing.get("defer_expired"):
+                logged = ""
+                if is_loss and not existing.get("note"):   # crossed the loss threshold while open: log it once
+                    logged = write_loss(base, project, name, header, f, loss_origin) if write else "(dry-run)"
+                    append({"event": "loss", "id": existing["id"], "note": logged, "loss_min": loss})
+                    existing["note"] = logged
+                tag = "OVERDUE" if existing["overdue"] else existing["status"].upper()
+                lines.append(f"ALERT {existing['id']} {tag} [{name}] {subject} — {f['summary']}"
+                             f"{' (loss logged ' + logged + ')' if logged else ''}")
+                continue
+            if existing and existing.get("defer_expired"):
+                ack_by = existing["ack_by"]   # the deadline runs from the deferral's expiry, not from this poll
+            else:
+                ack_by = note.iso(note.add_working_hours(now, cfg["ack_hours"], cfg["working_hours"]))
+            note_id = write_loss(base, project, name, header, f, loss_origin) if (is_loss and write) else ""
+            if existing:   # resolved, or a deferral that ran out: the same alert id reopens
+                why = "deferral passed" if existing.get("defer_expired") else "recurred"
+                append({"event": "reopen", "id": existing["id"], "reason": why, "summary": f["summary"],
+                        "ack_by": ack_by, "note": note_id})
+                existing.update(status="open", defer_expired=False, note=note_id, ack_by=ack_by)
+                lines.append(f"ALERT {existing['id']} REOPEN [{name}] {subject} — {f['summary']} "
+                             f"(owner {owner}, ack by {ack_by}{', log ' + note_id if note_id else ''})")
+            else:
+                event = append({"event": "open", "detector": name, "subject": subject, "key": key, "owner": owner,
+                                "summary": f["summary"], "evidence": f.get("evidence", ""), "ack_by": ack_by,
+                                "loss_min": loss, "loss_kind": f.get("loss_kind", ""), "note": note_id,
+                                "wh": cfg["working_hours"], "ack_hours": cfg["ack_hours"],
+                                "overdue_polls": cfg["overdue_polls"]})
+                alert_id = event.get("id", "(dry-run)")
+                by_key[key] = {"id": alert_id, "status": "open", "overdue": False, "note": note_id,
+                               "ack_by": ack_by}
+                lines.append(f"ALERT {alert_id} NEW [{name}] {subject} — {f['summary']} "
+                             f"(owner {owner}, ack by {ack_by}{', log ' + note_id if note_id else ''})")
+            opened += 1
+        for err in ctx.source_errors:
+            lines.append(f"SOURCE_ERROR {name} {err}")
+        blocked = bool(ctx.source_errors) or bool(bad)
+        # only a positive observation resolves, and never in a poll where one of the detector's sources failed
+        for a in list(states.values()):
+            if a["detector"] == name and a["status"] != "resolved" and a["key"] not in seen:
+                if blocked:
+                    lines.append(f"UNSEEN {a['id']} [{name}] {a['subject']} (source error this poll; stays "
+                                 f"{a['status']})")
+                elif a["subject"] in ctx.cleared:
+                    append({"event": "resolve", "id": a["id"],
+                            "evidence": f"cleared at poll {note.iso(now)}: {name} observed it fine"})
+                    lines.append(f"CLEARED {a['id']} [{name}] {a['subject']}")
+                else:
+                    lines.append(f"UNSEEN {a['id']} [{name}] {a['subject']} (not observed this poll; stays "
+                                 f"{a['status']})")
+        for text in ctx.info:
+            lines.append(f"INFO {name}: {text}")
+        lines.append(f"OK   {name} ({len(findings)} finding{'s' if len(findings) != 1 else ''}, {ms} ms)")
+    saved["pending"] = new_pending
+    return opened
+
+
+def write_loss(base, project, name, header, finding, loss_origin) -> str:
+    """One central-log entry per real loss; later losses from the same detector are --repeat of the first one."""
+    first = loss_origin.get(name, "")
+    loss = finding.get("loss_min")
+    cost = f"{int(loss)}min" if isinstance(loss, (int, float)) else "?"
+    what = f"[{name}] {finding['summary']}"
+    ref = finding.get("evidence", "")
+    if first:
+        entry_id, *_ = note.add_entry(base, project, raw_what=what, raw_cost=cost, raw_ref=ref, repeat=first)
+    else:
+        tags = header.get("Tags") or "infra"
+        entry_id, *_ = note.add_entry(base, project, raw_tags=tags, raw_what=what, raw_fix=header["Rule"],
+                                      raw_cost=cost, raw_ref=ref)
+        loss_origin[name] = entry_id
+    return entry_id
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(prog="acef-detect", description=__doc__.split("\n\n")[0])
+    parser.add_argument("--repo", required=True)
+    parser.add_argument("--config", default="")
+    parser.add_argument("--quiet", action="store_true", help="print only new/reopened/overdue alerts and errors")
+    parser.add_argument("--dry-run", action="store_true", help="write nothing to the store")
+    parser.add_argument("--only", default="", help="comma-separated detector names")
+    parser.add_argument("--list", action="store_true", help="list detectors with their headers")
+    return run(parser.parse_args())
+
+
+if __name__ == "__main__":
+    sys.exit(main())

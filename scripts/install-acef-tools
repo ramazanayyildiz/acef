@@ -37,6 +37,8 @@ const tools = [
   "acef-worker-result",
   "acef-note",
   "acef-version-check",
+  "acef-detect",
+  "acef-retro",
   "update-acef-installation",
 ];
 
@@ -132,6 +134,10 @@ const writer = createOwnedFileWriter(opts.repo, repoRoot, "tools");
 console.log(`Installed ACEF runtime package boundary: ${writeRuntimePackage(writer)}`);
 for (const tool of tools) {
   console.log(`Installed ${tool}: ${copyTool(tool, writer)}`);
+}
+// acef-detect finds its core detectors next to itself (.acef/bin/detectors); host detectors stay in .acef/detectors.
+for (const detector of copyDirectoryFiles(rel("scripts", "detectors"), rel(".acef", "bin", "detectors"), writer)) {
+  console.log(`Installed detector: ${detector}`);
 }
 for (const library of copyDirectoryFiles(rel("scripts", "lib"), rel(".acef", "bin", "lib"), writer)) {
   console.log(`Installed support library: ${library}`);

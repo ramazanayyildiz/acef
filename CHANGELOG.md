@@ -94,6 +94,92 @@ have removed three gates its own ACEF fork carries and upstream lacked, and over
   `scripts/test-acef-canonical-root` (ported), `scripts/test-acef-host-file-preservation` (new; policy upgrade vs
   host override, fork install, stale `.cjs`), non-ASCII scope cases in `scripts/test-acef-product-review`.
 
+## Unreleased — Waste detection and weekly retro (2026-10-27)
+
+Owner decision 2026-10-27 (Ram approved the first version): recurring waste — stuck agents, finished work waiting,
+idle or contended runners, review loops, forgotten sessions, improvements merged but not in effect — went unnoticed
+until the owner asked, and a whole day could be lost. Detection now runs during the day in the coordinator's
+~15-minute check; the owner sees it once a week in a retro prepared without him. Tests are not in this version.
+Design from two consultations, merged (five signal kinds, one file per detector, alerts with owners and deadlines,
+retro with at most five proposals).
+- **`scripts/acef-detect --repo <host> [--config <json>] [--quiet] [--dry-run] [--only] [--list]`**: runs
+  `scripts/detectors/*.py` and `<host>/.acef/detectors/*.py`; each detector has a header (question, source, rule,
+  threshold, owner, scope, kind) and `detect(ctx)`. Host sources and thresholds come from `slice-method.json` →
+  `detectors` or `--config`; an unconfigured source prints `SKIP <name> (no source: …)`. Durations from git
+  timestamps and run files, never self-reports; expected duration = median of the same route class from closed work,
+  fallback native 60 / HAFİF 180 / TAM 480 min below five samples. Measured on the first host: about 2 s per poll.
+- **Seven core detectors:** `stuck_agent` (no file change for 30 min; same failure 3x with no change),
+  `waiting_work` (accepted not merged > 2x merge-service median, fallback 2 h; developer report with no review for
+  4 h; accepted but not in the merge queue), `machine` (waiter while a slot is free for 2 polls; one project holding a
+  runner while another waits), `review_loop` (3rd REVISE round; one finding class in 3 slices in 7 days),
+  `forgotten_session` (done but a process, slot, leftover directory or merged worktree is still held after 30 min),
+  `inactive_improvement` (activation without owner or past its date in store rules, CHANGELOG, closing notes),
+  `size_ratio` (open work > 2x expected duration of its class).
+- **Alerts in the central store** (`alerts/<project>.jsonl`, append-only: poll, open, ack, defer, resolve, reopen; one
+  alert per detector + subject; ack deadline 4 working hours). `acef-note ack <id> --slice | --defer <date> --reason |
+  --resolve`, `acef-note alerts`; `acef-note due` prints `ALERT OPEN` (unacked for more than two polls),
+  `ALERT OVERDUE` (past the deadline) and `RETRO DUE` (in place of `DIGEST DUE`). Real losses (>= 30 min, lost results,
+  an inactive merged improvement) are also written to the central log, later ones as `--repeat`.
+- **`scripts/acef-retro --project <p> | --all [--week YYYY-Www] [--answer n=accept|reject|defer:<why>]`**: writes
+  `retros/<YYYY>-W<ww>.md` with what went well (numbers), what repeats (example + covering rule), overdue and unowned
+  alerts, rules past review, at most five numbered proposals, and the owner's answers in the same file.
+  `acef-note digest` keeps working; a retro's `Through:` date marks entries as digested.
+- **Method:** `method/FEEDBACK_LOOP.md` "Detection loop" and the retro in "Weekly cycle"; `method/WEEKLY_RETRO.md`
+  tells the coordinator how to write the judgment parts. `templates/slice/closing-note.md` gets
+  `Dedektör: <path | yok — reason>` for investigation slices (checked by `scripts/slice/selfcheck.sh`).
+- Tests: `scripts/test-acef-detect` (151 checks: each detector fires on a fixture and stays silent on a control, the
+  alert lifecycle, losses, skips, host detectors, working hours), `scripts/test-acef-retro` (45 checks).
+- Capability record `docs/ai/capabilities/waste-detection.json` (status `wired`).
+- **Review r1 fixes (independent review, REVISE, seven P2s; each with a regression test that fails on the earlier
+  code):** (1) `acef-detect`/`acef-retro` set `sys.dont_write_bytecode`, so loading detectors leaves no `__pycache__`
+  in a host or the checkout; (2) one lock per project's alert log across read state → decide → append (and the
+  state file), so parallel polls cannot open one key twice, and `acef-note ack` validates under the same lock;
+  (3) an expired deferral reopens with the deadline counted from its expiry, not from the poll; (4) only a positive
+  observation resolves an alert (`ctx.clear(subject)` in every core detector); a subject that aged out of a window or
+  vanished stays open and is printed `UNSEEN`; old run directories that are not marked done are read, because
+  appended logs do not move a directory's mtime; an open alert's run is looked up directly; (5) repeated failures
+  without a tree hash are "file change unknown", not an alert; (6) an alert that crosses 30 min while open writes its
+  loss once (`loss` event); (7) a retro snapshot folds only the events up to its window's end.
+- **Review r2 fixes:** the positive-observation rule now holds in every detector, with a test for each:
+  `size_ratio` clears only on a merge (open work older than its window is not judged, so not cleared);
+  `machine` clears a hog only on a release or a served waiter after the alert opened, and an idle waiter only on a
+  later take/cancel or a fresh wait; `forgotten_session` clears a slot only on a release after the alert opened and
+  asks git (`merge-base --is-ancestor`) when a worktree's merge has left the history window; `review_loop` clears only
+  on ACCEPT or a merge (rounds or class members leaving the window are not a recovery); `stuck_agent`'s command rule
+  clears only on a later success. `acef-retro` folds events strictly before the window's end (an event at Monday
+  00:00 belongs to the next week). The parallel-poll test now holds the alert lock until all 8 polls are blocked on
+  it (lsof barrier) and asserts every exit code; on the pre-lock code it fails with 48 opens for 6 keys.
+- **Review r3 fixes:** no answer is not an answer. `forgotten_session` clears a worktree only on git's definite
+  "not merged" (`merge-base --is-ancestor` exit 1); exit 128 or a failure keeps the alert open with a note.
+  `stuck_agent` clears a run only on an observed finish or observed progress, and a repeat only on a produced result
+  or differing attempt endings; a missing start stamp or missing attempt logs keep the alert open.
+- **Review r4 — read contract (structural):** every source read returns data or raises `SourceError`
+  (`scripts/detectors/_lib.py`); a detector that hit one (raised, or recorded with `ctx.mark_error` / `ctx.guard`)
+  prints `SOURCE_ERROR <source>` and resolves no alert in that poll (they print `UNSEEN`); a missing or unparseable
+  field is unknown (`_lib.field`), never success. Changed places: `_lib.git` (non-zero exit, OSError, timeout →
+  error; questions use `git_rc`), `is_git_repo`, `main_ref`, `history` (empty window is data), `worktrees`,
+  `processes` (failed or empty `ps` → error), `read_jsonl` (missing file → error, bad lines → unknown), `read_text`,
+  `read_stamp`, `Item` (scandir, stamps, status, result), `done_marker`, `glob_paths` (missing or unreadable base →
+  error), `items`, `find_item`; `stuck_agent` (`rc`/`cmd`/`err` required, attempt logs unreadable → error, guards per
+  source); `forgotten_session` (guards for git, slot log, runs, process table, worktrees; take rows need host, slot
+  and owner; leftover parent must be readable; ancestry exit 128 → error); `machine` (rows need event, host, slot,
+  owner); `waiting_work` (a missing or unreadable verdict no longer clears; configured queue missing → error; dev
+  reports guarded); `inactive_improvement` (guards per source; checked glob for store rules; configured changelog
+  missing → error); `size_ratio` (`is_git_repo`, no skip on an empty history); runner (`SOURCE_ERROR` lines,
+  `UNSEEN` instead of resolves, `--quiet` shows them, alert log read with `read_alert_events_checked`). Tests: a
+  generic injection poll with every source failing at once (each detector reports `SOURCE_ERROR`, nothing resolves),
+  single failures (`ps` exit 1, a failed `git worktree list`), `rc` missing / null / empty, a corrupt alert-log line.
+- **Review r5 fixes (last round):** (1) `glob_paths` walks with `os.scandir` and raises on any listing failure below
+  the base (`glob.glob` hid unreadable subtrees, so an older ACCEPT could stand in for a newer REVISE); (2) integer
+  fields accept only a real int or a canonical integer string (`false`, `0.5`, `"0.0"` are unknown); (3) an invalid
+  activation date (`2026-99-99`) is a source error for its file, never a cleared line; (4) an unreadable or
+  undecodable alert log makes `acef-detect` print `SOURCE_ERROR alert log`, list findings as NOT RECORDED, open and
+  resolve nothing and exit **4**; `acef-note due`/`alerts`/`ack` report it instead of crashing; (5) a leftover whose
+  parent directory was removed is observed gone (`os.lstat` ENOENT/ENOTDIR); only permission or I/O errors are source
+  errors. Each with a regression test; 8 checks fail on 602e48f.
+- **`install-acef-tools`** installs `acef-detect`, `acef-retro` and `scripts/detectors/` into `.acef/bin/` (host
+  detectors stay in `.acef/detectors/`); `scripts/test-install-acef-tools` runs the installed `acef-detect --list`.
+
 ## Unreleased — Changelog rule and feedback-log capability record (2026-10-27)
 
 Owner decision 2026-10-27: "is it written that CHANGELOG must be updated?" It was not; only this file's header said so.

@@ -7,6 +7,8 @@ One machine-wide store shared by every host project, default ~/CODE/acef-feedbac
   tags.txt             the closed tag vocabulary (stack:<x> and os:<x> scope tags are always allowed)
   rules/R-<n>.md       one accepted rule: Incidents, Cost, Review-by, Activation, Status
   digests/<YYYY>-W<ww>.md  weekly digests; "Through: <date>" marks what they cover
+  alerts/<project>.jsonl   append-only alert events from acef-detect (poll, open, ack, defer, resolve, reopen)
+  retros/<YYYY>-W<ww>.md   weekly retros from acef-retro ("Prepared:" and "Through:" dates)
 
 Text above the first entry line of a log (an imported legacy log) stays as it is and is searched as legacy blocks.
 Entries are never edited in place: a repeat or a retag is a new line that names the original id.
@@ -19,13 +21,16 @@ Usage:
   acef-note status <id>
   acef-note version             short stamp v<entries>.<rules-hash>; record it next to "Bilinen tuzaklar"
   acef-note check <stamp> [--tags ..] [--text ..]   exit 0 "unchanged" / exit 1 + only the newer matching entries
-  acef-note due                 entries not in a digest yet, and rules past their review date
+  acef-note due                 undigested entries, RETRO DUE, rules past their review date, ALERT OPEN / ALERT OVERDUE
   acef-note digest [--write]    group undigested entries by tag with repeat counts and cost sums
+  acef-note ack <alert-id> --slice <id> | --defer <YYYY-MM-DD> --reason "<why>" | --resolve "<evidence>"
+  acef-note alerts [--project p] [--all]   alert states (written by acef-detect)
 """
 import argparse
 import datetime as dt
 import fcntl
 import hashlib
+import json
 import os
 import re
 import sys
@@ -60,7 +65,7 @@ def root() -> Path:
 
 def ensure_store() -> Path:
     base = root()
-    for sub in ("log", "rules", "digests"):
+    for sub in ("log", "rules", "digests", "alerts", "retros"):
         (base / sub).mkdir(parents=True, exist_ok=True)
     tags = base / "tags.txt"
     if not tags.exists():
@@ -159,30 +164,44 @@ def score(entry_text: str, entry_tags: set, tags: set, text_words: set) -> int:
 
 def cmd_add(args):
     base = ensure_store()
-    if not PROJECT.match(args.project):
+    entry_id, tags, what, fix = add_entry(base, args.project, args.tags, args.what, args.fix, args.cost, args.ref,
+                                          args.repeat, args.retag)
+    print(entry_id)
+    if not (args.repeat or args.retag):
+        similar = search(base, set(tags) - {"untagged"}, words(what + " " + fix), "", 3, True, exclude=entry_id)
+        if similar:
+            print("similar (if one is the same lesson, use --repeat <id> next time):")
+            for row in similar:
+                print("  " + row)
+
+
+def add_entry(base: Path, project: str, raw_tags: str = "", raw_what: str = "", raw_fix: str = "", raw_cost: str = "",
+              raw_ref: str = "", repeat: str = "", retag: str = ""):
+    """Append one entry line under the project's lock; returns (id, tags, what, fix). Also used by acef-detect."""
+    if not PROJECT.match(project):
         sys.exit("acef-note: project must be lowercase letters, digits and dashes")
-    log = base / "log" / f"{args.project}.md"
+    log = base / "log" / f"{project}.md"
     with locked(log):
         entries, legacy = read_log(log)
-        if args.retag:
-            original, _ = find(base, args.retag)
+        if retag:
+            original, _ = find(base, retag)
             if not original:
-                sys.exit(f"acef-note: no entry {args.retag}")
-            tags = check_tags(base, args.tags or "")
-            what, fix, cost, ref = f"retag-of:{args.retag}", "", "0", args.retag
-        elif args.repeat:
-            original, _ = find(base, args.repeat)
+                sys.exit(f"acef-note: no entry {retag}")
+            tags = check_tags(base, raw_tags or "")
+            what, fix, cost, ref = f"retag-of:{retag}", "", "0", retag
+        elif repeat:
+            original, _ = find(base, repeat)
             if not original:
-                sys.exit(f"acef-note: no entry {args.repeat}")
+                sys.exit(f"acef-note: no entry {repeat}")
             tags = [t.strip() for t in original["tags"].split(",")]
-            what = f"repeat-of:{args.repeat} {clean(args.what)}"
-            fix, cost, ref = "", clean(args.cost) or "?", clean(args.ref)
+            what = f"repeat-of:{repeat} {clean(raw_what)}"
+            fix, cost, ref = "", clean(raw_cost) or "?", clean(raw_ref)
         else:
-            if not args.what:
+            if not raw_what:
                 sys.exit("acef-note: --what is required")
-            tags = check_tags(base, args.tags or "untagged")
-            what, fix, cost, ref = clean(args.what), clean(args.fix), clean(args.cost) or "?", clean(args.ref)
-        entry_id = next_id(entries, args.project, legacy)
+            tags = check_tags(base, raw_tags or "untagged")
+            what, fix, cost, ref = clean(raw_what), clean(raw_fix), clean(raw_cost) or "?", clean(raw_ref)
+        entry_id = next_id(entries, project, legacy)
         line = " | ".join([entry_id, dt.date.today().isoformat(), ",".join(tags), cost, what, fix, ref])
         with open(log, "a") as handle:
             if log.stat().st_size and not log.read_text().endswith("\n"):
@@ -193,13 +212,7 @@ def cmd_add(args):
         order = base / "order.txt"
         with locked(order), open(order, "a") as handle:
             handle.write(entry_id + "\n")
-    print(entry_id)
-    if not (args.repeat or args.retag):
-        similar = search(base, set(tags) - {"untagged"}, words(what + " " + fix), "", 3, True, exclude=entry_id)
-        if similar:
-            print("similar (if one is the same lesson, use --repeat <id> next time):")
-            for row in similar:
-                print("  " + row)
+    return entry_id, tags, what, fix
 
 
 def search(base, tags, text_words, project, limit, include_promoted, exclude=""):
@@ -290,8 +303,9 @@ def cmd_check(args):
 
 
 def last_through(base: Path) -> str:
+    """Latest "Through:" date of a digest or a weekly retro (a retro covers the log entries of its window)."""
     dates = []
-    for digest in (base / "digests").glob("*.md"):
+    for digest in list((base / "digests").glob("*.md")) + list((base / "retros").glob("*.md")):
         match = re.search(r"^Through: (\d{4}-\d{2}-\d{2})", digest.read_text(), re.M)
         if match:
             dates.append(match.group(1))
@@ -310,17 +324,257 @@ def undigested(base: Path):
 def cmd_due(args):
     base = ensure_store()
     since, rows = undigested(base)
-    today = dt.date.today().isoformat()
+    today = now_utc().astimezone().date().isoformat()
     print(f"undigested entries since {since}: {len(rows)}")
-    oldest = min((e["date"] for e in rows), default="")
-    if rows and (dt.date.today() - dt.date.fromisoformat(oldest)).days >= 7:
-        print(f"DIGEST DUE: oldest undigested entry is from {oldest}; run: acef-note digest --write")
+    # The weekly retro (scripts/acef-retro) replaced the digest as the owner-facing step; `digest` still works.
+    last = last_retro(base)
+    if not last:
+        print("RETRO DUE: no weekly retro yet; run: acef-retro --all")
+    elif (now_utc().date() - last).days >= 7:
+        print(f"RETRO DUE: last weekly retro prepared {last.isoformat()}; run: acef-retro --all")
+    for name, review in rules_past_review(base, today):
+        print(f"RULE REVIEW DUE: {name} (review-by {review})")
+    for project, path in alert_files(base):
+        try:
+            events, bad = read_alert_events_checked(path)
+        except (OSError, UnicodeDecodeError) as exc:
+            print(f"SOURCE_ERROR alert log {path.name}: {exc.__class__.__name__}; its alerts are not shown")
+            continue
+        if bad:
+            print(f"SOURCE_ERROR alert log {path.name}: {bad} unreadable line(s); states below may be incomplete")
+        states = alert_states(events, now_utc())
+        for a in sorted(states.values(), key=lambda a: a["since"]):
+            if a["status"] != "open":
+                continue
+            how = f"acef-note ack {a['id']} --slice <id> | --defer <date> --reason \"..\" | --resolve \"<evidence>\""
+            reopened = f"; reopened, deferral to {a['until']} passed" if a.get("defer_expired") else ""
+            if a["overdue"]:
+                print(f"ALERT OVERDUE: {a['id']} [{a['detector']}] {a['subject']} — owner {a['owner']}, ack by "
+                      f"{a['ack_by']} passed{reopened}; {how}")
+            elif a["polls"] > a["overdue_polls"] or reopened:
+                print(f"ALERT OPEN: {a['id']} [{a['detector']}] {a['subject']} — owner {a['owner']}, "
+                      f"{a['polls']} polls without ack, ack by {a['ack_by']}{reopened}; {how}")
+
+
+def rules_past_review(base: Path, today: str):
     for rule in sorted((base / "rules").glob("R-*.md")):
         text = rule.read_text()
         review = re.search(r"^Review-by: (\d{4}-\d{2}-\d{2})", text, re.M)
         status = re.search(r"^Status: (\S+)", text, re.M)
         if review and review.group(1) <= today and (not status or status.group(1) in ("shipped", "measuring")):
-            print(f"RULE REVIEW DUE: {rule.name} (review-by {review.group(1)})")
+            yield rule.name, review.group(1)
+
+
+def last_retro(base: Path):
+    dates = []
+    for retro in (base / "retros").glob("*.md"):
+        match = re.search(r"^Prepared: (\d{4}-\d{2}-\d{2})", retro.read_text(errors="replace"), re.M)
+        dates.append(dt.date.fromisoformat(match.group(1)) if match
+                     else dt.date.fromtimestamp(retro.stat().st_mtime))
+    return max(dates) if dates else None
+
+
+# ---------------------------------------------------------------- alerts (method/FEEDBACK_LOOP.md "Detection loop")
+# alerts/<project>.jsonl is append-only. Events: poll (one per acef-detect run), open, ack (slice id), defer (date +
+# reason), resolve (evidence), reopen, loss (an open alert crossed the loss threshold and was logged). One alert per
+# detector+subject ("key"); a recurrence reopens the same id.
+UTC = dt.timezone.utc
+DEFAULT_WORKING_HOURS = {"start": 9, "end": 18, "days": [0, 1, 2, 3, 4]}   # local time, Monday = 0
+ALERT_ID = re.compile(r"^(?P<project>[a-z0-9][a-z0-9-]*)-A(?P<n>\d+)$")
+
+
+def parse_ts(raw: str) -> dt.datetime:
+    raw = raw.strip()
+    if raw.endswith("Z"):
+        raw = raw[:-1] + "+00:00"
+    value = dt.datetime.fromisoformat(raw)
+    return (value if value.tzinfo else value.astimezone()).astimezone(UTC)
+
+
+def iso(value: dt.datetime) -> str:
+    return value.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def now_utc() -> dt.datetime:
+    """Current time; ACEF_NOW (ISO) overrides it for tests and replays."""
+    raw = os.environ.get("ACEF_NOW", "")
+    return parse_ts(raw) if raw else dt.datetime.now(UTC).replace(microsecond=0)
+
+
+def add_working_hours(start: dt.datetime, hours: float, wh: dict = None) -> dt.datetime:
+    """start + `hours` counted only inside working hours (local time)."""
+    wh = wh or DEFAULT_WORKING_HOURS
+    t, remaining = start.astimezone(), float(hours) * 60
+    for _ in range(400):
+        if remaining <= 0:
+            break
+        if t.weekday() in wh["days"] and wh["start"] <= t.hour < wh["end"]:
+            day_end = t.replace(hour=wh["end"], minute=0, second=0, microsecond=0)
+            step = min(remaining, (day_end - t).total_seconds() / 60)
+            t += dt.timedelta(minutes=step)
+            remaining -= step
+            if remaining <= 0:
+                break
+        if t.weekday() in wh["days"] and t.hour < wh["start"]:
+            t = t.replace(hour=wh["start"], minute=0, second=0, microsecond=0)
+        else:
+            t = (t + dt.timedelta(days=1)).replace(hour=wh["start"], minute=0, second=0, microsecond=0)
+            while t.weekday() not in wh["days"]:
+                t += dt.timedelta(days=1)
+    return t.astimezone(UTC)
+
+
+def alert_files(base: Path, project: str = ""):
+    for path in sorted((base / "alerts").glob("*.jsonl")):
+        if not project or path.stem == project:
+            yield path.stem, path
+
+
+def read_alert_events_checked(path: Path):
+    """(events, unreadable line count). A missing file is an empty log (no alerts yet)."""
+    events, bad = [], 0
+    if path.exists():
+        for line in path.read_text().splitlines():
+            if not line.strip():
+                continue
+            try:
+                event = json.loads(line)
+            except ValueError:
+                bad += 1
+                continue
+            if isinstance(event, dict) and "event" in event and "ts" in event:
+                events.append(event)
+            else:
+                bad += 1
+    return events, bad
+
+
+def read_alert_events(path: Path) -> list:
+    return read_alert_events_checked(path)[0]
+
+
+def alert_lock(base: Path, project: str):
+    """The one lock for a project's alert log: hold it across read state -> decide -> append (acef-detect, ack)."""
+    return locked(base / "alerts" / f"{project}.jsonl")
+
+
+def append_alert_event(base: Path, project: str, event: dict, held: bool = False) -> dict:
+    """Append one event. held=True: the caller already holds alert_lock (flock is not re-entrant)."""
+    if not PROJECT.match(project):
+        sys.exit("acef-note: project must be lowercase letters, digits and dashes")
+    if not held:
+        with alert_lock(base, project):
+            return append_alert_event(base, project, event, held=True)
+    path = base / "alerts" / f"{project}.jsonl"
+    event = {"ts": iso(now_utc()), **event}
+    if event["event"] == "open" and not event.get("id"):
+        opened = [e for e in read_alert_events(path) if e["event"] == "open"]
+        event["id"] = f"{project}-A{len(opened) + 1}"
+    with open(path, "a") as handle:
+        handle.write(json.dumps(event, ensure_ascii=False, sort_keys=True) + "\n")
+        handle.flush()
+        os.fsync(handle.fileno())
+    return event
+
+
+def alert_states(events: list, now: dt.datetime) -> dict:
+    """Fold the event log into one state per alert id. A deferral whose date has passed reopens the alert."""
+    states, polls = {}, sorted(parse_ts(e["ts"]) for e in events if e["event"] == "poll")
+    for e in events:
+        kind, a = e["event"], states.get(e.get("id", ""))
+        if kind == "open":
+            states[e["id"]] = a = {
+                "id": e["id"], "detector": e.get("detector", "?"), "subject": e.get("subject", "?"),
+                "key": e.get("key", ""), "owner": e.get("owner", "?"), "summary": e.get("summary", ""),
+                "evidence": e.get("evidence", ""), "opened": e["ts"], "since": e["ts"], "ack_by": e.get("ack_by", ""),
+                "status": "open", "slice": "", "until": "", "reason": "", "resolved": "", "resolution": "",
+                "note": e.get("note", ""), "reopens": 0, "wh": e.get("wh") or DEFAULT_WORKING_HOURS,
+                "ack_hours": e.get("ack_hours", 4), "overdue_polls": e.get("overdue_polls", 2),
+                "loss_min": e.get("loss_min"), "history": []}
+        elif a is None or kind == "poll":
+            continue
+        elif kind == "ack":
+            a.update(status="acked", slice=e.get("slice", ""))
+        elif kind == "defer":
+            a.update(status="deferred", until=e.get("until", ""), reason=e.get("reason", ""))
+        elif kind == "resolve":
+            a.update(status="resolved", resolved=e["ts"], resolution=e.get("evidence", ""))
+        elif kind == "reopen":
+            a.update(status="open", since=e["ts"], slice="", ack_by=e.get("ack_by") or a["ack_by"],
+                     summary=e.get("summary") or a["summary"], reopens=a["reopens"] + 1, note=e.get("note", ""))
+        elif kind == "loss":   # an open alert crossed the loss threshold; logged once per open cycle
+            a.update(note=e.get("note", ""), loss_min=e.get("loss_min"))
+        if a is not None:
+            a["history"].append(f"{e['ts']} {kind}")
+    for a in states.values():
+        a["defer_expired"] = False
+        if a["status"] == "deferred" and a["until"] and now.astimezone().date() > dt.date.fromisoformat(a["until"]):
+            restart = dt.datetime.combine(dt.date.fromisoformat(a["until"]) + dt.timedelta(days=1),
+                                          dt.time(0, 0)).astimezone()
+            a.update(status="open", since=iso(restart), defer_expired=True,
+                     ack_by=iso(add_working_hours(restart, a["ack_hours"], a["wh"])))
+        since = parse_ts(a["since"])
+        a["polls"] = sum(1 for p in polls if p > since)
+        a["overdue"] = a["status"] == "open" and bool(a["ack_by"]) and now > parse_ts(a["ack_by"])
+    return states
+
+
+def cmd_ack(args):
+    base = ensure_store()
+    match = ALERT_ID.match(args.id)
+    if not match:
+        sys.exit("acef-note: alert ids look like <project>-A<n>")
+    project = match.group("project")
+    path = base / "alerts" / f"{project}.jsonl"
+    chosen = [x for x in (args.slice, args.defer, args.resolve) if x]
+    if len(chosen) != 1:
+        sys.exit("acef-note: give exactly one of --slice <id>, --defer <YYYY-MM-DD> --reason \"..\", --resolve \"..\"")
+    with alert_lock(base, project):   # validate against the state the event is appended to
+        try:
+            events, bad = read_alert_events_checked(path)
+        except (OSError, UnicodeDecodeError) as exc:
+            sys.exit(f"acef-note: alert log {path} unreadable ({exc.__class__.__name__}); nothing recorded")
+        if bad:
+            sys.exit(f"acef-note: alert log {path} has {bad} unreadable line(s); repair it before acking")
+        state = alert_states(events, now_utc()).get(args.id)
+        if not state:
+            sys.exit(f"acef-note: no alert {args.id}")
+        if state["status"] == "resolved" and not args.resolve:
+            sys.exit(f"acef-note: {args.id} is resolved; a recurrence reopens it")
+        if args.slice:
+            event = {"event": "ack", "id": args.id, "slice": clean(args.slice)}
+        elif args.defer:
+            if not re.match(r"^\d{4}-\d{2}-\d{2}$", args.defer) or not args.reason.strip():
+                sys.exit("acef-note: --defer takes a YYYY-MM-DD date and needs --reason \"..\"")
+            if dt.date.fromisoformat(args.defer) < now_utc().astimezone().date():
+                sys.exit("acef-note: the deferral date is in the past")
+            event = {"event": "defer", "id": args.id, "until": args.defer, "reason": clean(args.reason)}
+        else:
+            event = {"event": "resolve", "id": args.id, "evidence": clean(args.resolve)}
+        append_alert_event(base, project, event, held=True)
+    print(f"{args.id} {event['event']}")
+
+
+def cmd_alerts(args):
+    base = ensure_store()
+    rows = 0
+    for project, path in alert_files(base, args.project):
+        try:
+            events = read_alert_events(path)
+        except (OSError, UnicodeDecodeError) as exc:
+            print(f"SOURCE_ERROR alert log {path.name}: {exc.__class__.__name__}")
+            rows += 1
+            continue
+        for a in alert_states(events, now_utc()).values():
+            if a["status"] == "resolved" and not args.all:
+                continue
+            extra = {"acked": f" slice {a['slice']}", "deferred": f" until {a['until']} ({a['reason']})",
+                     "resolved": f" ({a['resolution']})"}.get(a["status"], f" ack by {a['ack_by']}" +
+                                                              (" OVERDUE" if a["overdue"] else ""))
+            print(f"{a['id']} {a['status']}{extra} [{a['detector']}] {a['subject']} — {a['summary']}")
+            rows += 1
+    if not rows:
+        print("no alerts")
 
 
 def minutes(cost: str) -> int:
@@ -398,6 +652,17 @@ def main():
     ck.add_argument("--tags", default="")
     ck.add_argument("--text", default="")
     ck.set_defaults(func=cmd_check)
+    ak = sub.add_parser("ack")
+    ak.add_argument("id")
+    ak.add_argument("--slice", default="")
+    ak.add_argument("--defer", default="")
+    ak.add_argument("--reason", default="")
+    ak.add_argument("--resolve", default="")
+    ak.set_defaults(func=cmd_ack)
+    al = sub.add_parser("alerts")
+    al.add_argument("--project", default="")
+    al.add_argument("--all", action="store_true")
+    al.set_defaults(func=cmd_alerts)
     dg = sub.add_parser("digest")
     dg.add_argument("--write", action="store_true")
     dg.set_defaults(func=cmd_digest)

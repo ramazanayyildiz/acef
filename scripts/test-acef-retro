@@ -1,0 +1,202 @@
+#!/usr/bin/env python3
+"""test-acef-retro: the weekly retro is built from a throwaway store and host repo (never the real
+ACEF_FEEDBACK_DIR): numbers by route class with median-or-fallback, repeats with an example and the covering rule,
+overdue and unowned alerts, rules past review, at most five proposals, owner answers by number, no overwrite,
+RETRO DUE in acef-note due, and the old digest still working."""
+import datetime as dt
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+
+HERE = Path(__file__).resolve().parent
+RETRO, NOTE = HERE / "acef-retro", HERE / "acef-note"
+TMP = Path(os.path.realpath(tempfile.mkdtemp(prefix="acef-retro-test-")))
+STORE, HOST = TMP / "store", TMP / "host"
+NOW = dt.datetime.now(dt.timezone.utc).replace(microsecond=0)
+TODAY = NOW.date().isoformat()
+ENV = {**os.environ, "ACEF_FEEDBACK_DIR": str(STORE), "TZ": "UTC", "GIT_CONFIG_GLOBAL": "/dev/null"}
+ok = bad = 0
+
+
+def check(name, cond, detail=""):
+    global ok, bad
+    if cond:
+        ok += 1
+        print(f"ok   {name}")
+    else:
+        bad += 1
+        print(f"FAIL {name}" + (f"\n    {detail[:2500]}" if detail else ""))
+
+
+def iso(t):
+    return t.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def ago(minutes):
+    return NOW - dt.timedelta(minutes=minutes)
+
+
+def git(*args, minutes_ago=None, cwd=HOST):
+    env = dict(ENV)
+    if minutes_ago is not None:
+        env["GIT_AUTHOR_DATE"] = env["GIT_COMMITTER_DATE"] = iso(ago(minutes_ago))
+    return subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", *args], cwd=cwd, env=env,
+                          capture_output=True, text=True, check=True).stdout
+
+
+def tool(path, *args, now=NOW):
+    proc = subprocess.run([sys.executable, str(path), *args], env={**ENV, "ACEF_NOW": iso(now)},
+                          capture_output=True, text=True)
+    return proc.returncode, proc.stdout + proc.stderr
+
+
+try:
+    # ------------------------------------------------------------ host: 6 HAFIF + 1 TAM merges in the window
+    HOST.mkdir()
+    git("init", "-q", "-b", "main")
+    (HOST / "a.txt").write_text("a")
+    git("add", "-A")
+    git("commit", "-q", "-m", "init", minutes_ago=20 * 24 * 60)
+    plan = [(f"work-{i}", "light", 2000 + i * 300, 120) for i in range(1, 7)] + [("work-9", "FULL money", 900, 600)]
+    for wid, kind, merged_ago, length in plan:
+        git("checkout", "-q", "-b", f"slice/{wid}")
+        (HOST / f"{wid}.txt").write_text(wid)
+        git("add", "-A")
+        git("commit", "-q", "-m", f"{wid.upper()} change", minutes_ago=merged_ago + length)
+        git("checkout", "-q", "main")
+        git("merge", "-q", "--no-ff", f"slice/{wid}", "-m", f"Merge slice/{wid}: {wid.upper()} ({kind})",
+            minutes_ago=merged_ago)
+    git("worktree", "add", "-q", "-b", "slice/idle-1", str(TMP / "wt-idle"), "main")   # no own commit
+    t = ago(30).timestamp()
+    os.utime(TMP / "wt-idle/.git", (t, t))
+    reviews = HOST / "reviews"
+    reviews.mkdir()
+    for rnd in (1, 2, 3):
+        (reviews / f"WORK-9-review-r{rnd}.md").write_text("Verdict: REVISE\n")
+    (reviews / "WORK-1-review-r1.md").write_text("Verdict: ACCEPT\n")
+    for i, f in enumerate(sorted(reviews.iterdir())):
+        t = ago(60 - i).timestamp()
+        os.utime(f, (t, t))
+    cfg = TMP / "cfg.json"
+    cfg.write_text(json.dumps({"project": "demo", "sources": {"main_ref": "main", "reviews": {
+        "glob": "reviews/*.md", "id_regex": r"^(?P<id>.+?)-review(?:-r(?P<round>\d+))?$"}}}))
+
+    # ------------------------------------------------------------ store: log, rules, alerts
+    for sub in ("log", "rules", "alerts", "digests", "retros"):
+        (STORE / sub).mkdir(parents=True)
+    old = (NOW - dt.timedelta(days=30)).date().isoformat()
+    row = lambda *f: " | ".join(f)   # the exact line shape acef-note add writes
+    lines = [row("demo-1", TODAY, "tooling,runner", "30min", "ssh drop lost remote results", "retry", "x"),
+             row("demo-2", TODAY, "tooling,runner", "20min", "repeat-of:demo-1 again", "", "y"),
+             row("demo-3", old, "state", "10min", "outside the window", "", "z")]
+    tags = ["sizing", "ceremony", "rounds", "testscope", "infra", "state"]
+    n = 4
+    for tag in tags:
+        for _ in range(2):
+            lines.append(row(f"demo-{n}", TODAY, f"{tag},method", "5min", f"{tag} problem number {n}", "", "r"))
+            n += 1
+    (STORE / "log/demo.md").write_text("\n".join(lines) + "\n")
+    (STORE / "order.txt").write_text("\n".join(l.split(" | ")[0] for l in lines) + "\n")
+    (STORE / "rules/R-1.md").write_text("Incidents: demo-1\nReview-by: 2000-01-01\nStatus: measuring\n")
+    ev = [{"ts": iso(ago(600)), "event": "open", "id": "demo-A1", "detector": "stuck_agent", "subject": "run-a",
+           "key": "stuck_agent:run-a", "owner": "coordinator", "summary": "stuck 45 min", "ack_by": iso(ago(300))},
+          {"ts": iso(ago(500)), "event": "open", "id": "demo-A2", "detector": "stuck_agent", "subject": "run-b",
+           "key": "stuck_agent:run-b", "owner": "coordinator", "summary": "stuck 50 min", "ack_by": iso(ago(200))},
+          {"ts": iso(ago(400)), "event": "resolve", "id": "demo-A2", "evidence": "cleared"},
+          {"ts": iso(ago(300)), "event": "open", "id": "demo-A3", "detector": "waiting_work", "subject": "W-1",
+           "key": "waiting_work:W-1", "owner": "", "summary": "accepted 6 h", "ack_by": iso(NOW + dt.timedelta(hours=3))},
+          {"ts": iso(ago(100)), "event": "poll"}, {"ts": iso(ago(50)), "event": "poll"},
+          # opened in 2026-W40, resolved only on 2026-10-10: a W40 snapshot must still show it open and overdue
+          {"ts": "2026-10-01T10:00:00Z", "event": "open", "id": "demo-A4", "detector": "machine", "subject": "idle:x",
+           "key": "machine:idle:x", "owner": "merge-operator", "summary": "idle runner", "ack_by": "2026-10-01T14:00:00Z"},
+          {"ts": "2026-10-10T10:00:00Z", "event": "resolve", "id": "demo-A4", "evidence": "later"},
+          # resolved exactly at the window's end (Monday 00:00, excluded from W40): W40 still shows it open
+          {"ts": "2026-10-02T10:00:00Z", "event": "open", "id": "demo-A5", "detector": "machine", "subject": "idle:y",
+           "key": "machine:idle:y", "owner": "merge-operator", "summary": "edge", "ack_by": "2026-10-02T14:00:00Z"},
+          {"ts": "2026-10-05T00:00:00Z", "event": "resolve", "id": "demo-A5", "evidence": "at the boundary"}]
+    (STORE / "alerts/demo.jsonl").write_text("".join(json.dumps(e) + "\n" for e in ev))
+
+    rc, due = tool(NOTE, "due")
+    check("RETRO DUE before any retro", "RETRO DUE: no weekly retro yet" in due, due)
+    rc, dig = tool(NOTE, "digest")
+    check("old digest still works", rc == 0 and "| tooling |" in dig, dig)
+
+    rc, out = tool(RETRO, "--project", "demo", "--repo", str(HOST), "--config", str(cfg))
+    label = f"{NOW.date().isocalendar()[0]}-W{NOW.date().isocalendar()[1]:02d}"
+    path = STORE / "retros" / f"{label}-demo.md"
+    check("retro written to retros/<YYYY>-W<ww>-<project>.md", rc == 0 and out.strip() == str(path), out)
+    text = path.read_text() if path.exists() else ""
+    for head in ("Prepared: " + TODAY, "Window: ", "Through: " + TODAY, "Status: draft",
+                 "## 1. What went well (numbers)", "## 2. What repeats", "## 3. Overdue or unowned alerts",
+                 "## 4. Rules past their review date", "## 5. Proposed changes", "## Owner decisions"):
+        check(f"retro has '{head}'", head in text, text)
+    check("closed work counted (7 in window)", re.search(r"^\| demo \| 7 \|", text, re.M), text)
+    check("HAFIF cycle uses the median of 5+ samples",
+          re.search(r"HAFIF 6 \(median 2 h 00 min over 6 with a known start vs expected 2 h 00 min, median of 6 closed HAFIF\)", text), text)
+    check("TAM below 5 samples says fallback", re.search(r"TAM 1 \(median 10 h 00 min .* expected 8 h 00 min, fallback \(1 closed TAM sample", text), text)
+    check("REVISE rounds reported", "review, 3+ REVISE rounds" in text and "WORK-9" in text, text)
+    check("repeat with example and covering rule",
+          re.search(r"demo log, mode `tooling`\*\* — 2x · example demo-1: ssh drop .* 50 min logged · covered by rule: R-1", text), text)
+    check("entries outside the window are left out", "outside the window" not in text, text)
+    check("alert repeats by detector", re.search(r"demo alerts, detector `stuck_agent`\*\* — 2x", text), text)
+    check("overdue alert listed", re.search(r"- demo-A1 \[stuck_agent\] run-a — owner coordinator, .*\(OVERDUE\)", text), text)
+    check("unowned alert listed", re.search(r"- demo-A3 \[waiting_work\] W-1 — owner NONE", text), text)
+    check("resolved alert not listed as overdue", "- demo-A2" not in text, text)
+    check("rules past review listed", "- R-1.md (review-by 2000-01-01)" in text, text)
+    proposals = re.findall(r"(?m)^\d+\. Candidate", text)
+    check(f"at most five proposals ({len(proposals)})", 1 <= len(proposals) <= 5, text)
+    check("each proposal names evidence, layer, effect and measurement",
+          all(all(k in line for k in ("evidence:", "layer:", "expected effect:", "measured by:"))
+              for line in re.findall(r"(?m)^\d+\. Candidate.*$", text)), text)
+    check("owner decision rows pending", len(re.findall(r"(?m)^\| \d \| pending \|", text)) == len(proposals), text)
+    check("worktree with no own commit reported", "wt-idle" in text, text)
+    check("alerts and polls counted", re.search(r"\d+ opened / 1 resolved / 0 acked or deferred · 2 polls", text), text)
+
+    rc, out = tool(RETRO, "--project", "demo", "--repo", str(HOST), "--config", str(cfg))
+    check("existing retro is not overwritten", rc == 1 and "exists" in out, out)
+    rc, out = tool(RETRO, "--project", "demo", "--answer", "1=accept", "--answer", "2=reject:too costly")
+    text = path.read_text()
+    check("answers recorded by number", f"| 1 | accept |  | {TODAY} |" in text and f"| 2 | reject | too costly | {TODAY} |" in text, text)
+    check("status stays draft while answers are pending", "Status: draft" in text, text)
+    rc, out = tool(RETRO, "--project", "demo", "--answer", "9=accept")
+    check("answer to a missing proposal refused", rc != 0, out)
+    rc, out = tool(RETRO, "--project", "demo", "--answer", "1=maybe")
+    check("invalid decision refused", rc != 0, out)
+    rest = [f"{i}=defer:next week" for i in range(3, len(proposals) + 1)]
+    args = [x for r in rest for x in ("--answer", r)]
+    if args:
+        tool(RETRO, "--project", "demo", *args)
+    check("all answered marks the retro decided", "Status: decided" in path.read_text(), path.read_text())
+
+    rc, due = tool(NOTE, "due")
+    check("no RETRO DUE right after a retro", "RETRO DUE" not in due, due)
+    check("retro window marks log entries as digested", "undigested entries since " + TODAY + ": 0" in due, due)
+    rc, due = tool(NOTE, "due", now=NOW + dt.timedelta(days=8))
+    check("RETRO DUE a week later", "RETRO DUE: last weekly retro prepared " + TODAY in due, due)
+
+    rc, out = tool(RETRO, "--project", "demo", "--week", "2026-W40", "--repo", str(HOST), "--config", str(cfg))
+    wk = STORE / "retros/2026-W40-demo.md"
+    check("--week names the file and the window", wk.exists() and "Window: 2026-09-28 .. 2026-10-04" in wk.read_text(), out)
+    check("a past week's snapshot ignores events after its window (still open, OVERDUE then)",
+          re.search(r"- demo-A4 \[machine\] idle:x — owner merge-operator, .*\(OVERDUE\)", wk.read_text()), wk.read_text())
+    check("an event exactly at the window's end belongs to the next week",
+          "- demo-A5 [machine] idle:y" in wk.read_text(), wk.read_text())
+    check("bad --week refused", tool(RETRO, "--all", "--week", "2026-44")[0] != 0)
+    (STORE / "hosts").mkdir()
+    (STORE / "hosts/demo.json").write_text(json.dumps({"repo": str(HOST), "config": str(cfg)}))
+    rc, out = tool(RETRO, "--all", "--print")
+    check("--all reads hosts registered by acef-detect", rc == 0 and re.search(r"^\| demo \| 7 \|", out, re.M), out)
+    check("--print writes nothing", not (STORE / "retros" / f"{label}.md").exists())
+    rc, out = tool(RETRO, "--all")
+    check("--all writes retros/<YYYY>-W<ww>.md", rc == 0 and (STORE / "retros" / f"{label}.md").exists(), out)
+finally:
+    subprocess.run(["git", "worktree", "prune"], cwd=HOST, capture_output=True)
+    shutil.rmtree(TMP, ignore_errors=True)
+
+print(f"acef-retro tests: {ok} passed, {bad} failed")
+sys.exit(1 if bad else 0)
