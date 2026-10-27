@@ -1,0 +1,409 @@
+#!/usr/bin/env python3
+"""acef-note: the central ACEF feedback log (method/FEEDBACK_LOOP.md).
+
+One machine-wide store shared by every host project, default ~/CODE/acef-feedback (override: ACEF_FEEDBACK_DIR):
+  log/<project>.md     append-only; one entry = one line: id | date | tags | cost | what | fix | ref
+  order.txt            entry ids in the order they were added (the version stamp counts these)
+  tags.txt             the closed tag vocabulary (stack:<x> and os:<x> scope tags are always allowed)
+  rules/R-<n>.md       one accepted rule: Incidents, Cost, Review-by, Activation, Status
+  digests/<YYYY>-W<ww>.md  weekly digests; "Through: <date>" marks what they cover
+
+Text above the first entry line of a log (an imported legacy log) stays as it is and is searched as legacy blocks.
+Entries are never edited in place: a repeat or a retag is a new line that names the original id.
+
+Usage:
+  acef-note add <project> --tags t1,t2 --what "<observation>" [--fix "<proposal>"] [--cost 30min] [--ref <path|sha>]
+  acef-note add <project> --repeat <id> --what "<this occurrence>" [--cost ..] [--ref ..]
+  acef-note add <project> --retag <id> --tags t1,t2
+  acef-note search [--tags t1,t2] [--text "words"] [--project p] [--limit 5] [--include-promoted]
+  acef-note status <id>
+  acef-note version             short stamp v<entries>.<rules-hash>; record it next to "Bilinen tuzaklar"
+  acef-note check <stamp> [--tags ..] [--text ..]   exit 0 "unchanged" / exit 1 + only the newer matching entries
+  acef-note due                 entries not in a digest yet, and rules past their review date
+  acef-note digest [--write]    group undigested entries by tag with repeat counts and cost sums
+"""
+import argparse
+import datetime as dt
+import fcntl
+import hashlib
+import os
+import re
+import sys
+from contextlib import contextmanager
+from pathlib import Path
+
+ENTRY = re.compile(r"^(?P<id>[a-z0-9][a-z0-9-]*-\d+) \| (?P<date>\d{4}-\d{2}-\d{2}) \| (?P<tags>[^|]*) \| "
+                   r"(?P<cost>[^|]*) \| (?P<what>[^|]*) \| (?P<fix>[^|]*) \| (?P<ref>.*)$")
+PROJECT = re.compile(r"^[a-z0-9][a-z0-9-]*$")
+SCOPE_PATTERN = re.compile(r"^(stack|os):[a-z0-9.-]+$")
+DEFAULT_TAGS = """# Closed tag vocabulary. Failure modes (method/FEEDBACK_LOOP.md) first, then scope.
+sizing
+ceremony
+rounds
+testscope
+infra
+state
+tooling
+rulebreach
+untagged
+# scope (where a rule would land); stack:<name> and os:<name> are always allowed
+method
+runner
+host
+"""
+STOP = set("a an the and or of to in on for is was are be by it its this that with as at from not no".split())
+
+
+def root() -> Path:
+    return Path(os.environ.get("ACEF_FEEDBACK_DIR", str(Path.home() / "CODE" / "acef-feedback"))).expanduser()
+
+
+def ensure_store() -> Path:
+    base = root()
+    for sub in ("log", "rules", "digests"):
+        (base / sub).mkdir(parents=True, exist_ok=True)
+    tags = base / "tags.txt"
+    if not tags.exists():
+        tags.write_text(DEFAULT_TAGS)
+    return base
+
+
+@contextmanager
+def locked(path: Path):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path.with_name("." + path.name + ".lock"), "w") as handle:
+        fcntl.flock(handle, fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(handle, fcntl.LOCK_UN)
+
+
+def vocabulary(base: Path) -> set:
+    lines = (base / "tags.txt").read_text().splitlines()
+    return {line.strip() for line in lines if line.strip() and not line.startswith("#")}
+
+
+def check_tags(base: Path, raw: str) -> list:
+    tags = [t.strip() for t in raw.split(",") if t.strip()]
+    if not 1 <= len(tags) <= 4:
+        sys.exit("acef-note: give 1 to 4 tags (a failure mode, optionally a scope)")
+    known = vocabulary(base)
+    unknown = [t for t in tags if t not in known and not SCOPE_PATTERN.match(t)]
+    if unknown:
+        sys.exit(f"acef-note: unknown tag(s) {', '.join(unknown)}; see {base / 'tags.txt'}")
+    return tags
+
+
+def clean(text: str) -> str:
+    return " ".join((text or "").replace("|", "/").split())
+
+
+def read_log(path: Path):
+    """Return (entries, legacy_blocks). Legacy = free text that is not an entry line."""
+    entries, legacy, block = [], [], []
+    if not path.exists():
+        return entries, legacy
+    for line in path.read_text(errors="replace").splitlines():
+        match = ENTRY.match(line)
+        if match:
+            entries.append(match.groupdict())
+            continue
+        if not line.strip() or line.startswith("#") or line.startswith("- #") or line.startswith("## "):
+            if block:
+                legacy.append(" ".join(block))
+            block = [line.strip()] if line.strip() else []
+        else:
+            block.append(line.strip())
+    if block:
+        legacy.append(" ".join(block))
+    return entries, [b for b in legacy if len(b) > 20]
+
+
+def all_logs(base: Path, project: str = ""):
+    for path in sorted((base / "log").glob("*.md")):
+        if project and path.stem != project:
+            continue
+        yield path.stem, path
+
+
+def next_id(entries: list, project: str, legacy: list) -> str:
+    """Numbers continue after the highest entry number, or after the highest "#<n>" of an imported legacy log."""
+    numbers = [int(e["id"].rsplit("-", 1)[1]) for e in entries if e["id"].rsplit("-", 1)[0] == project]
+    numbers += [int(n) for n in re.findall(r"(?:^|\s|\()#(\d{1,4})\b", " ".join(legacy))]
+    return f"{project}-{max(numbers, default=0) + 1}"
+
+
+def find(base: Path, entry_id: str):
+    project = entry_id.rsplit("-", 1)[0]
+    entries, _ = read_log(base / "log" / f"{project}.md")
+    return next((e for e in entries if e["id"] == entry_id), None), entries
+
+
+def promoted_ids(base: Path) -> set:
+    ids = set()
+    for rule in (base / "rules").glob("R-*.md"):
+        for line in rule.read_text().splitlines():
+            if line.lower().startswith("incidents:"):
+                ids.update(re.findall(r"[a-z0-9-]+-\d+", line))
+    return ids
+
+
+def words(text: str) -> set:
+    return {w for w in re.findall(r"[a-z0-9]{3,}", text.lower()) if w not in STOP}
+
+
+def score(entry_text: str, entry_tags: set, tags: set, text_words: set) -> int:
+    return 3 * len(entry_tags & tags) + len(words(entry_text) & text_words)
+
+
+def cmd_add(args):
+    base = ensure_store()
+    if not PROJECT.match(args.project):
+        sys.exit("acef-note: project must be lowercase letters, digits and dashes")
+    log = base / "log" / f"{args.project}.md"
+    with locked(log):
+        entries, legacy = read_log(log)
+        if args.retag:
+            original, _ = find(base, args.retag)
+            if not original:
+                sys.exit(f"acef-note: no entry {args.retag}")
+            tags = check_tags(base, args.tags or "")
+            what, fix, cost, ref = f"retag-of:{args.retag}", "", "0", args.retag
+        elif args.repeat:
+            original, _ = find(base, args.repeat)
+            if not original:
+                sys.exit(f"acef-note: no entry {args.repeat}")
+            tags = [t.strip() for t in original["tags"].split(",")]
+            what = f"repeat-of:{args.repeat} {clean(args.what)}"
+            fix, cost, ref = "", clean(args.cost) or "?", clean(args.ref)
+        else:
+            if not args.what:
+                sys.exit("acef-note: --what is required")
+            tags = check_tags(base, args.tags or "untagged")
+            what, fix, cost, ref = clean(args.what), clean(args.fix), clean(args.cost) or "?", clean(args.ref)
+        entry_id = next_id(entries, args.project, legacy)
+        line = " | ".join([entry_id, dt.date.today().isoformat(), ",".join(tags), cost, what, fix, ref])
+        with open(log, "a") as handle:
+            if log.stat().st_size and not log.read_text().endswith("\n"):
+                handle.write("\n")
+            handle.write(line + "\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        order = base / "order.txt"
+        with locked(order), open(order, "a") as handle:
+            handle.write(entry_id + "\n")
+    print(entry_id)
+    if not (args.repeat or args.retag):
+        similar = search(base, set(tags) - {"untagged"}, words(what + " " + fix), "", 3, True, exclude=entry_id)
+        if similar:
+            print("similar (if one is the same lesson, use --repeat <id> next time):")
+            for row in similar:
+                print("  " + row)
+
+
+def search(base, tags, text_words, project, limit, include_promoted, exclude=""):
+    promoted = set() if include_promoted else promoted_ids(base)
+    scored = []
+    for name, path in all_logs(base, project):
+        entries, legacy = read_log(path)
+        for e in entries:
+            if e["id"] in (exclude,) or e["id"] in promoted or e["what"].startswith("retag-of:"):
+                continue
+            s = score(e["what"] + " " + e["fix"], set(e["tags"].split(",")), tags, text_words)
+            if s:
+                fix = f" -> {e['fix']}" if e["fix"] else ""
+                scored.append((s, e["date"], f"{e['id']} | {e['date']} | {e['tags']} | {e['what']}{fix}"))
+        for i, block in enumerate(legacy, 1):
+            s = len(words(block) & (text_words | tags))
+            if s >= 2:
+                scored.append((s, "", f"{name}-legacy | {block[:220]}"))
+    scored.sort(key=lambda row: (row[0], row[1]), reverse=True)
+    return [row[2] for row in scored[:limit]]
+
+
+def cmd_search(args):
+    base = ensure_store()
+    tags = {t.strip() for t in (args.tags or "").split(",") if t.strip()}
+    if not tags and not args.text:
+        sys.exit("acef-note: give --tags and/or --text")
+    rows = search(base, tags, words(args.text or ""), args.project, args.limit, args.include_promoted)
+    print("\n".join(rows) if rows else "no matching entries")
+
+
+def cmd_status(args):
+    base = ensure_store()
+    entry, entries = find(base, args.id)
+    if not entry:
+        sys.exit(f"acef-note: no entry {args.id}")
+    print(" | ".join(entry.values()))
+    repeats = [e["id"] for _, path in all_logs(base) for e in read_log(path)[0]
+               if e["what"].startswith(f"repeat-of:{args.id} ")]
+    print(f"repeats: {', '.join(repeats) or 'none'}")
+    in_digest = [d.name for d in sorted((base / "digests").glob("*.md")) if args.id in d.read_text()]
+    print(f"digests: {', '.join(in_digest) or 'none'}")
+    rules = [r.name for r in sorted((base / "rules").glob("R-*.md")) if args.id in r.read_text()]
+    print(f"rules: {', '.join(rules) or 'none'}")
+
+
+def order(base: Path) -> list:
+    """Entry ids in the order they were added, across all projects (order.txt, written by add)."""
+    path = base / "order.txt"
+    return path.read_text().split() if path.exists() else []
+
+
+def entry_count(base: Path) -> int:
+    return len(order(base))
+
+
+def stamp(base: Path) -> str:
+    digest = hashlib.sha256()
+    for rule in sorted((base / "rules").glob("R-*.md")):
+        digest.update(rule.name.encode() + rule.read_bytes())
+    return f"v{entry_count(base)}.{digest.hexdigest()[:4]}"
+
+
+def cmd_version(args):
+    print(stamp(ensure_store()))
+
+
+def cmd_check(args):
+    base = ensure_store()
+    match = re.match(r"^v(\d+)\.([0-9a-f]{4})$", args.stamp)
+    if not match:
+        sys.exit("acef-note: stamp looks like v140.3fa2 (from acef-note version)")
+    now = stamp(base)
+    if now == args.stamp:
+        print(f"unchanged {now}")
+        return
+    seen = int(match.group(1))
+    by_id = {e["id"]: e for _, path in all_logs(base) for e in read_log(path)[0]}
+    newer = [by_id[i] for i in order(base)[seen:] if i in by_id]
+    tags = {t.strip() for t in args.tags.split(",") if t.strip()}
+    text_words = words(args.text)
+    if tags or text_words:
+        newer = [e for e in newer if score(e["what"] + " " + e["fix"], set(e["tags"].split(",")), tags, text_words)]
+    print(f"changed {args.stamp} -> {now}" + ("; rules changed" if now.split(".")[1] != match.group(2) else ""))
+    for e in newer[-10:]:
+        print(f"{e['id']} | {e['date']} | {e['tags']} | {e['what']}")
+    sys.exit(1)
+
+
+def last_through(base: Path) -> str:
+    dates = []
+    for digest in (base / "digests").glob("*.md"):
+        match = re.search(r"^Through: (\d{4}-\d{2}-\d{2})", digest.read_text(), re.M)
+        if match:
+            dates.append(match.group(1))
+    return max(dates) if dates else "0000-00-00"
+
+
+def undigested(base: Path):
+    since = last_through(base)
+    rows = []
+    for _, path in all_logs(base):
+        entries, _ = read_log(path)
+        rows.extend(e for e in entries if e["date"] > since and not e["what"].startswith("retag-of:"))
+    return since, rows
+
+
+def cmd_due(args):
+    base = ensure_store()
+    since, rows = undigested(base)
+    today = dt.date.today().isoformat()
+    print(f"undigested entries since {since}: {len(rows)}")
+    oldest = min((e["date"] for e in rows), default="")
+    if rows and (dt.date.today() - dt.date.fromisoformat(oldest)).days >= 7:
+        print(f"DIGEST DUE: oldest undigested entry is from {oldest}; run: acef-note digest --write")
+    for rule in sorted((base / "rules").glob("R-*.md")):
+        text = rule.read_text()
+        review = re.search(r"^Review-by: (\d{4}-\d{2}-\d{2})", text, re.M)
+        status = re.search(r"^Status: (\S+)", text, re.M)
+        if review and review.group(1) <= today and (not status or status.group(1) in ("shipped", "measuring")):
+            print(f"RULE REVIEW DUE: {rule.name} (review-by {review.group(1)})")
+
+
+def minutes(cost: str) -> int:
+    total = 0
+    for value, unit in re.findall(r"(\d+)\s*(min|h)\b", cost):
+        total += int(value) * (60 if unit == "h" else 1)
+    return total
+
+
+def cmd_digest(args):
+    base = ensure_store()
+    since, rows = undigested(base)
+    if not rows:
+        print(f"nothing new since {since}")
+        return
+    through = max(e["date"] for e in rows)
+    year, week, _ = dt.date.fromisoformat(through).isocalendar()
+    groups = {}
+    for e in rows:
+        repeat = re.match(r"repeat-of:(\S+)", e["what"])
+        key = e["tags"].split(",")[0]
+        group = groups.setdefault(key, {"ids": [], "repeats": 0, "minutes": 0, "projects": set()})
+        group["ids"].append(e["id"])
+        group["repeats"] += 1 if repeat else 0
+        group["minutes"] += minutes(e["cost"])
+        group["projects"].add(e["id"].rsplit("-", 1)[0])
+    out = [f"# ACEF feedback digest {year}-W{week:02d}", "", f"Through: {through}", f"Since: {since}", "",
+           "| mode | entries | repeats | projects | cost (min, measured) | ids |", "|---|---|---|---|---|---|"]
+    for key, g in sorted(groups.items(), key=lambda kv: (len(kv[1]["ids"]) + kv[1]["repeats"], kv[1]["minutes"]),
+                         reverse=True):
+        out.append(f"| {key} | {len(g['ids'])} | {g['repeats']} | {', '.join(sorted(g['projects']))} | "
+                   f"{g['minutes'] or '?'} | {', '.join(g['ids'])} |")
+    out += ["", "## Proposals (at most three; the owner decides each)", "",
+            "For each: evidence ids · target file or script · scope (method / stack / host) · enforcement (script "
+            "preferred) · added cost · baseline · success metric · rollout owner · review-by date.", "",
+            "1. ", "", "## Owner decision", "", "- "]
+    text = "\n".join(out) + "\n"
+    if args.write:
+        target = base / "digests" / f"{year}-W{week:02d}.md"
+        if target.exists():
+            target = base / "digests" / f"{year}-W{week:02d}-{dt.date.today().isoformat()}.md"
+        target.write_text(text)
+        print(target)
+    else:
+        print(text)
+
+
+def main():
+    parser = argparse.ArgumentParser(prog="acef-note", description=__doc__.split("\n\n")[0])
+    sub = parser.add_subparsers(dest="cmd", required=True)
+    add = sub.add_parser("add")
+    add.add_argument("project")
+    add.add_argument("--tags", default="")
+    add.add_argument("--what", default="")
+    add.add_argument("--fix", default="")
+    add.add_argument("--cost", default="")
+    add.add_argument("--ref", default="")
+    add.add_argument("--repeat", default="")
+    add.add_argument("--retag", default="")
+    add.set_defaults(func=cmd_add)
+    se = sub.add_parser("search")
+    se.add_argument("--tags", default="")
+    se.add_argument("--text", default="")
+    se.add_argument("--project", default="")
+    se.add_argument("--limit", type=int, default=5)
+    se.add_argument("--include-promoted", action="store_true")
+    se.set_defaults(func=cmd_search)
+    st = sub.add_parser("status")
+    st.add_argument("id")
+    st.set_defaults(func=cmd_status)
+    sub.add_parser("due").set_defaults(func=cmd_due)
+    sub.add_parser("version").set_defaults(func=cmd_version)
+    ck = sub.add_parser("check")
+    ck.add_argument("stamp")
+    ck.add_argument("--tags", default="")
+    ck.add_argument("--text", default="")
+    ck.set_defaults(func=cmd_check)
+    dg = sub.add_parser("digest")
+    dg.add_argument("--write", action="store_true")
+    dg.set_defaults(func=cmd_digest)
+    args = parser.parse_args()
+    args.func(args)
+
+
+if __name__ == "__main__":
+    main()

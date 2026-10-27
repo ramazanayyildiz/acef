@@ -8,5 +8,6 @@
 - REVISE-turu: <n>
 - Kaçan-hata: <yok | B<n> (<hangi dilim/turda bulundu>)>
 - Etiket adayı: <evet | hayır | uygulanmaz> — <tek cümle gerekçe>
+- ACEF-gözlem: <yok | merkezi günlük kimlikleri (dev raporu ve inceleme satırlarından, `acef-note add`)>
 - Ertelenen: <B-kimlikleri | yok> · Kapı: `<GATE … son satır>` (`<kanonik merge/postmerge kanıt bağlantısı>`)
 - Temizlik: `git worktree list` yalnız ana ağaç; geçici dizinler silindi; lane DB `<ad>` <bırakıldı/silindi>. Durum: KAPANDI.

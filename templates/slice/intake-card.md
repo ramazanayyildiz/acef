@@ -22,6 +22,12 @@
 
 Proje kendi eşiklerini ve risk yollarını teknoloji yığını profilinde tutar (`stacks/<stack>/`).
 
+**Bilinen tuzaklar (koordinatör, karardan önce):** `acef-note search --tags <G2–G5'ten çıkan mod etiketleri> --text "<G1 yolları / iş özeti>" --limit 5`
+(merkezi geri bildirim günlüğü, `method/FEEDBACK_LOOP.md`). Çıkan kimlikler tek satır olarak dilime yazılır; kural ya da
+betiğe dönüşmüş dersler listede çıkmaz.
+
+`Bilinen tuzaklar: <kimlikler | yok> @<acef-note version çıktısı>`
+
 **Karar satırı (işe başlamadan önce, sahip görebilsin):**
 
 `Yol: native | HAFİF | TAM — <gerçeklere dayanan tek cümle>`

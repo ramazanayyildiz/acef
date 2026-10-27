@@ -1,0 +1,49 @@
+#!/bin/bash
+# test-acef-note — self-test of scripts/acef-note in a throwaway store (never the real ACEF_FEEDBACK_DIR).
+set -u
+HERE=$(cd "$(dirname "$0")" && pwd -P)
+NOTE="$HERE/acef-note"
+TMP=$(mktemp -d)
+trap 'rm -rf "$TMP"' EXIT
+export ACEF_FEEDBACK_DIR="$TMP/store"
+ok=0; bad=0
+check() { if eval "$2"; then printf 'ok   %s\n' "$1"; ok=$((ok + 1)); else printf 'FAIL %s\n' "$1"; bad=$((bad + 1)); fi; }
+
+id1=$("$NOTE" add alpha --tags tooling,runner --what "remote run lost its results after ssh drop" --fix "retry ssh once" --cost 50min --ref docs/x.md | head -1)
+check "first entry id" '[ "$id1" = alpha-1 ]'
+check "store created" '[ -f "$ACEF_FEEDBACK_DIR/tags.txt" ] && [ -d "$ACEF_FEEDBACK_DIR/rules" ]'
+check "entry line format" 'grep -qE "^alpha-1 \| [0-9-]{10} \| tooling,runner \| 50min \| remote run lost its results after ssh drop \| retry ssh once \| docs/x.md$" "$ACEF_FEEDBACK_DIR/log/alpha.md"'
+check "unknown tag refused" '! "$NOTE" add alpha --tags nonsense --what x >/dev/null 2>&1'
+check "stack scope tag allowed" '"$NOTE" add alpha --tags testscope,stack:demo --what "slow race tests" >/dev/null'
+check "pipe in text neutralised" '"$NOTE" add alpha --tags state --what "a|b" >/dev/null && grep -q "| a/b |" "$ACEF_FEEDBACK_DIR/log/alpha.md"'
+out=$("$NOTE" add beta --tags tooling --what "ssh drop lost remote results again")
+check "similar entries across projects shown" 'echo "$out" | grep -q "alpha-1"'
+rep=$("$NOTE" add beta --repeat alpha-1 --what "third time" --cost 20min)
+check "repeat gets its own id" '[ "$rep" = beta-2 ]'
+check "status lists the repeat" '"$NOTE" status alpha-1 | grep -q "repeats: beta-2"'
+check "search by tag ranks tooling first" '"$NOTE" search --tags tooling --limit 1 | grep -qE "^(alpha-1|beta-1) "'
+check "search respects limit" '[ "$("$NOTE" search --tags tooling,state,testscope --limit 2 | wc -l | tr -d " ")" = 2 ]'
+printf 'Incidents: alpha-1\nReview-by: 2000-01-01\nStatus: measuring\n' > "$ACEF_FEEDBACK_DIR/rules/R-1.md"
+check "promoted entry hidden from search" '! "$NOTE" search --tags tooling --limit 9 | grep -q "^alpha-1 "'
+check "promoted entry shown with flag" '"$NOTE" search --tags tooling --limit 9 --include-promoted | grep -q "^alpha-1 "'
+check "due reports rule review" '"$NOTE" due | grep -q "RULE REVIEW DUE: R-1.md"'
+d=$("$NOTE" digest --write)
+check "digest written with Through" 'grep -q "^Through: " "$d" && grep -q "| tooling |" "$d"'
+check "nothing undigested after digest" '"$NOTE" due | grep -q "undigested entries since .*: 0"'
+# legacy import: free text above entries keeps its numbers; new ids continue after the highest #n
+printf '# old log\n- #7 port pool collided twice\n- #12 worker cleanup deleted a live run dir\n' > "$ACEF_FEEDBACK_DIR/log/gamma.md"
+gid=$("$NOTE" add gamma --tags infra --what "cleanup removed a live run directory" | head -1)
+check "legacy numbering continues" '[ "$gid" = gamma-13 ]'
+check "legacy blocks searchable" '"$NOTE" search --text "cleanup deleted live run" --project gamma | grep -q "gamma-legacy"'
+# concurrency: parallel appends keep unique ids and whole lines
+for i in 1 2 3 4 5 6 7 8; do "$NOTE" add delta --tags state --what "parallel $i" >/dev/null & done; wait
+check "parallel appends unique" '[ "$(cut -d"|" -f1 "$ACEF_FEEDBACK_DIR/log/delta.md" | sort -u | wc -l | tr -d " ")" = 8 ]'
+check "bad project name refused" '! "$NOTE" add "Bad Name" --tags state --what x >/dev/null 2>&1'
+v1=$("$NOTE" version)
+check "version stamp format" 'echo "$v1" | grep -qE "^v[0-9]+\.[0-9a-f]{4}$"'
+check "check unchanged exits 0" '"$NOTE" check "$v1" | grep -q "^unchanged"'
+"$NOTE" add alpha --tags infra --what "new lesson after stamp" >/dev/null
+check "check changed exits 1 and lists new" 'out=$("$NOTE" check "$v1"); [ $? -eq 1 ] && echo "$out" | grep -q "new lesson after stamp"'
+check "check filters by tags" '! "$NOTE" check "$v1" --tags rounds | grep -q "new lesson"'
+echo "acef-note tests: $ok passed, $bad failed"
+[ "$bad" -eq 0 ]

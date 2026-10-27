@@ -7,6 +7,21 @@ proven, or installed.
 Update this file whenever ACEF itself gains or changes a flow, gate, validator, hook, skill, installer behavior, workflow,
 or evidence contract. Do not use it to claim implementation status; link to the capability record for that.
 
+## Unreleased — Central feedback log and version checks (2026-10-27)
+
+Owner decision 2026-10-27, after two hosts kept separate observation logs nobody read. Design from two independent
+consultations (Fable, Codex Astra), merged:
+- **`scripts/acef-note`** (+ `scripts/test-acef-note`, 24 checks): one machine-wide store (`ACEF_FEEDBACK_DIR`, default
+  `~/CODE/acef-feedback`), one append-only file per project, one-line entries with a closed tag list, locked appends,
+  `--repeat`/`--retag` instead of edits, bounded `search`, `status`, `version`/`check` stamps so a reader skips the log
+  when nothing changed, `due` and `digest` for the weekly loop, `rules/R-<n>.md` with cost, review date and activation.
+- **`scripts/acef-version-check --repo <host>`**: exit 0 current, exit 1 behind with the CHANGELOG headings added since
+  the installed commit, exit 2 no record or unknown commit.
+- **`method/FEEDBACK_LOOP.md`**: when to write (threshold), who writes (coordinator funnel), when to read (intake,
+  review brief, before shared-infrastructure changes; at most five entries), session-start checks, rule files.
+- **Templates:** intake card `Bilinen tuzaklar: <ids> @<stamp>`; review brief carries it and asks for one
+  `ACEF-gözlem:` line; developer report gets an "ACEF gözlemi" section; closing note an `ACEF-gözlem:` field.
+
 ## Unreleased — Test budget: merge batch and reviewer rule (2026-10-27)
 
 - `method/SLICE_LANE.md` → Test budget:
