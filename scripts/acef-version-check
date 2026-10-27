@@ -1,0 +1,70 @@
+#!/usr/bin/env python3
+"""acef-version-check --repo <path>: is this host's ACEF installation behind the ACEF checkout?
+
+Reads the source commit recorded in <repo>/docs/ai/ACEF_INSTALLATION.json and compares it with the ACEF checkout this
+script lives in (its origin/main when available, else HEAD). Cheap enough for session start:
+  exit 0  "ACEF current <sha>"                      nothing to read
+  exit 1  "ACEF behind by N commits" + the CHANGELOG headings added since the installed commit; read those, then
+          update with scripts/update-acef-installation --repo <path> through the host's own process
+  exit 2  no installation record, or the recorded commit is unknown to this checkout
+"""
+import json
+import os
+import re
+import subprocess
+import sys
+from pathlib import Path
+
+
+def acef_checkout() -> Path:
+    """ACEF_SOURCE, else the checkout this script lives in, else ~/CODE/acef (an installed copy lives in <host>/.acef)."""
+    here = Path(__file__).resolve().parent.parent
+    for candidate in (os.environ.get("ACEF_SOURCE", ""), str(here), str(Path.home() / "CODE" / "acef")):
+        if candidate and (Path(candidate) / "method" / "FEEDBACK_LOOP.md").exists():
+            return Path(candidate).expanduser()
+    sys.exit("cannot find the ACEF checkout; set ACEF_SOURCE")
+
+
+ACEF = acef_checkout()
+
+
+def git(*args) -> str:
+    return subprocess.run(["git", "-C", str(ACEF), *args], capture_output=True, text=True).stdout.strip()
+
+
+def recorded_commit(record: dict) -> str:
+    text = json.dumps(record)
+    match = re.search(r'"sourceCommit": "([0-9a-f]{7,40})"', text) or re.search(r'"commit": "([0-9a-f]{7,40})"', text)
+    return match.group(1) if match else ""
+
+
+def main():
+    args = sys.argv[1:]
+    if len(args) != 2 or args[0] not in ("--repo", "--target"):
+        print(__doc__.strip())
+        sys.exit(2)
+    record_path = Path(args[1]).expanduser() / "docs" / "ai" / "ACEF_INSTALLATION.json"
+    if not record_path.exists():
+        print(f"no ACEF installation record at {record_path}")
+        sys.exit(2)
+    installed = recorded_commit(json.loads(record_path.read_text()))
+    target = "origin/main" if git("rev-parse", "--verify", "-q", "origin/main") else "HEAD"
+    head = git("rev-parse", "--short=9", target)
+    if not installed or not git("rev-parse", "--verify", "-q", installed + "^{commit}"):
+        print(f"installed commit {installed or '?'} is unknown to the ACEF checkout {ACEF} ({target} {head})")
+        sys.exit(2)
+    behind = int(git("rev-list", "--count", f"{installed}..{target}") or 0)
+    if behind == 0:
+        print(f"ACEF current {head}")
+        sys.exit(0)
+    print(f"ACEF behind by {behind} commits (installed {installed[:9]}, {target} {head})")
+    added = git("diff", "-U0", f"{installed}..{target}", "--", "CHANGELOG.md")
+    headings = [line[1:].strip() for line in added.splitlines() if re.match(r"^\+## ", line)]
+    for heading in headings:
+        print("  " + heading.lstrip("# "))
+    print("read: CHANGELOG.md sections above; update: scripts/update-acef-installation --repo <path>")
+    sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()

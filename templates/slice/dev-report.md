@@ -75,6 +75,14 @@ Yöntemin maliyetini ölçmek için (`method/SLICE_LANE.md` "Cost accounting"). 
 - Token-toplam: <giriş>/<çıkış> | ölçülmedi
 - Ölçüm-kaynağı: <istemci kullanım komutu | API kullanım kaydı | günlük>
 
+## ACEF gözlemi
+
+Yöntemin ya da araçların bu dilimde maliyet çıkardığı bir an (≥30 dk kayıp, kural ihlali, sonuç kaybeden araç, etkisiz
+kalan hızlandırma, brifte yazılması gereken bir şey yüzünden tur) varsa tek cümle; yoksa `yok`. Koordinatör kapanışta
+merkezi günlüğe taşır (`acef-note add`).
+
+- ACEF-gözlem: <tek cümle | yok>
+
 ## Bilinmeyenler ve koordinatöre sorular
 
 - <izinli listeyi aşma ihtiyacı (dosya + neden) — geliştirici burada DURUR>

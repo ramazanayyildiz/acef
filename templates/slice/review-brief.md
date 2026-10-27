@@ -10,6 +10,7 @@ Rol: bağımsız inceleyici. Geliştiriciyle aynı oturum değilsin. **Farklı m
 - İlk bağımsız temiz koşu: `<kanonik kayıt bağlantısı>` (koordinatör/inceleyici, geliştirici değil); main `<sha>`, merge-base `<sha>`; test/standart/config, bağımlılık, DB/fixture, toolchain ve ilgili ortam bağları `<kayıt/başlık bağlantısı>`
 - Sınıf: TAM | HAFİF · Ortam: kendi worktree `<yol>`, port `<port>`, DB `<lane DB>` (paylaşılan DB ve ana önizleme portu YASAK)
 - Değişmezler: `<invariants-dosyası>` · Kontrol listesi: `templates/review-checklist.md`
+- Bilinen tuzaklar: `<kimlikler | yok>` (giriş kartından; koordinatör önce `acef-note check <damga>` koşar, `unchanged` ise yeniden arama yapılmaz, değiştiyse yalnız yeni kayıtlar eklenir; inceleyici her kimliğin bu dilimde tekrar etmediğini açıkça kontrol eder)
 
 ## Adımlar
 
@@ -32,6 +33,8 @@ Dosya: `<slices-dizini>/<SLICE-ID>-review.md` (inceleyici yazamıyorsa metin ola
 Karar: **PASS | REVISE**
 Tarih: <YYYY-MM-DD> · Aday `<sha>` · Taban `<sha>` · Model: <ad> · Süre: <dk> · Ortam: <worktree, DB, port>
 ```
+
+Raporun sonunda tek satır: `ACEF-gözlem: <yöntemin ya da brifin bu incelemede çıkardığı maliyet, tek cümle | yok>`.
 
 Karar satırı tam olarak `Karar: **PASS**` ya da `Karar: **REVISE**` olur; biçim örneklerini ``` bloğuna koy. `scripts/slice/codex-review.sh` blok dışındaki her karar satırının bu biçimde ve aynı olmasını ister; başka her biçimi ("NOT PASS", doldurulmamış "PASS | REVISE", çelişen satırlar) araç hatası sayar.
 
