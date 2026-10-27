@@ -99,7 +99,9 @@ called the gate again. pilaner had the same problem and was fixed by hand with `
 - **First install unchanged**: `install-acef-tools` still records no profile and installs no guard (asserted in
   `scripts/test-install-acef-tools`).
 - **Not covered**: a host whose record already says `profile: full` (written by an earlier update) keeps `full`; run
-  the update once with `--profile core` there.
+  the update once with `--profile core` there. The host's own `.acef/bin/update-acef-installation` copy carries the old
+  default until it is refreshed: run the first update after this change from the ACEF source (the recorded
+  `updateCommand`), or that copy reinstalls the guard and records `full`.
 - **Tests** `scripts/test-acef-install-profiles` cases 7-10 (guard removed -> core, guard present -> full, explicit
   `--profile full` reinstalls, recorded profile reused). Capability: `docs/ai/capabilities/installation-version-update.json`.
 
