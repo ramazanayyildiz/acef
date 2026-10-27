@@ -174,7 +174,7 @@ const nextJson = (repo, args = []) => {
   assert.match(down.stderr, /below the review floor claude-opus-5-5/);
   const unknown = reviewRun("--routing-role-model", "code-review=claude-mystery-9");
   assert.equal(unknown.status, 1, "an unranked review model was recorded");
-  assert.match(unknown.stderr, /not in provider anthropic modelRank/);
+  assert.match(unknown.stderr, /not in the ACEF modelRank for anthropic/);
   const devFree = reviewRun("--routing-role-model", "development=claude-mystery-9");
   assert.equal(devFree.status, 0, `development must stay freely overridable: ${devFree.stderr}`);
   const up = reviewRun("--routing-role-model", "code-review=claude-opus-5-5");
@@ -214,14 +214,10 @@ const nextJson = (repo, args = []) => {
   }
   for (const tool of ["acef-state", "acef-next", "acef-process-validator"]) fs.copyFileSync(path.join(sourceRoot, "scripts", tool), path.join(bin, `${tool}.cjs`));
   write(repo, ".acef/model-routing-policy.json", fs.readFileSync(path.join(sourceRoot, "method", "model-routing-policy-v1.json"), "utf8"));
-  fs.writeFileSync(path.join(bin, "lib", "acef-model-routing.js"), [
-    "\"use strict\";",
-    "// stand-in for a host-kept library from before per-role models",
-    `const current = require(${JSON.stringify(path.join(sourceRoot, "scripts", "lib", "acef-model-routing.js"))});`,
-    "const { runRoutingSelection, ROUTING_LIBRARY_VERSION, MODEL_ID_SOURCE, REVIEW_ROLES, validateRunRouting, ...older } = current;",
-    "module.exports = older;",
-    "",
-  ].join("\n"));
+  write(repo, ".acef/model-review-floors.json", fs.readFileSync(path.join(sourceRoot, "method", "model-review-floors-v1.json"), "utf8"));
+  // The library as released before per-role models (v3.0.0-beta.8, 7963a28): no roleModels, no floors.
+  fs.writeFileSync(path.join(bin, "lib", "acef-model-routing.js"),
+    cp.execFileSync("git", ["show", "7963a28:scripts/lib/acef-model-routing.js"], { cwd: sourceRoot, encoding: "utf8" }));
   const oldState = (args) => cp.spawnSync(process.execPath, [path.join(bin, "acef-state.cjs"), ...args, "--repo", repo], { cwd: repo, encoding: "utf8" });
   const oldNext = () => JSON.parse(cp.spawnSync(process.execPath, [path.join(bin, "acef-next.cjs"), "--repo", repo, "--format", "json"], { cwd: repo, encoding: "utf8" }).stdout);
   const actorArgs = (id, model) => ["actor", "--id", id, "--story", "Story cont", "--phase", "development", "--role", "developer",
@@ -242,6 +238,17 @@ const nextJson = (repo, args = []) => {
   const next = oldNext();
   assert.match(next.active_state.runtime.error, /predates per-role models/);
   assert.ok(next.blockers.some((entry) => /model routing: .*predates per-role models/.test(entry)));
+  // openai with a class model below the floor (review of 9269a8c, P2): the older library would hand Patch Assurance
+  // gpt-cheap, so the gate checks the floor itself and stops every resolution on that provider.
+  const cheap = JSON.parse(fs.readFileSync(path.join(sourceRoot, "method", "model-routing-policy-v1.json"), "utf8"));
+  cheap.providers.openai.models["semantic-critical"] = "gpt-cheap";
+  write(repo, ".acef/model-routing-policy.json", cheap);
+  const cheapRun = oldState([...base("RUN-o"), "--phase", "development", "--routing-provider", "openai"]);
+  assert.equal(cheapRun.status, 0, cheapRun.stderr);
+  const cheapActor = oldState(actorArgs("dev-cheap", "gpt-cheap"));
+  assert.equal(cheapActor.status, 1, "an older library resolved a review role below the floor");
+  assert.match(cheapActor.stderr, /below the ACEF floor[\s\S]*patch-assurance: gpt-cheap is not in the ACEF modelRank for openai/);
+  assert.match(oldNext().active_state.runtime.error, /predates per-role models/);
   console.log("older routing library ok");
 }
 console.log("acef active-run continuity tests passed");

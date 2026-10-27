@@ -166,7 +166,7 @@ try {
   fs.writeFileSync(reviewerActorPath, `${JSON.stringify({ ...reviewerActor, model: "gpt-6.1-terra" }, null, 2)}\n`);
   const unrankedReviewer = validatorRun("actor-separation");
   assert.notEqual(unrankedReviewer.status, 0, "actor-separation accepted an unranked review model");
-  assert.match(`${unrankedReviewer.stdout}${unrankedReviewer.stderr}`, /gpt-6\.1-terra is not in provider openai modelRank/);
+  assert.match(`${unrankedReviewer.stdout}${unrankedReviewer.stderr}`, /gpt-6\.1-terra is not in the ACEF modelRank for openai/);
   fs.writeFileSync(reviewerActorPath, `${JSON.stringify(reviewerActor, null, 2)}\n`);
   fs.writeFileSync(activeRunPath, activeRunBytes);
 

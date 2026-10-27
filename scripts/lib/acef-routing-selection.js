@@ -8,8 +8,9 @@
 
 const path = require("node:path");
 const routing = require("./acef-model-routing");
+const { REVIEW_ROLES, loadReviewFloors, policyFloorViolations, formatViolations } = require("./acef-review-floors");
 
-const REQUIRED_LIBRARY_VERSION = 2;
+const REQUIRED_LIBRARY_VERSION = 3;
 
 function libraryIsCurrent(library = routing) {
   return typeof library.runRoutingSelection === "function"
@@ -36,13 +37,31 @@ function requireRunRoutingSupport(activeRun, library = routing) {
 
 // The selection every consumer passes to resolveRoleRuntime / resolveActorRuntime. With a current library this is
 // runRoutingSelection(activeRun). With an older one it is the provider string, and only when nothing per-role is in
-// play for the selected provider; otherwise it throws.
-function routingSelectionFor(policyRecord, activeRun, library = routing) {
+// play for the selected provider and every review role the older library resolves meets the ACEF floor (checked
+// here, since the older library cannot); otherwise it throws.
+function routingSelectionFor(policyRecord, activeRun, library = routing, floorsLoader = () => loadReviewFloors().record) {
   if (libraryIsCurrent(library)) return library.runRoutingSelection(activeRun);
   requireRunRoutingSupport(activeRun, library);
   const provider = activeRun?.routingProvider || policyRecord?.activeProvider;
   if (hasEntries(policyRecord?.providers?.[provider]?.roleModels)) {
     throw staleLibraryError(`the routing policy names per-role models for provider ${provider}`);
+  }
+  let floors;
+  try {
+    floors = floorsLoader();
+  } catch (error) {
+    throw staleLibraryError(`the ACEF review floors cannot be read (${error.message})`);
+  }
+  if (floors.providers?.[provider]) {
+    const resolved = { ...policyRecord, providers: { [provider]: { ...policyRecord.providers[provider], roleModels: {} } } };
+    for (const role of REVIEW_ROLES) {
+      if (!policyRecord.roles?.[role] || typeof library.resolveRoleRuntime !== "function") continue;
+      resolved.providers[provider].roleModels[role] = library.resolveRoleRuntime(policyRecord, role, activeRun?.routingProvider || null).model;
+    }
+    const violations = policyFloorViolations(resolved, { ...floors, providers: { [provider]: floors.providers[provider] } });
+    if (violations.length) {
+      throw staleLibraryError(`it would resolve review roles below the ACEF floor:\n${formatViolations(violations)}`);
+    }
   }
   return activeRun?.routingProvider || null;
 }

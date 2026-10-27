@@ -158,7 +158,18 @@ function updateTarget(sourceRoot, targetRepo, opts) {
 try {
   const opts = parseArgs(process.argv.slice(2));
   const sourceRoot = resolveSourceRoot(opts.repo);
-  for (const targetRepo of targetWorktrees(opts.repo, opts.allWorktrees)) {
+  const targets = targetWorktrees(opts.repo, opts.allWorktrees);
+  // Review floors are checked for every target before any target is written: a rejection leaves each host
+  // byte-identical (owner decision 2026-10-27).
+  const preflightPath = path.join(sourceRoot, "scripts", "lib", "acef-routing-preflight.js");
+  if (fs.existsSync(preflightPath)) {
+    const { assertRoutingPreflight } = require(preflightPath);
+    for (const targetRepo of targets) {
+      const choice = chooseUpdateProfile(readCommittedManifest(targetRepo) || {}, opts.profile, targetRepo);
+      if (choice.profile !== "slice") assertRoutingPreflight(sourceRoot, targetRepo);
+    }
+  }
+  for (const targetRepo of targets) {
     updateTarget(sourceRoot, targetRepo, opts);
   }
 } catch (error) {

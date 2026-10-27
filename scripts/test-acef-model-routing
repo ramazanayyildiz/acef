@@ -15,6 +15,7 @@ const {
   MODEL_ID_SOURCE,
   REVIEW_ROLES,
 } = require("./lib/acef-model-routing");
+const { formatViolations, loadReviewFloors, policyFloorViolations, validateReviewFloors } = require("./lib/acef-review-floors");
 
 const repoRoot = path.resolve(__dirname, "..");
 const loaded = loadModelRoutingPolicy(repoRoot);
@@ -142,91 +143,104 @@ const assert = require("node:assert/strict");
   assert.equal(resolveRoleRuntime(host, "code-review", "anthropic").model, "claude-opus-5-5", "a host may raise a review role");
 }
 {
-  // Review floors (owner decision 2026-10-27): no downgrade of review roles without a recorded exemption.
+  // Review floors (owner decision 2026-10-27): ACEF-owned floors and ranks, loaded apart from the host policy.
   assert.deepEqual([...REVIEW_ROLES], ["code-review", "patch-assurance", "process-judge", "epic-process-judge"]);
+  const floorsFile = loadReviewFloors();
+  assert.equal(path.relative(repoRoot, floorsFile.path), path.join("method", "model-review-floors-v1.json"));
+  const floors = floorsFile.record;
+  assert.deepEqual(floors.providers.openai.modelRank, ["gpt-6.1-sol", "gpt-6-astra"], "astra ranks above sol; terra stays unranked");
+  assert.deepEqual(floors.providers.anthropic.modelRank, ["claude-sonnet-5-5", "claude-opus-5-5"]);
   // The shipped floors equal the shipped resolved model per review role, so the two cannot drift.
-  for (const [providerId, mapping] of Object.entries(loaded.record.providers)) {
-    assert.ok(Array.isArray(mapping.modelRank), `${providerId} ships modelRank`);
+  for (const providerId of Object.keys(floors.providers)) {
     for (const role of REVIEW_ROLES) {
-      assert.equal(mapping.reviewModelFloors?.[role], resolveRoleRuntime(loaded.record, role, providerId).model, `${providerId} ${role} floor`);
+      assert.equal(floors.providers[providerId].reviewModelFloors[role], resolveRoleRuntime(loaded.record, role, providerId).model, `${providerId} ${role} floor`);
     }
   }
+  // Floors and ranks no longer live in a routing policy.
+  const misplaced = structuredClone(loaded.record);
+  misplaced.providers.openai.modelRank = ["gpt-6.1-sol"];
+  assert.throws(() => validateModelRoutingPolicy(misplaced), /belongs in the ACEF-owned method\/model-review-floors-v1\.json/);
   const run = (roleModels, exemptions = null) => ({ provider: "anthropic", roleModels, exemptions });
-  // downgrade rejected
+  // run override: downgrade rejected, same/upgrade accepted, unranked rejected for review roles only
   assert.throws(() => resolveRoleRuntime(loaded.record, "patch-assurance", run({ "patch-assurance": "claude-sonnet-5-5" })),
-    (error) => error.code === "ACEF_REVIEW_FLOOR" && /below the review floor claude-opus-5-5/.test(error.message) && /exemption/.test(error.message));
-  // same model as the floor and an upgrade are accepted
+    (error) => error.code === "ACEF_REVIEW_FLOOR" && /below the review floor claude-opus-5-5/.test(error.message) && /--routing-role-model-exemption/.test(error.message));
   assert.equal(resolveRoleRuntime(loaded.record, "process-judge", run({ "process-judge": "claude-opus-5-5" })).model, "claude-opus-5-5");
   const upgrade = resolveRoleRuntime(loaded.record, "code-review", run({ "code-review": "claude-opus-5-5" }));
   assert.deepEqual([upgrade.model, upgrade.floor, upgrade.exemption], ["claude-opus-5-5", "claude-sonnet-5-5", undefined]);
-  // unknown model (not in modelRank) rejected for a review role, accepted for development
-  assert.throws(() => resolveRoleRuntime(loaded.record, "code-review", run({ "code-review": "claude-mystery-9" })), /not in provider anthropic modelRank/);
+  assert.throws(() => resolveRoleRuntime(loaded.record, "code-review", run({ "code-review": "claude-mystery-9" })), /not in the ACEF modelRank for anthropic/);
   assert.equal(resolveRoleRuntime(loaded.record, "development", run({ development: "claude-mystery-9" })).model, "claude-mystery-9");
-  assert.equal(resolveRoleRuntime(loaded.record, "development", run({ development: "claude-haiku-x" })).modelSource, "run-override", "development is freely overridable");
-  // exemption accepted and carried on the runtime
   const exempt = resolveRoleRuntime(loaded.record, "patch-assurance", run({ "patch-assurance": "claude-sonnet-5-5" }, { "patch-assurance": "owner: cost test 2026-10-27" }));
   assert.deepEqual([exempt.model, exempt.exemption, exempt.floor], ["claude-sonnet-5-5", "owner: cost test 2026-10-27", "claude-opus-5-5"]);
-  // an exemption only for review roles, and with a reason
   assert.throws(() => resolveRoleRuntime(loaded.record, "development", run({}, { development: "x" })), /not a review role/);
   assert.throws(() => resolveRoleRuntime(loaded.record, "code-review", run({}, { "code-review": " " })), /needs a reason/);
-  // openai: sol is the only ranked model, so terra on a review role is rejected
-  assert.throws(() => resolveRoleRuntime(loaded.record, "code-review", { provider: "openai", roleModels: { "code-review": "gpt-6.1-terra" } }), /not in provider openai modelRank/);
-  // persisted run keys are checked against canonical roles before resolving (point 3 of review 67bbeee)
+  // openai: astra is an upgrade over sol for Code Review; terra is unranked
+  assert.equal(resolveRoleRuntime(loaded.record, "code-review", { provider: "openai", roleModels: { "code-review": "gpt-6-astra" } }).model, "gpt-6-astra");
+  assert.throws(() => resolveRoleRuntime(loaded.record, "code-review", { provider: "openai", roleModels: { "code-review": "gpt-6.1-terra" } }), /not in the ACEF modelRank for openai/);
+  // persisted run keys are checked against canonical roles before resolving
   assert.throws(() => resolveRoleRuntime(loaded.record, "code-review", run({ reviewer: "claude-opus-5-5" })), /active-run routingRoleModels names unknown role reviewer/);
   assert.throws(() => validateRunRouting(loaded.record, { routingProvider: "anthropic", routingRoleModels: { reviewer: "claude-opus-5-5" } }), /unknown role reviewer/);
   assert.throws(() => validateRunRouting(loaded.record, { routingProvider: "anthropic", routingRoleModels: { "patch-assurance": "claude-sonnet-5-5" } }), /below the review floor/);
   validateRunRouting(loaded.record, { routingProvider: "anthropic", routingRoleModels: { "patch-assurance": "claude-sonnet-5-5" }, routingRoleModelExemptions: { "patch-assurance": "owner ok" } });
-  // host policy: a lower or null review-role model needs roleModelExemptions
+  // effective host policy (any file): a lower or null review model is rejected at resolve time unless exempted;
+  // non-review roles on the same policy still resolve.
   for (const lowered of ["claude-sonnet-5-5", null]) {
     const hostLow = structuredClone(loaded.record);
     hostLow.providers.anthropic.roleModels["patch-assurance"] = lowered;
-    assert.throws(() => validateModelRoutingPolicy(hostLow), (error) => error.code === "ACEF_REVIEW_FLOOR" && /roleModelExemptions\.patch-assurance/.test(error.message));
-    hostLow.providers.anthropic.roleModelExemptions = { "patch-assurance": "owner: Sonnet assurance accepted" };
     validateModelRoutingPolicy(hostLow);
-    assert.equal(resolveRoleRuntime(hostLow, "patch-assurance", "anthropic").model, "claude-sonnet-5-5");
+    assert.throws(() => resolveRoleRuntime(hostLow, "patch-assurance", "anthropic"),
+      (error) => error.code === "ACEF_REVIEW_FLOOR" && /roleModelExemptions/.test(error.message) && /below the review floor claude-opus-5-5/.test(error.message));
+    assert.equal(resolveRoleRuntime(hostLow, "development", "anthropic").model, "claude-sonnet-5-5");
+    hostLow.providers.anthropic.roleModelExemptions = { "patch-assurance": "owner: Sonnet assurance accepted" };
+    const allowed = resolveRoleRuntime(hostLow, "patch-assurance", "anthropic");
+    assert.deepEqual([allowed.model, allowed.exemption], ["claude-sonnet-5-5", "owner: Sonnet assurance accepted"]);
   }
-  // host policy: an unranked review model is rejected even on an inactive provider; a class change that lowers a review role too
+  // a policy that drops roleModels (a pre-roleModels docs override) still meets the floor only by exemption
+  const preRoleModels = structuredClone(loaded.record);
+  delete preRoleModels.providers.anthropic.roleModels;
+  assert.throws(() => resolveRoleRuntime(preRoleModels, "process-judge", "anthropic"), /below the review floor claude-opus-5-5/);
+  // a class change that puts a review role on an unranked or lower model fails, even when the host edits ranks
   const hostUnranked = structuredClone(loaded.record);
   hostUnranked.providers.openai.models["semantic-critical"] = "gpt-cheap";
-  assert.throws(() => validateModelRoutingPolicy(hostUnranked), /patch-assurance=gpt-cheap is not in provider openai modelRank/);
-  hostUnranked.providers.openai.modelRank = ["gpt-cheap", "gpt-6.1-sol"];
-  assert.throws(() => validateModelRoutingPolicy(hostUnranked), /below the review floor gpt-6.1-sol/);
-  // v1 provider without floors or ranks is unchecked; a run override on a review role there cannot be ranked
-  const portableRun = structuredClone(loaded.record);
-  delete portableRun.providers.anthropic.modelRank;
-  delete portableRun.providers.anthropic.reviewModelFloors;
-  validateModelRoutingPolicy(portableRun);
-  assert.throws(() => resolveRoleRuntime(portableRun, "code-review", run({ "code-review": "claude-opus-5-5" })), /has no modelRank/);
-  // modelRank and floor shape checks
-  const badRank = structuredClone(loaded.record);
-  badRank.providers.anthropic.modelRank = ["claude-opus-5-5", "claude-opus-5-5"];
-  assert.throws(() => validateModelRoutingPolicy(badRank), /twice/);
-  const badFloor = structuredClone(loaded.record);
-  badFloor.providers.anthropic.reviewModelFloors.development = "claude-opus-5-5";
-  assert.throws(() => validateModelRoutingPolicy(badFloor), /not a review role/);
+  assert.throws(() => resolveRoleRuntime(hostUnranked, "patch-assurance", "openai"), /gpt-cheap is not in the ACEF modelRank for openai/);
+  // policyFloorViolations lists every violating role with the exemption line to add
+  const listed = policyFloorViolations(preRoleModels, floors, "docs/ai/ACEF_MODEL_ROUTING_POLICY.json");
+  assert.deepEqual(listed.map((entry) => `${entry.provider}:${entry.role}:${entry.model}:${entry.floor}`),
+    ["anthropic:patch-assurance:claude-sonnet-5-5:claude-opus-5-5", "anthropic:process-judge:claude-sonnet-5-5:claude-opus-5-5", "anthropic:epic-process-judge:claude-sonnet-5-5:claude-opus-5-5"]);
+  assert.match(formatViolations(listed), /docs\/ai\/ACEF_MODEL_ROUTING_POLICY\.json: "providers": \{ "anthropic": \{ "roleModelExemptions": \{ "patch-assurance": "<owner, date, reason>" \} \} \}/);
+  // in-memory floors override (tests) and an uncovered provider: run overrides on review roles there need an exemption
+  const uncovered = structuredClone(loaded.record);
+  uncovered.acefReviewFloors = { ...floors, providers: { openai: floors.providers.openai } };
+  assert.throws(() => resolveRoleRuntime(uncovered, "code-review", run({ "code-review": "claude-opus-5-5" })), /do not cover that provider/);
+  // floors file shape checks
+  assert.throws(() => validateReviewFloors({ ...floors, providers: { openai: { modelRank: ["a", "a"], reviewModelFloors: {} } } }), /twice/);
+  assert.throws(() => validateReviewFloors({ ...floors, providers: { openai: { modelRank: ["a"], reviewModelFloors: { "code-review": "b" } } } }), /must be a model in its modelRank/);
 }
 {
-  // One model id grammar: schemas, the active-run parser and the hard-wall read MODEL_ID_SOURCE.
+  // One model id grammar: schemas, the active-run parser, the floors module and the hard-wall read MODEL_ID_SOURCE.
   const grammar = `^${MODEL_ID_SOURCE}$`;
   const policySchema = JSON.parse(fs.readFileSync(path.join(repoRoot, "schemas", "model-routing-policy-v1.schema.json"), "utf8"));
   const providerSchema = policySchema.properties.providers.additionalProperties.properties;
   assert.equal(providerSchema.roleModels.additionalProperties.anyOf[0].pattern, grammar);
-  assert.equal(providerSchema.modelRank.items.pattern, grammar);
-  assert.equal(providerSchema.reviewModelFloors.additionalProperties.pattern, grammar);
+  assert.equal(providerSchema.modelRank, undefined, "modelRank moved to the floors file");
   for (const executionClass of ["orchestration", "semantic-standard", "semantic-critical"]) {
     assert.equal(providerSchema.models.properties[executionClass].pattern, grammar);
   }
+  const floorsSchema = JSON.parse(fs.readFileSync(path.join(repoRoot, "schemas", "model-review-floors-v1.schema.json"), "utf8"));
+  const floorProvider = floorsSchema.properties.providers.additionalProperties.properties;
+  assert.equal(floorProvider.modelRank.items.pattern, grammar);
+  for (const role of REVIEW_ROLES) assert.equal(floorProvider.reviewModelFloors.properties[role].pattern, grammar);
   const runSchema = JSON.parse(fs.readFileSync(path.join(repoRoot, "schemas", "active-run-v2.schema.json"), "utf8"));
   assert.equal(runSchema.properties.routingRoleModels.additionalProperties.pattern, grammar);
   const parserSource = fs.readFileSync(path.join(repoRoot, "scripts", "lib", "acef-state-parser.js"), "utf8");
   assert.ok(parserSource.includes(`const SAFE_RUN_MODEL_ID = /${grammar}/;`), "active-run parser uses the shared grammar");
+  const floorsSource = fs.readFileSync(path.join(repoRoot, "scripts", "lib", "acef-review-floors.js"), "utf8");
+  assert.ok(floorsSource.includes(`const MODEL_ID = /${grammar}/;`), "floors module uses the shared grammar");
   const hookSource = fs.readFileSync(path.join(repoRoot, "claude-plugins", "acef-bmad-guard", "hooks", "acef-bmad-hard-wall.mjs"), "utf8");
   assert.ok(hookSource.includes("modelIdSource: library.MODEL_ID_SOURCE"), "hard-wall shell parser uses the library grammar");
   const slashed = structuredClone(loaded.record);
-  slashed.providers.anthropic.modelRank = ["claude-sonnet-5-5", "claude-opus-5-5", "anthropic/claude-opus-5-5:1"];
-  validateModelRoutingPolicy(slashed);
-  assert.equal(resolveRoleRuntime(slashed, "patch-assurance", run2("anthropic/claude-opus-5-5:1")).model, "anthropic/claude-opus-5-5:1");
-  function run2(model) { return { provider: "anthropic", roleModels: { "patch-assurance": model } }; }
+  slashed.acefReviewFloors = structuredClone(loadReviewFloors().record);
+  slashed.acefReviewFloors.providers.anthropic.modelRank.push("anthropic/claude-opus-5-5:1");
+  assert.equal(resolveRoleRuntime(slashed, "patch-assurance", { provider: "anthropic", roleModels: { "patch-assurance": "anthropic/claude-opus-5-5:1" } }).model, "anthropic/claude-opus-5-5:1");
 }
 {
   // Unknown or alias role keys and unsafe model ids are rejected, for inactive providers too.
@@ -251,10 +265,14 @@ const assert = require("node:assert/strict");
   const v1 = structuredClone(loaded.record);
   for (const mapping of Object.values(v1.providers)) {
     delete mapping.roleModels;
-    delete mapping.modelRank;
-    delete mapping.reviewModelFloors;
   }
   validateModelRoutingPolicy(v1);
+  // The 2026-10-27 floors put anthropic Patch Assurance and both Judges on Opus: a v1 anthropic policy keeps its old
+  // Sonnet route for them only with owner exemptions (review of 9269a8c). Everything else resolves exactly as before.
+  for (const role of ["patch-assurance", "process-judge", "epic-process-judge"]) {
+    assert.throws(() => resolveRoleRuntime(v1, role, "anthropic"), /below the review floor claude-opus-5-5/);
+  }
+  v1.providers.anthropic.roleModelExemptions = { "patch-assurance": "v1", "process-judge": "v1", "epic-process-judge": "v1" };
   for (const [role, assignment] of Object.entries(v1.roles)) {
     for (const provider of Object.keys(v1.providers)) {
       const runtime = resolveRoleRuntime(v1, role, provider);

@@ -37,17 +37,19 @@ Sonnet to Opus after `update-acef-installation`; no other role changes. OpenAI/C
 every role, effort by the role tier, and no `roleModels` by default.
 
 **No downgrade of review roles** (owner decision 2026-10-27). For `code-review`, `patch-assurance`, `process-judge`
-and `epic-process-judge`, an override may only pick the policy's model or a stronger one. Strength comes only from
-the provider's `modelRank` (weakest first: anthropic `claude-sonnet-5-5` < `claude-opus-5-5`; openai `gpt-6.1-sol`),
-never from model names, and a review-role model missing from `modelRank` is rejected.
-- Run override: at or above the policy's resolved model, or the run records
+and `epic-process-judge` the model never goes below the ACEF floor. Floors and model strength come only from the
+ACEF-owned `method/model-review-floors-v1.json` (installed as `.acef/model-review-floors.json`, reset on every update,
+loaded apart from any host policy). Its `modelRank` lists models weakest first: anthropic `claude-sonnet-5-5` <
+`claude-opus-5-5`; openai `gpt-6.1-sol` < `gpt-6-astra` (ranking Astra does not choose it: Astra is still used only
+when Ram names it); `gpt-6.1-terra` is unranked. A review-role model missing from `modelRank` is rejected.
+- Host policy, whichever file wins (`docs/ai/ACEF_MODEL_ROUTING_POLICY.json` or `.acef/model-routing-policy.json`): each
+  review role at or above its floor, or the provider lists `roleModelExemptions.<role>` with a reason. A host can add
+  exemptions; it cannot remove or lower floors. Checked when a role resolves, and by `update-acef-installation` before
+  it writes anything: a violation stops the update, leaves the host unchanged and prints the exemption line to add.
+- Run override: at or above the policy's model, or the run records
   `--routing-role-model-exemption "<role>: <reason>"` (stored as `routingRoleModelExemptions`, shown by `acef-next`;
   `"<role>:"` clears it). `acef-state` refuses the write; the hard-wall and the validator refuse the dispatch.
-- Host override (`.acef/model-routing-policy.json`): at or above `reviewModelFloors`, or the provider lists
-  `roleModelExemptions.<role>` with a reason. `reviewModelFloors` is ACEF-owned: `update-acef-installation` resets host
-  edits to it, and stops with an error (host file untouched) when a review role is below its floor without an
-  exemption. A `null` or lower review-role model therefore needs an exemption.
-- `development`, `atdd` and `conductor` stay freely overridable, also with models outside `modelRank`.
+- `development`, `atdd` and `conductor` stay freely overridable, also with unranked models.
 
 A host changes a role permanently in its `.acef/model-routing-policy.json` (for example
 `"roleModels": { "development": "claude-opus-5-5" }`), or for one run with `--routing-role-model`. Role keys must be

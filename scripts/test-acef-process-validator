@@ -2171,7 +2171,7 @@ try {
   providerRun.routingRoleModels = { "code-review": "claude-mystery-9" };
   writeProviderRun();
   expectHookDecision("unranked review model is denied", dispatch("code-review", "claude-mystery-9"),
-    "deny", {}, ["not in provider anthropic modelRank"]);
+    "deny", {}, ["not in the ACEF modelRank for anthropic"]);
   // A persisted alias key fails loudly instead of leaving Code Review on the policy model.
   providerRun.routingRoleModels = { reviewer: "claude-opus-5-5" };
   writeProviderRun();
