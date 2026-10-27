@@ -119,6 +119,14 @@ implemented, inspect the repo truth:
 
 Do not call a capability implemented when only markdown changed. If only method docs changed, it is `documented-only`.
 
+## Changelog
+
+Every PR that changes `method/`, `scripts/`, `templates/`, `schemas/` or `skills/` adds a `CHANGELOG.md` entry in the
+same PR: what changed, the date, why (the incident or measurement it answers) and the owner decision it rests on. A new
+capability also gets or updates its record in `docs/ai/capabilities/`. `scripts/slice/selfcheck.sh` fails a branch
+that changes those folders without touching `CHANGELOG.md`. Changes ship in tagged bundles (`v3.0.0-beta.<n>`); the
+CHANGELOG heading names the bundle once it is tagged.
+
 ## Core Rule
 
 ACEF claims are not evidence. Repository files, validators, tests, installed hooks/tools, and runtime evidence are the

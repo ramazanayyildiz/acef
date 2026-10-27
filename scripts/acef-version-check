@@ -58,10 +58,19 @@ def main():
         print(f"ACEF current {head}")
         sys.exit(0)
     print(f"ACEF behind by {behind} commits (installed {installed[:9]}, {target} {head})")
-    added = git("diff", "-U0", f"{installed}..{target}", "--", "CHANGELOG.md")
-    headings = [line[1:].strip() for line in added.splitlines() if re.match(r"^\+## ", line)]
-    for heading in headings:
-        print("  " + heading.lstrip("# "))
+    # New sections = headings whose title (text after the bundle prefix) was not in the installed CHANGELOG, so a
+    # renamed bundle heading ("Unreleased —" -> "v3.0.0-beta.4 —") is not reported again.
+    def titles(text: str) -> dict:
+        found = {}
+        for line in text.splitlines():
+            if line.startswith("## "):
+                found[line.split(" — ", 1)[-1].strip()] = line[3:].strip()
+        return found
+    before = titles(git("show", f"{installed}:CHANGELOG.md"))
+    after = titles(git("show", f"{target}:CHANGELOG.md"))
+    for title, heading in after.items():
+        if title not in before:
+            print("  " + heading)
     print("read: CHANGELOG.md sections above; update: scripts/update-acef-installation --repo <path>")
     sys.exit(1)
 

@@ -1,0 +1,53 @@
+{
+  "capabilityId": "central-feedback-log",
+  "requestedIntent": "Owner decision 2026-10-27: one machine-wide observation log for every ACEF host, with a defined write threshold, read points, a version stamp so readers skip unchanged logs, a weekly digest and rule files with cost, review date and activation; plus a session-start check that tells a host its ACEF installation is behind.",
+  "status": "wired",
+  "requiredLayers": [
+    "docs",
+    "artifact",
+    "cli",
+    "tests"
+  ],
+  "implementedLayers": {
+    "docs": [
+      "method/FEEDBACK_LOOP.md#Central log (2026-10-27)",
+      "CHANGELOG.md#v3.0.0-beta.4 — Central feedback log and version checks (2026-10-27)",
+      "AGENTS.md#Changelog"
+    ],
+    "artifact": [
+      "templates/slice/intake-card.md",
+      "templates/slice/review-brief.md",
+      "templates/slice/dev-report.md",
+      "templates/slice/closing-note.md"
+    ],
+    "cli": [
+      "scripts/acef-note",
+      "scripts/acef-version-check",
+      "scripts/install-acef-tools"
+    ],
+    "tests": [
+      "scripts/test-acef-note",
+      "scripts/test-install-acef-tools",
+      "scripts/slice/selfcheck.sh"
+    ]
+  },
+  "limitations": [
+    "Wired, not enforced: nothing blocks a coordinator that skips the intake search, the review-brief check or the closeout move of ACEF-gözlem lines; the templates and the global agent instructions ask for them.",
+    "The store is machine-local (~/CODE/acef-feedback, its own git repository without a remote); agents on another machine cannot write to it.",
+    "Imported legacy logs are free text: search matches them by keywords only, and their entries have no tags or costs.",
+    "Effect not measured yet: the first digest should report how many entries were written, how many searches surfaced a used lesson, and repeat counts."
+  ],
+  "evidence": [
+    {
+      "layer": "tests",
+      "ref": "scripts/test-acef-note",
+      "note": "2026-10-27: 24 checks passed (format, closed tags, pipe escaping, cross-project similar list, repeat/status, search ranking and limit, promoted entries hidden, due, digest, legacy numbering and search, 8 parallel appends with unique ids, version/check stamps)."
+    },
+    {
+      "layer": "cli",
+      "ref": "commit:75b802f",
+      "note": "2026-10-27: installed into a jakomeetweb update worktree; .acef/bin/acef-note version and .acef/bin/acef-version-check (rc 0) ran after the Python-tool install fix (PR #18)."
+    }
+  ],
+  "createdAt": "2026-10-27"
+}

@@ -92,6 +92,23 @@ need schemas/slice-method.schema.json '"stack_profile"'
 need docs/slice-lane/adoption.md '## Adopt in a new stack' '## Laravel profile'
 need templates/slice/exploration-tour.md 'FINDINGS: <n>' '390×844'
 
+# CHANGELOG rule (AGENTS.md "Changelog"): a branch that changes method, scripts, templates, schemas or skills against
+# the merge base with origin/main (committed, uncommitted or untracked) also changes CHANGELOG.md. No origin/main or
+# no git = the check is skipped and says so.
+cl_base=$(git merge-base HEAD origin/main 2>/dev/null || true)
+if [ -n "$cl_base" ]; then
+    cl_changed=$( { git diff --name-only "$cl_base" 2>/dev/null; git ls-files --others --exclude-standard 2>/dev/null; } | sort -u)
+    cl_code=$(printf '%s\n' "$cl_changed" | grep -E '^(method|scripts|templates|schemas|skills)/' || true)
+    if [ -z "$cl_code" ]; then pass "changelog rule (no framework change since origin/main)"
+    elif printf '%s\n' "$cl_changed" | grep -qx 'CHANGELOG.md'; then pass "changelog rule (CHANGELOG.md updated)"
+    else fail "changelog rule: framework files changed without a CHANGELOG.md entry: $(printf '%s' "$cl_code" | tr '\n' ' ')"; fi
+else
+    printf 'skip changelog rule (no origin/main merge base)\n'
+fi
+need templates/slice/intake-card.md 'Bilinen tuzaklar:' 'acef-note'
+need templates/slice/closing-note.md 'ACEF-gözlem:'
+need templates/slice/dev-report.md 'ACEF-gözlem:'
+
 run_test() { local out; out=$("$1" 2>&1) && pass "$1" || { fail "$1"; printf '%s\n' "$out" | grep -v '^ok ' | sed 's/^/    /'; }; }
 for t in scripts/slice/tests/test-*.sh; do [ -f "$t" ] && run_test "$t"; done
 

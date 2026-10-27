@@ -4,10 +4,20 @@ This file is the human-readable history of ACEF's framework changes. Git remains
 `docs/ai/capabilities/*.json` remains the layer-by-layer truth for whether a capability is documented, wired, enforced,
 proven, or installed.
 
-Update this file whenever ACEF itself gains or changes a flow, gate, validator, hook, skill, installer behavior, workflow,
+Update this file in the same PR whenever ACEF itself gains or changes a flow, gate, validator, hook, skill, installer behavior, workflow,
 or evidence contract. Do not use it to claim implementation status; link to the capability record for that.
 
-## Unreleased — Central feedback log and version checks (2026-10-27)
+## Unreleased — Changelog rule and feedback-log capability record (2026-10-27)
+
+Owner decision 2026-10-27: "is it written that CHANGELOG must be updated?" It was not; only this file's header said so.
+- `AGENTS.md` → **Changelog**: every PR touching method/scripts/templates/schemas/skills adds an entry here (what, date,
+  why, owner decision); new capabilities get a `docs/ai/capabilities/` record; bundles are tagged.
+- `scripts/slice/selfcheck.sh`: fails a branch that changes those folders against the origin/main merge base without
+  touching `CHANGELOG.md` (skipped, and says so, without origin/main); also checks the new template fields.
+- `docs/ai/capabilities/central-feedback-log.json` (status `wired`) for the 2026-10-27 feedback log.
+- The sections released in tag `v3.0.0-beta.4` are renamed from "Unreleased" to "v3.0.0-beta.4".
+
+## v3.0.0-beta.4 — Central feedback log and version checks (2026-10-27)
 
 Owner decision 2026-10-27, after two hosts kept separate observation logs nobody read. Design from two independent
 consultations (Fable, Codex Astra), merged:
@@ -24,13 +34,13 @@ consultations (Fable, Codex Astra), merged:
 - **Templates:** intake card `Bilinen tuzaklar: <ids> @<stamp>`; review brief carries it and asks for one
   `ACEF-gözlem:` line; developer report gets an "ACEF gözlemi" section; closing note an `ACEF-gözlem:` field.
 
-## Unreleased — Test budget: merge batch and reviewer rule (2026-10-27)
+## v3.0.0-beta.4 — Test budget: merge batch and reviewer rule (2026-10-27)
 
 - `method/SLICE_LANE.md` → Test budget:
   - Several TAM PRs that passed review are covered by one full suite on the combined head, provided they then merge back-to-back with nothing in between. Any other merge, or any change to a PR, voids the run.
   - Reviewers never run the full suite in any round; the integration run is the only full run. This makes explicit what the table already implied (owner request, 2026-10-27).
 
-## Unreleased — Test budget, contract set, rule cost and expiry (2026-10-25)
+## v3.0.0-beta.4 — Test budget, contract set, rule cost and expiry (2026-10-25)
 
 Owner decision 2026-10-25, from two hosts that independently cut their full-suite runs from 2–4 per slice:
 - **`method/SLICE_LANE.md` "Test budget".** The developer and the reviewer never run the full suite. Integration runs
@@ -44,7 +54,7 @@ Owner decision 2026-10-25, from two hosts that independently cut their full-suit
 - Pending measurement, about a week, both hosts: the affected-tests script (or `route.py` printing the list) and runner
   settings (worker cap, batch size, slow-first).
 
-## Unreleased — route.py: size and test fixes from the first host run (2026-10-25)
+## v3.0.0-beta.4 — route.py: size and test fixes from the first host run (2026-10-25)
 
 - **Log failures no longer look like a stop.** A failed decision-log write printed the verdict and then exited 1, the
   ROUTE_UP code. Now the write is caught, `LOG_FAILED` goes to stderr, and the exit is 2 (operational). ROUTE_UP keeps
@@ -59,7 +69,7 @@ From B2Press running `route.py check` read-only over six merged slices:
 - **Host rules extend the stack's by default.** `routing.risk_paths_mode: "extend" | "replace"`. Before, naming a fact
   in `slice-method.json` silently dropped the stack patterns for that fact.
 
-## Unreleased — Route script and diff check (2026-10-25)
+## v3.0.0-beta.4 — Route script and diff check (2026-10-25)
 
 Owner decision 2026-10-25: sizing is enforced by a script, not left to prose. `scripts/slice/route.py card` turns the
 intake card's six facts into `Yol: native | HAFIF | TAM — <reason>`. `scripts/slice/route.py check --base <ref>
@@ -70,7 +80,7 @@ reviewers still answer A7.
 - `routing` is added to both schemas; `stacks/laravel/profile.json` ships default risk paths. Hosts may extend them in
   `slice-method.json`.
 - Tests: `scripts/test-acef-slice-route`; `selfcheck.sh` passes (116/116, neutrality scan clean).
-## Unreleased — Installer: profiles, deterministic record, remembered selection, Slice kit (2026-10-25)
+## v3.0.0-beta.4 — Installer: profiles, deterministic record, remembered selection, Slice kit (2026-10-25)
 
 Owner decision 2026-10-25, from the selective Foundation install (21 files instead of about 170) and its gap list.
 - **Deterministic record.** `docs/ai/ACEF_INSTALLATION.json` no longer stores the absolute source path, the branch or
@@ -93,7 +103,7 @@ Owner decision 2026-10-25, from the selective Foundation install (21 files inste
 - **Host migration (one-time, optional).** B2Press and CursorPanel can move to the slice profile with
   `install-acef-skills --profile slice --tool …` plus `install-acef-slice-kit`, then commit the new record. Nothing
   changes until a host opts in.
-## Unreleased — Sizing from facts, outcome-first planning, round caps, feedback loop (2026-10-25)
+## v3.0.0-beta.4 — Sizing from facts, outcome-first planning, round caps, feedback loop (2026-10-25)
 
 Owner decision 2026-10-25, from the owner's collected agent notes (13–24 Oct) and the B2Press/Foundation/CursorPanel
 sessions.
@@ -112,7 +122,7 @@ sessions.
 - **`method/FEEDBACK_LOOP.md`.** A weekly digest groups observations by failure mode and proposes at most three rule
   changes. The owner decides; each change is measured and reverted if it shows no effect.
 
-## Unreleased — 2b cut lens, security checklist rows, maintenance scan pilot (2026-10-25)
+## v3.0.0-beta.4 — 2b cut lens, security checklist rows, maintenance scan pilot (2026-10-25)
 
 Owner decision 2026-10-25 (Ram), after proposals from the JakoMeet/CRM, B2Press and Foundation sessions, reviewed by
 Claude Fable and Codex gpt-6-astra:
@@ -133,7 +143,7 @@ Claude Fable and Codex gpt-6-astra:
   run first; one module reviewer from a different model family; no fixes inside the scan; budgets and stop rule;
   promotion only after measured runs.
 
-## Unreleased — Slice lane: simplify pass (2026-10-27)
+## v3.0.0-beta.4 — Slice lane: simplify pass (2026-10-27)
 
 Owner decision 2026-10-27 (CursorPanel): a **simplify pass** (step 2b in `method/SLICE_LANE.md`, Turkish in
 `docs/slice-lane/README.md`) runs after the developer report and before the clean-tree re-run and the independent
