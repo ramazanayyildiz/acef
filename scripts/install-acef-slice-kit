@@ -16,7 +16,7 @@ function usage() {
   console.log(`Usage: scripts/install-acef-slice-kit --repo <path> [--stack <name>] [--templates-dir <dir>] [--scripts-dir <dir>]
 
 Defaults: --templates-dir docs/slices/_templates  --scripts-dir scripts
-Installs: templates/slice/*, method/SLICE_LANE.md and method/PRODUCT_LANGUAGE.md snapshots, scripts/slice/{gate.sh,standards-check.sh,codex-review.sh,metrics.py,route.py,ui-copy-hints.py};
+Installs: templates/slice/*, method/SLICE_LANE.md, method/PRODUCT_LANGUAGE.md and method/MODEL_CHOICE.md snapshots, scripts/slice/{gate.sh,standards-check.sh,codex-review.sh,metrics.py,route.py,ui-copy-hints.py};
 with --stack also stacks/<stack>/profile.json (as scripts/stack-profile.json) and the slice-method example, only when missing.`);
 }
 
@@ -52,7 +52,7 @@ function plan(opts, previous) {
     if (fs.statSync(from).isFile()) owned.push({ to: `${templatesDir}/${name}`, content: fs.readFileSync(from) });
   }
   const { sourceShortCommit, sourceCommit } = sourceInfo(sourceRoot);
-  for (const doc of ["SLICE_LANE.md", "PRODUCT_LANGUAGE.md"]) {
+  for (const doc of ["SLICE_LANE.md", "PRODUCT_LANGUAGE.md", "MODEL_CHOICE.md"]) {
     const method = fs.readFileSync(path.join(sourceRoot, "method", doc), "utf8");
     owned.push({
       to: `${templatesDir}/${doc}`,

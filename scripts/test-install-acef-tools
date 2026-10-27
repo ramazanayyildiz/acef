@@ -127,7 +127,7 @@ try {
   const installedRouting = JSON.parse(fs.readFileSync(modelRoutingManifest, "utf8"));
   if (installedRouting.schema !== "acef.model-routing-policy.v1"
     || installedRouting.roles?.["code-review"]?.reasoningTier !== "medium"
-    || installedRouting.providers?.openai?.models?.["semantic-standard"] !== "gpt-5.6-sol") {
+    || installedRouting.providers?.openai?.models?.["semantic-standard"] !== "gpt-6.1-sol") {
     throw new Error("installed model routing policy lost calibrated provider-neutral role mapping");
   }
   const installedDosing = JSON.parse(fs.readFileSync(controlDosingManifest, "utf8"));

@@ -127,6 +127,15 @@ capability also gets or updates its record in `docs/ai/capabilities/`. `scripts/
 that changes those folders without touching `CHANGELOG.md`. Changes ship in tagged bundles (`v3.0.0-beta.<n>`); the
 CHANGELOG heading names the bundle once it is tagged.
 
+## Model choice
+
+Before you start a subagent or a Codex run, pick its model and effort from `method/MODEL_CHOICE.md`: critical work
+(money, tenancy, permission, data loss, migrations, locks) on Opus / gpt-6.1-sol high, standard on Sonnet / sol medium,
+mechanical on Sonnet / sol low, light on Haiku, browser tours on gpt-6.1-terra, trivial lookups from the shell with no
+agent. A project's recorded decision wins over this default. Run long tests in the background with a completion
+notification instead of waking agents to poll. Actors admitted through ACEF routing (Full roles, Fix/Standard under
+`admitted-role-routing-v1`) follow `method/model-routing-policy-v1.json` instead; the policy wins there.
+
 ## Core Rule
 
 ACEF claims are not evidence. Repository files, validators, tests, installed hooks/tools, and runtime evidence are the

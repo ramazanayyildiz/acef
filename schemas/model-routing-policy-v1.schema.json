@@ -9,6 +9,7 @@
     "schema": { "const": "acef.model-routing-policy.v1" },
     "policyId": { "type": "string", "pattern": "^[A-Za-z0-9._-]+$" },
     "activeProvider": { "type": "string", "pattern": "^[A-Za-z0-9._-]+$" },
+    "note": { "type": "string", "minLength": 1 },
     "roles": {
       "type": "object",
       "minProperties": 1,
@@ -45,7 +46,8 @@
           "reasoning": {
             "type": "object",
             "additionalProperties": { "type": "string", "enum": ["low", "medium", "high", "xhigh", "max"] }
-          }
+          },
+          "note": { "type": "string", "minLength": 1 }
         }
       }
     }

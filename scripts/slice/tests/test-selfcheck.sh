@@ -12,7 +12,7 @@ ok=0; bad=0
 check() { if [ "$1" = "$2" ]; then echo "ok   $3"; ok=$((ok+1)); else echo "FAIL $3 (got $1, want $2)"; bad=$((bad+1)); fi; }
 fresh() { # new copy of the lane in $T/r
     rm -rf "$T/r"; mkdir -p "$T/r/method" "$T/r/docs"
-    cp "$ROOT/method/SLICE_LANE.md" "$ROOT/method/PRODUCT_LANGUAGE.md" "$ROOT/method/TEST_PIPELINE.md" "$T/r/method/"
+    cp "$ROOT/method/SLICE_LANE.md" "$ROOT/method/PRODUCT_LANGUAGE.md" "$ROOT/method/TEST_PIPELINE.md" "$ROOT/method/MODEL_CHOICE.md" "$T/r/method/"
     cp -R "$ROOT/templates" "$ROOT/schemas" "$ROOT/stacks" "$ROOT/LICENSES" "$T/r/"
     mkdir -p "$T/r/scripts"; cp -R "$ROOT/scripts/slice" "$T/r/scripts/"
     cp -R "$ROOT/docs/slice-lane" "$T/r/docs/"

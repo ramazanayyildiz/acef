@@ -34,6 +34,11 @@ betiğe dönüşmüş dersler listede çıkmaz.
 
 `Hedef kullanıcı: <profil> · Bu ekranda yapacağı iş: <görev>`
 
+**Model (koordinatör, ajan başına; `method/MODEL_CHOICE.md`):** sınıf işten seçilir, diff boyutundan değil; projenin
+kayıtlı kararı varsayılanı geçer.
+
+`Model: <sınıf> → <model> (MODEL_CHOICE.md) · Effort: <low | medium | high>` (geliştirici ve inceleyici için ayrı satır)
+
 **Karar satırı (işe başlamadan önce, sahip görebilsin):**
 
 `Yol: native | HAFİF | TAM — <gerçeklere dayanan tek cümle>`

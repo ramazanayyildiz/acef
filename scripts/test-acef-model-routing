@@ -17,7 +17,7 @@ const codeReview = resolveRoleRuntime(loaded.record, "code-review");
 const patchAssurance = resolveRoleRuntime(loaded.record, "patch-assurance");
 const conductor = resolveRoleRuntime(loaded.record, "conductor");
 
-if (codeReview.model !== "gpt-5.6-sol" || codeReview.reasoningEffort !== "medium"
+if (codeReview.model !== "gpt-6.1-sol" || codeReview.reasoningEffort !== "medium"
   || codeReview.executionClass !== "semantic-standard") {
   throw new Error("calibrated Code Review route was not resolved");
 }
@@ -33,7 +33,7 @@ if (canonicalRoutingRole("developer", "development") !== "development"
   throw new Error("actor role aliases do not resolve to calibrated policy roles");
 }
 const standardDeveloper = resolveActorRuntime(loaded.record, "developer", "development");
-if (standardDeveloper.model !== "gpt-5.6-sol" || standardDeveloper.reasoningEffort !== "high") {
+if (standardDeveloper.model !== "gpt-6.1-sol" || standardDeveloper.reasoningEffort !== "high") {
   throw new Error("Standard/Fix Developer route was not resolved");
 }
 
@@ -41,6 +41,14 @@ const anthropicDeveloper = resolveRoleRuntime(loaded.record, "development", "ant
 if (!/^claude-/.test(anthropicDeveloper.model) || anthropicDeveloper.provider !== "anthropic"
   || !["low", "medium", "high", "xhigh", "max"].includes(anthropicDeveloper.reasoningEffort)) {
   throw new Error("anthropic provider mapping did not resolve the development role");
+}
+if (anthropicDeveloper.model !== "claude-sonnet-5-5"
+  || resolveRoleRuntime(loaded.record, "code-review", "anthropic").model !== "claude-sonnet-5-5"
+  || resolveRoleRuntime(loaded.record, "conductor", "anthropic").model !== "claude-sonnet-5-5") {
+  throw new Error("anthropic mapping drifted from the 2026-10-27 owner decision (Sonnet for every class)");
+}
+if (!/MODEL_CHOICE\.md/.test(loaded.record.note || "")) {
+  throw new Error("policy note must point ordinary subagent model choice to method/MODEL_CHOICE.md");
 }
 if (resolveRoleRuntime(loaded.record, "code-review").provider !== "openai") {
   throw new Error("default provider changed; activeProvider must remain openai");

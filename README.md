@@ -79,6 +79,8 @@ Added in v3.0.0-beta.4 to beta.7 on the owner's decision; details in `CHANGELOG.
   `templates/slice/user-goal-tour.md`): screens are for the end user; evidence stays in reports; each host defines its
   users; user-goal tours are a pre-check, not real user testing. Pilot on one screen before rollout
   (`docs/slice-lane/product-language-pilot.md`).
+- **Model choice** (`method/MODEL_CHOICE.md`): one class table (critical, standard, mechanical, light, browser tour,
+  trivial lookup) for Claude and Codex agents, effort levels, and waiting rules; a project's own decision wins.
 
 ## Core idea
 

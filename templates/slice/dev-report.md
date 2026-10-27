@@ -67,6 +67,7 @@ Kaynak: JKM inceleme öncesi öz-denetimi (`docs/slice-lane/SOURCES.md`; determi
 
 Yöntemin maliyetini ölçmek için (`method/SLICE_LANE.md` "Cost accounting"). Ölçülmeyen alan `ölçülmedi` yazılır, tahmin edilmez. Geliştirici kendi satırlarını doldurur; inceleme, koordinatör ve toplam satırlarını koordinatör kapanıştan önce tamamlar.
 
+- Model: <ad> · Effort: <seviye>  (kullanılan; `method/MODEL_CHOICE.md`)
 - Duvar-saati-geliştirme-dk: <n | ölçülmedi>  (geliştiricinin başlangıcı → bu rapor)
 - Duvar-saati-dilim-dk: <n | ölçülmedi>  (dilim dosyası → kapanış notu, tüm turlar; koordinatör)
 - Token-geliştirici: <giriş>/<çıkış> | ölçülmedi

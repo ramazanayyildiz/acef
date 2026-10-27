@@ -2096,26 +2096,26 @@ try {
     tool_name: "Agent",
     cwd: partialHook,
     tool_input: { task_name: "standard-developer", prompt: "Implement the bounded change" },
-  }, "deny", {}, ["model=gpt-5.6-sol", "reasoning_effort=high", "inherited/unspecified"]);
+  }, "deny", {}, ["model=gpt-6.1-sol", "reasoning_effort=high", "inherited/unspecified"]);
   expectHookDecision("Standard dispatch rejects an overpowered runtime", {
     tool_name: "Agent",
     cwd: partialHook,
     tool_input: { task_name: "standard-developer", model: "gpt-6-astra", reasoning_effort: "xhigh", prompt: "Implement the bounded change" },
-  }, "deny", {}, ["model=gpt-5.6-sol", "reasoning_effort=high"]);
+  }, "deny", {}, ["model=gpt-6.1-sol", "reasoning_effort=high"]);
   expectHookDecision("Standard dispatch accepts calibrated runtime", {
     tool_name: "functions.collaboration.spawn_agent",
     cwd: partialHook,
-    tool_input: { task_name: "standard-developer", model: "gpt-5.6-sol", reasoning_effort: "high", prompt: "Implement the bounded change" },
+    tool_input: { task_name: "standard-developer", model: "gpt-6.1-sol", reasoning_effort: "high", prompt: "Implement the bounded change" },
   }, "allow");
   expectHookDecision("Standard shell dispatch rejects inherited runtime", {
     tool_name: "Bash",
     cwd: partialHook,
     tool_input: { command: "claude agent run standard-developer" },
-  }, "deny", {}, ["model=gpt-5.6-sol", "reasoning_effort=high"]);
+  }, "deny", {}, ["model=gpt-6.1-sol", "reasoning_effort=high"]);
   expectHookDecision("Standard shell dispatch accepts calibrated runtime", {
     tool_name: "Bash",
     cwd: partialHook,
-    tool_input: { command: "claude agent run standard-developer --model gpt-5.6-sol --effort high" },
+    tool_input: { command: "claude agent run standard-developer --model gpt-6.1-sol --effort high" },
   }, "allow");
   const providerRun = JSON.parse(fs.readFileSync(path.join(partialHook, "docs", "ai", "ACEF_ACTIVE_RUN.json"), "utf8"));
   providerRun.routingProvider = "anthropic";
@@ -2123,7 +2123,7 @@ try {
   expectHookDecision("run-selected provider rejects the default provider's runtime", {
     tool_name: "Agent",
     cwd: partialHook,
-    tool_input: { task_name: "standard-developer", model: "gpt-5.6-sol", reasoning_effort: "high", prompt: "Implement the bounded change" },
+    tool_input: { task_name: "standard-developer", model: "gpt-6.1-sol", reasoning_effort: "high", prompt: "Implement the bounded change" },
   }, "deny", {}, ["model=claude-sonnet-5-5", "reasoning_effort=high"]);
   expectHookDecision("run-selected provider accepts its calibrated runtime", {
     tool_name: "Agent",
