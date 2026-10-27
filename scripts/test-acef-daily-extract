@@ -309,7 +309,8 @@ def property_fixture(root):
     a, b = chunk(8), chunk(8)
     secrets += [a, b]
     forms.append(f"password: # production\n  {a}\n  {b}\nnext: 1")              # comment, value below
-    for ind in ("|", ">", "|-", ">-", "|+"):                                     # YAML block scalars
+    for ind in ("|", ">", "|-", ">-", "|+", "|2-", ">1+", "|-2", "!!str |", "&pw |", "!secret >-",
+                "*alias"):                                                       # YAML block scalars, tags, anchors
         a, b = chunk(8), chunk(8)
         secrets += [a, b]
         forms.append(f"db:\n  password: {ind}\n    {a}\n    {b}\n  host: x")
@@ -319,6 +320,12 @@ def property_fixture(root):
     a, b = chunk(8), chunk(8)
     secrets += [a, b]
     forms.append(f'password="{a}\n{b}" rest\nok')                                # quoted value over two lines
+    a, b = chunk(8), chunk(8)
+    secrets += [a, b]
+    forms.append(f"{{password:\n {a}}}\n{{token:\n{b}}}\nok")                     # flow mappings, indented or not
+    a = chunk(8)
+    secrets.append(a)
+    forms.append(f"password: |2-\n{a}\nok")                                    # value line not indented
     forms.append(f"use sk-proj-{w()} now")                                     # tokens anywhere
     forms.append(f"ghp_{w()}")
     forms.append(f"xoxb-{w()}")
@@ -606,9 +613,11 @@ try:
     slow = {}
     for name, unit in adv.items():
         text = (unit * (K // len(unit) + 1))[:K]
-        t0 = time_mod.perf_counter()
-        mod.redact(text)
-        took = time_mod.perf_counter() - t0
+        took = 9.0
+        for _ in range(3):              # best of 3: the algorithmic cost, not machine-load noise
+            t0 = time_mod.perf_counter()
+            mod.redact(text)
+            took = min(took, time_mod.perf_counter() - t0)
         if took >= 0.2:
             slow[name] = round(took, 3)
     t0 = time_mod.perf_counter()

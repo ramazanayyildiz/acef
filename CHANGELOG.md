@@ -98,6 +98,15 @@ landed in; Manager-driven Codex panes counted as 99 owner hours; machine inciden
     whole lines (the tail reaches back up to 50 lines for a block that starts before it), the middle is dropped with
     a `<dropped N chars>` marker. On the previous commit, 256 KB adversarial inputs took 8 s (PEM), 42 s (JWT) and
     up to 59 s (URL); now each of 29 families finishes under 0.2 s (worst about 0.1 s under load).
+- **Confirmation round (Codex, PR #27: 1 P1):** YAML headers with an indentation digit (`|2-`, `>1+`), tags
+  (`!!str |`), anchors (`&pw |`) and aliases slipped past the block-indicator whitelist. The whitelist is gone:
+  (a) after any line with secret context, every following line indented deeper than it is redacted, whatever the
+  inline value; (b) the first following non-empty line is redacted too when the inline value is empty, starts with
+  one of `| > & ! * # ' " \ [ {`, ends with a backslash, or leaves a quote or bracket open. No YAML header is parsed;
+  at most 50 lines. The timing test takes the best of three runs per input, so it measures the algorithm, not load.
+  The property test adds `|2-`, `>1+`, `|-2`, `!!str |`, `&pw |`, `!secret >-`, an alias, flow mappings and an
+  unindented value line (73 secrets in 46 forms); on the previous commit it finds the leaks. Pilot day: no secret
+  pattern in the output, and 24 of 4,645 digest lines carry a marker (unchanged).
 - Tests: 46 checks on synthetic fixtures; the property test now covers 56 secrets in 37 forms (comment-then-value,
   five YAML block scalars, dotenv continuation, a quoted value over two lines). Runtime on the pilot day: about 20 s
   (parse 12 s, git/gh 4 s) for 3.8 GB under load. A scan of the real pilot-day output finds no email, key block,

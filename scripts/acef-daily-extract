@@ -162,7 +162,6 @@ DBCLI_RE = re.compile(r"\b(?:mysql\w*|mariadb\w*|psql|pg_dump|pg_restore)\b", re
 DBPASS_RE = re.compile(r"\s-p(?=\S)")
 URLCRED_RE = re.compile(r"://[^\s/@]{0,256}:[^\s@]{0,256}@")    # starts only at "://"; bounded
 SCHEME_CHARS = set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789+.-")
-BLOCK_IND_RE = re.compile(r"[|>][+-]?\d{0,2}\s*(?:#.*)?")
 LONG_TOKEN = re.compile(r"(?<![\w/-])[A-Za-z0-9_\-]{32,}")
 
 
@@ -207,18 +206,19 @@ def _redact_pem(s):
     return "".join(out)
 
 
-def _secret_span(line):
-    """(start, end) of the earliest secret context on a line, or None."""
+def _secret_span(line, ctx=True, db=True, url=True):
+    """(start, end) of the earliest secret context on a line, or None. The flags skip checks the whole text
+    already ruled out."""
     best = None
-    m = SECRET_CTX_RE.search(line)
+    m = SECRET_CTX_RE.search(line) if ctx else None
     if m:
         best = (m.start(), m.end())
-    d = DBCLI_RE.search(line)
+    d = DBCLI_RE.search(line) if db else None
     if d:
         p = DBPASS_RE.search(line, d.end())
         if p and (best is None or p.start() < best[0]):
             best = (p.start(), p.end())
-    if "@" in line and "://" in line:
+    if url and "@" in line and "://" in line:
         u = URLCRED_RE.search(line)
         if u and (best is None or u.start() < best[0]):
             st = u.start()
@@ -228,18 +228,19 @@ def _secret_span(line):
     return best
 
 
+VALUE_OPENERS = set("|>&!*#'\"\\[{")
+
+
 def _opens_block(rest):
-    """True when the secret's value is not on its line: nothing, a comment, a YAML block indicator, a backslash
-    continuation, an unterminated quote or an opening bracket."""
-    r = rest.strip().lstrip(":=").strip()
-    if not r or r.startswith("#") or r.endswith("\\") or r[-1] in "{[(":
+    """True when the first following non-empty line may hold the value: the inline value after the separator is
+    empty, starts with a block, tag, anchor, alias, comment, quote, backslash or bracket character, ends with a
+    backslash, or leaves a quote or bracket open. No YAML header is parsed."""
+    r = rest.strip().lstrip(":= \t")
+    if not r or r[0] in VALUE_OPENERS or r.endswith("\\"):
         return True
-    if BLOCK_IND_RE.fullmatch(r):
+    if r.count('"') % 2 == 1 or r.count("'") % 2 == 1:
         return True
-    q = r.strip("\"'")
-    if not q.strip() or q.strip().startswith("#"):
-        return True
-    return r.count('"') % 2 == 1 or r.count("'") % 2 == 1
+    return r.count("[") > r.count("]") or r.count("{") > r.count("}") or r.count("(") > r.count(")")
 
 
 def _indent(line):
@@ -247,20 +248,24 @@ def _indent(line):
 
 
 def _redact_lines(s):
-    if not (SECRET_CTX_RE.search(s) or DBCLI_RE.search(s) or ("://" in s and "@" in s)):
+    """A line with secret context loses everything from the keyword on. Below it, (a) every line indented deeper
+    than the keyword line is redacted whatever the inline value was, and (b) the first non-empty line is redacted
+    too when the value may continue there (_opens_block) or the line ends with a backslash; backslash continuations
+    carry on. At most BLOCK_CAP lines below one keyword line."""
+    ctx, db, url = bool(SECRET_CTX_RE.search(s)), bool(DBCLI_RE.search(s)), "://" in s and "@" in s
+    if not (ctx or db or url):
         return s                                    # no secret context anywhere: nothing to do line by line
     lines, out, i = s.split("\n"), [], 0
     while i < len(lines):
         line = lines[i]
-        span = _secret_span(line) if line.strip() else None
+        span = _secret_span(line, ctx, db, url) if line.strip() else None
         i += 1
         if not span:
             out.append(line)
             continue
         out.append(line[: span[0]] + MARK)
-        if not _opens_block(line[span[1]:]):
-            continue
-        base, first, cont, k = _indent(line), True, line.rstrip().endswith("\\"), 0
+        first = _opens_block(line[span[1]:])
+        base, cont, k = _indent(line), line.rstrip().endswith("\\"), 0
         while i < len(lines) and k < BLOCK_CAP:
             nxt = lines[i]
             if not nxt.strip():
