@@ -19,6 +19,8 @@ consultations (Fable, Codex Astra), merged:
   the installed commit, exit 2 no record or unknown commit.
 - **`method/FEEDBACK_LOOP.md`**: when to write (threshold), who writes (coordinator funnel), when to read (intake,
   review brief, before shared-infrastructure changes; at most five entries), session-start checks, rule files.
+- **`install-acef-tools`** installs `acef-note` and `acef-version-check` into `.acef/bin/`; Python tools are copied as they
+  are (the Node `.cjs` wrapper is only for Node tools).
 - **Templates:** intake card `Bilinen tuzaklar: <ids> @<stamp>`; review brief carries it and asks for one
   `ACEF-gözlem:` line; developer report gets an "ACEF gözlemi" section; closing note an `ACEF-gözlem:` field.
 
