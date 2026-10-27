@@ -7,6 +7,38 @@ proven, or installed.
 Update this file in the same PR whenever ACEF itself gains or changes a flow, gate, validator, hook, skill, installer behavior, workflow,
 or evidence contract. Do not use it to claim implementation status; link to the capability record for that.
 
+## Unreleased — Daily session review: stage 1 ready for the daily run (2026-10-27)
+
+Why: Ram approved the daily review after the pilot (2026-10-27). It runs every day at 09:00 as a Codex automation:
+stage 1 is `scripts/acef-daily-extract`, stage 2 is Codex on gpt-6.1-sol, medium effort, with a prompt the coordinator
+writes. The pilot showed what stage 1 lacked: 21 of 30 correction flags were false; "finished" needed `git log`/`gh` by
+hand in every project; red-first and mutation runs were counted as failures; a coordinator folder hid the repos its work
+landed in; Manager-driven Codex panes counted as 99 owner hours; machine incidents and store entries were not read.
+- **Window:** default is rolling, yesterday 09:00 to today 09:00 local (`--cut-hour`); `--since/--until` kept.
+- **Correction hint** on the owner's own words only: pasted blocks, system reminders, code fences, quoted/echoed lines,
+  terminal tables and paths are removed. A strong word ("hayır", "yanlış", "anlamadım", "demedim", "yapma", ...) flags
+  on its own in own text up to 300 characters; a weak word ("niye", "yine", "hala", "değil", "-mamış", ...) only in a
+  short reply (≤ 160 characters) right after an assistant claim, and not in a clause that is a question ("mu/mı/mısın")
+  or in numbered answers ("1 evet 2 hayır"). Measured on three days (25–27 Oct, the coordinator's labels, borderline
+  counted as false): 10 of 43 flags false (about 23 %, from 70 %); rules were tuned on 26–27 Oct, 25 Oct alone was 3 of
+  12. Corrections without any keyword are still missed (known limit; the short-reply cue catches "renk değişmemiş").
+- **Finished evidence:** for every repo a project's sessions touched (cwd, `cd`, `git -C`; a coordinator folder lists
+  the repos its work landed in), merges and PR commits on the default branch and on `origin/develop(ment)` in the
+  window (read-only `git log --first-parent`, local refs, no fetch), with sha, PR number and slice ids from the subject;
+  "origin/main into slice" syncs counted apart; merged PRs from `gh` when available (failure tolerated, `--no-gh`).
+  Calls run in parallel threads.
+- **Tests:** a red run is `red-intended` when the command or the agent's preceding words show a red-first or mutation
+  run, otherwise `unclassified` (never "fail").
+- **mem-guard log** lines and **central-store entries** (`log/*.md`, dated in the window; store project mapped through
+  `hosts/<p>.json`) are listed per project; the rest go to `_other.md`.
+- **Agent-driven Codex panes** (most messages relayed by an agent, or none from the owner) count as agent time.
+- **Stage 2 → weekly retro:** every digest ends with "Proposed acef-note lines" (store project, allowed tags, format,
+  `--repeat` hint) for stage 2 to fill. Proposals only; nothing runs them.
+- **CI:** Python tests (`test-acef-daily-extract`, `test-acef-detect`, `test-acef-retro`) run with `python3` in their
+  own step, before the Node loop, which now skips them. `test-acef-capsule-supervisor-v2` is red on main; not touched.
+- Tests: 30 checks on synthetic fixtures (git repo, mem-guard log, store, Manager pane, default window). Runtime on the
+  pilot day: 12 s (parse 4 s, git/gh 3 s) for 3.7 GB.
+
 ## Unreleased — Daily session review: stage-1 extractor (pilot) (2026-10-27)
 
 Why: the weekly retro (`method/WEEKLY_RETRO.md`) counts records but does not read what happened in the agent

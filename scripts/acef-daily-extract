@@ -1,16 +1,24 @@
 #!/usr/bin/env python3
-"""acef-daily-extract: stage 1 of the daily session review (pilot). Deterministic, no model.
+"""acef-daily-extract: stage 1 of the daily session review. Deterministic, no model.
 
 Usage:
-  acef-daily-extract [--since <local ISO>] [--until <local ISO>] [--store <dir>] [--claude-dir <dir>]
-                     [--codex-dir <dir>] [--label YYYY-MM-DD] [--budget-tokens 40000] [--repeat-min 3] [--jobs N]
+  acef-daily-extract [--since <local ISO>] [--until <local ISO>] [--cut-hour 9] [--store <dir>] [--claude-dir <dir>]
+                     [--codex-dir <dir>] [--mem-guard-log <file>] [--no-gh] [--label YYYY-MM-DD]
+                     [--budget-tokens 40000] [--repeat-min 3] [--jobs N]
 
 Reads Claude Code transcripts (<claude-dir>/<project>/<session>.jsonl and <session>/subagents/agent-*.jsonl) and Codex
-sessions (<codex-dir>/YYYY/MM/DD/*.jsonl) that have at least one event inside the window (default: yesterday 00:00 to
-today 00:00, local time). Extracts signals only, never whole transcripts: owner messages (truncated, with a correction
-hint), status asks, interrupts, failed tool calls and repeats, waits, test runs, review verdicts, commits and merges,
-context size and tokens, compactions and hand-offs, subagents. Signals are clipped to the window; a session's start and
-end are its full span.
+sessions (<codex-dir>/YYYY/MM/DD/*.jsonl) that have at least one event inside the window (default: rolling, yesterday
+09:00 to today 09:00 local; --cut-hour moves it). Extracts signals only, never whole transcripts: owner messages
+(truncated; a correction hint computed on the owner's own words), status asks, interrupts, failed tool calls and
+repeats, waits, test runs (pass / red-intended / unclassified), review verdicts and chains per slice id, git activity,
+context size and tokens, compactions and hand-offs, subagents. Codex panes an agent drives count as agent time.
+Signals are clipped to the window; a session's start and end are its full span.
+
+Also reads, read-only: for every repo a project's sessions touched (cwd, `cd`, `git -C`), the merges and PR commits on
+its default and integration branches in the window (`git log`, local refs, no fetch) and merged PRs from `gh` when it
+is available (failure tolerated; --no-gh skips it); mem-guard log lines in the window; central-store acef-note entries
+dated in the window. Each digest ends with an empty "Proposed acef-note lines" section that stage 2 fills: proposals
+only, never executed.
 
 Writes <store>/daily/<label>/extract.json (all sessions, compact) and <store>/daily/<label>/<project>.md (one digest per
 project, trimmed to the token budget with the strongest signals kept and a "Trimmed" line for what was cut). The store
@@ -30,6 +38,7 @@ import json
 import multiprocessing
 import os
 import re
+import shutil
 import subprocess
 import time
 from pathlib import Path
@@ -47,21 +56,42 @@ SKIP_PREFIXES = tuple('{"type":"%s"' % t for t in (
 ATTACH_RE = re.compile(r'"attachment":\{"type":"')
 
 HUMAN_SOURCES = {"typed", "sdk", "queued"}
-CORRECTION_WORDS = [
-    # Turkish
-    "hayır", "hayir", "yanlış", "yanlis", "anlamadım", "anlamadin", "anlamıyorsun", "neden", "niye", "niçin", "yine",
-    "gene", "tekrar", "dur", "durdur", "olmadı", "olmamış", "olmuyor", "hala", "hâlâ", "bozuk", "bozdun", "bozuldu",
-    "çalışmıyor", "calismiyor", "sorun", "saçma", "demedim", "dedim", "söyledim", "istemedim", "yapma", "geri al",
-    "kaybettin", "unuttun", "takıldı", "takildi",
-    # English
-    "no", "wrong", "stop", "why", "again", "still", "broken", "doesn't work", "not working", "i said", "i told",
-    "didn't ask", "don't", "undo", "revert", "mistake",
+# Strong words flag a correction on their own; weak words only in a short reply right after an assistant claim
+# (pilot 2026-10-27: 21 of 30 keyword flags were false, mostly weak words inside pasted agent text or neutral questions).
+STRONG_WORDS = [
+    "hayır", "hayir", "yanlış", "yanlis", "anlamadım", "anlamadin", "anlamıyorsun", "olmadı", "bozdun", "demedim",
+    "istemedim", "yapma", "geri al", "kaybettin", "unuttun", "saçma", "dur", "durdur",
+    "wrong", "stop", "i said", "i told", "didn't ask", "undo", "revert", "that's not",
 ]
-CORRECTION_RE = re.compile(r"(?<![\wçğıöşüâ])(" + "|".join(re.escape(w) for w in CORRECTION_WORDS) + r")(?![\wçğıöşüâ])",
-                           re.IGNORECASE)
+WEAK_WORDS = [
+    "neden", "niye", "niçin", "yine", "gene", "hala", "hâlâ", "olmamış", "olmuyor", "bozuk", "bozuldu",
+    "çalışmıyor", "calismiyor", "sorun", "dedim", "söyledim", "takıldı", "takildi", "değil", "degil",
+    "why", "still", "broken", "doesn't work", "not working", "don't", "mistake", "isn't",
+]
+WEAK_EXCEPT = {"kalmamış", "kalmamis"}          # "nothing left" is agreement, not a complaint
+QUESTION_RE = re.compile(r"(?<![\wçğıöşü])m[ıiuü](y?d[ıiuü]\w{0,3}|s[ıiuü]n\w{0,3}|y[ıiuü][mz]|d[ıiuü]r)?(?![\wçğıöşü])",
+                         re.IGNORECASE)   # "kaldı mı hala?"
+NUMBERED_RE = re.compile(r"(^|\s)[1-9]\d?[.)]?\s+\S+.*\s[2-9]\d?[.)]?\s+\S+")   # "1 evet 2 hayır": numbered answers
+
+
+def _word_re(words):
+    return re.compile(r"(?<![\wçğıöşüâ])(" + "|".join(re.escape(w) for w in words) + r")(?![\wçğıöşüâ])",
+                      re.IGNORECASE)
+
+
+STRONG_RE, WEAK_RE = _word_re(STRONG_WORDS), _word_re(WEAK_WORDS)
+NEG_SUFFIX_RE = re.compile(r"\b\w{3,}(mamış|memiş|mamis|memis)\b", re.IGNORECASE)   # "değişmemiş", "olmamış"
+PASTE_BLOCK_RE = re.compile(r"<pasted_content[^>]*>.*?(</pasted_content>|$)|<system-reminder>.*?(</system-reminder>|$)|"
+                            r"<(command|local-command)[\w-]*>.*?(</(command|local-command)[\w-]*>|$)|```.*?(```|$)",
+                            re.S | re.IGNORECASE)
+QUOTED_LINE_RE = re.compile(r"^\s*(>|│|┃|\||\$ |#|\* |- |• |\[|\d+[.)] |\w+@\w+|[\w/.-]+:\d+)|^( {2,}|\t)")
+INTENT_RE = re.compile(r"(red[- ]first|red run|kırmızı|should fail|must fail|expected? (to )?fail|fails? first|"
+                       r"confirm (that )?(it|the test|this) fails|prove\w* .{0,30}fail|mutation|mutant|mutasyon|mutate|"
+                       r"without the fix|before the fix|on base\b|base'de)", re.IGNORECASE)
+RED_WORD_RE = re.compile(r"\bRED\b|\bred-")
 STATUS_RE = re.compile(r"^\s*(nedir durum|ne durumda|durum ne|durum\??$|son durum|nedir son durum|ne kaldı|ne kaldi|"
-                       r"noldu|ne oldu|ne bitti|nerdeyiz|nerede kaldık|status|what'?s the status|where are we)",
-                       re.IGNORECASE)
+                       r"noldu|ne oldu|ne bitti|nerdeyiz|nerede kaldık|status|what'?s the status|where are we)|"
+                       r"(bitmedi mi|bitti mi|bitti mi\?|ne zaman biter)\s*\??\s*$", re.IGNORECASE)
 CONTINUATION = "This session is being continued from a previous conversation"
 INTERRUPT = "[Request interrupted by user"
 
@@ -83,7 +113,8 @@ RELAY_RE = re.compile(r"^\W*(manager|coordinator|koordinat\w*|root|lead|orchestr
 MSG_RE = re.compile(r"""-[a-z]*m\s+["']([^"'\n]{3,120})""")
 SLICE_RE = re.compile(r"\b([A-Z][A-Z0-9]{1,15}(?:-[A-Z0-9]{1,15}){1,4}-\d{1,3}[a-z]?)\b")
 REF_RE = re.compile(r"^.*?/(\.claude/projects|\.codex/sessions)/")
-CD_RE = re.compile(r"(?:^|[;&|(]\s*)cd\s+([~/][^\s;&|)]+)")
+CD_RE = re.compile(r"(?:^|[;&|(]\s*)cd\s+([~/][^\s;&|)'\"]+)")
+GITC_RE = re.compile(r"\bgit\s+-C\s+([~/][^\s;&|)'\"]+)")
 SHA_RE = re.compile(r"\[([\w./+-]+)(?: \(root-commit\))? ([0-9a-f]{7,12})\]")
 SLEEP_RE = re.compile(r"\bsleep\s+(\d+(?:\.\d+)?)")
 REVIEW_RE = re.compile(r"\b(review|reviewer|VERDICT|inceleme|incele)\b", re.IGNORECASE)
@@ -207,19 +238,44 @@ def strip_pasted(t):
     return t.strip()
 
 
-def human_msg(t, ln, txt):
+def own_text(raw):
+    """The owner's own words: pasted blocks, system reminders, code fences and quoted/echoed lines removed. A long
+    remainder is mostly pasted output, so only its opening counts."""
+    t = PASTE_BLOCK_RE.sub(" ", raw or "")
+    lines = [ln.split("│")[0].split("┃")[0] for ln in t.splitlines() if ln.strip() and not QUOTED_LINE_RE.match(ln)]
+    t = re.sub(r"\s+", " ", " ".join(lines)).strip()
+    t = re.sub(r"\S*[/\\]\S*", " ", t)          # paths and file names ("notes-again.md") are not words
+    return t
+
+
+def human_msg(t, ln, raw, after_claim=False):
+    """raw: the message as typed or pasted. after_claim: the previous event was an assistant text, not a tool result."""
+    txt = strip_pasted(raw)
+    own_full = own_text(raw)
+    own = own_full[:250] if len(own_full) > 600 else own_full    # a long remainder is mostly pasted output
+    hits, cue = [], ""
     if RELAY_RE.search(txt[:120]):
-        knd, hits = "relayed", []           # an agent writing into the pane (e.g. a manager), not the owner
-    elif STATUS_RE.search(txt) and len(txt) < 120:
-        knd, hits = "status", []
+        knd = "relayed"                     # an agent writing into the pane (e.g. a manager), not the owner
+    elif STATUS_RE.search(own) and len(own) < 120:
+        knd = "status"
     else:
-        hits = correction_hits(txt[:1500])
+        answers = bool(NUMBERED_RE.search(own))
+        # long own text is an instruction or a brief, where "yapma"/"stop" are directions, not complaints
+        strong = set() if answers or len(own_full) > 300 else {m.group(1).lower() for m in STRONG_RE.finditer(own)}
+        weak = set()
+        if not answers:     # per clause: "kaldı mı hala" is a question; "mavi değil ki? ... bakar mısın" still counts
+            for cl in re.split(r"[?.!;]+", own):
+                if cl.strip() and not QUESTION_RE.search(cl):
+                    weak |= {m.group(1).lower() for m in WEAK_RE.finditer(cl)} | \
+                        {m.group(0).lower() for m in NEG_SUFFIX_RE.finditer(cl)}
+            weak -= WEAK_EXCEPT
+        if strong:
+            hits, cue = sorted(strong), "strong word"
+        elif weak and after_claim and len(own) <= 160:
+            hits, cue = sorted(weak), "short reply after a claim"
         knd = "correction?" if hits else "other"
-    return {"t": t, "line": ln, "text": short(txt, MSG_CHARS), "hits": hits, "kind": knd}
-
-
-def correction_hits(t):
-    return sorted({m.group(1).lower() for m in CORRECTION_RE.finditer(t)})
+    return {"t": t, "line": ln, "text": short(txt, MSG_CHARS), "hits": hits, "cue": cue, "kind": knd,
+            "after_claim": after_claim}
 
 
 def commit_event(cmd, out, is_err):
@@ -241,28 +297,34 @@ def commit_event(cmd, out, is_err):
     return {"cmd": short(cmd, CMD_CHARS), "sha": shas[:3], "ok": True, "merge": kind == "merge", "kind": kind}
 
 
-def test_outcome(cmd, out, is_error):
+def test_outcome(cmd, out, is_error, context=""):
+    """pass | red-intended (the command or the agent's preceding words show a red-first/mutation run) |
+    unclassified (red, intent not shown; includes chained commands whose output also passes) | background | unknown."""
     o = out or ""
     line = ""
     m = list(TEST_LINE_RE.finditer(o[-6000:]))
     if m:
         line = short(m[-1].group(0), 140)
-    if TEST_FAIL_RE.search(o):
-        return "fail", line
+    red = TEST_FAIL_RE.search(o) or (is_error and line)
+    if red:
+        if INTENT_RE.search(cmd) or RED_WORD_RE.search(cmd) or INTENT_RE.search(context or "") or \
+                RED_WORD_RE.search(context or ""):
+            return "red-intended", line
+        return "unclassified", line
     if TEST_PASS_RE.search(o) and not is_error:
         return "pass", line
-    if is_error and line:
-        return "error", line
     if "run_in_background" in cmd or "Command running in background" in o or "backgroundTaskId" in cmd:
         return "background", line
     return "unknown", line
 
 
-def add_cmd_signals(s, t, ln, cmd, out, is_err):
+def add_cmd_signals(s, t, ln, cmd, out, is_err, context=""):
     for m in CD_RE.finditer(cmd):
         s.cd_dirs[m.group(1)] += 1
+    for m in GITC_RE.finditer(cmd):
+        s.cd_dirs[m.group(1)] += 1
     if TEST_RE.search(cmd):
-        res, summ = test_outcome(cmd, out, is_err)
+        res, summ = test_outcome(cmd, out, is_err, context)
         if res == "unknown":
             s.test_like += 1
         else:
@@ -309,6 +371,7 @@ def parse_claude(path, since, until, kind):
             "bad_lines": 0, "first_prompt": "", "effort": collections.Counter()}
     pending = {}            # tool_use id -> (name, cmd, t, line)
     seen_req = set()
+    last_event, last_text = "", ""      # "claim" after assistant text, "tool" after tool use/result
     with open(path, "r", encoding="utf-8", errors="replace") as fh:
         for ln, line in enumerate(fh, 1):
             meta["lines"] += 1
@@ -378,8 +441,11 @@ def parse_claude(path, since, until, kind):
                     if win:
                         meta["out_tokens"] += u.get("output_tokens") or 0
                 for c in msg.get("content") or []:
+                    if isinstance(c, dict) and c.get("type") == "text" and (c.get("text") or "").strip():
+                        last_event, last_text = "claim", (last_text + " " + c["text"])[-800:]
                     if not isinstance(c, dict) or c.get("type") != "tool_use":
                         continue
+                    last_event = "tool"
                     name, inp = c.get("name") or "", c.get("input") or {}
                     cmd = inp.get("command") or inp.get("cmd") or ""
                     if not isinstance(cmd, str):
@@ -419,7 +485,7 @@ def parse_claude(path, since, until, kind):
                             s.fails.append({"t": t, "line": ln, "tool": name, "cmd": short(cmd, CMD_CHARS) or
                                             short(json.dumps(inp)[:300], CMD_CHARS), "err": short(out, ERR_CHARS)})
                     if name == "Bash" and cmd:
-                        add_cmd_signals(s, t, ln, cmd, out, is_err)
+                        add_cmd_signals(s, t, ln, cmd, out, is_err, last_text)
                         if REVIEW_RE.search(cmd) and re.search(r"\bcodex\b", cmd):
                             v = VERDICT_RE.search(out)
                             if v:
@@ -427,6 +493,7 @@ def parse_claude(path, since, until, kind):
                                                   "verdict": v.group(1)})
                             else:
                                 s.review_launches += 1
+                last_event = "tool"
                 continue
             if d.get("isMeta"):
                 continue
@@ -443,6 +510,7 @@ def parse_claude(path, since, until, kind):
                 continue
             src = d.get("promptSource")
             if txt.startswith("<task-notification"):
+                last_event = "notification"
                 if win:
                     s.waits["notifications"] += 1
                 continue
@@ -452,14 +520,17 @@ def parse_claude(path, since, until, kind):
                 continue
             if src not in HUMAN_SOURCES:
                 continue
+            raw = txt
             txt = strip_pasted(txt)
             if txt.startswith("<") or not txt:
                 continue
             if not meta["first_prompt"]:
                 meta["first_prompt"] = short(txt, 200)
+            after = last_event == "claim"
+            last_event, last_text = "owner", ""
             if not win:
                 continue
-            s.human.append(human_msg(t, ln, txt))
+            s.human.append(human_msg(t, ln, raw, after))
     return finish(s, meta)
 
 
@@ -472,6 +543,7 @@ def parse_codex(path, since, until, kind_unused=None):
             "session_id": "", "verdicts": [], "ctx_window": None, "cmd_cwds": collections.Counter()}
     first_user = True
     prev_out = 0
+    last_event, last_text = "", ""
     with open(path, "r", encoding="utf-8", errors="replace") as fh:
         for ln, line in enumerate(fh, 1):
             meta["lines"] += 1
@@ -534,10 +606,20 @@ def parse_codex(path, since, until, kind_unused=None):
                 continue
             it = p.get("item") or {}
             itype = it.get("type")
+            if itype == "AgentMessage":
+                at = text_of(it.get("content"))
+                if at.strip():
+                    last_event, last_text = "claim", (last_text + " " + at)[-800:]
+                continue
             if itype == "UserMessage":
-                txt = strip_pasted(text_of(it.get("content")).strip())
+                raw = text_of(it.get("content")).strip()
+                txt = strip_pasted(raw)
                 if not txt:
                     continue
+                after = last_event == "claim"
+                last_event, last_text = "owner", ""
+                if RELAY_RE.search(txt[:120]):
+                    meta["relayed_seen"] = True
                 if first_user:
                     first_user = False
                     meta["first_prompt"] = short(txt, 200)
@@ -547,8 +629,10 @@ def parse_codex(path, since, until, kind_unused=None):
                         continue
                 if not win or meta["originator"] == "codex_exec" or txt.startswith("<"):
                     continue
-                s.human.append(human_msg(t, ln, txt))
+                s.human.append(human_msg(t, ln, raw, after))
                 continue
+            if itype in ("CommandExecution", "McpToolCall", "FileChange"):
+                last_event = "tool"
             if not win:
                 continue
             if itype == "CommandExecution":
@@ -566,7 +650,7 @@ def parse_codex(path, since, until, kind_unused=None):
                 for m in SLEEP_RE.finditer(cmd):
                     s.waits["sleep_s"] += float(m.group(1))
                     s.waits["sleep_calls"] += 1
-                add_cmd_signals(s, t, ln, cmd, out, is_err)
+                add_cmd_signals(s, t, ln, cmd, out, is_err, last_text)
             elif itype == "McpToolCall" and it.get("status") == "failed":
                 err = it.get("error")
                 s.fails.append({"t": t, "line": ln, "tool": f"mcp:{it.get('server')}/{it.get('tool')}", "cmd": "",
@@ -578,6 +662,11 @@ def parse_codex(path, since, until, kind_unused=None):
         s.reviews.append({"t": v["t"], "line": v["line"], "kind": "codex-review" if meta.get("is_review") else "codex",
                           "verdict": v["verdict"]})
     meta["kind"] = "codex-exec" if meta["originator"] == "codex_exec" else "codex-tui"
+    if meta["kind"] == "codex-tui":
+        relayed = sum(1 for h in s.human if h["kind"] == "relayed")
+        # a pane an agent (e.g. a manager) drives, or one with no owner message in the window: agent time
+        if relayed * 2 >= len(s.human) or (meta.get("relayed_seen") and relayed == len(s.human)):
+            meta["kind"] = "codex-tui-agent"
     return finish(s, meta)
 
 
@@ -664,12 +753,15 @@ def discover(claude_dir, codex_dir, since, until):
 _repo_cache = {}
 
 
-def repo_of(cwd):
+def repo_info(cwd):
+    """(name, root) of the main repository a path belongs to: worktrees fold into their repo. root is None when the
+    path no longer exists (a removed worktree); the name then comes from the path pattern."""
     if not cwd:
-        return None
+        return None, None
+    cwd = os.path.expanduser(cwd)
     if cwd in _repo_cache:
         return _repo_cache[cwd]
-    name = None
+    name = root = None
     if os.path.isdir(cwd):
         try:
             r = subprocess.run(["git", "-C", cwd, "rev-parse", "--path-format=absolute", "--git-common-dir"],
@@ -681,11 +773,20 @@ def repo_of(cwd):
         except (OSError, subprocess.SubprocessError):
             pass
     if not name:
-        m = re.search(r"/([^/]+)/\.worktrees/", cwd + "/") or re.search(r"/Volumes/devwork/([^/]+)/", cwd + "/")
+        m = re.search(r"^(.*/([^/]+))/\.worktrees/", cwd + "/")
         if m:
-            name = m.group(1)
-    _repo_cache[cwd] = name
-    return name
+            name = m.group(2)
+            root = m.group(1) if os.path.isdir(os.path.join(m.group(1), ".git")) else None
+        else:
+            m = re.search(r"/Volumes/devwork/([^/]+)/", cwd + "/")
+            if m:
+                name = m.group(1)
+    _repo_cache[cwd] = (name, root)
+    return name, root
+
+
+def repo_of(cwd):
+    return repo_info(cwd)[0]
 
 
 def project_for(r, parent_proj=None):
@@ -697,6 +798,148 @@ def project_for(r, parent_proj=None):
             return n
     c = r.get("cwd") or r.get("meta_cwd") or ""
     return os.path.basename(c.rstrip("/")) or "unknown"
+
+
+# ---------------------------------------------------------------- finished evidence (read-only git, optional gh)
+def git_out(root, *args, timeout=20):
+    try:
+        r = subprocess.run(["git", "-C", root, *args], capture_output=True, text=True, timeout=timeout)
+        return r.stdout if r.returncode == 0 else None
+    except (OSError, subprocess.SubprocessError):
+        return None
+
+
+def default_ref(root):
+    ref = (git_out(root, "symbolic-ref", "-q", "--short", "refs/remotes/origin/HEAD") or "").strip()
+    if ref:
+        return ref
+    for cand in ("origin/main", "origin/master", "origin/development", "origin/develop", "main", "master",
+                 "development", "develop"):
+        if git_out(root, "rev-parse", "--verify", "-q", cand + "^{commit}") is not None:
+            return cand
+    return None
+
+
+_finished_cache = {}
+
+
+def finished_in(root, since, until, use_gh):
+    """Merges and PR commits on the repo's default branch (first parent) in the window, from local refs only (no
+    fetch: refs are as fresh as the repo's last fetch), plus merged PRs from gh when it is available."""
+    if root in _finished_cache:
+        return _finished_cache[root]
+    out = {"root": root, "ref": None, "items": [], "direct_commits": 0, "gh": None, "error": None}
+    ref = default_ref(root)
+    refs = [ref] if ref else []
+    for cand in ("origin/develop", "origin/development", "origin/dev"):     # integration branches PRs merge into
+        if cand != ref and git_out(root, "rev-parse", "--verify", "-q", cand + "^{commit}") is not None:
+            refs.append(cand)
+    out["ref"] = ", ".join(refs) or None
+    if not refs:
+        out["error"] = "no default branch ref"
+    iso = lambda x: dt.datetime.fromtimestamp(x).astimezone().isoformat(timespec="seconds")  # noqa: E731
+    seen = set()
+    for rf in refs:
+        log = git_out(root, "log", rf, "--first-parent", f"--since={iso(since)}", f"--until={iso(until)}",
+                      "--format=%h%x1f%ct%x1f%P%x1f%s")
+        if log is None:
+            out["error"] = f"git log {rf} failed"
+        for line in (log or "").splitlines():
+            parts = line.split("\x1f")
+            if len(parts) != 4 or parts[0] in seen:
+                continue
+            h, ct, parents, subj = parts
+            seen.add(h)
+            pr = re.search(r"(?:pull request #|\(#)(\d+)", subj)
+            if len(parents.split()) > 1 or pr or subj.startswith("Merge "):
+                out["items"].append({"t": float(ct), "sha": h, "ref": rf, "pr": int(pr.group(1)) if pr else None,
+                                     "slices": list(dict.fromkeys(SLICE_RE.findall(subj)))[:3],
+                                     "subject": short(subj, 110), "sync": bool(re.search(
+                                         r"Merge (remote-tracking )?branch '?(origin/)?(main|master|develop\w*)'? into|"
+                                         r"Merge origin/(main|master|develop\w*)", subj))})
+            else:
+                out["direct_commits"] += 1
+    if use_gh and shutil.which("gh"):
+        try:
+            day = dt.datetime.fromtimestamp(since).strftime("%Y-%m-%d")
+            r = subprocess.run(["gh", "pr", "list", "--state", "merged", "--limit", "100", "--search",
+                                f"merged:>={day}", "--json", "number,title,mergedAt,baseRefName"], cwd=root,
+                               capture_output=True, text=True, timeout=25, env={**os.environ, "GH_PROMPT_DISABLED": "1"})
+            if r.returncode == 0:
+                prs = [x for x in json.loads(r.stdout or "[]") if since <= (parse_ts(x.get("mergedAt")) or 0) < until]
+                out["gh"] = [{"pr": x["number"], "base": x.get("baseRefName"), "t": parse_ts(x["mergedAt"]),
+                              "title": short(x.get("title"), 100)} for x in prs]
+            else:
+                out["gh_error"] = short(r.stderr or "gh failed", 120)
+        except (OSError, subprocess.SubprocessError, ValueError) as e:
+            out["gh_error"] = f"{type(e).__name__}"
+    _finished_cache[root] = out
+    return out
+
+
+MEMGUARD_RE = re.compile(r"^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}) (\S+) (.*)$")
+
+
+def read_memguard(path, since, until):
+    events, err = [], None
+    try:
+        with open(path, encoding="utf-8", errors="replace") as fh:
+            for line in fh:
+                m = MEMGUARD_RE.match(line.strip())
+                if not m:
+                    continue
+                t = dt.datetime.strptime(m.group(1), "%Y-%m-%d %H:%M:%S").timestamp()
+                if not since <= t < until:
+                    continue
+                rest = m.group(3)
+                g = lambda k: (re.search(k + r"=(\S+)", rest) or [None, ""])[1]  # noqa: E731
+                size = re.search(r"\(([^)]*)\)", rest)
+                events.append({"t": t, "action": m.group(2), "project": g("project"), "cwd": g("cwd"),
+                               "size": size.group(1) if size else "", "cmd": short(rest.split("cmd=", 1)[-1], 90)
+                               if "cmd=" in rest else ""})
+    except OSError as e:
+        err = f"{path}: {e.strerror}"
+    return events, err
+
+
+STORE_LINE_RE = re.compile(r"^([\w.-]+-\d+) \| (\d{4}-\d{2}-\d{2}) \| ([^|]*) \| ([^|]*) \| (.*)$")
+
+
+def read_store(store, since, until):
+    """acef-note entries dated inside the window (the log keeps dates, not times: both boundary days count)."""
+    d0 = dt.datetime.fromtimestamp(since).strftime("%Y-%m-%d")
+    d1 = dt.datetime.fromtimestamp(until - 1).strftime("%Y-%m-%d")
+    out = []
+    for f in sorted((Path(store) / "log").glob("*.md")):
+        for line in f.read_text(encoding="utf-8", errors="replace").splitlines():
+            m = STORE_LINE_RE.match(line)
+            if m and d0 <= m.group(2) <= d1:
+                rest = [x.strip() for x in m.group(5).split(" | ")]
+                out.append({"store_project": f.stem, "id": m.group(1), "date": m.group(2), "tags": m.group(3).strip(),
+                            "cost": m.group(4).strip(), "what": short(rest[0], 220),
+                            "ref": short(rest[-1], 120) if len(rest) > 2 else ""})
+    return out
+
+
+def store_aliases(store):
+    """repo name -> store project, from hosts/<project>.json (acef-detect registers the host repo there)."""
+    out = {}
+    for f in (Path(store) / "hosts").glob("*.json"):
+        try:
+            repo = json.loads(f.read_text()).get("repo")
+        except (OSError, ValueError):
+            continue
+        if repo:
+            out[os.path.basename(repo.rstrip("/"))] = f.stem
+    return out
+
+
+def store_tags(store):
+    try:
+        return [x.strip() for x in (Path(store) / "tags.txt").read_text().splitlines()
+                if x.strip() and not x.startswith("#")]
+    except OSError:
+        return []
 
 
 # ---------------------------------------------------------------- digest
@@ -716,7 +959,7 @@ def fmt_k(n):
 def dedupe_tests(tests):
     seen, out = collections.Counter(), []
     for r, x in sorted(tests, key=lambda z: z[1]["t"]):
-        if x["result"] not in ("fail", "error"):
+        if x["result"] != "unclassified":
             continue
         k = (r["path"], norm_key(x["summary"] or x["cmd"]))
         seen[k] += 1
@@ -725,20 +968,29 @@ def dedupe_tests(tests):
     return out
 
 
-def build_digest(project, rows, unread, window_txt, budget_chars, repeat_min):
+OWNER_KINDS = ("main", "codex-tui")
+AGENT_KINDS = ("subagent", "codex-exec", "codex-tui-agent")
+
+
+def build_digest(project, rows, unread, window_txt, budget_chars, repeat_min, extra=None):
+    extra = extra or {}
     rows = sorted(rows, key=lambda r: r["win_start"])
     mains = [r for r in rows if r["kind"] == "main"]
     subs = [r for r in rows if r["kind"] == "subagent"]
     cx_exec = [r for r in rows if r["kind"] == "codex-exec"]
     cx_tui = [r for r in rows if r["kind"] == "codex-tui"]
+    cx_agent = [r for r in rows if r["kind"] == "codex-tui-agent"]
     allf = [(r, f) for r in rows for f in r["fails"]]
     tests = [(r, x) for r in rows for x in r["tests"]]
     commits = [(r, x) for r in rows for x in r["commits"] if x["ok"]]
     reviews = [(r, x) for r in rows for x in r["reviews"]]
     human = [(r, h) for r in rows for h in r["human"]]
     comp = [(r, c) for r in rows for c in r["compactions"]]
-    active = round(sum(r["active_min"] for r in rows if r["kind"] in ("main", "codex-tui")) / 60, 1)
-    agent_min = round(sum(r["active_min"] for r in rows if r["kind"] in ("subagent", "codex-exec")) / 60, 1)
+    active = round(sum(r["active_min"] for r in rows if r["kind"] in OWNER_KINDS) / 60, 1)
+    agent_min = round(sum(r["active_min"] for r in rows if r["kind"] in AGENT_KINDS) / 60, 1)
+    finished = extra.get("finished", [])
+    mem = extra.get("memguard", [])
+    notes = extra.get("store", [])
     tcount = collections.Counter(x["result"] for _, x in tests)
     kcount = collections.Counter(x.get("kind", "commit") for _, x in commits)
     vcount = collections.Counter(x["verdict"] or "no verdict in output" for _, x in reviews)
@@ -753,15 +1005,23 @@ def build_digest(project, rows, unread, window_txt, budget_chars, repeat_min):
         "transcript line (see Refs at the end).",
         "",
         "## Totals",
-        f"- sessions: {len(mains)} main, {len(subs)} subagent, {len(cx_exec)} codex exec, {len(cx_tui)} codex tui; "
-        f"owner-facing active {active} h, agent active {agent_min} h",
+        f"- sessions: {len(mains)} main, {len(subs)} subagent, {len(cx_exec)} codex exec, {len(cx_tui)} codex tui, "
+        f"{len(cx_agent)} codex tui driven by an agent; owner-facing active {active} h, agent active {agent_min} h "
+        "(parallel sessions add up)",
+        f"- finished on default branches (git): "
+        + (", ".join(f"{f['name']} {sum(1 for i in f['items'] if not i['sync'])} merge/PR commits"
+                     + (f" (+{sum(1 for i in f['items'] if i['sync'])} sync)" if any(i['sync'] for i in f['items'])
+                        else "") + (f", gh {len(f['gh'])} PRs" if f.get('gh') is not None else "")
+                     for f in finished) or "no touched repo resolved"),
+        f"- machine events (mem-guard): {len(mem)}; central-store entries in the window: {len(notes)}",
         f"- owner messages: {sum(1 for _, h in human if h['kind'] != 'relayed')} "
         f"({sum(1 for _, h in human if h['kind'] == 'correction?')} flagged correction?, "
         f"{sum(1 for _, h in human if h['kind'] == 'status')} status asks; plus "
         f"{sum(1 for _, h in human if h['kind'] == 'relayed')} relayed by an agent); interrupts "
         f"{sum(len(r['interrupts']) for r in rows)}",
         f"- tool failures: {len(allf)}; api errors {sum(r['api_errors'] for r in rows)}",
-        f"- tests: {len(tests)} runs with an outcome ({', '.join(f'{k} {v}' for k, v in tcount.most_common()) or 'none'}); "
+        f"- tests: {len(tests)} runs with an outcome ({', '.join(f'{k} {v}' for k, v in tcount.most_common()) or 'none'}; "
+        "red-intended = the transcript shows a red-first or mutation run, unclassified = red without shown intent); "
         f"{sum(r['test_like_no_outcome'] for r in rows)} test-like commands without a readable outcome",
         f"- reviews: {len(reviews)} verdicts ({', '.join(f'{k} {v}' for k, v in vcount.most_common()) or 'none'})",
         f"- git: {kcount['commit']} commits, {kcount['merge']} merges, {kcount['push']} pushes (from command output); "
@@ -783,24 +1043,49 @@ def build_digest(project, rows, unread, window_txt, budget_chars, repeat_min):
 
     # sessions table (main + tui), always kept
     srows = []
-    for r in mains + cx_tui:
+    for r in mains + cx_tui + cx_agent:
         kids = [x for x in subs if Path(x["path"]).parent.parent.name == Path(r["path"]).stem]
+        tag = "[agent-driven pane] " if r["kind"] == "codex-tui-agent" else ""
         srows.append(
             f"| {sid(r)} | {hhmm(r['win_start'])}-{hhmm(r['win_end'])} | {r['active_min']} | "
-            f"{short(r['title'] or r['first_prompt'], 70)} | {','.join(r['models'])[:30]} | "
+            f"{tag}{short(r['title'] or r['first_prompt'], 70)} | {','.join(r['models'])[:30]} | "
             f"{len(r['human'])}/{sum(1 for h in r['human'] if h['kind'] == 'correction?')}/"
             f"{sum(1 for h in r['human'] if h['kind'] == 'status')} | {len(r['fails'])} | {len(kids)} | "
             f"{fmt_k(r['ctx_max'])} | {len(r['compactions'])} | {', '.join(r.get('repos', []))[:60]} |")
-    sections.append((0, "Sessions (main and codex tui)",
+    sections.append((0, "Sessions (main, codex tui, agent-driven codex panes)",
                      ["| ref | window | act min | title / first prompt | model | msgs/corr?/status | fails | subagents | "
                       "ctx max | compact | repos touched (cd) |", "|---|---|---|---|---|---|---|---|---|---|---|"], srows))
     # human messages: corrections first, then other, then status
     order = {"correction?": 0, "other": 1, "status": 2, "relayed": 3}
-    hitems = [f"- {ref(r, h['line'])} {hhmm(h['t'])} [{h['kind']}{(': ' + ','.join(h['hits'])) if h['hits'] else ''}] "
-              f"{h['text']}" for r, h in sorted(human, key=lambda x: (order[x[1]['kind']], x[1]['t']))]
+    hitems = [f"- {ref(r, h['line'])} {hhmm(h['t'])} [{h['kind']}{(': ' + ','.join(h['hits'])) if h['hits'] else ''}"
+              f"{(' (' + h['cue'] + ')') if h.get('cue') else ''}] {h['text']}"
+              for r, h in sorted(human, key=lambda x: (order[x[1]['kind']], x[1]['t']))]
     interrupts = [f"- {ref(r, i['line'])} {hhmm(i['t'])} interrupted by owner" for r in rows for i in r["interrupts"]]
-    sections.append((1, "Owner messages (correction? first, then other, status asks, relayed by an agent) and interrupts", [],
-                     interrupts + hitems))
+    sections.append((1, "Owner messages (correction? first, then other, status asks, relayed by an agent) and interrupts",
+                     ["- correction? is computed on the owner's own words (pasted blocks and quoted lines removed): a "
+                      "strong word, or a weak word in a short reply right after an assistant claim. Corrections "
+                      "without any keyword are still missed."], interrupts + hitems))
+    # finished evidence
+    fitems = []
+    for f in finished:
+        nsync = sum(1 for i in f["items"] if i["sync"])
+        fitems.append(f"- **{f['name']}** `{f.get('ref') or '?'}` ({f['root']}): "
+                      f"{len(f['items']) - nsync} merge/PR commits, {nsync} sync merges, {f['direct_commits']} direct "
+                      f"commits" + (f"; error: {f['error']}" if f.get("error") else "")
+                      + (f"; gh merged PRs: {len(f['gh'])}" if f.get("gh") is not None else
+                         f"; gh: {f.get('gh_error') or 'not used'}"))
+        for i in [i for i in f["items"] if not i["sync"]][:40]:
+            fitems.append(f"  - {hhmm(i['t'])} {i['sha']} {('[' + ','.join(i['slices']) + '] ') if i['slices'] else ''}"
+                          f"{('#' + str(i['pr']) + ' ') if i['pr'] else ''}{i['subject']}")
+        if f.get("gh"):
+            fitems.append("  - gh: " + ", ".join(f"#{x['pr']}→{x['base']} {hhmm(x['t'])}" for x in f["gh"][:40]))
+    sections.append((0, "Finished on the default branch (read-only git log of each touched repo; gh when available)",
+                     ["- Repos come from session cwds and `cd`/`git -C` targets, so a coordinator folder lists the repos "
+                      "its work landed in. Local refs only (no fetch): as fresh as the repo's last fetch."], fitems))
+    mitems = [f"- {hhmm(e['t'])} {e['action']} {e['size']} project={e['project']} cwd={e['cwd']} {e['cmd']}" for e in mem]
+    sections.append((1, "Machine events (mem-guard log)", [], mitems))
+    nitems = [f"- {n['id']} {n['date']} [{n['tags']}] {n['cost']}: {n['what']}" for n in notes]
+    sections.append((1, "Central-store entries (acef-note) dated in the window", [], nitems))
     # repeated failures
     groups = collections.defaultdict(list)
     for r, f in allf:
@@ -815,13 +1100,15 @@ def build_digest(project, rows, unread, window_txt, budget_chars, repeat_min):
         c = collections.Counter(x["result"] for x in r["tests"])
         if c:
             last = r["tests"][-1]
-            tsum.append(f"- {ref(r)} pass {c['pass']}, fail {c['fail']}, error {c['error']}, background "
-                        f"{c['background']}; last {hhmm(last['t'])} {last['result'].upper()} {last['summary'][:90]}")
-    sections.append((0, "Test runs per session (red runs can be intended: red-first tests, mutation checks)", [], tsum))
+            tsum.append(f"- {ref(r)} pass {c['pass']}, red-intended {c['red-intended']}, unclassified "
+                        f"{c['unclassified']}, background {c['background']}; last {hhmm(last['t'])} "
+                        f"{last['result'].upper()} {last['summary'][:90]}")
+    sections.append((0, "Test runs per session", [], tsum))
     titems = [f"- {ref(r, x['line'])} {hhmm(x['t'])} {x['result'].upper()} `{short(x['cmd'], 100)}`"
               + (f" → {x['summary']}" if x["summary"] else "")
               for r, x in dedupe_tests(tests)]
-    sections.append((4, "Failed test runs", [], titems))
+    sections.append((4, "Unclassified red test runs (intent not shown in the transcript; may still be intended)", [],
+                     titems))
     # reviews
     vitems = []
     for r in rows:
@@ -895,10 +1182,19 @@ def build_digest(project, rows, unread, window_txt, budget_chars, repeat_min):
     tail = []
     if unread:
         tail += ["", "## UNREADABLE"] + [f"- {u['path']}: {u['unreadable']}" for u in unread]
+    sp = extra.get("store_project") or project
+    tags = extra.get("tags") or []
+    tail += ["", "## Proposed acef-note lines (stage 2 writes here; proposals only, never executed)",
+             f"- Store project: `{sp}`. Allowed tags: {', '.join(tags) or 'see tags.txt'} (plus `stack:<x>`, `os:<x>`).",
+             "- Only problems that recur (seen in two or more sessions, or already in the log: `acef-note search "
+             "--text \"...\"`; then propose `--repeat <id>`). Format:",
+             f"  `acef-note add {sp} --tags <tag>[,<tag>] --what \"<what happened>\" --fix \"<proposal>\" "
+             "--cost <n>min --ref <session ref or sha>`",
+             "- proposals: none yet"]
     tail += ["", "## Refs (paths relative to ~/.claude/projects or ~/.codex/sessions)"] + [
         f"- {sid(r)} {REF_RE.sub('', r['path'])}" for r in rows]
 
-    caps = {"Failed test runs": 50, "Other tool failures": 40, "Owner messages": 120, "Subagents": 60,
+    caps = {"Unclassified red test runs": 50, "Finished on the default branch": 200, "Other tool failures": 40, "Owner messages": 120, "Subagents": 60,
             "Codex exec sessions": 90}
     kept = {i: min(len(sec[3]), next((v for k, v in caps.items() if sec[1].startswith(k)), 10 ** 6))
             for i, sec in enumerate(sections)}
@@ -931,8 +1227,8 @@ def build_digest(project, rows, unread, window_txt, budget_chars, repeat_min):
 
 
 # ---------------------------------------------------------------- main
-def local_midnight(d):
-    return dt.datetime(d.year, d.month, d.day).astimezone().timestamp()
+def local_at(d, hour):
+    return dt.datetime(d.year, d.month, d.day, hour).astimezone().timestamp()
 
 
 def main():
@@ -946,12 +1242,15 @@ def main():
     ap.add_argument("--budget-tokens", type=int, default=40000)
     ap.add_argument("--repeat-min", type=int, default=3)
     ap.add_argument("--jobs", type=int, default=min(8, os.cpu_count() or 2))
+    ap.add_argument("--cut-hour", type=int, default=9, help="default window: yesterday <h>:00 to today <h>:00 local")
+    ap.add_argument("--mem-guard-log", default=str(Path.home() / "Library/Logs/mem-guard.log"))
+    ap.add_argument("--no-gh", action="store_true", help="skip gh (git log only)")
     a = ap.parse_args()
     t0 = time.time()
     today = dt.date.today()
-    until = dt.datetime.fromisoformat(a.until).astimezone().timestamp() if a.until else local_midnight(today)
+    until = dt.datetime.fromisoformat(a.until).astimezone().timestamp() if a.until else local_at(today, a.cut_hour)
     since = dt.datetime.fromisoformat(a.since).astimezone().timestamp() if a.since else \
-        local_midnight(today - dt.timedelta(days=1))
+        local_at(today - dt.timedelta(days=1), a.cut_hour)
     if since >= until:
         sys.exit("--since must be before --until")
     label = a.label or dt.datetime.fromtimestamp(until - 1).strftime("%Y-%m-%d")
@@ -979,13 +1278,45 @@ def main():
     for r in rows:
         if r["kind"] != "main":
             r["project"] = project_for(r, proj_of_main.get(Path(r["path"]).parent.parent.name))
+    # touched repos per session and project: cwd (weight 5) and cd / git -C targets
+    roots_by_name = {}
+    touched = collections.defaultdict(collections.Counter)
     for r in rows:
         rc = collections.Counter()
+        for c in {r.get("cwd"), r.get("cmd_cwd"), r.get("meta_cwd")} - {None, ""}:
+            nm, root = repo_info(c)
+            if nm:
+                rc[nm] += 5
+                if root:
+                    roots_by_name.setdefault(nm, root)
         for d_, n in r.get("cd_dirs", {}).items():
-            nm = repo_of(os.path.expanduser(d_))
+            nm, root = repo_info(d_)
             if nm:
                 rc[nm] += n
+                if root:
+                    roots_by_name.setdefault(nm, root)
         r["repos"] = [k for k, _ in rc.most_common(3)]
+        touched[r["project"]].update(rc)
+    git_t0 = time.time()
+    wanted = {roots_by_name[nm] for rc in touched.values() for nm, w in rc.items() if w >= 2 and nm in roots_by_name}
+    from concurrent.futures import ThreadPoolExecutor
+    with ThreadPoolExecutor(max_workers=8) as ex:      # git/gh calls are I/O bound; results land in the cache
+        list(ex.map(lambda rt: finished_in(rt, since, until, not a.no_gh), sorted(wanted)))
+    finished_by = {}
+    for proj, rc in touched.items():
+        fl = []
+        for nm, w in rc.most_common():
+            if w < 2 or nm not in roots_by_name:
+                continue
+            f = dict(finished_in(roots_by_name[nm], since, until, not a.no_gh), name=nm)
+            if f["items"] or f.get("gh") or f["direct_commits"] or f.get("error"):
+                fl.append(f)
+        finished_by[proj] = fl
+    git_s = time.time() - git_t0
+    mem, mem_err = read_memguard(a.mem_guard_log, since, until)
+    notes = read_store(a.store, since, until)
+    aliases = store_aliases(a.store)
+    tags = store_tags(a.store)
     for u in unreadable:
         p = Path(u["path"])
         u["project"] = (proj_of_main.get(p.parent.parent.name) if "subagents" in p.parts else None) or "unknown"
@@ -995,14 +1326,35 @@ def main():
     outdir.mkdir(parents=True, exist_ok=True)
     rows = redact_obj(rows)
     unreadable = redact_obj(unreadable)
+    mem, notes, finished_by = redact_obj(mem), redact_obj(notes), redact_obj(finished_by)
     by = collections.defaultdict(list)
     for r in rows:
         by[r["project"]].append(r)
+    # store project <-> digest: hosts/<p>.json names the repo; else the same name; else a prefix match
+    to_store = {p: aliases.get(p, p) for p in by}
+
+    def digest_for(name):
+        if not name:
+            return None
+        for p in by:
+            if to_store[p] == name or p == name:
+                return p
+        cands = [p for p in by if p.startswith(name) or name.startswith(p)]
+        return cands[0] if len(cands) == 1 else None
+    mem_by, notes_by, mem_rest, notes_rest = collections.defaultdict(list), collections.defaultdict(list), [], []
+    for e in mem:
+        p = digest_for(e["project"]) or digest_for(repo_of(e["cwd"]))
+        (mem_by[p] if p else mem_rest).append(e)
+    for n in notes:
+        p = digest_for(n["store_project"])
+        (notes_by[p] if p else notes_rest).append(n)
     projects = {}
     for p in sorted(by, key=lambda k: -sum(r["active_min"] for r in by[k])):
         prs = by[p]
         unr = [u for u in unreadable if u["project"] == p]
-        text, trimmed = build_digest(p, prs, unr, window_txt, a.budget_tokens * 4, a.repeat_min)
+        text, trimmed = build_digest(p, prs, unr, window_txt, a.budget_tokens * 4, a.repeat_min, extra={
+            "finished": finished_by.get(p, []), "memguard": mem_by.get(p, []), "store": notes_by.get(p, []),
+            "store_project": to_store[p], "tags": tags})
         text = redact(text)
         fname = re.sub(r"[^\w.-]", "_", p) + ".md"
         (outdir / fname).write_text(text, encoding="utf-8")
@@ -1010,17 +1362,30 @@ def main():
             "digest": fname, "digest_chars": len(text), "digest_tokens_est": len(text) // 4,
             "trimmed": {k: f"{x}/{y}" for k, (x, y) in trimmed.items()},
             "sessions": collections.Counter(r["kind"] for r in prs),
-            "active_min_owner": sum(r["active_min"] for r in prs if r["kind"] in ("main", "codex-tui")),
-            "active_min_agents": sum(r["active_min"] for r in prs if r["kind"] in ("subagent", "codex-exec")),
-            "owner_msgs": sum(len(r["human"]) for r in prs),
+            "active_min_owner": sum(r["active_min"] for r in prs if r["kind"] in OWNER_KINDS),
+            "active_min_agents": sum(r["active_min"] for r in prs if r["kind"] in AGENT_KINDS),
+            "owner_msgs": sum(1 for r in prs for h in r["human"] if h["kind"] != "relayed"),
             "corrections_flagged": sum(1 for r in prs for h in r["human"] if h["kind"] == "correction?"),
             "status_asks": sum(1 for r in prs for h in r["human"] if h["kind"] == "status"),
             "fails": sum(len(r["fails"]) for r in prs), "tests": sum(len(r["tests"]) for r in prs),
-            "test_fails": sum(1 for r in prs for x in r["tests"] if x["result"] in ("fail", "error")),
+            "test_unclassified": sum(1 for r in prs for x in r["tests"] if x["result"] == "unclassified"),
+            "test_red_intended": sum(1 for r in prs for x in r["tests"] if x["result"] == "red-intended"),
+            "finished": {f["name"]: sum(1 for i in f["items"] if not i["sync"]) for f in finished_by.get(p, [])},
+            "store_project": to_store[p], "memguard_events": len(mem_by.get(p, [])),
+            "store_entries": len(notes_by.get(p, [])),
             "reviews": sum(len(r["reviews"]) for r in prs),
             "commits": sum(1 for r in prs for x in r["commits"] if x["ok"]),
             "compactions": sum(len(r["compactions"]) for r in prs),
         }
+    if mem_rest or notes_rest or mem_err:
+        lines = ["# Daily digest: machine events and store entries not tied to an active project", ""]
+        if mem_err:
+            lines.append(f"- mem-guard log not read: {mem_err}")
+        lines += [f"- {hhmm(e['t'])} mem-guard {e['action']} {e['size']} project={e['project']} cwd={e['cwd']}"
+                  for e in mem_rest]
+        lines += [f"- {n['id']} ({n['store_project']}) {n['date']} [{n['tags']}] {n['cost']}: {n['what']}"
+                  for n in notes_rest]
+        (outdir / "_other.md").write_text(redact("\n".join(lines) + "\n"), encoding="utf-8")
     orphan = [u for u in unreadable if u["project"] not in by]
     if orphan:
         text = "# Daily digest: unreadable sessions\n\n" + "\n".join(f"- {u['path']}: {u['unreadable']}" for u in orphan) + "\n"
@@ -1029,7 +1394,9 @@ def main():
     index = {
         "window": {"since": since, "until": until, "text": window_txt, "label": label},
         "generated": dt.datetime.now().astimezone().isoformat(timespec="seconds"),
-        "runtime_s": runtime, "parse_s": round(parse_s, 1), "files_scanned": len(jobs), "bytes_scanned": size,
+        "runtime_s": runtime, "parse_s": round(parse_s, 1), "git_s": round(git_s, 1), "files_scanned": len(jobs),
+        "bytes_scanned": size, "memguard": mem, "memguard_error": mem_err, "store_entries": notes,
+        "finished": finished_by,
         "sessions_in_window": len(rows), "unreadable": unreadable, "projects": projects, "sessions": rows,
     }
     (outdir / "extract.json").write_text(json.dumps(index, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")

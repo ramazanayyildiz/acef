@@ -17,6 +17,7 @@ HERE = Path(__file__).resolve().parent
 TOOL = HERE / "acef-daily-extract"
 TMP = Path(os.path.realpath(tempfile.mkdtemp(prefix="acef-daily-extract-test-")))
 CLAUDE, CODEX, STORE = TMP / "claude", TMP / "codex", TMP / "store"
+WORK, MEM = TMP / "work-repo", TMP / "mem-guard.log"   # a repo the coordinator's work lands in; a mem-guard log
 CWD = "/nonexistent-acef-fixture/demo/.worktrees/login-fix"   # removed worktree: project comes from the path pattern
 ENV = {**os.environ, "TZ": "UTC"}
 ok = bad = 0
@@ -66,6 +67,21 @@ def bash(t, tid, cmd, req, ctx=1000):
     return d
 
 
+def say(t, text, req):
+    d = base(t, "assistant")
+    d.update(requestId=req, message={"model": "claude-sonnet-5-5", "id": req, "role": "assistant",
+                                     "content": [{"type": "text", "text": text}]})
+    return d
+
+
+def gitw(*args, at=None):
+    env = {**ENV, "GIT_CONFIG_GLOBAL": "/dev/null"}
+    if at:
+        env["GIT_AUTHOR_DATE"] = env["GIT_COMMITTER_DATE"] = at
+    subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", *args], cwd=WORK, env=env, check=True,
+                   capture_output=True)
+
+
 def result(t, tid, out, err=False):
     d = base(t, "user")
     d.update(message={"role": "user", "content": [{"type": "tool_result", "tool_use_id": tid, "content": out,
@@ -96,6 +112,22 @@ def build():
         result(ts(10, 31), "c1", "[feat/login abc1234] feat: login fix\n 1 file changed"),
         bash(ts(10, 40), "w1", "sleep 600; tail -1 run.log", "rw1", ctx=350000),
         result(ts(10, 50), "w1", "done"),
+        # correction cues: own words only, weak words only in a short reply right after a claim
+        say(ts(10, 51), "The new design is in place.", "s1"),
+        user(ts(10, 52), "renk değişmemiş"),
+        say(ts(10, 53), "The cleanup is done.", "s2"),
+        user(ts(10, 54), "loglar kaldı mı hala"),
+        say(ts(10, 55), "Three questions for you.", "s3"),
+        user(ts(10, 56), "1 evet 2 hayır 3 sonra"),
+        user(ts(10, 57), "<pasted_content id='p1'>Bu yanlış ve hala bozuk, dur</pasted_content> şuna bak"),
+        bash(ts(10, 58), "y1", "ls", "ry1"), result(ts(10, 58), "y1", "a"),
+        user(ts(10, 59), "yine"),
+        # a red-first run the agent announced, then the coordinator working in another repo
+        say(ts(11, 30), "Red-first: this test should fail before the fix.", "s4"),
+        bash(ts(11, 31), "red1", "vendor/bin/phpunit --filter NewRule", "rr1"),
+        result(ts(11, 32), "red1", "FAILURES!\nTests: 1, Assertions: 1, Failures: 1.", err=True),
+        bash(ts(11, 40), "g1", f"cd {WORK} && git status", "rg1"), result(ts(11, 40), "g1", "clean"),
+        bash(ts(11, 41), "g2", f"cd {WORK} && git log -1", "rg2"), result(ts(11, 41), "g2", "x"),
     ]
     agent = base(ts(11, 0), "assistant")
     agent.update(requestId="ra", message={"model": "claude-sonnet-5-5", "id": "ra", "role": "assistant", "content": [
@@ -137,6 +169,34 @@ def build():
            ev(ts(14, 5), {"type": "task_complete", "last_agent_message": "**REQUEST CHANGES**\n\n1. **P2 - one item**"})]
     jl(CODEX / "2026" / "10" / "26" / "rollout-2026-10-26T14-05-00-cx-2.jsonl", cx2)
     jl(CODEX / "2026" / "10" / "26" / "rollout-2026-10-26T14-00-00-broken.jsonl", [], raw=["not json", "{broken"])
+    # a Codex pane a manager agent drives: agent time, not owner time
+    tui = [{"timestamp": ts(15, 0), "type": "session_meta", "payload": {"id": "tui-1", "cwd": CWD,
+                                                                         "originator": "codex-tui"}}]
+    for i in range(2):
+        tui.append(ev(ts(15, 10 * i + 1), {"type": "item_completed", "item": {"type": "UserMessage", "content": [
+            {"type": "text", "text": f"Manager (Claude, w1): continue lane {i}"}]}}))
+        tui.append(ev(ts(15, 10 * i + 5), {"type": "item_completed", "item": {"type": "AgentMessage", "content": [
+            {"type": "text", "text": "working"}]}}))
+    jl(CODEX / "2026" / "10" / "26" / "rollout-2026-10-26T15-00-00-tui-1.jsonl", tui)
+    # the repo: one slice merge and one direct commit on main inside the window
+    WORK.mkdir()
+    gitw("init", "-q", "-b", "main")
+    gitw("commit", "-q", "--allow-empty", "-m", "init", at="2026-10-26T08:00:00Z")
+    gitw("checkout", "-q", "-b", "slice/demo")
+    gitw("commit", "-q", "--allow-empty", "-m", "fix login", at="2026-10-26T08:30:00Z")
+    gitw("checkout", "-q", "main")
+    gitw("merge", "-q", "--no-ff", "slice/demo", "-m", "Merge slice/demo: DEMO-FIX-01 login fix (#12)",
+         at="2026-10-26T09:00:00Z")
+    gitw("commit", "-q", "--allow-empty", "-m", "docs: handoff", at="2026-10-26T09:30:00Z")
+    MEM.write_text("2026-10-26 10:05:00 STOPPED pid 1 (20G = 20480 MB > 16384 MB) project=demo cwd=/x cmd=node --test\n"
+                   "2026-10-20 10:05:00 STOPPED pid 2 (OLD-EVENT) project=demo cwd=/x cmd=node\n")
+    (STORE / "log").mkdir(parents=True)
+    (STORE / "hosts").mkdir()
+    (STORE / "hosts" / "demostore.json").write_text(json.dumps({"repo": "/nonexistent/demo"}))
+    (STORE / "tags.txt").write_text("# closed tags\ntooling\nrunner\n")
+    (STORE / "log" / "demostore.md").write_text(
+        "demostore-1 | 2026-10-26 | tooling | 10min | STORE-IN-WINDOW lesson | fix it | ref\n"
+        "demostore-2 | 2026-10-20 | tooling | 10min | STORE-OLD lesson | fix it | ref\n")
     for f in list(CLAUDE.rglob("*.jsonl")) + list(CODEX.rglob("*.jsonl")):
         os.utime(f, (1_900_000_000, 1_900_000_000))     # mtime after the window start (the prefilter)
 
@@ -153,7 +213,8 @@ def tree_hash(root):
 def run(*extra):
     return subprocess.run([sys.executable, "-I", str(TOOL), "--claude-dir", str(CLAUDE), "--codex-dir", str(CODEX),
                            "--store", str(STORE), "--since", "2026-10-26T00:00", "--until", "2026-10-27T00:00",
-                           "--jobs", "1", *extra], env=ENV, capture_output=True, text=True)
+                           "--jobs", "1", "--mem-guard-log", str(MEM), "--no-gh", *extra], env=ENV,
+                          capture_output=True, text=True)
 
 
 try:
@@ -166,7 +227,8 @@ try:
     md = (out / "demo.md").read_text()
     alltext = "".join(f.read_text() for f in out.iterdir())
     kinds = sorted(s["kind"] for s in idx["sessions"])
-    check("session types", kinds == ["codex-exec", "codex-exec", "main", "subagent"], kinds)
+    check("session types (manager-driven pane is agent time)",
+          kinds == ["codex-exec", "codex-exec", "codex-tui-agent", "main", "subagent"], kinds)
     check("verdict at the head of the message", "REQUEST_CHANGES" in md, md)
     check("project from removed worktree path, subagent inherits", {s["project"] for s in idx["sessions"]} == {"demo"},
           [s["project"] for s in idx["sessions"]])
@@ -177,7 +239,11 @@ try:
           and main["start"] < idx["window"]["since"] <= main["win_start"])
     kinds_h = [h["kind"] for h in main["human"]]
     check("owner messages: correction, status, other; subagent prompt and notifications not counted",
-          kinds_h == ["other", "correction?", "status", "other"], kinds_h)
+          kinds_h == ["other", "correction?", "status", "other", "correction?", "other", "other", "other", "other"],
+          kinds_h)
+    check("weak word counts only as a short reply right after a claim; questions, numbered answers, pasted text "
+          "and replies after tool output do not", "(short reply after a claim)" in md and
+          [h["hits"] for h in main["human"]][4] == ["değişmemiş"], [h["hits"] for h in main["human"]])
     corr = next(h for h in main["human"] if h["kind"] == "correction?")
     check("correction hits", {"hayır", "yanlış"} <= set(corr["hits"]), corr)
     check("interrupt", len(main["interrupts"]) == 1)
@@ -197,6 +263,32 @@ try:
     check("unreadable listed with reason", any("broken" in u["path"] and "parsed as JSON" in u["unreadable"]
                                                for u in idx["unreadable"]) and "broken" in alltext, idx["unreadable"])
     check("inputs untouched", tree_hash(CLAUDE) + tree_hash(CODEX) == before)
+    res = [x["result"] for x in main["tests"]]
+    check("red-first run announced by the agent is red-intended; red without intent is unclassified",
+          res == ["pass", "red-intended"] and "## Unclassified red test runs" in md and "1 failed, 2 passed" in md,
+          (res, md))
+    check("finished evidence from the repo the coordinator worked in", "**work-repo** `main`" in md and
+          "[DEMO-FIX-01] #12 Merge slice/demo" in md and "2 direct commits" in md and "gh: not used" in md, md)
+    check("mem-guard events in the window only", "STOPPED 20G = 20480 MB > 16384 MB project=demo" in md
+          and "OLD-EVENT" not in md, md)
+    check("store entries in the window, mapped through hosts/<p>.json", "STORE-IN-WINDOW" in md and
+          "STORE-OLD" not in md and idx["projects"]["demo"]["store_project"] == "demostore", md)
+    check("proposed acef-note section for stage 2, never executed",
+          "## Proposed acef-note lines (stage 2 writes here; proposals only, never executed)" in md and
+          "acef-note add demostore --tags" in md and "tooling, runner" in md and "- proposals: none yet" in md, md)
+    pane = next(s for s in idx["sessions"] if s["kind"] == "codex-tui-agent")
+    check("agent-driven pane counts as agent time", idx["projects"]["demo"]["active_min_owner"] == main["active_min"]
+          and pane["active_min"] > 0, idx["projects"]["demo"])
+    # default window: yesterday 09:00 to today 09:00 local (TZ=UTC here)
+    p2 = subprocess.run([sys.executable, "-I", str(TOOL), "--claude-dir", str(TMP / "none"), "--codex-dir",
+                         str(TMP / "none"), "--store", str(TMP / "store2"), "--mem-guard-log", str(MEM), "--no-gh"],
+                        env=ENV, capture_output=True, text=True)
+    import datetime as dt
+    today = dt.datetime.now(dt.timezone.utc).date()
+    exp_until = dt.datetime(today.year, today.month, today.day, 9, tzinfo=dt.timezone.utc).timestamp()
+    idx2 = json.loads(next((TMP / "store2" / "daily").glob("*/extract.json")).read_text()) if p2.returncode == 0 else {}
+    check("default window is the rolling 09:00 to 09:00", idx2.get("window", {}).get("until") == exp_until and
+          idx2["window"]["since"] == exp_until - 86400, (p2.stdout + p2.stderr, idx2.get("window")))
     # budget trimming: many distinct failures, tiny budget
     sid = "11111111-2222-3333-4444-555555555555"
     f = CLAUDE / "-nonexistent-acef-fixture-demo" / f"{sid}.jsonl"
