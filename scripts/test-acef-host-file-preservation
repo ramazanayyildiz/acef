@@ -1,0 +1,143 @@
+#!/usr/bin/env node
+// Updates keep host-modified files (owner decision 2026-10-27): install-acef-tools, install-acef-bmad-guard and
+// install-acef-skills replace a file only when the host copy equals what ACEF installed last time; the model routing
+// policy is merged (host values kept, new keys added); legacy records without hashes use the recorded install commit.
+const assert = require("node:assert/strict");
+const cp = require("node:child_process");
+const crypto = require("node:crypto");
+const fs = require("node:fs");
+const os = require("node:os");
+const path = require("node:path");
+
+const root = path.resolve(__dirname, "..");
+const sha = (bytes) => crypto.createHash("sha256").update(bytes).digest("hex");
+const run = (script, args) => cp.execFileSync(process.execPath, [path.join(root, "scripts", script), ...args], {
+  cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"],
+});
+const update = (repo) => run("update-acef-installation", ["--repo", repo]);
+const read = (repo, rel) => fs.readFileSync(path.join(repo, rel), "utf8");
+const write = (repo, rel, text) => fs.writeFileSync(path.join(repo, rel), text);
+const recordPath = (repo) => path.join(repo, "docs", "ai", "ACEF_INSTALLATION.json");
+const record = (repo) => JSON.parse(fs.readFileSync(recordPath(repo), "utf8"));
+const saveRecord = (repo, value) => fs.writeFileSync(recordPath(repo), `${JSON.stringify(value, null, 2)}\n`);
+const source = (rel) => fs.readFileSync(path.join(root, rel), "utf8");
+const committedSource = (rel) => cp.execFileSync("git", ["show", `HEAD:${rel}`], { cwd: root, encoding: "utf8" });
+
+const STATE = ".acef/bin/acef-state.cjs";
+const LIB = ".acef/bin/lib/acef-installation.js";
+const HOOK = ".acef/hooks/acef-bmad-hard-wall.mjs";
+const SKILL = ".claude/skills/acef/SKILL.md";
+const POLICY = ".acef/model-routing-policy.json";
+const dirs = [];
+function freshRepo() {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "acef-host-files-"));
+  dirs.push(dir);
+  cp.execFileSync("git", ["init", "-q", dir]);
+  update(dir);
+  return dir;
+}
+
+try {
+  // 1. A fresh install records the hash of every owned file per component.
+  const repo = freshRepo();
+  const first = record(repo).components;
+  for (const [component, rel] of [["tools", STATE], ["tools", LIB], ["bmadGuard", HOOK], ["skills", SKILL]]) {
+    assert.equal(first[component].files[rel], sha(fs.readFileSync(path.join(repo, rel))), `${component} records ${rel}`);
+  }
+  assert.ok(!first.tools.files[POLICY], "the policy is merged, never hash-owned");
+
+  // 2. Host edits survive an update and are reported; untouched files are refreshed.
+  write(repo, STATE, `${read(repo, STATE)}\n// host gate\n`);
+  write(repo, HOOK, `${read(repo, HOOK)}\n// host hook gate\n`);
+  write(repo, SKILL, `${read(repo, SKILL)}\nHost note.\n`);
+  const olderLib = "// what ACEF installed last time\n";
+  write(repo, LIB, olderLib);
+  const rec = record(repo);
+  rec.components.tools.files[LIB] = sha(olderLib); // simulate an older ACEF copy that the host never touched
+  saveRecord(repo, rec);
+  const out = update(repo);
+  for (const rel of [STATE, HOOK, SKILL]) assert.match(out, new RegExp(`kept host-modified ${rel.replace(/[.]/g, "\\.")}`), rel);
+  assert.match(read(repo, STATE), /\/\/ host gate\n$/);
+  assert.match(read(repo, HOOK), /\/\/ host hook gate\n$/);
+  assert.match(read(repo, SKILL), /Host note\.\n$/);
+  assert.equal(read(repo, LIB), source("scripts/lib/acef-installation.js"), "an unmodified older copy is replaced");
+  const second = record(repo).components;
+  assert.equal(second.tools.files[STATE], first.tools.files[STATE], "a kept file keeps the hash ACEF installed, not the host one");
+  // and a second update still keeps it
+  assert.match(update(repo), /kept host-modified \.acef\/bin\/acef-state\.cjs/);
+  assert.match(read(repo, STATE), /\/\/ host gate\n$/);
+
+  // 3. Model routing policy: host values survive, only new keys are added.
+  const policy = JSON.parse(read(repo, POLICY));
+  policy.providers.openai.models.orchestration = "host-chosen-model";
+  policy.policyId = "host-policy";
+  const removed = Object.keys(policy.providers).find((name) => name !== policy.activeProvider);
+  if (removed) delete policy.providers[removed];
+  write(repo, POLICY, `${JSON.stringify(policy, null, 2)}\n`);
+  const merged = update(repo);
+  const after = JSON.parse(read(repo, POLICY));
+  assert.equal(after.providers.openai.models.orchestration, "host-chosen-model");
+  assert.equal(after.policyId, "host-policy");
+  if (removed) {
+    assert.ok(after.providers[removed], `new key providers.${removed} is added`);
+    assert.match(merged, new RegExp(`merged \\.acef/model-routing-policy\\.json: kept host values, added 1 new key\\(s\\): providers\\.${removed}`));
+  }
+  // an unusable merge leaves the host file untouched
+  write(repo, POLICY, "{\"schema\": \"acef.model-routing-policy.v1\", \"roles\": \"broken\"}\n");
+  assert.match(update(repo), /kept host-modified \.acef\/model-routing-policy\.json \(merged copy invalid/);
+  assert.equal(read(repo, POLICY), "{\"schema\": \"acef.model-routing-policy.v1\", \"roles\": \"broken\"}\n");
+
+  // 4. Legacy record (no hashes): the baseline is the file at the recorded install commit.
+  const legacy = freshRepo();
+  const head = cp.execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim();
+  const stripHashes = (repoDir, commit) => {
+    const value = record(repoDir);
+    for (const component of Object.values(value.components)) {
+      delete component.files;
+      component.sourceCommit = commit;
+    }
+    value.acefVersion.sourceCommit = commit;
+    saveRecord(repoDir, value);
+  };
+  write(legacy, STATE, committedSource("scripts/acef-state"));          // exactly what ACEF shipped at that commit
+  write(legacy, HOOK, `${committedSource("claude-plugins/acef-bmad-guard/hooks/acef-bmad-hard-wall.mjs")}\n// host\n`);
+  stripHashes(legacy, head);
+  const legacyOut = update(legacy);
+  assert.equal(read(legacy, STATE), source("scripts/acef-state"), "unmodified legacy copy is replaced");
+  assert.match(legacyOut, /kept host-modified \.acef\/hooks\/acef-bmad-hard-wall\.mjs/);
+  assert.match(read(legacy, HOOK), /\/\/ host\n$/);
+  assert.ok(!record(legacy).components.bmadGuard.files[HOOK] || record(legacy).components.bmadGuard.files[HOOK] !== sha(fs.readFileSync(path.join(legacy, HOOK))),
+    "the host copy's hash is never recorded as ACEF-installed");
+
+  // 5. Legacy record whose install commit is unknown: differing files are kept, never overwritten blind.
+  const unknown = freshRepo();
+  write(unknown, STATE, "// some host copy\n");
+  stripHashes(unknown, "0".repeat(40));
+  assert.match(update(unknown), /kept host copy \.acef\/bin\/acef-state\.cjs \(install commit 000000000000 not available/);
+  assert.equal(read(unknown, STATE), "// some host copy\n");
+
+  // 6. Legacy record made from another ACEF checkout (a fork): the baseline comes from that checkout, also for the
+  //    guard and skills installers that run after install-acef-tools has rewritten the record's source path.
+  const fork = fs.mkdtempSync(path.join(os.tmpdir(), "acef-host-files-fork-"));
+  dirs.push(fork);
+  cp.execFileSync("git", ["clone", "-q", "--shared", root, fork]);
+  const forkGit = (...args) => cp.execFileSync("git", args, { cwd: fork, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
+  const forkHook = "claude-plugins/acef-bmad-guard/hooks/acef-bmad-hard-wall.mjs";
+  fs.appendFileSync(path.join(fork, forkHook), "\n// fork-only line\n");
+  forkGit("-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "commit", "-qam", "fork change");
+  const forkCommit = forkGit("rev-parse", "HEAD");
+  const forked = freshRepo();
+  write(forked, HOOK, fs.readFileSync(path.join(fork, forkHook), "utf8"));
+  stripHashes(forked, forkCommit);
+  const forkedRecord = record(forked);
+  forkedRecord.acefVersion.sourcePath = fork;
+  saveRecord(forked, forkedRecord);
+  fs.rmSync(path.join(forked, ".acef", "local"), { recursive: true, force: true });
+  const forkOut = update(forked);
+  assert.doesNotMatch(forkOut, /kept[^\n]*acef-bmad-hard-wall\.mjs/, "an unmodified fork copy is replaced");
+  assert.equal(read(forked, HOOK), source(forkHook));
+
+  console.log("acef host file preservation tests passed");
+} finally {
+  for (const dir of dirs) fs.rmSync(dir, { recursive: true, force: true });
+}

@@ -1,0 +1,283 @@
+#!/usr/bin/env node
+"use strict";
+
+// Canonical ACEF root discovery: an explicit .acef/CANONICAL_ROOT marker at a git toplevel makes that
+// toplevel the ACEF root for every path inside it (nested historical installs/records are ignored), and a
+// marked root never claims paths inside an independent inner git repo. Without the marker, discovery keeps
+// its historical first-match behaviour.
+
+const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const os = require("node:os");
+const path = require("node:path");
+const cp = require("node:child_process");
+const { pathToFileURL } = require("node:url");
+
+const sourceRoot = path.resolve(__dirname, "..");
+const hardWallPath = path.join(sourceRoot, "claude-plugins", "acef-bmad-guard", "hooks", "acef-bmad-hard-wall.mjs");
+const dispatcher = path.join(sourceRoot, "claude-plugins", "acef-bmad-guard", "hooks", "acef-bmad-dispatcher.mjs");
+const opencodePlugin = path.join(sourceRoot, "opencode-plugins", "acef-bmad-guard", "acef-bmad-hard-wall.js");
+const updater = path.join(sourceRoot, "scripts", "update-acef-installation");
+
+const temps = [];
+function tempDir(prefix) {
+  const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), prefix)));
+  temps.push(dir);
+  return dir;
+}
+
+function write(filePath, text) {
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  fs.writeFileSync(filePath, text);
+}
+
+function gitInit(dir) {
+  fs.mkdirSync(dir, { recursive: true });
+  cp.execFileSync("git", ["init", "-q", dir], { stdio: ["ignore", "pipe", "pipe"] });
+}
+
+const fakeHome = tempDir("acef-canonical-home-");
+const hookLog = path.join(tempDir("acef-canonical-log-"), "hook.log");
+
+function cleanEnv(extra = {}) {
+  const env = { ...process.env, HOME: fakeHome, ACEF_FAKE_HOOK_LOG: hookLog, ...extra };
+  for (const name of Object.keys(env)) {
+    if (/^(CLAUDE_PROJECT_DIR|CODEX_PROJECT_DIR|OPENCODE_PROJECT_DIR|ACEF_BMAD_WORKER|ACEF_ROLE|ACEF_WORKER_ID|CLAUDE_AGENT_NAME|CLAUDE_SUBAGENT_NAME|OPENCODE_AGENT_NAME|AGENT_NAME)$/.test(name)) {
+      delete env[name];
+    }
+  }
+  return env;
+}
+
+function fakeHook(label) {
+  return `import fs from "node:fs";
+if (process.env.ACEF_FAKE_HOOK_LOG) fs.appendFileSync(process.env.ACEF_FAKE_HOOK_LOG, ${JSON.stringify(`${label}\n`)});
+process.stdout.write(JSON.stringify({ hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "allow" }, systemMessage: ${JSON.stringify(`LOCAL_HOOK:${label}`)} }));
+`;
+}
+
+// root (git, ACEF active) > app/ (historical install + completed record) and root/acef (independent repo).
+function layout({ canonical }) {
+  const root = tempDir("acef-canonical-root-");
+  gitInit(root);
+  if (canonical) {
+    write(path.join(root, ".acef", "CANONICAL_ROOT"), `${JSON.stringify({ schema: "acef.canonical-root.v1" })}\n`);
+  }
+  write(path.join(root, ".acef", "hooks", "acef-bmad-hard-wall.mjs"), fakeHook("root"));
+  write(path.join(root, "docs", "ai", "ACEF_ACTIVE_RUN.json"), `${JSON.stringify({ status: "active" })}\n`);
+  write(path.join(root, "app", "docs", "ai", "ACEF_ACTIVE_RUN.json"), `${JSON.stringify({ status: "completed" })}\n`);
+  write(path.join(root, "app", ".acef", "hooks", "acef-bmad-hard-wall.mjs"), fakeHook("app"));
+  write(path.join(root, "app", "x.php"), "<?php\n");
+  gitInit(path.join(root, "acef"));
+  write(path.join(root, "acef", "scripts", "y"), "y\n");
+  write(path.join(root, "acef", "tests", "y.test.js"), "y\n");
+  return root;
+}
+
+function runNode(script, payload, env = {}) {
+  const result = cp.spawnSync(process.execPath, [script], {
+    input: JSON.stringify(payload),
+    encoding: "utf8",
+    env: cleanEnv(env),
+  });
+  if (result.status !== 0) throw new Error(`${path.basename(script)} exited ${result.status}: ${result.stderr}`);
+  const parsed = JSON.parse(String(result.stdout || "").trim());
+  return {
+    decision: parsed?.hookSpecificOutput?.permissionDecision || "none",
+    message: parsed?.systemMessage || "",
+  };
+}
+
+function hardWall(payload) {
+  return runNode(hardWallPath, payload);
+}
+
+function dispatcherHook(payload) {
+  fs.rmSync(hookLog, { force: true });
+  const decision = runNode(dispatcher, payload);
+  const log = fs.existsSync(hookLog) ? fs.readFileSync(hookLog, "utf8").trim() : "";
+  return { ...decision, hook: log || "none" };
+}
+
+async function opencodeHook(directory, toolInput) {
+  fs.rmSync(hookLog, { force: true });
+  const saved = { ...process.env };
+  const env = cleanEnv();
+  for (const name of Object.keys(process.env)) if (!(name in env)) delete process.env[name];
+  Object.assign(process.env, env);
+  try {
+    const { AcefBmadGuard } = await import(`${pathToFileURL(opencodePlugin).href}?t=${Date.now()}`);
+    const guard = await AcefBmadGuard({ directory });
+    await guard["tool.execute.before"]({ tool: "write" }, { args: toolInput });
+  } finally {
+    for (const name of Object.keys(process.env)) if (!(name in saved)) delete process.env[name];
+    Object.assign(process.env, saved);
+  }
+  return fs.existsSync(hookLog) ? fs.readFileSync(hookLog, "utf8").trim() : "none";
+}
+
+const results = [];
+async function scenario(label, fn) {
+  try {
+    await fn();
+    results.push({ label, ok: true });
+    console.log(`PASS ${label}`);
+  } catch (error) {
+    results.push({ label, ok: false });
+    console.log(`FAIL ${label}: ${error.message}`);
+  }
+}
+
+function isRunAuthorizationDeny(result) {
+  return result.decision === "deny" && /^ACEF run authorization/.test(result.message);
+}
+
+(async () => {
+  try {
+    const marked = layout({ canonical: true });
+    const legacy = layout({ canonical: false });
+    const outside = tempDir("acef-canonical-outside-");
+    const missing = path.join(os.tmpdir(), `acef-canonical-missing-${process.pid}-${Date.now()}`, "deep", "x.php");
+
+    // A: a file under app/ resolves to the canonical root: root's active run governs, root hook is chosen.
+    await scenario("A hard-wall: app/x.php uses canonical root active run", () => {
+      const result = hardWall({ tool_name: "Write", tool_input: { file_path: path.join(marked, "app", "x.php"), content: "x" } });
+      assert.ok(isRunAuthorizationDeny(result), `expected root active-run authorization deny, got ${JSON.stringify(result)}`);
+    });
+    await scenario("A dispatcher: app/x.php selects root/.acef/hooks", () => {
+      const result = dispatcherHook({ tool_name: "Write", tool_input: { file_path: path.join(marked, "app", "x.php") } });
+      assert.equal(result.hook, "root");
+    });
+    await scenario("A opencode: directory app/ selects root/.acef/hooks", async () => {
+      assert.equal(await opencodeHook(path.join(marked, "app"), { filePath: path.join(marked, "app", "x.php") }), "root");
+    });
+
+    // B: cwd app/ with no file path resolves to the canonical root.
+    await scenario("B hard-wall: cwd app/ uses canonical root active run", () => {
+      const result = hardWall({ tool_name: "Agent", cwd: path.join(marked, "app"), tool_input: { prompt: "x" } });
+      assert.ok(isRunAuthorizationDeny(result), `expected root active-run authorization deny, got ${JSON.stringify(result)}`);
+    });
+    await scenario("B dispatcher: cwd app/ selects root/.acef/hooks", () => {
+      const result = dispatcherHook({ tool_name: "Agent", cwd: path.join(marked, "app"), tool_input: { prompt: "x" } });
+      assert.equal(result.hook, "root");
+    });
+
+    // C: an independent inner repo is never claimed by the outer canonical root.
+    await scenario("C hard-wall: inner repo path is not governed by outer root", () => {
+      const inner = path.join(marked, "acef");
+      const result = hardWall({ tool_name: "Write", cwd: inner, tool_input: { file_path: path.join(inner, "tests", "y.test.js"), content: "x" } });
+      assert.deepEqual(result, { decision: "allow", message: "" });
+    });
+    await scenario("C dispatcher: inner repo path finds no hook", () => {
+      const inner = path.join(marked, "acef");
+      const result = dispatcherHook({ tool_name: "Write", cwd: inner, tool_input: { file_path: path.join(inner, "scripts", "y") } });
+      assert.equal(result.hook, "none");
+      assert.deepEqual([result.decision, result.message], ["allow", ""]);
+    });
+    await scenario("C opencode: inner repo directory finds no hook", async () => {
+      const inner = path.join(marked, "acef");
+      assert.equal(await opencodeHook(inner, { filePath: path.join(inner, "scripts", "y") }), "none");
+    });
+
+    await scenario("C mixed cwd: outer canonical root never claims an inner Git file", async () => {
+      const inner = path.join(marked, "acef");
+      const payload = { tool_name: "Write", cwd: marked, tool_input: { file_path: path.join(inner, "tests", "y.test.js"), content: "x" } };
+      assert.deepEqual(hardWall(payload), { decision: "allow", message: "" });
+      assert.equal(dispatcherHook(payload).hook, "none");
+      assert.equal(await opencodeHook(marked, payload.tool_input), "none");
+      write(path.join(inner, ".acef", "hooks", "acef-bmad-hard-wall.mjs"), fakeHook("inner"));
+      assert.equal(dispatcherHook(payload).hook, "inner");
+      assert.equal(await opencodeHook(marked, payload.tool_input), "inner");
+    });
+
+    // D: invalid or outside targets have no root.
+    await scenario("D hard-wall: nonexistent path, outside dir and HOME have no root", () => {
+      assert.deepEqual(hardWall({ tool_name: "Write", cwd: path.dirname(missing), tool_input: { file_path: missing, content: "x" } }), { decision: "allow", message: "" });
+      assert.deepEqual(hardWall({ tool_name: "Write", cwd: outside, tool_input: { file_path: path.join(outside, "app", "x.php"), content: "x" } }), { decision: "allow", message: "" });
+      gitInit(fakeHome);
+      write(path.join(fakeHome, ".acef", "CANONICAL_ROOT"), "{}\n");
+      write(path.join(fakeHome, "docs", "ai", "ACEF_ACTIVE_RUN.json"), `${JSON.stringify({ status: "active" })}\n`);
+      assert.deepEqual(hardWall({ tool_name: "Write", cwd: fakeHome, tool_input: { file_path: path.join(fakeHome, "app", "x.php"), content: "x" } }), { decision: "allow", message: "" });
+    });
+    await scenario("D dispatcher: nonexistent path, outside dir and HOME find no hook", () => {
+      write(path.join(fakeHome, ".acef", "hooks", "acef-bmad-hard-wall.mjs"), fakeHook("home"));
+      for (const [cwd, file] of [[path.dirname(missing), missing], [outside, path.join(outside, "x.php")], [fakeHome, path.join(fakeHome, "x.php")]]) {
+        const result = dispatcherHook({ tool_name: "Write", cwd, tool_input: { file_path: file } });
+        assert.equal(result.hook, "none", `${file}`);
+      }
+    });
+
+    // E: without .acef/CANONICAL_ROOT the historical first-match behaviour is unchanged.
+    await scenario("E hard-wall: no marker keeps first match (app/ completed record shadows root)", () => {
+      const result = hardWall({ tool_name: "Write", tool_input: { file_path: path.join(legacy, "app", "x.php"), content: "x" } });
+      assert.deepEqual(result, { decision: "allow", message: "" });
+    });
+    await scenario("E hard-wall: no marker keeps crossing into an inner repo (historical)", () => {
+      const inner = path.join(legacy, "acef");
+      const result = hardWall({ tool_name: "Write", cwd: inner, tool_input: { file_path: path.join(inner, "tests", "y.test.js"), content: "x" } });
+      assert.ok(isRunAuthorizationDeny(result), `expected historical outer-root governance, got ${JSON.stringify(result)}`);
+    });
+    await scenario("E dispatcher: no marker keeps first match (app/ hook)", () => {
+      assert.equal(dispatcherHook({ tool_name: "Write", tool_input: { file_path: path.join(legacy, "app", "x.php") } }).hook, "app");
+      assert.equal(dispatcherHook({ tool_name: "Write", cwd: path.join(legacy, "acef"), tool_input: { file_path: path.join(legacy, "acef", "scripts", "y") } }).hook, "root");
+    });
+    await scenario("E opencode: no marker keeps first match (app/ hook)", async () => {
+      assert.equal(await opencodeHook(path.join(legacy, "app"), {}), "app");
+    });
+
+    // Invalid canonical configuration must fail closed before historical app records/hooks can win.
+    for (const [label, content] of [
+      ["malformed JSON", "{"],
+      ["wrong schema", JSON.stringify({ schema: "other" })],
+      ["redirect outside", JSON.stringify({ schema: "acef.canonical-root.v1", root: "../../outside" })],
+      ["absolute target", JSON.stringify({ schema: "acef.canonical-root.v1", target: outside })],
+    ]) {
+      await scenario(`G invalid marker ${label}: hard-wall, dispatcher and OpenCode deny`, async () => {
+        const root = layout({ canonical: true });
+        write(path.join(root, ".acef", "CANONICAL_ROOT"), content);
+        const payload = { tool_name: "Write", cwd: path.join(root, "app"), tool_input: { file_path: path.join(root, "app", "x.php"), content: "x" } };
+        for (const result of [hardWall(payload), dispatcherHook(payload)]) {
+          assert.equal(result.decision, "deny", JSON.stringify(result));
+          assert.match(result.message, /canonical root/i);
+        }
+        await assert.rejects(opencodeHook(path.join(root, "app"), payload.tool_input), /canonical root/i);
+      });
+    }
+    await scenario("H linked worktree .git file uses its own canonical root", async () => {
+      const main = tempDir("acef-canonical-worktree-main-");
+      gitInit(main);
+      cp.execFileSync("git", ["-C", main, "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "commit", "--allow-empty", "-qm", "fixture"]);
+      const root = path.join(tempDir("acef-canonical-worktree-parent-"), "linked");
+      cp.execFileSync("git", ["-C", main, "worktree", "add", "--detach", root], { stdio: "pipe" });
+      assert.ok(fs.statSync(path.join(root, ".git")).isFile());
+      write(path.join(root, ".acef", "CANONICAL_ROOT"), JSON.stringify({ schema: "acef.canonical-root.v1" }));
+      write(path.join(root, ".acef", "hooks", "acef-bmad-hard-wall.mjs"), fakeHook("linked"));
+      write(path.join(root, "docs", "ai", "ACEF_ACTIVE_RUN.json"), JSON.stringify({ status: "active" }));
+      write(path.join(root, "app", "docs", "ai", "ACEF_ACTIVE_RUN.json"), JSON.stringify({ status: "completed" }));
+      write(path.join(root, "app", ".acef", "hooks", "acef-bmad-hard-wall.mjs"), fakeHook("old-app"));
+      const payload = { tool_name: "Write", cwd: path.join(root, "app"), tool_input: { file_path: path.join(root, "app", "x.php"), content: "x" } };
+      assert.ok(isRunAuthorizationDeny(hardWall(payload)));
+      assert.equal(dispatcherHook(payload).hook, "linked");
+      assert.equal(await opencodeHook(path.join(root, "app"), payload.tool_input), "linked");
+    });
+
+    // F: the updater writes the canonical marker at each target it installs.
+    await scenario("F update-acef-installation writes .acef/CANONICAL_ROOT at --repo", () => {
+      const target = tempDir("acef-canonical-install-");
+      gitInit(target);
+      write(path.join(target, "package.json"), `${JSON.stringify({ private: true }, null, 2)}\n`);
+      write(path.join(target, "AGENTS.md"), "# test\n");
+      cp.execFileSync(process.execPath, [updater, "--repo", target], { encoding: "utf8", env: cleanEnv(), stdio: ["ignore", "pipe", "pipe"] });
+      const markerPath = path.join(target, ".acef", "CANONICAL_ROOT");
+      assert.ok(fs.existsSync(markerPath), "marker missing");
+      assert.deepEqual(JSON.parse(fs.readFileSync(markerPath, "utf8")), { schema: "acef.canonical-root.v1" });
+    });
+  } finally {
+    for (const dir of temps) fs.rmSync(dir, { recursive: true, force: true });
+  }
+
+  const failed = results.filter((result) => !result.ok);
+  console.log(`${results.length - failed.length}/${results.length} scenarios passed`);
+  if (failed.length) process.exit(1);
+  console.log("ACEF canonical root discovery tests passed");
+})();

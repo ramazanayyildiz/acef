@@ -2,7 +2,7 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const { validateSkillMetadata } = require("./lib/acef-skill-metadata");
-const { writeInstallationManifest } = require("./lib/acef-installation");
+const { createOwnedFileWriter, writeInstallationManifest } = require("./lib/acef-installation");
 
 const repoRoot = path.resolve(__dirname, "..");
 const sourceSkillsDir = path.join(repoRoot, "skills");
@@ -87,11 +87,31 @@ function parseArgs(argv) {
   return opts;
 }
 
-function copyDir(source, target) {
+function sourceFiles(dir, base = dir) {
+  const result = [];
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
+    const filePath = path.join(dir, entry.name);
+    if (entry.isDirectory()) result.push(...sourceFiles(filePath, base));
+    else if (entry.isFile()) result.push(path.relative(base, filePath));
+  }
+  return result;
+}
+
+// File by file through the owned-file writer (no more rm -rf of the skill folder): a host-modified file is kept and
+// reported, files ACEF stopped shipping are removed only when unmodified, and host-added files are left alone.
+function copySkill(skill, targetBase, writer) {
+  const source = path.join(sourceSkillsDir, skill);
   if (!fs.existsSync(source)) throw new Error(`Skill source not found: ${source}`);
-  fs.rmSync(target, { recursive: true, force: true });
-  fs.mkdirSync(path.dirname(target), { recursive: true });
-  fs.cpSync(source, target, { recursive: true });
+  const toPosix = (value) => value.split(path.sep).join("/");
+  const prefix = `${toPosix(path.join(targetBase, skill))}/`;
+  const written = [];
+  for (const file of sourceFiles(source)) {
+    const target = `${prefix}${toPosix(file)}`;
+    const mode = fs.statSync(path.join(source, file)).mode & 0o777;
+    writer.write(target, fs.readFileSync(path.join(source, file)), { mode, sourceRel: toPosix(path.join("skills", skill, file)) });
+    written.push(target);
+  }
+  writer.removeStale(prefix, written);
 }
 
 function commandBody(skill) {
@@ -111,12 +131,10 @@ User request:
 `;
 }
 
-function installOpenCodeCommands(repo, skills) {
+function installOpenCodeCommands(repo, skills, writer) {
   const commandDir = path.join(repo, ".opencode", "commands");
-  fs.mkdirSync(commandDir, { recursive: true });
   for (const skill of skills) {
-    const file = path.join(commandDir, `${skill}.md`);
-    fs.writeFileSync(file, commandBody(skill));
+    writer.write(`.opencode/commands/${skill}.md`, commandBody(skill), { generated: true });
   }
   console.log(`Installed ${skills.length} OpenCode command(s): ${commandDir}`);
 }
@@ -153,6 +171,7 @@ for (const skill of skills) {
 }
 
 const skillsDirs = {};
+const writer = createOwnedFileWriter(opts.repo, repoRoot, "skills");
 for (const tool of tools) {
   const relativeBase = opts.skillsDir ? opts.skillsDir : path.join(...toolSkillDirs[tool]);
   if (path.isAbsolute(relativeBase) || relativeBase.split(/[\\/]/).includes("..")) {
@@ -161,17 +180,19 @@ for (const tool of tools) {
   skillsDirs[tool] = relativeBase.split(path.sep).join("/");
   const targetBase = path.join(opts.repo, relativeBase);
   for (const skill of skills) {
-    copyDir(path.join(sourceSkillsDir, skill), path.join(targetBase, skill));
+    copySkill(skill, relativeBase, writer);
   }
   console.log(`Installed ${skills.length} ACEF skill(s) for ${tool}: ${targetBase}`);
   if (tool === "opencode") {
-    installOpenCodeCommands(opts.repo, skills);
+    installOpenCodeCommands(opts.repo, skills, writer);
   }
 }
+const { files } = writer.finish("install-acef-skills");
 console.log(`Updated ACEF installation manifest: ${writeInstallationManifest(opts.repo, repoRoot, "skills", {
   tools,
   skills,
   skillsDirs,
   reviewLenses: opts.reviewLenses,
   allCore: opts.allCore,
+  files,
 }, opts.profile || null)}`);

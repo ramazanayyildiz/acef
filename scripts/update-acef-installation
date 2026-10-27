@@ -2,7 +2,7 @@
 const cp = require("node:child_process");
 const fs = require("node:fs");
 const path = require("node:path");
-const { readCommittedManifest, readInstallationManifest, rewriteInstallationUpdateCommand } = require("./lib/acef-installation");
+const { readCommittedManifest, readInstallationManifest, rewriteInstallationUpdateCommand, writeCanonicalRootMarker } = require("./lib/acef-installation");
 
 const defaultSourceRoot = path.resolve(__dirname, "..");
 
@@ -18,6 +18,10 @@ Refreshes a target repo from this ACEF checkout:
   2. repo-local ACEF skills for Codex, Claude, and OpenCode
   3. repo-local BMAD hard-wall guard
   4. docs/ai/ACEF_INSTALLATION.json source/version stamp
+  5. .acef/CANONICAL_ROOT explicit portable root marker
+
+A file the host changed since ACEF installed it is kept and reported ("kept host-modified <path>"), never overwritten;
+.acef/model-routing-policy.json is merged (host values kept, only new keys added).
 
 The stamp records this ACEF checkout path, commit, branch, dirty/clean state, installed components, and the update command.`);
 }
@@ -76,11 +80,12 @@ function resolveSourceRoot(targetRepo) {
   return sourcePath;
 }
 
-function run(sourceRoot, script, args) {
+function run(sourceRoot, script, args, env = {}) {
   const output = cp.execFileSync(process.execPath, [path.join(sourceRoot, "scripts", script), ...args], {
     cwd: sourceRoot,
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"],
+    env: { ...process.env, ...env },
   });
   process.stdout.write(output);
 }
@@ -99,11 +104,16 @@ function targetWorktrees(repo, allWorktrees) {
 
 // Re-apply exactly what was selected before (owner decision 2026-10-25): a selective install must never silently
 // grow into a full one. A record without a profile is a legacy full install and keeps the old behaviour.
+// Host-modified files are kept (owner decision 2026-10-27; see createOwnedFileWriter in lib/acef-installation.js). The
+// first installer rewrites the record's source path, so the checkout that made the previous install is passed on: a
+// legacy record without file hashes reads its baseline from that checkout at the recorded commit.
 function updateTarget(sourceRoot, targetRepo, opts) {
   const record = readCommittedManifest(targetRepo) || {};
+  const previousSource = readInstallationManifest(targetRepo)?.acefVersion?.sourcePath;
+  const env = previousSource ? { ACEF_PREVIOUS_SOURCE_PATH: previousSource } : {};
   const profile = opts.profile || record.profile || "full";
   const recorded = record.components?.skills || {};
-  if (profile !== "slice") run(sourceRoot, "install-acef-tools", ["--repo", targetRepo]);
+  if (profile !== "slice") run(sourceRoot, "install-acef-tools", ["--repo", targetRepo], env);
   const skillArgs = ["--repo", targetRepo, "--profile", profile];
   const tools = recorded.tools && recorded.tools.length ? recorded.tools : null;
   if (tools && !opts.profile) for (const tool of tools) skillArgs.push("--tool", tool);
@@ -115,14 +125,16 @@ function updateTarget(sourceRoot, targetRepo, opts) {
   }
   if (opts.reviewLenses || recorded.reviewLenses === true) skillArgs.push("--review-lenses");
   if (opts.allCore || recorded.allCore === true) skillArgs.push("--all-core");
-  run(sourceRoot, "install-acef-skills", skillArgs);
+  run(sourceRoot, "install-acef-skills", skillArgs, env);
   if (profile === "slice" || record.components?.sliceKit) {
     run(sourceRoot, "install-acef-slice-kit", ["--repo", targetRepo]);
   }
   if (profile === "full") {
     const guardArgs = ["--repo", targetRepo];
     if (opts.globalDispatcher) guardArgs.push("--global-dispatcher");
-    run(sourceRoot, "install-acef-bmad-guard", guardArgs);
+    run(sourceRoot, "install-acef-bmad-guard", guardArgs, env);
+    // The hard-wall guard reads this marker to bind discovery to the owning repository.
+    writeCanonicalRootMarker(targetRepo);
   }
   rewriteInstallationUpdateCommand(targetRepo, sourceRoot, { allWorktrees: opts.allWorktrees });
   console.log(`UPDATED_WORKTREE ${targetRepo}`);

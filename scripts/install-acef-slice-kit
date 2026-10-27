@@ -87,7 +87,8 @@ function main() {
       // host-edited: it differs from both what ACEF installed last time and what ACEF would install now
       if (current !== next && current !== previousHashes[item.to]) {
         kept.push(item.to);
-        files[item.to] = previousHashes[item.to] || current;
+        // Record only a hash ACEF installed; recording the host copy would let the next update overwrite it.
+        if (previousHashes[item.to]) files[item.to] = previousHashes[item.to];
         continue;
       }
     }
@@ -104,7 +105,7 @@ function main() {
     console.log(`Created host config (edit it for this project): ${item.to}`);
   }
   for (const file of kept) console.log(`KEPT_HOST_EDIT ${file} (differs from the ACEF copy; merge by hand)`);
-  console.log(`Installed Slice lane kit: ${Object.keys(files).length - kept.length} file(s) written, ${kept.length} kept`);
+  console.log(`Installed Slice lane kit: ${p.owned.length - kept.length} file(s) written, ${kept.length} kept`);
   const sorted = Object.fromEntries(Object.entries(files).sort(([a], [b]) => a.localeCompare(b)));
   console.log(`Updated ACEF installation manifest: ${writeInstallationManifest(opts.repo, sourceRoot, "sliceKit", {
     templatesDir: p.templatesDir,
