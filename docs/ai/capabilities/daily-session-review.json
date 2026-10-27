@@ -1,0 +1,46 @@
+{
+  "capabilityId": "daily-session-review",
+  "requestedIntent": "Owner request 2026-10-27 (Ram): a daily review, separate from the weekly retro, that reads what happened in the agent sessions (what finished, what dragged on, where agents got stuck, what went well, what to look at first tomorrow). It never changes rules; it reports and carries repeating problems to the weekly retro. Stage 1 is a deterministic extractor of signals from Claude Code and Codex transcripts; stage 2 is one model pass per project over the digest.",
+  "status": "wired",
+  "requiredLayers": [
+    "docs",
+    "cli",
+    "tests"
+  ],
+  "implementedLayers": {
+    "docs": [
+      "CHANGELOG.md#Unreleased — Daily session review: stage 1 ready for the daily run (2026-10-27)",
+      "CHANGELOG.md#Unreleased — Daily session review: stage-1 extractor (pilot) (2026-10-27)"
+    ],
+    "cli": [
+      "scripts/acef-daily-extract"
+    ],
+    "tests": [
+      "scripts/test-acef-daily-extract",
+      ".github/workflows/validate.yml"
+    ]
+  },
+  "limitations": [
+    "Redaction is line-level for secret context and over-redacts on purpose: a secret value with no keyword, marker or known token shape (for example a bare password in a file name) is not recognised.",
+    "Keyword matching follows Python's re.IGNORECASE: lookalike letters from other scripts (for example a Cyrillic o in 'token') are not recognised.",
+    "Stage 2 runs outside ACEF: a daily Codex automation (gpt-6.1-sol, medium) with a prompt the coordinator owns; no method page yet.",
+    "Correction hints are heuristics: about 23 % of flags were false on 25-27 Oct (coordinator's labels), and corrections without a keyword are missed.",
+    "Finished evidence reads local refs only (no fetch), so it is as fresh as each repo's last fetch; gh is optional.",
+    "Test intent is read from the command and the agent's preceding words; red runs without stated intent stay unclassified.",
+    "Codex exec sessions are not linked to the Claude session that started them; Claude subagents are linked by folder.",
+    "Proposed acef-note lines are never executed by the tool; the coordinator runs them after the owner's OK."
+  ],
+  "evidence": [
+    {
+      "layer": "tests",
+      "ref": "scripts/test-acef-daily-extract",
+      "note": "2026-10-27: 50 checks passed on synthetic fixtures (no real transcript content): a property test (207 secrets, 104 forms incl. multiline YAML headers, tags, anchors, flow mappings, keyword lines at every position inside a block, and dotenv, every input field, no 6-char substring written), a key/value walk of extract.json, a linear-time test (29 adversarial 256 KB families each under 0.2 s, 10 MB fields under 1 s), an IGNORECASE differential test with Unicode case folds, a bounding-cut invariant (120 fields, no line the full-text pass redacts survives) and the field cap; each review regression fails on the commit before its fix; test-acef-detect 195 and test-acef-retro 49 also pass under python3."
+    },
+    {
+      "layer": "cli",
+      "ref": "~/CODE/acef-feedback/daily/2026-10-27/",
+      "note": "2026-10-27: pilot day after the final review round, 615 files, 3.8 GB, 531 sessions in about 20 s under load; 0 unreadable; scan of the written output finds no email, key block, known token prefix, JWT, secret-context value, URL credential or -p database password."
+    }
+  ],
+  "createdAt": "2026-10-27"
+}

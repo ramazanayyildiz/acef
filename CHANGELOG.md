@@ -7,6 +7,188 @@ proven, or installed.
 Update this file in the same PR whenever ACEF itself gains or changes a flow, gate, validator, hook, skill, installer behavior, workflow,
 or evidence contract. Do not use it to claim implementation status; link to the capability record for that.
 
+## Unreleased — Daily session review: stage 1 ready for the daily run (2026-10-27)
+
+Why: Ram approved the daily review after the pilot (2026-10-27). It runs every day at 09:00 as a Codex automation:
+stage 1 is `scripts/acef-daily-extract`, stage 2 is Codex on gpt-6.1-sol, medium effort, with a prompt the coordinator
+writes. The pilot showed what stage 1 lacked: 21 of 30 correction flags were false; "finished" needed `git log`/`gh` by
+hand in every project; red-first and mutation runs were counted as failures; a coordinator folder hid the repos its work
+landed in; Manager-driven Codex panes counted as 99 owner hours; machine incidents and store entries were not read.
+- **Window:** default is rolling, yesterday 09:00 to today 09:00 local (`--cut-hour`); `--since/--until` kept.
+- **Correction hint** on the owner's own words only: pasted blocks, system reminders, code fences, quoted/echoed lines,
+  terminal tables and paths are removed. A strong word ("hayır", "yanlış", "anlamadım", "demedim", "yapma", ...) flags
+  on its own in own text up to 300 characters; a weak word ("niye", "yine", "hala", "değil", "-mamış", ...) only in a
+  short reply (≤ 160 characters) right after an assistant claim, and not in a clause that is a question ("mu/mı/mısın")
+  or in numbered answers ("1 evet 2 hayır"). Measured on three days (25–27 Oct, the coordinator's labels, borderline
+  counted as false): 10 of 43 flags false (about 23 %, from 70 %); rules were tuned on 26–27 Oct, 25 Oct alone was 3 of
+  12. Corrections without any keyword are still missed (known limit; the short-reply cue catches "renk değişmemiş").
+- **Finished evidence:** for every repo a project's sessions touched (cwd, `cd`, `git -C`; a coordinator folder lists
+  the repos its work landed in), merges and PR commits on the default branch and on `origin/develop(ment)` in the
+  window (read-only `git log --first-parent`, local refs, no fetch), with sha, PR number and slice ids from the subject;
+  "origin/main into slice" syncs counted apart; merged PRs from `gh` when available (failure tolerated, `--no-gh`).
+  Calls run in parallel threads.
+- **Tests:** a red run is `red-intended` when the command or the agent's preceding words show a red-first or mutation
+  run, otherwise `unclassified` (never "fail").
+- **mem-guard log** lines and **central-store entries** (`log/*.md`, dated in the window; store project mapped through
+  `hosts/<p>.json`) are listed per project; the rest go to `_other.md`.
+- **Agent-driven Codex panes** (most messages relayed by an agent, or none from the owner) count as agent time.
+- **Stage 2 → weekly retro:** every digest ends with "Proposed acef-note lines" (store project, allowed tags, format,
+  `--repeat` hint) for stage 2 to fill. Proposals only; nothing runs them.
+- **CI:** Python tests (`test-acef-daily-extract`, `test-acef-detect`, `test-acef-retro`) run with `python3` in their
+  own step, before the Node loop, which now skips them. `test-acef-capsule-supervisor-v2` is red on main; not touched.
+- **Review r1 (Codex, PR #27: 2 P1, 4 P2):**
+  - P1: text is redacted before it is truncated (a cut PEM lost its END marker and key text survived); an unterminated
+    `-----BEGIN ... KEY-----` block is redacted to the end and a tail slice up to `-----END ... KEY-----` from the start.
+  - P1: dict keys are sanitized (an email in a `cd` path stayed in a `cd_dirs` key), and every written file goes
+    through one last sanitize pass of the whole object (`memguard_error` was written raw).
+  - P2: older Codex shapes are read: `event_msg/user_message`, `agent_message`, and shell `function_call` +
+    `function_call_output` mapped onto owner messages and commands (an owner request and a failed pytest gave nothing
+    and the pane was classed as agent-driven). The same owner message arriving in two shapes counts once. Agent tools
+    `sleep` and `wait_agent` count as waits. Recent sessions (30 days) carry no shell `function_call`.
+  - P2: tool calls completed before the window leave the pending map, which keeps only a tool name, a bounded command
+    and a short input summary.
+  - P2: Codex discovery covers every date folder, so a session created earlier and resumed in the window is found; the
+    mtime prefilter and event timestamps decide.
+  - P2: the parent map uses every scanned main session, in the window or not, and reads the first cwd of a parent file
+    that was not scanned, so a child of an idle parent keeps the parent's project.
+- **Review r2 (Codex, PR #27: 2 P1, 2 P2):**
+  - P1, structural: text is shortened only through `clip(x, n)` (redact the whole text, then truncate) and
+    `tail_clip(x, n)` (the tail of the redacted text). Every slice whose result can be written now runs on redacted
+    text: failure tails (`out[-400:]` kept the last 30 characters of an `sk-proj-` token), test summary tails, MCP
+    error text, bounded commands and input summaries, git subjects, mem-guard and store lines. Slices used only for
+    matching (verdict word, relay prefix, flag text, intent context) are never written. Outputs are redacted whole
+    only when they can be written (failures, tests, commits, Codex review launches); others are dropped unread.
+  - P1: the password rule consumes the whole quoted value (double, single and escaped double quotes; JSON and
+    key=value), and covers `authorization` (`{"password":"a b c"}` kept "b c").
+  - P2: a top-level `exit_code` in a function_call_output counts, as well as `metadata.exit_code`.
+  - P2: owner messages are deduplicated only as the same event in two shapes (item and event, identical full text,
+    within 10 s, paired once); two messages of the same shape always count.
+- **Review r3 (Codex, PR #27: 4 P1) and a redesign, so a leak needs a structural bug, not a missed quoting style**
+  (coordinator decision; over-redaction is accepted for a private gist digest):
+  - **Line-level redaction of secret context:** a line naming a secret (password/passwd/pwd/pass=, secret, token,
+    api_key, authorization, bearer, private key, BEGIN … KEY, client_secret, DATABASE_URL, credentials, `-p<x>`
+    after mysql/mariadb/psql/pg_dump, `scheme://user:pass@`) loses everything from that point to the end of the line,
+    and the next line when nothing follows the keyword. No value is parsed, so unterminated quotes, nested escapes,
+    JSON in JSON and CLI quoting cannot leak. Full-token patterns (key blocks, sk-/gh*_/xox/AKIA/AIza, JWT, emails,
+    opaque high-entropy strings) stay as a second layer that applies anywhere. Markers carry no keyword (`<redacted>`,
+    `<email>`), so redaction is idempotent; JSON keys of the index were renamed off keywords (`out_tok`,
+    `digest_tok_est`). Every pattern is linear (anchored starts, bounded repeats): 0.07 s or less on 260 KB worst cases.
+  - **Identifiers are never text:** session refs are `C:`/`S:`/`X:` plus the first 10 hex of sha256 of the transcript
+    path; subagents link to their parent by ref; digests no longer list paths, and `extract.json` keeps the
+    ref -> path table (redacted). A digest file name comes from the redacted project name, or a hash when redaction
+    changed it. stdout lines are redacted too.
+  - **One write gate** (`write_out`) redacts every key and value of every written object or text; text is shortened
+    only by `clip()`/`tail_clip()` after redaction.
+  - **Property test:** 40 generated secrets in 29 forms (quoted, unquoted, unterminated, nested escapes, JSON in JSON,
+    key=value, YAML next line, CLI flags, URLs, tokens, PEM, file names, emails) placed in every input field (owner
+    messages, titles, branch, PR repo, tool inputs and outputs, test summaries, commit messages, cd paths, Agent
+    descriptions, Codex commands and output tails, MCP errors, older Codex shapes, git subjects, mem-guard and store
+    lines, session file and project names); no 6-character substring of any secret appears in any written file, file
+    name or stdout, and a walk over every key and value of `extract.json` finds none. On the previous commit the same
+    test finds more than 20 leaked fragments.
+- **Final review round (Codex, PR #27: 1 P1, 1 P2):**
+  - P1, multiline secret context: when the value is not on the keyword's line (empty, a comment, a YAML block
+    indicator `|`/`>`/`|-`/`>-`/`|+`, a trailing backslash, an unterminated quote or an opening bracket), the block
+    below is redacted too: the first non-empty line, then every line indented deeper than the keyword line or
+    continued with a backslash, stopping at the first line at the same or lower indent; at most 50 lines.
+  - P2, linear time: key blocks are found with a `str.find` scan (BEGIN..END, BEGIN without END to the end, END
+    without BEGIN from the start); `-p` after a database client and `user:pass@` URLs are per-line scans; the JWT
+    pattern starts only at a run start; test-summary patterns are bounded and scanned line by line; the corrections
+    hint reads a bounded opening. Every input field is capped at 64 KB per side: the first and last 64 KB are kept as
+    whole lines (the tail reaches back up to 50 lines for a block that starts before it), the middle is dropped with
+    a `<dropped N chars>` marker. On the previous commit, 256 KB adversarial inputs took 8 s (PEM), 42 s (JWT) and
+    up to 59 s (URL); now each of 29 families finishes under 0.2 s (worst about 0.1 s under load).
+- **Confirmation round (Codex, PR #27: 1 P1):** YAML headers with an indentation digit (`|2-`, `>1+`), tags
+  (`!!str |`), anchors (`&pw |`) and aliases slipped past the block-indicator whitelist. The whitelist is gone:
+  (a) after any line with secret context, every following line indented deeper than it is redacted, whatever the
+  inline value; (b) the first following non-empty line is redacted too when the inline value is empty, starts with
+  one of `| > & ! * # ' " \ [ {`, ends with a backslash, or leaves a quote or bracket open. No YAML header is parsed;
+  at most 50 lines. The timing test takes the best of three runs per input, so it measures the algorithm, not load.
+  The property test adds `|2-`, `>1+`, `|-2`, `!!str |`, `&pw |`, `!secret >-`, an alias, flow mappings and an
+  unindented value line (73 secrets in 46 forms); on the previous commit it finds the leaks. Pilot day: no secret
+  pattern in the output, and 24 of 4,645 digest lines carry a marker (unchanged).
+- **Second confirmation round (Codex, PR #27: 1 P1):** a keyword line consumed as the continuation of an earlier
+  secret block did not start its own context (`db:\n  password:\napi_key: |2-\n  <value>` kept the value). The block
+  logic is now one pass: every line is checked for secret context, consumed or not; a keyword line inside a block is
+  redacted whole and becomes the new header (new indent baseline, rules (a) and (b) from it, cap restarted). The
+  property test adds a header as the first continuation line, consecutive headers at mixed indents, nested headers
+  inside a block and a header that dedents (81 secrets in 50 forms); on the previous commit it finds the leak.
+  Pilot day: no secret pattern in the output; 23 of 4,647 digest lines carry a marker.
+- **Third confirmation round (Codex, PR #27: 1 P1, caused by the previous fix):** a keyword line inside a literal
+  block reset the baseline and let a same-indent value line escape (`password: |\n  api_key: example\n  <value>`).
+  The block state is now monotone: a keyword line can only extend redaction. Inside an active block it keeps the
+  outer baseline and adds its own rules (a)/(b); only a keyword line at or below the baseline starts a fresh block
+  (so a header swallowed as a continuation still gets its own block); the 50-line cap counts from the most recent
+  keyword line. New check: 54 block shapes with a keyword line first, middle, last, deeper and deeper-with-its-own-
+  block, under three header styles, with secrets before and after; every line from the header to the end of the
+  outermost block is redacted. The property test carries the same family (207 secrets in 104 forms). It fails on
+  7ae6d7f (this shape) and on a4b3881 (the swallowed header).
+- **Fourth confirmation round (Codex, PR #27: 1 P1, bounding vs block state):** the field cap ran before the
+  secret-context pass and kept only 51 lines before the tail, so an outer block renewed by nested keywords lost its
+  baseline at the cut and a later same-indent line leaked (a failed command's output reached extract.json). The
+  order is fixed: key blocks are scanned over the whole field; a field up to 2 x 64 KB gets the line pass whole;
+  for a larger one the head is exact (its state depends only on earlier lines) and the tail starts inside an active
+  block with a baseline below every indent whenever a candidate line (keyword, database client, URL) lies in the 51
+  lines before it, head lines included. That carried state redacts at least everything the full pass would and
+  over-redacts at most 50 lines after the cut; the token layer runs after bounding. The line pass now copies the text
+  between blocks as slices and walks only candidate lines and the lines a block claims, with cached pattern hits
+  and case-sensitive searches on lowercased text: a 10 MB field takes 0.02 to 0.05 s (keyword on every line
+  included); a 4,000-input random comparison with a plain per-line walk finds no difference.
+  New checks: the repro end to end (a failed Codex command), 120 generated fields with a long block crossing the cut
+  at different offsets and nested keywords (no line the full-text pass redacts survives; it fails on 72ec5e9), and
+  10 MB fields under 1 s.
+- **Fifth confirmation round (Codex, PR #27: 1 P1, a regression from the speed-up):** the fast path matched
+  case-sensitively on `.lower()`, but `re.IGNORECASE` also folds `ı` (U+0131), `İ` (U+0130), `ſ` (U+017F) and the
+  Kelvin sign onto ASCII letters, so `prıvate key: <value>` leaked. Decisions on a line use the IGNORECASE patterns
+  again; the fast search only finds candidate lines, on a copy folded with `str.translate` (ASCII upper case plus
+  the four characters re folds onto ASCII letters, one character to one, so positions stay put). It is a superset
+  filter: it cannot say "no" where the IGNORECASE pattern says "yes". The property test then found a second gap of the
+  same family: `json.dumps` escaped `ı` to `\u0131` before redaction (tool-input summaries, MCP errors); every dump
+  that feeds redaction now keeps non-ASCII text. New checks: the fold table equals what `re` folds onto ASCII
+  letters over every code point; a differential test over 4 seeds (about 14,500 keyword lines with fold characters,
+  fullwidth letters and combining marks) where the fast path never keeps a line an independent IGNORECASE regex or
+  the per-line IGNORECASE reference redacts; probes with `ı`, `ſ`, `K`, `İ` in the property test. All fail on
+  df349b2. Lookalikes from other scripts (a Cyrillic `о` in `tоken`) are not folded by IGNORECASE either and stay a
+  known limit.
+- Tests: 46 checks on synthetic fixtures; the property test now covers 56 secrets in 37 forms (comment-then-value,
+  five YAML block scalars, dotenv continuation, a quoted value over two lines). Runtime on the pilot day: about 20 s
+  (parse 12 s, git/gh 4 s) for 3.8 GB under load. A scan of the real pilot-day output finds no email, key block,
+  known token prefix, JWT, secret-context value, URL credential or `-p` database password; 24 of 4,641 digest lines
+  carry a redaction marker.
+
+## Unreleased — Daily session review: stage-1 extractor (pilot) (2026-10-27)
+
+Why: the weekly retro (`method/WEEKLY_RETRO.md`) counts records but does not read what happened in the agent
+sessions. Ram asked on 2026-10-27 for a daily review that does: what finished, what dragged on, where agents got stuck,
+what went well, what to look at first tomorrow. One day holds about 230 Claude Code transcripts (with subagents) and 300
+Codex sessions, about 3.5 GB, too much for a model to read raw, so the review has two stages. This entry ships stage 1
+for the pilot; the owner reviews the pilot before anything is scheduled.
+- **`scripts/acef-daily-extract`** (Python, no model): reads every Claude Code session, subagent and Codex session with
+  an event in the window (default yesterday 00:00 to today 00:00 local; `--since/--until`), maps it to a project from its
+  cwd (git common dir, so worktrees fold into their repo; removed worktrees by path pattern; subagents inherit their
+  parent's project), and extracts signals only: owner messages truncated to 300 characters with a correction hint
+  (keyword list, a hint not a verdict), status asks and messages relayed by an agent kept apart, interrupts, failed tool
+  calls and repeats (same tool and normalised command three times or more), sleeps, Monitor calls, task notifications,
+  long turns and idle gaps, test runs with an outcome line, Codex review verdicts, commits, merges and pushes seen in
+  command output, PR links, context size and output tokens, compactions and continuations, subagents with their
+  model. Writes `daily/<date>/extract.json` and one Markdown digest per project in the central store
+  (`ACEF_FEEDBACK_DIR`); nothing goes into host repos, `~/.claude` or `~/.codex`. Every string is redacted (keys,
+  tokens, passwords, connection strings, emails) before it is written; account ids are never read. Files that cannot be
+  read are listed as UNREADABLE with the reason. Digests are trimmed to a token budget (default 40k) with the weakest
+  sections cut first and a "Trimmed" line saying what was cut.
+- **After the pilot's stage 2** (same day): Codex compactions counted once (the `compacted` record, not also the
+  `ContextCompaction` item: gtz showed 68 for 34); Codex review launches from Claude sessions without a verdict in the
+  output are counted apart instead of as "no verdict" reviews (119 of 127 in one project); review chains per slice id
+  (first id in the Codex prompt) so rounds per slice show directly.
+  Reviewer verdicts that open the message instead of `VERDICT: X` ("**REQUEST CHANGES**", "Verdict: APPROVE ...") are
+  read too (one host's 77 Codex reviews showed 0 verdicts, now 44).
+- **Test** `scripts/test-acef-daily-extract` builds a synthetic fixture (no real transcript text) and checks 22 points.
+- **Pilot numbers** (last 24 h on 2026-10-27): about 540–550 files, 3.6 GB, 529 sessions in the window, 10–18 s wall time,
+  0 unreadable, digests 0.4k–20k tokens per project. Capability record: `docs/ai/capabilities/daily-session-review.json`
+  (wired).
+- Not changed: rules, the weekly retro, `acef-note`. The daily review reports and carries repeats to the weekly retro;
+  it never changes rules.
+
 ## v3.0.0-beta.8 — One model-choice rule for Claude and Codex agents (2026-10-27)
 
 Why: model choice lived in three places that disagreed (the owner's global rule, project decisions, and
