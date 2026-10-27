@@ -33,12 +33,12 @@
     {
       "layer": "tests",
       "ref": "scripts/test-acef-daily-extract",
-      "note": "2026-10-27: 44 checks passed on synthetic fixtures (no real transcript content), including a property test (40 secrets, 29 forms, every input field, no 6-char substring written) and a key/value walk of extract.json; each review regression fails on the commit before its fix; test-acef-detect 195 and test-acef-retro 49 also pass under python3."
+      "note": "2026-10-27: 46 checks passed on synthetic fixtures (no real transcript content): a property test (56 secrets, 37 forms incl. multiline YAML/dotenv, every input field, no 6-char substring written), a key/value walk of extract.json, a linear-time test (29 adversarial 256 KB families each under 0.2 s) and the field cap; each review regression fails on the commit before its fix; test-acef-detect 195 and test-acef-retro 49 also pass under python3."
     },
     {
       "layer": "cli",
       "ref": "~/CODE/acef-feedback/daily/2026-10-27/",
-      "note": "2026-10-27: pilot day after review r3, 607 files, 3.8 GB, 531 sessions in about 18 s; 0 unreadable; scan of the written output finds no email, key block, known token prefix, JWT, secret-context value or URL credential."
+      "note": "2026-10-27: pilot day after the final review round, 615 files, 3.8 GB, 531 sessions in about 20 s under load; 0 unreadable; scan of the written output finds no email, key block, known token prefix, JWT, secret-context value, URL credential or -p database password."
     }
   ],
   "createdAt": "2026-10-27"

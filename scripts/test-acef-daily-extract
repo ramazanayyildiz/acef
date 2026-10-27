@@ -306,6 +306,19 @@ def property_fixture(root):
     forms.append(f"X-Api-Key: {w()}")
     a, b, c = v3()
     forms.append(f"password:\n  {a} {b} {c}\nnext")                             # YAML value on the next line
+    a, b = chunk(8), chunk(8)
+    secrets += [a, b]
+    forms.append(f"password: # production\n  {a}\n  {b}\nnext: 1")              # comment, value below
+    for ind in ("|", ">", "|-", ">-", "|+"):                                     # YAML block scalars
+        a, b = chunk(8), chunk(8)
+        secrets += [a, b]
+        forms.append(f"db:\n  password: {ind}\n    {a}\n    {b}\n  host: x")
+    a, b = chunk(8), chunk(8)
+    secrets += [a, b]
+    forms.append(f"API_KEY=\\\n{a}\\\n{b}\nNEXT=1")                                # dotenv backslash continuation
+    a, b = chunk(8), chunk(8)
+    secrets += [a, b]
+    forms.append(f'password="{a}\n{b}" rest\nok')                                # quoted value over two lines
     forms.append(f"use sk-proj-{w()} now")                                     # tokens anywhere
     forms.append(f"ghp_{w()}")
     forms.append(f"xoxb-{w()}")
@@ -578,6 +591,37 @@ try:
     check("B no file-name text in refs: every session ref is a hash", pidx and all(
         re.fullmatch(r"[CSX]:[0-9a-f]{10}", x.get("ref", "")) for x in pidx["sessions"]),
         [x.get("ref") for x in pidx.get("sessions", [])][:5])
+    # P2: every redaction pattern family is linear: an adversarial 256 KB input finishes under 0.2 s
+    import time as time_mod
+    K = 256 * 1024
+    adv = {
+        "pem BEGIN repeated": "-----BEGIN PRIVATE KEY-----\n", "pem END repeated": "-----END PRIVATE KEY-----\n",
+        "pem non-key markers": "-----BEGIN X-----", "pem dashes": "-", "sk": "sk-", "gh": "ghp_", "xox": "xoxb-",
+        "AKIA": "AKIA", "AIza": "AIza", "jwt dash": "eyJ-", "jwt dot": "eyJ.", "email at": "a@", "email dot": "a.",
+        "email local": "x", "url": "a://", "url creds": "a://b:", "ctx keyword": "password ", "ctx pass": "pass ",
+        "ctx block": "password: |\n", "db cli": "mysql ", "db dash": "mysql -", "long token": "Ab1",
+        "spaces": " ", "newlines": "\n", "quotes": '"', "backslash lines": "\\\n",
+        "url at no colon": "a://b@", "url colon no at": "x://y:", "keyword lines": "password\n",
+    }
+    slow = {}
+    for name, unit in adv.items():
+        text = (unit * (K // len(unit) + 1))[:K]
+        t0 = time_mod.perf_counter()
+        mod.redact(text)
+        took = time_mod.perf_counter() - t0
+        if took >= 0.2:
+            slow[name] = round(took, 3)
+    t0 = time_mod.perf_counter()
+    mod.clip("token " + "Ab1-" * (1024 * 1024 // 4), 300)
+    took_clip = time_mod.perf_counter() - t0
+    check(f"P2 linear redaction: {len(adv)} adversarial 256 KB inputs each under 0.2 s; clip() on 1 MB "
+          f"{took_clip:.2f} s", not slow and took_clip < 0.5, slow or took_clip)
+    big_field = "\n".join(f"line {i} " + "x" * 60 for i in range(6000)) + "\npassword: |\n  Zq9Yw2Xr8Vt4\nend"
+    bf = mod.redact_field(big_field)
+    check("P2 field cap: a field over 2 x 64 KB keeps whole head and tail lines, drops the middle with a marker, "
+          "and still redacts a block in the tail", "<dropped " in bf and "Zq9Yw2Xr8Vt4" not in bf and
+          all(ln_.startswith(("line ", "<dropped", "<redacted>", "end")) or not ln_ for ln_ in bf.split("\n")),
+          bf[-300:])
     # default window: yesterday 09:00 to today 09:00 local (TZ=UTC here)
     p2 = subprocess.run([sys.executable, "-I", str(TOOL), "--claude-dir", str(TMP / "none"), "--codex-dir",
                          str(TMP / "none"), "--store", str(TMP / "store2"), "--mem-guard-log", str(MEM), "--no-gh"],

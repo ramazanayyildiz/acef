@@ -86,9 +86,23 @@ landed in; Manager-driven Codex panes counted as 99 owner hours; machine inciden
     lines, session file and project names); no 6-character substring of any secret appears in any written file, file
     name or stdout, and a walk over every key and value of `extract.json` finds none. On the previous commit the same
     test finds more than 20 leaked fragments.
-- Tests: 44 checks on synthetic fixtures. Runtime on the pilot day: about 18 s (parse 9 s, git/gh 4 s) for 3.8 GB. A
-  scan of the real pilot-day output finds no email, key block, known token prefix, JWT, secret-context value or URL
-  credential; 24 of 4,639 digest lines carry a redaction marker.
+- **Final review round (Codex, PR #27: 1 P1, 1 P2):**
+  - P1, multiline secret context: when the value is not on the keyword's line (empty, a comment, a YAML block
+    indicator `|`/`>`/`|-`/`>-`/`|+`, a trailing backslash, an unterminated quote or an opening bracket), the block
+    below is redacted too: the first non-empty line, then every line indented deeper than the keyword line or
+    continued with a backslash, stopping at the first line at the same or lower indent; at most 50 lines.
+  - P2, linear time: key blocks are found with a `str.find` scan (BEGIN..END, BEGIN without END to the end, END
+    without BEGIN from the start); `-p` after a database client and `user:pass@` URLs are per-line scans; the JWT
+    pattern starts only at a run start; test-summary patterns are bounded and scanned line by line; the corrections
+    hint reads a bounded opening. Every input field is capped at 64 KB per side: the first and last 64 KB are kept as
+    whole lines (the tail reaches back up to 50 lines for a block that starts before it), the middle is dropped with
+    a `<dropped N chars>` marker. On the previous commit, 256 KB adversarial inputs took 8 s (PEM), 42 s (JWT) and
+    up to 59 s (URL); now each of 29 families finishes under 0.2 s (worst about 0.1 s under load).
+- Tests: 46 checks on synthetic fixtures; the property test now covers 56 secrets in 37 forms (comment-then-value,
+  five YAML block scalars, dotenv continuation, a quoted value over two lines). Runtime on the pilot day: about 20 s
+  (parse 12 s, git/gh 4 s) for 3.8 GB under load. A scan of the real pilot-day output finds no email, key block,
+  known token prefix, JWT, secret-context value, URL credential or `-p` database password; 24 of 4,641 digest lines
+  carry a redaction marker.
 
 ## Unreleased — Daily session review: stage-1 extractor (pilot) (2026-10-27)
 

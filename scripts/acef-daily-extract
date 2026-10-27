@@ -72,7 +72,7 @@ WEAK_WORDS = [
 WEAK_EXCEPT = {"kalmamış", "kalmamis"}          # "nothing left" is agreement, not a complaint
 QUESTION_RE = re.compile(r"(?<![\wçğıöşü])m[ıiuü](y?d[ıiuü]\w{0,3}|s[ıiuü]n\w{0,3}|y[ıiuü][mz]|d[ıiuü]r)?(?![\wçğıöşü])",
                          re.IGNORECASE)   # "kaldı mı hala?"
-NUMBERED_RE = re.compile(r"(^|\s)[1-9]\d?[.)]?\s+\S+.*\s[2-9]\d?[.)]?\s+\S+")   # "1 evet 2 hayır": numbered answers
+NUMBERED_RE = re.compile(r"(?:^|\s)[1-9]\d?[.)]?\s+\S{1,40}[^\n]{0,200}?\s[2-9]\d?[.)]?\s+\S")   # "1 evet 2 hayır": numbered answers
 
 
 def _word_re(words):
@@ -99,12 +99,11 @@ INTERRUPT = "[Request interrupted by user"
 TEST_RE = re.compile(r"((?<![\w.-])(phpunit|paratest|pest|vitest|jest|pytest)(?![\w.-])|artisan test|node --test|bun test|"
                      r"npm (run )?test|pnpm (run )?test|yarn test|playwright test|selfcheck\.sh|test-[\w-]+|"
                      r"composer (run )?test|go test|cargo test|run-tests?|remote-(test|run)\.sh|lane-guard)", re.IGNORECASE)
-TEST_FAIL_RE = re.compile(r"(FAILURES!|ERRORS!|Tests:\s+[^\n]*\d+ failed|\b[1-9]\d* (failed|failing)\b|# fail [1-9]|"
+TEST_FAIL_RE = re.compile(r"(FAILURES!|ERRORS!|Tests:[ \t]{1,8}[^\n]{0,200}?\d+ failed|\b[1-9]\d* (failed|failing)\b|# fail [1-9]|"
                           r"SELFCHECK FAIL|\bFAIL\b\s+\S|\b(Errors|Failures): [1-9]|Error: Process completed with exit code [1-9])")
-TEST_PASS_RE = re.compile(r"(OK \(\d+ tests?|Tests:\s+[^\n]*\d+ passed|\b\d+ passed\b|# pass \d+|SELFCHECK PASS|"
+TEST_PASS_RE = re.compile(r"(OK \(\d+ tests?|Tests:[ \t]{1,8}[^\n]{0,200}?\d+ passed|\b\d+ passed\b|# pass \d+|SELFCHECK PASS|"
                           r"All tests passed|\bok=\d+ fail=0\b)")
-TEST_LINE_RE = re.compile(r"^.*(Tests:|OK \(|FAILURES!|ERRORS!|passed|failed|SELFCHECK|# (pass|fail)|ok=\d+).*$",
-                          re.MULTILINE)
+TEST_LINE_RE = re.compile(r"Tests:|OK \(|FAILURES!|ERRORS!|passed|failed|SELFCHECK|# (?:pass|fail)|ok=\d+")
 COMMIT_RE = re.compile(r"\bgit\s+(-C\s+\S+\s+|-c\s+\S+\s+)*(commit|merge|cherry-pick|push)(?![\w-])|\bgh pr merge\b")
 MERGE_OUT_RE = re.compile(r"Merge made by|Fast-forward|Automatic merge went well|Merged pull request|was already merged|"
                           r"Squashed and merged|Merged")
@@ -133,31 +132,37 @@ def verdict_of(msg):
 BENIGN_EXIT1 = re.compile(r"^\s*(\S*/)?(rg|grep|egrep|fgrep|test|\[|diff|cmp|git diff|git grep|pgrep|which)\b")
 
 # ---------------------------------------------------------------- redaction (applied to every string at write time)
-# Two layers. (1) Full-token patterns that are secrets wherever they appear: key blocks, known token prefixes, JWTs,
-# emails, opaque high-entropy strings. (2) Secret CONTEXT: a line that names a secret (password, token, -p after a
-# database client, user:pass@ in a URL, ...) loses everything from that point to the end of the line, and the next
-# line too when nothing follows the keyword (a YAML-style value below it). Layer 2 does not parse values, so no
-# quoting style, escape or missing quote can let a value through; it over-redacts on purpose (the digest is read for
-# gist). Markers carry no secret keyword, so redaction is idempotent.
+# Two layers. (1) Full-token patterns that are secrets wherever they appear: key blocks (a str.find scan), known
+# token prefixes, JWTs, emails, opaque high-entropy strings. (2) Secret CONTEXT: a line that names a secret (password,
+# token, -p after a database client, user:pass@ in a URL, ...) loses everything from that point to the end of the
+# line. When the value is not on that line (empty, a comment, a YAML block indicator, a trailing backslash, an
+# unterminated quote or an opening bracket), the block below goes too: the first non-empty line and every following
+# line indented deeper or continued with a backslash, up to 50 lines. Layer 2 does not parse values, so no quoting
+# style can let a value through; it over-redacts on purpose. Markers carry no secret keyword, so redaction is
+# idempotent. Every pattern runs in linear time: starts are anchored to run starts, repeats are bounded, and the
+# multi-part checks (key blocks, database -p, URL credentials) are scans, not backtracking regexes.
 MARK = "<redacted>"
+FIELD_CAP = 64 * 1024        # per input field: beyond this, whole lines in the middle are dropped before redaction
+BLOCK_CAP = 50               # lines a secret block may cover below its keyword line
 TOKEN_PATTERNS = [
-    re.compile(r"-----BEGIN [A-Z0-9 ]*KEY-----.*?-----END [A-Z0-9 ]*KEY-----", re.S),
-    re.compile(r"-----BEGIN [A-Z0-9 ]*KEY-----.*", re.S),          # unterminated: to the end of the text
-    re.compile(r"^.*?-----END [A-Z0-9 ]*KEY-----", re.S),          # a tail that starts inside a key: from the start
     re.compile(r"\b(sk|rk|pk)[-_][A-Za-z0-9_-]{12,}"),
     re.compile(r"\b(ghp|gho|ghu|ghs|ghr|github_pat)_[A-Za-z0-9_]{12,}"),
     re.compile(r"\bxox[abprs]-[A-Za-z0-9-]{8,}"),
     re.compile(r"\bAKIA[0-9A-Z]{12,}"),
     re.compile(r"\bAIza[0-9A-Za-z_-]{20,}"),
-    re.compile(r"\beyJ[\w-]{6,}\.[\w-]{6,}(\.[\w-]*)?"),
+    re.compile(r"(?<![\w-])eyJ[\w-]{6,}\.[\w-]{6,}(?:\.[\w-]*)?"),
 ]
-EMAIL_RE = re.compile(r"(?<![\w.+-])[\w.+-]{1,64}@[\w-]+(\.[\w-]+)+")
+KEYMARK_RE = re.compile(r"-----(?:BEGIN|END) [A-Z0-9 ]{0,40}KEY-----")
+EMAIL_RE = re.compile(r"(?<![\w.+-])[\w.+-]{1,64}@[\w-]+(?:\.[\w-]+)+")
 SECRET_CTX_RE = re.compile(
     r"passw(?:or)?d|\bpwd\b|\bpass\s*[=:]|secret|token|api[_-]?key|apikey|authori[sz]ation|bearer|"
-    r"private[ _-]?key|-----BEGIN|client[_-]?secret|database_url|credential|access[_-]?key|auth[_-]?key|"
-    r"\b(?:mysql\w*|mariadb\w*|psql|pg_dump|pg_restore)\b[^\n]{0,400}?\s-p(?=\S)|"
-    r"(?<![a-z0-9+.-])[a-z][a-z0-9+.-]{0,30}://[^\s/@]*:[^\s@]*@", re.IGNORECASE)
-EMPTY_REST_RE = re.compile(r"^[\s:=\"'{}\[\],|>-]*$")
+    r"private[ _-]?key|-----BEGIN|client[_-]?secret|database_url|credential|access[_-]?key|auth[_-]?key",
+    re.IGNORECASE)
+DBCLI_RE = re.compile(r"\b(?:mysql\w*|mariadb\w*|psql|pg_dump|pg_restore)\b", re.IGNORECASE)
+DBPASS_RE = re.compile(r"\s-p(?=\S)")
+URLCRED_RE = re.compile(r"://[^\s/@]{0,256}:[^\s@]{0,256}@")    # starts only at "://"; bounded
+SCHEME_CHARS = set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789+.-")
+BLOCK_IND_RE = re.compile(r"[|>][+-]?\d{0,2}\s*(?:#.*)?")
 LONG_TOKEN = re.compile(r"(?<![\w/-])[A-Za-z0-9_\-]{32,}")
 
 
@@ -169,30 +174,144 @@ def _long_token(m):
     return w
 
 
+def _redact_pem(s):
+    """Key blocks by scanning for markers: BEGIN..END becomes a marker, BEGIN without END drops to the end of the
+    text, an END with no BEGIN before it drops from the start (a tail that begins inside a key)."""
+    if "-----" not in s:
+        return s
+
+    def nxt(tag, start):
+        pos = s.find(tag, start)
+        while pos != -1 and not KEYMARK_RE.match(s, pos):
+            pos = s.find(tag, pos + len(tag))
+        return pos
+    out, i, n = [], 0, len(s)
+    b, e = nxt("-----BEGIN ", 0), nxt("-----END ", 0)
+    while i < n:
+        if b != -1 and b < i:
+            b = nxt("-----BEGIN ", i)
+        if e != -1 and e < i:
+            e = nxt("-----END ", i)
+        if e != -1 and (b == -1 or e < b):
+            out.append(MARK)
+            i = KEYMARK_RE.match(s, e).end()
+            continue
+        if b == -1:
+            out.append(s[i:])
+            break
+        out.append(s[i:b])
+        out.append(MARK)
+        if e == -1:
+            break                                   # unterminated: drop to the end
+        i = KEYMARK_RE.match(s, e).end()
+    return "".join(out)
+
+
+def _secret_span(line):
+    """(start, end) of the earliest secret context on a line, or None."""
+    best = None
+    m = SECRET_CTX_RE.search(line)
+    if m:
+        best = (m.start(), m.end())
+    d = DBCLI_RE.search(line)
+    if d:
+        p = DBPASS_RE.search(line, d.end())
+        if p and (best is None or p.start() < best[0]):
+            best = (p.start(), p.end())
+    if "@" in line and "://" in line:
+        u = URLCRED_RE.search(line)
+        if u and (best is None or u.start() < best[0]):
+            st = u.start()
+            while st > 0 and u.start() - st < 32 and line[st - 1] in SCHEME_CHARS:
+                st -= 1
+            best = (st, u.end())
+    return best
+
+
+def _opens_block(rest):
+    """True when the secret's value is not on its line: nothing, a comment, a YAML block indicator, a backslash
+    continuation, an unterminated quote or an opening bracket."""
+    r = rest.strip().lstrip(":=").strip()
+    if not r or r.startswith("#") or r.endswith("\\") or r[-1] in "{[(":
+        return True
+    if BLOCK_IND_RE.fullmatch(r):
+        return True
+    q = r.strip("\"'")
+    if not q.strip() or q.strip().startswith("#"):
+        return True
+    return r.count('"') % 2 == 1 or r.count("'") % 2 == 1
+
+
+def _indent(line):
+    return len(line) - len(line.lstrip(" \t"))
+
+
 def _redact_lines(s):
-    out, carry = [], False
-    for line in s.split("\n"):
-        if carry:
-            carry = False
-            if line.strip():
+    if not (SECRET_CTX_RE.search(s) or DBCLI_RE.search(s) or ("://" in s and "@" in s)):
+        return s                                    # no secret context anywhere: nothing to do line by line
+    lines, out, i = s.split("\n"), [], 0
+    while i < len(lines):
+        line = lines[i]
+        span = _secret_span(line) if line.strip() else None
+        i += 1
+        if not span:
+            out.append(line)
+            continue
+        out.append(line[: span[0]] + MARK)
+        if not _opens_block(line[span[1]:]):
+            continue
+        base, first, cont, k = _indent(line), True, line.rstrip().endswith("\\"), 0
+        while i < len(lines) and k < BLOCK_CAP:
+            nxt = lines[i]
+            if not nxt.strip():
+                out.append(nxt)
+            elif first or cont or _indent(nxt) > base:
                 out.append(MARK)
-                continue
-        m = SECRET_CTX_RE.search(line)
-        if m:
-            carry = bool(EMPTY_REST_RE.match(line[m.end():]))
-            line = line[:m.start()] + MARK
-        out.append(line)
+                first, cont = False, nxt.rstrip().endswith("\\")
+            else:
+                break
+            i += 1
+            k += 1
     return "\n".join(out)
 
 
 def redact(s):
     if not isinstance(s, str) or not s:
         return s
+    s = _redact_pem(s)
     for rx in TOKEN_PATTERNS:
         s = rx.sub(MARK, s)
     s = _redact_lines(s)
     s = EMAIL_RE.sub("<email>", s)
     return LONG_TOKEN.sub(_long_token, s)
+
+
+def bounded(s, cap=FIELD_CAP):
+    """An input field larger than 2 x cap keeps its first cap and last cap characters as whole lines and drops the
+    middle. The tail reaches back up to BLOCK_CAP more lines (at most another cap characters) so a secret block that
+    starts just before it is still recognised. Dropping is safe; a line cut in half is never kept."""
+    if not isinstance(s, str) or len(s) <= 2 * cap:
+        return s
+    hcut = s.rfind("\n", 0, cap)
+    head = s[:hcut] if hcut > 0 else ""
+    lo = max(hcut + 1, len(s) - 2 * cap)
+    pos = len(s) - cap
+    for _ in range(BLOCK_CAP + 1):
+        prev = s.rfind("\n", lo, pos)
+        if prev == -1:
+            break
+        pos = prev
+    if s[pos:pos + 1] == "\n":
+        tail = s[pos + 1:]
+    else:
+        nl = s.find("\n", pos)
+        tail = s[nl + 1:] if nl != -1 else ""
+    return head + f"\n<dropped {len(s) - len(head) - len(tail)} chars>\n" + tail
+
+
+def redact_field(s):
+    """Redaction for an input field: bounded, then redacted."""
+    return redact(bounded(s))
 
 
 def redact_obj(o):
@@ -231,13 +350,13 @@ def hhmm(t):
 def clip(s, n):
     """The only way text is shortened for output: redact the whole text, then collapse and truncate. A cut must never
     split a secret out of its pattern (a PEM block losing its END marker, a token losing its prefix)."""
-    s = re.sub(r"\s+", " ", redact(s or "")).strip()
+    s = re.sub(r"\s+", " ", redact_field(s or "")).strip()
     return s if len(s) <= n else s[: n - 1] + "…"
 
 
 def tail_clip(s, n):
     """The last n characters of the redacted text (never a raw tail that starts inside a secret)."""
-    return redact(s or "")[-n:]
+    return redact_field(s or "")[-n:]
 
 
 def text_of(content):
@@ -292,7 +411,7 @@ def own_text(raw):
 def human_msg(t, ln, raw, after_claim=False):
     """raw: the message as typed or pasted. after_claim: the previous event was an assistant text, not a tool result."""
     txt = strip_pasted(raw)
-    own_full = own_text(raw)
+    own_full = own_text(raw[:8000])          # the flag reads the opening; bounded input keeps it linear
     own = own_full[:250] if len(own_full) > 600 else own_full    # a long remainder is mostly pasted output
     hits, cue = [], ""
     if RELAY_RE.search(txt[:120]):
@@ -343,9 +462,10 @@ def test_outcome(cmd, out, is_error, context=""):
     unclassified (red, intent not shown; includes chained commands whose output also passes) | background | unknown."""
     o = out or ""
     line = ""
-    m = list(TEST_LINE_RE.finditer(tail_clip(o, 6000)))
-    if m:
-        line = clip(m[-1].group(0), 140)
+    for ln_ in reversed(tail_clip(o, 6000).splitlines()):     # the last summary-like line, scanned line by line
+        if TEST_LINE_RE.search(ln_):
+            line = clip(ln_, 140)
+            break
     red = TEST_FAIL_RE.search(o) or (is_error and line)
     if red:
         if INTENT_RE.search(cmd) or RED_WORD_RE.search(cmd) or INTENT_RE.search(context or "") or \
@@ -490,12 +610,12 @@ def parse_claude(path, since, until, kind):
                     name, inp = c.get("name") or "", c.get("input") or {}
                     cmd = inp.get("command") or inp.get("cmd") or ""
                     if not isinstance(cmd, str):
-                        cmd = redact(json.dumps(cmd))[:300]
+                        cmd = redact_field(json.dumps(cmd))[:300]
                     if inp.get("run_in_background"):
                         cmd += "  [run_in_background]"
                     # only what the result needs: tool name, a bounded command, a short input summary
-                    pending[c.get("id")] = (name, redact(cmd)[:4000], t, ln,
-                                            redact(json.dumps(inp))[:300] if not cmd else "")
+                    pending[c.get("id")] = (name, redact_field(cmd)[:4000], t, ln,
+                                            redact_field(json.dumps(inp))[:300] if not cmd else "")
                     if not win:
                         continue
                     if name in ("Agent", "Task"):
@@ -529,7 +649,7 @@ def parse_claude(path, since, until, kind):
                     if is_err or (name == "Bash" and cmd and (TEST_RE.search(cmd) or COMMIT_RE.search(cmd) or
                                                               (REVIEW_RE.search(cmd) and "codex" in cmd))):
                         # only these outputs are ever written; each is redacted whole before any slice
-                        out = redact(out)
+                        out = redact_field(out)
                     else:
                         out = ""            # never written, never sliced
                     if is_err:
@@ -633,7 +753,7 @@ def codex_item(typ, pt, p, fc_pending, s, t, win):
             cmd = args.get("command") or args.get("cmd") or ""
             if isinstance(cmd, list):
                 cmd = cmd[-1] if len(cmd) >= 3 and cmd[1] in ("-lc", "-c") else " ".join(map(str, cmd))
-            fc_pending[p.get("call_id")] = (redact(str(cmd))[:4000], args.get("workdir") or args.get("cwd") or "")
+            fc_pending[p.get("call_id")] = (redact_field(str(cmd))[:4000], args.get("workdir") or args.get("cwd") or "")
         elif win and name == "sleep":
             s.waits["sleep_s"] += (args.get("duration_ms") or 0) / 1000.0
             s.waits["sleep_calls"] += 1
@@ -769,11 +889,11 @@ def parse_codex(path, since, until, kind_unused=None):
                 cwd = (it.get("cwd") or "").replace("file://", "")
                 if cwd:
                     meta["cmd_cwds"][cwd] += 1
-                cmd = redact(cmd)
+                cmd = redact_field(cmd)
                 code = it.get("exit_code")
                 is_err = code not in (0, None)
                 # only failed, test and commit outputs are ever written; each is redacted whole before any slice
-                out = redact(it.get("aggregated_output") or "") if is_err or TEST_RE.search(cmd) or \
+                out = redact_field(it.get("aggregated_output") or "") if is_err or TEST_RE.search(cmd) or \
                     COMMIT_RE.search(cmd) else ""
                 if is_err and not (code == 1 and BENIGN_EXIT1.search(cmd)):
                     s.fails.append({"t": t, "line": ln, "tool": "exec", "cmd": clip(cmd, CMD_CHARS),
