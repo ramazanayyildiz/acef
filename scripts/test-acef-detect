@@ -541,6 +541,51 @@ try:
     def merge20():
         git("merge", "-q", "--no-ff", "slice/work-20", "-m", "Merge slice/work-20: WORK-20 (light)")
     aged_case("size_ratio", "sz", "size_ratio", sz, "WORK-20", NOW + dt.timedelta(days=2), release=merge20)
+
+    # ------------------------------------------------------------ review r3: no answer is not an answer
+    # stuck_agent: a run whose start stamp disappears has neither running nor finished evidence -> UNSEEN
+    R4 = HOST / "runs4"
+    put(R4 / "run-n/started", iso(ago(90)) + "\n", 90)
+    put(R4 / "run-n/events-1.log", "working\n", 45)
+    settle(R4 / "run-n", 45)
+    put(R4 / "run-r/started", iso(ago(50)) + "\n", 50)
+    for i, m in enumerate((40, 25, 10), 1):
+        put(R4 / f"run-r/events-{i}.log", "ERROR: quota\n", m)
+    settle(R4 / "run-r", 10)
+    sa = det_cfg("sa", {"agent_runs": {"glob": "runs4/*", "attempt_glob": "events-*.log", "result_file": "report.md"}})
+    rc, o = run("--only", "stuck_agent", config=sa, env=ENV_R)
+    n_id, r_id = alert_id(o, "stuck_agent", "run-n"), alert_id(o, "stuck_agent", "run-r:repeat")
+    check("r3 stuck_agent fixtures fire", bool(n_id and r_id), o)
+    (R4 / "run-n/started").unlink()
+    settle(R4 / "run-n", 45)
+    for i in (1, 2, 3):
+        (R4 / f"run-r/events-{i}.log").unlink()
+    settle(R4 / "run-r", 10)
+    rc, o = run("--only", "stuck_agent", config=sa, env=ENV_R, now=NOW + dt.timedelta(minutes=1))
+    check("missing start stamp is UNSEEN, not CLEARED", f"UNSEEN {n_id} " in o and f"CLEARED {n_id}" not in o, o)
+    check("missing attempt logs are UNSEEN, not CLEARED", f"UNSEEN {r_id} " in o and f"CLEARED {r_id}" not in o, o)
+    put(R4 / "run-n/finished", iso(NOW) + "\n", 0)
+    put(R4 / "run-r/report.md", "Verdict: ACCEPT\n", 0)
+    rc, o = run("--only", "stuck_agent", config=sa, env=ENV_R, now=NOW + dt.timedelta(minutes=2))
+    check("observed finish clears the stuck run", f"CLEARED {n_id} " in o, o)
+    check("a produced result clears the repeat", f"CLEARED {r_id} " in o, o)
+
+    # forgotten_session: git cannot answer the ancestry question (unknown ref, exit 128) -> UNSEEN
+    fw2 = det_cfg("fw2", {}, {"forgotten_session": {"merged_worktrees": True}})
+    rc, o = run("--only", "forgotten_session", config=fw2, env=ENV_R)
+    w2 = alert_id(o, "forgotten_session", "worktree:wt-work-12")
+    broken = TMP / "fw2-broken.json"
+    broken.write_text(json.dumps({"project": "fw2", "sources": {"main_ref": "refs/heads/no-such-branch"},
+                                  "thresholds": {"forgotten_session": {"merged_worktrees": True}}}))
+    rc, o = run("--only", "forgotten_session", config=broken, env=ENV_R, now=NOW + dt.timedelta(minutes=1))
+    check("git ancestry error (exit 128) is UNSEEN, not CLEARED",
+          w2 and f"CLEARED {w2}" not in o and f"UNSEEN {w2} " in o and "gave no answer (exit 128)" in o, o)
+    wt12 = TMP / "wt-work-12"
+    put(wt12 / "more.txt", "more")
+    git("add", "-A", cwd=wt12)
+    git("commit", "-q", "-m", "WORK-12 more", cwd=wt12)
+    rc, o = run("--only", "forgotten_session", config=fw2, env=ENV_R, now=NOW + dt.timedelta(minutes=2))
+    check("git's definite 'not merged' (exit 1) clears it", f"CLEARED {w2} " in o, o)
 finally:
     subprocess.run(["git", "worktree", "prune"], cwd=HOST, capture_output=True)
     shutil.rmtree(TMP, ignore_errors=True)

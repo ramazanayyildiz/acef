@@ -127,7 +127,7 @@ retro with at most five proposals).
 - **Method:** `method/FEEDBACK_LOOP.md` "Detection loop" and the retro in "Weekly cycle"; `method/WEEKLY_RETRO.md`
   tells the coordinator how to write the judgment parts. `templates/slice/closing-note.md` gets
   `Dedektör: <path | yok — reason>` for investigation slices (checked by `scripts/slice/selfcheck.sh`).
-- Tests: `scripts/test-acef-detect` (114 checks: each detector fires on a fixture and stays silent on a control, the
+- Tests: `scripts/test-acef-detect` (121 checks: each detector fires on a fixture and stays silent on a control, the
   alert lifecycle, losses, skips, host detectors, working hours), `scripts/test-acef-retro` (45 checks).
 - Capability record `docs/ai/capabilities/waste-detection.json` (status `wired`).
 - **Review r1 fixes (independent review, REVISE, seven P2s; each with a regression test that fails on the earlier
@@ -149,6 +149,10 @@ retro with at most five proposals).
   clears only on a later success. `acef-retro` folds events strictly before the window's end (an event at Monday
   00:00 belongs to the next week). The parallel-poll test now holds the alert lock until all 8 polls are blocked on
   it (lsof barrier) and asserts every exit code; on the pre-lock code it fails with 48 opens for 6 keys.
+- **Review r3 fixes:** no answer is not an answer. `forgotten_session` clears a worktree only on git's definite
+  "not merged" (`merge-base --is-ancestor` exit 1); exit 128 or a failure keeps the alert open with a note.
+  `stuck_agent` clears a run only on an observed finish or observed progress, and a repeat only on a produced result
+  or differing attempt endings; a missing start stamp or missing attempt logs keep the alert open.
 - **`install-acef-tools`** installs `acef-detect`, `acef-retro` and `scripts/detectors/` into `.acef/bin/` (host
   detectors stay in `.acef/detectors/`); `scripts/test-install-acef-tools` runs the installed `acef-detect --list`.
 

@@ -98,14 +98,19 @@ def detect(ctx):
             if head not in merged_at:
                 if subject in ctx.open_subjects:
                     # the merge may only have left the history window: ask git directly
-                    merged = subprocess.run(["git", "-C", str(ctx.repo), "merge-base", "--is-ancestor", head,
-                                             _lib.main_ref(ctx)], capture_output=True).returncode == 0
-                    if merged:
+                    try:
+                        rc = subprocess.run(["git", "-C", str(ctx.repo), "merge-base", "--is-ancestor", head,
+                                             _lib.main_ref(ctx)], capture_output=True, timeout=10).returncode
+                    except (OSError, subprocess.TimeoutExpired):
+                        rc = -1
+                    if rc == 0:
                         out.append({"subject": subject, "evidence": path,
                                     "summary": f"branch {branch.replace('refs/heads/', '')} merged before the "
                                                f"{s['history_days']}-day history window, worktree still on disk"})
-                    else:
-                        ctx.clear(subject)   # positively not merged (for example new commits on the branch)
+                    elif rc == 1:
+                        ctx.clear(subject)   # git's definite answer: not merged (for example new commits)
+                    else:   # 128 or a failure: no answer, so the alert stays open (UNSEEN)
+                        ctx.note(f"{subject}: git merge-base --is-ancestor gave no answer (exit {rc}); not judged")
                 continue
             ct, sha = merged_at[head]
             late = _lib.minutes(_lib.ts(ct), ctx.now)

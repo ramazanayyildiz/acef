@@ -2,7 +2,7 @@
 
 Question: Is an agent, lane or review run making no progress, or retrying the same failure?
 Source: sources.agent_runs (run items: start/finish stamps, logs, optional numbered attempt logs); sources.command_log (JSONL lines: ts, cmd, rc, err, tree)
-Rule: a running item whose newest file is older than stuck_min; or the same command failing with the same error repeat_fail times in a row with no file change between (the same non-empty tree hash; a missing hash is unknown, not "no change"; or the same attempt-log tail and no result). Resolves only when the run is seen active or finished
+Rule: a running item whose newest file is older than stuck_min; or the same command failing with the same error repeat_fail times in a row with no file change between (the same non-empty tree hash; a missing hash is unknown, not "no change"; or the same attempt-log tail and no result). Resolves only on an observed finish, observed progress, a produced result or differing attempt endings; missing stamps or logs leave the alert open
 Threshold: stuck_min=30, repeat_fail=3, max_age_h=12
 Owner: coordinator
 Scope: acef
@@ -54,10 +54,18 @@ def detect(ctx):
             out.append({"subject": item.name, "evidence": str(item.path), "loss_min": idle, "loss_kind": "time",
                         "summary": f"running since {item.started:%Y-%m-%d %H:%MZ}, no file change for {idle} min"})
             continue
-        ctx.clear(item.name)   # seen: active, or finished
+        if item.done or item.running:
+            ctx.clear(item.name)   # observed finish, or observed progress (a running item with a recent change)
+        # neither: no start stamp and no finish -> no evidence either way, the alert stays open (UNSEEN)
         attempts = item.attempts[-s["repeat_fail"]:]
         tails = {tail_line(a) for a in attempts}
-        if len(attempts) >= s["repeat_fail"] and not item.result.strip() and len(tails) == 1 and "" not in tails:
+        has_result = bool(item.result.strip())
+        if has_result:
+            ctx.clear(f"{item.name}:repeat")   # a result was produced
+            continue
+        if len(attempts) < s["repeat_fail"] or "" in tails:
+            continue   # attempt logs missing or unreadable: no evidence, not a recovery
+        if len(tails) == 1:
             times = [_lib.mtime(_lib.Path(a)) for a in item.attempts]
             span = _lib.minutes(min(times), max(times))
             out.append({"subject": f"{item.name}:repeat", "evidence": str(item.path), "loss_min": span,
@@ -65,7 +73,7 @@ def detect(ctx):
                         "summary": f"{len(item.attempts)} attempts, no result, same last line: "
                                    f"{tails.pop()[:120]}"})
         else:
-            ctx.clear(f"{item.name}:repeat")
+            ctx.clear(f"{item.name}:repeat")   # the last attempts ended differently: not the same failure
     if log:
         since = ctx.now - dt.timedelta(hours=s["max_age_h"])
         by_cmd = {}
