@@ -142,6 +142,13 @@ try {
   if (JSON.parse(fs.readFileSync(runtimePackage, "utf8")).type !== "commonjs") throw new Error("ACEF runtime CommonJS boundary was not installed");
   const installationManifest = path.join(tmp, "docs", "ai", "ACEF_INSTALLATION.json");
   if (!fs.existsSync(installationManifest)) throw new Error("ACEF installation manifest was not written");
+  for (const name of ["acef-detect", "acef-retro", path.join("detectors", "_lib.py"), path.join("detectors", "stuck_agent.py")]) {
+    if (!fs.existsSync(path.join(tmp, ".acef", "bin", name))) throw new Error(`waste detection file was not installed: ${name}`);
+  }
+  const detectList = run(path.join(tmp, ".acef", "bin", "acef-detect"), ["--repo", tmp, "--list"],
+    { env: { ...process.env, ACEF_FEEDBACK_DIR: path.join(tmp, ".acef-feedback-test") } });
+  if (!String(detectList).includes("stuck_agent (core")) throw new Error(`installed acef-detect --list failed:\n${detectList}`);
+  if (fs.existsSync(path.join(tmp, ".acef", "bin", "detectors", "__pycache__"))) throw new Error("installed acef-detect wrote bytecode into the host");
   const installation = JSON.parse(fs.readFileSync(installationManifest, "utf8"));
   if (installation.schema !== "acef.installation.v1") throw new Error("installation manifest schema missing");
   if (!installation.acefVersion?.sourceCommit) throw new Error("installation manifest missing source commit");

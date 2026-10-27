@@ -95,10 +95,21 @@ retro with at most five proposals).
 - **Method:** `method/FEEDBACK_LOOP.md` "Detection loop" and the retro in "Weekly cycle"; `method/WEEKLY_RETRO.md`
   tells the coordinator how to write the judgment parts. `templates/slice/closing-note.md` gets
   `Dedektör: <path | yok — reason>` for investigation slices (checked by `scripts/slice/selfcheck.sh`).
-- Tests: `scripts/test-acef-detect` (80 checks: each detector fires on a fixture and stays silent on a control, the
-  alert lifecycle, losses, skips, host detectors, working hours), `scripts/test-acef-retro` (43 checks).
-- Capability record `docs/ai/capabilities/waste-detection.json` (status `wired`). Not yet installed into hosts by
-  `install-acef-tools`: run the scripts from the ACEF checkout.
+- Tests: `scripts/test-acef-detect` (94 checks: each detector fires on a fixture and stays silent on a control, the
+  alert lifecycle, losses, skips, host detectors, working hours), `scripts/test-acef-retro` (44 checks).
+- Capability record `docs/ai/capabilities/waste-detection.json` (status `wired`).
+- **Review r1 fixes (independent review, REVISE, seven P2s; each with a regression test that fails on the earlier
+  code):** (1) `acef-detect`/`acef-retro` set `sys.dont_write_bytecode`, so loading detectors leaves no `__pycache__`
+  in a host or the checkout; (2) one lock per project's alert log across read state → decide → append (and the
+  state file), so parallel polls cannot open one key twice, and `acef-note ack` validates under the same lock;
+  (3) an expired deferral reopens with the deadline counted from its expiry, not from the poll; (4) only a positive
+  observation resolves an alert (`ctx.clear(subject)` in every core detector); a subject that aged out of a window or
+  vanished stays open and is printed `UNSEEN`; old run directories that are not marked done are read, because
+  appended logs do not move a directory's mtime; an open alert's run is looked up directly; (5) repeated failures
+  without a tree hash are "file change unknown", not an alert; (6) an alert that crosses 30 min while open writes its
+  loss once (`loss` event); (7) a retro snapshot folds only the events up to its window's end.
+- **`install-acef-tools`** installs `acef-detect`, `acef-retro` and `scripts/detectors/` into `.acef/bin/` (host
+  detectors stay in `.acef/detectors/`); `scripts/test-install-acef-tools` runs the installed `acef-detect --list`.
 
 ## Unreleased — Changelog rule and feedback-log capability record (2026-10-27)
 

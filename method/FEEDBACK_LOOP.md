@@ -37,7 +37,8 @@ Owner decision 2026-10-27: recurring waste (stuck agents, finished work waiting,
 loops, forgotten sessions, improvements merged but not in effect, open work far past its usual time) went unnoticed
 until the owner asked, and a whole day could be lost. Detection runs **during the day**, not nightly.
 
-- **When:** the coordinator's ~15-minute check runs `scripts/acef-detect --repo <host> --quiet` (from the ACEF checkout;
+- **When:** the coordinator's ~15-minute check runs `.acef/bin/acef-detect --repo . --quiet` (installed by
+  `install-acef-tools`, or `scripts/acef-detect` from the ACEF checkout;
   target under 5 s, no tests, no network, a few git calls and stat-only scans). It prints only new, reopened and
   overdue alerts; without `--quiet` it also prints `OK`, `SKIP <name> (no source: …)`, `WATCH` and `INFO` lines.
   `--dry-run` writes nothing; `--list` shows the detectors with their headers.
@@ -56,12 +57,16 @@ until the owner asked, and a whole day could be lost. Detection runs **during th
 - **Alert lifecycle** (`alerts/<project>.jsonl` in the store, append-only events): a breach **opens** an alert with an
   owner and an ack deadline (4 working hours); one alert per detector + subject. The owner answers with
   `acef-note ack <id> --slice <id>` (it becomes work), `--defer <date> --reason "…"` (a dated, reasoned deferral) or
-  `--resolve "<evidence>"`. A finding that is gone on a later poll **resolves** its alert; a recurrence **reopens** the
-  same id; a deferral past its date reopens it. `acef-note due` prints `ALERT OPEN` once an alert has stayed unacked
+  `--resolve "<evidence>"`. An alert **resolves** by itself only when its detector positively observes the cleared
+  condition (the run finished, the work merged, the worktree is gone from `git worktree list`); a subject that merely
+  dropped out of a window or vanished stays open and is printed `UNSEEN`. A recurrence **reopens** the same id; a
+  deferral past its date reopens it with the deadline counted from the deferral's expiry. Parallel polls and acks
+  share one lock per project, so a key never gets two alerts. `acef-note due` prints `ALERT OPEN` once an alert has stayed unacked
   for more than two polls and `ALERT OVERDUE` once its ack deadline has passed; overdue and unowned alerts go to the
   owner's weekly retro. `acef-note alerts` lists the states.
-- **Central log:** only real losses are also written there by `acef-detect`: 30 minutes or more lost, lost results, an
-  improvement merged but not in effect (later: a rule breach, an escaped defect). The first loss of a detector is a new
+- **Central log:** only real losses are also written there by `acef-detect`: 30 minutes or more lost (also when an open
+  alert crosses 30 minutes later, once), lost results, an improvement merged but not in effect (later: a rule breach,
+  an escaped defect). The first loss of a detector is a new
   entry with the detector's tags; later ones are `--repeat` of it. Waiting work and size overruns stay alerts.
 - **Investigations close with a detector:** a "why is X slow" or "why does X keep happening" slice closes with
   `Dedektör: <path | yok — reason>` in its closing note: either a detector that would have caught it, or why none can.

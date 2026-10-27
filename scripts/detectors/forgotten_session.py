@@ -30,7 +30,16 @@ def detect(ctx):
                 held_takes[k] = row
             elif row.get("event") == "release":
                 held_takes.pop(k, None)
-    for item in _lib.items(ctx, "agent_runs", s["max_age_h"], required=False) if runs else []:
+    found = _lib.items(ctx, "agent_runs", s["max_age_h"], required=False) if runs else []
+    names = {i.name for i in found}
+    for subject in ctx.open_subjects:   # an open alert's run that aged out of the window is looked up directly
+        name = subject.split(":", 1)[0]
+        if runs and not subject.startswith("worktree:") and name not in names:
+            item = _lib.find_item(ctx, "agent_runs", name)
+            if item:
+                found.append(item)
+                names.add(name)
+    for item in found:
         if not item.done:
             continue
         done_at = item.finished or item.last
@@ -39,10 +48,18 @@ def detect(ctx):
             continue
         path = str(item.path)
         procs = [pid for pid, cmd in _lib.processes(ctx) if path in cmd]
-        if procs:
+        if not procs:
+            ctx.clear(f"{item.name}:process")
+        else:
             out.append({"subject": f"{item.name}:process", "evidence": path, "loss_min": late, "loss_kind": "time",
                         "summary": f"done {late} min ago, process(es) {', '.join(map(str, procs[:5]))} still run "
                                    f"with its path"})
+        held_now = {f"{item.name}:slot:{h}/{sl}" for (h, sl), r in held_takes.items()
+                    if r.get("owner") in (item.name, item.id) and r["_ts"] <= done_at}
+        if slots:
+            for subject in ctx.open_subjects:
+                if subject.startswith(f"{item.name}:slot:") and subject not in held_now:
+                    ctx.clear(subject)
         for (host, slot), row in held_takes.items():
             if row.get("owner") in (item.name, item.id) and row["_ts"] <= done_at:
                 out.append({"subject": f"{item.name}:slot:{host}/{slot}", "evidence": str(ctx.path(slots)),
@@ -50,7 +67,9 @@ def detect(ctx):
                             "summary": f"done {late} min ago, still holds {host} {slot} (taken {row['ts']})"})
         for template in s["leftovers"]:
             left = ctx.path(template.format(name=item.name, id=item.id))
-            if left.exists():
+            if not left.exists():
+                ctx.clear(f"{item.name}:leftover")
+            else:
                 out.append({"subject": f"{item.name}:leftover", "evidence": str(left),
                             "summary": f"done {late} min ago, leftover {left} still on disk"})
     if git_ok and s["merged_worktrees"]:
@@ -60,9 +79,17 @@ def detect(ctx):
             parents, ct, subject = hist["commits"][sha]
             for p in parents[1:]:
                 merged_at.setdefault(p, (ct, sha))
-        for wt in _lib.worktrees(ctx):
+        listed = _lib.worktrees(ctx)
+        names_now = {f"worktree:{_lib.Path(w.get('worktree', '')).name}" for w in listed}
+        for subject in ctx.open_subjects:
+            if subject.startswith("worktree:") and subject not in names_now:
+                ctx.clear(subject)   # git worktree list no longer has it
+        for wt in listed:
             path, head, branch = wt.get("worktree", ""), wt.get("HEAD", ""), wt.get("branch", "")
-            if not branch or _lib.Path(path).resolve() == ctx.repo.resolve() or head not in merged_at:
+            if not branch or _lib.Path(path).resolve() == ctx.repo.resolve():
+                continue
+            if head not in merged_at:
+                ctx.clear(f"worktree:{_lib.Path(path).name}")
                 continue
             ct, sha = merged_at[head]
             late = _lib.minutes(_lib.ts(ct), ctx.now)

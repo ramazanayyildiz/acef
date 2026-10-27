@@ -369,7 +369,8 @@ def last_retro(base: Path):
 
 # ---------------------------------------------------------------- alerts (method/FEEDBACK_LOOP.md "Detection loop")
 # alerts/<project>.jsonl is append-only. Events: poll (one per acef-detect run), open, ack (slice id), defer (date +
-# reason), resolve (evidence), reopen. One alert per detector+subject ("key"); a recurrence reopens the same id.
+# reason), resolve (evidence), reopen, loss (an open alert crossed the loss threshold and was logged). One alert per
+# detector+subject ("key"); a recurrence reopens the same id.
 UTC = dt.timezone.utc
 DEFAULT_WORKING_HOURS = {"start": 9, "end": 18, "days": [0, 1, 2, 3, 4]}   # local time, Monday = 0
 ALERT_ID = re.compile(r"^(?P<project>[a-z0-9][a-z0-9-]*)-A(?P<n>\d+)$")
@@ -435,19 +436,27 @@ def read_alert_events(path: Path) -> list:
     return events
 
 
-def append_alert_event(base: Path, project: str, event: dict) -> dict:
+def alert_lock(base: Path, project: str):
+    """The one lock for a project's alert log: hold it across read state -> decide -> append (acef-detect, ack)."""
+    return locked(base / "alerts" / f"{project}.jsonl")
+
+
+def append_alert_event(base: Path, project: str, event: dict, held: bool = False) -> dict:
+    """Append one event. held=True: the caller already holds alert_lock (flock is not re-entrant)."""
     if not PROJECT.match(project):
         sys.exit("acef-note: project must be lowercase letters, digits and dashes")
+    if not held:
+        with alert_lock(base, project):
+            return append_alert_event(base, project, event, held=True)
     path = base / "alerts" / f"{project}.jsonl"
     event = {"ts": iso(now_utc()), **event}
-    with locked(path):
-        if event["event"] == "open" and not event.get("id"):
-            opened = [e for e in read_alert_events(path) if e["event"] == "open"]
-            event["id"] = f"{project}-A{len(opened) + 1}"
-        with open(path, "a") as handle:
-            handle.write(json.dumps(event, ensure_ascii=False, sort_keys=True) + "\n")
-            handle.flush()
-            os.fsync(handle.fileno())
+    if event["event"] == "open" and not event.get("id"):
+        opened = [e for e in read_alert_events(path) if e["event"] == "open"]
+        event["id"] = f"{project}-A{len(opened) + 1}"
+    with open(path, "a") as handle:
+        handle.write(json.dumps(event, ensure_ascii=False, sort_keys=True) + "\n")
+        handle.flush()
+        os.fsync(handle.fileno())
     return event
 
 
@@ -475,7 +484,9 @@ def alert_states(events: list, now: dt.datetime) -> dict:
             a.update(status="resolved", resolved=e["ts"], resolution=e.get("evidence", ""))
         elif kind == "reopen":
             a.update(status="open", since=e["ts"], slice="", ack_by=e.get("ack_by") or a["ack_by"],
-                     summary=e.get("summary") or a["summary"], reopens=a["reopens"] + 1)
+                     summary=e.get("summary") or a["summary"], reopens=a["reopens"] + 1, note=e.get("note", ""))
+        elif kind == "loss":   # an open alert crossed the loss threshold; logged once per open cycle
+            a.update(note=e.get("note", ""), loss_min=e.get("loss_min"))
         if a is not None:
             a["history"].append(f"{e['ts']} {kind}")
     for a in states.values():
@@ -496,26 +507,28 @@ def cmd_ack(args):
     match = ALERT_ID.match(args.id)
     if not match:
         sys.exit("acef-note: alert ids look like <project>-A<n>")
-    path = base / "alerts" / f"{match.group('project')}.jsonl"
-    state = alert_states(read_alert_events(path), now_utc()).get(args.id)
-    if not state:
-        sys.exit(f"acef-note: no alert {args.id}")
+    project = match.group("project")
+    path = base / "alerts" / f"{project}.jsonl"
     chosen = [x for x in (args.slice, args.defer, args.resolve) if x]
     if len(chosen) != 1:
         sys.exit("acef-note: give exactly one of --slice <id>, --defer <YYYY-MM-DD> --reason \"..\", --resolve \"..\"")
-    if state["status"] == "resolved" and not args.resolve:
-        sys.exit(f"acef-note: {args.id} is resolved; a recurrence reopens it")
-    if args.slice:
-        event = {"event": "ack", "id": args.id, "slice": clean(args.slice)}
-    elif args.defer:
-        if not re.match(r"^\d{4}-\d{2}-\d{2}$", args.defer) or not args.reason.strip():
-            sys.exit("acef-note: --defer takes a YYYY-MM-DD date and needs --reason \"..\"")
-        if dt.date.fromisoformat(args.defer) < now_utc().astimezone().date():
-            sys.exit("acef-note: the deferral date is in the past")
-        event = {"event": "defer", "id": args.id, "until": args.defer, "reason": clean(args.reason)}
-    else:
-        event = {"event": "resolve", "id": args.id, "evidence": clean(args.resolve)}
-    append_alert_event(base, match.group("project"), event)
+    with alert_lock(base, project):   # validate against the state the event is appended to
+        state = alert_states(read_alert_events(path), now_utc()).get(args.id)
+        if not state:
+            sys.exit(f"acef-note: no alert {args.id}")
+        if state["status"] == "resolved" and not args.resolve:
+            sys.exit(f"acef-note: {args.id} is resolved; a recurrence reopens it")
+        if args.slice:
+            event = {"event": "ack", "id": args.id, "slice": clean(args.slice)}
+        elif args.defer:
+            if not re.match(r"^\d{4}-\d{2}-\d{2}$", args.defer) or not args.reason.strip():
+                sys.exit("acef-note: --defer takes a YYYY-MM-DD date and needs --reason \"..\"")
+            if dt.date.fromisoformat(args.defer) < now_utc().astimezone().date():
+                sys.exit("acef-note: the deferral date is in the past")
+            event = {"event": "defer", "id": args.id, "until": args.defer, "reason": clean(args.reason)}
+        else:
+            event = {"event": "resolve", "id": args.id, "evidence": clean(args.resolve)}
+        append_alert_event(base, project, event, held=True)
     print(f"{args.id} {event['event']}")
 
 

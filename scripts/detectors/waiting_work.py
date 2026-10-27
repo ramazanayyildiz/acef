@@ -8,6 +8,7 @@ Owner: merge-operator
 Scope: acef
 Kind: age
 Tags: state,host
+Clears: when the work merges, goes back to review, waits less than the limit, appears in the queue, or its review starts
 """
 import re
 import statistics
@@ -29,10 +30,14 @@ def detect(ctx):
             continue   # reviews of things that never merge (plans, retros) are not waiting work
         latest = items[-1]
         if latest.verdict != "ACCEPT":
+            ctx.clear(work_id)   # seen back in review: no longer accepted-and-waiting
+            ctx.clear(f"{work_id}:queue")
             continue
         merges = [m for m in _lib.mentions(ctx, work_id, s["median_days"] + 1) if m >= latest.when]
         if merges:
             delays.append(_lib.minutes(latest.when, merges[0]))
+            ctx.clear(work_id)
+            ctx.clear(f"{work_id}:queue")
         elif latest.when >= ctx.now - _lib.dt.timedelta(days=s["window_days"]):
             accepted.append((work_id, latest))
     if len(delays) >= _lib.MIN_SAMPLES:
@@ -51,10 +56,15 @@ def detect(ctx):
             out.append({"subject": work_id, "evidence": str(latest.path),
                         "summary": f"accepted {age // 60} h {age % 60} min ago, not merged (limit {limit} min = "
                                    f"{s['accepted_factor']} x {how})"})
-        if queue is not None and age > s["queue_grace_min"] and not re.search(
-                r"(?<![A-Z0-9-])" + re.escape(work_id) + r"(?![A-Z0-9])", queue):
-            out.append({"subject": f"{work_id}:queue", "evidence": str(ctx.path(queue_path)),
-                        "summary": f"accepted {age} min ago, not merged, and not named in the merge queue"})
+        else:
+            ctx.clear(work_id)
+        if queue is not None:
+            if age > s["queue_grace_min"] and not re.search(
+                    r"(?<![A-Z0-9-])" + re.escape(work_id) + r"(?![A-Z0-9])", queue):
+                out.append({"subject": f"{work_id}:queue", "evidence": str(ctx.path(queue_path)),
+                            "summary": f"accepted {age} min ago, not merged, and not named in the merge queue"})
+            else:
+                ctx.clear(f"{work_id}:queue")
     on_main = None
     for item in _lib.items(ctx, "dev_reports", s["window_days"] * 24, required=False):
         match = re.match(s["dev_report_regex"], item.path.stem)
@@ -63,15 +73,22 @@ def detect(ctx):
         if on_main is None:   # a report already on main belongs to merged work; checkouts reset file times
             on_main = {line.rsplit("/", 1)[-1] for line in
                        _lib.git(ctx, "ls-tree", "-r", "--name-only", _lib.main_ref(ctx)).splitlines()}
-        if item.path.name in on_main:
-            continue
         work_id = match.group("id").upper()
+        if item.path.name in on_main:
+            ctx.clear(f"{work_id}:review")
+            continue
         age = _lib.minutes(item.when, ctx.now)
         started = [r for r in rounds.get(work_id, []) if (r.started or r.when) >= item.when]
         merged = [m for m in _lib.mentions(ctx, work_id, s["window_days"] + 1) if m >= item.when]
         if age > s["review_wait_min"] and not started and not merged:
             out.append({"subject": f"{work_id}:review", "evidence": str(item.path),
                         "summary": f"developer report {age // 60} h old, no review started after it"})
+        else:
+            ctx.clear(f"{work_id}:review")
+    for subject in ctx.open_subjects:   # aged out of the window: only a merge naming the id counts as cleared
+        work_id = subject.split(":", 1)[0]
+        if _lib.mentions(ctx, work_id, s["median_days"] + 1):
+            ctx.clear(subject)
     seen, unique = set(), []
     for f in out:
         if f["subject"] not in seen:

@@ -8,7 +8,8 @@ Runs every detector in scripts/detectors/*.py (core, files starting with "_" are
 (host). Each detector is one small file: a docstring header (Question, Source, Rule, Threshold, Owner, Scope, Kind,
 Tags) and detect(ctx) -> list of findings. A breach opens an ALERT in the central store
 (ACEF_FEEDBACK_DIR/alerts/<project>.jsonl, via acef-note); one alert per detector+subject; a finding that is gone on a
-later poll resolves its alert; a recurrence reopens it. Real losses (>= 30 min, lost results, an inactive merged
+later poll resolves its alert only when the detector positively observed it fine (ctx.clear); a subject that is merely
+missing keeps its alert open (UNSEEN). A recurrence reopens the same alert. Real losses (>= 30 min, lost results, an inactive merged
 improvement, a rule breach) are also written to the central log, deduplicated with --repeat.
 
 Config: <host>/slice-method.json "detectors", overlaid by --config (a JSON file that is either the whole
@@ -19,13 +20,16 @@ A detector whose source is not configured prints "SKIP <name> (no source: <key>)
 Cheap by design: no tests, no network, a few git calls, stat-only directory scans. Never writes into the host repo.
 Exit 0 (alerts or not), 2 usage/config error, 3 a detector crashed (the others still ran).
 """
-import argparse
+import sys
+
+sys.dont_write_bytecode = True   # loading detectors must never leave __pycache__ in the host (or the ACEF checkout)
+
+import argparse  # noqa: E402
 import importlib.machinery
 import importlib.util
 import json
 import os
 import re
-import sys
 import time
 import traceback
 from pathlib import Path
@@ -125,6 +129,13 @@ class Ctx:
         self.sources = cfg["sources"]
         self.info = []
         self.Skip = Skip
+        self.cleared = set()        # subjects positively observed as fine this poll
+        self.open_subjects = set()  # subjects of this detector's alerts that are not resolved
+
+    def clear(self, subject: str):
+        """Report a positive observation that `subject` is fine now. Only this resolves an alert: a subject that is
+        merely missing (aged out of a window, source unreadable) keeps its alert open."""
+        self.cleared.add(str(subject))
 
     def source(self, key: str, required: bool = True):
         value = self.sources.get(key)
@@ -153,20 +164,7 @@ def run(args) -> int:
     project, now = cfg["project"], note.now_utc()
     base = note.ensure_store() if not args.dry_run else note.root()
     alerts_path = base / "alerts" / f"{project}.jsonl"
-    events = note.read_alert_events(alerts_path)
-    states = note.alert_states(events, now)
-    by_key = {}
-    for a in states.values():
-        by_key.setdefault(a["key"], a)   # first alert for a key is the one recurrences reopen
     state_path = base / "alerts" / f"{project}.state.json"
-    try:
-        saved = json.loads(state_path.read_text()) if state_path.exists() else {}
-    except ValueError:
-        saved = {}
-    pending, det_state = saved.get("pending", {}), saved.get("detectors", {})
-    started, cache, crashed, lines = time.monotonic(), {}, False, []
-    only = {x.strip() for x in args.only.split(",") if x.strip()}
-    disabled = set(cfg.get("disabled") or [])
     detectors = discover(repo)
     if args.list:
         for origin, name, path in detectors:
@@ -177,11 +175,14 @@ def run(args) -> int:
             except Exception as exc:  # noqa: BLE001
                 print(f"{name} ({origin}): BAD HEADER {exc}")
         return 0
-    new_pending, opened = {}, 0
-    loss_origin = {}   # detector -> first central-log id of its losses (this poll included)
-    for a in sorted(states.values(), key=lambda a: a["opened"]):
-        if a.get("note"):
-            loss_origin.setdefault(a["detector"], a["note"])
+    snapshot = note.alert_states(note.read_alert_events(alerts_path), now)   # read-only, for open_subjects
+    saved = read_state(state_path)
+    det_state = saved.get("detectors", {})
+    started, cache, crashed, lines = time.monotonic(), {}, False, []
+    only = {x.strip() for x in args.only.split(",") if x.strip()}
+    disabled = set(cfg.get("disabled") or [])
+    results = []
+    # 1. run the detectors; nothing is written yet
     for origin, name, path in detectors:
         if (only and name not in only) or name in disabled:
             continue
@@ -195,6 +196,8 @@ def run(args) -> int:
             continue
         ctx = Ctx(repo, cfg, name, getattr(module, "DEFAULTS", {}), now, det_state.setdefault(name, {}), cache)
         ctx.store = base
+        ctx.open_subjects = {a["subject"] for a in snapshot.values()
+                             if a["detector"] == name and a["status"] != "resolved"}
         try:
             findings = module.detect(ctx) or []
         except Skip as exc:
@@ -206,7 +209,59 @@ def run(args) -> int:
                 traceback.print_exc()
             crashed = True
             continue
-        ms = int((time.monotonic() - t0) * 1000)
+        results.append((name, header, ctx, findings, int((time.monotonic() - t0) * 1000)))
+    # 2. one lock across read state -> decide -> append, so parallel polls cannot open the same key twice
+    if args.dry_run:
+        opened = apply(args, cfg, base, project, now, results, saved, lines)
+    else:
+        with note.alert_lock(base, project):
+            saved = read_state(state_path)
+            saved["detectors"] = {**saved.get("detectors", {}), **det_state}
+            opened = apply(args, cfg, base, project, now, results, saved, lines)
+            elapsed = int((time.monotonic() - started) * 1000)
+            note.append_alert_event(base, project, {"event": "poll", "ms": elapsed, "opened": opened}, held=True)
+            tmp = state_path.with_suffix(".json.tmp")
+            tmp.write_text(json.dumps(saved, sort_keys=True))
+            os.replace(tmp, state_path)
+        hosts = base / "hosts"
+        hosts.mkdir(exist_ok=True)
+        (hosts / f"{project}.json").write_text(json.dumps(
+            {"repo": str(repo), "config": str(Path(args.config).expanduser().resolve()) if args.config else "",
+             "last_poll": note.iso(now)}, indent=1))
+    elapsed = int((time.monotonic() - started) * 1000)
+    print(f"acef-detect {project} {note.iso(now)}{' (dry run, nothing written)' if args.dry_run else ''}: "
+          f"{opened} new/reopened alert(s), {elapsed} ms")
+    for line in lines:
+        if args.quiet and not re.match(r"^(ALERT \S+ (NEW|REOPEN|OVERDUE)|ERROR)", line):
+            continue
+        print(line)
+    return 3 if crashed else 0
+
+
+def read_state(path: Path) -> dict:
+    try:
+        return json.loads(path.read_text()) if path.exists() else {}
+    except ValueError:
+        return {}
+
+
+def apply(args, cfg, base, project, now, results, saved, lines) -> int:
+    """Turn findings into alert events against the current log (the caller holds the alert lock unless dry run)."""
+    write = not args.dry_run
+    states = note.alert_states(note.read_alert_events(base / "alerts" / f"{project}.jsonl"), now)
+    by_key = {}
+    for a in states.values():
+        by_key.setdefault(a["key"], a)   # first alert for a key is the one recurrences reopen
+    loss_origin = {}   # detector -> first central-log id of its losses (this poll included)
+    for a in sorted(states.values(), key=lambda a: a["opened"]):
+        if a.get("note"):
+            loss_origin.setdefault(a["detector"], a["note"])
+    pending, new_pending, opened = saved.get("pending", {}), {}, 0
+
+    def append(event):
+        return note.append_alert_event(base, project, event, held=True) if write else event
+
+    for name, header, ctx, findings, ms in results:
         owner = cfg["owners"].get(name) or cfg["owners"].get("default") or header["Owner"]
         seen = set()
         for f in findings:
@@ -215,70 +270,62 @@ def run(args) -> int:
             seen.add(key)
             need = int(f.get("confirm_polls") or ctx.settings.get("confirm_polls") or 1)
             count = pending.get(key, 0) + 1
+            new_pending[key] = count
             if count < need:
-                new_pending[key] = count
                 lines.append(f"WATCH {name} {subject} ({count}/{need} polls) — {f['summary']}")
                 continue
-            new_pending[key] = count
             existing = by_key.get(key)
             loss = f.get("loss_min")
             is_loss = (f.get("loss_kind") in ALWAYS_LOSS) or (isinstance(loss, (int, float)) and loss >= LOSS_MIN)
             if existing and existing["status"] != "resolved" and not existing.get("defer_expired"):
+                logged = ""
+                if is_loss and not existing.get("note"):   # crossed the loss threshold while open: log it once
+                    logged = write_loss(base, project, name, header, f, loss_origin) if write else "(dry-run)"
+                    append({"event": "loss", "id": existing["id"], "note": logged, "loss_min": loss})
+                    existing["note"] = logged
                 tag = "OVERDUE" if existing["overdue"] else existing["status"].upper()
-                lines.append(f"ALERT {existing['id']} {tag} [{name}] {subject} — {f['summary']}")
+                lines.append(f"ALERT {existing['id']} {tag} [{name}] {subject} — {f['summary']}"
+                             f"{' (loss logged ' + logged + ')' if logged else ''}")
                 continue
-            ack_by = note.iso(note.add_working_hours(now, cfg["ack_hours"], cfg["working_hours"]))
-            note_id = ""
-            if is_loss and not args.dry_run:
-                note_id = write_loss(base, project, name, header, f, loss_origin)
-            event = {"detector": name, "subject": subject, "key": key, "owner": owner, "summary": f["summary"],
-                     "evidence": f.get("evidence", ""), "ack_by": ack_by, "loss_min": loss,
-                     "loss_kind": f.get("loss_kind", ""), "note": note_id, "wh": cfg["working_hours"],
-                     "ack_hours": cfg["ack_hours"], "overdue_polls": cfg["overdue_polls"]}
+            if existing and existing.get("defer_expired"):
+                ack_by = existing["ack_by"]   # the deadline runs from the deferral's expiry, not from this poll
+            else:
+                ack_by = note.iso(note.add_working_hours(now, cfg["ack_hours"], cfg["working_hours"]))
+            note_id = write_loss(base, project, name, header, f, loss_origin) if (is_loss and write) else ""
             if existing:   # resolved, or a deferral that ran out: the same alert id reopens
                 why = "deferral passed" if existing.get("defer_expired") else "recurred"
-                if not args.dry_run:
-                    note.append_alert_event(base, project, {"event": "reopen", "id": existing["id"], "reason": why,
-                                                            "summary": f["summary"], "ack_by": ack_by,
-                                                            "note": note_id})
+                append({"event": "reopen", "id": existing["id"], "reason": why, "summary": f["summary"],
+                        "ack_by": ack_by, "note": note_id})
+                existing.update(status="open", defer_expired=False, note=note_id, ack_by=ack_by)
                 lines.append(f"ALERT {existing['id']} REOPEN [{name}] {subject} — {f['summary']} "
                              f"(owner {owner}, ack by {ack_by}{', log ' + note_id if note_id else ''})")
             else:
-                if args.dry_run:
-                    alert_id = "(dry-run)"
-                else:
-                    alert_id = note.append_alert_event(base, project, {"event": "open", **event})["id"]
-                    by_key[key] = {"id": alert_id, "status": "open", "overdue": False}
+                event = append({"event": "open", "detector": name, "subject": subject, "key": key, "owner": owner,
+                                "summary": f["summary"], "evidence": f.get("evidence", ""), "ack_by": ack_by,
+                                "loss_min": loss, "loss_kind": f.get("loss_kind", ""), "note": note_id,
+                                "wh": cfg["working_hours"], "ack_hours": cfg["ack_hours"],
+                                "overdue_polls": cfg["overdue_polls"]})
+                alert_id = event.get("id", "(dry-run)")
+                by_key[key] = {"id": alert_id, "status": "open", "overdue": False, "note": note_id,
+                               "ack_by": ack_by}
                 lines.append(f"ALERT {alert_id} NEW [{name}] {subject} — {f['summary']} "
                              f"(owner {owner}, ack by {ack_by}{', log ' + note_id if note_id else ''})")
             opened += 1
-        # a finding that is gone resolves its alert (only for a detector that ran)
+        # only a positive observation resolves: a subject that is merely missing keeps its alert
         for a in list(states.values()):
             if a["detector"] == name and a["status"] != "resolved" and a["key"] not in seen:
-                if not args.dry_run:
-                    note.append_alert_event(base, project, {"event": "resolve", "id": a["id"],
-                                                            "evidence": f"cleared at poll {note.iso(now)}: "
-                                                                        f"{name} no longer reports it"})
-                lines.append(f"CLEARED {a['id']} [{name}] {a['subject']}")
+                if a["subject"] in ctx.cleared:
+                    append({"event": "resolve", "id": a["id"],
+                            "evidence": f"cleared at poll {note.iso(now)}: {name} observed it fine"})
+                    lines.append(f"CLEARED {a['id']} [{name}] {a['subject']}")
+                else:
+                    lines.append(f"UNSEEN {a['id']} [{name}] {a['subject']} (not observed this poll; stays "
+                                 f"{a['status']})")
         for text in ctx.info:
             lines.append(f"INFO {name}: {text}")
         lines.append(f"OK   {name} ({len(findings)} finding{'s' if len(findings) != 1 else ''}, {ms} ms)")
-    elapsed = int((time.monotonic() - started) * 1000)
-    if not args.dry_run:
-        note.append_alert_event(base, project, {"event": "poll", "ms": elapsed, "opened": opened})
-        state_path.write_text(json.dumps({"pending": new_pending, "detectors": det_state}, sort_keys=True))
-        hosts = base / "hosts"
-        hosts.mkdir(exist_ok=True)
-        (hosts / f"{project}.json").write_text(json.dumps(
-            {"repo": str(repo), "config": str(Path(args.config).expanduser().resolve()) if args.config else "",
-             "last_poll": note.iso(now)}, indent=1))
-    print(f"acef-detect {project} {note.iso(now)}{' (dry run, nothing written)' if args.dry_run else ''}: "
-          f"{opened} new/reopened alert(s), {elapsed} ms")
-    for line in lines:
-        if args.quiet and not re.match(r"^(ALERT \S+ (NEW|REOPEN|OVERDUE)|ERROR)", line):
-            continue
-        print(line)
-    return 3 if crashed else 0
+    saved["pending"] = new_pending
+    return opened
 
 
 def write_loss(base, project, name, header, finding, loss_origin) -> str:

@@ -27,18 +27,20 @@
     "cli": [
       "scripts/acef-detect",
       "scripts/acef-retro",
-      "scripts/acef-note"
+      "scripts/acef-note",
+      "scripts/install-acef-tools"
     ],
     "tests": [
       "scripts/test-acef-detect",
       "scripts/test-acef-retro",
       "scripts/test-acef-note",
-      "scripts/slice/selfcheck.sh"
+      "scripts/slice/selfcheck.sh",
+      "scripts/test-install-acef-tools"
     ]
   },
   "limitations": [
     "Wired, not enforced: nothing runs acef-detect on its own; the coordinator's 15-minute check has to call it, and nothing blocks an owner who leaves alerts unanswered (they become ALERT OVERDUE and go to the retro).",
-    "Not installed into hosts: install-acef-tools does not copy acef-detect, acef-retro or scripts/detectors yet; hosts run them from the ACEF checkout.",
+    "Resolution needs a positive observation: an alert whose subject vanished or aged out of every window stays open (printed UNSEEN) until the owner resolves it with evidence.",
     "Each detector needs host sources; an unconfigured one prints SKIP. On the first host the machine detector has no local slot event log (runner slots live on the runners), and no review report carries a finding-class field, so the review_loop class rule has no data.",
     "Durations are wall clock from git timestamps and file times (nights and weekends included); cycle-time starts are unknown when a branch began before the history window.",
     "Tests (slow or flaky suites) are not covered in this first version."
@@ -47,17 +49,22 @@
     {
       "layer": "tests",
       "ref": "scripts/test-acef-detect",
-      "note": "2026-10-27: 80 checks passed: every core detector fires on a fixture and stays silent on a normal-case control; alert open, dedupe, confirm polls, ALERT OPEN after 2 polls, ack, defer, reopen after the deferral date, OVERDUE after 4 working hours, resolve on clear, recurrence reopens the same id; losses to the central log with --repeat; SKIP without sources; host detectors and header validation."
+      "note": "2026-10-27: 94 checks passed, including review r1 regressions (no bytecode in the host or under a pycache prefix, 8 parallel polls open each key once, deferral deadline from expiry, aged-out or vanished runs not counted as recovered, missing tree hash is unknown, loss logged once when an open alert crosses 30 min); each regression failed on the pre-fix code."
     },
     {
       "layer": "tests",
       "ref": "scripts/test-acef-retro",
-      "note": "2026-10-27: 43 checks passed: sections, numbers by route class with median or fallback, repeats with example and covering rule, overdue and unowned alerts, rules past review, at most five proposals, owner answers, no overwrite, RETRO DUE."
+      "note": "2026-10-27: 44 checks passed: sections, numbers by route class with median or fallback, repeats with example and covering rule, overdue and unowned alerts, rules past review, at most five proposals, owner answers, no overwrite, RETRO DUE. A past week's snapshot ignores later events."
     },
     {
       "layer": "cli",
       "ref": "dry run against the first host (read-only, temp store)",
       "note": "2026-10-27: acef-detect about 2 s per poll on the first host; acef-retro under 1 s."
+    },
+    {
+      "layer": "cli",
+      "ref": "scripts/test-install-acef-tools",
+      "note": "2026-10-27: install-acef-tools installs acef-detect, acef-retro and the core detectors; the installed acef-detect --list runs without writing bytecode."
     }
   ],
   "createdAt": "2026-10-27"

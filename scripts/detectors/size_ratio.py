@@ -28,16 +28,19 @@ def detect(ctx):
         raise ctx.Skip(f"no source: history of {_lib.main_ref(ctx)}")
     closed = _lib.closed_work(ctx, s["expected_window_days"])
     slices_dir = ctx.sources.get("slices_dir") or ""
-    out, unknown = [], []
+    out, unknown, open_ids = [], [], set()
     for wt in _lib.worktrees(ctx):
         path, head, branch = wt.get("worktree", ""), wt.get("HEAD", ""), wt.get("branch", "")
-        if not branch or _lib.Path(path).resolve() == ctx.repo.resolve() or head in hist["commits"]:
-            continue   # main checkout, detached, or already in main
+        if not branch or _lib.Path(path).resolve() == ctx.repo.resolve():
+            continue
         short = branch.replace("refs/heads/", "")
         match = re.search(s["branch_id_regex"], short)
         if not match:
             continue
         work_id = match.group("id").upper()
+        if head in hist["commits"]:
+            continue   # already in main: not open work (cleared below)
+        open_ids.add(work_id)
         own = _lib.git(ctx, "log", "--format=%ct%x09%s", f"{_lib.main_ref(ctx)}..{head}").splitlines()
         if own:
             start = _lib.ts(min(int(line.split("\t", 1)[0]) for line in own))
@@ -45,6 +48,7 @@ def detect(ctx):
             git_file = _lib.Path(path) / ".git"
             start = _lib.mtime(git_file) if git_file.exists() else None
         if not start or start < ctx.now - _lib.dt.timedelta(days=s["open_window_days"]):
+            open_ids.discard(work_id)   # outside the window: not judged, not cleared
             continue
         cls = "unknown"
         spec = _lib.Path(path) / slices_dir / f"{work_id}.md" if slices_dir else None
@@ -56,6 +60,7 @@ def detect(ctx):
             cls = _lib.route_class(ctx, " ".join(line.split("\t", 1)[-1] for line in own))
         if cls == "unknown":
             unknown.append(work_id)
+            open_ids.discard(work_id)
             continue
         expected, how = _lib.expected_minutes(ctx, cls, closed)
         elapsed = _lib.minutes(start, ctx.now)
@@ -64,6 +69,11 @@ def detect(ctx):
                         "summary": f"{cls} work open {elapsed // 60} h {elapsed % 60} min (wall clock since "
                                    f"{'first own commit' if own else 'worktree creation'}), expected {expected} min "
                                    f"({how}), ratio {elapsed / expected:.1f}"})
+        else:
+            ctx.clear(work_id)
+    for subject in ctx.open_subjects - {f["subject"] for f in out}:
+        if subject not in open_ids and subject not in unknown:
+            ctx.clear(subject)   # git worktree list shows it merged or gone
     if unknown:
         ctx.note(f"route class unknown, not sized: {', '.join(sorted(unknown)[:8])}")
     return out

@@ -2,7 +2,7 @@
 
 Question: Is an agent, lane or review run making no progress, or retrying the same failure?
 Source: sources.agent_runs (run items: start/finish stamps, logs, optional numbered attempt logs); sources.command_log (JSONL lines: ts, cmd, rc, err, tree)
-Rule: a running item whose newest file is older than stuck_min; or the same command failing with the same error repeat_fail times in a row with no file change between (same tree hash, or the same attempt-log tail and no result)
+Rule: a running item whose newest file is older than stuck_min; or the same command failing with the same error repeat_fail times in a row with no file change between (the same non-empty tree hash; a missing hash is unknown, not "no change"; or the same attempt-log tail and no result). Resolves only when the run is seen active or finished
 Threshold: stuck_min=30, repeat_fail=3, max_age_h=12
 Owner: coordinator
 Scope: acef
@@ -38,39 +38,59 @@ def detect(ctx):
     log = ctx.source("command_log", required=False)
     if not runs and not log:
         raise ctx.Skip("no source: agent_runs, command_log")
-    out = []
-    for item in _lib.items(ctx, "agent_runs", s["max_age_h"], required=False) if runs else []:
-        if item.running:
+    out, observed = [], []
+    found = _lib.items(ctx, "agent_runs", s["max_age_h"], required=False) if runs else []
+    names = {i.name for i in found}
+    for subject in ctx.open_subjects:   # an open alert's run that aged out of the window is looked up directly
+        name = subject.rsplit(":repeat", 1)[0]
+        if runs and not subject.startswith("cmd:") and name not in names:
+            item = _lib.find_item(ctx, "agent_runs", name)
+            if item:
+                found.append(item)
+                names.add(name)
+    for item in found:
+        if item.running and _lib.minutes(item.last, ctx.now) >= s["stuck_min"]:
             idle = _lib.minutes(item.last, ctx.now)
-            if idle >= s["stuck_min"]:
-                out.append({"subject": item.name, "evidence": str(item.path), "loss_min": idle, "loss_kind": "time",
-                            "summary": f"running since {item.started:%Y-%m-%d %H:%MZ}, no file change for {idle} min"})
-                continue
+            out.append({"subject": item.name, "evidence": str(item.path), "loss_min": idle, "loss_kind": "time",
+                        "summary": f"running since {item.started:%Y-%m-%d %H:%MZ}, no file change for {idle} min"})
+            continue
+        ctx.clear(item.name)   # seen: active, or finished
         attempts = item.attempts[-s["repeat_fail"]:]
-        if len(attempts) >= s["repeat_fail"] and not item.result.strip():
-            tails = {tail_line(a) for a in attempts}
-            if len(tails) == 1 and "" not in tails:
-                times = [_lib.mtime(_lib.Path(a)) for a in item.attempts]
-                span = _lib.minutes(min(times), max(times))
-                out.append({"subject": f"{item.name}:repeat", "evidence": str(item.path), "loss_min": span,
-                            "loss_kind": "lost-results" if item.done else "time",
-                            "summary": f"{len(item.attempts)} attempts, no result, same last line: "
-                                       f"{tails.pop()[:120]}"})
+        tails = {tail_line(a) for a in attempts}
+        if len(attempts) >= s["repeat_fail"] and not item.result.strip() and len(tails) == 1 and "" not in tails:
+            times = [_lib.mtime(_lib.Path(a)) for a in item.attempts]
+            span = _lib.minutes(min(times), max(times))
+            out.append({"subject": f"{item.name}:repeat", "evidence": str(item.path), "loss_min": span,
+                        "loss_kind": "lost-results" if item.done else "time",
+                        "summary": f"{len(item.attempts)} attempts, no result, same last line: "
+                                   f"{tails.pop()[:120]}"})
+        else:
+            ctx.clear(f"{item.name}:repeat")
     if log:
         since = ctx.now - dt.timedelta(hours=s["max_age_h"])
         by_cmd = {}
         for row in _lib.read_jsonl(ctx.path(log), since):
             by_cmd.setdefault(str(row.get("cmd", "")), []).append(row)
+        unknown = []
         for cmd, rows in by_cmd.items():
+            subject = f"cmd:{cmd[:80]}"
             last = rows[-s["repeat_fail"]:]
             if len(last) < s["repeat_fail"] or any(int(r.get("rc", 0) or 0) == 0 for r in last):
+                ctx.clear(subject)
                 continue
             errors = {normalise(str(r.get("err", ""))) for r in last}
-            trees = {str(r.get("tree", "")) for r in last}
-            if len(errors) == 1 and len(trees) == 1:
+            trees = [str(r.get("tree") or "").strip() for r in last]
+            if any(not t for t in trees):
+                unknown.append(cmd[:40])   # no tree hash: "no file change between" cannot be known
+                continue
+            if len(errors) == 1 and len(set(trees)) == 1:
                 span = _lib.minutes(last[0]["_ts"], last[-1]["_ts"])
-                out.append({"subject": f"cmd:{cmd[:80]}", "evidence": str(ctx.path(log)), "loss_min": span,
+                out.append({"subject": subject, "evidence": str(ctx.path(log)), "loss_min": span,
                             "loss_kind": "time",
                             "summary": f"'{cmd[:80]}' failed {len(last)}x in a row with the same error and no file "
                                        f"change: {errors.pop()[:120]}"})
+            else:
+                ctx.clear(subject)
+        if unknown:
+            ctx.note(f"repeated failures without a tree hash, file change unknown, not judged: {', '.join(unknown)}")
     return out

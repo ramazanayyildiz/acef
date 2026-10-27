@@ -14,14 +14,17 @@ decision table; at most five proposals. Numbers from a fallback or a proxy say s
 "unknown". An existing retro is never overwritten (owner answers live in it) unless --force.
 --answer records the owner's decision by proposal number in the same file.
 """
-import argparse
+import sys
+
+sys.dont_write_bytecode = True   # loading acef-detect and the detector helpers must not leave __pycache__ behind
+
+import argparse  # noqa: E402
 import datetime as dt
 import importlib.machinery
 import importlib.util
 import json
 import re
 import statistics
-import sys
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -147,7 +150,8 @@ def build(base: Path, projects: list, args, now) -> str:
         events = note.read_alert_events(base / "alerts" / f"{project}.jsonl")
         in_window = [e for e in events if e["event"] != "poll" and lo <= note.parse_ts(e["ts"]) < hi]
         polls = [e for e in events if e["event"] == "poll" and lo <= note.parse_ts(e["ts"]) < hi]
-        states = note.alert_states(events, hi)
+        # the snapshot is the window's end: events after it (a later resolve or ack) must not change the past
+        states = note.alert_states([e for e in events if note.parse_ts(e["ts"]) <= hi], hi)
         opened = [e for e in in_window if e["event"] in ("open", "reopen")]
         resolved = [e for e in in_window if e["event"] == "resolve"]
         acked = [e for e in in_window if e["event"] in ("ack", "defer")]

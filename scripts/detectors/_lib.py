@@ -141,8 +141,19 @@ class Item:
         return self.finished or self.last
 
 
+def done_marker(path: Path, spec: dict) -> bool:
+    if any((path / f).exists() for f in spec["finished_files"]):
+        return True
+    status = path / spec["status_file"] if spec["status_file"] else None
+    try:
+        return bool(status and status.exists() and status.read_text(errors="replace").strip() in spec["done_status"])
+    except OSError:
+        return False
+
+
 def items(ctx, key: str, max_age_h: float, required: bool = True) -> list:
-    """All run items of a source touched within max_age_h (stat-only prefilter on the item's own mtime)."""
+    """All run items of a source with activity within max_age_h. Cheap: an old directory that is marked done is skipped
+    on two stats; an old directory that is not done is read, because appended logs do not move its mtime."""
     out = []
     for spec in specs(ctx, key, required):
         cache_key = ("items", json.dumps(spec, sort_keys=True), max_age_h)
@@ -152,9 +163,17 @@ def items(ctx, key: str, max_age_h: float, required: bool = True) -> list:
             for raw in glob.glob(str(resolve(ctx.repo, spec["glob"]))):
                 path = Path(raw)
                 try:
-                    if mtime(path) < cutoff:   # a directory's mtime moves when a file is created in it
-                        continue
                     if spec["exclude_regex"] and re.search(spec["exclude_regex"], path.name):
+                        continue
+                    if mtime(path) < cutoff:
+                        # A directory's mtime moves when a file is created in it, not when a log is appended to.
+                        # An old directory is skipped cheaply only when it is marked done; otherwise its files decide.
+                        if not path.is_dir() or done_marker(path, spec):
+                            continue
+                        item = Item(path, spec)
+                        if item.last < cutoff:
+                            continue
+                        found.append(item)
                         continue
                     found.append(Item(path, spec))
                 except OSError:
@@ -162,6 +181,19 @@ def items(ctx, key: str, max_age_h: float, required: bool = True) -> list:
             ctx.cache[cache_key] = found
         out.extend(ctx.cache[cache_key])
     return out
+
+
+def find_item(ctx, key: str, name: str):
+    """Look one run item up by name across a source's globs, whatever its age (for an open alert's subject)."""
+    for spec in specs(ctx, key, required=False):
+        for raw in glob.glob(str(resolve(ctx.repo, spec["glob"]))):
+            path = Path(raw)
+            if (path.name if path.is_dir() else path.stem) == name:
+                try:
+                    return Item(path, spec)
+                except OSError:
+                    return None
+    return None
 
 
 def rounds_by_id(review_items: list) -> dict:

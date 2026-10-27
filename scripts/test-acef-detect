@@ -19,7 +19,10 @@ DETECT, NOTE = HERE / "acef-detect", HERE / "acef-note"
 TMP = Path(os.path.realpath(tempfile.mkdtemp(prefix="acef-detect-test-")))
 STORE, HOST = TMP / "store", TMP / "host"
 NOW = dt.datetime.now(dt.timezone.utc).replace(microsecond=0)
-ENV = {**os.environ, "ACEF_FEEDBACK_DIR": str(STORE), "TZ": "UTC", "GIT_CONFIG_GLOBAL": "/dev/null"}
+ENV = {k: v for k, v in os.environ.items() if k != "PYTHONDONTWRITEBYTECODE"}   # the scripts must stop bytecode themselves
+ENV.update({"ACEF_FEEDBACK_DIR": str(STORE), "TZ": "UTC", "GIT_CONFIG_GLOBAL": "/dev/null",
+            # some Pythons redirect bytecode to a cache prefix; point it here so a write is visible either way
+            "PYTHONPYCACHEPREFIX": str(TMP / "pyc")})
 ok = bad = 0
 
 
@@ -336,6 +339,101 @@ try:
     check("an alert opened at the weekend starts counting Monday 09:00",
           mod.add_working_hours(sat, 4) == dt.datetime(2026, 10, 26, 13, 0, tzinfo=dt.timezone.utc),
           str(mod.add_working_hours(sat, 4)))
+
+    # ------------------------------------------------------------ review r1 regressions (each fails without its fix)
+    # P2-1: loading host detectors (also with --list / --dry-run) leaves no __pycache__ in the host or the checkout
+    run("--list", config=CFG)
+    run("--dry-run", "--only", "host_probe", config=CFG)
+    check("no __pycache__ in the host's .acef/detectors", not (hd / "__pycache__").exists(),
+          str(list(hd.iterdir())))
+    check("no __pycache__ next to the core detectors", not (HERE / "detectors" / "__pycache__").exists())
+    leaked = [str(p_) for p_ in (TMP / "pyc").rglob("*.pyc")
+              if "detectors" in str(p_) or "acef" in p_.name] if (TMP / "pyc").exists() else []
+    check("no detector bytecode under the pycache prefix either", not leaked, "\n".join(leaked[:5]))
+
+    STORE_R = TMP / "store-r"
+    ENV_R = {**ENV, "ACEF_FEEDBACK_DIR": str(STORE_R)}
+
+    def events_of(project):
+        f = STORE_R / "alerts" / f"{project}.jsonl"
+        return [json.loads(l) for l in f.read_text().splitlines()] if f.exists() else []
+
+    # P2-2: parallel polls never open two alerts for one key
+    par = TMP / "par.json"
+    par.write_text(json.dumps({**cfg["detectors"], "project": "par"}))
+    procs = [subprocess.Popen([sys.executable, str(DETECT), "--repo", str(HOST), "--config", str(par), "--only",
+                               "stuck_agent,size_ratio,review_loop"], env={**ENV_R, "ACEF_NOW": iso(NOW)},
+                              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL) for _ in range(8)]
+    for p_ in procs:
+        p_.wait()
+    opens = [e["key"] for e in events_of("par") if e["event"] == "open"]
+    check(f"8 parallel polls open each key once ({len(opens)} opens, {len(set(opens))} keys)",
+          opens and len(opens) == len(set(opens)), "\n".join(sorted(opens)))
+    ids = [e["id"] for e in events_of("par") if e["event"] == "open"]
+    check("parallel polls allocate distinct ids", len(ids) == len(set(ids)))
+
+    # P2-3: a reopened deferral keeps the deadline that runs from the deferral's expiry
+    dfc = TMP / "defer.json"
+    dfc.write_text(json.dumps({**cfg["detectors"], "project": "dfr"}))
+    rc, o = run("--only", "size_ratio", config=dfc, env=ENV_R)
+    did = alert_id(o, "size_ratio", "WORK-10")
+    until_d = (NOW + dt.timedelta(days=1)).date()
+    subprocess.run([sys.executable, str(NOTE), "ack", did, "--defer", until_d.isoformat(), "--reason", "later"],
+                   env={**ENV_R, "ACEF_NOW": iso(NOW)}, capture_output=True)
+    poll_at = NOW + dt.timedelta(days=5)
+    rc, o = run("--only", "size_ratio", config=dfc, env=ENV_R, now=poll_at)
+    expected = mod.iso(mod.add_working_hours(dt.datetime.combine(until_d + dt.timedelta(days=1), dt.time(0, 0),
+                                                                 tzinfo=dt.timezone.utc), 4))
+    reopen = [e for e in events_of("dfr") if e["event"] == "reopen"]
+    check("expired deferral reopens with the deadline from its expiry",
+          reopen and reopen[-1]["ack_by"] == expected and f"ack by {expected}" in o, f"{expected} vs {reopen}\n{o}")
+    rc, d = note("due", now=poll_at, env=ENV_R)
+    check("that alert is OVERDUE at the poll, not given a fresh deadline", f"ALERT OVERDUE: {did} " in d, d)
+
+    # P2-4: an active run in an old directory is still seen; aged-out or missing evidence is not recovery
+    R2 = HOST / "runs2"
+    put(R2 / "run-x/started", iso(ago(14 * 60)) + "\n", 14 * 60)
+    put(R2 / "run-x/events-1.log", "working\n", 40)          # log appended: the directory mtime does not move
+    settle(R2 / "run-x", 13 * 60)
+    put(R2 / "run-y/started", iso(ago(30)) + "\n", 30)
+    put(R2 / "run-y/events-1.log", "working\n", 15)
+    settle(R2 / "run-y", 15)
+    put(R2 / "run-z/started", iso(ago(60)) + "\n", 60)
+    put(R2 / "run-z/events-1.log", "working\n", 45)
+    settle(R2 / "run-z", 45)
+    agc = TMP / "aged.json"
+    agc.write_text(json.dumps({"project": "aged", "sources": {"agent_runs": "runs2/*", "command_log": "cmd2.jsonl"},
+                               "thresholds": {"stuck_agent": {"stuck_min": 10}}}))
+    put(HOST / "cmd2.jsonl", "".join(json.dumps({"ts": iso(ago(m)), "cmd": "make v", "rc": 2, "err": "boom"}) + "\n"
+                                     for m in (30, 20, 10)))
+    rc, o = run("--only", "stuck_agent", config=agc, env=ENV_R)
+    x_id = alert_id(o, "stuck_agent", "run-x")
+    check("active run in a directory with an old mtime is still seen (stuck)", bool(x_id), o)
+    # P2-5: failures without a tree hash do not count as "no file change"
+    check("same failure 3x without tree hashes is unknown, not an alert",
+          "[stuck_agent] cmd:make v" not in o and "file change unknown" in o, o)
+    # P2-6: an alert opened below 30 min logs its loss once when it crosses 30 min
+    y_id = alert_id(o, "stuck_agent", "run-y")
+    logf = STORE_R / "log/aged.md"
+    check("loss below 30 min is not logged at open", y_id and not any(
+        l.endswith("/run-y") for l in (logf.read_text().splitlines() if logf.exists() else [])), o)
+    rc, o2 = run("--only", "stuck_agent", config=agc, env=ENV_R, now=NOW + dt.timedelta(minutes=20))
+    rc, o3 = run("--only", "stuck_agent", config=agc, env=ENV_R, now=NOW + dt.timedelta(minutes=25))
+    logged = [e for e in events_of("aged") if e["event"] == "loss" and e["id"] == y_id]
+    log_text = logf.read_text() if logf.exists() else ""
+    y_entries = [l for l in log_text.splitlines() if l.endswith("/run-y")]
+    check("crossing 30 min while open logs the loss once",
+          len(logged) == 1 and len(y_entries) == 1 and "for 35 min" in y_entries[0], o2 + o3 + log_text)
+    # P2-4 continued: two days later run-x has aged out of the window but is still stuck: it stays open
+    shutil.rmtree(R2 / "run-z")
+    z_id = alert_id(o, "stuck_agent", "run-z")
+    rc, o4 = run("--only", "stuck_agent", config=agc, env=ENV_R, now=NOW + dt.timedelta(days=2))
+    check("aged-out run is looked up and stays open, not CLEARED", f"CLEARED {x_id}" not in o4 and
+          f"ALERT {x_id} OPEN" in o4 or f"ALERT {x_id} OVERDUE" in o4, o4)
+    check("a run that disappeared is UNSEEN, not CLEARED", f"UNSEEN {z_id} " in o4 and f"CLEARED {z_id}" not in o4, o4)
+    put(R2 / "run-x/finished", iso(NOW) + "\n", 0)
+    rc, o5 = run("--only", "stuck_agent", config=agc, env=ENV_R, now=NOW + dt.timedelta(days=2, minutes=1))
+    check("a positive observation (finished) clears it", f"CLEARED {x_id} [stuck_agent] run-x" in o5, o5)
 finally:
     subprocess.run(["git", "worktree", "prune"], cwd=HOST, capture_output=True)
     shutil.rmtree(TMP, ignore_errors=True)

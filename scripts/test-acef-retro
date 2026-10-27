@@ -110,7 +110,11 @@ try:
           {"ts": iso(ago(400)), "event": "resolve", "id": "demo-A2", "evidence": "cleared"},
           {"ts": iso(ago(300)), "event": "open", "id": "demo-A3", "detector": "waiting_work", "subject": "W-1",
            "key": "waiting_work:W-1", "owner": "", "summary": "accepted 6 h", "ack_by": iso(NOW + dt.timedelta(hours=3))},
-          {"ts": iso(ago(100)), "event": "poll"}, {"ts": iso(ago(50)), "event": "poll"}]
+          {"ts": iso(ago(100)), "event": "poll"}, {"ts": iso(ago(50)), "event": "poll"},
+          # opened in 2026-W40, resolved only on 2026-10-10: a W40 snapshot must still show it open and overdue
+          {"ts": "2026-10-01T10:00:00Z", "event": "open", "id": "demo-A4", "detector": "machine", "subject": "idle:x",
+           "key": "machine:idle:x", "owner": "merge-operator", "summary": "idle runner", "ack_by": "2026-10-01T14:00:00Z"},
+          {"ts": "2026-10-10T10:00:00Z", "event": "resolve", "id": "demo-A4", "evidence": "later"}]
     (STORE / "alerts/demo.jsonl").write_text("".join(json.dumps(e) + "\n" for e in ev))
 
     rc, due = tool(NOTE, "due")
@@ -174,6 +178,8 @@ try:
     rc, out = tool(RETRO, "--project", "demo", "--week", "2026-W40", "--repo", str(HOST), "--config", str(cfg))
     wk = STORE / "retros/2026-W40-demo.md"
     check("--week names the file and the window", wk.exists() and "Window: 2026-09-28 .. 2026-10-04" in wk.read_text(), out)
+    check("a past week's snapshot ignores events after its window (still open, OVERDUE then)",
+          re.search(r"- demo-A4 \[machine\] idle:x — owner merge-operator, .*\(OVERDUE\)", wk.read_text()), wk.read_text())
     check("bad --week refused", tool(RETRO, "--all", "--week", "2026-44")[0] != 0)
     (STORE / "hosts").mkdir()
     (STORE / "hosts/demo.json").write_text(json.dumps({"repo": str(HOST), "config": str(cfg)}))

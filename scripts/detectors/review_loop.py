@@ -37,16 +37,26 @@ def detect(ctx):
             out.append({"subject": work_id, "evidence": str(latest.path),
                         "summary": f"{len(revised)} REVISE rounds (rounds {', '.join(map(str, revised))}), "
                                    f"latest round {latest.round}: {state}"})
+        else:
+            ctx.clear(work_id)
         for r in rounds:
             if r.verdict == "REVISE":
                 revise_items += 1
                 for cls in set(m.lower() for m in re.findall(s["finding_class_regex"], r.result)):
                     classes.setdefault(cls, set()).add(work_id)
+    firing = set()
     for cls, ids in sorted(classes.items()):
         if len(ids) >= s["class_slices"]:
+            firing.add(f"class:{cls}")
             out.append({"subject": f"class:{cls}", "evidence": ", ".join(sorted(ids)),
                         "summary": f"finding class '{cls}' in {len(ids)} pieces of work within {s['window_days']} "
                                    f"days: {', '.join(sorted(ids)[:6])}"})
+    for subject in ctx.open_subjects:
+        if subject.startswith("class:"):
+            if classes and subject not in firing:
+                ctx.clear(subject)   # class data present this window and below the threshold
+        elif _lib.mentions(ctx, subject, 30):
+            ctx.clear(subject)       # aged out of the window, but merged since
     if revise_items and not classes:
         ctx.note(f"no finding-class data in {revise_items} REVISE result(s) of the window (finding_class_regex "
                  f"matched nothing); the class rule did not run")
