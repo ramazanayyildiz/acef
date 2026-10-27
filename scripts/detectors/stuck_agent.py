@@ -75,9 +75,11 @@ def detect(ctx):
         for cmd, rows in by_cmd.items():
             subject = f"cmd:{cmd[:80]}"
             last = rows[-s["repeat_fail"]:]
-            if len(last) < s["repeat_fail"] or any(int(r.get("rc", 0) or 0) == 0 for r in last):
-                ctx.clear(subject)
+            if int(last[-1].get("rc", 0) or 0) == 0:
+                ctx.clear(subject)   # the latest run of the command succeeded
                 continue
+            if len(last) < s["repeat_fail"] or any(int(r.get("rc", 0) or 0) == 0 for r in last):
+                continue   # too few rows in the window to judge: not a recovery
             errors = {normalise(str(r.get("err", ""))) for r in last}
             trees = [str(r.get("tree") or "").strip() for r in last]
             if any(not t for t in trees):

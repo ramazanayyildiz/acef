@@ -114,7 +114,11 @@ try:
           # opened in 2026-W40, resolved only on 2026-10-10: a W40 snapshot must still show it open and overdue
           {"ts": "2026-10-01T10:00:00Z", "event": "open", "id": "demo-A4", "detector": "machine", "subject": "idle:x",
            "key": "machine:idle:x", "owner": "merge-operator", "summary": "idle runner", "ack_by": "2026-10-01T14:00:00Z"},
-          {"ts": "2026-10-10T10:00:00Z", "event": "resolve", "id": "demo-A4", "evidence": "later"}]
+          {"ts": "2026-10-10T10:00:00Z", "event": "resolve", "id": "demo-A4", "evidence": "later"},
+          # resolved exactly at the window's end (Monday 00:00, excluded from W40): W40 still shows it open
+          {"ts": "2026-10-02T10:00:00Z", "event": "open", "id": "demo-A5", "detector": "machine", "subject": "idle:y",
+           "key": "machine:idle:y", "owner": "merge-operator", "summary": "edge", "ack_by": "2026-10-02T14:00:00Z"},
+          {"ts": "2026-10-05T00:00:00Z", "event": "resolve", "id": "demo-A5", "evidence": "at the boundary"}]
     (STORE / "alerts/demo.jsonl").write_text("".join(json.dumps(e) + "\n" for e in ev))
 
     rc, due = tool(NOTE, "due")
@@ -180,6 +184,8 @@ try:
     check("--week names the file and the window", wk.exists() and "Window: 2026-09-28 .. 2026-10-04" in wk.read_text(), out)
     check("a past week's snapshot ignores events after its window (still open, OVERDUE then)",
           re.search(r"- demo-A4 \[machine\] idle:x — owner merge-operator, .*\(OVERDUE\)", wk.read_text()), wk.read_text())
+    check("an event exactly at the window's end belongs to the next week",
+          "- demo-A5 [machine] idle:y" in wk.read_text(), wk.read_text())
     check("bad --week refused", tool(RETRO, "--all", "--week", "2026-44")[0] != 0)
     (STORE / "hosts").mkdir()
     (STORE / "hosts/demo.json").write_text(json.dumps({"repo": str(HOST), "config": str(cfg)}))

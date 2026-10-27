@@ -358,19 +358,39 @@ try:
         f = STORE_R / "alerts" / f"{project}.jsonl"
         return [json.loads(l) for l in f.read_text().splitlines()] if f.exists() else []
 
-    # P2-2: parallel polls never open two alerts for one key
+    # P2-2: parallel polls never open two alerts for one key. Deterministic: the test holds the project's alert lock,
+    # starts 8 polls, waits until all 8 are blocked on that lock (lsof barrier), then releases it.
+    import fcntl
+    import time as _time
     par = TMP / "par.json"
     par.write_text(json.dumps({**cfg["detectors"], "project": "par"}))
+    (STORE_R / "alerts").mkdir(parents=True, exist_ok=True)
+    lock_path = STORE_R / "alerts" / ".par.jsonl.lock"
+    holder_fd = open(lock_path, "w")
+    fcntl.flock(holder_fd, fcntl.LOCK_EX)
     procs = [subprocess.Popen([sys.executable, str(DETECT), "--repo", str(HOST), "--config", str(par), "--only",
                                "stuck_agent,size_ratio,review_loop"], env={**ENV_R, "ACEF_NOW": iso(NOW)},
-                              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL) for _ in range(8)]
-    for p_ in procs:
-        p_.wait()
+                              stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True) for _ in range(8)]
+    pids = {p_.pid for p_ in procs}
+    blocked, deadline = set(), _time.monotonic() + 60
+    while _time.monotonic() < deadline and blocked != pids:
+        got = subprocess.run(["lsof", "-t", str(lock_path)], capture_output=True, text=True).stdout.split()
+        blocked = pids & {int(x) for x in got if x.isdigit()}
+        if blocked != pids:
+            _time.sleep(0.2)
+    check("barrier: all 8 polls reached the alert lock while it was held", blocked == pids,
+          f"{len(blocked)} of 8 blocked")
+    fcntl.flock(holder_fd, fcntl.LOCK_UN)
+    holder_fd.close()
+    outputs = [p_.communicate(timeout=120)[0] for p_ in procs]
+    codes = [p_.returncode for p_ in procs]
+    check(f"every parallel poll exits 0 ({codes})", codes == [0] * 8, "\n---\n".join(outputs)[:2000])
     opens = [e["key"] for e in events_of("par") if e["event"] == "open"]
     check(f"8 parallel polls open each key once ({len(opens)} opens, {len(set(opens))} keys)",
           opens and len(opens) == len(set(opens)), "\n".join(sorted(opens)))
     ids = [e["id"] for e in events_of("par") if e["event"] == "open"]
     check("parallel polls allocate distinct ids", len(ids) == len(set(ids)))
+    check("8 polls recorded", sum(1 for e in events_of("par") if e["event"] == "poll") == 8)
 
     # P2-3: a reopened deferral keeps the deadline that runs from the deferral's expiry
     dfc = TMP / "defer.json"
@@ -434,6 +454,93 @@ try:
     put(R2 / "run-x/finished", iso(NOW) + "\n", 0)
     rc, o5 = run("--only", "stuck_agent", config=agc, env=ENV_R, now=NOW + dt.timedelta(days=2, minutes=1))
     check("a positive observation (finished) clears it", f"CLEARED {x_id} [stuck_agent] run-x" in o5, o5)
+
+    # ------------------------------------------------------------ review r2: aged-out evidence is UNSEEN, per detector
+    def det_cfg(project, sources, thresholds=None):
+        f = TMP / f"{project}.json"
+        f.write_text(json.dumps({"project": project, "sources": {"main_ref": "main", **sources},
+                                 "thresholds": thresholds or {}}))
+        return f
+
+    def aged_case(label, project, only, cfgf, subject, later, release=None, recover_at=None):
+        rc, o = run("--only", only, config=cfgf, env=ENV_R)
+        aid = alert_id(o, only, subject)
+        check(f"{label}: fires", bool(aid), o)
+        rc, o2 = run("--only", only, config=cfgf, env=ENV_R, now=later)
+        check(f"{label}: aged-out evidence is UNSEEN, not CLEARED",
+              f"CLEARED {aid} " not in o2 and (f"UNSEEN {aid} " in o2 or f"ALERT {aid} " in o2), o2)
+        if release:
+            release()
+            rc, o3 = run("--only", only, config=cfgf, env=ENV_R, now=recover_at or later + dt.timedelta(minutes=1))
+            check(f"{label}: a positive observation clears it", f"CLEARED {aid} " in o3, o3)
+
+    # stuck_agent command rule: the first failure leaves the 12 h window
+    put(HOST / "cmd3.jsonl", "".join(json.dumps({"ts": iso(ago(m)), "cmd": "make w", "rc": 1, "err": "e", "tree": "t"})
+                                     + "\n" for m in (30, 20, 5)))
+    t_sc = NOW + dt.timedelta(hours=12, minutes=-25)
+    aged_case("stuck_agent cmd", "sc", "stuck_agent", det_cfg("sc", {"command_log": "cmd3.jsonl"}), "cmd:make w", t_sc,
+              release=lambda: open(HOST / "cmd3.jsonl", "a").write(json.dumps(
+                  {"ts": iso(t_sc), "cmd": "make w", "rc": 0, "err": "", "tree": "t2"}) + "\n"))
+
+    # review_loop: the first REVISE round and two class members leave the 7-day window
+    for wid, rnd, m, verdict in (("WORK-30", 1, 6 * 1440, "REVISE"), ("WORK-30", 2, 5 * 1440, "REVISE"),
+                                 ("WORK-30", 3, 1440, "REVISE"), ("WORK-31", 1, 6.5 * 1440, "REVISE"),
+                                 ("WORK-32", 1, 6.5 * 1440, "REVISE")):
+        put(HOST / "reviews3" / f"{wid}-review-r{rnd}.md", f"Verdict: {verdict}\nReason: flaky\n", m)
+    rl = det_cfg("rl", {"reviews": {"glob": "reviews3/*.md", "id_regex": r"^(?P<id>.+?)-review(?:-r(?P<round>\d+))?$"}})
+    t_rl = NOW + dt.timedelta(days=1, hours=12)
+    aged_case("review_loop rounds", "rl", "review_loop", rl, "WORK-30", t_rl,
+              release=lambda: put(HOST / "reviews3/WORK-30-review-r4.md", "Verdict: ACCEPT\n", -36 * 60 + 1))
+    rc, o = run("--only", "review_loop", config=rl, env=ENV_R, now=t_rl + dt.timedelta(minutes=2))
+    cid = re.search(r"(?:UNSEEN|ALERT) (\S+) .*\[review_loop\] class:flaky", o)
+    check("review_loop class: dropping below the threshold as rounds age out is UNSEEN",
+          cid and f"CLEARED {cid.group(1)}" not in o, o)
+
+    # machine hog: the take and the wait leave the 24 h window
+    put(HOST / "slots3.jsonl", "".join(json.dumps(r) + "\n" for r in [
+        {"ts": iso(ago(60)), "event": "take", "host": "r2", "slot": "s1", "project": "projA", "owner": "o1"},
+        {"ts": iso(ago(40)), "event": "wait", "project": "projB", "owner": "o2", "hosts": ["r2"]}]))
+    t_mh = NOW + dt.timedelta(hours=25)
+    aged_case("machine hog", "mh", "machine",
+              det_cfg("mh", {"slot_events": "slots3.jsonl"}, {"machine": {"capacity": {"r2": 1}}}), "hog:r2:projA",
+              t_mh, release=lambda: open(HOST / "slots3.jsonl", "a").write(json.dumps(
+                  {"ts": iso(t_mh), "event": "release", "host": "r2", "slot": "s1", "project": "projA",
+                   "owner": "o1"}) + "\n"))
+
+    # forgotten_session slot: the take leaves the window (run aged out too, looked up directly)
+    put(HOST / "runs3/run-s/started", iso(ago(200)) + "\n", 200)
+    put(HOST / "runs3/run-s/finished", iso(ago(120)) + "\n", 120)
+    settle(HOST / "runs3/run-s", 120)
+    put(HOST / "slots4.jsonl", json.dumps({"ts": iso(ago(150)), "event": "take", "host": "r1", "slot": "s1",
+                                           "project": "p", "owner": "run-s"}) + "\n")
+    t_fs = NOW + dt.timedelta(days=3)
+    aged_case("forgotten_session slot", "fs", "forgotten_session",
+              det_cfg("fs", {"agent_runs": "runs3/*", "slot_events": "slots4.jsonl"},
+                      {"forgotten_session": {"merged_worktrees": False}}), "run-s:slot:r1/s1", t_fs,
+              release=lambda: open(HOST / "slots4.jsonl", "a").write(json.dumps(
+                  {"ts": iso(t_fs), "event": "release", "host": "r1", "slot": "s1", "project": "p",
+                   "owner": "run-s"}) + "\n"))
+
+    # forgotten_session worktree: the merge leaves the 14-day history window; the worktree is still there
+    fw = det_cfg("fw", {}, {"forgotten_session": {"merged_worktrees": True}})
+    rc, o = run("--only", "forgotten_session", config=fw, env=ENV_R)
+    wid_ = alert_id(o, "forgotten_session", "worktree:wt-work-12")
+    rc, o2 = run("--only", "forgotten_session", config=fw, env=ENV_R, now=NOW + dt.timedelta(days=15))
+    check("forgotten_session worktree: merge outside the history window still counts (not CLEARED)",
+          wid_ and f"CLEARED {wid_}" not in o2 and "merged before the 14-day history window" in o2, o2)
+
+    # size_ratio: open work older than the 14-day window is not judged, so not cleared
+    git("branch", "slice/work-20", "main")
+    wt20 = TMP / "wt-work-20"
+    git("worktree", "add", "-q", str(wt20), "slice/work-20")
+    put(wt20 / "docs/slices/WORK-20.md", "# WORK-20\nYol: HAFİF\n")
+    git("add", "-A", cwd=wt20)
+    git("commit", "-q", "-m", "WORK-20 spec", minutes_ago=13 * 1440, cwd=wt20)
+    sz = det_cfg("sz", {"slices_dir": "docs/slices"})
+
+    def merge20():
+        git("merge", "-q", "--no-ff", "slice/work-20", "-m", "Merge slice/work-20: WORK-20 (light)")
+    aged_case("size_ratio", "sz", "size_ratio", sz, "WORK-20", NOW + dt.timedelta(days=2), release=merge20)
 finally:
     subprocess.run(["git", "worktree", "prune"], cwd=HOST, capture_output=True)
     shutil.rmtree(TMP, ignore_errors=True)

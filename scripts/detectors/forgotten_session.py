@@ -9,6 +9,8 @@ Scope: acef
 Kind: age
 Tags: infra,runner
 """
+import subprocess
+
 import _lib
 
 DEFAULTS = {"held_min": 30, "max_age_h": 24, "merged_worktrees": True, "leftovers": [], "history_days": 14}
@@ -22,7 +24,7 @@ def detect(ctx):
     if not runs and not slots and not (git_ok and s["merged_worktrees"]):
         raise ctx.Skip("no source: agent_runs, slot_events, git worktrees")
     out = []
-    held_takes = {}
+    held_takes, releases = {}, {}
     if slots:
         for row in _lib.read_jsonl(ctx.path(slots), ctx.now - _lib.dt.timedelta(hours=s["max_age_h"] * 2)):
             k = (row.get("host", ""), row.get("slot", ""))
@@ -30,6 +32,7 @@ def detect(ctx):
                 held_takes[k] = row
             elif row.get("event") == "release":
                 held_takes.pop(k, None)
+                releases.setdefault(k, []).append(row["_ts"])
     found = _lib.items(ctx, "agent_runs", s["max_age_h"], required=False) if runs else []
     names = {i.name for i in found}
     for subject in ctx.open_subjects:   # an open alert's run that aged out of the window is looked up directly
@@ -59,7 +62,10 @@ def detect(ctx):
         if slots:
             for subject in ctx.open_subjects:
                 if subject.startswith(f"{item.name}:slot:") and subject not in held_now:
-                    ctx.clear(subject)
+                    host, _, slot = subject.split(":slot:", 1)[1].partition("/")
+                    since = ctx.open_since.get(subject, ctx.now)
+                    if any(t >= since for t in releases.get((host, slot), [])):
+                        ctx.clear(subject)   # a release seen after the alert opened; an aged-out take is UNSEEN
         for (host, slot), row in held_takes.items():
             if row.get("owner") in (item.name, item.id) and row["_ts"] <= done_at:
                 out.append({"subject": f"{item.name}:slot:{host}/{slot}", "evidence": str(ctx.path(slots)),
@@ -88,8 +94,18 @@ def detect(ctx):
             path, head, branch = wt.get("worktree", ""), wt.get("HEAD", ""), wt.get("branch", "")
             if not branch or _lib.Path(path).resolve() == ctx.repo.resolve():
                 continue
+            subject = f"worktree:{_lib.Path(path).name}"
             if head not in merged_at:
-                ctx.clear(f"worktree:{_lib.Path(path).name}")
+                if subject in ctx.open_subjects:
+                    # the merge may only have left the history window: ask git directly
+                    merged = subprocess.run(["git", "-C", str(ctx.repo), "merge-base", "--is-ancestor", head,
+                                             _lib.main_ref(ctx)], capture_output=True).returncode == 0
+                    if merged:
+                        out.append({"subject": subject, "evidence": path,
+                                    "summary": f"branch {branch.replace('refs/heads/', '')} merged before the "
+                                               f"{s['history_days']}-day history window, worktree still on disk"})
+                    else:
+                        ctx.clear(subject)   # positively not merged (for example new commits on the branch)
                 continue
             ct, sha = merged_at[head]
             late = _lib.minutes(_lib.ts(ct), ctx.now)

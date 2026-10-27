@@ -95,8 +95,8 @@ retro with at most five proposals).
 - **Method:** `method/FEEDBACK_LOOP.md` "Detection loop" and the retro in "Weekly cycle"; `method/WEEKLY_RETRO.md`
   tells the coordinator how to write the judgment parts. `templates/slice/closing-note.md` gets
   `Dedektör: <path | yok — reason>` for investigation slices (checked by `scripts/slice/selfcheck.sh`).
-- Tests: `scripts/test-acef-detect` (94 checks: each detector fires on a fixture and stays silent on a control, the
-  alert lifecycle, losses, skips, host detectors, working hours), `scripts/test-acef-retro` (44 checks).
+- Tests: `scripts/test-acef-detect` (114 checks: each detector fires on a fixture and stays silent on a control, the
+  alert lifecycle, losses, skips, host detectors, working hours), `scripts/test-acef-retro` (45 checks).
 - Capability record `docs/ai/capabilities/waste-detection.json` (status `wired`).
 - **Review r1 fixes (independent review, REVISE, seven P2s; each with a regression test that fails on the earlier
   code):** (1) `acef-detect`/`acef-retro` set `sys.dont_write_bytecode`, so loading detectors leaves no `__pycache__`
@@ -108,6 +108,15 @@ retro with at most five proposals).
   appended logs do not move a directory's mtime; an open alert's run is looked up directly; (5) repeated failures
   without a tree hash are "file change unknown", not an alert; (6) an alert that crosses 30 min while open writes its
   loss once (`loss` event); (7) a retro snapshot folds only the events up to its window's end.
+- **Review r2 fixes:** the positive-observation rule now holds in every detector, with a test for each:
+  `size_ratio` clears only on a merge (open work older than its window is not judged, so not cleared);
+  `machine` clears a hog only on a release or a served waiter after the alert opened, and an idle waiter only on a
+  later take/cancel or a fresh wait; `forgotten_session` clears a slot only on a release after the alert opened and
+  asks git (`merge-base --is-ancestor`) when a worktree's merge has left the history window; `review_loop` clears only
+  on ACCEPT or a merge (rounds or class members leaving the window are not a recovery); `stuck_agent`'s command rule
+  clears only on a later success. `acef-retro` folds events strictly before the window's end (an event at Monday
+  00:00 belongs to the next week). The parallel-poll test now holds the alert lock until all 8 polls are blocked on
+  it (lsof barrier) and asserts every exit code; on the pre-lock code it fails with 48 opens for 6 keys.
 - **`install-acef-tools`** installs `acef-detect`, `acef-retro` and `scripts/detectors/` into `.acef/bin/` (host
   detectors stay in `.acef/detectors/`); `scripts/test-install-acef-tools` runs the installed `acef-detect --list`.
 

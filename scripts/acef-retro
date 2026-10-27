@@ -151,7 +151,7 @@ def build(base: Path, projects: list, args, now) -> str:
         in_window = [e for e in events if e["event"] != "poll" and lo <= note.parse_ts(e["ts"]) < hi]
         polls = [e for e in events if e["event"] == "poll" and lo <= note.parse_ts(e["ts"]) < hi]
         # the snapshot is the window's end: events after it (a later resolve or ack) must not change the past
-        states = note.alert_states([e for e in events if note.parse_ts(e["ts"]) <= hi], hi)
+        states = note.alert_states([e for e in events if note.parse_ts(e["ts"]) < hi], hi)   # the window excludes hi
         opened = [e for e in in_window if e["event"] in ("open", "reopen")]
         resolved = [e for e in in_window if e["event"] == "resolve"]
         acked = [e for e in in_window if e["event"] in ("ack", "defer")]

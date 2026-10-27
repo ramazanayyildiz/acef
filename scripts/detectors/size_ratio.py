@@ -28,7 +28,7 @@ def detect(ctx):
         raise ctx.Skip(f"no source: history of {_lib.main_ref(ctx)}")
     closed = _lib.closed_work(ctx, s["expected_window_days"])
     slices_dir = ctx.sources.get("slices_dir") or ""
-    out, unknown, open_ids = [], [], set()
+    out, unknown, open_ids, merged_ids = [], [], set(), set()
     for wt in _lib.worktrees(ctx):
         path, head, branch = wt.get("worktree", ""), wt.get("HEAD", ""), wt.get("branch", "")
         if not branch or _lib.Path(path).resolve() == ctx.repo.resolve():
@@ -39,7 +39,8 @@ def detect(ctx):
             continue
         work_id = match.group("id").upper()
         if head in hist["commits"]:
-            continue   # already in main: not open work (cleared below)
+            merged_ids.add(work_id)   # its tip is in main: positively no longer open
+            continue
         open_ids.add(work_id)
         own = _lib.git(ctx, "log", "--format=%ct%x09%s", f"{_lib.main_ref(ctx)}..{head}").splitlines()
         if own:
@@ -48,8 +49,7 @@ def detect(ctx):
             git_file = _lib.Path(path) / ".git"
             start = _lib.mtime(git_file) if git_file.exists() else None
         if not start or start < ctx.now - _lib.dt.timedelta(days=s["open_window_days"]):
-            open_ids.discard(work_id)   # outside the window: not judged, not cleared
-            continue
+            continue   # outside the window: not judged, so not cleared either (UNSEEN)
         cls = "unknown"
         spec = _lib.Path(path) / slices_dir / f"{work_id}.md" if slices_dir else None
         if spec and spec.exists():
@@ -60,7 +60,6 @@ def detect(ctx):
             cls = _lib.route_class(ctx, " ".join(line.split("\t", 1)[-1] for line in own))
         if cls == "unknown":
             unknown.append(work_id)
-            open_ids.discard(work_id)
             continue
         expected, how = _lib.expected_minutes(ctx, cls, closed)
         elapsed = _lib.minutes(start, ctx.now)
@@ -72,8 +71,8 @@ def detect(ctx):
         else:
             ctx.clear(work_id)
     for subject in ctx.open_subjects - {f["subject"] for f in out}:
-        if subject not in open_ids and subject not in unknown:
-            ctx.clear(subject)   # git worktree list shows it merged or gone
+        if subject in merged_ids or _lib.mentions(ctx, subject, s["expected_window_days"]):
+            ctx.clear(subject)   # merged into main; a worktree that is merely gone or aged out is UNSEEN
     if unknown:
         ctx.note(f"route class unknown, not sized: {', '.join(sorted(unknown)[:8])}")
     return out

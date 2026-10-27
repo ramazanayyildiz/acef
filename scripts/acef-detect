@@ -131,6 +131,7 @@ class Ctx:
         self.Skip = Skip
         self.cleared = set()        # subjects positively observed as fine this poll
         self.open_subjects = set()  # subjects of this detector's alerts that are not resolved
+        self.open_since = {}        # subject -> when its alert (re)opened
 
     def clear(self, subject: str):
         """Report a positive observation that `subject` is fine now. Only this resolves an alert: a subject that is
@@ -196,8 +197,9 @@ def run(args) -> int:
             continue
         ctx = Ctx(repo, cfg, name, getattr(module, "DEFAULTS", {}), now, det_state.setdefault(name, {}), cache)
         ctx.store = base
-        ctx.open_subjects = {a["subject"] for a in snapshot.values()
-                             if a["detector"] == name and a["status"] != "resolved"}
+        ctx.open_since = {a["subject"]: note.parse_ts(a["since"]) for a in snapshot.values()
+                          if a["detector"] == name and a["status"] != "resolved"}
+        ctx.open_subjects = set(ctx.open_since)
         try:
             findings = module.detect(ctx) or []
         except Skip as exc:

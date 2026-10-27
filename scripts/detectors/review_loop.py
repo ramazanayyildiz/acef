@@ -37,8 +37,9 @@ def detect(ctx):
             out.append({"subject": work_id, "evidence": str(latest.path),
                         "summary": f"{len(revised)} REVISE rounds (rounds {', '.join(map(str, revised))}), "
                                    f"latest round {latest.round}: {state}"})
-        else:
-            ctx.clear(work_id)
+        elif latest.verdict == "ACCEPT" or any(
+                m >= latest.when for m in _lib.mentions(ctx, work_id, s["window_days"] + 1)):
+            ctx.clear(work_id)   # accepted or merged; fewer rounds because old ones left the window is UNSEEN
         for r in rounds:
             if r.verdict == "REVISE":
                 revise_items += 1
@@ -53,8 +54,7 @@ def detect(ctx):
                                    f"days: {', '.join(sorted(ids)[:6])}"})
     for subject in ctx.open_subjects:
         if subject.startswith("class:"):
-            if classes and subject not in firing:
-                ctx.clear(subject)   # class data present this window and below the threshold
+            continue   # a class falling below the threshold as rounds leave the window is not a recovery
         elif _lib.mentions(ctx, subject, 30):
             ctx.clear(subject)       # aged out of the window, but merged since
     if revise_items and not classes:
