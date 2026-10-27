@@ -7,6 +7,38 @@ proven, or installed.
 Update this file in the same PR whenever ACEF itself gains or changes a flow, gate, validator, hook, skill, installer behavior, workflow,
 or evidence contract. Do not use it to claim implementation status; link to the capability record for that.
 
+## Unreleased — Product language, end-user profiles and user-goal tours (2026-10-27)
+
+Why: in two hosts, agents filled end-user screens with process and evidence text and stacked warnings ("kaynak
+dayanaklı", "teyitsiz", "UNKNOWN", disclaimers), building for the reviewer and the owner instead of the end user.
+Contributing factors (not proven root causes; each host investigates its own): a report instruction applied to every
+screen, no end-user profile anywhere, tests that pinned the warning sentences, review rounds that only added warnings,
+and agent note language stored in database records and rendered raw. Owner decision 2026-10-27 (Ram).
+- **Rule** `method/PRODUCT_LANGUAGE.md`, summarised in `method/SLICE_LANE.md` ("Screens are for the end user"):
+  development/audit/evidence notes stay in reports and agent records; information the user needs to know or act on now
+  is shown briefly; user-facing text and agent notes live in separate fields and raw agent notes are never rendered;
+  every new warning is checked for necessity and merging; owner reports carry results, important problems and
+  decisions only.
+- **Profiles** `templates/slice/user-profiles.md` (host copy, path in `slice-method.json` → new `user_profiles` key,
+  schema and examples updated): who, top tasks, knowledge, vocabulary, "may confuse" terms (a review hint, not a ban),
+  device/context, needs, and a "last checked against real usage" line; separate from permission roles.
+- **Briefs**: intake card, slice template and review brief carry `Hedef kullanıcı: <profil> · Bu ekranda yapacağı iş:
+  <görev>` for UI-touching work. `closing-note.md` and `method/FEEDBACK_LOOP.md` are untouched.
+- **Tests** `method/TEST_PIPELINE.md`: the existing content/negative-assertion and screen-evidence requirements are
+  unchanged; added what they verify (data, state, `data-testid`/role selectors, not process or disclaimer sentences)
+  and that adding screen text so a test can find it is a defect.
+- **Review**: checklist section F (F1 "can the target user do their actual job here; which element does not serve
+  it?", F2 no process/evidence text, F3 new warnings justified, F4 raw agent notes not rendered, F5 tests assert
+  data/behaviour, F6 hint output reviewed) and step 7b in the review brief.
+- **Hint script** `scripts/slice/ui-copy-hints.py` (installed by `install-acef-slice-kit` with a
+  `PRODUCT_LANGUAGE.md` snapshot): lists added visible-looking strings that contain the profile's "may confuse" terms
+  and long explanatory strings; always exit 0 (2 only for usage errors). Test: `scripts/slice/tests/test-ui-copy-hints.sh`.
+- **User-goal tour** `templates/slice/user-goal-tour.md` (pointer from `exploration-tour.md`): clean-context agent,
+  only profile + goal + starting info, synthetic data, no real external actions, report task result first; stated as a
+  pre-check, not real user testing. Permission-role tours are unchanged.
+- **Pilot plan** `docs/slice-lane/product-language-pilot.md` (one screen, one host; not run). Capability:
+  `docs/ai/capabilities/product-language.json` (`wired`).
+
 ## v3.0.0-beta.6 — Host product-review origin is binding (2026-10-27)
 
 Found by the first host's Codex host-safety review of its beta.5 update: `run.productReviewOrigin` (or the active run's)

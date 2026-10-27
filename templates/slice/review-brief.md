@@ -10,6 +10,7 @@ Rol: bağımsız inceleyici. Geliştiriciyle aynı oturum değilsin. **Farklı m
 - İlk bağımsız temiz koşu: `<kanonik kayıt bağlantısı>` (koordinatör/inceleyici, geliştirici değil); main `<sha>`, merge-base `<sha>`; test/standart/config, bağımlılık, DB/fixture, toolchain ve ilgili ortam bağları `<kayıt/başlık bağlantısı>`
 - Sınıf: TAM | HAFİF · Ortam: kendi worktree `<yol>`, port `<port>`, DB `<lane DB>` (paylaşılan DB ve ana önizleme portu YASAK)
 - Değişmezler: `<invariants-dosyası>` · Kontrol listesi: `templates/review-checklist.md`
+- Hedef kullanıcı: <profil> · Bu ekranda yapacağı iş: <görev> (giriş kartından; UI'a dokunmuyorsa "UI yok: uygulanmaz"). Profil bölümü: `<user_profiles dosyası>#Profil: <ad>`
 - Bilinen tuzaklar: `<kimlikler | yok>` (giriş kartından; koordinatör önce `acef-note check <damga>` koşar, `unchanged` ise yeniden arama yapılmaz, değiştiyse yalnız yeni kayıtlar eklenir; inceleyici her kimliğin bu dilimde tekrar etmediğini açıkça kontrol eder)
 
 ## Adımlar
@@ -21,6 +22,7 @@ Rol: bağımsız inceleyici. Geliştiriciyle aynı oturum değilsin. **Farklı m
 5. **Mutasyon:** TAM'da yeni/değişen **her kural için 3–5 mutasyon**; HAFİF'te **davranış değişikliği başına bir mutasyon** (kuralı/davranışı boz → hangi test kırmızı); geliştiricinin her mutasyonunu kendin yeniden uygula + en az bir kendi mutasyonun; her biri için kanıt dosyası; sonunda geri al ve `git status --short` boş (A4). HAFİF'te yeni/değişen davranış yoksa dilim ve dev raporundaki "uygulanmaz: <neden>" gerekçesini doğrulayıp rapora yaz. Kuralı bozup test yeşil kalıyorsa bu bir test boşluğu bulgusudur.
 6. **Kontrol listesi:** A her zaman; B paket view/lang/config değişince (**hostlarda `<paket-öneki>` include taraması — checklist B1**); C UI/rota/config/migration dokunuşunda; D TAM sınıfında; E paylaşılan sözleşmede. Uygulanmayan madde "uygulanmaz: <neden>".
 7. **Gerçek tarayıcı:** dilimin senaryolarını giriş noktasından (URL/menü) kullanıcı gibi, 1280 ve 390 px; ekran görüntüsü. Yalnız dilim UI'a dokunuyorsa (rota, görünüm/şablon, UI bileşeni) — her iki sınıfta; dokunmuyorsa dilim ve dev raporundaki "uygulanmaz: <neden>" gerekçesini doğrulayıp rapora yaz. Uygulanabilir kontrol atlanmaz; TAM şartları değişmez. Betik yeşili tek başına yetmez.
+7b. **Hedef kullanıcı** (UI'a dokunuyorsa, checklist F): ekranı profildeki kişi gözüyle oku. **Hedef kullanıcı burada asıl işini yapabiliyor mu; hangi öğe bu işe hizmet etmiyor?** Yeni her uyarı gerekçeli mi, mevcut metinle birleşebilir mi; ekranda süreç/kanıt metni var mı; ham ajan notu (görev başlığı/açıklaması dahil) render ediliyor mu (`method/PRODUCT_LANGUAGE.md`). İsteğe bağlı ipucu: `scripts/ui-copy-hints.py --base <taban-sha>` (yalnız uyarır).
 8. **Karar:** PASS | REVISE. REVISE ise bulgular tablosu (≤10 satır); bloklamayan bulgu backlog adayı olarak işaretlenir.
 9. **Etiket adayı** (paket/sürüm dilimlerinde): "evet / hayır" ve tek cümle neden. Bu açık bir yargıdır; boş bırakılmaz.
 

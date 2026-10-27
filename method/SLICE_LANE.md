@@ -111,6 +111,20 @@ complete → persisted), not around prerequisite slices. Slices are the internal
 - Affected checks run during development; the full gate and independent review run at integration points.
 - The progress record shows usable outcomes first and infrastructure progress separately.
 
+### Screens are for the end user (owner decision 2026-10-27)
+
+Full rule: `method/PRODUCT_LANGUAGE.md`. The core, so a host snapshot of this page is not blind to it:
+- UI-touching work names `Hedef kullanıcı: <profil> · Bu ekranda yapacağı iş: <görev>` (intake card, slice, review
+  brief), from the host's end-user profiles (`slice-method.json` → `user_profiles`, template
+  `templates/slice/user-profiles.md`). Profiles are assumptions corrected from real use, and are not permission roles.
+- Development, audit and evidence notes never go on a product screen; information the user needs to know or act on
+  now is shown, briefly and plainly. User-facing text and agent working notes live in separate fields; raw agent notes
+  are never rendered. Every new warning is checked for necessity and for merging with existing text.
+- Content assertions verify required data and behaviour, not process or disclaimer sentences; adding screen text so a
+  test can find it is a defect (`method/TEST_PIPELINE.md`). Review checklist section F asks whether the target user can
+  do their job on the screen. A user-goal tour (`templates/slice/user-goal-tour.md`) is a pre-check by a clean-context
+  agent, not real user testing.
+
 ## Flow
 
 ```
@@ -332,7 +346,8 @@ lower snake_case, or a `{{…}}` left after expansion exits 2. `scripts/slice/st
 ```text
 method/SLICE_LANE.md                 this page
 templates/slice/                     slice, dev-report, review-brief (+ TAM annex), review-checklist (A–E), review-r2,
-                                     closing-note, invariants-skeleton, locks, module-CLAUDE, exploration-tour
+                                     closing-note, invariants-skeleton, locks, module-CLAUDE, exploration-tour,
+                                     user-goal-tour, user-profiles (host end-user profiles)
 scripts/slice/gate.sh                runs slice-method.json gate.commands, {{placeholders}} from the stack profile;
                                      one summary line; exit 0/1/2/3
 scripts/slice/standards-check.sh     standards ratchet engine; rules from the stack adapter
@@ -340,6 +355,8 @@ scripts/slice/codex-review.sh        read-only review call with a required model
 scripts/slice/metrics.py             measurement table from slice/review files and git history (--profile)
 scripts/slice/route.py               route from intake facts ("card") and the diff check against the declared route
                                      ("check": ROUTE_UP stops, OVER_CEREMONY warns); path rules: stack profile "routing"
+scripts/slice/ui-copy-hints.py       review hint: new visible strings with a profile's "may confuse" terms, long
+                                     explanatory lines; warns only, exit 0
 scripts/slice/selfcheck.sh           the lane's own gate: syntax, templates, core + adapter self-tests, metrics
                                      fixture, and a scan that the core names no stack or source project
 scripts/slice/tests/                 gate (incl. placeholders, zero tests), codex-review, standards-check (incl. regex errors),

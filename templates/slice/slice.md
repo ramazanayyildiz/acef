@@ -16,6 +16,8 @@ Koordinatör yazar; geliştirici ve inceleyici yalnız okur. Raporlar: `<SLICE-I
 
 <Kullanıcıya görünen sonuç, 3–6 cümle: kim, hangi ekranda/uçta, ne yapabilecek. Kararlar D1… ve kaydı. Eski davranıştan bilinçli sapma kanıtıyla tek satır.>
 
+Hedef kullanıcı: <profil> · Bu ekranda yapacağı iş: <görev> (UI'a dokunmuyorsa "UI yok: uygulanmaz"; profil: `slice-method.json` → `user_profiles`; ekran metni kuralı: `method/PRODUCT_LANGUAGE.md` — süreç/kanıt notu ekrana yazılmaz, ham ajan notu gösterilmez)
+
 ## Değişmezler
 
 Geçerli: `<invariants-dosyası>` I<n>, I<n> (yalnız dokunulan yüzeye göre). Kural metni burada TEKRARLANMAZ.

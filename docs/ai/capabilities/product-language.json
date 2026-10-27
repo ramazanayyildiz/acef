@@ -1,0 +1,60 @@
+{
+  "capabilityId": "product-language",
+  "requestedIntent": "Owner decision 2026-10-27: end-user screens are built for the end user. Host end-user profiles (separate from permission roles), a target-user line in intake/slice/review brief, a product-language rule (no process/evidence text on screens, needed information shown briefly, user-facing text and agent notes in separate fields), a clarification that content assertions verify data and behaviour rather than disclaimer sentences, a review section and question, an optional warn-only hint script, and a clean-context user-goal tour that is a pre-check and not real user testing.",
+  "status": "wired",
+  "requiredLayers": [
+    "docs",
+    "artifact",
+    "schema",
+    "cli",
+    "installer",
+    "tests"
+  ],
+  "implementedLayers": {
+    "docs": [
+      "method/PRODUCT_LANGUAGE.md",
+      "method/SLICE_LANE.md#Screens are for the end user (owner decision 2026-10-27)",
+      "method/TEST_PIPELINE.md#Real runtime smoke",
+      "docs/slice-lane/product-language-pilot.md",
+      "CHANGELOG.md"
+    ],
+    "artifact": [
+      "templates/slice/user-profiles.md",
+      "templates/slice/user-goal-tour.md",
+      "templates/slice/intake-card.md",
+      "templates/slice/slice.md",
+      "templates/slice/review-brief.md",
+      "templates/slice/review-checklist.md",
+      "templates/slice/exploration-tour.md"
+    ],
+    "schema": [
+      "schemas/slice-method.schema.json"
+    ],
+    "cli": [
+      "scripts/slice/ui-copy-hints.py"
+    ],
+    "installer": [
+      "scripts/install-acef-slice-kit"
+    ],
+    "tests": [
+      "scripts/slice/tests/test-ui-copy-hints.sh",
+      "scripts/slice/selfcheck.sh",
+      "scripts/test-acef-install-profiles"
+    ]
+  },
+  "limitations": [
+    "Wired, not enforced: nothing blocks a slice without the target-user line, a review that skips section F, or a screen that shows process text; the templates and the review ask for them, and selfcheck only checks that the template fields exist.",
+    "The hint script is a heuristic and only warns (exit 0): it sees quoted literals and text between tags on added lines, not rendered pages or text that comes from the database, so raw agent notes rendered from a record field are found only by review F4 and the goal tour.",
+    "Term matching is case-insensitive at word start with dotted/dotless I folded both ways; Turkish casing and morphology are approximated, not exact.",
+    "Profiles are assumptions written by the coordinator; the user-goal tour is an agent role-playing a user, not real user testing.",
+    "Effect not measured: the pilot in docs/slice-lane/product-language-pilot.md has not run; no host has a profile file yet."
+  ],
+  "evidence": [
+    {
+      "layer": "tests",
+      "ref": "scripts/slice/tests/test-ui-copy-hints.sh",
+      "note": "2026-10-27: 27 checks passed (warn-only exit codes, profile list drives hints, --profile scoping, placeholders ignored, long text, docs skipped, test files labelled, Turkish I folding, git mode with slice-method.json user_profiles)."
+    }
+  ],
+  "createdAt": "2026-10-27"
+}
