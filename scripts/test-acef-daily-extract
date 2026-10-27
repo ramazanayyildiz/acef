@@ -133,6 +133,9 @@ def build():
         ev(ts(13, 5), {"type": "task_complete", "last_agent_message": "VERDICT: REVISE\n- one blocking item"}),
     ]
     jl(CODEX / "2026" / "10" / "26" / "rollout-2026-10-26T13-00-00-cx-1.jsonl", cx)
+    cx2 = [dict(cx[0], payload=dict(cx[0]["payload"], id="cx-2")), cx[1], cx[2],
+           ev(ts(14, 5), {"type": "task_complete", "last_agent_message": "**REQUEST CHANGES**\n\n1. **P2 - one item**"})]
+    jl(CODEX / "2026" / "10" / "26" / "rollout-2026-10-26T14-05-00-cx-2.jsonl", cx2)
     jl(CODEX / "2026" / "10" / "26" / "rollout-2026-10-26T14-00-00-broken.jsonl", [], raw=["not json", "{broken"])
     for f in list(CLAUDE.rglob("*.jsonl")) + list(CODEX.rglob("*.jsonl")):
         os.utime(f, (1_900_000_000, 1_900_000_000))     # mtime after the window start (the prefilter)
@@ -163,7 +166,8 @@ try:
     md = (out / "demo.md").read_text()
     alltext = "".join(f.read_text() for f in out.iterdir())
     kinds = sorted(s["kind"] for s in idx["sessions"])
-    check("session types", kinds == ["codex-exec", "main", "subagent"], kinds)
+    check("session types", kinds == ["codex-exec", "codex-exec", "main", "subagent"], kinds)
+    check("verdict at the head of the message", "REQUEST_CHANGES" in md, md)
     check("project from removed worktree path, subagent inherits", {s["project"] for s in idx["sessions"]} == {"demo"},
           [s["project"] for s in idx["sessions"]])
     check("subagent linked to parent", "parent C:11111111" in md, md)

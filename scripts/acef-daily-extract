@@ -88,6 +88,17 @@ SHA_RE = re.compile(r"\[([\w./+-]+)(?: \(root-commit\))? ([0-9a-f]{7,12})\]")
 SLEEP_RE = re.compile(r"\bsleep\s+(\d+(?:\.\d+)?)")
 REVIEW_RE = re.compile(r"\b(review|reviewer|VERDICT|inceleme|incele)\b", re.IGNORECASE)
 VERDICT_RE = re.compile(r"VERDICT\s*[:=]\s*\**\s*([A-Z_]+)")
+# reviewers that open with the verdict instead of "VERDICT: X" ("**REQUEST CHANGES**", "Verdict: APPROVE for round 3")
+VERDICT_HEAD_RE = re.compile(r"^\W*(?:verdict\s*[:=]\s*\**\s*)?(request changes|changes requested|approve with changes|"
+                             r"approve|accept|revise|reject|pass|fail|block)\b", re.IGNORECASE)
+
+
+def verdict_of(msg):
+    m = VERDICT_RE.search(msg or "")
+    if m:
+        return m.group(1)
+    m = VERDICT_HEAD_RE.match((msg or "").strip()[:200])
+    return m.group(1).upper().replace(" ", "_") if m else ""
 BENIGN_EXIT1 = re.compile(r"^\s*(\S*/)?(rg|grep|egrep|fgrep|test|\[|diff|cmp|git diff|git grep|pgrep|which)\b")
 
 # ---------------------------------------------------------------- redaction (applied to every string at write time)
@@ -515,10 +526,9 @@ def parse_codex(path, since, until, kind_unused=None):
                 meta["ctx_window"] = info.get("model_context_window") or meta["ctx_window"]
                 continue
             if typ == "event_msg" and pt == "task_complete":
-                msg = p.get("last_agent_message") or ""
-                v = VERDICT_RE.search(msg)
+                v = verdict_of(p.get("last_agent_message") or "")
                 if v and win:
-                    meta["verdicts"].append({"t": t, "line": ln, "verdict": v.group(1)})
+                    meta["verdicts"].append({"t": t, "line": ln, "verdict": v})
                 continue
             if not (typ == "event_msg" and pt == "item_completed"):
                 continue

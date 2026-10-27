@@ -31,8 +31,10 @@ for the pilot; the owner reviews the pilot before anything is scheduled.
   `ContextCompaction` item: gtz showed 68 for 34); Codex review launches from Claude sessions without a verdict in the
   output are counted apart instead of as "no verdict" reviews (119 of 127 in one project); review chains per slice id
   (first id in the Codex prompt) so rounds per slice show directly.
-- **Test** `scripts/test-acef-daily-extract` builds a synthetic fixture (no real transcript text) and checks 21 points.
-- **Pilot numbers** (last 24 h on 2026-10-27): 537 files, 3.6 GB, 529 sessions in the window, about 10–14 s wall time,
+  Reviewer verdicts that open the message instead of `VERDICT: X` ("**REQUEST CHANGES**", "Verdict: APPROVE ...") are
+  read too (one host's 77 Codex reviews showed 0 verdicts, now 44).
+- **Test** `scripts/test-acef-daily-extract` builds a synthetic fixture (no real transcript text) and checks 22 points.
+- **Pilot numbers** (last 24 h on 2026-10-27): about 540–550 files, 3.6 GB, 529 sessions in the window, 10–18 s wall time,
   0 unreadable, digests 0.4k–20k tokens per project. Capability record: `docs/ai/capabilities/daily-session-review.json`
   (wired).
 - Not changed: rules, the weekly retro, `acef-note`. The daily review reports and carries repeats to the weekly retro;
