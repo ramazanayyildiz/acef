@@ -45,5 +45,25 @@ check "check unchanged exits 0" '"$NOTE" check "$v1" | grep -q "^unchanged"'
 "$NOTE" add alpha --tags infra --what "new lesson after stamp" >/dev/null
 check "check changed exits 1 and lists new" 'out=$("$NOTE" check "$v1"); [ $? -eq 1 ] && echo "$out" | grep -q "new lesson after stamp"'
 check "check filters by tags" '! "$NOTE" check "$v1" --tags rounds | grep -q "new lesson"'
+# stale acks: an ack with --slice is re-asked when a poll still saw the breach after the recheck time
+A="$ACEF_FEEDBACK_DIR/alerts/eps.jsonl"
+cat > "$A" <<'EOF'
+{"ts": "2026-10-20T08:00:00Z", "event": "open", "id": "eps-A1", "detector": "waiting_work", "subject": "W-1", "key": "waiting_work:W-1", "owner": "merge-operator", "summary": "accepted 5 h", "ack_by": "2026-10-20T12:00:00Z"}
+{"ts": "2026-10-20T09:00:00Z", "event": "open", "id": "eps-A2", "detector": "waiting_work", "subject": "W-2", "key": "waiting_work:W-2", "owner": "merge-operator", "summary": "accepted 6 h", "ack_by": "2026-10-20T13:00:00Z"}
+EOF
+ACEF_NOW=2026-10-20T10:00:00Z "$NOTE" ack eps-A1 --slice MERGE-W1 >/dev/null
+ACEF_NOW=2026-10-20T10:00:00Z "$NOTE" ack eps-A2 --slice MERGE-W2 >/dev/null
+printf '{"ts": "2026-10-20T20:00:00Z", "event": "poll", "breaching": ["eps-A1", "eps-A2"]}\n' >> "$A"
+check "ack inside the recheck time is quiet" '! ACEF_NOW=2026-10-20T21:00:00Z "$NOTE" due | grep -q "ACKED-STALE"'
+printf '{"ts": "2026-10-21T11:00:00Z", "event": "poll", "breaching": ["eps-A1"]}\n' >> "$A"
+due=$(ACEF_NOW=2026-10-21T11:05:00Z "$NOTE" due)
+check "due prints ACKED-STALE for an ack still breaching after 24 h" 'echo "$due" | grep -q "^ALERT ACKED-STALE: eps-A1 \[waiting_work\] W-1 — owner merge-operator, acked 25 h ago to slice MERGE-W1"'
+check "an ack not seen breaching after the recheck time is not stale" '! echo "$due" | grep -q "ACKED-STALE: eps-A2"'
+check "--recheck-hours needs --slice" '! "$NOTE" ack eps-A1 --resolve done --recheck-hours 2 >/dev/null 2>&1'
+ACEF_NOW=2026-10-21T11:10:00Z "$NOTE" ack eps-A1 --slice MERGE-W1 --recheck-hours 2 >/dev/null
+printf '{"ts": "2026-10-21T12:00:00Z", "event": "poll", "breaching": ["eps-A1"]}\n' >> "$A"
+check "a new ack starts a new period" '! ACEF_NOW=2026-10-21T12:05:00Z "$NOTE" due | grep -q "ACKED-STALE: eps-A1"'
+printf '{"ts": "2026-10-21T13:30:00Z", "event": "poll", "breaching": ["eps-A1"]}\n' >> "$A"
+check "--recheck-hours 2 re-asks after two hours" 'ACEF_NOW=2026-10-21T13:35:00Z "$NOTE" due | grep -q "ACKED-STALE: eps-A1 .*recheck after 2 h"'
 echo "acef-note tests: $ok passed, $bad failed"
 [ "$bad" -eq 0 ]

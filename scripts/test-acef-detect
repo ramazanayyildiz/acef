@@ -766,6 +766,341 @@ try:
         os.chmod(HOST / "left2", 0o755)
     check("r5-5 leftover behind an unreadable parent: SOURCE_ERROR leftovers, not CLEARED",
           "SOURCE_ERROR forgotten_session leftovers" in o and f"CLEARED {l_id}" not in o, o)
+
+    # ------------------------------------------------------------ speed: shared reads, persistent index, timing
+    STORE_C = TMP / "store-cache"
+    ENV_C = {**ENV, "ACEF_FEEDBACK_DIR": str(STORE_C)}
+
+    def body(text):
+        """Output without the timing numbers (ms in OK lines and the header, the closing timing line)."""
+        return "\n".join(re.sub(r"\d+ ms", "N ms", l) for l in text.splitlines()
+                         if not re.match(r"^acef-detect \d+\.\d s ", l))
+
+    rc, cold = run(config=CFG, env=ENV_C)   # real poll: builds the index
+    index_file = STORE_C / "alerts" / "demo.index.json"
+    check("speed: a real poll writes the run-item index in the store, not the host",
+          rc in (0, 3) and index_file.exists() and not list(HOST.glob("**/*.index.json")), cold)
+    rows = json.loads(index_file.read_text()).get("rows", {}) if index_file.exists() else {}
+    check("speed: only finished run items are indexed",
+          rows and all(r.get("finished") for r in rows.values()) and not any("/run-a\t" in k for k in rows), rows)
+    rc_w, warm = run("--dry-run", config=CFG, env=ENV_C, now=NOW + dt.timedelta(minutes=1))
+    rc_n, nocache = run("--dry-run", "--no-cache", config=CFG, env=ENV_C, now=NOW + dt.timedelta(minutes=1))
+    hits = re.search(r"index (\d+) hit", warm)
+    check("speed: the warm poll uses the index", hits and int(hits.group(1)) > 0, warm)
+    check("speed: same findings with and without the index (warm vs --no-cache)",
+          rc_w == rc_n and body(warm) == body(nocache) and "index off" in nocache, f"{warm}\n----\n{nocache}")
+    shutil.copy(index_file, TMP / "index.bak")
+    index_file.write_text("{not json")
+    rc_b, broken = run("--dry-run", config=CFG, env=ENV_C, now=NOW + dt.timedelta(minutes=1))
+    check("speed: a corrupt index is ignored (same findings)", rc_b == rc_n and body(broken) == body(nocache), broken)
+    index_file.write_text('{"version": 2, "rows": ' + "[" * 100000 + "]" * 100000 + "}")
+    rc_d, deep = run("--dry-run", config=CFG, env=ENV_C, now=NOW + dt.timedelta(minutes=1))
+    check("codex-r4 a deeply nested corrupt index (RecursionError) is ignored, never a crash",
+          rc_d == rc_n and body(deep) == body(nocache) and "Traceback" not in deep, deep[-800:])
+    shutil.copy(TMP / "index.bak", index_file)
+
+    # an indexed finished review whose report changes is read again (mtime/size signature)
+    put(HOST / "idx/codex-IDX-1-1/started", iso(ago(100)) + "\n", 100)
+    put(HOST / "idx/codex-IDX-1-1/report.md", "Verdict: ACCEPT\n", 90)
+    put(HOST / "idx/codex-IDX-1-1/finished", iso(ago(90)) + "\n", 90)
+    for r_ in (2, 3):
+        put(HOST / f"idx/codex-IDX-1-{r_}/started", iso(ago(100 - r_)) + "\n", 100 - r_)
+        put(HOST / f"idx/codex-IDX-1-{r_}/report.md", "Verdict: REVISE\n", 90 - r_)
+        put(HOST / f"idx/codex-IDX-1-{r_}/finished", iso(ago(90 - r_)) + "\n", 90 - r_)
+    ic = det_cfg("idx", {"reviews": {"glob": "idx/codex-*", "result_file": "report.md",
+                                     "id_regex": "^codex-(?P<id>.+?)-(?P<round>\\d+)$"}})
+    rc, o = run("--only", "review_loop", config=ic, env=ENV_C)
+    check("speed: index fixture has two REVISE rounds, no alert yet", "[review_loop] IDX-1" not in o, o)
+    put(HOST / "idx/codex-IDX-1-1/report.md", "Verdict: REVISE\n", 80)   # same size, new mtime
+    rc, o = run("--only", "review_loop", config=ic, env=ENV_C, now=NOW + dt.timedelta(minutes=1))
+    check("speed: a changed result file is reread, not served from the index",
+          bool(re.search(r"ALERT \S+ NEW \[review_loop\] IDX-1 — 3 REVISE rounds", o)), o)
+
+    # review r1 (Codex, PR #24): nested configured paths, unreadable cached sources, malformed index rows
+    for r_ in (1, 2, 3):
+        put(HOST / f"nest/codex-NEST-1-{r_}/started", iso(ago(100 - r_)) + "\n", 100 - r_)
+        put(HOST / f"nest/codex-NEST-1-{r_}/reports/result.md", "Verdict: REVISE\n", 90 - r_)
+        put(HOST / f"nest/codex-NEST-1-{r_}/finished", iso(ago(90 - r_)) + "\n", 90 - r_)
+    nc = det_cfg("nest", {"reviews": {"glob": "nest/codex-*", "result_file": "reports/result.md",
+                                      "id_regex": "^codex-(?P<id>.+?)-(?P<round>\\d+)$"}})
+    rc, o = run("--only", "review_loop", config=nc, env=ENV_C)
+    n_id = alert_id(o, "review_loop", "NEST-1")
+    nip = STORE_C / "alerts/nest.index.json"
+    nrows = json.loads(nip.read_text())["rows"] if nip.exists() else {}
+    check("codex-r1-1 a nested result file is signed in the index (not None)",
+          n_id and nrows and all(r["sig"].get("reports/result.md")
+                                 for r in nrows.values()), o + json.dumps(nrows)[:600])
+    put(HOST / "nest/codex-NEST-1-3/reports/result.md", "Verdict: ACCEPT\n", 80)   # same size, new mtime
+    rc_w, w = run("--only", "review_loop", "--dry-run", config=nc, env=ENV_C, now=NOW + dt.timedelta(minutes=1))
+    rc_n, n = run("--only", "review_loop", "--dry-run", "--no-cache", config=nc, env=ENV_C,
+                  now=NOW + dt.timedelta(minutes=1))
+    check("codex-r1-1 nested result REVISE->ACCEPT: warm index equals --no-cache and clears",
+          f"CLEARED {n_id} " in w and body(w) == body(n), w + "\n----\n" + n)
+    # a nested status file decides done/running with and without the index
+    put(HOST / "nest2/run-N1/started", iso(ago(300)) + "\n", 300)
+    put(HOST / "nest2/run-N1/meta/status", "running\n", 240)
+    put(HOST / "nest2/run-N2/started", iso(ago(300)) + "\n", 300)
+    put(HOST / "nest2/run-N2/meta/status", "done\n", 240)
+    for d_ in ("run-N1", "run-N2"):
+        settle(HOST / f"nest2/{d_}/meta", 240)
+        settle(HOST / f"nest2/{d_}", 240)
+    n2 = det_cfg("nest2", {"agent_runs": {"glob": "nest2/*", "status_file": "meta/status",
+                                          "finished_files": ["meta/finished"]}})
+    rc, o1 = run("--only", "stuck_agent", "--dry-run", config=n2, env=ENV_C)
+    rc, o2 = run("--only", "stuck_agent", "--dry-run", "--no-cache", config=n2, env=ENV_C)
+    check("codex-r1-1 nested status: running item fires, done item silent, same with and without the index",
+          "[stuck_agent] run-N1 " in o1 and "[stuck_agent] run-N2" not in o1 and body(o1) == body(o2), o1 + o2)
+
+    # an indexed result file that becomes unreadable is a SOURCE_ERROR, never the cached verdict
+    rc, o = run("--only", "review_loop", config=ic, env=ENV_C, now=NOW + dt.timedelta(minutes=2))   # verdicts indexed
+    target = HOST / "idx/codex-IDX-1-2/report.md"
+    os.chmod(target, 0)
+    try:
+        rc_w, w = run("--only", "review_loop", "--dry-run", config=ic, env=ENV_C, now=NOW + dt.timedelta(minutes=3))
+        rc_n, n = run("--only", "review_loop", "--dry-run", "--no-cache", config=ic, env=ENV_C,
+                      now=NOW + dt.timedelta(minutes=3))
+    finally:
+        os.chmod(target, 0o644)
+    check("codex-r1-2 chmod 000 on a cached result: warm poll reports SOURCE_ERROR like --no-cache",
+          "SOURCE_ERROR review_loop" in w and "SOURCE_ERROR review_loop" in n and "CLEARED" not in w
+          and "Traceback" not in w, w + "\n----\n" + n)
+
+    # malformed index rows are cache misses, never a crash
+    ip = STORE_C / "alerts/nest.index.json"
+    good = json.loads(ip.read_text()) if ip.exists() else {"version": 1, "rows": {"k": {}}}
+    keys = sorted(good["rows"]) or ["k"]
+    bad_rows = {keys[0]: [1, 2, 3], "not-a-path": "x"}
+    for k in keys[1:]:
+        bad_rows[k] = {kk: vv for kk, vv in good["rows"][k].items() if kk not in ("finished", "last")}
+    bad_rows[keys[-1]] = {**good["rows"][keys[-1]], "finished": "not a date", "facts": [1]}
+    ip.write_text(json.dumps({"version": good["version"], "rows": bad_rows}))
+    check("codex-r1-3 fixture: the index had rows to corrupt", ip.exists() and len(keys) >= 3, str(keys))
+    rc_b, b_ = run("--only", "review_loop", "--dry-run", config=nc, env=ENV_C, now=NOW + dt.timedelta(minutes=4))
+    rc_n, n = run("--only", "review_loop", "--dry-run", "--no-cache", config=nc, env=ENV_C,
+                  now=NOW + dt.timedelta(minutes=4))
+    check("codex-r1-3 malformed index rows ([1,2,3], missing or invalid fields) are misses: no crash, same findings",
+          rc_b == rc_n == 0 and "Traceback" not in b_ and "ERROR review_loop" not in b_ and body(b_) == body(n)
+          and "index 0 hit(s)" in b_, b_ + "\n----\n" + n)
+
+    # review r2 (Codex): whatever the index holds, the worst outcome is a cache miss
+    rp = HOST / "rep/run-R"
+    put(rp / "started", iso(ago(200)) + "\n", 200)
+    for k_ in (1, 2, 3):
+        put(rp / f"events-{k_}.log", f"try {k_}\nERROR: connection refused\n", 150 - k_)
+    put(rp / "report.md", "", 140)
+    put(rp / "finished", iso(ago(140)) + "\n", 140)
+    settle(rp, 140)
+    rc_ = det_cfg("rep", {"agent_runs": {"glob": "rep/*", "attempt_glob": "events-*.log", "result_file": "report.md"}})
+    rc, o = run("--only", "stuck_agent", config=rc_, env=ENV_C)
+    r_id = alert_id(o, "stuck_agent", "run-R:repeat")
+    rip = STORE_C / "alerts/rep.index.json"
+    rdata = json.loads(rip.read_text()) if rip.exists() else {"version": 1, "rows": {}}
+    check("codex-r2-1 fixture: repeat alert open, empty result cached as nonblank false",
+          r_id and any((r.get("facts") or {}).get("nonblank") is False for r in rdata["rows"].values()), o + str(rdata))
+    for r in rdata["rows"].values():
+        r.setdefault("facts", {})["nonblank"] = "false"
+    rip.write_text(json.dumps(rdata))
+    rc_w, w = run("--only", "stuck_agent", "--dry-run", config=rc_, env=ENV_C, now=NOW + dt.timedelta(minutes=1))
+    rc_n, n = run("--only", "stuck_agent", "--dry-run", "--no-cache", config=rc_, env=ENV_C,
+                  now=NOW + dt.timedelta(minutes=1))
+    check("codex-r2-1 cached nonblank \"false\" (a string) is a miss: no CLEARED, same as --no-cache",
+          f"CLEARED {r_id}" not in w and body(w) == body(n), w + "\n----\n" + n)
+    rc, o = run("--only", "review_loop", config=ic, env=ENV_C, now=NOW + dt.timedelta(minutes=5))   # verdicts indexed
+    vdata = json.loads(ip_idx.read_text()) if (ip_idx := STORE_C / "alerts/idx.index.json").exists() else {"rows": {}}
+    tampered = 0
+    for r in vdata["rows"].values():
+        for k_ in list((r.get("facts") or {})):
+            if k_.startswith("verdict:"):
+                r["facts"][k_] = 5
+                tampered += 1
+    ip_idx.write_text(json.dumps(vdata))
+    rc_w, w = run("--only", "review_loop", "--dry-run", config=ic, env=ENV_C, now=NOW + dt.timedelta(minutes=6))
+    rc_n, n = run("--only", "review_loop", "--dry-run", "--no-cache", config=ic, env=ENV_C,
+                  now=NOW + dt.timedelta(minutes=6))
+    check("codex-r2-1 cached numeric verdict is a miss: no crash, same as --no-cache",
+          tampered and rc_w == rc_n and "ERROR review_loop" not in w and "Traceback" not in w and body(w) == body(n),
+          w + "\n----\n" + n)
+    for r in vdata["rows"].values():
+        r["facts"] = {}
+        r["finished"] = "0001-01-01T00:00:00+23:00"
+    ip_idx.write_text(json.dumps(vdata))
+    rc_w, w = run("--only", "review_loop", "--dry-run", config=ic, env=ENV_C, now=NOW + dt.timedelta(minutes=7))
+    rc_n, n = run("--only", "review_loop", "--dry-run", "--no-cache", config=ic, env=ENV_C,
+                  now=NOW + dt.timedelta(minutes=7))
+    check("codex-r2-2 an overflowing cached time is a miss: the poll runs, same as --no-cache",
+          rc_w == rc_n == 0 and "Traceback" not in w and "OverflowError" not in w and body(w) == body(n),
+          w + "\n----\n" + n)
+
+    # review r3 (Codex): correctly typed but false facts and edited rows fail the row checksum; wrong shapes at use
+    sys.dont_write_bytecode = True
+    sys.path.insert(0, str(HERE / "detectors"))
+    import _lib as ilib   # noqa: E402
+    csum = getattr(ilib.Index, "checksum", lambda k, r: None)
+    fshape = getattr(ilib, "_findall_shape", lambda v, g: None)
+    rc, o = run("--only", "stuck_agent", config=rc_, env=ENV_C, now=NOW + dt.timedelta(minutes=8))   # fresh rep index
+    rdata = json.loads(rip.read_text()) if rip.exists() else {"version": 0, "rows": {}}
+    check("codex-r3 fixture: index rows carry a checksum", rdata["rows"] and all(
+        r.get("sum") and r.get("sum") == csum(k, r) for k, r in rdata["rows"].items()), str(rdata)[:400])
+    for r in rdata["rows"].values():
+        r.setdefault("facts", {})["nonblank"] = True   # well-typed, false: the result file is empty; old checksum kept
+    rip.write_text(json.dumps(rdata))
+    rc_w, w = run("--only", "stuck_agent", "--dry-run", config=rc_, env=ENV_C, now=NOW + dt.timedelta(minutes=9))
+    rc_n, n = run("--only", "stuck_agent", "--dry-run", "--no-cache", config=rc_, env=ENV_C,
+                  now=NOW + dt.timedelta(minutes=9))
+    check("codex-r3-1 an edited value with the old checksum is a miss (nonblank true over an empty result)",
+          f"CLEARED {r_id}" not in w and "index 0 hit(s)" in w and body(w) == body(n), w + "\n----\n" + n)
+    rc, o = run("--only", "review_loop", config=ic, env=ENV_C, now=NOW + dt.timedelta(minutes=10))  # fresh idx index
+    vdata = json.loads(ip_idx.read_text())
+    flipped = 0
+    for r in vdata["rows"].values():
+        for k_ in list(r.get("facts") or {}):
+            if k_.startswith("verdict:") and r["facts"][k_] == "REVISE":
+                r["facts"][k_] = "ACCEPT"
+                flipped += 1
+    ip_idx.write_text(json.dumps(vdata))
+    rc_w, w = run("--only", "review_loop", "--dry-run", config=ic, env=ENV_C, now=NOW + dt.timedelta(minutes=11))
+    rc_n, n = run("--only", "review_loop", "--dry-run", "--no-cache", config=ic, env=ENV_C,
+                  now=NOW + dt.timedelta(minutes=11))
+    check("codex-r3-1 a cached verdict flipped REVISE->ACCEPT with the old checksum is a miss",
+          flipped and body(w) == body(n), w + "\n----\n" + n)
+    old_fmt = {"version": 1, "rows": {k: {kk: vv for kk, vv in r.items() if kk != "sum"} for k, r in vdata["rows"].items()}}
+    ip_idx.write_text(json.dumps(old_fmt))
+    rc_w, w = run("--only", "review_loop", "--dry-run", config=ic, env=ENV_C, now=NOW + dt.timedelta(minutes=11))
+    check("codex-r3-1 an old-format (version 1) index is ignored: all misses, same as --no-cache",
+          "index 0 hit(s)" in w and body(w) == body(n), w)
+    # a findall value of the wrong shape (here with a valid checksum) is recomputed by its consumer, never a crash
+    rc, o = run("--only", "review_loop", config=ic, env=ENV_C, now=NOW + dt.timedelta(minutes=12))
+    vdata = json.loads(ip_idx.read_text())
+    shaped = 0
+    for k, r in vdata["rows"].items():
+        for k_ in list(r.get("facts") or {}):
+            if k_.startswith("findall:"):
+                r["facts"][k_] = [["security"]]
+                shaped += 1
+        r["sum"] = csum(k, r)
+    ip_idx.write_text(json.dumps(vdata))
+    rc_w, w = run("--only", "review_loop", "--dry-run", config=ic, env=ENV_C, now=NOW + dt.timedelta(minutes=13))
+    rc_n, n = run("--only", "review_loop", "--dry-run", "--no-cache", config=ic, env=ENV_C,
+                  now=NOW + dt.timedelta(minutes=13))
+    check("codex-r3-2 a findall of the wrong shape ([[\"security\"]] for a one-group regex) is recomputed: no crash",
+          shaped and rc_w == rc_n and "ERROR review_loop" not in w and "Traceback" not in w and body(w) == body(n),
+          w + "\n----\n" + n)
+    check("codex-r3-2 findall shape follows the regex's group count",
+          fshape(["a"], 1) and fshape([["a"]], 1) is False and fshape([["a", "b"]], 2)
+          and fshape([["a"]], 2) is False and fshape(["a"], 2) is False and fshape([], 0))
+
+    # shared git: one git log of main for every history window, one for every worktree head
+    trace = TMP / "git-trace.txt"
+    rc, o = run("--dry-run", config=CFG, env={**ENV_C, "GIT_TRACE": str(trace)}, now=NOW + dt.timedelta(minutes=2))
+    cmds = [l for l in trace.read_text().splitlines() if "trace: built-in: git" in l] if trace.exists() else []
+    logs = [l.split("trace: built-in: git ", 1)[1] for l in cmds if "trace: built-in: git log " in l]
+    since_logs = [l for l in logs if "--since=" in l]
+    head_logs = [l for l in logs if re.search(r"(^| )--not( |$)", l)]
+    per_head = [l for l in logs if re.search(r"(^| )'?main\.\.[0-9a-f]+", l)]
+    check("speed: one git log of main per poll (all history windows share it)", len(since_logs) == 1,
+          "\n".join(since_logs))
+    check("speed: one git log for every worktree head, none per head", len(head_logs) == 1 and not per_head,
+          "\n".join(head_logs + per_head))
+
+    # the batched own-commit query gives what `git log main..<head>` gives for each worktree
+    sys.dont_write_bytecode = True
+    sys.path.insert(0, str(HERE / "detectors"))
+    import _lib as lib   # noqa: E402
+
+    class FakeCtx:
+        def __init__(self):
+            self.repo, self.cache, self.now = HOST, {}, NOW
+            self.sources = {"main_ref": "main"}
+
+    fctx = FakeCtx()
+    heads = [w.get("HEAD") for w in lib.worktrees(fctx) if w.get("branch")]
+    same = all(sorted(lib.own_commits(fctx, h)) == sorted(
+        (int(l.split("\t", 1)[0]), l.split("\t", 1)[1]) for l in git("log", "--format=%ct%x09%s", f"main..{h}").splitlines())
+        for h in heads)
+    check(f"speed: batched own commits equal git log main..<head> for {len(heads)} worktree(s)", heads and same)
+    # history views: each window equals its own `git log --since`
+    views_ok = True
+    for days in (1, 2, 3, 30, 90):
+        since = (NOW - dt.timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        own = {l.split("\t")[0] for l in git("log", "main", f"--since={since}", "--format=%H%x09%ct").splitlines()}
+        views_ok = views_ok and set(lib.history(fctx, days)["commits"]) == own
+    check("speed: every history window equals its own git log --since", views_ok)
+    # the mention index answers exactly what the old regex answered
+    subjects = ["Merge FOO-1: x", "Merge FOO-1-r2 into main", "Merge XFOO-1", "Merge foo-12 (light)", "Merge FOO-1A",
+                "Merge (FOO-1) and BAR-2-3", "Merge 'slice/foo-1'", "Merge FOO--1", "Merge -FOO-1"]
+    hist = {"chain": [f"s{i}" for i in range(len(subjects))],
+            "commits": {f"s{i}": (["p", "q"], 1000 + i, s) for i, s in enumerate(subjects)}}
+    idx = lib._mention_index(hist)
+    agree = True
+    for wid in ("FOO-1", "FOO-12", "XFOO-1", "FOO-1A", "BAR-2", "BAR-2-3", "FOO", "FOO-", "-FOO-1", "SLICE"):
+        rx = re.compile(r"(?<![A-Z0-9-])" + re.escape(wid) + r"(?![A-Z0-9])")
+        want = sorted(hist["commits"][s][1] for s in hist["chain"] if rx.search(hist["commits"][s][2].upper()))
+        agree = agree and sorted(idx.get(wid, [])) == want
+    check("speed: mention index equals the regex on edge-case subjects", agree, json.dumps(idx, sort_keys=True))
+
+    rc, q = run("--quiet", "--dry-run", config=CFG, env=ENV_C, now=NOW + dt.timedelta(minutes=3))
+    check("timing: --quiet ends with 'acef-detect <s> s' and the shared-read counts",
+          bool(re.search(r"^acef-detect \d+\.\d s \(git \d+ call\(s\) .*file\(s\) read, index ", q, re.M)), q)
+    check("timing: --quiet has no TIME lines", "TIME " not in q, q)
+    rc, t = run("--timing", "--dry-run", config=CFG, env=ENV_C, now=NOW + dt.timedelta(minutes=3))
+    ran = set(re.findall(r"^OK   (\S+) ", t, re.M))
+    timed = set(re.findall(r"^TIME (\S+) \d+ ms$", t, re.M))
+    check("timing: --timing prints one TIME line per detector that ran", ran and ran == timed, t)
+
+    # ------------------------------------------------------------ acked alerts do not hide a long wait
+    STORE_S = TMP / "store-stale"
+    ENV_S = {**ENV, "ACEF_FEEDBACK_DIR": str(STORE_S)}
+    put(HOST / "stale/run-S/started", iso(ago(300)) + "\n", 300)
+    put(HOST / "stale/run-S/out.log", "working\n", 240)
+    settle(HOST / "stale/run-S", 240)
+    put(HOST / "stale/run-U/started", iso(ago(300)) + "\n", 300)
+    put(HOST / "stale/run-U/out.log", "working\n", 240)
+    settle(HOST / "stale/run-U", 240)
+    sc = det_cfg("st", {"agent_runs": "stale/*"})
+    T = lambda h: NOW + dt.timedelta(hours=h)   # noqa: E731
+    rc, o = run("--only", "stuck_agent", config=sc, env=ENV_S)
+    s_id, u_id = alert_id(o, "stuck_agent", "run-S"), alert_id(o, "stuck_agent", "run-U")
+    check("stale: two stuck runs open alerts", bool(s_id and u_id), o)
+    note("ack", s_id, "--slice", "FIX-S", now=T(0.1), env=ENV_S)
+    note("ack", u_id, "--slice", "FIX-U", now=T(0.1), env=ENV_S)
+    rc, o = run("--only", "stuck_agent", "--quiet", config=sc, env=ENV_S, now=T(2))
+    rc, d = note("due", now=T(2), env=ENV_S)
+    check("stale: an ack inside 24 h stays quiet", "ACKED-STALE" not in o and "ACKED-STALE" not in d, o + d)
+    shutil.rmtree(HOST / "stale/run-U")   # run-U's evidence is gone: UNSEEN from now on, never "still breaching"
+    rc, o = run("--only", "stuck_agent", "--quiet", config=sc, env=ENV_S, now=T(25))
+    check("stale: still breaching 24 h after the ack prints ACKED-STALE under --quiet",
+          bool(re.search(rf"^ALERT {s_id} ACKED-STALE \[stuck_agent\] run-S .*slice FIX-S", o, re.M)), o)
+    rc, d = note("due", now=T(25.1), env=ENV_S)
+    check("stale: due prints ALERT ACKED-STALE with age and slice",
+          bool(re.search(rf"ALERT ACKED-STALE: {s_id} \[stuck_agent\] run-S — owner \S+, acked 2[45] h ago to slice "
+                         rf"FIX-S", d)), d)
+    check("stale: an acked alert that is only UNSEEN is not stale", f"ACKED-STALE: {u_id} " not in d, d)
+    rc, al = note("alerts", now=T(25.1), env=ENV_S)
+    check("stale: alerts marks it STALE", bool(re.search(rf"^{s_id} acked slice FIX-S STALE", al, re.M)), al)
+    note("ack", s_id, "--slice", "FIX-S", now=T(25.2), env=ENV_S)
+    rc, o = run("--only", "stuck_agent", "--quiet", config=sc, env=ENV_S, now=T(26))
+    rc, d = note("due", now=T(26), env=ENV_S)
+    check("stale: acking again starts a new period", "ACKED-STALE" not in o and f"ACKED-STALE: {s_id}" not in d, o + d)
+    rc_bad, _ = note("ack", s_id, "--defer", "2099-01-01", "--reason", "x", "--recheck-hours", "2", now=T(26), env=ENV_S)
+    check("stale: --recheck-hours goes only with --slice", rc_bad != 0)
+    note("ack", s_id, "--slice", "FIX-S", "--recheck-hours", "1", now=T(26.1), env=ENV_S)
+    rc, o = run("--only", "stuck_agent", "--quiet", config=sc, env=ENV_S, now=T(27.5))
+    check("stale: ack --recheck-hours 1 re-asks after one hour", f"ALERT {s_id} ACKED-STALE" in o, o)
+    sc2 = TMP / "st2.json"
+    sc2.write_text(json.dumps({"project": "st", "stale_ack_hours": 3, "sources": {"main_ref": "main",
+                                                                                   "agent_runs": "stale/*"}}))
+    note("ack", s_id, "--slice", "FIX-S", now=T(28), env=ENV_S)
+    rc, o = run("--only", "stuck_agent", "--quiet", config=sc2, env=ENV_S, now=T(30))
+    check("stale: stale_ack_hours 3 from the host config is not stale after 2 h", "ACKED-STALE" not in o, o)
+    rc, o = run("--only", "stuck_agent", "--quiet", config=sc2, env=ENV_S, now=T(31.5))
+    rc, d = note("due", now=T(31.5), env=ENV_S)
+    check("stale: stale_ack_hours 3 from the host config re-asks after 3 h",
+          f"ALERT {s_id} ACKED-STALE" in o and f"ACKED-STALE: {s_id}" in d, o + d)
+    polls = [json.loads(l) for l in (STORE_S / "alerts/st.jsonl").read_text().splitlines()]
+    polls = [e for e in polls if e["event"] == "poll"]
+    check("stale: each poll records the acked alerts it still saw breaching",
+          polls and s_id in (polls[-1].get("breaching") or []) and u_id not in (polls[-1].get("breaching") or []),
+          json.dumps(polls[-1:]))
 finally:
     subprocess.run(["git", "worktree", "prune"], cwd=HOST, capture_output=True)
     shutil.rmtree(TMP, ignore_errors=True)

@@ -43,7 +43,7 @@ def detect(ctx):
         for r in rounds:
             if r.verdict == "REVISE":
                 revise_items += 1
-                for cls in set(m.lower() for m in re.findall(s["finding_class_regex"], r.result)):
+                for cls in set(m.lower() for m in r.findall(s["finding_class_regex"])):
                     classes.setdefault(cls, set()).add(work_id)
     firing = set()
     for cls, ids in sorted(classes.items()):

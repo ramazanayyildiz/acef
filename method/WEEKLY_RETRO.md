@@ -21,7 +21,9 @@ judgment on top; the owner decides by number. This page is for the coordinator. 
   the repeat should fall next week), missing (a proposal), or wrong (a proposal to narrow or remove it)? Agent
   self-reports are evidence of a problem, not proof of a cause: confirm in diffs, logs and timings first.
 - **Overdue or unowned alerts:** for each, propose an owner and a slice id or a dated deferral with a reason. Do not
-  leave an alert without an owner in the file.
+  leave an alert without an owner in the file. The same section lists the acked alerts that are still open (age,
+  slice, last observed breach, STALE when the breach was still seen after the recheck time): for each STALE one, say
+  whether the slice is really moving, or defer or resolve it; an ack is not a resolution.
 - **Rules past their review date:** keep, narrow or retire each, with its measured effect (the retro's numbers or the
   log's repeat counts). A rule that cost more than it saved is narrowed or retired.
 - **Proposed changes:** at most five, numbered. Rewrite or merge the collected candidates, delete the weak ones. Each

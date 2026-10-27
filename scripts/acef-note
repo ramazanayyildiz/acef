@@ -8,6 +8,7 @@ One machine-wide store shared by every host project, default ~/CODE/acef-feedbac
   rules/R-<n>.md       one accepted rule: Incidents, Cost, Review-by, Activation, Status
   digests/<YYYY>-W<ww>.md  weekly digests; "Through: <date>" marks what they cover
   alerts/<project>.jsonl   append-only alert events from acef-detect (poll, open, ack, defer, resolve, reopen)
+  alerts/<project>.index.json  acef-detect's cache of finished run items (safe to delete; rebuilt by the next poll)
   retros/<YYYY>-W<ww>.md   weekly retros from acef-retro ("Prepared:" and "Through:" dates)
 
 Text above the first entry line of a log (an imported legacy log) stays as it is and is searched as legacy blocks.
@@ -21,12 +22,17 @@ Usage:
   acef-note status <id>
   acef-note version             short stamp v<entries>.<rules-hash>; record it next to "Bilinen tuzaklar"
   acef-note check <stamp> [--tags ..] [--text ..]   exit 0 "unchanged" / exit 1 + only the newer matching entries
-  acef-note due                 undigested entries, RETRO DUE, rules past their review date, ALERT OPEN / ALERT OVERDUE
+  acef-note due                 undigested entries, RETRO DUE, rules past their review date, ALERT OPEN / ALERT OVERDUE /
+                                ALERT ACKED-STALE (acked, still breaching after the recheck time)
   acef-note digest [--write]    group undigested entries by tag with repeat counts and cost sums
-  acef-note ack <alert-id> --slice <id> | --defer <YYYY-MM-DD> --reason "<why>" | --resolve "<evidence>"
+  acef-note ack <alert-id> --slice <id> [--recheck-hours N] | --defer <YYYY-MM-DD> --reason "<why>" | --resolve "<evidence>"
+                                an ack with --slice is re-asked (ALERT ACKED-STALE) when the detector still sees the
+                                breach N hours after the ack (default 24, or the host's detectors.stale_ack_hours);
+                                acking again starts a new period
   acef-note alerts [--project p] [--all]   alert states (written by acef-detect)
 """
 import argparse
+import bisect
 import datetime as dt
 import fcntl
 import hashlib
@@ -354,6 +360,17 @@ def cmd_due(args):
             elif a["polls"] > a["overdue_polls"] or reopened:
                 print(f"ALERT OPEN: {a['id']} [{a['detector']}] {a['subject']} — owner {a['owner']}, "
                       f"{a['polls']} polls without ack, ack by {a['ack_by']}{reopened}; {how}")
+        for a in sorted(states.values(), key=lambda a: a["acked_at"] or ""):
+            if a["stale"]:
+                print(f"ALERT ACKED-STALE: {stale_line(a, now_utc())}; acef-note ack {a['id']} --slice <id> "
+                      f"(again, if still tracked) | --defer <date> --reason \"..\" | --resolve \"<evidence>\"")
+
+
+def stale_line(a: dict, now: dt.datetime) -> str:
+    acked = parse_ts(a["acked_at"])
+    age = int((now - acked).total_seconds() // 3600)
+    return (f"{a['id']} [{a['detector']}] {a['subject']} — owner {a['owner']}, acked {age} h ago to slice "
+            f"{a['slice'] or '?'}, still breaching at {a['last_breach']} (recheck after {a['stale_hours']:g} h)")
 
 
 def rules_past_review(base: Path, today: str):
@@ -380,6 +397,7 @@ def last_retro(base: Path):
 # detector+subject ("key"); a recurrence reopens the same id.
 UTC = dt.timezone.utc
 DEFAULT_WORKING_HOURS = {"start": 9, "end": 18, "days": [0, 1, 2, 3, 4]}   # local time, Monday = 0
+DEFAULT_STALE_ACK_HOURS = 24   # an ack with --slice is re-asked when the breach is still seen this long after it
 ALERT_ID = re.compile(r"^(?P<project>[a-z0-9][a-z0-9-]*)-A(?P<n>\d+)$")
 
 
@@ -478,8 +496,24 @@ def append_alert_event(base: Path, project: str, event: dict, held: bool = False
 
 
 def alert_states(events: list, now: dt.datetime) -> dict:
-    """Fold the event log into one state per alert id. A deferral whose date has passed reopens the alert."""
-    states, polls = {}, sorted(parse_ts(e["ts"]) for e in events if e["event"] == "poll")
+    """Fold the event log into one state per alert id. A deferral whose date has passed reopens the alert.
+
+    Stale acks: acef-detect lists, in each poll event, the acked alerts it still saw breaching ("breaching"). An acked
+    alert is stale when a breach was seen at or after acked_at + stale_hours (the ack's recheck_hours, else the latest
+    poll's stale_ack_hours, else DEFAULT_STALE_ACK_HOURS). A breach that is merely not observed (UNSEEN, a source
+    error) does not make it stale; acking again starts a new period."""
+    states, polls, stale_hours = {}, [], DEFAULT_STALE_ACK_HOURS
+    breach = {}   # alert id -> latest poll time that saw it breaching
+    for e in events:
+        if e["event"] == "poll":
+            t = parse_ts(e["ts"])
+            polls.append(t)
+            for alert_id in e.get("breaching") or []:
+                if alert_id not in breach or t > breach[alert_id]:
+                    breach[alert_id] = t
+            if isinstance(e.get("stale_ack_hours"), (int, float)) and not isinstance(e.get("stale_ack_hours"), bool):
+                stale_hours = e["stale_ack_hours"]
+    polls.sort()
     for e in events:
         kind, a = e["event"], states.get(e.get("id", ""))
         if kind == "open":
@@ -490,11 +524,13 @@ def alert_states(events: list, now: dt.datetime) -> dict:
                 "status": "open", "slice": "", "until": "", "reason": "", "resolved": "", "resolution": "",
                 "note": e.get("note", ""), "reopens": 0, "wh": e.get("wh") or DEFAULT_WORKING_HOURS,
                 "ack_hours": e.get("ack_hours", 4), "overdue_polls": e.get("overdue_polls", 2),
-                "loss_min": e.get("loss_min"), "history": []}
+                "loss_min": e.get("loss_min"), "acked_at": "", "recheck_hours": None, "history": []}
         elif a is None or kind == "poll":
             continue
         elif kind == "ack":
-            a.update(status="acked", slice=e.get("slice", ""))
+            hours = e.get("recheck_hours")
+            a.update(status="acked", slice=e.get("slice", ""), acked_at=e["ts"],
+                     recheck_hours=hours if isinstance(hours, (int, float)) and not isinstance(hours, bool) else None)
         elif kind == "defer":
             a.update(status="deferred", until=e.get("until", ""), reason=e.get("reason", ""))
         elif kind == "resolve":
@@ -514,8 +550,16 @@ def alert_states(events: list, now: dt.datetime) -> dict:
             a.update(status="open", since=iso(restart), defer_expired=True,
                      ack_by=iso(add_working_hours(restart, a["ack_hours"], a["wh"])))
         since = parse_ts(a["since"])
-        a["polls"] = sum(1 for p in polls if p > since)
+        a["polls"] = len(polls) - bisect.bisect_right(polls, since)
         a["overdue"] = a["status"] == "open" and bool(a["ack_by"]) and now > parse_ts(a["ack_by"])
+        a["stale_hours"] = a["recheck_hours"] if a["recheck_hours"] is not None else stale_hours
+        seen = breach.get(a["id"])
+        a["last_breach"] = iso(seen) if seen else ""
+        a["stale"] = False
+        if a["status"] == "acked" and a["acked_at"]:
+            recheck = parse_ts(a["acked_at"]) + dt.timedelta(hours=a["stale_hours"])
+            a["recheck_at"] = iso(recheck)
+            a["stale"] = bool(seen) and seen >= recheck and now >= recheck
     return states
 
 
@@ -543,6 +587,12 @@ def cmd_ack(args):
             sys.exit(f"acef-note: {args.id} is resolved; a recurrence reopens it")
         if args.slice:
             event = {"event": "ack", "id": args.id, "slice": clean(args.slice)}
+            if args.recheck_hours is not None:
+                if args.recheck_hours <= 0:
+                    sys.exit("acef-note: --recheck-hours must be more than 0")
+                event["recheck_hours"] = args.recheck_hours
+        elif args.recheck_hours is not None:
+            sys.exit("acef-note: --recheck-hours goes with --slice")
         elif args.defer:
             if not re.match(r"^\d{4}-\d{2}-\d{2}$", args.defer) or not args.reason.strip():
                 sys.exit("acef-note: --defer takes a YYYY-MM-DD date and needs --reason \"..\"")
@@ -568,7 +618,8 @@ def cmd_alerts(args):
         for a in alert_states(events, now_utc()).values():
             if a["status"] == "resolved" and not args.all:
                 continue
-            extra = {"acked": f" slice {a['slice']}", "deferred": f" until {a['until']} ({a['reason']})",
+            extra = {"acked": f" slice {a['slice']}" + (" STALE (still breaching at " + a["last_breach"] + ")"
+                                                         if a["stale"] else ""), "deferred": f" until {a['until']} ({a['reason']})",
                      "resolved": f" ({a['resolution']})"}.get(a["status"], f" ack by {a['ack_by']}" +
                                                               (" OVERDUE" if a["overdue"] else ""))
             print(f"{a['id']} {a['status']}{extra} [{a['detector']}] {a['subject']} — {a['summary']}")
@@ -658,6 +709,8 @@ def main():
     ak.add_argument("--defer", default="")
     ak.add_argument("--reason", default="")
     ak.add_argument("--resolve", default="")
+    ak.add_argument("--recheck-hours", type=float, default=None,
+                    help="with --slice: re-ask after this many hours if the breach is still seen (default 24)")
     ak.set_defaults(func=cmd_ack)
     al = sub.add_parser("alerts")
     al.add_argument("--project", default="")
