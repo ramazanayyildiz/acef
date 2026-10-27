@@ -7,6 +7,12 @@ proven, or installed.
 Update this file whenever ACEF itself gains or changes a flow, gate, validator, hook, skill, installer behavior, workflow,
 or evidence contract. Do not use it to claim implementation status; link to the capability record for that.
 
+## Unreleased — Test budget: merge batch and reviewer rule (2026-10-27)
+
+- `method/SLICE_LANE.md` → Test budget:
+  - Several TAM PRs that passed review are covered by one full suite on the combined head, provided they then merge back-to-back with nothing in between. Any other merge, or any change to a PR, voids the run.
+  - Reviewers never run the full suite in any round; the integration run is the only full run. This makes explicit what the table already implied (owner request, 2026-10-27).
+
 ## Unreleased — Test budget, contract set, rule cost and expiry (2026-10-25)
 
 Owner decision 2026-10-25, from two hosts that independently cut their full-suite runs from 2–4 per slice:

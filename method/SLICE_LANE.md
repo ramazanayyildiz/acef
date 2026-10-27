@@ -82,7 +82,7 @@ method, not a per-host habit:
 | Developer, while iterating | affected tests (the slice's classes and pins) + the slice's browser scripts | never |
 | Developer, before review | affected + the touched module's tests + the slice's race tests when a lock path is touched + the **contract set** on the final head | never |
 | Reviewer | own focused tests, mutations, the slice's race tests | never |
-| Integration, TAM | one full suite on the final head **merged with current main**, before the merge lands | once per merge |
+| Integration, TAM | one full suite on the final head **merged with current main**, before the merge lands | once per merge, or once per **merge batch** (see below) |
 | Integration, HAFİF | affected tests; one full suite per batch | once per batch |
 | Nightly on main | full suite + full race + all browser scripts; compared with the previous night | once a day |
 
@@ -91,6 +91,12 @@ method, not a per-host habit:
   runs the set on its final head. Before, hosts ran a full suite per review round for this.
 - **Selection by script, not by judgement.** The affected tests come from a script that maps changed files to tests.
   An unmapped application file makes it fall back to a wider set ("run more", never "run less").
+- **Merge batch (TAM).** Several TAM PRs that have each passed review may land together:
+  - one full suite runs on the **combined head**: current main plus every PR in the batch, merged in the intended order;
+  - the PRs then merge back-to-back in that order, with nothing else merged in between;
+  - that single run covers every PR in the batch.
+  - If anything else lands on main first, or a PR changes after the run, the run no longer counts: run it again on the new combined head.
+- **Reviewers do not run the full suite**, in any review round. A review round re-runs focused tests, mutations, the slice's race tests and the contract set; the integration run is the only full run.
 - **Why TAM keeps a pre-merge full run:** a conflict between two merges is caught before money or data code reaches
   main, not the next morning. For HAFİF work, the nightly run catches it.
 - **Run the suite on the production OS at least nightly.** One host's first Linux run exposed three macOS-only test
