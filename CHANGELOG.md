@@ -114,6 +114,15 @@ landed in; Manager-driven Codex panes counted as 99 owner hours; machine inciden
   property test adds a header as the first continuation line, consecutive headers at mixed indents, nested headers
   inside a block and a header that dedents (81 secrets in 50 forms); on the previous commit it finds the leak.
   Pilot day: no secret pattern in the output; 23 of 4,647 digest lines carry a marker.
+- **Third confirmation round (Codex, PR #27: 1 P1, caused by the previous fix):** a keyword line inside a literal
+  block reset the baseline and let a same-indent value line escape (`password: |\n  api_key: example\n  <value>`).
+  The block state is now monotone: a keyword line can only extend redaction. Inside an active block it keeps the
+  outer baseline and adds its own rules (a)/(b); only a keyword line at or below the baseline starts a fresh block
+  (so a header swallowed as a continuation still gets its own block); the 50-line cap counts from the most recent
+  keyword line. New check: 54 block shapes with a keyword line first, middle, last, deeper and deeper-with-its-own-
+  block, under three header styles, with secrets before and after; every line from the header to the end of the
+  outermost block is redacted. The property test carries the same family (207 secrets in 104 forms). It fails on
+  7ae6d7f (this shape) and on a4b3881 (the swallowed header).
 - Tests: 46 checks on synthetic fixtures; the property test now covers 56 secrets in 37 forms (comment-then-value,
   five YAML block scalars, dotenv continuation, a quoted value over two lines). Runtime on the pilot day: about 20 s
   (parse 12 s, git/gh 4 s) for 3.8 GB under load. A scan of the real pilot-day output finds no email, key block,

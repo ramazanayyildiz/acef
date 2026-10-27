@@ -248,11 +248,13 @@ def _indent(line):
 
 
 def _redact_lines(s):
-    """One pass. A line with secret context loses everything from the keyword on and starts a block, replacing any
-    block in progress: below it, (a) every line indented deeper than it is redacted whatever the inline value was,
-    and (b) the first non-empty line is redacted too when the value may continue there (_opens_block); backslash
-    continuations carry on; at most BLOCK_CAP lines. Every line is checked for secret context, consumed or not: a
-    keyword line inside a block is redacted whole and becomes the new header (new baseline, rules, cap)."""
+    """One pass, monotone: a keyword line can only extend redaction. A line with secret context loses everything from
+    the keyword on and opens a block: (a) every following line indented deeper than the block's baseline is
+    redacted, (b) the first following non-empty line is redacted too when the value may continue there
+    (_opens_block), and backslash continuations carry on. A keyword line INSIDE an active block is redacted whole,
+    keeps the outer baseline and adds its own (a)/(b) to the block; one at or below the baseline starts a fresh block
+    there (a header swallowed as a continuation still gets its own block). The block ends at the first non-empty line
+    at or below the baseline that no rule claims, or BLOCK_CAP lines after the most recent keyword line."""
     ctx, db, url = bool(SECRET_CTX_RE.search(s)), bool(DBCLI_RE.search(s)), "://" in s and "@" in s
     if not (ctx or db or url):
         return s                                    # no secret context anywhere: nothing to do line by line
@@ -261,12 +263,17 @@ def _redact_lines(s):
     for line in s.split("\n"):
         blank = not line.strip()
         in_block = active and k < BLOCK_CAP
-        consumed = in_block and not blank and (first or cont or _indent(line) > base)
+        ind = _indent(line)
+        consumed = in_block and not blank and (first or cont or ind > base)
         span = None if blank else _secret_span(line, ctx, db, url)
         if span:
-            out.append(MARK if consumed else line[: span[0]] + MARK)
-            active, base, k = True, _indent(line), 0
-            first, cont = _opens_block(line[span[1]:]), line.rstrip().endswith("\\")
+            opens, ends_bs = _opens_block(line[span[1]:]), line.rstrip().endswith("\\")
+            if consumed and ind > base:             # nested header: keep the outer baseline, add its rules
+                out.append(MARK)
+                first, cont, k = opens, ends_bs, 0
+            else:                                   # a fresh block at this line (dedent or no block)
+                out.append(MARK if consumed else line[: span[0]] + MARK)
+                active, base, first, cont, k = True, ind, opens, ends_bs, 0
         elif consumed:
             out.append(MARK)
             first, cont, k = False, line.rstrip().endswith("\\"), k + 1

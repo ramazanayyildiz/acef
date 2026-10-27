@@ -256,6 +256,27 @@ def build():
     os.utime(pp / f"{pid}.jsonl", (1_700_000_000, 1_700_000_000))   # the idle parent: before the window
 
 
+def block_family():
+    """Block bodies with a keyword line at every position (first, middle, last, deeper, deeper with its own block)
+    and secrets ({}) before and after it, under three header styles. Every line from the header to the line before
+    "next: 1" must be redacted (the outermost block)."""
+    kws = ["api_key: example", "token: x", "secret:"]
+    shapes = [
+        ["  {KW}", "  {}", "  {}"],                     # first line of the block
+        ["  {}", "  {KW}", "  {}"],                     # middle, same indent
+        ["  {}", "  {}", "  {KW}"],                     # last
+        ["  {}", "    {KW}", "  {}"],                   # deeper
+        ["  {}", "    {KW} |", "      {}", "  {}"],     # deeper, with its own block
+        ["  {KW}", "  {}", "    {}", "  {}"],           # same indent, value lines at mixed depth
+    ]
+    out = []
+    for head in ("password: |", "password:", "password: >-"):
+        for kw in kws:
+            for shape in shapes:
+                out.append("\n".join([head] + [ln.replace("{KW}", kw) for ln in shape] + ["next: 1"]))
+    return out
+
+
 def property_fixture(root):
     """Secrets in many forms, each placed in every input field the extractor reads. Returns the secret values that
     must never appear (no 6+ char substring) in any written file or file name."""
@@ -338,6 +359,10 @@ def property_fixture(root):
     a, b = chunk(8), chunk(8)
     secrets += [a, b]
     forms.append(f"  a:\n    password: |\n      {a}\n  api_key: >\n    {b}\nnext: 1")     # a header that dedents
+    for body in block_family():                   # a keyword line at every position inside a block (r7)
+        vals = [chunk(8) for _ in range(body.count("{}"))]
+        secrets.extend(vals)
+        forms.append(body.format(*vals))
     forms.append(f"use sk-proj-{w()} now")                                     # tokens anywhere
     forms.append(f"ghp_{w()}")
     forms.append(f"xoxb-{w()}")
@@ -610,6 +635,21 @@ try:
     check("B no file-name text in refs: every session ref is a hash", pidx and all(
         re.fullmatch(r"[CSX]:[0-9a-f]{10}", x.get("ref", "")) for x in pidx["sessions"]),
         [x.get("ref") for x in pidx.get("sessions", [])][:5])
+    # P1 r7: monotone blocks. For every family member, every line from the header to the line before "next: 1" is
+    # redacted, and "next: 1" survives. r6 and r7 shapes checked directly too.
+    survivors = []
+    for body in block_family():
+        text = body.replace("{}", "Zq9Yw2Xr")
+        red = mod.redact(text).split("\n")
+        # an empty-valued keyword as the last body line claims the next line by rule (b): over-redaction, allowed
+        tail_ok = red[-1] == "next: 1" or (text.split("\n")[-2].strip() == "secret:" and red[-1] == "<redacted>")
+        if not tail_ok or any(x.strip() and x.strip() != "<redacted>" for x in red[:-1]):
+            survivors.append((text, red))
+    r6 = mod.redact("db:\n  password:\napi_key: |2-\n  Cedar47Maple\nok: 1")
+    r7 = mod.redact("password: |\n  api_key: example\n  CanaryMint79!\nnext: 1")
+    check(f"P1 monotone blocks: a keyword line at every position inside a block ({len(block_family())} shapes) "
+          "never shortens it; r6 and r7", not survivors and "Cedar47Maple" not in r6 and "CanaryMint79" not in r7
+          and r6.endswith("ok: 1") and r7.endswith("next: 1"), (survivors[:2], r6, r7))
     # P2: every redaction pattern family is linear: an adversarial 256 KB input finishes under 0.2 s
     import time as time_mod
     K = 256 * 1024
