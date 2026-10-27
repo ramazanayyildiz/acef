@@ -94,6 +94,11 @@
       "layer": "tests",
       "ref": "scripts/test-acef-detect",
       "note": "2026-10-27 review r1 (Codex, three P2s): 184 checks passed (+6): nested result/status files signed and read at their real path (warm index equals --no-cache after REVISE->ACCEPT; nested status decides running/done), chmod 000 on an indexed result gives SOURCE_ERROR like the uncached path, malformed index rows ([1,2,3], missing or invalid fields) are misses with no crash. The five regression checks fail on bc8bf35."
+    },
+    {
+      "layer": "tests",
+      "ref": "scripts/test-acef-detect",
+      "note": "2026-10-27 review r2 (Codex, two P2s): 188 checks passed (+4): a cached nonblank 'false' string and a numeric cached verdict are misses (same output as --no-cache, no crash, no CLEARED); an overflowing cached time is a miss and the poll runs. The three regression checks fail on bf57461."
     }
   ],
   "createdAt": "2026-10-27"

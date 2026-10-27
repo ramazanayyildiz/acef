@@ -421,11 +421,27 @@ class Index:
             started, finished, last = row.get("started", ""), row["finished"], row["last"]
             status, facts = row.get("status", ""), row.get("facts") or {}
             if not all(isinstance(v, str) for v in (started, finished, last, status)) or not finished or not last \
-                    or not isinstance(facts, dict):
+                    or not isinstance(facts, dict) or not all(Index.valid_fact(k, v) for k, v in facts.items()):
                 return None
             return (read_iso(started) if started else None, read_iso(finished), status, read_iso(last), dict(facts))
-        except (KeyError, ValueError, TypeError, AttributeError):
-            return None
+        except (KeyError, ValueError, TypeError, AttributeError, OverflowError):
+            return None   # e.g. "0001-01-01T00:00:00+23:00" overflows in the UTC conversion
+
+    @staticmethod
+    def valid_fact(name, value) -> bool:
+        """A cached fact has exactly the type the uncached path produces (Item.verdict / has_result / findall);
+        anything else (an unknown name, "false" for a bool, a number for a verdict) makes the row a cache miss."""
+        if not isinstance(name, str):
+            return False
+        if name == "nonblank":
+            return isinstance(value, bool)
+        if name.startswith("verdict:"):
+            return value is None or isinstance(value, str)
+        if name.startswith("findall:"):
+            return isinstance(value, list) and all(
+                isinstance(m, str) or (isinstance(m, list) and all(isinstance(x, str) for x in m))
+                for m in value)
+        return False
 
     def keep(self, key: str, row: dict):
         self.seen[key] = row

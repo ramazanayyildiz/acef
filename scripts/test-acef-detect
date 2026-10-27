@@ -878,6 +878,55 @@ try:
           rc_b == rc_n == 0 and "Traceback" not in b_ and "ERROR review_loop" not in b_ and body(b_) == body(n)
           and "index 0 hit(s)" in b_, b_ + "\n----\n" + n)
 
+    # review r2 (Codex): whatever the index holds, the worst outcome is a cache miss
+    rp = HOST / "rep/run-R"
+    put(rp / "started", iso(ago(200)) + "\n", 200)
+    for k_ in (1, 2, 3):
+        put(rp / f"events-{k_}.log", f"try {k_}\nERROR: connection refused\n", 150 - k_)
+    put(rp / "report.md", "", 140)
+    put(rp / "finished", iso(ago(140)) + "\n", 140)
+    settle(rp, 140)
+    rc_ = det_cfg("rep", {"agent_runs": {"glob": "rep/*", "attempt_glob": "events-*.log", "result_file": "report.md"}})
+    rc, o = run("--only", "stuck_agent", config=rc_, env=ENV_C)
+    r_id = alert_id(o, "stuck_agent", "run-R:repeat")
+    rip = STORE_C / "alerts/rep.index.json"
+    rdata = json.loads(rip.read_text()) if rip.exists() else {"version": 1, "rows": {}}
+    check("codex-r2-1 fixture: repeat alert open, empty result cached as nonblank false",
+          r_id and any((r.get("facts") or {}).get("nonblank") is False for r in rdata["rows"].values()), o + str(rdata))
+    for r in rdata["rows"].values():
+        r.setdefault("facts", {})["nonblank"] = "false"
+    rip.write_text(json.dumps(rdata))
+    rc_w, w = run("--only", "stuck_agent", "--dry-run", config=rc_, env=ENV_C, now=NOW + dt.timedelta(minutes=1))
+    rc_n, n = run("--only", "stuck_agent", "--dry-run", "--no-cache", config=rc_, env=ENV_C,
+                  now=NOW + dt.timedelta(minutes=1))
+    check("codex-r2-1 cached nonblank \"false\" (a string) is a miss: no CLEARED, same as --no-cache",
+          f"CLEARED {r_id}" not in w and body(w) == body(n), w + "\n----\n" + n)
+    rc, o = run("--only", "review_loop", config=ic, env=ENV_C, now=NOW + dt.timedelta(minutes=5))   # verdicts indexed
+    vdata = json.loads(ip_idx.read_text()) if (ip_idx := STORE_C / "alerts/idx.index.json").exists() else {"rows": {}}
+    tampered = 0
+    for r in vdata["rows"].values():
+        for k_ in list((r.get("facts") or {})):
+            if k_.startswith("verdict:"):
+                r["facts"][k_] = 5
+                tampered += 1
+    ip_idx.write_text(json.dumps(vdata))
+    rc_w, w = run("--only", "review_loop", "--dry-run", config=ic, env=ENV_C, now=NOW + dt.timedelta(minutes=6))
+    rc_n, n = run("--only", "review_loop", "--dry-run", "--no-cache", config=ic, env=ENV_C,
+                  now=NOW + dt.timedelta(minutes=6))
+    check("codex-r2-1 cached numeric verdict is a miss: no crash, same as --no-cache",
+          tampered and rc_w == rc_n and "ERROR review_loop" not in w and "Traceback" not in w and body(w) == body(n),
+          w + "\n----\n" + n)
+    for r in vdata["rows"].values():
+        r["facts"] = {}
+        r["finished"] = "0001-01-01T00:00:00+23:00"
+    ip_idx.write_text(json.dumps(vdata))
+    rc_w, w = run("--only", "review_loop", "--dry-run", config=ic, env=ENV_C, now=NOW + dt.timedelta(minutes=7))
+    rc_n, n = run("--only", "review_loop", "--dry-run", "--no-cache", config=ic, env=ENV_C,
+                  now=NOW + dt.timedelta(minutes=7))
+    check("codex-r2-2 an overflowing cached time is a miss: the poll runs, same as --no-cache",
+          rc_w == rc_n == 0 and "Traceback" not in w and "OverflowError" not in w and body(w) == body(n),
+          w + "\n----\n" + n)
+
     # shared git: one git log of main for every history window, one for every worktree head
     trace = TMP / "git-trace.txt"
     rc, o = run("--dry-run", config=CFG, env={**ENV_C, "GIT_TRACE": str(trace)}, now=NOW + dt.timedelta(minutes=2))

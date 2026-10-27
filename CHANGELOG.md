@@ -66,6 +66,11 @@ approved this change).
   the old verdict where the uncached path raises SourceError; now both report SOURCE_ERROR (PR #22 rule). (3) Each
   index row is validated (shape, required fields, parseable times, facts a dict); a malformed row is dropped on load
   and is a miss at use, never a crash. `scripts/test-acef-detect` 184 checks (+6).
+- **Review r2 fixes (Codex, two P2s; each check fails on bf57461):** cached facts are type-checked against what the
+  uncached path produces (`nonblank` a bool, a verdict a string or null, findall a list of strings or string lists;
+  an unknown fact name is invalid), so `"nonblank": "false"` can no longer clear a repeat alert and a numeric verdict
+  can no longer crash; a cached time that overflows in the UTC conversion (`0001-01-01T00:00:00+23:00`) is caught.
+  Whatever the index file holds, the worst outcome is a cache miss. `scripts/test-acef-detect` 188 checks (+4).
 
 ## v3.0.0-beta.7 — Product language, end-user profiles and user-goal tours (2026-10-27)
 
