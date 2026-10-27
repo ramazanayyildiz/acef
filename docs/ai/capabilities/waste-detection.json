@@ -1,0 +1,64 @@
+{
+  "capabilityId": "waste-detection",
+  "requestedIntent": "Owner decision 2026-10-27: detect recurring waste during the day (stuck agents, waiting work, idle or contended runners, review loops, forgotten sessions, inactive improvements, open work far past its expected time) in the coordinator's 15-minute check, turn breaches into owned alerts with deadlines in the central store, write real losses to the central log, and prepare a weekly retro the owner decides by number.",
+  "status": "wired",
+  "requiredLayers": [
+    "docs",
+    "artifact",
+    "cli",
+    "tests"
+  ],
+  "implementedLayers": {
+    "docs": [
+      "method/FEEDBACK_LOOP.md#Detection loop (2026-10-27)",
+      "method/WEEKLY_RETRO.md",
+      "CHANGELOG.md#Unreleased — Waste detection and weekly retro (2026-10-27)"
+    ],
+    "artifact": [
+      "templates/slice/closing-note.md",
+      "scripts/detectors/stuck_agent.py",
+      "scripts/detectors/waiting_work.py",
+      "scripts/detectors/machine.py",
+      "scripts/detectors/review_loop.py",
+      "scripts/detectors/forgotten_session.py",
+      "scripts/detectors/inactive_improvement.py",
+      "scripts/detectors/size_ratio.py"
+    ],
+    "cli": [
+      "scripts/acef-detect",
+      "scripts/acef-retro",
+      "scripts/acef-note"
+    ],
+    "tests": [
+      "scripts/test-acef-detect",
+      "scripts/test-acef-retro",
+      "scripts/test-acef-note",
+      "scripts/slice/selfcheck.sh"
+    ]
+  },
+  "limitations": [
+    "Wired, not enforced: nothing runs acef-detect on its own; the coordinator's 15-minute check has to call it, and nothing blocks an owner who leaves alerts unanswered (they become ALERT OVERDUE and go to the retro).",
+    "Not installed into hosts: install-acef-tools does not copy acef-detect, acef-retro or scripts/detectors yet; hosts run them from the ACEF checkout.",
+    "Each detector needs host sources; an unconfigured one prints SKIP. On the first host the machine detector has no local slot event log (runner slots live on the runners), and no review report carries a finding-class field, so the review_loop class rule has no data.",
+    "Durations are wall clock from git timestamps and file times (nights and weekends included); cycle-time starts are unknown when a branch began before the history window.",
+    "Tests (slow or flaky suites) are not covered in this first version."
+  ],
+  "evidence": [
+    {
+      "layer": "tests",
+      "ref": "scripts/test-acef-detect",
+      "note": "2026-10-27: 80 checks passed: every core detector fires on a fixture and stays silent on a normal-case control; alert open, dedupe, confirm polls, ALERT OPEN after 2 polls, ack, defer, reopen after the deferral date, OVERDUE after 4 working hours, resolve on clear, recurrence reopens the same id; losses to the central log with --repeat; SKIP without sources; host detectors and header validation."
+    },
+    {
+      "layer": "tests",
+      "ref": "scripts/test-acef-retro",
+      "note": "2026-10-27: 43 checks passed: sections, numbers by route class with median or fallback, repeats with example and covering rule, overdue and unowned alerts, rules past review, at most five proposals, owner answers, no overwrite, RETRO DUE."
+    },
+    {
+      "layer": "cli",
+      "ref": "dry run against the first host (read-only, temp store)",
+      "note": "2026-10-27: acef-detect about 2 s per poll on the first host; acef-retro under 1 s."
+    }
+  ],
+  "createdAt": "2026-10-27"
+}

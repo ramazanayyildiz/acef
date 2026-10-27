@@ -107,6 +107,7 @@ else
 fi
 need templates/slice/intake-card.md 'Bilinen tuzaklar:' 'acef-note'
 need templates/slice/closing-note.md 'ACEF-gözlem:'
+need templates/slice/closing-note.md 'Dedektör:'
 need templates/slice/dev-report.md 'ACEF-gözlem:'
 
 run_test() { local out; out=$("$1" 2>&1) && pass "$1" || { fail "$1"; printf '%s\n' "$out" | grep -v '^ok ' | sed 's/^/    /'; }; }

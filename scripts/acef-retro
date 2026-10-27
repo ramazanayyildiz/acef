@@ -180,7 +180,7 @@ def build(base: Path, projects: list, args, now) -> str:
             if len(g["ids"]) >= 2 or g["origins"]:
                 ex = g["example"] or next(e for e in entries if e["id"] == g["ids"][0])
                 repeats.append({"count": len(g["ids"]), "what": f"{project} log, mode `{key}`",
-                                "ids": g["ids"] + sorted(g["origins"]),
+                                "ids": list(dict.fromkeys(g["ids"] + sorted(g["origins"]))),
                                 "example": f"{ex['id']}: {ex['what'][:160]}",
                                 "cost": f"{g['minutes']} min logged" if g["minutes"] else "cost not logged",
                                 "rule": covering(g["ids"] + sorted(g["origins"])),
@@ -290,7 +290,7 @@ def main() -> int:
         print(text, end="")
         return 0
     if path.exists() and not args.force:
-        print(f"acef-retro: {path} exists (owner answers live in it); use --force to rebuild", file=sys.stderr)
+        print(f"acef-retro: {path} exists (owner answers live in it); use --force to regenerate it", file=sys.stderr)
         print(path)
         return 1
     path.write_text(text)

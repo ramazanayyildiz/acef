@@ -54,6 +54,44 @@ have removed three gates its own ACEF fork carries and upstream lacked, and over
   `scripts/test-acef-canonical-root` (ported), `scripts/test-acef-host-file-preservation` (new; policy upgrade vs
   host override, fork install, stale `.cjs`), non-ASCII scope cases in `scripts/test-acef-product-review`.
 
+## Unreleased — Waste detection and weekly retro (2026-10-27)
+
+Owner decision 2026-10-27 (Ram approved the first version): recurring waste — stuck agents, finished work waiting,
+idle or contended runners, review loops, forgotten sessions, improvements merged but not in effect — went unnoticed
+until the owner asked, and a whole day could be lost. Detection now runs during the day in the coordinator's
+~15-minute check; the owner sees it once a week in a retro prepared without him. Tests are not in this version.
+Design from two consultations, merged (five signal kinds, one file per detector, alerts with owners and deadlines,
+retro with at most five proposals).
+- **`scripts/acef-detect --repo <host> [--config <json>] [--quiet] [--dry-run] [--only] [--list]`**: runs
+  `scripts/detectors/*.py` and `<host>/.acef/detectors/*.py`; each detector has a header (question, source, rule,
+  threshold, owner, scope, kind) and `detect(ctx)`. Host sources and thresholds come from `slice-method.json` →
+  `detectors` or `--config`; an unconfigured source prints `SKIP <name> (no source: …)`. Durations from git
+  timestamps and run files, never self-reports; expected duration = median of the same route class from closed work,
+  fallback native 60 / HAFİF 180 / TAM 480 min below five samples. Measured on the first host: about 2 s per poll.
+- **Seven core detectors:** `stuck_agent` (no file change for 30 min; same failure 3x with no change),
+  `waiting_work` (accepted not merged > 2x merge-service median, fallback 2 h; developer report with no review for
+  4 h; accepted but not in the merge queue), `machine` (waiter while a slot is free for 2 polls; one project holding a
+  runner while another waits), `review_loop` (3rd REVISE round; one finding class in 3 slices in 7 days),
+  `forgotten_session` (done but a process, slot, leftover directory or merged worktree is still held after 30 min),
+  `inactive_improvement` (activation without owner or past its date in store rules, CHANGELOG, closing notes),
+  `size_ratio` (open work > 2x expected duration of its class).
+- **Alerts in the central store** (`alerts/<project>.jsonl`, append-only: poll, open, ack, defer, resolve, reopen; one
+  alert per detector + subject; ack deadline 4 working hours). `acef-note ack <id> --slice | --defer <date> --reason |
+  --resolve`, `acef-note alerts`; `acef-note due` prints `ALERT OPEN` (unacked for more than two polls),
+  `ALERT OVERDUE` (past the deadline) and `RETRO DUE` (in place of `DIGEST DUE`). Real losses (>= 30 min, lost results,
+  an inactive merged improvement) are also written to the central log, later ones as `--repeat`.
+- **`scripts/acef-retro --project <p> | --all [--week YYYY-Www] [--answer n=accept|reject|defer:<why>]`**: writes
+  `retros/<YYYY>-W<ww>.md` with what went well (numbers), what repeats (example + covering rule), overdue and unowned
+  alerts, rules past review, at most five numbered proposals, and the owner's answers in the same file.
+  `acef-note digest` keeps working; a retro's `Through:` date marks entries as digested.
+- **Method:** `method/FEEDBACK_LOOP.md` "Detection loop" and the retro in "Weekly cycle"; `method/WEEKLY_RETRO.md`
+  tells the coordinator how to write the judgment parts. `templates/slice/closing-note.md` gets
+  `Dedektör: <path | yok — reason>` for investigation slices (checked by `scripts/slice/selfcheck.sh`).
+- Tests: `scripts/test-acef-detect` (80 checks: each detector fires on a fixture and stays silent on a control, the
+  alert lifecycle, losses, skips, host detectors, working hours), `scripts/test-acef-retro` (43 checks).
+- Capability record `docs/ai/capabilities/waste-detection.json` (status `wired`). Not yet installed into hosts by
+  `install-acef-tools`: run the scripts from the ACEF checkout.
+
 ## Unreleased — Changelog rule and feedback-log capability record (2026-10-27)
 
 Owner decision 2026-10-27: "is it written that CHANGELOG must be updated?" It was not; only this file's header said so.
