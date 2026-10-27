@@ -9,6 +9,7 @@ Rol: bağımsız inceleyici. Geliştiriciyle aynı oturum değilsin. **Farklı m
 - Sadeleştirme geçişi (2b): commit `<2b-sha veya "commit yok">` · atlananlar listesi `<bağlantı>` (inceleyici geçişin değiştirdiği diff'i görür; atlanan bir bulgu güvenlik ya da kabul maddesiyle ilgiliyse incelemede ayrıca bakılır)
 - İlk bağımsız temiz koşu: `<kanonik kayıt bağlantısı>` (koordinatör/inceleyici, geliştirici değil); main `<sha>`, merge-base `<sha>`; test/standart/config, bağımlılık, DB/fixture, toolchain ve ilgili ortam bağları `<kayıt/başlık bağlantısı>`
 - Sınıf: TAM | HAFİF · Ortam: kendi worktree `<yol>`, port `<port>`, DB `<lane DB>` (paylaşılan DB ve ana önizleme portu YASAK)
+- Model: <sınıf> → <model> (MODEL_CHOICE.md) · Effort: <low | medium | high> (giriş kartından; `method/MODEL_CHOICE.md`)
 - Değişmezler: `<invariants-dosyası>` · Kontrol listesi: `templates/review-checklist.md`
 - Hedef kullanıcı: <profil> · Bu ekranda yapacağı iş: <görev> (giriş kartından; UI'a dokunmuyorsa "UI yok: uygulanmaz"). Profil bölümü: `<user_profiles dosyası>#Profil: <ad>`
 - Bilinen tuzaklar: `<kimlikler | yok>` (giriş kartından; koordinatör önce `acef-note check <damga>` koşar, `unchanged` ise yeniden arama yapılmaz, değiştiyse yalnız yeni kayıtlar eklenir; inceleyici her kimliğin bu dilimde tekrar etmediğini açıkça kontrol eder)
@@ -33,7 +34,7 @@ Dosya: `<slices-dizini>/<SLICE-ID>-review.md` (inceleyici yazamıyorsa metin ola
 ```
 # <SLICE-ID> bağımsız inceleme
 Karar: **PASS | REVISE**
-Tarih: <YYYY-MM-DD> · Aday `<sha>` · Taban `<sha>` · Model: <ad> · Süre: <dk> · Ortam: <worktree, DB, port>
+Tarih: <YYYY-MM-DD> · Aday `<sha>` · Taban `<sha>` · Model: <ad> · Effort: <seviye> · Süre: <dk> · Ortam: <worktree, DB, port>
 ```
 
 Raporun sonunda tek satır: `ACEF-gözlem: <yöntemin ya da brifin bu incelemede çıkardığı maliyet, tek cümle | yok>`.

@@ -7,6 +7,40 @@ proven, or installed.
 Update this file in the same PR whenever ACEF itself gains or changes a flow, gate, validator, hook, skill, installer behavior, workflow,
 or evidence contract. Do not use it to claim implementation status; link to the capability record for that.
 
+## Unreleased — One model-choice rule for Claude and Codex agents (2026-10-27)
+
+Why: model choice lived in three places that disagreed (the owner's global rule, project decisions, and
+`method/model-routing-policy-v1.json`, which still named gpt-5.6-sol, mapped every anthropic class to Sonnet and bound
+only BMAD roles). One host's coordinator ran almost every agent on Opus, mechanical work included, and used up the
+usage limit; long-waiting agents (300–600k context) kept waking up to poll queued test runs. Owner decision
+2026-10-27 (Ram), with the effort section approved the same day.
+- **Rule** `method/MODEL_CHOICE.md`: work-class table (critical → Opus / gpt-6.1-sol high; standard → Sonnet / sol
+  medium; mechanical → Sonnet / sol low, pending the owner's confirmation; light → Haiku / sol low; browser tours →
+  gpt-6.1-terra; trivial lookups from the shell, no agent; Astra only when the owner names it). Effort section (four
+  questions, levels, one-level escalation, "don't pay twice", where effort is set in Codex and Claude Code). A
+  project's recorded decision wins. Waiting rules: background jobs with a completion notification, hand off before a
+  long wait or past ~300k context, no watcher model. Logging with `acef-note`.
+- **Routing policy** `method/model-routing-policy-v1.json`: openai classes → `gpt-6.1-sol` (not recalibrated; the
+  code-review evidence string says so); anthropic `semantic-critical` → `claude-opus-5-5`, standard and orchestration
+  stay `claude-sonnet-5-5`; `policyId` → `model-choice-2026-10-27`; a top-level `note` points to MODEL_CHOICE.md. No
+  new execution classes: `scripts/lib/acef-model-routing.js`, the schema and the BMAD hard-wall resolve exactly three,
+  and no BMAD role is mechanical or light. Roles, tiers and session policies are unchanged.
+- **Schema** `schemas/model-routing-policy-v1.schema.json`: optional `note` at top level and per provider (the anthropic
+  provider already carried a `note` the schema did not allow; nothing validated the file against the schema).
+- **Hosts**: on `update-acef-installation` an untouched `.acef/model-routing-policy.json` follows the new values
+  (three-way merge); a host that runs BMAD with `--routing-provider anthropic` moves ATDD, Development, Patch Assurance
+  and the Judges from Sonnet to Opus unless it records an override. `install-acef-slice-kit` now also snapshots
+  `MODEL_CHOICE.md` into the templates folder.
+- **Templates**: intake card and review brief carry `Model: <sınıf> → <model> (MODEL_CHOICE.md) · Effort: <…>`; the
+  dev report and the review header record the model and effort used. `method/WEEKLY_RETRO.md` compares review rounds
+  and escaped defects by effort. AGENTS.md "Model choice", README one line.
+- **Tests**: `scripts/test-acef-model-routing` pins the new mapping and the note; `test-install-acef-tools`,
+  `test-acef-install-profiles` and `scripts/slice/selfcheck.sh` (+ its self-test) follow. Tests that resolve runtimes
+  from the live policy (`test-acef-next`, `-capsule-supervisor`, `-capsule-supervisor-v2`, `-quick-fix-single-review`, `-process-validator`,
+  `-active-run-continuity`) now expect gpt-6.1-sol, and Opus for anthropic development. Historical experiment
+  manifests and `scripts/lib/acef-execution-assurance-experiment.js` keep gpt-5.6-sol (they bind V3.27–V3.29 runs).
+  Capability record `docs/ai/capabilities/model-choice.json` (wired, not enforced for ordinary subagents).
+
 ## Unreleased — acef-detect speed and stale acks (2026-10-27)
 
 Why: on the first host (B2Press) `acef-detect` was reported at about 24 s in the coordinator's real 15-minute loop

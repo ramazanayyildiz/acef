@@ -198,7 +198,7 @@ try {
   }
   const red = cp.spawnSync(process.execPath, [state, "evidence-run", "--repo", tmp, "--id", "capsule-red",
     "--kind", "runtime-test", "--actor", "acef_story_capsule_atdd", "--story", "Story Capsule",
-    "--model", "gpt-5.6-sol", "--effort", "high", "--satisfies", "story-capsule-ac1",
+    "--model", "gpt-6.1-sol", "--effort", "high", "--satisfies", "story-capsule-ac1",
     "--discovery-command-json", JSON.stringify([process.execPath, "-e", "console.log('demo contract')"]),
     "--expected-test", "demo contract",
     "--", process.execPath, "--test", "tests/demo.test.js"], { cwd: tmp, encoding: "utf8" });
@@ -232,13 +232,13 @@ try {
   if (developmentDispatch.action.type !== "dispatch"
     || developmentDispatch.action.actorInstanceId !== "acef_story_capsule_development"
     || !developmentDispatch.action.registrationCommand.includes("--session-id /root/acef_story_capsule_development")
-    || !developmentDispatch.action.registrationCommand.includes("--model gpt-5.6-sol --effort high")) {
+    || !developmentDispatch.action.registrationCommand.includes("--model gpt-6.1-sol --effort high")) {
     throw new Error("supervisor did not compile the canonical Development registration before dispatch");
   }
   const beforeDeveloperActor = armObjectiveHeartbeat();
   stateRun(["actor", "--repo", tmp, "--id", "acef_story_capsule_development", "--story", "Story Capsule",
     "--phase", "development", "--role", "developer", "--client", "codex", "--session-id", "/root/acef_story_capsule_development",
-    "--context-profile", "development", "--model", "gpt-5.6-sol", "--effort", "high"]);
+    "--context-profile", "development", "--model", "gpt-6.1-sol", "--effort", "high"]);
   assertObjectiveHeartbeat(beforeDeveloperActor, "Developer actor registration");
 
   const correctionHash = "a".repeat(64);
@@ -278,7 +278,7 @@ try {
   const wrongCorrectionId = cp.spawnSync(process.execPath, [state, "evidence-run", "--repo", tmp,
     "--id", "forged-correction-red", "--kind", "runtime-test",
     "--actor", "acef_story_capsule_atdd_correction1", "--story", "Story Capsule",
-    "--model", "gpt-5.6-sol", "--effort", "high", "--satisfies", "story-capsule-ac1",
+    "--model", "gpt-6.1-sol", "--effort", "high", "--satisfies", "story-capsule-ac1",
     "--discovery-command-json", JSON.stringify([process.execPath, "-e", "console.log('demo contract')"]),
     "--expected-test", "demo contract", "--", process.execPath, "--test", "tests/demo.test.js"],
   { cwd: tmp, encoding: "utf8" });
@@ -290,7 +290,7 @@ try {
   const correctedRed = cp.spawnSync(process.execPath, [state, "evidence-run", "--repo", tmp,
     "--id", "story_capsule-red-correction1", "--kind", "runtime-test",
     "--actor", "acef_story_capsule_atdd_correction1", "--story", "Story Capsule",
-    "--model", "gpt-5.6-sol", "--effort", "high", "--satisfies", "story-capsule-ac1",
+    "--model", "gpt-6.1-sol", "--effort", "high", "--satisfies", "story-capsule-ac1",
     "--discovery-command-json", JSON.stringify([process.execPath, "-e", "console.log('demo contract')"]),
     "--expected-test", "demo contract", "--", process.execPath, "--test", "tests/demo.test.js"],
   { cwd: tmp, encoding: "utf8" });
@@ -366,7 +366,7 @@ try {
   if (reviewDispatch.action.type !== "dispatch-parallel" || reviewDispatch.action.actors.length !== 2
     || reviewDispatch.action.concurrency?.minimum !== 1
     || reviewDispatch.action.concurrency?.fallback !== "sequential-same-input-tree"
-    || reviewDispatch.action.actors.some((actor) => actor.runtime.model !== "gpt-5.6-sol"
+    || reviewDispatch.action.actors.some((actor) => actor.runtime.model !== "gpt-6.1-sol"
       || actor.runtime.reasoningEffort !== (actor.role === "code-review" ? "medium" : "high")
       || !actor.capsule?.path.startsWith("docs/ai/capsules/") || !/^[a-f0-9]{64}$/.test(actor.capsule?.sha256 || "")
       || actor.capsule.showCommand !== `.acef/bin/acef-state capsule-show --repo . --id ${actor.capsule.id}`)) {
@@ -378,20 +378,20 @@ try {
   }
 
   const wrongCodeReviewFloor = cp.spawnSync(process.execPath, [state, "review-result", "--repo", tmp,
-    "--actor", "acef_story_capsule_code_review", "--model", "gpt-5.6-sol", "--effort", "high",
+    "--actor", "acef_story_capsule_code_review", "--model", "gpt-6.1-sol", "--effort", "high",
     "--verdict", "PASS"], { cwd: tmp, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
   if (wrongCodeReviewFloor.status === 0
-    || !`${wrongCodeReviewFloor.stdout}${wrongCodeReviewFloor.stderr}`.includes("calibrated runtime gpt-5.6-sol/medium")
+    || !`${wrongCodeReviewFloor.stdout}${wrongCodeReviewFloor.stderr}`.includes("calibrated runtime gpt-6.1-sol/medium")
     || fs.existsSync(path.join(tmp, "docs", "ai", "reports", "acef_story_capsule_code_review.json"))
     || fs.existsSync(path.join(tmp, "docs", "ai", "actors", "acef_story_capsule_code_review.json"))) {
     throw new Error("Code Review accepted or partially persisted a runtime outside the calibrated role floor");
   }
   const beforeReviewResult = armObjectiveHeartbeat();
   stateRun(["review-result", "--repo", tmp, "--actor", "acef_story_capsule_code_review",
-    "--model", "gpt-5.6-sol", "--effort", "medium", "--verdict", "PASS"]);
+    "--model", "gpt-6.1-sol", "--effort", "medium", "--verdict", "PASS"]);
   assertObjectiveHeartbeat(beforeReviewResult, "review result/completion");
   stateRun(["review-result", "--repo", tmp, "--actor", "acef_story_capsule_patch_assurance",
-    "--model", "gpt-5.6-sol", "--effort", "high", "--verdict", "REVISE",
+    "--model", "gpt-6.1-sol", "--effort", "high", "--verdict", "REVISE",
     "--finding-id", "PA-REPAIR", "--finding-severity", "HIGH",
     "--finding-reason", "The test needs one bounded integrity repair"]);
   const codeReviewHash = readJson("docs/ai/actors/acef_story_capsule_code_review.json").producedArtifactHash;
@@ -524,7 +524,7 @@ try {
   stateRun(["actor", "--repo", tmp, "--id", "acef_epic_process_judge", "--story", "Epic closeout",
     "--phase", "epic-process-judge", "--role", "process-judge", "--client", "codex",
     "--session-id", "/root/acef_epic_process_judge", "--context-profile", "epic-process-judge",
-    "--model", "gpt-5.6-sol", "--effort", "high"]);
+    "--model", "gpt-6.1-sol", "--effort", "high"]);
   assertObjectiveHeartbeat(beforeEpicActor, "Epic Judge actor registration");
   const epicGateId = epicDispatch.action.decisionCommands.PASS.match(/--id\s+(\S+)/)[1];
   const beforeEpicGate = armObjectiveHeartbeat();

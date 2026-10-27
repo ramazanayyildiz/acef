@@ -32,7 +32,7 @@ const recordText = (repo) => fs.readFileSync(path.join(repo, "docs", "ai", "ACEF
   assert.ok(!exists(repo, ".claude/skills") && !exists(repo, ".opencode/skills"), "slice profile installs one tool");
   assert.ok(!exists(repo, ".acef/bin"), "slice profile installs no runtime tools");
   for (const rel of ["docs/slices/_templates/slice.md", "docs/slices/_templates/review-checklist.md", "docs/slices/_templates/SLICE_LANE.md",
-    "scripts/gate.sh", "scripts/standards-check.sh", "scripts/codex-review.sh", "scripts/metrics.py", "scripts/route.py", "scripts/ui-copy-hints.py", "docs/slices/_templates/PRODUCT_LANGUAGE.md",
+    "scripts/gate.sh", "scripts/standards-check.sh", "scripts/codex-review.sh", "scripts/metrics.py", "scripts/route.py", "scripts/ui-copy-hints.py", "docs/slices/_templates/PRODUCT_LANGUAGE.md", "docs/slices/_templates/MODEL_CHOICE.md",
     "scripts/stack-profile.json", "slice-method.json"]) assert.ok(exists(repo, rel), rel);
   assert.match(fs.readFileSync(path.join(repo, "docs/slices/_templates/SLICE_LANE.md"), "utf8"), /^<!-- ACEF method snapshot from acef@/);
   const r = record(repo);

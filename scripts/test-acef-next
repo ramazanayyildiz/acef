@@ -106,7 +106,7 @@ try {
   if (readyJson.status !== "ready") throw new Error(`acef-next was not ready:\n${ready}`);
   if (readyJson.active_state.next_allowed_action !== "implement_to_green") throw new Error("acef-next did not derive dev action");
   if (readyJson.active_state.story !== "Story 2.2") throw new Error("acef-next lost active story");
-  if (readyJson.active_state.runtime?.model !== "gpt-5.6-sol"
+  if (readyJson.active_state.runtime?.model !== "gpt-6.1-sol"
     || readyJson.active_state.runtime?.reasoning_effort !== "high"
     || readyJson.active_state.runtime?.policy_role !== "development") {
     throw new Error("acef-next did not expose the required Standard Developer runtime");

@@ -20,6 +20,8 @@ judgment on top; the owner decides by number. This page is for the coordinator. 
 - **What repeats:** keep the collected lines. For each, add at most one sentence: is the covering rule working (then
   the repeat should fall next week), missing (a proposal), or wrong (a proposal to narrow or remove it)? Agent
   self-reports are evidence of a problem, not proof of a cause: confirm in diffs, logs and timings first.
+- **Effort:** compare review rounds and escaped defects by the `Effort:` recorded in dev and review reports, and propose
+  a change to the defaults in `method/MODEL_CHOICE.md` only when the numbers support it.
 - **Overdue or unowned alerts:** for each, propose an owner and a slice id or a dated deferral with a reason. Do not
   leave an alert without an owner in the file. The same section lists the acked alerts that are still open (age,
   slice, last observed breach, STALE when the breach was still seen after the recheck time): for each STALE one, say

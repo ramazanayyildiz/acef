@@ -125,7 +125,7 @@ try {
     "actor", "--repo", tmp, "--id", firstDispatch.action.actorInstanceId,
     "--story", "Shared Story", "--phase", "development", "--role", "developer",
     "--client", "codex", "--session-id", `/root/${firstDispatch.action.actorInstanceId}`,
-    "--context-profile", "development", "--model", "gpt-5.6-sol", "--effort", "high",
+    "--context-profile", "development", "--model", "gpt-6.1-sol", "--effort", "high",
   ]);
 
   activeRun("RUN-two", "atdd");
@@ -145,7 +145,7 @@ try {
     "actor", "--repo", tmp, "--id", secondDispatch.action.actorInstanceId,
     "--story", "Shared Story", "--phase", "development", "--role", "developer",
     "--client", "codex", "--session-id", `/root/${secondDispatch.action.actorInstanceId}`,
-    "--context-profile", "development", "--model", "gpt-5.6-sol", "--effort", "high",
+    "--context-profile", "development", "--model", "gpt-6.1-sol", "--effort", "high",
   ]);
 
   workerScope(secondDispatch.action.actorInstanceId, "atdd");

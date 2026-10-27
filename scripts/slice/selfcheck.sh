@@ -121,6 +121,11 @@ need templates/slice/intake-card.md 'Bilinen tuzaklar:' 'acef-note'
 need templates/slice/closing-note.md 'ACEF-gözlem:'
 need templates/slice/closing-note.md 'Dedektör:'
 need templates/slice/dev-report.md 'ACEF-gözlem:'
+# Model choice (owner decision 2026-10-27, method/MODEL_CHOICE.md): one class table for Claude and Codex, effort, waiting
+need method/MODEL_CHOICE.md '| critical |' '| mechanical |' '| light |' 'gpt-6.1-terra' '## Effort' '## Waiting' 'acef-note add'
+need templates/slice/intake-card.md 'Model: <sınıf> → <model> (MODEL_CHOICE.md)' 'Effort:'
+need templates/slice/review-brief.md 'Model: <sınıf> → <model> (MODEL_CHOICE.md)' 'Effort:'
+need templates/slice/dev-report.md 'Effort:'
 
 run_test() { local out; out=$("$1" 2>&1) && pass "$1" || { fail "$1"; printf '%s\n' "$out" | grep -v '^ok ' | sed 's/^/    /'; }; }
 for t in scripts/slice/tests/test-*.sh; do [ -f "$t" ] && run_test "$t"; done

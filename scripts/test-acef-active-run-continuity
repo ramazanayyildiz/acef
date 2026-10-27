@@ -114,17 +114,17 @@ const base = (runId) => ["active-run", "--run-id", runId, "--workflow-id", "ligh
 
   const actorArgs = (model, effort) => ["actor", "--id", `dev-${model}`, "--story", "Story cont", "--phase", "development", "--role", "developer",
     "--client", "claude-code", "--model", model, "--effort", effort, "--context-profile", "worker"];
-  const openai = run(repo, actorArgs("gpt-5.6-sol", "high"));
+  const openai = run(repo, actorArgs("gpt-6.1-sol", "high"));
   assert.equal(openai.status, 1, "openai runtime accepted on an anthropic-routed run");
   assert.match(openai.stderr, /must bind calibrated runtime claude-/);
-  const claude = run(repo, actorArgs("claude-sonnet-5-5", "high"));
+  const claude = run(repo, actorArgs("claude-opus-5-5", "high"));
   assert.equal(claude.status, 0, `${claude.stdout}${claude.stderr}`);
 
   const defaultRepo = initRepo();
   const plain = run(defaultRepo, [...base("RUN-d"), "--phase", "development"]);
   assert.equal(plain.status, 0, `${plain.stdout}${plain.stderr}`);
   assert.equal(json(defaultRepo, "docs/ai/ACEF_ACTIVE_RUN.json").routingProvider, undefined, "default run must not record a provider");
-  const stillOpenai = run(defaultRepo, actorArgs("gpt-5.6-sol", "high"));
+  const stillOpenai = run(defaultRepo, actorArgs("gpt-6.1-sol", "high"));
   assert.equal(stillOpenai.status, 0, `${stillOpenai.stdout}${stillOpenai.stderr}`);
   console.log("WP-11 routing provider ok");
 }
