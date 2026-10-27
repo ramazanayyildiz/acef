@@ -28,11 +28,54 @@ function ancestors(startPath) {
   return dirs;
 }
 
-function findLocalHook(projectDir) {
-  for (const dirPath of ancestors(projectDir || process.cwd())) {
-    const hookPath = path.join(dirPath, ".acef", "hooks", "acef-bmad-hard-wall.mjs");
-    if (exists(hookPath)) return hookPath;
+// The marker selects this Git boundary, never a stored or redirected filesystem path.
+// Keep this self-contained: hooks are also installed as standalone files.
+function canonicalRootMarker(dirPath) {
+  const marker = path.join(dirPath, ".acef", "CANONICAL_ROOT");
+  let stat;
+  try { stat = fs.lstatSync(marker); }
+  catch (error) {
+    if (error.code === "ENOENT") return false;
+    throw new Error(`ACEF canonical root: cannot read ${marker}: ${error.message}`);
   }
+  try {
+    if (!stat.isFile() || stat.isSymbolicLink()) throw new Error("marker must be a regular file");
+    if (fs.lstatSync(path.dirname(marker)).isSymbolicLink()) throw new Error(".acef must not redirect to another directory");
+    const record = JSON.parse(fs.readFileSync(marker, "utf8"));
+    if (!record || Array.isArray(record) || record.schema !== "acef.canonical-root.v1"
+      || Object.keys(record).some((key) => !["schema", "note"].includes(key))
+      || (record.note !== undefined && typeof record.note !== "string")) {
+      throw new Error("expected acef.canonical-root.v1 with no target path");
+    }
+    return true;
+  } catch (error) {
+    throw new Error(`ACEF canonical root: invalid ${marker}: ${error.message}`);
+  }
+}
+
+function discoverRoot(candidate, home, matches) {
+  const dirs = ancestors(candidate);
+  const boundaryIndex = dirs.findIndex((dir) => fs.existsSync(path.join(dir, ".git")));
+  const boundary = boundaryIndex >= 0 ? dirs[boundaryIndex] : "";
+  if (boundary && boundary !== home && canonicalRootMarker(boundary)) {
+    return matches(boundary) ? boundary : "";
+  }
+  for (const [index, dir] of dirs.entries()) {
+    if (dir === home) continue;
+    // Do not enter another canonical repository through an independent nested Git boundary.
+    // Unmarked legacy installations retain their existing first-match behavior.
+    if (boundaryIndex >= 0 && index > boundaryIndex
+      && fs.existsSync(path.join(dir, ".acef", "CANONICAL_ROOT"))) return "";
+    if (matches(dir)) return dir;
+  }
+  return "";
+}
+
+function findLocalHook(projectDir) {
+  const home = process.env.HOME ? path.resolve(process.env.HOME) : "";
+  const hookFor = (dir) => path.join(dir, ".acef", "hooks", "acef-bmad-hard-wall.mjs");
+  const root = discoverRoot(projectDir || process.cwd(), home, (dir) => exists(hookFor(dir)));
+  if (root) return hookFor(root);
   return exists(siblingHookPath) ? siblingHookPath : "";
 }
 
@@ -77,7 +120,11 @@ function agentIdentity(input, output) {
 }
 
 function runAcefHook(payload, projectDir) {
-  const hookPath = findLocalHook(projectDir);
+  const input = payload.tool_input || {};
+  const target = input.file_path || input.filePath || input.path;
+  const resolved = typeof target === "string" && target ? path.resolve(payload.cwd || projectDir, target) : "";
+  const hasTargetBoundary = resolved && ancestors(resolved).some((dir) => exists(path.join(dir, ".git")));
+  const hookPath = findLocalHook(hasTargetBoundary ? resolved : projectDir);
   if (!hookPath) return { decision: "allow", reason: "" };
 
   const result = spawnSync(process.execPath, [hookPath], {

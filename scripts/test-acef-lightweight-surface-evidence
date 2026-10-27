@@ -36,5 +36,19 @@ try {
   assert.equal(lifecycle.status, 0, lifecycle.stderr);
   const undeclared = run(["--evidence", "EV-1", "--surface", "queue"]); assert.equal(undeclared.status, 2); assert.match(undeclared.stderr, /not declared/);
   evidence.exitCode = 1; write("docs/ai/evidence/EV-1.json", JSON.stringify(evidence)); const failed = run(["--evidence", "EV-1", "--surface", "api"]); assert.equal(failed.status, 2);
+  // Synthetic upstream compatibility fixtures: no actual browser acceptance.
+  runRecord.schema = "acef.lightweight-run.v2"; runRecord.workflowId = "lightweight"; runRecord.assuranceProfile = "guarded"; runRecord.productReviewContract = "running-product-review-v1"; runRecord.status = "active"; delete runRecord.lane;
+  write("docs/ai/ACEF_LIGHTWEIGHT_RUN.json", JSON.stringify(runRecord));
+  const developerActor = JSON.parse(fs.readFileSync(path.join(repo, "docs/ai/actors/impl.json"))); developerActor.sessionId = "developer-session";
+  write("docs/ai/actors/impl.json", JSON.stringify(developerActor));
+  const reviewerActor = { ...developerActor, actorInstanceId: "review", phase: "code-review", role: "code-review", sessionId: "independent-session" };
+  write("docs/ai/actors/review.json", JSON.stringify(reviewerActor));
+  evidence.exitCode = 0; evidence.actorInstanceId = "review"; evidence.runnerProof.sha256 = proof(evidence); write("docs/ai/evidence/EV-1.json", JSON.stringify(evidence));
+  const reviewerProjection = run(["--evidence", "EV-1", "--surface", "api"]); assert.equal(reviewerProjection.status, 0, reviewerProjection.stderr);
+  reviewerActor.sessionId = developerActor.sessionId; write("docs/ai/actors/review.json", JSON.stringify(reviewerActor));
+  const sharedSession = run(["--evidence", "EV-1", "--surface", "api"]); assert.equal(sharedSession.status, 2); assert.match(sharedSession.stderr, /independent Code Review session/);
+  reviewerActor.sessionId = "independent-session"; write("docs/ai/actors/review.json", JSON.stringify(reviewerActor));
+  delete runRecord.productReviewContract; write("docs/ai/ACEF_LIGHTWEIGHT_RUN.json", JSON.stringify(runRecord));
+  const legacyReviewer = run(["--evidence", "EV-1", "--surface", "api"]); assert.equal(legacyReviewer.status, 2); assert.match(legacyReviewer.stderr, /implementation actor/);
   console.log("acef lightweight surface evidence tests passed");
 } finally { fs.rmSync(repo, { recursive: true, force: true }); }

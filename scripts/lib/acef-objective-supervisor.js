@@ -5,7 +5,8 @@ const fs = require("node:fs");
 const path = require("node:path");
 const cp = require("node:child_process");
 const { attemptPath, collectRunAttempts, commandIdentity } = require("./acef-invocation-ledger");
-const { parseActorRecord, parseGateVerdict, parseReviewReport } = require("./acef-state-parser");
+const { parseActorRecord, parseGateVerdict, parseReviewReport, parseActiveRun, parseLightweightRun } = require("./acef-state-parser");
+const { CONTRACT, productReviewFailures } = require("./acef-product-review");
 
 const THRESHOLDS = Object.freeze({
   consolidateRuns: 5,
@@ -64,6 +65,7 @@ function validateObjective(record) {
   if (!Array.isArray(record.runs) || record.runCount !== record.runs.length) throw new Error("objective runCount must equal unique runs length");
   if (new Set(record.runs.map((run) => safeId(run.runId, "objective run id"))).size !== record.runs.length) throw new Error("objective runs must be unique");
   for (const run of record.runs) {
+    if (run.productReviewContract !== undefined && run.productReviewContract !== CONTRACT) throw new Error("objective run product review contract is invalid");
     if (run.outcomeDisposition !== undefined || run.outcomeReason !== undefined) {
       if (!["resolved", "superseded"].includes(run.outcomeDisposition) || !String(run.outcomeReason || "").trim()
         || !["FAIL", "REPLAN", "BLOCKED"].includes(run.terminalDisposition) || run.successfulCompletion) {
@@ -76,6 +78,9 @@ function validateObjective(record) {
       if (!/^docs\/ai\/gates\/[^/]+\.json$/.test(run.successfulCompletion.gatePath || "") || !String(run.successfulCompletion.applicationTree || "")) {
         throw new Error("successful completion binding is invalid");
       }
+      const snapshot = run.successfulCompletion.productReviewSnapshot;
+      if (snapshot && (snapshot.runId !== run.runId || snapshot.productReviewContract !== CONTRACT || snapshot.workflowId !== "lightweight" || snapshot.assuranceProfile !== "guarded" || snapshot.status !== "complete"
+        || !snapshot.implementationActorId || !snapshot.reviewActorId || !snapshot.productReview?.reportPath || !/^[a-f0-9]{64}$/.test(snapshot.productReview.sha256 || ""))) throw new Error("successful product completion snapshot is invalid");
     }
   }
   const derivedReplans = record.runs.filter((run) => run.terminalDisposition === "REPLAN").length;
@@ -108,6 +113,32 @@ function validateObjective(record) {
     || !Number.isInteger(record.progress.controlCommits) || !Number.isInteger(record.progress.productCommits)) {
     throw new Error("objective progress counters are invalid");
   }
+  if (record.controlBudgetDecisions !== undefined) {
+    if (!Array.isArray(record.controlBudgetDecisions)) throw new Error("control budget decisions must be an array");
+    const ids = new Set(), runs = new Set(), terminals = new Set();
+    for (const decision of record.controlBudgetDecisions) {
+      if (record.accounting?.version !== "objective-accounting-v2") throw new Error("control budget requires objective-accounting-v2");
+      const fields = ["decisionId", "eligibleRunId", "terminalRunId", "authorityRef", "authoritySha256", "reason", "issuedAt", "expiresAt", "observedActiveControlSeconds", "additionalSeconds", "terminalGatePath", "terminalGateSha256"];
+      if (!decision || Object.keys(decision).some((key) => !fields.includes(key)) || fields.some((key) => decision[key] === undefined)) throw new Error("invalid control budget decision shape");
+      for (const key of ["decisionId", "eligibleRunId", "terminalRunId"]) safeId(decision[key], key);
+      if (ids.has(decision.decisionId) || runs.has(decision.eligibleRunId) || terminals.has(decision.terminalRunId)) throw new Error("duplicate control budget decision or eligible run");
+      ids.add(decision.decisionId); runs.add(decision.eligibleRunId); terminals.add(decision.terminalRunId);
+      const priorIndex = record.runs.findIndex((run) => run.runId === decision.terminalRunId);
+      const prior = record.runs[priorIndex];
+      const nextIndex = record.runs.findIndex((run) => run.runId === decision.eligibleRunId);
+      if (!prior?.successfulCompletion || prior.terminalDisposition !== "PASS" || prior.productReviewContract !== CONTRACT
+        || decision.eligibleRunId === decision.terminalRunId || (nextIndex >= 0 ? nextIndex !== priorIndex + 1 : priorIndex !== record.runs.length - 1)
+        || decision.terminalGatePath !== prior.successfulCompletion.gatePath
+        || decision.terminalGateSha256 !== prior.successfulCompletion.artifactHashes?.[decision.terminalGatePath]) throw new Error("control budget terminal/next run binding is invalid");
+      if (!/^docs\/ai\/[^\\]+\.md$/.test(decision.authorityRef) || decision.authorityRef.split("/").includes("..")
+        || !/^[a-f0-9]{64}$/.test(decision.authoritySha256) || !/^[a-f0-9]{64}$/.test(decision.terminalGateSha256)
+        || String(decision.reason).trim().length < 20) throw new Error("control budget authority/reason binding is invalid");
+      const issued = Date.parse(decision.issuedAt), expires = Date.parse(decision.expiresAt);
+      if (!Number.isFinite(issued) || !Number.isFinite(expires) || expires <= issued || expires - issued > 2 * 3600000
+        || !Number.isInteger(decision.observedActiveControlSeconds) || decision.observedActiveControlSeconds < 1800
+        || !Number.isInteger(decision.additionalSeconds) || decision.additionalSeconds < 1 || decision.additionalSeconds > 3600) throw new Error("invalid bounded control budget time");
+    }
+  }
   return record;
 }
 
@@ -126,6 +157,68 @@ function atomicWrite(filePath, record) {
 function loadObjective(repo, objectiveId) {
   const filePath = objectivePath(repo, objectiveId);
   return fs.existsSync(filePath) ? validateObjective(readJson(filePath)) : null;
+}
+
+function productReviewEnabled(repo, runId, record) {
+  const saved = record?.runs.find((run) => run.runId === runId);
+  if (saved?.productReviewContract === CONTRACT || saved?.successfulCompletion?.productReviewSnapshot?.productReviewContract === CONTRACT) return true;
+  try {
+    const active = parseActiveRun(path.join(repo, "docs/ai/ACEF_ACTIVE_RUN.json"));
+    return active.runId === runId && active.workflowId === "lightweight" && active.assuranceProfile === "guarded" && active.productReviewContract === CONTRACT;
+  } catch { return false; }
+}
+
+// Accounting records a real review attempt, including a partial failed tour.
+// It is deliberately not product acceptance: final PASS separately validates
+// every artifact and check. One surviving hash-bound failed observation suffices
+// to retain a failed cycle when another historical screenshot was lost.
+function collectProductReviewCycles(repo, record, actors, cycles) {
+  const gatesDir = path.join(repo, "docs/ai/gates");
+  if (!fs.existsSync(gatesDir)) return;
+  const reportsDir = path.join(repo, "docs/ai/reports");
+  const reports = fs.existsSync(reportsDir) ? fs.readdirSync(reportsDir).filter((name) => name.endsWith(".json")).flatMap((name) => {
+    try { return [readJson(path.join(reportsDir, name))]; } catch { return []; }
+  }) : [];
+  const { evidenceRecordById, validateEvidenceRecord, applicationTreeDigest } = require(fs.existsSync(path.join(__dirname, "../acef-process-validator.cjs")) ? "../acef-process-validator.cjs" : "../acef-process-validator");
+  for (const name of fs.readdirSync(gatesDir).filter((entry) => entry.endsWith(".json"))) {
+    try {
+      const gate = parseGateVerdict(path.join(gatesDir, name));
+      if (!record.runs.some((run) => run.runId === gate.runId) || !productReviewEnabled(repo, gate.runId, record)
+        || gate.lightweightStateContract !== "lightweight-state-v1" || !["PASS", "REVISE", "FAIL"].includes(gate.verdict)) continue;
+      const reviewer = actors.find((actor) => actor.actorInstanceId === gate.decidedBy && actor.runId === gate.runId && normalizeScope(actor.story) === normalizeScope(gate.scope));
+      const norm = (value) => String(value || "").toLowerCase().replace(/[^a-z0-9]+/g, "");
+      if (!reviewer || norm(reviewer.phase) !== "codereview" || !["codereview", "codereviewer", "reviewer"].includes(norm(reviewer.role)) || !reviewer.sessionId) continue;
+      const developers = actors.filter((actor) => actor.runId === gate.runId && normalizeScope(actor.story) === normalizeScope(gate.scope) && norm(actor.role) === "developer");
+      if (!developers.length || developers.some((actor) => !actor.sessionId || actor.sessionId === reviewer.sessionId || actor.actorInstanceId === reviewer.actorInstanceId)) continue;
+      git(repo, ["merge-base", "--is-ancestor", gate.applicationCommit, "HEAD"]);
+      if (applicationTreeDigest(repo, gate.applicationCommit, gate.scopePaths) !== gate.applicationTree) continue;
+      const reportProof = reports.some((report) => {
+        if (report.schema !== "acef.product-review.v1" || report.runId !== gate.runId || report.reviewerActorId !== reviewer.actorInstanceId || report.sessionId !== reviewer.sessionId
+          || report.applicationCommit !== gate.applicationCommit || report.applicationTree !== gate.applicationTree || report.verdict !== gate.verdict
+          || !Number.isFinite(Date.parse(report.reviewedAt)) || Date.parse(report.reviewedAt) < Date.parse(reviewer.createdAt) || Date.parse(report.reviewedAt) > Date.now() + 60000
+          || report.browser?.status !== "VERIFIED") return false;
+        return Object.values(report.checks || {}).some((check) => ["PASS", "FAIL"].includes(check.status) && String(check.observation || "").trim().length >= 12
+          && check.artifactIds?.some((id) => report.artifacts?.some((artifact) => {
+            if (artifact.id !== id) return false;
+            try {
+              const root = fs.realpathSync(repo), target = fs.realpathSync(path.resolve(repo, artifact.path));
+              return !path.isAbsolute(artifact.path) && target.startsWith(root + path.sep) && fs.statSync(target).isFile()
+                && crypto.createHash("sha256").update(fs.readFileSync(target)).digest("hex") === artifact.sha256;
+            } catch { return false; }
+          })));
+      });
+      const executionProof = (gate.evidenceIds || []).some((id) => {
+        try {
+          const evidence = evidenceRecordById(repo, id);
+          if (evidence.actorInstanceId !== reviewer.actorInstanceId || evidence.story !== gate.scope || evidence.kind !== "manual-smoke"
+            || evidence.repositoryCommit !== gate.applicationCommit || validateEvidenceRecord(repo, evidence, { scopePaths: gate.scopePaths }).length) return false;
+          return collectRunAttempts(repo, gate.runId).some((attempt) => attempt.evidenceId === id && attempt.actorId === reviewer.actorInstanceId
+            && ["passed", "failed"].includes(attempt.status) && attempt.exitCode === evidence.exitCode && attempt.commandIdentity === commandIdentity(evidence.commandArgv));
+        } catch { return false; }
+      });
+      if (reportProof || executionProof) cycles.add(gate.runId + "\0" + normalizeScope(gate.scope) + "\0" + gate.applicationTree);
+    } catch { /* Invalid or unbound claims do not count. */ }
+  }
 }
 
 function collectObjectiveReviews(repo, record) {
@@ -152,6 +245,7 @@ function collectObjectiveReviews(repo, record) {
   }
   const cycles = new Set();
   for (const actor of actors) {
+    if (productReviewEnabled(repo, actor.runId, record)) continue;
     const phase = normalizeScope(actor.phase).replace(/[^a-z0-9]+/g, "");
     const role = normalizeScope(actor.role).replace(/[^a-z0-9]+/g, "");
     if (!["codereview", "review", "patchassurance"].includes(phase)
@@ -181,6 +275,7 @@ function collectObjectiveReviews(repo, record) {
       cycles.add(actor.runId + "\0" + normalizeScope(actor.story) + "\0" + actor.inputTree);
     } catch { /* An unbound, partial, missing or changed report cannot count. */ }
   }
+  collectProductReviewCycles(repo, record, actors, cycles);
   return [...cycles];
 }
 
@@ -245,14 +340,29 @@ function reconcileProgress(repo, progress) {
   };
 }
 
-function deriveStatus(record) {
+function controlTimeLimit(record, runId, repo) {
+  const decision = record.controlBudgetDecisions?.find((entry) => entry.eligibleRunId === runId);
+  const now = Date.now();
+  if (!decision || now < Date.parse(decision.issuedAt) || now >= Date.parse(decision.expiresAt)
+    || record.accounting?.version !== "objective-accounting-v2" || record.manualQa.status === "running") return 1800;
+  try {
+    const root = fs.realpathSync(repo);
+    for (const [relative, expected] of [[decision.authorityRef, decision.authoritySha256], [decision.terminalGatePath, decision.terminalGateSha256]]) {
+      const target = fs.realpathSync(path.resolve(root, relative));
+      if (!target.startsWith(root + path.sep) || !fs.statSync(target).isFile() || crypto.createHash("sha256").update(fs.readFileSync(target)).digest("hex") !== expected) return 1800;
+    }
+  } catch { return 1800; }
+  return 1800 + decision.additionalSeconds;
+}
+
+function deriveStatus(record, runId = record.runs.at(-1)?.runId, repo) {
   if (["CLOSEOUT", "DONE"].includes(record.status)) return record.status;
   if (record.accounting?.version === "objective-accounting-v2") {
     if (record.accounting.consecutiveNoProgressRuns >= THRESHOLDS.suspendRuns
       || record.accounting.consecutiveReplans >= THRESHOLDS.suspendReplans) return "SUSPENDED_OVER_BUDGET";
     if (record.accounting.consecutiveNoProgressRuns >= THRESHOLDS.consolidateRuns
       || record.accounting.consecutiveReplans >= THRESHOLDS.consolidateReplans
-      || record.progress.activeControlSeconds >= 1800
+      || record.progress.activeControlSeconds >= controlTimeLimit(record, runId, repo)
       || (record.accounting.consecutiveReviewCycles || 0) >= THRESHOLDS.consolidateReviews) return "CONSOLIDATING";
     return "EXECUTING";
   }
@@ -265,6 +375,9 @@ function deriveStatus(record) {
 
 function reconcileObjective(repo, record, previousRun = null) {
   const next = JSON.parse(JSON.stringify(record));
+  for (const run of next.runs) {
+    if (productReviewEnabled(repo, run.runId, next)) run.productReviewContract = CONTRACT;
+  }
   if (previousRun && previousRun.objectiveId === next.objectiveId && previousRun.status === "complete") {
     const run = next.runs.find((entry) => entry.runId === previousRun.runId);
     if (run && !run.terminalDisposition) run.terminalDisposition = previousRun.terminalDisposition;
@@ -307,7 +420,7 @@ function reconcileObjective(repo, record, previousRun = null) {
   if (next.progress.productCommits > 0 && next.progress.controlCommits / next.progress.productCommits > 1.5) {
     next.warnings.push("control-to-product commit ratio exceeds 1.5");
   }
-  next.status = deriveStatus(next);
+  next.status = deriveStatus(next, next.runs.at(-1)?.runId, repo);
   next.updatedAt = new Date().toISOString();
   return validateObjective(next);
 }
@@ -378,6 +491,9 @@ function prepareRegisterRun(repo, options) {
   } else if (record.scopeFingerprint !== fingerprint) {
     throw new Error(`objective ${objectiveId} scope is immutable`);
   }
+  const pendingBudget = record.controlBudgetDecisions?.find((entry) => entry.eligibleRunId === options.runId);
+  if (pendingBudget && (["DONE", "CLOSEOUT", "SUSPENDED_OVER_BUDGET"].includes(record.status)
+    || record.defectLedger.some((defect) => CRITICAL_CLASSES.has(defect.class) && defect.status !== "fixed"))) throw new Error("control budget admission blocked by terminal status or unresolved critical defect");
   record = reconcileObjective(repo, record, options.previousRun);
   const existing = record.runs.find((entry) => entry.runId === options.runId);
   if (existing) {
@@ -393,7 +509,10 @@ function prepareRegisterRun(repo, options) {
   const defects = defectIds.map((id) => record.defectLedger.find((defect) => defect.defectId === id));
   if (defects.some((defect) => !defect)) throw new Error("objective run references an unknown defect id");
   if (record.manualQa.status === "running" && defectIds.length) throw new Error("manual QA must complete before findings can open repair runs");
-  if (record.status === "CONSOLIDATING" && !defectIds.length) throw new Error("CONSOLIDATING objective permits only defect-ledger admissions");
+  const decision = record.controlBudgetDecisions?.find((entry) => entry.eligibleRunId === options.runId);
+  if (decision && (options.workflowId !== "lightweight" || options.assuranceProfile !== "guarded" || options.productReviewContract !== CONTRACT
+    || record.manualQa.status === "running" || Date.now() >= Date.parse(decision.expiresAt))) throw new Error("control budget requires unexpired Standard+Guarded product-review admission with no running manual QA");
+  if (record.status === "CONSOLIDATING" && !defectIds.length && (!decision || deriveStatus(record, options.runId, repo) !== "EXECUTING")) throw new Error("CONSOLIDATING objective permits only defect-ledger admissions");
   if (defects.some((defect) => CRITICAL_CLASSES.has(defect.class))) {
     if (options.workflowId === "quick-fix") throw new Error("critical objective defects require ACEF Standard or Full, not Quick Fix");
     if (options.assuranceProfile !== "guarded") throw new Error("critical objective defects require Guarded assurance");
@@ -424,6 +543,38 @@ function prepareRegisterRun(repo, options) {
   if (record.accounting?.version === "objective-accounting-v2" && record.status === "SUSPENDED_OVER_BUDGET") {
     throw new Error(`objective ${objectiveId} reached the ${THRESHOLDS.suspendRuns}-run hard stop for consecutive no-progress churn; human split required`);
   }
+  validateObjective(record);
+  return { path: objectivePath(repo, objectiveId), record };
+}
+
+function prepareControlBudget(repo, objectiveId, input) {
+  let record = loadObjective(repo, objectiveId);
+  if (!record) throw new Error("unknown control budget objective");
+  if (["DONE", "CLOSEOUT", "SUSPENDED_OVER_BUDGET"].includes(record.status) || record.manualQa.status === "running") throw new Error("control budget cannot extend DONE/closeout/suspended/manual QA objectives");
+  if (record.defectLedger.some((defect) => CRITICAL_CLASSES.has(defect.class) && defect.status !== "fixed")) throw new Error("control budget cannot bypass unresolved critical defects");
+  record = reconcileObjective(repo, record);
+  const terminal = record.runs.at(-1);
+  if (record.accounting?.version !== "objective-accounting-v2" || terminal?.runId !== input.terminalRunId
+    || terminal.terminalDisposition !== "PASS" || !terminal.successfulCompletion || terminal.productReviewContract !== CONTRACT
+    || ["DONE", "CLOSEOUT", "SUSPENDED_OVER_BUDGET"].includes(record.status) || record.manualQa.status === "running") throw new Error("control budget requires authentic latest successful opted-in terminal and eligible objective");
+  if (record.progress.activeControlSeconds < 1800 || record.accounting.consecutiveNoProgressRuns >= THRESHOLDS.consolidateRuns
+    || record.accounting.consecutiveReplans >= THRESHOLDS.consolidateReplans || record.accounting.consecutiveReviewCycles >= THRESHOLDS.consolidateReviews) throw new Error("control budget may extend only the elapsed control-time guard");
+  if (record.runs.some((run) => run.runId === input.eligibleRunId) || record.controlBudgetDecisions?.some((entry) => entry.decisionId === input.decisionId || entry.eligibleRunId === input.eligibleRunId || entry.terminalRunId === input.terminalRunId)) throw new Error("control budget decision/eligible run already recorded");
+  const terminalGate = parseGateVerdict(path.join(repo, terminal.successfulCompletion.gatePath));
+  if (!input.terminalGateId || terminalGate.gateId !== input.terminalGateId) throw new Error("control budget canonical terminal gate binding mismatch");
+  // Revalidate authentic terminal proof; no invented completion or raw reset.
+  completionIntegrity(repo, terminal.runId, terminal.successfulCompletion, { requireFresh: true });
+  const root = fs.realpathSync(repo), relative = String(input.authorityRef || "");
+  if (!/^docs\/ai\/[^\\]+\.md$/.test(relative) || relative.split("/").includes("..")) throw new Error("control budget authority must be repository-local docs/ai markdown");
+  const authority = fs.realpathSync(path.resolve(root, relative));
+  if (!authority.startsWith(root + path.sep) || !fs.statSync(authority).isFile()) throw new Error("control budget authority path escapes repository");
+  const gate = fs.readFileSync(path.join(root, terminal.successfulCompletion.gatePath));
+  const decision = { decisionId: input.decisionId, eligibleRunId: input.eligibleRunId, terminalRunId: input.terminalRunId,
+    authorityRef: relative, authoritySha256: crypto.createHash("sha256").update(fs.readFileSync(authority)).digest("hex"), reason: String(input.reason || "").trim(),
+    issuedAt: new Date().toISOString(), expiresAt: input.expiresAt, observedActiveControlSeconds: record.progress.activeControlSeconds,
+    additionalSeconds: Number(input.additionalSeconds), terminalGatePath: terminal.successfulCompletion.gatePath, terminalGateSha256: crypto.createHash("sha256").update(gate).digest("hex") };
+  record.controlBudgetDecisions = [...(record.controlBudgetDecisions || []), decision];
+  record.updatedAt = decision.issuedAt;
   validateObjective(record);
   return { path: objectivePath(repo, objectiveId), record };
 }
@@ -550,7 +701,7 @@ function completionIntegrity(repo, runId, input, { requireFresh = false } = {}) 
   // modules have initialized, including the installed .cjs entrypoint.
   const validatorPath = fs.existsSync(path.join(__dirname, "../acef-process-validator.cjs"))
     ? "../acef-process-validator.cjs" : "../acef-process-validator";
-  const { evidenceRecordById, validateEvidenceRecord } = require(validatorPath);
+  const { evidenceRecordById, validateEvidenceRecord, applicationTreeDigest } = require(validatorPath);
   function boundEvidence(id) {
     safeId(id, "completion evidence id");
     bindFile(`docs/ai/evidence/${id}.json`);
@@ -577,11 +728,12 @@ function completionIntegrity(repo, runId, input, { requireFresh = false } = {}) 
   const producer = parseActorRecord(bindFile(`docs/ai/actors/${safeId(source.actorInstanceId, "producer actor id")}.json`));
   const reviewer = parseActorRecord(bindFile(`docs/ai/actors/${safeId(gate.decidedBy, "reviewer actor id")}.json`));
   const normalize = (value) => String(value || "").toLowerCase().replace(/[^a-z0-9]+/g, "");
+  const optedIn = (!requireFresh && input.productReviewSnapshot?.productReviewContract === CONTRACT) || productReviewEnabled(repo, runId);
   if (producer.runId !== runId || reviewer.runId !== runId
     || normalize(producer.story) !== normalize(gate.scope) || normalize(reviewer.story) !== normalize(gate.scope)
     || producer.actorInstanceId === reviewer.actorInstanceId
     || (producer.sessionId && producer.sessionId === reviewer.sessionId)
-    || !["reviewer", "codereviewer", "processjudge", "judge"].includes(normalize(reviewer.role))) {
+    || !["reviewer", "codereviewer", "processjudge", "judge", ...(optedIn ? ["codereview"] : [])].includes(normalize(reviewer.role))) {
     throw new Error("validated completion requires independent actor/run/story bindings");
   }
   if (reviewer.producedArtifactPath) {
@@ -590,7 +742,20 @@ function completionIntegrity(repo, runId, input, { requireFresh = false } = {}) 
       throw new Error("completion review artifact hash mismatch");
     }
   }
-  return { evidenceId: green.evidenceId, physicalEvidenceId: source.evidenceId, gatePath: gateRelative, artifactHashes: hashes };
+  let productReviewSnapshot;
+  if (optedIn) {
+    const lifecycle = input.productReviewSnapshot || parseLightweightRun(path.join(repo, "docs/ai/ACEF_LIGHTWEIGHT_RUN.json"));
+    if (lifecycle.runId !== runId || lifecycle.status !== "complete" || lifecycle.implementationActorId !== producer.actorInstanceId || lifecycle.reviewActorId !== reviewer.actorInstanceId) throw new Error("completion requires the bound complete running-product lifecycle");
+    const failures = productReviewFailures(repo, lifecycle, { productReviewContract: CONTRACT }, (ref) => applicationTreeDigest(repo, !requireFresh && ref === "HEAD" ? gate.applicationCommit : ref, gate.scopePaths));
+    if (failures.length) throw new Error(`completion running-product review rejected: ${failures.join("; ")}`);
+    bindFile(lifecycle.productReview.reportPath);
+    // The hashed report binds each local browser artifact; productReviewFailures
+    // rechecks their bytes on every completion validation. Keep ignored trace
+    // files local instead of forcing large browser archives into the Git index.
+    // Preserve this run's binding when a later story replaces the singleton.
+    productReviewSnapshot = Object.fromEntries(["runId", "workflowId", "assuranceProfile", "status", "implementationActorId", "reviewActorId", "productReviewContract", "productReview"].map((field) => [field, lifecycle[field]]));
+  }
+  return { evidenceId: green.evidenceId, physicalEvidenceId: source.evidenceId, gatePath: gateRelative, artifactHashes: hashes, ...(productReviewSnapshot ? { productReviewSnapshot } : {}) };
 }
 
 function prepareValidatedCompletion(repo, objectiveId, input) {
@@ -695,6 +860,7 @@ module.exports = {
   persistObjectiveHeartbeat,
   prepareObjectiveHeartbeat,
   prepareRegisterRun,
+  prepareControlBudget,
   prepareCloseObjective,
   prepareValidatedCompletion,
   publishPreparedObjective,

@@ -114,33 +114,69 @@ function hasLaneMarker(dirPath) {
   ].some((name) => exists(path.join(dirPath, name)));
 }
 
-function findActiveRoot(paths) {
+// The marker selects this Git boundary, never a stored or redirected filesystem path.
+// Keep this self-contained: hooks are also installed as standalone files.
+function canonicalRootMarker(dirPath) {
+  const marker = path.join(dirPath, ".acef", "CANONICAL_ROOT");
+  let stat;
+  try { stat = fs.lstatSync(marker); }
+  catch (error) {
+    if (error.code === "ENOENT") return false;
+    throw new Error(`ACEF canonical root: cannot read ${marker}: ${error.message}`);
+  }
+  try {
+    if (!stat.isFile() || stat.isSymbolicLink()) throw new Error("marker must be a regular file");
+    if (fs.lstatSync(path.dirname(marker)).isSymbolicLink()) throw new Error(".acef must not redirect to another directory");
+    const record = JSON.parse(fs.readFileSync(marker, "utf8"));
+    if (!record || Array.isArray(record) || record.schema !== "acef.canonical-root.v1"
+      || Object.keys(record).some((key) => !["schema", "note"].includes(key))
+      || (record.note !== undefined && typeof record.note !== "string")) {
+      throw new Error("expected acef.canonical-root.v1 with no target path");
+    }
+    return true;
+  } catch (error) {
+    throw new Error(`ACEF canonical root: invalid ${marker}: ${error.message}`);
+  }
+}
+
+function discoverRoot(candidate, home, matches) {
+  const dirs = ancestors(candidate);
+  const boundaryIndex = dirs.findIndex((dir) => fs.existsSync(path.join(dir, ".git")));
+  const boundary = boundaryIndex >= 0 ? dirs[boundaryIndex] : "";
+  if (boundary && boundary !== home && canonicalRootMarker(boundary)) {
+    return matches(boundary) ? boundary : "";
+  }
+  for (const [index, dir] of dirs.entries()) {
+    if (dir === home) continue;
+    // Do not enter another canonical repository through an independent nested Git boundary.
+    // Unmarked legacy installations retain their existing first-match behavior.
+    if (boundaryIndex >= 0 && index > boundaryIndex
+      && fs.existsSync(path.join(dir, ".acef", "CANONICAL_ROOT"))) return "";
+    if (matches(dir)) return dir;
+  }
+  return "";
+}
+
+function findActiveRoot(paths, includeProjectFallback = true) {
   const home = process.env.HOME ? path.resolve(process.env.HOME) : "";
   for (const candidate of paths.filter(Boolean)) {
-    for (const dirPath of ancestors(candidate)) {
-      if (home && path.resolve(dirPath) === home) continue;
-      if (hasLaneMarker(dirPath)) return dirPath;
-    }
+    const root = discoverRoot(candidate, home, hasLaneMarker);
+    if (root) return root;
   }
-
-  const projectDir = process.env.CLAUDE_PROJECT_DIR || process.env.CODEX_PROJECT_DIR || process.env.OPENCODE_PROJECT_DIR
-    ? resolvePath(process.env.CLAUDE_PROJECT_DIR || process.env.CODEX_PROJECT_DIR || process.env.OPENCODE_PROJECT_DIR)
-    : "";
-  if (projectDir && exists(path.join(projectDir, ".acef-bmad-hard-wall"))) {
-    return projectDir;
+  const projectDir = process.env.CLAUDE_PROJECT_DIR || process.env.CODEX_PROJECT_DIR || process.env.OPENCODE_PROJECT_DIR;
+  if (includeProjectFallback && projectDir) {
+    return discoverRoot(resolvePath(projectDir), home, (dir) => exists(path.join(dir, ".acef-bmad-hard-wall")));
   }
-
   return "";
 }
 
 function findInstalledRoot(paths) {
   const home = process.env.HOME ? path.resolve(process.env.HOME) : "";
+  const installed = (dir) => exists(path.join(dir, ".acef", "hooks", "acef-bmad-hard-wall.mjs"))
+    || exists(path.join(dir, ".acef", "bin", "acef-native-test"));
   for (const candidate of paths.filter(Boolean)) {
-    for (const dirPath of ancestors(candidate)) {
-      if (home && path.resolve(dirPath) === home) continue;
-      if (exists(path.join(dirPath, ".acef", "hooks", "acef-bmad-hard-wall.mjs"))
-        || exists(path.join(dirPath, ".acef", "bin", "acef-native-test"))) return dirPath;
-    }
+    const root = discoverRoot(candidate, home, installed);
+    if (root) return root;
   }
   return "";
 }
@@ -1215,7 +1251,16 @@ function p1ConformanceRestricted(repoRoot) {
     process.env.CODEX_PROJECT_DIR ? resolvePath(process.env.CODEX_PROJECT_DIR) : "",
     process.env.OPENCODE_PROJECT_DIR ? resolvePath(process.env.OPENCODE_PROJECT_DIR) : "",
   ];
-  const repoRoot = findActiveRoot(rootCandidates) || findInstalledRoot(rootCandidates);
+  // An explicit file inside an independent repository must not fall back to the caller's outer cwd.
+  const targetCandidates = [filePath, ...patchPaths].filter(Boolean)
+    .filter((candidate) => ancestors(candidate).some((dir) => exists(path.join(dir, ".git"))));
+  const candidates = targetCandidates.length ? targetCandidates : rootCandidates;
+  let repoRoot;
+  try { repoRoot = findActiveRoot(candidates, !targetCandidates.length) || findInstalledRoot(candidates); }
+  catch (error) {
+    deny(error.message);
+    return;
+  }
 
   if (!repoRoot) {
     allow();

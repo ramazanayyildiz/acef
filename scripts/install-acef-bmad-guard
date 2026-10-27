@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 const fs = require("node:fs");
 const path = require("node:path");
-const { writeInstallationManifest } = require("./lib/acef-installation");
+const { createOwnedFileWriter, writeInstallationManifest } = require("./lib/acef-installation");
 
 const repoRoot = path.resolve(__dirname, "..");
 const sourceHook = path.join(repoRoot, "claude-plugins", "acef-bmad-guard", "hooks", "acef-bmad-hard-wall.mjs");
@@ -80,14 +80,16 @@ function copyFile(source, target) {
   fs.copyFileSync(source, target);
 }
 
-function installLocal(targetRepo) {
-  const localHook = path.join(targetRepo, ".acef", "hooks", "acef-bmad-hard-wall.mjs");
-  const localOpenCodePlugin = path.join(targetRepo, ".opencode", "plugins", "acef-bmad-hard-wall.js");
-  copyFile(sourceHook, localHook);
-  copyFile(sourceOpenCodePlugin, localOpenCodePlugin);
-  console.log(`Installed local ACEF guard engine: ${localHook}`);
-  console.log(`Installed local OpenCode plugin: ${localOpenCodePlugin}`);
-  installGitPrecommitGate(targetRepo);
+// Repo-local guard files go through the owned-file writer: a host-modified copy is kept and reported.
+function installLocal(targetRepo, writer) {
+  const owned = (source) => path.relative(repoRoot, source).split(path.sep).join("/");
+  const localHook = ".acef/hooks/acef-bmad-hard-wall.mjs";
+  const localOpenCodePlugin = ".opencode/plugins/acef-bmad-hard-wall.js";
+  writer.write(localHook, fs.readFileSync(sourceHook), { sourceRel: owned(sourceHook) });
+  writer.write(localOpenCodePlugin, fs.readFileSync(sourceOpenCodePlugin), { sourceRel: owned(sourceOpenCodePlugin) });
+  console.log(`Installed local ACEF guard engine: ${path.join(targetRepo, localHook)}`);
+  console.log(`Installed local OpenCode plugin: ${path.join(targetRepo, localOpenCodePlugin)}`);
+  installGitPrecommitGate(targetRepo, writer, owned(sourcePrecommitGate));
 }
 
 // Install a git pre-commit hook that runs the ACEF lean-evidence check before
@@ -96,13 +98,12 @@ function installLocal(targetRepo) {
 //
 // If .git/hooks/pre-commit already exists and does not yet reference the gate,
 // a one-line call is appended so we compose rather than clobber.
-function installGitPrecommitGate(targetRepo) {
+function installGitPrecommitGate(targetRepo, writer, sourceRel) {
   // The gate script itself goes into .acef/hooks/ (alongside the bmad wall)
   // so it stays out of .git/ (which is not committed).  The git hook only
   // needs to call it.
   const gateTarget = path.join(targetRepo, ".acef", "hooks", "acef-precommit-gate.sh");
-  copyFile(sourcePrecommitGate, gateTarget);
-  fs.chmodSync(gateTarget, 0o755);
+  writer.write(".acef/hooks/acef-precommit-gate.sh", fs.readFileSync(sourcePrecommitGate), { mode: 0o755, sourceRel });
   console.log(`Installed ACEF pre-commit gate: ${gateTarget}`);
 
   const gitHooksDir = path.join(targetRepo, ".git", "hooks");
@@ -211,11 +212,14 @@ assertFile(sourceOpenCodePlugin);
 assertFile(sourcePrecommitGate);
 
 const opts = parseArgs(process.argv.slice(2));
-installLocal(opts.repo);
+const writer = createOwnedFileWriter(opts.repo, repoRoot, "bmadGuard");
+installLocal(opts.repo, writer);
+const { files } = writer.finish("install-acef-bmad-guard");
 console.log(`Updated ACEF installation manifest: ${writeInstallationManifest(opts.repo, repoRoot, "bmadGuard", {
   localHook: true,
   localOpenCodePlugin: true,
   globalDispatcher: opts.globalDispatcher,
+  files,
 })}`);
 if (opts.globalDispatcher) {
   installGlobalDispatchers();

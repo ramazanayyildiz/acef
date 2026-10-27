@@ -226,7 +226,248 @@ function writeInstallationManifest(targetRepo, sourceRoot, componentName, compon
   return filePath;
 }
 
+// ---------------------------------------------------------------- host-modified file preservation
+// Owner decision 2026-10-27: an update replaces an ACEF-installed file only when the host copy still equals what ACEF
+// installed last time. Otherwise the host copy is kept and reported ("kept host-modified <path>"). The installer records
+// the sha256 of every file it wrote under components.<name>.files (the Slice kit has done this since 2026-10-20).
+// Installs recorded before that have no hashes: the baseline is then the file's bytes at the recorded install commit,
+// read with `git show` from the recorded ACEF checkout or this one. Without any baseline the host copy is kept.
+
+const sha256 = (buffer) => crypto.createHash("sha256").update(buffer).digest("hex");
+
+function gitShowBytes(repoRoot, commit, relativePath) {
+  try {
+    return cp.execFileSync("git", ["show", `${commit}:${relativePath}`], {
+      cwd: repoRoot,
+      stdio: ["ignore", "pipe", "ignore"],
+      maxBuffer: 64 * 1024 * 1024,
+    });
+  } catch {
+    return null;
+  }
+}
+
+function gitHasCommit(repoRoot, commit) {
+  return runGit(repoRoot, ["cat-file", "-e", `${commit}^{commit}`]) !== null;
+}
+
+/**
+ * Returns a writer for one installer component.
+ *   write(relTarget, content, { mode, sourceRel, generated }) -> "written" | "unchanged" | "kept"
+ *     sourceRel: the ACEF source path the content came from (legacy baseline lookup);
+ *     generated: true when the installer generates the content (no source file to compare with in a legacy install).
+ *   removeStale(prefix, keepRelPaths): deletes recorded files under prefix that ACEF no longer ships, when unmodified.
+ *   finish() prints the kept lines and returns { files, kept }.
+ */
+function createOwnedFileWriter(targetRepo, sourceRoot, componentName) {
+  const manifest = readInstallationManifest(targetRepo) || {};
+  const previous = manifest.components?.[componentName] || {};
+  const recordedHashes = previous.files && typeof previous.files === "object" ? previous.files : null;
+  const legacyCommit = previous.sourceCommit || manifest.acefVersion?.sourceCommit || null;
+  const candidates = [...new Set([process.env.ACEF_PREVIOUS_SOURCE_PATH, manifest.acefVersion?.sourcePath,
+    readLocalMetadata(targetRepo)?.sourcePath, sourceRoot]
+    .filter((entry) => typeof entry === "string" && entry && fs.existsSync(entry)))];
+  let legacyRepo;
+  const baselineRepo = () => {
+    if (legacyRepo === undefined) legacyRepo = legacyCommit ? candidates.find((root) => gitHasCommit(root, legacyCommit)) || null : null;
+    return legacyRepo;
+  };
+  const files = {};
+  const kept = [];
+
+  // The hash the host copy must equal to count as unmodified, or a reason why there is none.
+  function baseline(relTarget, opts) {
+    if (recordedHashes) {
+      return recordedHashes[relTarget] ? { hash: recordedHashes[relTarget] } : { reason: "not installed by ACEF before" };
+    }
+    if (opts.generated) return { reason: "differs from the ACEF-generated copy and no install hash is recorded" };
+    if (!legacyCommit) return { reason: "no recorded install hash or commit" };
+    const root = baselineRepo();
+    if (!root) return { reason: `install commit ${legacyCommit.slice(0, 12)} not available` };
+    const bytes = opts.sourceRel ? gitShowBytes(root, legacyCommit, opts.sourceRel) : null;
+    return bytes ? { hash: sha256(bytes) } : { reason: `not in ACEF at ${legacyCommit.slice(0, 12)}` };
+  }
+
+  function write(relTarget, content, opts = {}) {
+    const rel = relTarget.split(path.sep).join("/");
+    const buffer = Buffer.isBuffer(content) ? content : Buffer.from(content);
+    const next = sha256(buffer);
+    const target = path.join(targetRepo, rel);
+    if (fs.existsSync(target)) {
+      const current = sha256(fs.readFileSync(target));
+      if (current === next) {
+        if (opts.mode) fs.chmodSync(target, opts.mode);
+        files[rel] = next;
+        return "unchanged";
+      }
+      const base = baseline(rel, opts);
+      if (base.hash !== current) {
+        kept.push({ path: rel, reason: base.hash ? "host-modified" : base.reason });
+        // Record only a hash ACEF really installed, so the next update still sees the host edit.
+        if (base.hash) files[rel] = base.hash;
+        return "kept";
+      }
+    }
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    fs.writeFileSync(target, buffer);
+    if (opts.mode) fs.chmodSync(target, opts.mode);
+    files[rel] = next;
+    return "written";
+  }
+
+  // Removes a file ACEF installed earlier and no longer ships, only when the host copy is still ACEF's; otherwise it is
+  // kept and reported like any other host-modified file.
+  function removeOwned(relTarget, opts = {}) {
+    const rel = relTarget.split(path.sep).join("/");
+    const target = path.join(targetRepo, rel);
+    if (!fs.existsSync(target)) return "absent";
+    const base = baseline(rel, opts);
+    if (base.hash && sha256(fs.readFileSync(target)) === base.hash) {
+      fs.rmSync(target);
+      return "removed";
+    }
+    kept.push({ path: rel, reason: base.hash ? "host-modified, no longer shipped by ACEF" : `no longer shipped by ACEF; ${base.reason}` });
+    if (base.hash) files[rel] = base.hash;
+    return "kept";
+  }
+
+  function removeStale(prefix, keepRelPaths) {
+    if (!recordedHashes) return;
+    const keep = new Set(keepRelPaths);
+    for (const rel of Object.keys(recordedHashes)) {
+      if (rel.startsWith(prefix) && !keep.has(rel)) removeOwned(rel);
+    }
+  }
+
+  function finish(label = componentName) {
+    for (const item of kept) {
+      console.log(item.reason.startsWith("host-modified")
+        ? `kept host-modified ${item.path}${item.reason === "host-modified" ? "" : ` (${item.reason.slice("host-modified, ".length)})`}`
+        : `kept host copy ${item.path} (${item.reason}; compare with ACEF by hand)`);
+    }
+    if (kept.length) console.log(`${label}: kept ${kept.length} host file(s); the ACEF version was not written for them`);
+    const sorted = Object.fromEntries(Object.entries(files).sort(([a], [b]) => a.localeCompare(b)));
+    return { files: sorted, kept };
+  }
+
+  return { targetRepo, write, removeOwned, removeStale, finish };
+}
+
+function isPlainObject(value) {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+const sameJson = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+
+// Three-way merge of host JSON configuration against the ACEF copy it was installed from (baseline) and the ACEF copy
+// now shipped (source). A key the host lacks is added. A leaf (scalar or array) equal to the baseline is untouched by
+// the host and takes the new ACEF value; a leaf that differs from the baseline is a host override and stays. Without a
+// baseline every existing value counts as a host value. Keys only the host has are kept.
+function mergeHostConfig(host, source, baseline = null, prefix = "", report = { added: [], upgraded: [], overrides: [] }) {
+  const result = { ...host };
+  for (const [key, value] of Object.entries(source)) {
+    const keyPath = prefix ? `${prefix}.${key}` : key;
+    const base = isPlainObject(baseline) && key in baseline ? baseline[key] : undefined;
+    if (!(key in host)) {
+      result[key] = value;
+      report.added.push(keyPath);
+    } else if (isPlainObject(host[key]) && isPlainObject(value)) {
+      result[key] = mergeHostConfig(host[key], value, isPlainObject(base) ? base : null, keyPath, report).result;
+    } else if (!sameJson(host[key], value)) {
+      if (baseline && base !== undefined && sameJson(host[key], base)) {
+        result[key] = value;
+        report.upgraded.push(keyPath);
+      } else {
+        report.overrides.push(keyPath);
+      }
+    }
+  }
+  return { result, report };
+}
+
+// Kept for callers that only add missing keys (no baseline).
+function mergeMissingKeys(host, source) {
+  return mergeHostConfig(host, source, null).result;
+}
+
+/**
+ * Host-local JSON configuration (for example .acef/model-routing-policy.json): written when missing; otherwise merged
+ * three-way (see mergeHostConfig) so host overrides survive, untouched ACEF values follow ACEF, and new keys are added.
+ * baseline is the ACEF copy the host file was installed from, or null when it is unknown. validate(record) must throw
+ * for an unusable result; the host file is then left untouched and reported.
+ */
+function mergeHostJson(targetRepo, relTarget, sourceBytes, validate = null, baseline = null) {
+  const target = path.join(targetRepo, relTarget);
+  const empty = { added: [], upgraded: [], overrides: [] };
+  if (!fs.existsSync(target)) {
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    fs.writeFileSync(target, sourceBytes);
+    return { status: "written", ...empty };
+  }
+  let host;
+  try {
+    host = JSON.parse(fs.readFileSync(target, "utf8"));
+  } catch (error) {
+    console.log(`kept host-modified ${relTarget} (not valid JSON, not merged: ${error.message})`);
+    return { status: "kept", ...empty };
+  }
+  const source = JSON.parse(Buffer.isBuffer(sourceBytes) ? sourceBytes.toString("utf8") : sourceBytes);
+  if (!isPlainObject(host) || !isPlainObject(source)) {
+    console.log(`kept host-modified ${relTarget} (not a JSON object, not merged)`);
+    return { status: "kept", ...empty };
+  }
+  const { result: merged, report } = mergeHostConfig(host, source, isPlainObject(baseline) ? baseline : null);
+  if (validate) {
+    try {
+      validate(merged);
+    } catch (error) {
+      console.log(`kept host-modified ${relTarget} (merged copy invalid, host file left as it is: ${error.message})`);
+      return { status: "kept", ...empty };
+    }
+  }
+  const basis = baseline ? "against the ACEF copy it was installed from" : "no ACEF baseline, every existing value counts as host";
+  if (report.overrides.length) console.log(`kept host overrides ${relTarget}: ${report.overrides.join(", ")}`);
+  if (report.upgraded.length) console.log(`upgraded untouched ACEF values ${relTarget}: ${report.upgraded.join(", ")}`);
+  if (report.added.length) console.log(`added new keys ${relTarget}: ${report.added.join(", ")}`);
+  if (!report.added.length && !report.upgraded.length) {
+    console.log(`kept host values ${relTarget} (nothing to upgrade or add; ${basis})`);
+    return { status: "unchanged", ...report };
+  }
+  fs.writeFileSync(target, `${JSON.stringify(merged, null, 2)}\n`);
+  console.log(`merged ${relTarget} (${basis}): ${report.overrides.length} host override(s) kept, ${report.upgraded.length} untouched value(s) upgraded, ${report.added.length} new key(s) added`);
+  return { status: "merged", ...report };
+}
+
+// The ACEF policy a host file was installed from, when that install came from this ACEF line of history. An install
+// from a commit outside it (a host fork) has no baseline: its values are the host's choices and are all kept.
+function installedSourceBaseline(targetRepo, sourceRoot, componentName, sourceRel) {
+  const manifest = readCommittedManifest(targetRepo) || {};
+  const commit = manifest.components?.[componentName]?.sourceCommit || manifest.acefVersion?.sourceCommit;
+  if (!commit || !gitHasCommit(sourceRoot, commit)) return null;
+  if (runGit(sourceRoot, ["merge-base", "--is-ancestor", commit, "HEAD"]) === null) return null;
+  const bytes = gitShowBytes(sourceRoot, commit, sourceRel);
+  if (!bytes) return null;
+  try {
+    return JSON.parse(bytes.toString("utf8"));
+  } catch {
+    return null;
+  }
+}
+
+// Portable declaration: the owning Git root is discovered, never stored as an absolute path.
+function writeCanonicalRootMarker(targetRepo) {
+  const filePath = path.join(targetRepo, ".acef", "CANONICAL_ROOT");
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  fs.writeFileSync(filePath, `${JSON.stringify({ schema: "acef.canonical-root.v1" })}\n`);
+  return filePath;
+}
+
 module.exports = {
+  createOwnedFileWriter,
+  installedSourceBaseline,
+  mergeHostConfig,
+  mergeHostJson,
+  mergeMissingKeys,
   localMetadataPath,
   readCommittedManifest,
   readLocalMetadata,
@@ -239,4 +480,5 @@ module.exports = {
   sourceRuntimeDigest,
   sourceInfo,
   writeInstallationManifest,
+  writeCanonicalRootMarker,
 };

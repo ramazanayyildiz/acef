@@ -1,0 +1,56 @@
+{
+  "capabilityId": "running-product-review",
+  "requestedIntent": "Opt-in Standard + Guarded runs may PASS only after an independent reviewer exercised the running product with hash-bound browser evidence bound to the current scoped application tree.",
+  "status": "enforced",
+  "requiredLayers": [
+    "docs",
+    "validator",
+    "tests",
+    "installer"
+  ],
+  "implementedLayers": {
+    "docs": [
+      "method/RUNNING_PRODUCT_REVIEW.md"
+    ],
+    "validator": [
+      "scripts/lib/acef-product-review.js",
+      "scripts/acef-process-validator#checkLightweightLifecycle",
+      "scripts/acef-process-validator#validateTerminalCandidate",
+      "scripts/lib/acef-state-parser.js",
+      "scripts/lib/acef-objective-supervisor.js",
+      "scripts/lib/acef-scoped-tree.js",
+      "scripts/acef-lightweight-surface-evidence"
+    ],
+    "tests": [
+      "scripts/test-acef-product-review",
+      "scripts/test-acef-product-review-accounting",
+      "scripts/test-acef-lightweight-surface-evidence"
+    ],
+    "installer": [
+      "scripts/install-acef-tools"
+    ]
+  },
+  "limitations": [
+    "Opt-in Standard + Guarded only; no global hook interception or automatic executor added.",
+    "Synthetic regression fixtures establish validator behavior, not product quality.",
+    "Hashed local evidence and actor identity bind recorded review but cannot independently prove a browser visit or the honesty of an observation.",
+    "Any loopback origin passes unless the run, the active run or the host-owned .acef/product-review-policy.json pins one.",
+    "The tenancy check is mandatory; a host without tenants or accounts records how isolation was exercised or does not opt in.",
+    "objective-control-budget authority file/hash binds a recorded decision, not proof of human authorization."
+  ],
+  "evidence": [
+    {
+      "layer": "tests",
+      "ref": "scripts/test-acef-product-review",
+      "note": "Synthetic regression: independence, tree freshness incl. globstar, browser artifacts, origin pinning, reuse audit, lifecycle integration."
+    },
+    {
+      "layer": "tests",
+      "ref": "scripts/test-acef-product-review-accounting",
+      "note": "Synthetic accounting and control-budget regression."
+    }
+  ],
+  "createdAt": "2026-10-06",
+  "updatedAt": "2026-10-27",
+  "provenance": "Ported 2026-10-27 from a host fork (commits 6dcda63, d97a3ec, e006745, 5aaf9d7, 200259d) into upstream; neutral origin handling added."
+}

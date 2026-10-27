@@ -1,7 +1,15 @@
 #!/usr/bin/env node
 const fs = require("node:fs");
 const path = require("node:path");
-const { installedRuntimeDigest, sourceRuntimeDigest, writeInstallationManifest } = require("./lib/acef-installation");
+const {
+  createOwnedFileWriter,
+  installedRuntimeDigest,
+  installedSourceBaseline,
+  mergeHostJson,
+  sourceRuntimeDigest,
+  writeInstallationManifest,
+} = require("./lib/acef-installation");
+const { validateModelRoutingPolicy } = require("./lib/acef-model-routing");
 
 const repoRoot = path.resolve(__dirname, "..");
 const tools = [
@@ -59,141 +67,93 @@ function parseArgs(argv) {
   return opts;
 }
 
-function copyTool(name, targetRepo) {
+// Every write goes through the owned-file writer: a host-modified copy is kept and reported, never overwritten.
+function rel(...parts) {
+  return path.join(...parts).split(path.sep).join("/");
+}
+
+function copyTool(name, writer) {
   const source = path.join(repoRoot, "scripts", name);
-  const target = path.join(targetRepo, ".acef", "bin", name);
-  const targetCjs = `${target}.cjs`;
+  const target = rel(".acef", "bin", name);
   if (!fs.existsSync(source)) throw new Error(`Tool source not found: ${source}`);
-  fs.mkdirSync(path.dirname(target), { recursive: true });
-  if (fs.readFileSync(source, "utf8").startsWith("#!/usr/bin/env python3")) {
+  const content = fs.readFileSync(source);
+  if (content.toString("utf8").startsWith("#!/usr/bin/env python3")) {
     // Python tools (acef-note, acef-version-check) are copied as they are; there is no Node wrapper.
-    fs.rmSync(targetCjs, { force: true });
-    fs.copyFileSync(source, target);
-    fs.chmodSync(target, 0o755);
+    // Older installs wrapped every tool in node; that .cjs is removed only when it is still ACEF's copy.
+    writer.removeOwned(`${target}.cjs`, { sourceRel: rel("scripts", name) });
+    writer.write(target, content, { mode: 0o755, sourceRel: rel("scripts", name) });
     return target;
   }
-  fs.copyFileSync(source, targetCjs);
-  fs.writeFileSync(target, `#!/usr/bin/env sh\nexec node "$(dirname "$0")/${name}.cjs" "$@"\n`);
-  fs.chmodSync(target, 0o755);
-  fs.chmodSync(targetCjs, 0o755);
+  writer.write(`${target}.cjs`, content, { mode: 0o755, sourceRel: rel("scripts", name) });
+  writer.write(target, `#!/usr/bin/env sh\nexec node "$(dirname "$0")/${name}.cjs" "$@"\n`, { mode: 0o755, generated: true });
   return target;
 }
 
-function copySupportLibraries(targetRepo) {
-  const sourceDir = path.join(repoRoot, "scripts", "lib");
-  const targetDir = path.join(targetRepo, ".acef", "bin", "lib");
-  if (!fs.existsSync(sourceDir)) return [];
-  fs.mkdirSync(targetDir, { recursive: true });
+function copyDirectoryFiles(sourceDir, targetDir, writer) {
+  const absolute = path.join(repoRoot, sourceDir);
+  if (!fs.existsSync(absolute)) return [];
   const copied = [];
-  for (const entry of fs.readdirSync(sourceDir).sort((a, b) => a.localeCompare(b))) {
-    const source = path.join(sourceDir, entry);
+  for (const entry of fs.readdirSync(absolute).sort((a, b) => a.localeCompare(b))) {
+    const source = path.join(absolute, entry);
     if (!fs.statSync(source).isFile()) continue;
-    const target = path.join(targetDir, entry);
-    fs.copyFileSync(source, target);
+    const target = rel(targetDir, entry);
+    writer.write(target, fs.readFileSync(source), { sourceRel: rel(sourceDir, entry) });
     copied.push(target);
   }
   return copied;
 }
 
-function writeRuntimePackage(targetRepo) {
-  const targetDir = path.join(targetRepo, ".acef", "bin");
-  fs.mkdirSync(targetDir, { recursive: true });
-  const target = path.join(targetDir, "package.json");
-  fs.writeFileSync(target, `${JSON.stringify({ private: true, type: "commonjs" }, null, 2)}\n`);
+function writeRuntimePackage(writer) {
+  const target = rel(".acef", "bin", "package.json");
+  writer.write(target, `${JSON.stringify({ private: true, type: "commonjs" }, null, 2)}\n`, { generated: true });
   return target;
 }
 
-function copySchemas(targetRepo) {
-  const sourceDir = path.join(repoRoot, "schemas");
-  const targetDir = path.join(targetRepo, ".acef", "schemas");
-  if (!fs.existsSync(sourceDir)) return [];
-  fs.mkdirSync(targetDir, { recursive: true });
-  const copied = [];
-  for (const entry of fs.readdirSync(sourceDir).sort((a, b) => a.localeCompare(b))) {
-    const source = path.join(sourceDir, entry);
-    if (!fs.statSync(source).isFile()) continue;
-    const target = path.join(targetDir, entry);
-    fs.copyFileSync(source, target);
-    copied.push(target);
-  }
-  return copied;
-}
-
-function copyControlDosing(targetRepo) {
-  const source = path.join(repoRoot, "method", "control-dosing.json");
+function copySingle(sourceRel, targetRel, writer) {
+  const source = path.join(repoRoot, sourceRel);
   if (!fs.existsSync(source)) return "";
-  const target = path.join(targetRepo, ".acef", "control-dosing.json");
-  fs.mkdirSync(path.dirname(target), { recursive: true });
-  fs.copyFileSync(source, target);
-  return target;
+  writer.write(targetRel, fs.readFileSync(source), { sourceRel });
+  return targetRel;
 }
 
-function copyModelRoutingPolicy(targetRepo) {
+// Host-local model choices survive an update: values the host changed stay, values still equal to the ACEF copy they
+// were installed from follow the new ACEF copy, and new keys are added.
+function mergeModelRoutingPolicy(targetRepo) {
   const source = path.join(repoRoot, "method", "model-routing-policy-v1.json");
   if (!fs.existsSync(source)) return "";
-  const target = path.join(targetRepo, ".acef", "model-routing-policy.json");
-  fs.mkdirSync(path.dirname(target), { recursive: true });
-  fs.copyFileSync(source, target);
+  const target = rel(".acef", "model-routing-policy.json");
+  const baseline = installedSourceBaseline(targetRepo, repoRoot, "tools", rel("method", "model-routing-policy-v1.json"));
+  mergeHostJson(targetRepo, target, fs.readFileSync(source), validateModelRoutingPolicy, baseline);
   return target;
-}
-
-function copyExperimentFixtures(targetRepo) {
-  const sourceDir = path.join(repoRoot, "docs", "experiments", "context-retrieval", "tasks");
-  const targetDir = path.join(targetRepo, ".acef", "context-retrieval", "tasks");
-  if (!fs.existsSync(sourceDir)) return [];
-  fs.mkdirSync(targetDir, { recursive: true });
-  const copied = [];
-  for (const entry of fs.readdirSync(sourceDir).sort((a, b) => a.localeCompare(b))) {
-    const source = path.join(sourceDir, entry);
-    if (!fs.statSync(source).isFile()) continue;
-    const target = path.join(targetDir, entry);
-    fs.copyFileSync(source, target);
-    copied.push(target);
-  }
-  return copied;
-}
-
-function copyWorkflows(targetRepo) {
-  const sourceDir = path.join(repoRoot, "workflows");
-  const targetDir = path.join(targetRepo, ".acef", "workflows");
-  if (!fs.existsSync(sourceDir)) return [];
-  fs.mkdirSync(targetDir, { recursive: true });
-  const copied = [];
-  for (const entry of fs.readdirSync(sourceDir).sort((a, b) => a.localeCompare(b))) {
-    const source = path.join(sourceDir, entry);
-    if (!fs.statSync(source).isFile()) continue;
-    const target = path.join(targetDir, entry);
-    fs.copyFileSync(source, target);
-    copied.push(target);
-  }
-  return copied;
 }
 
 const opts = parseArgs(process.argv.slice(2));
-console.log(`Installed ACEF runtime package boundary: ${writeRuntimePackage(opts.repo)}`);
+const writer = createOwnedFileWriter(opts.repo, repoRoot, "tools");
+console.log(`Installed ACEF runtime package boundary: ${writeRuntimePackage(writer)}`);
 for (const tool of tools) {
-  console.log(`Installed ${tool}: ${copyTool(tool, opts.repo)}`);
+  console.log(`Installed ${tool}: ${copyTool(tool, writer)}`);
 }
-for (const library of copySupportLibraries(opts.repo)) {
+for (const library of copyDirectoryFiles(rel("scripts", "lib"), rel(".acef", "bin", "lib"), writer)) {
   console.log(`Installed support library: ${library}`);
 }
-for (const schema of copySchemas(opts.repo)) {
+for (const schema of copyDirectoryFiles("schemas", rel(".acef", "schemas"), writer)) {
   console.log(`Installed schema: ${schema}`);
 }
-const controlDosing = copyControlDosing(opts.repo);
+const controlDosing = copySingle(rel("method", "control-dosing.json"), rel(".acef", "control-dosing.json"), writer);
 if (controlDosing) {
   console.log(`Installed control dosing manifest: ${controlDosing}`);
 }
-const modelRoutingPolicy = copyModelRoutingPolicy(opts.repo);
+const modelRoutingPolicy = mergeModelRoutingPolicy(opts.repo);
 if (modelRoutingPolicy) {
   console.log(`Installed model routing policy: ${modelRoutingPolicy}`);
 }
-for (const fixture of copyExperimentFixtures(opts.repo)) {
+for (const fixture of copyDirectoryFiles(rel("docs", "experiments", "context-retrieval", "tasks"), rel(".acef", "context-retrieval", "tasks"), writer)) {
   console.log(`Installed context experiment fixture: ${fixture}`);
 }
-for (const workflow of copyWorkflows(opts.repo)) {
+for (const workflow of copyDirectoryFiles("workflows", rel(".acef", "workflows"), writer)) {
   console.log(`Installed workflow: ${workflow}`);
 }
+const { files: ownedFiles } = writer.finish("install-acef-tools");
 console.log(`Updated ACEF installation manifest: ${writeInstallationManifest(opts.repo, repoRoot, "tools", {
   tools,
   schemas: fs.existsSync(path.join(repoRoot, "schemas")),
@@ -211,4 +171,5 @@ console.log(`Updated ACEF installation manifest: ${writeInstallationManifest(opt
   freshnessContract: "worktree-handshake-v1",
   sourceRuntimeDigest: sourceRuntimeDigest(repoRoot),
   installedRuntimeDigest: installedRuntimeDigest(opts.repo),
+  files: ownedFiles,
 })}`);

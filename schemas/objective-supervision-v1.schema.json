@@ -40,6 +40,7 @@
         "properties": {
           "runId": { "type": "string", "pattern": "^[A-Za-z0-9._-]+$" },
           "openedAt": { "type": "string", "format": "date-time" },
+          "productReviewContract": { "const": "running-product-review-v1" },
           "terminalDisposition": { "enum": ["PASS", "FAIL", "REPLAN", "BLOCKED"] },
           "outcomeDisposition": { "enum": ["resolved", "superseded"] },
           "outcomeReason": { "type": "string", "minLength": 1 },
@@ -57,6 +58,24 @@
               "physicalEvidenceId": { "type": "string", "pattern": "^[A-Za-z0-9._-]+$" },
               "gatePath": { "type": "string", "pattern": "^docs/ai/gates/[^/]+\\.json$" },
               "applicationTree": { "type": "string", "minLength": 1 },
+              "productReviewSnapshot": {
+                "type": "object", "additionalProperties": false,
+                "required": ["runId", "workflowId", "assuranceProfile", "status", "implementationActorId", "reviewActorId", "productReviewContract", "productReview"],
+                "properties": {
+                  "runId": { "type": "string", "minLength": 1 },
+                  "workflowId": { "const": "lightweight" },
+                  "assuranceProfile": { "const": "guarded" },
+                  "status": { "const": "complete" },
+                  "implementationActorId": { "type": "string", "minLength": 1 },
+                  "reviewActorId": { "type": "string", "minLength": 1 },
+                  "productReviewContract": { "const": "running-product-review-v1" },
+                  "productReview": {
+                    "type": "object", "additionalProperties": false,
+                    "required": ["reportPath", "sha256"],
+                    "properties": { "reportPath": { "type": "string", "minLength": 1 }, "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" } }
+                  }
+                }
+              },
               "artifactHashes": { "type": "object", "minProperties": 1, "additionalProperties": { "type": "string", "pattern": "^[a-f0-9]{64}$" } },
               "validatedAt": { "type": "string", "format": "date-time" }
             }
@@ -76,6 +95,78 @@
         "consecutiveReplans": { "type": "integer", "minimum": 0 },
         "consecutiveReviewCycles": { "type": "integer", "minimum": 0 },
         "successfulCompletionCount": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "controlBudgetDecisions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "decisionId",
+          "eligibleRunId",
+          "terminalRunId",
+          "authorityRef",
+          "authoritySha256",
+          "reason",
+          "issuedAt",
+          "expiresAt",
+          "observedActiveControlSeconds",
+          "additionalSeconds",
+          "terminalGatePath",
+          "terminalGateSha256"
+        ],
+        "properties": {
+          "decisionId": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9._-]+$"
+          },
+          "eligibleRunId": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9._-]+$"
+          },
+          "terminalRunId": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9._-]+$"
+          },
+          "authoritySha256": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "terminalGateSha256": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "issuedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "authorityRef": {
+            "type": "string",
+            "pattern": "^docs/ai/.+\\.md$"
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 20
+          },
+          "observedActiveControlSeconds": {
+            "type": "integer",
+            "minimum": 1800
+          },
+          "additionalSeconds": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 3600
+          },
+          "terminalGatePath": {
+            "type": "string",
+            "pattern": "^docs/ai/gates/.+\\.json$"
+          }
+        }
       }
     },
     "replanEvents": {
