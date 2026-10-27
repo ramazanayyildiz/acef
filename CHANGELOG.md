@@ -7,7 +7,7 @@ proven, or installed.
 Update this file in the same PR whenever ACEF itself gains or changes a flow, gate, validator, hook, skill, installer behavior, workflow,
 or evidence contract. Do not use it to claim implementation status; link to the capability record for that.
 
-## Unreleased — Daily session review: stage 1 ready for the daily run (2026-10-27)
+## v3.0.0-beta.9 — Daily session review: stage 1 ready for the daily run (2026-10-27)
 
 Why: Ram approved the daily review after the pilot (2026-10-27). It runs every day at 09:00 as a Codex automation:
 stage 1 is `scripts/acef-daily-extract`, stage 2 is Codex on gpt-6.1-sol, medium effort, with a prompt the coordinator
@@ -156,7 +156,7 @@ landed in; Manager-driven Codex panes counted as 99 owner hours; machine inciden
   known token prefix, JWT, secret-context value, URL credential or `-p` database password; 24 of 4,641 digest lines
   carry a redaction marker.
 
-## Unreleased — Daily session review: stage-1 extractor (pilot) (2026-10-27)
+## v3.0.0-beta.9 — Daily session review: stage-1 extractor (pilot) (2026-10-27)
 
 Why: the weekly retro (`method/WEEKLY_RETRO.md`) counts records but does not read what happened in the agent
 sessions. Ram asked on 2026-10-27 for a daily review that does: what finished, what dragged on, where agents got stuck,
@@ -188,7 +188,7 @@ for the pilot; the owner reviews the pilot before anything is scheduled.
   (wired).
 - Not changed: rules, the weekly retro, `acef-note`. The daily review reports and carries repeats to the weekly retro;
   it never changes rules.
-## Unreleased — Per-role models in the routing policy: Opus review on anthropic (2026-10-27)
+## v3.0.0-beta.9 — Per-role models in the routing policy: Opus review on anthropic (2026-10-27)
 
 Why: the routing policy mapped each role to one of three execution classes, and Development shared
 `semantic-critical` with Patch Assurance and both Judges. On anthropic a host could not run Development on Sonnet and
