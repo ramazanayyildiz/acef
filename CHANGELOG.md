@@ -27,6 +27,10 @@ for the pilot; the owner reviews the pilot before anything is scheduled.
   tokens, passwords, connection strings, emails) before it is written; account ids are never read. Files that cannot be
   read are listed as UNREADABLE with the reason. Digests are trimmed to a token budget (default 40k) with the weakest
   sections cut first and a "Trimmed" line saying what was cut.
+- **After the pilot's stage 2** (same day): Codex compactions counted once (the `compacted` record, not also the
+  `ContextCompaction` item: gtz showed 68 for 34); Codex review launches from Claude sessions without a verdict in the
+  output are counted apart instead of as "no verdict" reviews (119 of 127 in one project); review chains per slice id
+  (first id in the Codex prompt) so rounds per slice show directly.
 - **Test** `scripts/test-acef-daily-extract` builds a synthetic fixture (no real transcript text) and checks 21 points.
 - **Pilot numbers** (last 24 h on 2026-10-27): 537 files, 3.6 GB, 529 sessions in the window, about 10–14 s wall time,
   0 unreadable, digests 0.4k–20k tokens per project. Capability record: `docs/ai/capabilities/daily-session-review.json`
