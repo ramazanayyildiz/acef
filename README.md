@@ -229,6 +229,9 @@ files the agent follows. No build, no npm, no services.
    ```
    This writes the full guard engine to `/path/to/your/repo/.acef/hooks/acef-bmad-hard-wall.mjs` and installs a
    repo-local OpenCode plugin at `/path/to/your/repo/.opencode/plugins/acef-bmad-hard-wall.js`.
+   Updates keep the guard only for profile `full`. A record without a profile that lists the guard while any guard
+   file is missing is updated as `core`: the guard is not reinstalled, `bmadGuard` leaves the record and a warning is
+   printed. Pass `--profile full` to `update-acef-installation` to bring it back.
    For Claude Code and Codex, which need a user-level hook entry, install the tiny dispatcher once per machine:
    ```bash
    scripts/install-acef-bmad-guard --repo /path/to/your/repo --global-dispatcher

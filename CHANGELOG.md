@@ -82,6 +82,32 @@ approved this change).
 - **Review r4 fix (Codex, one P2):** any failure to decode or validate the index file (also `RecursionError` on
   deeply nested corrupt JSON) starts an empty index instead of aborting the poll. `scripts/test-acef-detect` 195 checks (+1).
 
+## Unreleased — Updates never reinstall a BMAD guard the host removed (2026-10-27)
+
+Why: `update-acef-installation` treated a record without `profile` as `full` and reinstalled the BMAD guard
+(`.acef/hooks/acef-bmad-hard-wall.mjs`, `.acef/hooks/acef-precommit-gate.sh`, `.opencode/plugins/acef-bmad-hard-wall.js`)
+on hosts that had removed it on purpose but still listed `components.bmadGuard`. JakoMeet removed the gate and the
+hard-wall hook in 1938d2446 (the gate refused every commit); its ACEF update put both back and `.git/hooks/pre-commit`
+called the gate again. pilaner had the same problem and was fixed by hand with `--profile core`. Owner decision
+2026-10-27 (Ram).
+- **Profile choice** (`chooseUpdateProfile` in `scripts/lib/acef-installation.js`, used only by
+  `scripts/update-acef-installation`): an explicit `--profile` wins; else the recorded profile is reused; else, when the
+  record lists `bmadGuard` and any of the three guard files is missing, the update uses `core`, prints
+  `ACEF: no recorded profile; BMAD guard files are absent, using core (pass --profile full to reinstall the guard)`,
+  drops `bmadGuard` from the record and leaves `.git/hooks/pre-commit` alone; otherwise `full` as before. `bmadGuard`
+  counts when the key is present (also `null`, `false`, `{}`). The `core` choice and the removal of `bmadGuard` are
+  written in one record write before any installer runs, so a failed or interrupted update retries as `core`. The chosen
+  profile is written into the record, so the question comes up once per host. `--all-worktrees` decides per worktree.
+- **First install unchanged**: `install-acef-tools` still records no profile and installs no guard (asserted in
+  `scripts/test-install-acef-tools`).
+- **Not covered**: a host whose record already says `profile: full` (written by an earlier update) keeps `full`; run
+  the update once with `--profile core` there. The host's own `.acef/bin/update-acef-installation` copy carries the old
+  default until it is refreshed: run the first update after this change from the ACEF source (the recorded
+  `updateCommand`), or that copy reinstalls the guard and records `full`.
+- **Tests** `scripts/test-acef-install-profiles` cases 7-13 (guard removed -> core with the host pre-commit hook kept
+  byte-for-byte, guard present -> full, explicit `--profile full` reinstalls, recorded profile reused, failed installer
+  then retry stays core, `bmadGuard` null/false/{} shapes, mixed-profile `--all-worktrees`). Capability: `docs/ai/capabilities/installation-version-update.json`.
+
 ## v3.0.0-beta.7 — Product language, end-user profiles and user-goal tours (2026-10-27)
 
 Why: in two hosts, agents filled end-user screens with process and evidence text and stacked warnings ("kaynak

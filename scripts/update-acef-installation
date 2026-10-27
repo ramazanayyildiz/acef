@@ -2,7 +2,14 @@
 const cp = require("node:child_process");
 const fs = require("node:fs");
 const path = require("node:path");
-const { readCommittedManifest, readInstallationManifest, rewriteInstallationUpdateCommand, writeCanonicalRootMarker } = require("./lib/acef-installation");
+const {
+  chooseUpdateProfile,
+  persistProfileChoice,
+  readCommittedManifest,
+  readInstallationManifest,
+  rewriteInstallationUpdateCommand,
+  writeCanonicalRootMarker,
+} = require("./lib/acef-installation");
 
 const defaultSourceRoot = path.resolve(__dirname, "..");
 
@@ -10,8 +17,12 @@ function usage() {
   console.log(`Usage: scripts/update-acef-installation --repo <path> [--profile slice|core|full] [--all-worktrees] [--review-lenses] [--all-core] [--global-dispatcher]
 
 Profiles: slice = recorded skills (default codex + 4 skills) and the Slice lane kit, no .acef tools, no BMAD guard;
-core = tools + skills, no BMAD guard; full = tools + skills + BMAD guard (also used when the record has no profile).
+core = tools + skills, no BMAD guard; full = tools + skills + BMAD guard.
 Without --profile the recorded profile and the recorded tool/skill selection are reused.
+A record without a profile: if it lists the BMAD guard but any guard file (.acef/hooks/acef-bmad-hard-wall.mjs,
+.acef/hooks/acef-precommit-gate.sh, .opencode/plugins/acef-bmad-hard-wall.js) is missing, the host removed the guard,
+so core is used, bmadGuard is dropped from the record and a warning is printed; otherwise full. The chosen profile is
+written into the record. An update never reinstalls a removed guard unless --profile full is passed.
 
 Refreshes a target repo from this ACEF checkout:
   1. repo-local ACEF tools, schemas, workflows, and support libraries
@@ -103,7 +114,8 @@ function targetWorktrees(repo, allWorktrees) {
 }
 
 // Re-apply exactly what was selected before (owner decision 2026-10-25): a selective install must never silently
-// grow into a full one. A record without a profile is a legacy full install and keeps the old behaviour.
+// grow into a full one. A record without a profile is decided by chooseUpdateProfile (owner decision 2026-10-27): a
+// guard the host removed is never reinstalled without an explicit --profile full.
 // Host-modified files are kept (owner decision 2026-10-27; see createOwnedFileWriter in lib/acef-installation.js). The
 // first installer rewrites the record's source path, so the checkout that made the previous install is passed on: a
 // legacy record without file hashes reads its baseline from that checkout at the recorded commit.
@@ -111,7 +123,10 @@ function updateTarget(sourceRoot, targetRepo, opts) {
   const record = readCommittedManifest(targetRepo) || {};
   const previousSource = readInstallationManifest(targetRepo)?.acefVersion?.sourcePath;
   const env = previousSource ? { ACEF_PREVIOUS_SOURCE_PATH: previousSource } : {};
-  const profile = opts.profile || record.profile || "full";
+  const choice = chooseUpdateProfile(record, opts.profile, targetRepo);
+  const profile = choice.profile;
+  if (choice.warning) console.log(choice.warning);
+  if (choice.dropBmadGuard) persistProfileChoice(targetRepo, profile, ["bmadGuard"]);
   const recorded = record.components?.skills || {};
   if (profile !== "slice") run(sourceRoot, "install-acef-tools", ["--repo", targetRepo], env);
   const skillArgs = ["--repo", targetRepo, "--profile", profile];

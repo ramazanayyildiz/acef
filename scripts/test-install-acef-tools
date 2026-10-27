@@ -151,6 +151,12 @@ try {
   if (fs.existsSync(path.join(tmp, ".acef", "bin", "detectors", "__pycache__"))) throw new Error("installed acef-detect wrote bytecode into the host");
   const installation = JSON.parse(fs.readFileSync(installationManifest, "utf8"));
   if (installation.schema !== "acef.installation.v1") throw new Error("installation manifest schema missing");
+  // First install is unchanged by the 2026-10-27 update-profile choice: install-acef-tools records no profile and installs
+  // no BMAD guard; only update-acef-installation decides a missing profile.
+  if ("profile" in installation) throw new Error(`first tools install must not record a profile: ${installation.profile}`);
+  if (installation.components?.bmadGuard || fs.existsSync(path.join(tmp, ".acef", "hooks", "acef-bmad-hard-wall.mjs"))) {
+    throw new Error("first tools install must not install the BMAD guard");
+  }
   if (!installation.acefVersion?.sourceCommit) throw new Error("installation manifest missing source commit");
   if (!installation.components?.tools) throw new Error("installation manifest missing tools component");
   if (installation.updateCommand.includes("--all-worktrees")) {
