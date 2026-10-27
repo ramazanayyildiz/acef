@@ -18,7 +18,9 @@ slice-method shape or just the "detectors" object). Keys: project, owners {detec
 A detector whose source is not configured prints "SKIP <name> (no source: <key>)".
 
 Cheap by design: no tests, no network, a few git calls, stat-only directory scans. Never writes into the host repo.
-Exit 0 (alerts or not), 2 usage/config error, 3 a detector crashed (the others still ran).
+Exit 0 (alerts or not), 2 usage/config error, 3 a detector crashed (the others still ran), 4 the alert log could not
+be read or written (I/O or decode error): SOURCE_ERROR alert log is printed, findings are listed as NOT RECORDED,
+nothing is opened or resolved; the loop sees exit 4 and someone repairs the store.
 """
 import sys
 
@@ -190,7 +192,11 @@ def run(args) -> int:
             except Exception as exc:  # noqa: BLE001
                 print(f"{name} ({origin}): BAD HEADER {exc}")
         return 0
-    snapshot = note.alert_states(note.read_alert_events(alerts_path), now)   # read-only, for open_subjects
+    log_error = ""
+    try:
+        snapshot = note.alert_states(note.read_alert_events(alerts_path), now)   # read-only, for open_subjects
+    except (OSError, UnicodeDecodeError) as exc:
+        snapshot, log_error = {}, f"{exc.__class__.__name__}: {exc}"
     saved = read_state(state_path)
     det_state = saved.get("detectors", {})
     started, cache, crashed, lines = time.monotonic(), {}, False, []
@@ -230,18 +236,28 @@ def run(args) -> int:
             continue
         results.append((name, header, ctx, findings, int((time.monotonic() - t0) * 1000)))
     # 2. one lock across read state -> decide -> append, so parallel polls cannot open the same key twice
+    opened = 0
+    if log_error:
+        return alert_log_failure(project, now, log_error, results, lines, args)
     if args.dry_run:
-        opened = apply(args, cfg, base, project, now, results, saved, lines)
-    else:
-        with note.alert_lock(base, project):
-            saved = read_state(state_path)
-            saved["detectors"] = {**saved.get("detectors", {}), **det_state}
+        try:
             opened = apply(args, cfg, base, project, now, results, saved, lines)
-            elapsed = int((time.monotonic() - started) * 1000)
-            note.append_alert_event(base, project, {"event": "poll", "ms": elapsed, "opened": opened}, held=True)
-            tmp = state_path.with_suffix(".json.tmp")
-            tmp.write_text(json.dumps(saved, sort_keys=True))
-            os.replace(tmp, state_path)
+        except (OSError, UnicodeDecodeError) as exc:
+            return alert_log_failure(project, now, f"{exc.__class__.__name__}: {exc}", results, lines, args)
+    else:
+        try:
+            with note.alert_lock(base, project):
+                saved = read_state(state_path)
+                saved["detectors"] = {**saved.get("detectors", {}), **det_state}
+                opened = apply(args, cfg, base, project, now, results, saved, lines)
+                elapsed = int((time.monotonic() - started) * 1000)
+                note.append_alert_event(base, project, {"event": "poll", "ms": elapsed, "opened": opened}, held=True)
+                tmp = state_path.with_suffix(".json.tmp")
+                tmp.write_text(json.dumps(saved, sort_keys=True))
+                os.replace(tmp, state_path)
+        except (OSError, UnicodeDecodeError) as exc:
+            return alert_log_failure(project, now, f"{exc.__class__.__name__}: {exc}", results, lines, args)
+    if not args.dry_run:
         hosts = base / "hosts"
         hosts.mkdir(exist_ok=True)
         (hosts / f"{project}.json").write_text(json.dumps(
@@ -255,6 +271,21 @@ def run(args) -> int:
             continue
         print(line)
     return 3 if crashed else 0
+
+
+def alert_log_failure(project, now, error, results, lines, args) -> int:
+    """The alert log could not be read or written: report, record nothing, resolve nothing, exit 4."""
+    print(f"acef-detect {project} {note.iso(now)}: alert log unreadable, nothing recorded")
+    print(f"SOURCE_ERROR alert log: {error}; no alert is opened or resolved this poll")
+    for line in lines:
+        if not args.quiet or re.match(r"^(ERROR|SOURCE_ERROR)", line):
+            print(line)
+    for name, header, ctx, findings, ms in results:
+        for err in ctx.source_errors:
+            print(f"SOURCE_ERROR {name} {err}")
+        for f in findings:
+            print(f"FINDING {name} {f['subject']} — {f['summary']} (NOT RECORDED)")
+    return 4
 
 
 def read_state(path: Path) -> dict:

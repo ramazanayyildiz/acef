@@ -9,6 +9,8 @@ Scope: acef
 Kind: age
 Tags: infra,runner
 """
+import os
+
 import _lib
 
 DEFAULTS = {"held_min": 30, "max_age_h": 24, "merged_worktrees": True, "leftovers": [], "history_days": 14}
@@ -99,9 +101,11 @@ def check_runs(ctx, s, slots, held_takes, releases, out):
         for template in s["leftovers"]:
             left = ctx.path(template.format(name=item.name, id=item.id))
             try:
-                exists = left.exists() or left.is_symlink()
-                left.parent.stat()   # the parent must be readable for "it is gone" to mean anything
-            except OSError as exc:
+                os.lstat(left)
+                exists = True
+            except (FileNotFoundError, NotADirectoryError):
+                exists = False   # observed gone, also when cleanup removed its parent directory
+            except OSError as exc:   # permission or I/O: no answer
                 raise _lib.SourceError("leftovers", f"{left}: {exc.__class__.__name__}")
             if not exists:
                 ctx.clear(f"{item.name}:leftover")

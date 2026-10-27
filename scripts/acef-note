@@ -335,7 +335,14 @@ def cmd_due(args):
     for name, review in rules_past_review(base, today):
         print(f"RULE REVIEW DUE: {name} (review-by {review})")
     for project, path in alert_files(base):
-        states = alert_states(read_alert_events(path), now_utc())
+        try:
+            events, bad = read_alert_events_checked(path)
+        except (OSError, UnicodeDecodeError) as exc:
+            print(f"SOURCE_ERROR alert log {path.name}: {exc.__class__.__name__}; its alerts are not shown")
+            continue
+        if bad:
+            print(f"SOURCE_ERROR alert log {path.name}: {bad} unreadable line(s); states below may be incomplete")
+        states = alert_states(events, now_utc())
         for a in sorted(states.values(), key=lambda a: a["since"]):
             if a["status"] != "open":
                 continue
@@ -523,7 +530,13 @@ def cmd_ack(args):
     if len(chosen) != 1:
         sys.exit("acef-note: give exactly one of --slice <id>, --defer <YYYY-MM-DD> --reason \"..\", --resolve \"..\"")
     with alert_lock(base, project):   # validate against the state the event is appended to
-        state = alert_states(read_alert_events(path), now_utc()).get(args.id)
+        try:
+            events, bad = read_alert_events_checked(path)
+        except (OSError, UnicodeDecodeError) as exc:
+            sys.exit(f"acef-note: alert log {path} unreadable ({exc.__class__.__name__}); nothing recorded")
+        if bad:
+            sys.exit(f"acef-note: alert log {path} has {bad} unreadable line(s); repair it before acking")
+        state = alert_states(events, now_utc()).get(args.id)
         if not state:
             sys.exit(f"acef-note: no alert {args.id}")
         if state["status"] == "resolved" and not args.resolve:
@@ -546,7 +559,13 @@ def cmd_alerts(args):
     base = ensure_store()
     rows = 0
     for project, path in alert_files(base, args.project):
-        for a in alert_states(read_alert_events(path), now_utc()).values():
+        try:
+            events = read_alert_events(path)
+        except (OSError, UnicodeDecodeError) as exc:
+            print(f"SOURCE_ERROR alert log {path.name}: {exc.__class__.__name__}")
+            rows += 1
+            continue
+        for a in alert_states(events, now_utc()).values():
             if a["status"] == "resolved" and not args.all:
                 continue
             extra = {"acked": f" slice {a['slice']}", "deferred": f" until {a['until']} ({a['reason']})",

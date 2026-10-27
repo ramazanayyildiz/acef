@@ -127,7 +127,7 @@ retro with at most five proposals).
 - **Method:** `method/FEEDBACK_LOOP.md` "Detection loop" and the retro in "Weekly cycle"; `method/WEEKLY_RETRO.md`
   tells the coordinator how to write the judgment parts. `templates/slice/closing-note.md` gets
   `Dedektör: <path | yok — reason>` for investigation slices (checked by `scripts/slice/selfcheck.sh`).
-- Tests: `scripts/test-acef-detect` (141 checks: each detector fires on a fixture and stays silent on a control, the
+- Tests: `scripts/test-acef-detect` (151 checks: each detector fires on a fixture and stays silent on a control, the
   alert lifecycle, losses, skips, host detectors, working hours), `scripts/test-acef-retro` (45 checks).
 - Capability record `docs/ai/capabilities/waste-detection.json` (status `wired`).
 - **Review r1 fixes (independent review, REVISE, seven P2s; each with a regression test that fails on the earlier
@@ -169,6 +169,14 @@ retro with at most five proposals).
   `UNSEEN` instead of resolves, `--quiet` shows them, alert log read with `read_alert_events_checked`). Tests: a
   generic injection poll with every source failing at once (each detector reports `SOURCE_ERROR`, nothing resolves),
   single failures (`ps` exit 1, a failed `git worktree list`), `rc` missing / null / empty, a corrupt alert-log line.
+- **Review r5 fixes (last round):** (1) `glob_paths` walks with `os.scandir` and raises on any listing failure below
+  the base (`glob.glob` hid unreadable subtrees, so an older ACCEPT could stand in for a newer REVISE); (2) integer
+  fields accept only a real int or a canonical integer string (`false`, `0.5`, `"0.0"` are unknown); (3) an invalid
+  activation date (`2026-99-99`) is a source error for its file, never a cleared line; (4) an unreadable or
+  undecodable alert log makes `acef-detect` print `SOURCE_ERROR alert log`, list findings as NOT RECORDED, open and
+  resolve nothing and exit **4**; `acef-note due`/`alerts`/`ack` report it instead of crashing; (5) a leftover whose
+  parent directory was removed is observed gone (`os.lstat` ENOENT/ENOTDIR); only permission or I/O errors are source
+  errors. Each with a regression test; 8 checks fail on 602e48f.
 - **`install-acef-tools`** installs `acef-detect`, `acef-retro` and `scripts/detectors/` into `.acef/bin/` (host
   detectors stay in `.acef/detectors/`); `scripts/test-install-acef-tools` runs the installed `acef-detect --list`.
 

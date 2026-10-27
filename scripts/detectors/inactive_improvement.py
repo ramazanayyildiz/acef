@@ -32,14 +32,13 @@ def scan(path, label, today, grace, out, status_ok=True, scanned_labels=None):
             continue
         subject = f"{label}:{re.sub(r'[^a-z0-9]+', '-', value.lower())[:48].strip('-')}"
         owner = OWNER.search(value)
-        dates = [d for d in DATE.findall(value)]
         due = None
-        for d in dates:
+        for d in DATE.findall(value):
             try:
-                due = dt.date.fromisoformat(d)
-                break
-            except ValueError:
-                continue
+                parsed = dt.date.fromisoformat(d)
+            except ValueError:   # 2026-99-99 is unknown, not "no date": this file cannot clear anything this poll
+                raise _lib.SourceError("activation lines", f"{path}: invalid activation date {d}")
+            due = due or parsed
         if not owner:
             out.append({"subject": subject, "evidence": str(path),
                         "summary": f"{label}: activation without an owner: {value[:140]}"})

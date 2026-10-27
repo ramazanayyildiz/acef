@@ -669,7 +669,8 @@ try:
     check("with ps working again, the gone process clears (positive observation)", f"CLEARED {pid_} " in o, o)
 
     # a missing, null or empty rc is unknown, never success
-    for variant, extra in (("missing", {}), ("null", {"rc": None}), ("empty", {"rc": ""})):
+    for variant, extra in (("missing", {}), ("null", {"rc": None}), ("empty", {"rc": ""}), ("false", {"rc": False}),
+                           ("half", {"rc": 0.5}), ("float-string", {"rc": "0.0"})):
         logf_ = HOST / f"cmd-rc-{variant}.jsonl"
         put(logf_, "".join(json.dumps({"ts": iso(ago(m)), "cmd": "make k", "rc": 1, "err": "e", "tree": "t"}) + "\n"
                            for m in (30, 20, 10)))
@@ -689,6 +690,82 @@ try:
     rc, o3 = run("--only", "stuck_agent,waiting_work,machine,review_loop,forgotten_session,inactive_improvement,size_ratio", config=inj, env=ENV_R, now=NOW + dt.timedelta(minutes=3))
     check("injection: a corrupt alert-log line blocks every resolve",
           "SOURCE_ERROR alert log: 1 unreadable line" in o3 and "CLEARED" not in o3, o3)
+
+    # ------------------------------------------------------------ review r5
+    # 1. an unreadable subtree below the glob base is an error, not a hidden newer REVISE behind an older ACCEPT
+    for d, rnd, verdict, m in (("a1", 1, "REVISE", 300), ("a2", 2, "REVISE", 240), ("a3", 3, "REVISE", 180),
+                               ("a4", 4, "ACCEPT", 120), ("a5", 5, "REVISE", 60)):
+        put(HOST / "reviews5" / d / f"WORK-50-review-r{rnd}.md", f"Verdict: {verdict}\n", m)
+    gw = det_cfg("gw", {"reviews": {"glob": "reviews5/*/*.md",
+                                    "id_regex": r"^(?P<id>.+?)-review(?:-r(?P<round>\d+))?$"}})
+    rc, o = run("--only", "review_loop", config=gw, env=ENV_R)
+    g_id = alert_id(o, "review_loop", "WORK-50")
+    os.chmod(HOST / "reviews5/a5", 0)
+    try:
+        rc, o = run("--only", "review_loop", config=gw, env=ENV_R, now=NOW + dt.timedelta(minutes=1))
+    finally:
+        os.chmod(HOST / "reviews5/a5", 0o755)
+    check("r5-1 unreadable subtree under the glob: SOURCE_ERROR, the loop alert does not resolve",
+          g_id and "SOURCE_ERROR review_loop reviews" in o and f"CLEARED {g_id}" not in o, o)
+
+    # 3. an invalid activation date is unknown for that file: no clear
+    STORE_D = TMP / "store-d"
+    ENV_D = {**ENV, "ACEF_FEEDBACK_DIR": str(STORE_D)}
+    put(STORE_D / "rules/R-7.md", "Incidents: x-7\nActivation: owner: ram, job on 2026-01-01\nStatus: shipped\n")
+    dtc = det_cfg("dt", {})
+    rc, o = run("--only", "inactive_improvement", config=dtc, env=ENV_D)
+    d_id = re.search(r"ALERT (\S+) NEW \[inactive_improvement\] R-7:", o)
+    put(STORE_D / "rules/R-7.md", "Incidents: x-7\nActivation: owner: ram, job on 2026-99-99\nStatus: shipped\n")
+    rc, o = run("--only", "inactive_improvement", config=dtc, env=ENV_D, now=NOW + dt.timedelta(minutes=1))
+    check("r5-3 invalid activation date: SOURCE_ERROR, the previous alert does not resolve",
+          d_id and "invalid activation date 2026-99-99" in o and f"CLEARED {d_id.group(1)}" not in o, o)
+
+    # 4. an unreadable or undecodable alert log: SOURCE_ERROR alert log, nothing recorded, exit 4, no traceback
+    STORE_A = TMP / "store-a"
+    ENV_A = {**ENV, "ACEF_FEEDBACK_DIR": str(STORE_A)}
+    alc = det_cfg("al", {"agent_runs": "runs4/*"})
+    run("--only", "stuck_agent", config=alc, env=ENV_A)
+    log_a = STORE_A / "alerts/al.jsonl"
+    size_before = log_a.stat().st_size
+    os.chmod(log_a, 0)
+    try:
+        rc, o = run("--only", "stuck_agent", config=alc, env=ENV_A, now=NOW + dt.timedelta(minutes=1))
+    finally:
+        os.chmod(log_a, 0o644)
+    check("r5-4 unreadable alert log: exit 4, SOURCE_ERROR alert log, no traceback",
+          rc == 4 and "SOURCE_ERROR alert log: PermissionError" in o and "Traceback" not in o, o)
+    with open(log_a, "ab") as fh:
+        fh.write(b"\xff\xfe not utf-8\n")
+    rc, o = run("--only", "stuck_agent", config=alc, env=ENV_A, now=NOW + dt.timedelta(minutes=2))
+    check("r5-4 undecodable alert log: exit 4, SOURCE_ERROR alert log, nothing appended",
+          rc == 4 and "SOURCE_ERROR alert log: UnicodeDecodeError" in o and "Traceback" not in o
+          and log_a.stat().st_size == size_before + len(b"\xff\xfe not utf-8\n"), o)
+    rc, d = note("due", env=ENV_A)
+    check("r5-4 acef-note due reports the bad alert log instead of crashing",
+          rc == 0 and "SOURCE_ERROR alert log al.jsonl" in d and "Traceback" not in d, d)
+
+    # 5. a leftover whose parent directory cleanup removed is observed gone; only permission/I-O is an error
+    put(HOST / "runs6/run-L/started", iso(ago(200)) + "\n", 200)
+    put(HOST / "runs6/run-L/finished", iso(ago(120)) + "\n", 120)
+    settle(HOST / "runs6/run-L", 120)
+    (HOST / "left2/run-L/ws").mkdir(parents=True)
+    lp = det_cfg("lp", {"agent_runs": "runs6/*"},
+                 {"forgotten_session": {"merged_worktrees": False, "leftovers": ["left2/{name}/ws"]}})
+    rc, o = run("--only", "forgotten_session", config=lp, env=ENV_R)
+    l_id = alert_id(o, "forgotten_session", "run-L:leftover")
+    shutil.rmtree(HOST / "left2/run-L")
+    rc, o = run("--only", "forgotten_session", config=lp, env=ENV_R, now=NOW + dt.timedelta(minutes=1))
+    check("r5-5 leftover removed with its parent: observed gone, CLEARED, no SOURCE_ERROR",
+          l_id and f"CLEARED {l_id} " in o and "SOURCE_ERROR" not in o, o)
+    (HOST / "left2/run-L/ws").mkdir(parents=True)
+    rc, o = run("--only", "forgotten_session", config=lp, env=ENV_R, now=NOW + dt.timedelta(minutes=2))
+    os.chmod(HOST / "left2", 0)
+    try:
+        rc, o = run("--only", "forgotten_session", config=lp, env=ENV_R, now=NOW + dt.timedelta(minutes=3))
+    finally:
+        os.chmod(HOST / "left2", 0o755)
+    check("r5-5 leftover behind an unreadable parent: SOURCE_ERROR leftovers, not CLEARED",
+          "SOURCE_ERROR forgotten_session leftovers" in o and f"CLEARED {l_id}" not in o, o)
 finally:
     subprocess.run(["git", "worktree", "prune"], cwd=HOST, capture_output=True)
     shutil.rmtree(TMP, ignore_errors=True)

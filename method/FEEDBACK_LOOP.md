@@ -62,7 +62,8 @@ until the owner asked, and a whole day could be lost. Detection runs **during th
   dropped out of a window or vanished stays open and is printed `UNSEEN`. A source that cannot be read (git
   fails, `ps` fails, a log or directory is missing or unreadable, a row lacks a required field) is never read as
   "nothing there" or "success": the detector prints `SOURCE_ERROR <source>` and none of its alerts resolves in that
-  poll; an unreadable line in the alert log itself blocks every resolve until it is repaired. A recurrence **reopens** the same id; a
+  poll; an unreadable line in the alert log itself blocks every resolve until it is repaired, and an alert log that
+  cannot be read at all (I/O or decode error) makes `acef-detect` record nothing and exit 4, so the loop sees it. A recurrence **reopens** the same id; a
   deferral past its date reopens it with the deadline counted from the deferral's expiry. Parallel polls and acks
   share one lock per project, so a key never gets two alerts. `acef-note due` prints `ALERT OPEN` once an alert has stayed unacked
   for more than two polls and `ALERT OVERDUE` once its ack deadline has passed; overdue and unowned alerts go to the

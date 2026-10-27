@@ -13,6 +13,7 @@ ctx.mark_error / ctx.guard) resolves no alert in that poll; acef-detect prints S
 unparseable field is unknown: the caller records it with ctx.mark_error and does not judge that row.
 """
 import datetime as dt
+import fnmatch
 import glob
 import json
 import os
@@ -207,7 +208,50 @@ def glob_paths(ctx, pattern: str, source: str) -> list:
         base = base.parent
     if not base.exists() or (base.is_dir() and not os.access(base, os.R_OK | os.X_OK)):
         raise SourceError(source, f"{base} is missing or unreadable")
-    return glob.glob(full)
+    return walk_glob(base, Path(full).relative_to(base).parts if full != str(base) else (), source)
+
+
+def walk_glob(base: Path, parts: tuple, source: str) -> list:
+    """glob.glob without its silence: every directory the pattern descends into is listed with os.scandir, and a
+    listing that fails (permission, I/O) raises SourceError instead of hiding the subtree. A literal component that
+    does not exist is simply no match (not every worktree has every folder)."""
+    current = [base]
+    for depth, part in enumerate(parts):
+        last = depth == len(parts) - 1
+        nxt = []
+        for folder in current:
+            if not glob.has_magic(part):
+                candidate = folder / part
+                try:
+                    os.lstat(candidate)
+                except (FileNotFoundError, NotADirectoryError):
+                    continue
+                except OSError as exc:
+                    raise SourceError(source, f"{candidate}: {exc.__class__.__name__}")
+                nxt.append(candidate)
+                continue
+            try:
+                with os.scandir(folder) as entries:
+                    names = [e.name for e in entries]
+            except (FileNotFoundError, NotADirectoryError):
+                continue
+            except OSError as exc:
+                raise SourceError(source, f"{folder}: {exc.__class__.__name__}")
+            hidden_ok = part.startswith(".")
+            for name in sorted(names):
+                if (hidden_ok or not name.startswith(".")) and fnmatch.fnmatchcase(name, part):
+                    nxt.append(folder / name)
+        if not last:   # keep only directories to descend into; a stat failure is an error, not a skip
+            dirs = []
+            for path in nxt:
+                try:
+                    if path.is_dir():
+                        dirs.append(path)
+                except OSError as exc:
+                    raise SourceError(source, f"{path}: {exc.__class__.__name__}")
+            nxt = dirs
+        current = nxt
+    return [str(p) for p in current]
 
 
 def items(ctx, key: str, max_age_h: float, required: bool = True) -> list:
@@ -412,13 +456,16 @@ def read_jsonl(ctx, source: str, path: Path, since: dt.datetime = None) -> list:
 def field(ctx, source: str, row: dict, key: str, kind=str):
     """A required field of a log row, or None after recording it as unknown (never a default such as 0 or "")."""
     value = row.get(key)
-    try:
-        if value is None or (isinstance(value, str) and not value.strip()):
-            raise ValueError
-        return int(value) if kind is int else kind(value)
-    except (ValueError, TypeError):
-        ctx.mark_error(source, f"row at {row.get('ts', '?')} has no valid {key!r}")
-        return None
+    if kind is int:
+        # only a real integer (not a bool, not a float) or a canonical integer string; false or 0.5 is unknown
+        if isinstance(value, int) and not isinstance(value, bool):
+            return value
+        if isinstance(value, str) and re.fullmatch(r"-?(0|[1-9][0-9]*)", value.strip()):
+            return int(value.strip())
+    elif isinstance(value, str) and value.strip():
+        return value
+    ctx.mark_error(source, f"row at {row.get('ts', '?')} has no valid {key!r}")
+    return None
 
 
 def read_iso(raw: str) -> dt.datetime:
