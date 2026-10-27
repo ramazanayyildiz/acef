@@ -13,7 +13,8 @@
     "docs": [
       "CHANGELOG.md#Installation versioning and update path",
       "README.md#Install & use",
-      "CHANGELOG.md#Unreleased — Host fork gates ported upstream; updates keep host-modified files (2026-10-27)"
+      "CHANGELOG.md#Unreleased — Host fork gates ported upstream; updates keep host-modified files (2026-10-27)",
+      "CHANGELOG.md#Unreleased — Updates never reinstall a BMAD guard the host removed (2026-10-27)"
     ],
     "cli": [
       "scripts/acef-status",
@@ -29,7 +30,8 @@
       "scripts/test-acef-canonical-root",
       "scripts/test-acef-host-file-preservation",
       "scripts/test-install-acef-skills",
-      "scripts/test-install-acef-tools"
+      "scripts/test-install-acef-tools",
+      "scripts/test-acef-install-profiles"
     ],
     "targetRepo": [
       "docs/ai/installation-evidence/pilaner-acef-installation.json"
@@ -68,6 +70,11 @@
       "layer": "tests",
       "ref": "scripts/test-acef-host-file-preservation",
       "note": "2026-10-27: host-modified tool, hook and skill files kept and reported; unmodified copies replaced; model routing policy merged three-way (host overrides kept, untouched ACEF values upgraded, new keys added; fork installs keep all values); stale Python-tool .cjs removed only when unmodified; legacy records use the recorded install commit, including another ACEF checkout."
+    },
+    {
+      "layer": "tests",
+      "ref": "scripts/test-acef-install-profiles",
+      "note": "2026-10-27: an update without --profile on a record without a profile uses core when the record lists bmadGuard and a guard file is missing (warning, bmadGuard dropped, no guard files or pre-commit call written); guard present stays full; explicit --profile full reinstalls; a recorded profile is reused. First install via install-acef-tools records no profile (scripts/test-install-acef-tools)."
     }
   ],
   "createdAt": "2026-06-25"

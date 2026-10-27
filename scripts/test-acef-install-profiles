@@ -10,8 +10,11 @@ const root = path.resolve(__dirname, "..");
 const run = (script, args, env = {}) => cp.execFileSync(process.execPath, [path.join(root, "scripts", script), ...args], {
   cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, ...env },
 });
+const tempDirs = [];
+process.on("exit", () => { for (const dir of tempDirs) fs.rmSync(dir, { recursive: true, force: true }); });
 function tempRepo() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "acef-profiles-"));
+  tempDirs.push(dir);
   cp.execFileSync("git", ["init", "-q", dir]);
   return dir;
 }
@@ -89,6 +92,77 @@ const recordText = (repo) => fs.readFileSync(path.join(repo, "docs", "ai", "ACEF
   run("update-acef-installation", ["--repo", repo]);
   assert.ok(exists(repo, ".acef/bin"), "legacy (no profile) update must stay a full update");
   assert.equal(record(repo).profile, "full");
+}
+
+// 7-10. a record without a profile never reinstalls a BMAD guard the host removed (owner decision 2026-10-27)
+const GUARD = [".acef/hooks/acef-bmad-hard-wall.mjs", ".acef/hooks/acef-precommit-gate.sh", ".opencode/plugins/acef-bmad-hard-wall.js"];
+const WARNING = "ACEF: no recorded profile; BMAD guard files are absent, using core (pass --profile full to reinstall the guard)";
+function legacyGuardedRepo() {
+  const repo = tempRepo();
+  run("install-acef-tools", ["--repo", repo]);
+  run("install-acef-skills", ["--repo", repo, "--tool", "codex"]);
+  run("install-acef-bmad-guard", ["--repo", repo]);
+  const legacy = record(repo);
+  delete legacy.profile;
+  assert.ok(legacy.components.bmadGuard, "fixture must record the guard");
+  fs.writeFileSync(path.join(repo, "docs/ai/ACEF_INSTALLATION.json"), `${JSON.stringify(legacy, null, 2)}\n`);
+  for (const rel of GUARD) assert.ok(exists(repo, rel), `fixture must have ${rel}`);
+  return repo;
+}
+// 7. no profile + bmadGuard recorded + hook files removed (JakoMeet 1938d2446: the two .acef/hooks files, plugin kept) -> core
+{
+  const repo = legacyGuardedRepo();
+  for (const rel of GUARD.slice(0, 2)) fs.rmSync(path.join(repo, rel));
+  const precommit = path.join(repo, ".git/hooks/pre-commit");
+  fs.rmSync(precommit, { force: true });
+  const out = run("update-acef-installation", ["--repo", repo]);
+  assert.ok(out.includes(WARNING), `update must warn when it picks core:\n${out}`);
+  for (const rel of GUARD.slice(0, 2)) assert.ok(!exists(repo, rel), `update must not reinstall removed ${rel}`);
+  assert.ok(!fs.existsSync(precommit), "update must not recreate the pre-commit gate call");
+  assert.ok(exists(repo, ".acef/bin"), "core keeps the runtime tools");
+  const r = record(repo);
+  assert.equal(r.profile, "core");
+  assert.ok(!("bmadGuard" in r.components), "removed guard must be dropped from the record");
+  assert.match(r.updateCommand, /--profile core/);
+  const again = run("update-acef-installation", ["--repo", repo]);
+  assert.ok(!again.includes(WARNING), "a recorded core profile needs no second warning");
+  assert.equal(record(repo).profile, "core");
+  for (const rel of GUARD.slice(0, 2)) assert.ok(!exists(repo, rel), "second update must not reinstall the guard");
+
+  // 9. explicit --profile full on a host without the guard files installs them
+  const full = run("update-acef-installation", ["--repo", repo, "--profile", "full"]);
+  assert.ok(!full.includes(WARNING));
+  for (const rel of GUARD) assert.ok(exists(repo, rel), `--profile full must install ${rel}`);
+  assert.equal(record(repo).profile, "full");
+  assert.ok(record(repo).components.bmadGuard, "--profile full records the guard again");
+}
+// 8. no profile + guard files present -> full, as before
+{
+  const repo = legacyGuardedRepo();
+  const out = run("update-acef-installation", ["--repo", repo]);
+  assert.ok(!out.includes(WARNING));
+  for (const rel of GUARD) assert.ok(exists(repo, rel), rel);
+  assert.equal(record(repo).profile, "full");
+  assert.ok(record(repo).components.bmadGuard);
+}
+// 10. a recorded profile is reused, even when the guard files are absent (recorded full) or present (recorded core)
+{
+  const repo = legacyGuardedRepo();
+  const withFull = record(repo);
+  withFull.profile = "full";
+  fs.writeFileSync(path.join(repo, "docs/ai/ACEF_INSTALLATION.json"), `${JSON.stringify(withFull, null, 2)}\n`);
+  for (const rel of GUARD) fs.rmSync(path.join(repo, rel));
+  const out = run("update-acef-installation", ["--repo", repo]);
+  assert.ok(!out.includes(WARNING), "a recorded profile is never re-decided");
+  for (const rel of GUARD) assert.ok(exists(repo, rel), `recorded full reinstalls ${rel}`);
+  assert.equal(record(repo).profile, "full");
+
+  const other = legacyGuardedRepo();
+  const withCore = record(other);
+  withCore.profile = "core";
+  fs.writeFileSync(path.join(other, "docs/ai/ACEF_INSTALLATION.json"), `${JSON.stringify(withCore, null, 2)}\n`);
+  run("update-acef-installation", ["--repo", other]);
+  assert.equal(record(other).profile, "core");
 }
 
 console.log("test-acef-install-profiles: OK");

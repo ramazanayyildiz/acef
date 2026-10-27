@@ -191,7 +191,8 @@ function stripMachineFields(record) {
   return clean;
 }
 
-// profile: "slice" | "core" | "full". null keeps the recorded one; a record without a profile is "full" (legacy).
+// profile: "slice" | "core" | "full". null keeps the recorded one. A record without a profile gets one from the first
+// update: see chooseUpdateProfile below (the first install path through install-acef-tools does not use it).
 function writeInstallationManifest(targetRepo, sourceRoot, componentName, componentDetails = {}, profile = null) {
   const filePath = manifestPath(targetRepo);
   const existing = stripMachineFields(readCommittedManifest(targetRepo) || { schema: "acef.installation.v1", components: {} });
@@ -224,6 +225,45 @@ function writeInstallationManifest(targetRepo, sourceRoot, componentName, compon
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
   fs.writeFileSync(filePath, `${JSON.stringify(next, null, 2)}\n`);
   return filePath;
+}
+
+// ---------------------------------------------------------------- update profile choice
+// Owner decision 2026-10-27: an update never reinstalls a BMAD guard the host removed unless --profile full is passed.
+// Order: explicit --profile, then the recorded profile, then (no profile recorded) the host's files decide. A record
+// that lists bmadGuard while any of the guard's repo-local files is missing means the host removed the guard on purpose
+// (JakoMeet 1938d2446 removed the two .acef/hooks files and kept the OpenCode plugin): use core and drop bmadGuard.
+// Otherwise a record without a profile stays full, as before. The chosen profile is then written into the record.
+const BMAD_GUARD_FILES = [
+  ".acef/hooks/acef-bmad-hard-wall.mjs",
+  ".acef/hooks/acef-precommit-gate.sh",
+  ".opencode/plugins/acef-bmad-hard-wall.js",
+];
+
+// exists(rel) defaults to the target's working tree; a caller may pass another view (for example a git tree).
+function chooseUpdateProfile(record, explicitProfile, targetRepo, exists = null) {
+  if (explicitProfile) return { profile: explicitProfile, reason: "explicit", dropBmadGuard: false };
+  if (record?.profile) return { profile: record.profile, reason: "recorded", dropBmadGuard: false };
+  if (!record?.components?.bmadGuard) return { profile: "full", reason: "legacy", dropBmadGuard: false };
+  const has = exists || ((rel) => fs.existsSync(path.join(targetRepo, rel)));
+  const missing = BMAD_GUARD_FILES.filter((rel) => !has(rel));
+  if (missing.length) {
+    return {
+      profile: "core",
+      reason: "guard-absent",
+      dropBmadGuard: true,
+      missing,
+      warning: "ACEF: no recorded profile; BMAD guard files are absent, using core (pass --profile full to reinstall the guard)",
+    };
+  }
+  return { profile: "full", reason: "guard-present", dropBmadGuard: false };
+}
+
+function dropInstallationComponent(targetRepo, componentName) {
+  const record = readCommittedManifest(targetRepo);
+  if (!record?.components || !(componentName in record.components)) return false;
+  delete record.components[componentName];
+  fs.writeFileSync(manifestPath(targetRepo), `${JSON.stringify(record, null, 2)}\n`);
+  return true;
 }
 
 // ---------------------------------------------------------------- host-modified file preservation
@@ -463,7 +503,10 @@ function writeCanonicalRootMarker(targetRepo) {
 }
 
 module.exports = {
+  BMAD_GUARD_FILES,
+  chooseUpdateProfile,
   createOwnedFileWriter,
+  dropInstallationComponent,
   installedSourceBaseline,
   mergeHostConfig,
   mergeHostJson,

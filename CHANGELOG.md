@@ -82,6 +82,27 @@ approved this change).
 - **Review r4 fix (Codex, one P2):** any failure to decode or validate the index file (also `RecursionError` on
   deeply nested corrupt JSON) starts an empty index instead of aborting the poll. `scripts/test-acef-detect` 195 checks (+1).
 
+## Unreleased — Updates never reinstall a BMAD guard the host removed (2026-10-27)
+
+Why: `update-acef-installation` treated a record without `profile` as `full` and reinstalled the BMAD guard
+(`.acef/hooks/acef-bmad-hard-wall.mjs`, `.acef/hooks/acef-precommit-gate.sh`, `.opencode/plugins/acef-bmad-hard-wall.js`)
+on hosts that had removed it on purpose but still listed `components.bmadGuard`. JakoMeet removed the gate and the
+hard-wall hook in 1938d2446 (the gate refused every commit); its ACEF update put both back and `.git/hooks/pre-commit`
+called the gate again. pilaner had the same problem and was fixed by hand with `--profile core`. Owner decision
+2026-10-27 (Ram).
+- **Profile choice** (`chooseUpdateProfile` in `scripts/lib/acef-installation.js`, used only by
+  `scripts/update-acef-installation`): an explicit `--profile` wins; else the recorded profile is reused; else, when the
+  record lists `bmadGuard` and any of the three guard files is missing, the update uses `core`, prints
+  `ACEF: no recorded profile; BMAD guard files are absent, using core (pass --profile full to reinstall the guard)`,
+  drops `bmadGuard` from the record and leaves `.git/hooks/pre-commit` alone; otherwise `full` as before. The chosen
+  profile is written into the record, so the question comes up once per host.
+- **First install unchanged**: `install-acef-tools` still records no profile and installs no guard (asserted in
+  `scripts/test-install-acef-tools`).
+- **Not covered**: a host whose record already says `profile: full` (written by an earlier update) keeps `full`; run
+  the update once with `--profile core` there.
+- **Tests** `scripts/test-acef-install-profiles` cases 7-10 (guard removed -> core, guard present -> full, explicit
+  `--profile full` reinstalls, recorded profile reused). Capability: `docs/ai/capabilities/installation-version-update.json`.
+
 ## v3.0.0-beta.7 — Product language, end-user profiles and user-goal tours (2026-10-27)
 
 Why: in two hosts, agents filled end-user screens with process and evidence text and stacked warnings ("kaynak
