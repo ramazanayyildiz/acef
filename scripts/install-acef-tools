@@ -65,6 +65,13 @@ function copyTool(name, targetRepo) {
   const targetCjs = `${target}.cjs`;
   if (!fs.existsSync(source)) throw new Error(`Tool source not found: ${source}`);
   fs.mkdirSync(path.dirname(target), { recursive: true });
+  if (fs.readFileSync(source, "utf8").startsWith("#!/usr/bin/env python3")) {
+    // Python tools (acef-note, acef-version-check) are copied as they are; there is no Node wrapper.
+    fs.rmSync(targetCjs, { force: true });
+    fs.copyFileSync(source, target);
+    fs.chmodSync(target, 0o755);
+    return target;
+  }
   fs.copyFileSync(source, targetCjs);
   fs.writeFileSync(target, `#!/usr/bin/env sh\nexec node "$(dirname "$0")/${name}.cjs" "$@"\n`);
   fs.chmodSync(target, 0o755);
