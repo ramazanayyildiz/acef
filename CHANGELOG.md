@@ -123,6 +123,20 @@ landed in; Manager-driven Codex panes counted as 99 owner hours; machine inciden
   block, under three header styles, with secrets before and after; every line from the header to the end of the
   outermost block is redacted. The property test carries the same family (207 secrets in 104 forms). It fails on
   7ae6d7f (this shape) and on a4b3881 (the swallowed header).
+- **Fourth confirmation round (Codex, PR #27: 1 P1, bounding vs block state):** the field cap ran before the
+  secret-context pass and kept only 51 lines before the tail, so an outer block renewed by nested keywords lost its
+  baseline at the cut and a later same-indent line leaked (a failed command's output reached extract.json). The
+  order is fixed: key blocks are scanned over the whole field; a field up to 2 x 64 KB gets the line pass whole;
+  for a larger one the head is exact (its state depends only on earlier lines) and the tail starts inside an active
+  block with a baseline below every indent whenever a candidate line (keyword, database client, URL) lies in the 51
+  lines before it, head lines included. That carried state redacts at least everything the full pass would and
+  over-redacts at most 50 lines after the cut; the token layer runs after bounding. The line pass now copies the text
+  between blocks as slices and walks only candidate lines and the lines a block claims, with cached pattern hits
+  and case-sensitive searches on lowercased text: a 10 MB field takes 0.02 to 0.05 s (keyword on every line
+  included); a 4,000-input random comparison with a plain per-line walk finds no difference.
+  New checks: the repro end to end (a failed Codex command), 120 generated fields with a long block crossing the cut
+  at different offsets and nested keywords (no line the full-text pass redacts survives; it fails on 72ec5e9), and
+  10 MB fields under 1 s.
 - Tests: 46 checks on synthetic fixtures; the property test now covers 56 secrets in 37 forms (comment-then-value,
   five YAML block scalars, dotenv continuation, a quoted value over two lines). Runtime on the pilot day: about 20 s
   (parse 12 s, git/gh 4 s) for 3.8 GB under load. A scan of the real pilot-day output finds no email, key block,

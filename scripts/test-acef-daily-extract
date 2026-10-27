@@ -241,7 +241,12 @@ def build():
               {"command": ["bash", "-lc", "cat build.log"]})}, typ="response_item"),
           ev(ts(17, 6), {"type": "function_call_output", "call_id": "d2", "output": json.dumps(
               {"output": "build failed\n" + tok + " " + "y" * 369, "metadata": {"exit_code": 3}})},
-             typ="response_item")]
+             typ="response_item"),
+          # r8: a secret block crossing the 64 KB bounding cut, in a failed command's output
+          ev(ts(17, 7), {"type": "function_call", "name": "shell", "call_id": "d3", "arguments": json.dumps(
+              {"command": ["bash", "-lc", "deploy --verbose"]})}, typ="response_item"),
+          ev(ts(17, 8), {"type": "function_call_output", "call_id": "d3", "output": json.dumps(
+              {"output": cut_repro(), "metadata": {"exit_code": 1}})}, typ="response_item")]
     jl(CODEX / "2026" / "10" / "26" / "rollout-2026-10-26T17-00-00-r2-1.jsonl", r2)
     # P2-6: a subagent in the window whose parent went idle before it (parent file not scanned)
     pp = CLAUDE / "-nonexistent-acef-fixture-parentproj"
@@ -254,6 +259,35 @@ def build():
     for f in list(CLAUDE.rglob("*.jsonl")) + list(CODEX.rglob("*.jsonl")):
         os.utime(f, (1_900_000_000, 1_900_000_000))     # mtime after the window start (the prefilter)
     os.utime(pp / f"{pid}.jsonl", (1_700_000_000, 1_700_000_000))   # the idle parent: before the window
+
+
+def cut_repro():
+    s = "public\n" + "x" * 70000 + "\npassword: |\n"
+    s += "\n".join("  api_key: example" if i % 30 == 0 else "  " + "z" * 990 for i in range(350))
+    return s + "\n  Velvet meadow 731\n  " + "y" * 250
+
+
+def cut_family(seed=11, n=120):
+    """Fields with a long secret block that crosses the bounding cut at different offsets: head fillers of several
+    sizes, headers at several indents, nested keyword lines, blank lines, body lines of several lengths. Every body
+    line carries a unique tag."""
+    import random
+    rng = random.Random(seed)
+    for trial in range(n):
+        lines = ["head %d" % i for i in range(rng.randint(0, 40))]
+        lines.append("f" * rng.choice([1000, 60000, 65000, 66000, 70000, 130000]))
+        hdr = " " * rng.choice([0, 2, 4])
+        lines.append(hdr + rng.choice(["password: |", "password:", "secret: >-", "token: x", "api_key: |2-"]))
+        for i in range(rng.randint(5, 400)):
+            r, ind = rng.random(), hdr + " " * rng.choice([2, 2, 4])
+            if r < 0.05:
+                lines.append(ind + rng.choice(["api_key: example", "token: |", "secret:"]))
+            elif r < 0.08:
+                lines.append("")
+            else:
+                lines.append(ind + "T%04d_%d " % (trial, i) + "z" * rng.choice([10, 500, 990, 3000]))
+        lines += [hdr + "  T%04d_end" % trial, "tail " + "y" * rng.choice([10, 250, 70000])]
+        yield "\n".join(lines)
 
 
 def block_family():
@@ -650,6 +684,21 @@ try:
     check(f"P1 monotone blocks: a keyword line at every position inside a block ({len(block_family())} shapes) "
           "never shortens it; r6 and r7", not survivors and "Cedar47Maple" not in r6 and "CanaryMint79" not in r7
           and r6.endswith("ok: 1") and r7.endswith("next: 1"), (survivors[:2], r6, r7))
+    # P1 r8: the bounding cut never shortens a block. For every field, no line the full-text line pass redacts
+    # survives redact_field (exact head, carried state into the tail); the repro does not reach extract.json.
+    viol, total = [], 0
+    for x in cut_family():
+        full = mod._redact_lines(mod._redact_pem(x)).split("\n")
+        orig = x.split("\n")
+        tags = [orig[i].split()[0] for i in range(len(orig)) if full[i] != orig[i] and orig[i].strip().startswith("T")]
+        kept = set(re.findall(r"T\d{4}_\w+", mod.redact_field(x)))
+        total += len(tags)
+        viol += [t for t in tags if t in kept]
+    check(f"P1 bounding cut: no line the full-text pass redacts survives redact_field ({total} redacted lines in "
+          "120 fields crossing the cut); the r8 repro does not reach any written file",
+          not viol and total > 5000 and "Velvet meadow" not in mod.redact_field(cut_repro()) and
+          "Velvet meadow" not in mod.tail_clip(cut_repro(), 400) and r2s and
+          not any("Velvet meadow" in v for v in written.values()), viol[:10])
     # P2: every redaction pattern family is linear: an adversarial 256 KB input finishes under 0.2 s
     import time as time_mod
     K = 256 * 1024
@@ -675,6 +724,25 @@ try:
     t0 = time_mod.perf_counter()
     mod.clip("token " + "Ab1-" * (1024 * 1024 // 4), 300)
     took_clip = time_mod.perf_counter() - t0
+    import random as random_mod
+    rng = random_mod.Random(1)
+    mixed = []
+    while sum(map(len, mixed)) < 10 * 1024 * 1024:
+        k_ = rng.random()
+        mixed.append("password: |" if k_ < 0.01 else "  token: x" if k_ < 0.02 else "  " + "a" * rng.randint(10, 200))
+    tenmb = {"mixed": "\n".join(mixed), "keyword every line": ("password\n" * 1200000)[:10 * 1024 * 1024],
+             "indented keyword every line": ("  token: x\n" * 1000000)[:10 * 1024 * 1024],
+             "one line": "x" * (10 * 1024 * 1024)}
+    slow10 = {}
+    for name, text in tenmb.items():
+        took = 9.0
+        for _ in range(2):
+            t0 = time_mod.perf_counter()
+            mod.redact_field(text)
+            took = min(took, time_mod.perf_counter() - t0)
+        if took >= 1.0:
+            slow10[name] = round(took, 3)
+    check("P2 a 10 MB field is redacted under 1 s (mixed, keyword on every line, one line)", not slow10, slow10)
     check(f"P2 linear redaction: {len(adv)} adversarial 256 KB inputs each under 0.2 s; clip() on 1 MB "
           f"{took_clip:.2f} s", not slow and took_clip < 0.5, slow or took_clip)
     big_field = "\n".join(f"line {i} " + "x" * 60 for i in range(6000)) + "\npassword: |\n  Zq9Yw2Xr8Vt4\nend"

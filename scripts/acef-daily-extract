@@ -158,6 +158,9 @@ SECRET_CTX_RE = re.compile(
     r"passw(?:or)?d|\bpwd\b|\bpass\s*[=:]|secret|token|api[_-]?key|apikey|authori[sz]ation|bearer|"
     r"private[ _-]?key|-----BEGIN|client[_-]?secret|database_url|credential|access[_-]?key|auth[_-]?key",
     re.IGNORECASE)
+# whole-text pre-checks run case-sensitively on s.lower() (one C pass) instead of IGNORECASE over megabytes
+SECRET_CTX_LOWER = re.compile(SECRET_CTX_RE.pattern)
+DBCLI_LOWER = re.compile(r"\b(?:mysql\w*|mariadb\w*|psql|pg_dump|pg_restore)\b")
 DBCLI_RE = re.compile(r"\b(?:mysql\w*|mariadb\w*|psql|pg_dump|pg_restore)\b", re.IGNORECASE)
 DBPASS_RE = re.compile(r"\s-p(?=\S)")
 URLCRED_RE = re.compile(r"://[^\s/@]{0,256}:[^\s@]{0,256}@")    # starts only at "://"; bounded
@@ -206,14 +209,16 @@ def _redact_pem(s):
     return "".join(out)
 
 
-def _secret_span(line, ctx=True, db=True, url=True):
+def _secret_span(line, ctx=True, db=True, url=True, low=None):
     """(start, end) of the earliest secret context on a line, or None. The flags skip checks the whole text
-    already ruled out."""
+    already ruled out. low is line.lower(): case-sensitive patterns on it are much faster than IGNORECASE; when
+    lowercasing changed the length (some non-ASCII letters), positions would drift, so the original is searched."""
     best = None
-    m = SECRET_CTX_RE.search(line) if ctx else None
+    same = low is not None and len(low) == len(line)
+    m = (SECRET_CTX_LOWER.search(low) if same else SECRET_CTX_RE.search(line)) if ctx else None
     if m:
         best = (m.start(), m.end())
-    d = DBCLI_RE.search(line) if db else None
+    d = (DBCLI_LOWER.search(low) if same else DBCLI_RE.search(line)) if db else None
     if d:
         p = DBPASS_RE.search(line, d.end())
         if p and (best is None or p.start() < best[0]):
@@ -247,82 +252,148 @@ def _indent(line):
     return len(line) - len(line.lstrip(" \t"))
 
 
-def _redact_lines(s):
+class _Block:
+    """The monotone block state of the secret-context pass (see _redact_lines)."""
+    __slots__ = ("active", "base", "first", "cont", "k")
+
+    def __init__(self):
+        self.active, self.base, self.first, self.cont, self.k = False, 0, False, False, 0
+
+    def step(self, line, lw, ctx, db, url):
+        """Redact one line and advance the state. Returns the line to output."""
+        blank = not line.strip()
+        in_block = self.active and self.k < BLOCK_CAP
+        ind = _indent(line)
+        consumed = in_block and not blank and (self.first or self.cont or ind > self.base)
+        span = None if blank else _secret_span(line, ctx, db, url, lw)
+        if span:
+            opens, ends_bs = _opens_block(line[span[1]:]), line.rstrip().endswith("\\")
+            if consumed and ind > self.base:        # nested header: keep the outer baseline, add its rules
+                self.first, self.cont, self.k = opens, ends_bs, 0
+                return MARK
+            out = MARK if consumed else line[: span[0]] + MARK
+            self.active, self.base, self.first, self.cont, self.k = True, ind, opens, ends_bs, 0
+            return out                              # a fresh block at this line (dedent or no block)
+        if consumed:
+            self.first, self.cont, self.k = False, line.rstrip().endswith("\\"), self.k + 1
+            return MARK
+        if in_block and blank:
+            self.k += 1
+            return line
+        self.active = False
+        return line
+
+
+def _redact_lines(s, start=None):
     """One pass, monotone: a keyword line can only extend redaction. A line with secret context loses everything from
     the keyword on and opens a block: (a) every following line indented deeper than the block's baseline is
     redacted, (b) the first following non-empty line is redacted too when the value may continue there
     (_opens_block), and backslash continuations carry on. A keyword line INSIDE an active block is redacted whole,
     keeps the outer baseline and adds its own (a)/(b) to the block; one at or below the baseline starts a fresh block
     there (a header swallowed as a continuation still gets its own block). The block ends at the first non-empty line
-    at or below the baseline that no rule claims, or BLOCK_CAP lines after the most recent keyword line."""
-    ctx, db, url = bool(SECRET_CTX_RE.search(s)), bool(DBCLI_RE.search(s)), "://" in s and "@" in s
-    if not (ctx or db or url):
-        return s                                    # no secret context anywhere: nothing to do line by line
-    out = []
-    active, base, first, cont, k = False, 0, False, False, 0
-    for line in s.split("\n"):
-        blank = not line.strip()
-        in_block = active and k < BLOCK_CAP
-        ind = _indent(line)
-        consumed = in_block and not blank and (first or cont or ind > base)
-        span = None if blank else _secret_span(line, ctx, db, url)
-        if span:
-            opens, ends_bs = _opens_block(line[span[1]:]), line.rstrip().endswith("\\")
-            if consumed and ind > base:             # nested header: keep the outer baseline, add its rules
-                out.append(MARK)
-                first, cont, k = opens, ends_bs, 0
-            else:                                   # a fresh block at this line (dedent or no block)
-                out.append(MARK if consumed else line[: span[0]] + MARK)
-                active, base, first, cont, k = True, ind, opens, ends_bs, 0
-        elif consumed:
-            out.append(MARK)
-            first, cont, k = False, line.rstrip().endswith("\\"), k + 1
-        elif in_block and blank:
-            out.append(line)
-            k += 1
-        else:
-            active = False
-            out.append(line)
-    return "\n".join(out)
+    at or below the baseline that no rule claims, or BLOCK_CAP lines after the most recent keyword line.
+    Speed: the text between blocks is copied as slices; Python only walks candidate lines (a keyword, a database
+    client, a URL) and the lines a block claims, and every pattern's next hit is cached so nothing is rescanned."""
+    low = s.lower()
+    ctx, db, url = bool(SECRET_CTX_LOWER.search(low)), bool(DBCLI_LOWER.search(low)), "://" in s and "@" in s
+    st = start or _Block()
+    if not (ctx or db or url or st.active):
+        return s                                    # no secret context anywhere
+    if len(low) != len(s):                          # lowercasing moved positions: walk every line
+        return "\n".join(st.step(ln, None, ctx, db, url) for ln in s.split("\n"))
+    n, inf = len(s), len(s) + 1
+
+    def srch(rx, pos):
+        m = rx.search(low, pos)
+        return m.start() if m else inf
+    nxt_c = srch(SECRET_CTX_LOWER, 0) if ctx else inf
+    nxt_d = srch(DBCLI_LOWER, 0) if db else inf
+    nxt_u = (low.find("://") if url else -1)
+    nxt_u = inf if nxt_u == -1 else nxt_u
+    out, cur = [], 0
+    while cur <= n:
+        if nxt_c < cur:
+            nxt_c = srch(SECRET_CTX_LOWER, cur)
+        if nxt_d < cur:
+            nxt_d = srch(DBCLI_LOWER, cur)
+        if nxt_u < cur:
+            f = low.find("://", cur)
+            nxt_u = inf if f == -1 else f
+        c = cur if st.active else min(nxt_c, nxt_d, nxt_u)     # a carried-in block is walked from the start
+        if c >= inf:
+            out.append(s[cur:])
+            break
+        ls = s.rfind("\n", cur, c) + 1 or cur      # start of the candidate's line
+        ls = max(ls, cur)
+        out.append(s[cur:ls])                       # untouched lines, copied as one slice
+        i = ls
+        while True:                                 # walk the candidate line and the block it opens
+            le = s.find("\n", i)
+            le = n if le == -1 else le
+            out.append(st.step(s[i:le], low[i:le], ctx, db, url))
+            if le >= n:
+                cur = inf
+                break
+            out.append("\n")
+            i = le + 1
+            if not st.active:
+                cur = i
+                break
+    return "".join(out)
+
+
+def _structure_layer(s):
+    """The redaction that depends on context across lines: key blocks, then secret-context lines and their blocks.
+    It must see a whole field, never a bounded window of it."""
+    return _redact_lines(_redact_pem(s))
+
+
+def _token_layer(s):
+    """The redaction that is local to a line: known token shapes, emails, opaque high-entropy strings."""
+    for rx in TOKEN_PATTERNS:
+        s = rx.sub(MARK, s)
+    s = EMAIL_RE.sub("<email>", s)
+    return LONG_TOKEN.sub(_long_token, s)
 
 
 def redact(s):
     if not isinstance(s, str) or not s:
         return s
-    s = _redact_pem(s)
-    for rx in TOKEN_PATTERNS:
-        s = rx.sub(MARK, s)
-    s = _redact_lines(s)
-    s = EMAIL_RE.sub("<email>", s)
-    return LONG_TOKEN.sub(_long_token, s)
-
-
-def bounded(s, cap=FIELD_CAP):
-    """An input field larger than 2 x cap keeps its first cap and last cap characters as whole lines and drops the
-    middle. The tail reaches back up to BLOCK_CAP more lines (at most another cap characters) so a secret block that
-    starts just before it is still recognised. Dropping is safe; a line cut in half is never kept."""
-    if not isinstance(s, str) or len(s) <= 2 * cap:
-        return s
-    hcut = s.rfind("\n", 0, cap)
-    head = s[:hcut] if hcut > 0 else ""
-    lo = max(hcut + 1, len(s) - 2 * cap)
-    pos = len(s) - cap
-    for _ in range(BLOCK_CAP + 1):
-        prev = s.rfind("\n", lo, pos)
-        if prev == -1:
-            break
-        pos = prev
-    if s[pos:pos + 1] == "\n":
-        tail = s[pos + 1:]
-    else:
-        nl = s.find("\n", pos)
-        tail = s[nl + 1:] if nl != -1 else ""
-    return head + f"\n<dropped {len(s) - len(head) - len(tail)} chars>\n" + tail
+    return _token_layer(_structure_layer(s))
 
 
 def redact_field(s):
-    """Redaction for an input field: bounded, then redacted."""
-    return redact(bounded(s))
+    """Redaction for an input field, which may be huge. Key blocks are scanned over the whole field first. A field up
+    to 2 x FIELD_CAP is redacted whole. A larger one keeps its first and last FIELD_CAP characters as whole lines and
+    drops the middle, and the secret-context pass never loses a block across the cut: the head is exact (its state
+    depends only on earlier lines); the tail starts inside an active block, with a baseline below every indent, when
+    any candidate line (secret keyword, database client, URL) lies in the BLOCK_CAP + 1 lines before it. That carried
+    state redacts at least everything the full pass would (it only ends after BLOCK_CAP lines without a keyword), so
+    a dropped middle never shortens a block; it over-redacts at most BLOCK_CAP lines after the cut. The middle is
+    only searched by regex, never walked line by line, so the cost stays linear."""
+    if not isinstance(s, str) or not s:
+        return s
+    s = _redact_pem(s)
+    if len(s) <= 2 * FIELD_CAP:
+        return _token_layer(_redact_lines(s))
+    hcut = s.rfind("\n", 0, FIELD_CAP)
+    head = s[:hcut] if hcut > 0 else ""
+    nl = s.find("\n", len(s) - FIELD_CAP)
+    tstart = nl + 1 if nl != -1 else len(s)
+    lo = tstart - 1                                  # the BLOCK_CAP + 1 lines before the tail, head lines included
+    for _ in range(BLOCK_CAP + 2):
+        prev = s.rfind("\n", 0, lo)
+        if prev == -1:
+            lo = 0
+            break
+        lo = prev
+    window = s[lo:tstart].lower()
+    carried = _Block()
+    if SECRET_CTX_LOWER.search(window) or DBCLI_LOWER.search(window) or "://" in window:
+        carried.active, carried.base, carried.first, carried.cont, carried.k = True, -1, True, False, 0
+    tail = s[tstart:]
+    dropped = len(s) - len(head) - len(tail)
+    return _token_layer(_redact_lines(head) + f"\n<dropped {dropped} chars>\n" + _redact_lines(tail, carried))
 
 
 def redact_obj(o):
