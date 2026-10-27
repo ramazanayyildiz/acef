@@ -10,7 +10,7 @@ const {
   writeInstallationManifest,
 } = require("./lib/acef-installation");
 const { validateModelRoutingPolicy } = require("./lib/acef-model-routing");
-const { assertRoutingPreflight } = require("./lib/acef-routing-preflight");
+const { assertRoutingPreflight, stripMovedFloorKeys } = require("./lib/acef-routing-preflight");
 
 const repoRoot = path.resolve(__dirname, "..");
 const tools = [
@@ -126,6 +126,18 @@ function mergeModelRoutingPolicy(targetRepo) {
   if (!fs.existsSync(source)) return "";
   const target = rel(".acef", "model-routing-policy.json");
   const baseline = installedSourceBaseline(targetRepo, repoRoot, "tools", rel("method", "model-routing-policy-v1.json"));
+  // modelRank/reviewModelFloors (and acefReviewFloors) moved to the ACEF-owned floors file; drop them from the host copy.
+  const hostPath = path.join(targetRepo, target);
+  if (fs.existsSync(hostPath)) {
+    let host = null;
+    try { host = JSON.parse(fs.readFileSync(hostPath, "utf8")); } catch {}
+    const moved = host ? stripMovedFloorKeys(host) : [];
+    if (moved.length) {
+      fs.writeFileSync(hostPath, `${JSON.stringify(host, null, 2)}\n`);
+      console.log(`moved to .acef/model-review-floors.json (removed from ${target}): ${moved.join(", ")}`);
+    }
+  }
+  if (baseline) stripMovedFloorKeys(baseline);
   mergeHostJson(targetRepo, target, fs.readFileSync(source), validateModelRoutingPolicy, baseline);
   return target;
 }

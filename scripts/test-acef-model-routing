@@ -207,10 +207,42 @@ const assert = require("node:assert/strict");
   assert.deepEqual(listed.map((entry) => `${entry.provider}:${entry.role}:${entry.model}:${entry.floor}`),
     ["anthropic:patch-assurance:claude-sonnet-5-5:claude-opus-5-5", "anthropic:process-judge:claude-sonnet-5-5:claude-opus-5-5", "anthropic:epic-process-judge:claude-sonnet-5-5:claude-opus-5-5"]);
   assert.match(formatViolations(listed), /docs\/ai\/ACEF_MODEL_ROUTING_POLICY\.json: "providers": \{ "anthropic": \{ "roleModelExemptions": \{ "patch-assurance": "<owner, date, reason>" \} \} \}/);
-  // in-memory floors override (tests) and an uncovered provider: run overrides on review roles there need an exemption
-  const uncovered = structuredClone(loaded.record);
-  uncovered.acefReviewFloors = { ...floors, providers: { openai: floors.providers.openai } };
-  assert.throws(() => resolveRoleRuntime(uncovered, "code-review", run({ "code-review": "claude-opus-5-5" })), /do not cover that provider/);
+  // explicit floors argument (tests) and an uncovered provider: run overrides on review roles there need an exemption
+  const openaiOnly = { ...floors, providers: { openai: floors.providers.openai } };
+  assert.throws(() => resolveRoleRuntime(loaded.record, "code-review", run({ "code-review": "claude-opus-5-5" }), { reviewFloors: openaiOnly }), /do not cover that provider/);
+  // Floors never come from a policy record (review of 7bc3bad): a serialized acefReviewFloors, top-level or per
+  // provider, is rejected by validation, and a record carrying it in memory is ignored by the resolver.
+  for (const place of ["top", "provider"]) {
+    for (const key of ["acefReviewFloors", "modelRank", "reviewModelFloors"]) {
+      const smuggled = structuredClone(loaded.record);
+      const target = place === "top" ? smuggled : smuggled.providers.openai;
+      target[key] = key === "modelRank" ? ["gpt-cheap"] : { providers: {} };
+      assert.throws(() => validateModelRoutingPolicy(smuggled), /review floors belong in|belongs in the ACEF-owned/, `${place} ${key}`);
+    }
+  }
+  const inMemory = structuredClone(loaded.record);
+  inMemory.acefReviewFloors = { providers: {} };
+  inMemory.providers.openai.models["semantic-critical"] = "gpt-cheap";
+  assert.throws(() => resolveRoleRuntime(inMemory, "patch-assurance", "openai"), /gpt-cheap is not in the ACEF modelRank for openai/);
+  {
+    // The repro: a docs override with "acefReviewFloors":{"providers":{}} and openai semantic-critical gpt-cheap.
+    const os = require("node:os");
+    const host = fs.mkdtempSync(path.join(os.tmpdir(), "acef-floor-smuggle-"));
+    try {
+      const override = structuredClone(JSON.parse(fs.readFileSync(path.join(repoRoot, "method", "model-routing-policy-v1.json"), "utf8")));
+      override.acefReviewFloors = { providers: {} };
+      override.providers.openai.models["semantic-critical"] = "gpt-cheap";
+      fs.mkdirSync(path.join(host, "docs", "ai"), { recursive: true });
+      fs.writeFileSync(path.join(host, "docs", "ai", "ACEF_MODEL_ROUTING_POLICY.json"), JSON.stringify(override));
+      assert.throws(() => loadModelRoutingPolicy(host), /acefReviewFloors is not allowed/);
+      delete override.acefReviewFloors;
+      fs.writeFileSync(path.join(host, "docs", "ai", "ACEF_MODEL_ROUTING_POLICY.json"), JSON.stringify(override));
+      // The floors still come from the ACEF-owned file, so the cheap class model is refused for Patch Assurance.
+      assert.throws(() => resolveRoleRuntime(loadModelRoutingPolicy(host).record, "patch-assurance", "openai"), /gpt-cheap is not in the ACEF modelRank for openai/);
+    } finally {
+      fs.rmSync(host, { recursive: true, force: true });
+    }
+  }
   // floors file shape checks
   assert.throws(() => validateReviewFloors({ ...floors, providers: { openai: { modelRank: ["a", "a"], reviewModelFloors: {} } } }), /twice/);
   assert.throws(() => validateReviewFloors({ ...floors, providers: { openai: { modelRank: ["a"], reviewModelFloors: { "code-review": "b" } } } }), /must be a model in its modelRank/);
@@ -237,10 +269,9 @@ const assert = require("node:assert/strict");
   assert.ok(floorsSource.includes(`const MODEL_ID = /${grammar}/;`), "floors module uses the shared grammar");
   const hookSource = fs.readFileSync(path.join(repoRoot, "claude-plugins", "acef-bmad-guard", "hooks", "acef-bmad-hard-wall.mjs"), "utf8");
   assert.ok(hookSource.includes("modelIdSource: library.MODEL_ID_SOURCE"), "hard-wall shell parser uses the library grammar");
-  const slashed = structuredClone(loaded.record);
-  slashed.acefReviewFloors = structuredClone(loadReviewFloors().record);
-  slashed.acefReviewFloors.providers.anthropic.modelRank.push("anthropic/claude-opus-5-5:1");
-  assert.equal(resolveRoleRuntime(slashed, "patch-assurance", { provider: "anthropic", roleModels: { "patch-assurance": "anthropic/claude-opus-5-5:1" } }).model, "anthropic/claude-opus-5-5:1");
+  const slashedFloors = structuredClone(loadReviewFloors().record);
+  slashedFloors.providers.anthropic.modelRank.push("anthropic/claude-opus-5-5:1");
+  assert.equal(resolveRoleRuntime(loaded.record, "patch-assurance", { provider: "anthropic", roleModels: { "patch-assurance": "anthropic/claude-opus-5-5:1" } }, { reviewFloors: slashedFloors }).model, "anthropic/claude-opus-5-5:1");
 }
 {
   // Unknown or alias role keys and unsafe model ids are rejected, for inactive providers too.

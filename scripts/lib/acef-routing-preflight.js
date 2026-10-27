@@ -9,6 +9,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { installedSourceBaseline, mergeHostConfig } = require("./acef-installation");
 const { formatViolations, policyFloorViolations, validateReviewFloors } = require("./acef-review-floors");
+const { FLOOR_KEYS, validateModelRoutingPolicy } = require("./acef-model-routing");
 
 const INSTALLED_POLICY = ".acef/model-routing-policy.json";
 const DOCS_OVERRIDE = "docs/ai/ACEF_MODEL_ROUTING_POLICY.json";
@@ -22,37 +23,74 @@ function readJson(file) {
   }
 }
 
-// The violations an update from sourceRoot would leave in targetRepo, without writing.
+// Migration for installs of the unreleased 9269a8c shape, which carried modelRank/reviewModelFloors inside the routing
+// policy: those keys now live only in the ACEF-owned floors file, so they are removed from a host policy copy.
+// Returns the removed key paths; mutates `record`.
+function stripMovedFloorKeys(record) {
+  const moved = [];
+  if (!record || typeof record !== "object") return moved;
+  for (const key of FLOOR_KEYS) {
+    if (key in record) { delete record[key]; moved.push(key); }
+  }
+  for (const [providerId, provider] of Object.entries(record.providers || {})) {
+    for (const key of FLOOR_KEYS) {
+      if (provider && typeof provider === "object" && key in provider) { delete provider[key]; moved.push(`providers.${providerId}.${key}`); }
+    }
+  }
+  return moved;
+}
+
+// The violations an update from sourceRoot would leave in targetRepo, without writing. `invalid` lists policies that
+// would fail full validation (the merged installed policy, the effective docs override).
 function routingPreflight(sourceRoot, targetRepo) {
   const floorsPath = path.join(sourceRoot, "method", "model-review-floors-v1.json");
   const sourcePolicyPath = path.join(sourceRoot, "method", "model-routing-policy-v1.json");
-  if (!fs.existsSync(floorsPath) || !fs.existsSync(sourcePolicyPath)) return { violations: [], checked: [] };
+  if (!fs.existsSync(floorsPath) || !fs.existsSync(sourcePolicyPath)) return { violations: [], invalid: [], checked: [], moved: [] };
   const floors = validateReviewFloors(JSON.parse(fs.readFileSync(floorsPath, "utf8")));
   const source = JSON.parse(fs.readFileSync(sourcePolicyPath, "utf8"));
   const checked = [];
   const violations = [];
+  const invalid = [];
+  const validate = (record, file) => {
+    try {
+      validateModelRoutingPolicy(record);
+    } catch (error) {
+      invalid.push({ file, message: error.message });
+    }
+  };
   const host = readJson(path.join(targetRepo, INSTALLED_POLICY));
+  const moved = host ? stripMovedFloorKeys(host) : [];
   const baseline = host ? installedSourceBaseline(targetRepo, sourceRoot, "tools", "method/model-routing-policy-v1.json") : null;
+  if (baseline) stripMovedFloorKeys(baseline);
   const merged = host ? mergeHostConfig(host, source, baseline).result : source;
   checked.push(INSTALLED_POLICY);
+  validate(merged, INSTALLED_POLICY);
   violations.push(...policyFloorViolations(merged, floors, INSTALLED_POLICY));
   const override = readJson(path.join(targetRepo, DOCS_OVERRIDE));
   if (override) {
     checked.push(DOCS_OVERRIDE);
+    validate(override, DOCS_OVERRIDE);
     violations.push(...policyFloorViolations(override, floors, DOCS_OVERRIDE));
   }
-  return { violations, checked };
+  return { violations, invalid, checked, moved };
 }
 
 function assertRoutingPreflight(sourceRoot, targetRepo) {
-  const { violations } = routingPreflight(sourceRoot, targetRepo);
-  if (!violations.length) return;
-  const error = new Error(`ACEF update stopped before any write: review roles below the ACEF review floor `
-    + `(owner decision 2026-10-27; method/model-review-floors-v1.json) in ${targetRepo}:\n${formatViolations(violations)}\n`
-    + "Nothing in the host was changed. Add each exemption line only with Ram's approval, then rerun the update.");
-  error.code = "ACEF_REVIEW_FLOOR";
+  const { violations, invalid } = routingPreflight(sourceRoot, targetRepo);
+  if (!violations.length && !invalid.length) return;
+  const parts = [];
+  if (invalid.length) {
+    parts.push(`routing policy would not validate:\n${invalid.map((entry) => `- ${entry.file}: ${entry.message}`).join("\n")}`);
+  }
+  if (violations.length) {
+    parts.push(`review roles below the ACEF review floor (owner decision 2026-10-27; method/model-review-floors-v1.json):\n${formatViolations(violations)}`);
+  }
+  const error = new Error(`ACEF update stopped before any write in ${targetRepo}: ${parts.join("\n")}\n`
+    + "Nothing in the host was changed. Add each exemption line only with Ram's approval, fix any invalid policy, then rerun the update.");
+  error.code = violations.length ? "ACEF_REVIEW_FLOOR" : "ACEF_ROUTING_POLICY_INVALID";
   error.violations = violations;
+  error.invalid = invalid;
   throw error;
 }
 
-module.exports = { assertRoutingPreflight, routingPreflight };
+module.exports = { assertRoutingPreflight, routingPreflight, stripMovedFloorKeys };

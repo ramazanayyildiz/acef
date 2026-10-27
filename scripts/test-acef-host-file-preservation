@@ -83,10 +83,13 @@ try {
     assert.ok(after.providers[removed], `new key providers.${removed} is added`);
     assert.match(merged, new RegExp(`added new keys \\.acef/model-routing-policy\\.json: providers\\.${removed}`));
   }
-  // an unusable merge leaves the host file untouched
+  // an unusable merge stops the update before any write (review of 7bc3bad): the new runtime would reject it
   write(repo, POLICY, "{\"schema\": \"acef.model-routing-policy.v1\", \"roles\": \"broken\"}\n");
-  assert.match(update(repo), /kept host-modified \.acef\/model-routing-policy\.json \(merged copy invalid/);
+  const stateBefore = read(repo, STATE);
+  assert.throws(() => update(repo), (error) => /update stopped before any write[\s\S]*routing policy would not validate:\n- \.acef\/model-routing-policy\.json/.test(`${error.stderr}`));
   assert.equal(read(repo, POLICY), "{\"schema\": \"acef.model-routing-policy.v1\", \"roles\": \"broken\"}\n");
+  assert.equal(read(repo, STATE), stateBefore, "no runtime file is replaced");
+  write(repo, POLICY, `${JSON.stringify(after, null, 2)}\n`);
 
   // 4. Legacy record (no hashes): the baseline is the file at the recorded install commit.
   const legacy = freshRepo();
@@ -245,12 +248,13 @@ try {
   // 7b. Per-role models across the same upgrade. An untouched host gains ACEF's roleModels (Patch Assurance and the
   //     Judges move to Opus on anthropic); review roles never drop below the floor without an exemption.
   const { loadModelRoutingPolicy, resolveRoleRuntime } = require(path.join(root, "scripts", "lib", "acef-model-routing"));
-  const withFloors = (dir) => ({ ...loadModelRoutingPolicy(dir).record, acefReviewFloors: JSON.parse(read(dir, FLOORS)) });
+  // Resolve with the host's installed floors file passed explicitly (floors never ride on a policy record).
+  const resolveIn = (dir, role, provider) => resolveRoleRuntime(loadModelRoutingPolicy(dir).record, role, provider, { reviewFloors: JSON.parse(read(dir, FLOORS)) });
   const plainOut = updateFrom(plainHost);
   assert.match(plainOut, /added new keys \.acef\/model-routing-policy\.json: [^\n]*providers\.anthropic\.roleModels/);
   assert.deepEqual(JSON.parse(read(plainHost, POLICY)).providers.anthropic.roleModels, shippedRoleModels);
-  assert.equal(resolveRoleRuntime(withFloors(plainHost), "patch-assurance", "anthropic").model, "claude-opus-5-5");
-  assert.equal(resolveRoleRuntime(withFloors(plainHost), "development", "anthropic").model, "claude-sonnet-5-5");
+  assert.equal(resolveIn(plainHost, "patch-assurance", "anthropic").model, "claude-opus-5-5");
+  assert.equal(resolveIn(plainHost, "development", "anthropic").model, "claude-sonnet-5-5");
   // A rejected update (review of 9269a8c, P2): checked before any write, the host stays byte-identical, and the
   // message names each role, model, floor and the exemption line.
   const expectRefused = (dir, patterns) => {
@@ -265,8 +269,7 @@ try {
   // The effective docs override is checked too: all three anthropic review roles are on Sonnet there.
   expectRefused(docsHost, ["patch-assurance", "process-judge", "epic-process-judge"].map((role) => new RegExp(`docs/ai/ACEF_MODEL_ROUTING_POLICY\\.json provider anthropic ${role}: claude-sonnet-5-5 is below the review floor claude-opus-5-5`)));
   // At resolve time the docs override (the file the loader prefers) is held to the installed floors as well.
-  const docsLoaded = { ...loadModelRoutingPolicy(docsHost).record, acefReviewFloors: shippedFloors };
-  assert.throws(() => resolveRoleRuntime(docsLoaded, "patch-assurance", "anthropic"), /below the review floor claude-opus-5-5/);
+  assert.throws(() => resolveRoleRuntime(loadModelRoutingPolicy(docsHost).record, "patch-assurance", "anthropic", { reviewFloors: shippedFloors }), /below the review floor claude-opus-5-5/);
   editPolicy(docsHost, "docs/ai/ACEF_MODEL_ROUTING_POLICY.json", (value) => {
     value.providers.anthropic.roleModelExemptions = { "patch-assurance": "owner: test", "process-judge": "owner: test", "epic-process-judge": "owner: test" };
   });
@@ -280,8 +283,8 @@ try {
   assert.equal(exemptAfter.roleModels["epic-process-judge"], "claude-opus-5-5", "a per-role default the host did not name is added");
   assert.deepEqual(Object.keys(exemptAfter.roleModelExemptions), ["patch-assurance", "process-judge"], "host exemptions survive");
   assert.match(exemptOut, /kept host overrides \.acef\/model-routing-policy\.json: [^\n]*providers\.anthropic\.roleModels\.patch-assurance/);
-  assert.equal(resolveRoleRuntime(withFloors(exemptHost), "patch-assurance", "anthropic").model, "claude-sonnet-5-5");
-  assert.equal(resolveRoleRuntime(withFloors(exemptHost), "process-judge", "anthropic").model, "claude-sonnet-5-5");
+  assert.equal(resolveIn(exemptHost, "patch-assurance", "anthropic").model, "claude-sonnet-5-5");
+  assert.equal(resolveIn(exemptHost, "process-judge", "anthropic").model, "claude-sonnet-5-5");
   // The floors file is ACEF-owned: a host edit is reset on the next update and reported.
   const lowered = JSON.parse(read(exemptHost, FLOORS));
   lowered.providers.anthropic.reviewModelFloors["epic-process-judge"] = "claude-sonnet-5-5";
@@ -289,6 +292,35 @@ try {
   const resetOut = updateFrom(exemptHost);
   assert.match(resetOut, /reset host-modified ACEF-owned \.acef\/model-review-floors\.json/);
   assert.equal(JSON.parse(read(exemptHost, FLOORS)).providers.anthropic.reviewModelFloors["epic-process-judge"], "claude-opus-5-5");
+  // A 9269a8c-shaped install (unreleased round 2: modelRank/reviewModelFloors inside the routing policy) migrates:
+  // the keys are removed from the host policy and reported, and the merged policy validates (review of 7bc3bad).
+  const roundTwo = freshHost();
+  editPolicy(roundTwo, POLICY, (value) => {
+    value.providers.openai.modelRank = ["gpt-6.1-sol"];
+    value.providers.openai.reviewModelFloors = { "code-review": "gpt-6.1-sol", "patch-assurance": "gpt-6.1-sol", "process-judge": "gpt-6.1-sol", "epic-process-judge": "gpt-6.1-sol" };
+    value.providers.anthropic.modelRank = ["claude-sonnet-5-5", "claude-opus-5-5"];
+    value.providers.anthropic.reviewModelFloors = { "code-review": "claude-sonnet-5-5", "patch-assurance": "claude-opus-5-5", "process-judge": "claude-opus-5-5", "epic-process-judge": "claude-opus-5-5" };
+    value.providers.anthropic.roleModels = shippedRoleModels;
+    value.providers.openai.models["semantic-critical"] = "gpt-6.1-sol";
+  });
+  const roundTwoOut = updateFrom(roundTwo);
+  assert.match(roundTwoOut, /moved to \.acef\/model-review-floors\.json \(removed from \.acef\/model-routing-policy\.json\): providers\.openai\.modelRank, providers\.openai\.reviewModelFloors, providers\.anthropic\.modelRank, providers\.anthropic\.reviewModelFloors/);
+  const roundTwoPolicy = JSON.parse(read(roundTwo, POLICY));
+  for (const mapping of Object.values(roundTwoPolicy.providers)) {
+    assert.equal(mapping.modelRank, undefined);
+    assert.equal(mapping.reviewModelFloors, undefined);
+  }
+  const { validateModelRoutingPolicy } = require(path.join(root, "scripts", "lib", "acef-model-routing"));
+  validateModelRoutingPolicy(roundTwoPolicy);
+  assert.equal(resolveIn(roundTwo, "patch-assurance", "anthropic").model, "claude-opus-5-5");
+  // A docs override that would not validate (floor keys in it) stops the update before any write.
+  const badDocs = freshHost();
+  write(badDocs, "docs/ai/ACEF_MODEL_ROUTING_POLICY.json", read(roundTwo, POLICY).replace('"providers": {', '"acefReviewFloors": { "providers": {} },\n  "providers": {'));
+  const badBefore = snapshot(badDocs);
+  let badErr = "";
+  assert.throws(() => updateFrom(badDocs), (error) => { badErr = `${error.stderr}`; return true; });
+  assert.match(badErr, /update stopped before any write[\s\S]*routing policy would not validate:\n- docs\/ai\/ACEF_MODEL_ROUTING_POLICY\.json: model routing policy acefReviewFloors is not allowed/);
+  assert.deepEqual(snapshot(badDocs), badBefore, "an invalid docs override leaves the host byte-identical");
   const forkOut2 = updateFrom(forkInstall);
   assert.equal(JSON.parse(read(forkInstall, POLICY)).providers.openai.models.orchestration, "fork-orchestration", "fork values are host choices");
   assert.match(forkOut2, /no ACEF baseline/);

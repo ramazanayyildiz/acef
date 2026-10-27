@@ -219,8 +219,9 @@ beta.8 model-choice entry.
   ranks live in a new ACEF-owned file, `method/model-review-floors-v1.json` (schema
   `schemas/model-review-floors-v1.schema.json`), installed as `.acef/model-review-floors.json` and reset on every
   update. It is loaded apart from any host policy, so neither the merged `.acef/model-routing-policy.json` nor a
-  whole-file `docs/ai/ACEF_MODEL_ROUTING_POLICY.json` can remove or lower a floor; a routing policy that carries
-  `modelRank` or `reviewModelFloors` is rejected. `modelRank` (weakest first: anthropic Sonnet < Opus; openai
+  whole-file `docs/ai/ACEF_MODEL_ROUTING_POLICY.json` can remove or lower a floor; a routing policy file that carries
+  `acefReviewFloors`, `modelRank` or `reviewModelFloors` (top level or per provider) is rejected, and the resolver takes
+  floors only from that file or an explicit argument, never from a policy record. `modelRank` (weakest first: anthropic Sonnet < Opus; openai
   `gpt-6.1-sol` < `gpt-6-astra`; terra unranked) is the only source of model strength; ranking Astra does not choose it.
   At resolve time (`scripts/lib/acef-review-floors.js`, used by the routing library) the effective policy, whichever
   file won, must put code-review, patch-assurance, process-judge and epic-process-judge at or above the floor unless
@@ -235,8 +236,11 @@ beta.8 model-choice entry.
   blocker instead of a silent null runtime.
 - **Update preflight** `scripts/lib/acef-routing-preflight.js`: `update-acef-installation` (every target, before any
   write) and `install-acef-tools` check the merged installed policy and the docs override against the floors being
-  installed. A violation stops the update with the host byte-identical and lists each role, model, floor and the exact
-  `roleModelExemptions` line to add if Ram approves.
+  installed, including full validation of both. A violation or an invalid policy stops the update with the host
+  byte-identical and lists each role, model, floor and the exact `roleModelExemptions` line to add if Ram approves.
+  (A host policy that fails validation used to be kept with a log line while the runtime was replaced; it now stops
+  the update.) Installs of the unreleased round-2 shape (9269a8c) migrate: `modelRank`/`reviewModelFloors` are removed
+  from `.acef/model-routing-policy.json` and reported as moved to `.acef/model-review-floors.json`.
 - **One model id grammar** `MODEL_ID_SOURCE` (`[A-Za-z0-9._:/-]+`) for the policy, both schemas, the active-run parser
   and the hard-wall shell parser, so `anthropic/claude-opus-5-5`-style ids resolve and dispatch alike. Persisted
   `routingRoleModels` keys are checked against the canonical policy roles before resolving (alias keys fail loudly).

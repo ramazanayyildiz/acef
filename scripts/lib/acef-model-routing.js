@@ -79,9 +79,13 @@ function validateModelRoutingPolicy(record) {
     if (typeof assignment.sessionPolicy !== "string" || !assignment.sessionPolicy.trim()) throw new Error(`model routing role ${role} requires sessionPolicy`);
     if (typeof assignment.evidence !== "string" || !assignment.evidence.trim()) throw new Error(`model routing role ${role} requires evidence`);
   }
+  // Floors and ranks come only from the ACEF-owned floors file; a routing policy file can never carry them.
+  for (const key of FLOOR_KEYS) {
+    if (key in record) throw new Error(`model routing policy ${key} is not allowed: review floors belong in the ACEF-owned method/model-review-floors-v1.json, never in a routing policy`);
+  }
   for (const [providerId, provider] of Object.entries(record.providers)) {
     validateRoleModels(provider?.roleModels, record.roles, `provider ${providerId} roleModels`);
-    for (const moved of ["modelRank", "reviewModelFloors"]) {
+    for (const moved of FLOOR_KEYS) {
       if (provider && moved in provider) throw new Error(`provider ${providerId} ${moved} belongs in the ACEF-owned method/model-review-floors-v1.json, not in a routing policy`);
     }
     validateExemptions(provider?.roleModelExemptions, record.roles, `provider ${providerId} roleModelExemptions`);
@@ -106,10 +110,14 @@ function validateExemptions(exemptions, roles, label) {
   }
 }
 
-// The ACEF-owned floors: an in-memory override on the record (tests), else the file next to this library.
+// Keys a routing policy file may never carry (review of 7bc3bad): floors are not serializable through a policy.
+const FLOOR_KEYS = Object.freeze(["acefReviewFloors", "modelRank", "reviewModelFloors"]);
+
+// The ACEF-owned floors: an explicit resolver argument (tests), else the file next to this library. Nothing on the
+// policy record is consulted.
 let cachedFloors = null;
-function reviewFloorsFor(policyRecord) {
-  if (policyRecord?.acefReviewFloors) return policyRecord.acefReviewFloors;
+function reviewFloorsFor(explicitFloors = null) {
+  if (explicitFloors) return explicitFloors;
   if (!cachedFloors) cachedFloors = loadReviewFloors().record;
   return cachedFloors;
 }
@@ -156,11 +164,11 @@ function selectPolicyModel(mapping, canonicalRole, executionClass) {
 // per role (providers.<id>.roleModels) -> policy class mapping (providers.<id>.models[executionClass]). The reasoning
 // tier always comes from the role. A run override on a review role must rank at or above the policy's model unless
 // the run records an exemption for that role.
-function selectRoleModel(policyRecord, providerId, canonicalRole, executionClass, runRoleModels = null, exemptions = null) {
+function selectRoleModel(policyRecord, providerId, canonicalRole, executionClass, runRoleModels = null, exemptions = null, explicitFloors = null) {
   const mapping = policyRecord.providers[providerId];
   const policy = selectPolicyModel(mapping, canonicalRole, executionClass);
   const review = REVIEW_ROLES.includes(canonicalRole);
-  const floors = review ? reviewFloorsFor(policyRecord) : null;
+  const floors = review ? reviewFloorsFor(explicitFloors) : null;
   const covered = Boolean(floors?.providers?.[providerId]);
   // The effective policy (whichever file won) must meet the ACEF floor unless it exempts the role.
   if (covered) checkPolicyFloor(policyRecord, floors, providerId, canonicalRole);
@@ -219,7 +227,8 @@ function loadModelRoutingPolicy(repoRoot) {
 }
 
 // selection: provider id string, null (policy activeProvider), or { provider, roleModels } (see runRoutingSelection).
-function resolveRoleRuntime(policyRecord, role, selection = null) {
+// options.reviewFloors: explicit floors record (tests, installer checks); otherwise the ACEF-owned file is used.
+function resolveRoleRuntime(policyRecord, role, selection = null, options = {}) {
   const normalized = normalizedRole(role);
   const canonicalRole = ROLE_ALIASES[normalized] || normalized;
   const assignment = policyRecord.roles[canonicalRole];
@@ -230,7 +239,7 @@ function resolveRoleRuntime(policyRecord, role, selection = null) {
   const provider = providerId || policyRecord.activeProvider;
   const mapping = policyRecord.providers[provider];
   if (!mapping) throw new Error(`model routing policy has no provider mapping for ${provider}`);
-  const { model, modelSource, floor, exemption } = selectRoleModel(policyRecord, provider, canonicalRole, assignment.executionClass, runRoleModels, exemptions);
+  const { model, modelSource, floor, exemption } = selectRoleModel(policyRecord, provider, canonicalRole, assignment.executionClass, runRoleModels, exemptions, options.reviewFloors || null);
   const reasoningEffort = mapping.reasoning?.[assignment.reasoningTier];
   if (!model || !REASONING_TIERS.has(reasoningEffort)) throw new Error(`provider ${provider} cannot resolve role ${canonicalRole}`);
   return {
@@ -247,10 +256,10 @@ function resolveRoleRuntime(policyRecord, role, selection = null) {
   };
 }
 
-function resolveActorRuntime(policyRecord, role, phase = "", selection = null) {
+function resolveActorRuntime(policyRecord, role, phase = "", selection = null, options = {}) {
   const canonicalRole = canonicalRoutingRole(role, phase);
   if (!canonicalRole) throw new Error(`model routing policy cannot classify actor role=${role || "null"} phase=${phase || "null"}`);
-  return { role: canonicalRole, ...resolveRoleRuntime(policyRecord, canonicalRole, selection) };
+  return { role: canonicalRole, ...resolveRoleRuntime(policyRecord, canonicalRole, selection, options) };
 }
 
 // Checks every run override and exemption against the policy (used by acef-state when it records them).
@@ -264,6 +273,7 @@ function validateRunRouting(policyRecord, activeRun) {
 }
 
 module.exports = {
+  FLOOR_KEYS,
   MODEL_ID_SOURCE,
   REVIEW_ROLES,
   ROUTING_LIBRARY_VERSION,
