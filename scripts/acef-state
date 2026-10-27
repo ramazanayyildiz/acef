@@ -33,6 +33,7 @@ const { riskRequiresGuarded, workflowSelectionFailures } = require("./lib/acef-e
 const { buildAssuranceRequirements } = require("./lib/acef-assurance-requirements");
 const { staticReuseInputFingerprint } = require("./lib/acef-evidence-reuse-contract");
 const { loadModelRoutingPolicy, resolveActorRuntime, resolveRoleRuntime, validateProviderMapping } = require("./lib/acef-model-routing");
+const { globTreeDigest } = require("./lib/acef-scoped-tree");
 const { installationFreshnessFailures, readInstallationManifest } = require("./lib/acef-installation");
 const {
   attemptPath,
@@ -67,6 +68,7 @@ const {
   prepareObjectiveHeartbeat,
   prepareReplanEvent,
   prepareRegisterRun,
+  prepareControlBudget,
   prepareValidatedCompletion,
   recordDefect,
   setManualQa,
@@ -100,6 +102,7 @@ The existing direct record is the compact compatibility context. Do not inspect 
 
 Usage:
   acef-state active-run --repo <path> --run-id <id> --objective-id <id> --objective-scope <stable-parent-scope> --workflow-id quick-fix|lightweight|full-bmad [--objective-defect <id>...] [--replan-cause new-root-cause|scope-error|evidence-invalid] [options] [--routing-provider <provider-id>] [--goal-reset]
+  acef-state objective-control-budget --repo <path> --objective-id <id> --run-id <authentic-terminal-id> --decision-id <id> --eligible-run-id <next-id> --additional-seconds <1..3600> --expires-at <ISO-date-within-2hours> --authority-ref <docs/ai/record.md> --reason <explicit-scope>
   acef-state objective-qa --repo <path> --objective-id <id> --status running|complete
   acef-state objective-defect --repo <path> --objective-id <id> --id <id> --source review|manual-qa|broad-suite --defect-class <class> --summary <text> --discovered-in-run <id> [--defect-status <status> --batch-key <key> --root-cause-key <key>]
   acef-state objective-defect-transition --repo <path> --objective-id <id> --id <id> --defect-status batched|escalated|fixed|deferred|legacy-quarantined [--batch-key <key>]
@@ -717,6 +720,10 @@ function writeActiveRun(opts) {
     ? previous.lightweightStateContract
     : (["quick-fix", "lightweight"].includes(workflowId)
       ? (installedLightweightStateContract || "lightweight-state-v1") : undefined);
+  const productReviewContract = sameRun ? previous.productReviewContract : opts.productReviewContract;
+  if (productReviewContract && (workflowId !== "lightweight" || opts.assurance === "baseline")) {
+    throw new Error("productReviewContract requires Standard and Guarded assurance");
+  }
   if (lightweightStateContract === "lightweight-state-v1" && opts.status === "complete") {
     throw new Error("lightweight-state-v1 terminal state requires acef-state lightweight-complete");
   }
@@ -810,6 +817,7 @@ function writeActiveRun(opts) {
     ...(quickFixContract ? { quickFixContract } : {}),
     ...(modelRoutingContract ? { modelRoutingContract } : {}),
     ...(lightweightStateContract ? { lightweightStateContract } : {}),
+    ...(productReviewContract ? { productReviewContract } : {}),
     ...(redOwnershipContract ? { redOwnershipContract } : {}),
     ...(fullFlowContract ? { fullFlowContract } : {}),
     ...(runtimeContract ? { runtimeContract } : {}),
@@ -882,6 +890,7 @@ function writeActiveRun(opts) {
       replanCause: opts.replanCause,
       workflowId,
       assuranceProfile,
+      productReviewContract,
       ...(lightweightStateContract === "lightweight-state-v1"
         ? { accountingVersion: "objective-accounting-v2" } : {}),
     }) : (sameRun ? prepareObjectiveHeartbeat(opts.repo, record) : null);
@@ -1005,6 +1014,18 @@ function parseRunDispositions(entries) {
       reason: entry.slice(second + 1).trim(),
     };
   });
+}
+
+function writeObjectiveControlBudget(opts) {
+  required(opts, ["decisionId", "eligibleRunId", "authorityRef", "reason", "expiresAt", "additionalSeconds"]);
+  const authentication = authenticatedObjectiveRun(opts);
+  if (authentication.activeRun.workflowId !== "lightweight" || authentication.activeRun.assuranceProfile !== "guarded"
+    || authentication.activeRun.productReviewContract !== "running-product-review-v1" || authentication.activeRun.terminalDisposition !== "PASS") throw new Error("control budget requires opted-in Standard+Guarded terminal PASS");
+  const prepared = prepareControlBudget(opts.repo, opts.objectiveId, { terminalRunId: authentication.activeRun.runId, terminalGateId: authentication.activeRun.terminalGateId,
+    decisionId: opts.decisionId, eligibleRunId: opts.eligibleRunId, authorityRef: opts.authorityRef, reason: opts.reason,
+    expiresAt: opts.expiresAt, additionalSeconds: opts.additionalSeconds });
+  publishObjectiveCommand(opts, prepared, authentication, "objective-control-budget");
+  console.log(`WROTE objective-control-budget ${opts.decisionId} eligible=${opts.eligibleRunId}`);
 }
 
 function writeObjectiveReplan(opts) {
@@ -2647,6 +2668,8 @@ function normalizedScopePaths(paths) {
 function applicationTreeDigest(repo, commit = "HEAD", scopePaths = null) {
   if (scopePaths) {
     const normalized = normalizedScopePaths(scopePaths);
+    const globDigest = globTreeDigest(repo, commit, normalized);
+    if (globDigest) return globDigest;
     return sha256(normalized.map((filePath) => {
       const entry = runGit(repo, ["ls-tree", "--full-tree", commit, "--", filePath]);
       return `${filePath}\0${entry || "<missing>"}`;
@@ -3874,6 +3897,7 @@ function main() {
   if (opts.command === "objective-qa") return writeObjectiveQa(opts);
   if (opts.command === "objective-defect") return writeObjectiveDefect(opts);
   if (opts.command === "objective-defect-transition") return writeObjectiveDefectTransition(opts);
+  if (opts.command === "objective-control-budget") return writeObjectiveControlBudget(opts);
   if (opts.command === "objective-replan") return writeObjectiveReplan(opts);
   if (opts.command === "objective-close") return writeObjectiveClose(opts);
   if (opts.command === "migrate-active-run") return migrateActiveRun(opts);

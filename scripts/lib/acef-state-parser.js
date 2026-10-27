@@ -176,6 +176,10 @@ function validateActiveRunRecord(record) {
   );
   if (v2) {
     requireEnum(record, "workflowId", WORKFLOW_IDS, "active run");
+    if (record.productReviewContract !== undefined) {
+      requireEnum(record, "productReviewContract", ["running-product-review-v1"], "active run");
+      if (record.workflowId !== "lightweight" || record.assuranceProfile !== "guarded") throw new Error("product review contract requires Standard + Guarded");
+    }
     if (record.quickFixContract !== undefined) {
       requireEnum(record, "quickFixContract", ["single-review-v1"], "active run");
       if (record.workflowId !== "quick-fix") {
@@ -1152,6 +1156,10 @@ function parsePrReviewProfile(input, label = "PR review profile") {
 
 function parseLightweightRun(filePath) {
   const record = readJson(filePath);
+  if (record.productReviewContract !== undefined) {
+    requireEnum(record, "productReviewContract", ["running-product-review-v1"], "lightweight run");
+    if (record.workflowId !== "lightweight" || record.assuranceProfile !== "guarded") throw new Error("product review contract requires Standard + Guarded");
+  }
   const v2 = record.schema === "acef.lightweight-run.v2";
   requireFields(
     record,

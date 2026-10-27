@@ -1,0 +1,93 @@
+#!/usr/bin/env node
+"use strict";
+// All browser bytes below are synthetic validator fixtures, not product proof.
+const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const path = require("node:path");
+const os = require("node:os");
+const cp = require("node:child_process");
+const crypto = require("node:crypto");
+const { productReviewFailures, REQUIRED, CONDITIONAL } = require("./lib/acef-product-review");
+const { applicationTreeDigest, evaluateProcessChecks, gateDeciderIntegrityFailures } = require("./acef-process-validator");
+const { parseLightweightRun } = require("./lib/acef-state-parser");
+const repo = fs.mkdtempSync(path.join(os.tmpdir(), "acef-product-review-"));
+const hash = (bytes) => crypto.createHash("sha256").update(bytes).digest("hex");
+function write(file, value) { fs.mkdirSync(path.dirname(path.join(repo, file)), { recursive: true }); fs.writeFileSync(path.join(repo, file), typeof value === "string" ? value : JSON.stringify(value)); }
+function git(...args) { return cp.execFileSync("git", args, { cwd: repo, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim(); }
+try {
+  git("init", "-q"); git("config", "user.email", "fixture@example.invalid"); git("config", "user.name", "Fixture");
+  write("app/value.txt", "one"); git("add", "app"); git("commit", "-qm", "fixture");
+  const commit = git("rev-parse", "HEAD");
+  write("app/Root.php", "one"); write("app/Nested/Child.php", "one"); git("add", "app"); git("commit", "-qm", "globstar fixtures");
+  const initialGlobTree = applicationTreeDigest(repo, "HEAD", ["app/**/*.php"]);
+  write("app/Root.php", "two"); git("add", "app"); git("commit", "-qm", "zero-depth drift");
+  const rootDriftTree = applicationTreeDigest(repo, "HEAD", ["app/**/*.php"]);
+  assert.notEqual(rootDriftTree, initialGlobTree, "globstar must match zero directories");
+  write("app/Nested/Child.php", "two"); git("add", "app"); git("commit", "-qm", "nested drift");
+  assert.notEqual(applicationTreeDigest(repo, "HEAD", ["app/**/*.php"]), rootDriftTree, "globstar must match nested directories");
+  const tree = (ref) => applicationTreeDigest(repo, ref, ["app/**"]);
+  const actor = { runId: "P01", createdAt: "2026-10-01T00:00:00Z" };
+  const actorFields = { ...actor, story: "P01", client: "codex", inputCommit: commit, inputTree: git("rev-parse", "HEAD^{tree}"), allowedContextProfile: "scoped", producedArtifactHash: null, producedArtifactPath: null };
+  write("docs/ai/actors/dev.json", { ...actorFields, actorInstanceId: "dev", phase: "development", role: "developer", sessionId: "dev-session" });
+  const reviewActor = { ...actorFields, actorInstanceId: "reviewer", sessionId: "review-session", phase: "code-review", role: "code-review" };
+  write("docs/ai/actors/reviewer.json", reviewActor);
+  const artifacts = [
+    { id: "trace", kind: "browser-trace", path: ".local-evidence/trace.txt" },
+    { id: "desktop", kind: "screenshot", viewport: "desktop", path: ".local-evidence/desktop.png" },
+    { id: "mobile", kind: "screenshot", viewport: "mobile", path: ".local-evidence/mobile.png" },
+  ];
+  for (const artifact of artifacts) { write(artifact.path, "synthetic test fixture"); artifact.sha256 = hash("synthetic test fixture"); }
+  let report = {
+    schema: "acef.product-review.v1", runId: "P01", verdict: "PASS", reviewerActorId: "reviewer", sessionId: "review-session",
+    reviewedAt: new Date().toISOString(), applicationCommit: git("rev-parse", "HEAD"), applicationTree: tree("HEAD"),
+    browser: { status: "VERIFIED", origin: "http://127.0.0.1:4173" }, artifacts,
+    checks: Object.fromEntries([...REQUIRED, ...CONDITIONAL].map((name) => [name, { status: "PASS", observation: "Synthetic check", artifactIds: ["trace"] }])),
+  };
+  report.checks.componentReuse.reuseAudit = { existing: [{ path: "app/value.txt", usage: "Synthetic existing source reuse" }], introduced: [], sharedChanges: [], duplicationReview: "Synthetic scoped source duplication review; no semantic browser proof." };
+  const run = { schema: "acef.lightweight-run.v2", runId: "P01", workflowId: "lightweight", assuranceProfile: "guarded", status: "complete", implementationActorId: "dev", reviewActorId: "reviewer", productReviewContract: "running-product-review-v1", steps: ["preflight-current-context", "reuse-before-create", "implementation", "independent-review", "focused-verification", "closeout-evidence"].map((name) => ({ name, status: "PASS", evidencePaths: ["docs/ai/reports/product.json"] })), promotion: { decision: "stay-lightweight", triggers: [] }, surfaces: ["ui"] };
+  const active = { productReviewContract: run.productReviewContract };
+  function bind() { write("docs/ai/reports/product.json", report); run.productReview = { reportPath: "docs/ai/reports/product.json", sha256: hash(fs.readFileSync(path.join(repo, "docs/ai/reports/product.json"))) }; }
+  function failures() { bind(); return productReviewFailures(repo, run, active, tree); }
+  assert.deepEqual(failures(), []);
+  const audit = report.checks.componentReuse.reuseAudit;
+  delete report.checks.componentReuse.reuseAudit; assert.match(failures().join(), /bare PASS/);
+  report.checks.componentReuse.reuseAudit = audit;
+  audit.existing[0].path = "app/missing.txt"; assert.ok(failures().length, "nonexistent reused source must fail"); audit.existing[0].path = "app/value.txt";
+  audit.sharedChanges = [{ path: "app/value.txt", consumers: [] }]; assert.match(failures().join(), /checked consumers/); audit.sharedChanges = [];
+  audit.introduced = [{ path: "app/value.txt", kind: "helper", rationale: "short", alternativesChecked: [] }]; assert.match(failures().join(), /introduction rationale/); audit.introduced = [];
+  delete run.productReview; assert.match(productReviewFailures(repo, run, active, tree).join(), /missing hashed/); bind();
+  delete run.productReviewContract; assert.match(productReviewFailures(repo, run, active, tree).join(), /contract/i); run.productReviewContract = active.productReviewContract;
+  report.browser.status = "UNVERIFIED"; assert.match(failures().join(), /browser/); report.browser.status = "VERIFIED";
+  report.browser.origin = "http://example.com:4173"; assert.match(failures().join(), /browser/); report.browser.origin = "http://127.0.0.1:4173";
+  report.browser.origin = "http://localhost:5173/"; assert.deepEqual(failures(), [], "any loopback origin passes when none is pinned"); report.browser.origin = "http://127.0.0.1:4173";
+  run.productReviewOrigin = "http://127.0.0.1:9999"; assert.match(failures().join(), /browser/, "run pin must match exactly"); run.productReviewOrigin = "http://127.0.0.1:4173"; assert.deepEqual(failures(), []); delete run.productReviewOrigin;
+  write(".acef/product-review-policy.json", { browserOrigin: "http://127.0.0.1:9999" }); assert.match(failures().join(), /browser/, "host policy pin must match exactly");
+  write(".acef/product-review-policy.json", { browserOrigin: "http://127.0.0.1:4173" }); assert.deepEqual(failures(), []); fs.rmSync(path.join(repo, ".acef"), { recursive: true });
+  report.sessionId = "dev-session"; assert.match(failures().join(), /session/); report.sessionId = "review-session";
+  report.reviewerActorId = "dev"; assert.match(failures().join(), /independent/); report.reviewerActorId = "reviewer";
+  report.checks.validation.status = "UNVERIFIED"; assert.match(failures().join(), /validation/); report.checks.validation.status = "PASS";
+  report.checks.dialog = { status: "NOT_APPLICABLE", reason: "This feature has no dialog interaction." }; assert.deepEqual(failures(), []);
+  report.artifacts[2].sha256 = "0".repeat(64); assert.match(failures().join(), /hash/); report.artifacts[2].sha256 = hash("synthetic test fixture");
+  report.artifacts[2].viewport = "desktop"; assert.match(failures().join(), /mobile screenshot/); report.artifacts[2].viewport = "mobile";
+  report.reviewedAt = "2020-01-01"; assert.match(failures().join(), /timestamp/); report.reviewedAt = new Date().toISOString();
+  write("app/value.txt", "two"); git("add", "app"); git("commit", "-qm", "product drift"); assert.match(failures().join(), /stale/);
+  report.applicationCommit = git("rev-parse", "HEAD"); report.applicationTree = tree("HEAD"); bind();
+  write("docs/ai/ACEF_LIGHTWEIGHT_RUN.json", run); assert.equal(parseLightweightRun(path.join(repo, "docs/ai/ACEF_LIGHTWEIGHT_RUN.json")).productReviewContract, active.productReviewContract);
+  report.checks.navigation.status = "UNVERIFIED"; report.applicationTree = applicationTreeDigest(repo, "HEAD"); bind(); write("docs/ai/ACEF_LIGHTWEIGHT_RUN.json", run);
+  const lifecycle = evaluateProcessChecks(repo, ["lightweight-lifecycle"])[0];
+  assert.equal(lifecycle.ok, false); assert.match(lifecycle.message, /navigation/);
+  write("docs/ai/ACEF_ACTIVE_RUN.json", { schema: "acef.active-run.v2", runId: "P01", repo: "fixture", workflowId: "lightweight", assuranceProfile: "guarded", assuranceRationale: "Independent product review fixture", scopeUnit: "story", status: "active", activeStory: "P01", activePhase: "code-review", ledgerPath: "docs/ai/runs/P01.md", productReviewContract: "running-product-review-v1" });
+  write("docs/ai/runs/P01.md", "# Real fixture ledger");
+  assert.equal(evaluateProcessChecks(repo, ["actor-separation"])[0].ok, true, "opt-in Standard needs independent code-review, not an extra Judge");
+  reviewActor.sessionId = "dev-session"; write("docs/ai/actors/reviewer.json", reviewActor);
+  assert.equal(evaluateProcessChecks(repo, ["actor-separation"])[0].ok, false, "shared session must fail");
+  reviewActor.sessionId = "review-session"; reviewActor.runId = "another-run"; write("docs/ai/actors/reviewer.json", reviewActor);
+  assert.equal(evaluateProcessChecks(repo, ["actor-separation"])[0].ok, false, "another run's reviewer must fail");
+  reviewActor.runId = "P01"; write("docs/ai/actors/reviewer.json", reviewActor);
+  const activeRecord = JSON.parse(fs.readFileSync(path.join(repo, "docs/ai/ACEF_ACTIVE_RUN.json")));
+  assert.deepEqual(gateDeciderIntegrityFailures(repo, activeRecord, { decidedBy: "reviewer" }), []);
+  assert.ok(gateDeciderIntegrityFailures(repo, activeRecord, { decidedBy: "dev" }).length, "Developer cannot certify product gate");
+  assert.ok(gateDeciderIntegrityFailures(repo, { ...activeRecord, productReviewContract: undefined }, { decidedBy: "reviewer" }).length, "legacy Judge requirement retained");
+  assert.deepEqual(productReviewFailures(repo, { ...run, productReviewContract: undefined }, null, tree), []);
+  console.log("PASS product review contract: independent session, tree freshness, browser artifacts, semantic check coverage, lifecycle integration and legacy opt-in compatibility (synthetic fixtures)");
+} finally { fs.rmSync(repo, { recursive: true, force: true }); }

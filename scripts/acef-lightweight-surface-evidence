@@ -36,8 +36,15 @@ function main() {
   const validation = validateEvidenceRecord(args.repo, evidence, { requireFresh: true });
   if (validation.length) fail(validation.join("; "));
   if (evidence.exitCode !== 0) fail(`evidence ${evidence.evidenceId} is not successful`);
-  if (evidence.actorInstanceId !== run.implementationActorId) fail("evidence actor is not the active run implementation actor");
+  const independentProductEvidence = run.productReviewContract === "running-product-review-v1"
+    && run.workflowId === "lightweight" && run.assuranceProfile === "guarded"
+    && evidence.actorInstanceId === run.reviewActorId && run.reviewActorId !== run.implementationActorId;
+  if (evidence.actorInstanceId !== run.implementationActorId && !independentProductEvidence) fail("evidence actor is not the active run implementation actor or bound product reviewer");
   const actor = parseActorRecord(path.join(args.repo, "docs", "ai", "actors", `${evidence.actorInstanceId}.json`));
+  if (independentProductEvidence) {
+    const developer = parseActorRecord(path.join(args.repo, "docs", "ai", "actors", `${run.implementationActorId}.json`));
+    if (actor.runId !== run.runId || developer.runId !== run.runId || !actor.sessionId || !developer.sessionId || actor.sessionId === developer.sessionId || !/code[-_ ]?review/i.test(`${actor.role} ${actor.phase}`)) fail("product surface evidence requires the bound independent Code Review session");
+  }
   if (actor.runId && actor.runId !== run.runId) fail("evidence actor is bound to a different run");
   if (String(actor.story || "").trim() !== String(evidence.story || "").trim()) fail("evidence actor/story binding mismatch");
   for (const surface of args.surfaces) {

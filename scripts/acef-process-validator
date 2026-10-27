@@ -35,6 +35,8 @@ const { inspectRunAuthorization } = require("./lib/acef-run-authorization");
 const { pendingTransactionPath } = require("./lib/acef-state-transaction");
 const { collectRunAttempts } = require("./lib/acef-invocation-ledger");
 const { loadModelRoutingPolicy, resolveActorRuntime } = require("./lib/acef-model-routing");
+const { productReviewFailures } = require("./lib/acef-product-review");
+const { globTreeDigest } = require("./lib/acef-scoped-tree");
 const { recoveredStoryCloseBindingFailures } = require("./lib/acef-story-close");
 const {
   buildAssuranceRequirements,
@@ -392,6 +394,8 @@ function applicationTreeDigest(repoRoot, commit = "HEAD", scopePaths = null) {
   const normalized = scopePaths ? normalizedScopePaths(scopePaths) : null;
   try {
     if (normalized) {
+      const globDigest = globTreeDigest(repoRoot, commit, normalized);
+      if (globDigest) return globDigest;
       const entries = normalized.map((filePath) => {
         const entry = cp.execFileSync("git", ["ls-tree", "--full-tree", commit, "--", filePath], {
           cwd: repoRoot,
@@ -1716,11 +1720,13 @@ function isFourActorV3EpicClose(activeRun) {
 }
 
 function checkTypedActorSeparation(repoRoot, activeRun) {
+  const productReview = activeRun.workflowId === "lightweight" && activeRun.productReviewContract === "running-product-review-v1";
   const actorFiles = jsonRecords(path.join(repoRoot, "docs", "ai", "actors"));
   const actors = actorFiles.flatMap((filePath) => {
     const candidate = JSON.parse(read(filePath));
     if (normalizedScope(candidate.story) !== normalizedScope(activeRun.activeStory)) return [];
     const actor = parseActorRecord(filePath);
+    if (productReview && actor.runId !== activeRun.runId) return [];
     return !isFourActorV3(activeRun) || (actor.runId === activeRun.runId && actor.fullFlowContract === activeRun.fullFlowContract)
       ? [actor]
       : [];
@@ -1729,7 +1735,7 @@ function checkTypedActorSeparation(repoRoot, activeRun) {
     ? (isFourActorV3(activeRun)
       ? ["atdd", "development", "codereview", "patchassurance"]
       : ["atdd", "development", "codereview", "verifypatch", "testreview", "processjudge"])
-    : isSingleReviewQuickFix(activeRun)
+    : isSingleReviewQuickFix(activeRun) || productReview
       ? ["development", "codereview"]
       : ["development", "processjudge"];
   const byPhase = new Map();
@@ -1743,6 +1749,11 @@ function checkTypedActorSeparation(repoRoot, activeRun) {
   const duplicates = ids.filter((id, index) => ids.indexOf(id) !== index);
   if (duplicates.length) return result("actor-separation", false, `Typed phase actors must be distinct: ${[...new Set(duplicates)].join(", ")}`);
   const failures = [];
+  if (productReview) {
+    const developer = byPhase.get("development");
+    const reviewer = byPhase.get("codereview");
+    if (!developer.sessionId || !reviewer.sessionId || developer.sessionId === reviewer.sessionId) failures.push("product review requires distinct actual Developer and Code Review sessions");
+  }
   const routingPolicy = activeRun.modelRoutingContract === "admitted-role-routing-v1"
     ? loadModelRoutingPolicy(repoRoot).record : null;
   for (const phase of requiredPhases) {
@@ -1785,7 +1796,9 @@ function checkTypedActorSeparation(repoRoot, activeRun) {
       ? `${isFourActorV3(activeRun) ? "Four v3" : "Six v2"} typed Full BMAD phase actors are distinct for ${activeRun.activeStory}`
       : isSingleReviewQuickFix(activeRun)
         ? `Quick Fix developer and single independent reviewer are distinct for ${activeRun.activeStory}`
-        : `Guarded developer and Process Judge actors are distinct for ${activeRun.activeStory}`,
+        : productReview
+          ? `Standard developer and independent product reviewer are distinct for ${activeRun.activeStory}`
+          : `Guarded developer and Process Judge actors are distinct for ${activeRun.activeStory}`,
   );
 }
 
@@ -2021,7 +2034,10 @@ function gateDeciderIntegrityFailures(repoRoot, activeRun, gate) {
     if (normalizedScope(actor.story) !== normalizedScope(activeRun.activeStory)) {
       failures.push(`gate actor ${gate.decidedBy} story mismatch`);
     }
-    if (!isProcessJudgeActor(actor)) failures.push(`gate actor ${gate.decidedBy} is not a Process Judge actor`);
+    if (activeRun.workflowId === "lightweight" && activeRun.productReviewContract === "running-product-review-v1") {
+      const developers = actorRecordsForStory(repoRoot, activeRun.activeStory).filter((entry) => entry.runId === activeRun.runId && canonicalPhase(entry.phase) === "development");
+      if (actor.runId !== activeRun.runId || canonicalPhase(actor.phase) !== "codereview" || !actor.sessionId || !developers.length || developers.some((entry) => !entry.sessionId || entry.sessionId === actor.sessionId)) failures.push("product gate requires the same-run independent Code Review session");
+    } else if (!isProcessJudgeActor(actor)) failures.push(`gate actor ${gate.decidedBy} is not a Process Judge actor`);
     const implementationActorIds = actorRecordsForStory(repoRoot, activeRun.activeStory)
       .filter((record) => canonicalPhase(record.phase) === "development" || normalizedPhase(record.role) === "developer")
       .map((record) => record.actorInstanceId);
@@ -3196,7 +3212,8 @@ function checkLeanEvidence(repoRoot, ledgerPath) {
       : null;
     const deterministicStoryDecider = latest?.gateType === "deterministic-story-close-v3"
       && latest.verdict === "PASS" && !latest.processJudge;
-    if (!deterministicStoryDecider && !isSingleReviewQuickFix(activeRun)) required.add("process_judge_report");
+    const independentProductReview = activeRun?.workflowId === "lightweight" && activeRun?.productReviewContract === "running-product-review-v1";
+    if (!deterministicStoryDecider && !isSingleReviewQuickFix(activeRun) && !independentProductReview) required.add("process_judge_report");
   }
 
   const missing = [...required].filter((field) => !hasMeaningfulValue(fields[field]));
@@ -3366,6 +3383,12 @@ function checkLightweightLifecycle(repoRoot) {
   try {
     const run = parseLightweightRun(statePath);
     const missing = [];
+    if (run.status === "complete") {
+      const activeRun = typedActiveRun(repoRoot);
+      const scopePath = activeRun?.workerScopePath || "docs/ai/ACEF_ACTIVE_WORKER_SCOPE.json";
+      const scope = exists(path.join(repoRoot, scopePath)) ? parseWorkerScope(path.join(repoRoot, scopePath)) : null;
+      missing.push(...productReviewFailures(repoRoot, run, activeRun, (commit) => applicationTreeDigest(repoRoot, commit, scope?.allowedPaths)));
+    }
     for (const step of run.steps) {
       for (const evidencePath of step.evidencePaths) {
         if (!exists(path.join(repoRoot, evidencePath))) missing.push(`${step.name}: ${evidencePath}`);
@@ -4658,16 +4681,8 @@ function main() {
   if (results.some((item) => !item.ok)) process.exitCode = 1;
 }
 
-if (require.main === module) {
-  try {
-    main();
-  } catch (error) {
-    console.error(`FAIL validator: ${error.message}`);
-    process.exitCode = 1;
-  }
-}
-
 module.exports = {
+  gateDeciderIntegrityFailures,
   FULL_V3_DISPATCH_CHECKS,
   applicationTreeDigest,
   evaluateProcessChecks,
@@ -4679,3 +4694,14 @@ module.exports = {
   validateTerminalCandidate,
   validateEvidenceRecord,
 };
+
+// The objective supervisor resolves validator helpers lazily during checks.
+// Publish them before the CLI starts, not after a circular CLI call returns.
+if (require.main === module) {
+  try {
+    main();
+  } catch (error) {
+    console.error(`FAIL validator: ${error.message}`);
+    process.exitCode = 1;
+  }
+}
