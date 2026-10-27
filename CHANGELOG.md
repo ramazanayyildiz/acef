@@ -215,12 +215,28 @@ beta.8 model-choice entry.
   directly. The experiment harness pins the policy by sha256 only and is unchanged.
 - **Run override** `acef-state active-run --routing-role-model <role>=<model>` (repeatable; merges by role on same-run
   updates, `<role>=` clears; validated against the policy roles) records `routingRoleModels`.
+- **No downgrade of review roles** (owner decision 2026-10-27; review of 67bbeee): per-provider `modelRank` (weakest
+  first; anthropic Sonnet < Opus, openai sol) is the only source of model strength. For code-review, patch-assurance,
+  process-judge and epic-process-judge a run override must rank at or above the policy's model, and a host policy at or
+  above the ACEF-owned `reviewModelFloors`; an unranked model is rejected. Exemptions: run
+  `--routing-role-model-exemption "<role>: <reason>"` (stored as `routingRoleModelExemptions`, shown by `acef-next`) and
+  host `providers.<id>.roleModelExemptions`. Enforced by `acef-state` on write and by the hard-wall and validator at
+  dispatch. Development, ATDD and the Conductor stay free.
+- **Older library kept by a host**: new `scripts/lib/acef-routing-selection.js` gates every consumer
+  (`ROUTING_LIBRARY_VERSION` 2). When the installed `acef-model-routing.js` is older and the run or the selected
+  provider uses per-role routing, actor binding, supervision, validation and dispatch fail with
+  `ACEF_ROUTING_LIBRARY_STALE`; `acef-next` reports it as a blocker instead of a silent null runtime.
+- **One model id grammar** `MODEL_ID_SOURCE` (`[A-Za-z0-9._:/-]+`) for the policy, both schemas, the active-run parser
+  and the hard-wall shell parser, so `anthropic/claude-opus-5-5`-style ids resolve and dispatch alike. Persisted
+  `routingRoleModels` keys are checked against the canonical policy roles before resolving (alias keys fail loudly).
 - **Hosts**: `update-acef-installation` merges `.acef/model-routing-policy.json` three-way as before. A host without
-  `roleModels` gains ACEF's defaults; a host's own per-role values, including a `null` opt-out, are kept and reported
-  as overrides. **Effect: after the update, hosts running admitted roles on anthropic routing move Patch Assurance,
+  `roleModels` gains ACEF's defaults; a host's own per-role values are kept and reported as overrides (a `null` or
+  lower review-role model only with an exemption). **Effect: after the update, hosts running admitted roles on anthropic routing move Patch Assurance,
   the Process Judge and the Epic Process Judge from Sonnet to Opus. Cost note: review roles only;** Development, ATDD,
-  the Conductor and Code Review stay on Sonnet unless a host overrides them. A host that does not want this sets those
-  roles to `null` in its `roleModels`. The hard-wall reads the installed `.acef/bin/lib` copy, so the new routing takes
+  the Conductor and Code Review stay on Sonnet unless a host overrides them. Keeping a review role on Sonnet needs
+  `roleModelExemptions.<role>` with a reason; without it the update stops with an error and leaves the host policy
+  as it was. Host edits to `reviewModelFloors` are reset and reported. A host that changed a class model used by a
+  review role (for example openai `semantic-critical`) must rank that model in `modelRank` or exempt the role. The hard-wall reads the installed `.acef/bin/lib` copy, so the new routing takes
   effect on the host's next install/update.
 - **Docs**: `method/MODEL_CHOICE.md` replaces the known-limitation paragraph with the mechanism and the default table;
   `method/BMAD_V2_LANE.md`, `method/DELIVERY_RULES.md`, `method/OPERATING_MODEL.md`, `skills/acef/SKILL.md`, the lane
@@ -231,8 +247,9 @@ beta.8 model-choice entry.
   `test-acef-process-validator` (hard-wall accepts Opus for Patch Assurance and rejects Sonnet; a run override wins),
   `test-acef-quick-fix-single-review` (validator actor-separation follows a run override),
   `test-acef-active-run-continuity` (`--routing-role-model` record, keep, clear, alias rejection, actor binding),
-  `test-acef-host-file-preservation` (per-role values and a `null` opt-out survive an update; an untouched host gains
-  the defaults).
+  `test-acef-host-file-preservation` (exempted per-role values and a `null` survive an update, an unexempted
+  downgrade stops it, floor edits are reset, an untouched host gains the defaults), plus floor, exemption, unranked
+  model, grammar, alias-key and older-library cases in the same files.
 
 ## v3.0.0-beta.8 — One model-choice rule for Claude and Codex agents (2026-10-27)
 

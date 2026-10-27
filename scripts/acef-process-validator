@@ -34,7 +34,8 @@ const { loadObjective, objectiveFailures } = require("./lib/acef-objective-super
 const { inspectRunAuthorization } = require("./lib/acef-run-authorization");
 const { pendingTransactionPath } = require("./lib/acef-state-transaction");
 const { collectRunAttempts } = require("./lib/acef-invocation-ledger");
-const { loadModelRoutingPolicy, resolveActorRuntime, runRoutingSelection } = require("./lib/acef-model-routing");
+const { loadModelRoutingPolicy, resolveActorRuntime } = require("./lib/acef-model-routing");
+const { routingSelectionFor } = require("./lib/acef-routing-selection");
 const { productReviewFailures } = require("./lib/acef-product-review");
 const { globTreeDigest, unquotedTreePath } = require("./lib/acef-scoped-tree");
 const { recoveredStoryCloseBindingFailures } = require("./lib/acef-story-close");
@@ -1765,7 +1766,7 @@ function checkTypedActorSeparation(repoRoot, activeRun) {
     if (/^(?:conductor|dispatcher|orchestrator|main|general-purpose)$/i.test(actor.role)) failures.push(`${phase}: invalid role ${actor.role}`);
     if (routingPolicy) {
       try {
-        const expected = resolveActorRuntime(routingPolicy, actor.role, actor.phase, runRoutingSelection(activeRun));
+        const expected = resolveActorRuntime(routingPolicy, actor.role, actor.phase, routingSelectionFor(routingPolicy, activeRun));
         if (actor.model !== expected.model || actor.reasoningEffort !== expected.reasoningEffort) {
           failures.push(`${phase}: actor runtime must be ${expected.model}/${expected.reasoningEffort}, got ${actor.model || "null"}/${actor.reasoningEffort || "null"}`);
         }

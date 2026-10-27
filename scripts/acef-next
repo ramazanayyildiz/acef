@@ -6,7 +6,8 @@ const { inspectRunAuthorization } = require("./lib/acef-run-authorization");
 const { displayName } = require("./lib/acef-execution-policy");
 const { installationFreshnessFailures } = require("./lib/acef-installation");
 const { loadObjective, objectiveFailures } = require("./lib/acef-objective-supervisor");
-const { loadModelRoutingPolicy, resolveActorRuntime, runRoutingSelection } = require("./lib/acef-model-routing");
+const { loadModelRoutingPolicy, resolveActorRuntime } = require("./lib/acef-model-routing");
+const { routingSelectionFor } = require("./lib/acef-routing-selection");
 const validatorModule = fs.existsSync(path.join(__dirname, "acef-process-validator.cjs"))
   ? "./acef-process-validator.cjs" : "./acef-process-validator";
 const { FULL_V3_DISPATCH_CHECKS, evaluateProcessChecks } = require(validatorModule);
@@ -109,14 +110,18 @@ function routedRuntime(repo, activeRun, roleOverride) {
     || (activeRun?.workflowId === "full-bmad" && ["capsule-supervisor-v1", "capsule-supervisor-v2"].includes(activeRun.runtimeContract));
   if (!activeRun || activeRun.status !== "active" || !routed) return null;
   try {
+    const record = loadModelRoutingPolicy(repo).record;
     return resolveActorRuntime(
-      loadModelRoutingPolicy(repo).record,
+      record,
       roleOverride || activeRun.workerRole || "",
       activeRun.activePhase || "",
-      runRoutingSelection(activeRun),
+      routingSelectionFor(record, activeRun),
     );
-  } catch {
-    return null;
+  } catch (error) {
+    // A phase with no semantic actor (intake, closeout) has no runtime. Every other routing failure (stale library,
+    // unknown role key, review floor) is a blocker, never a silent null.
+    if (/cannot classify actor role/.test(error.message)) return null;
+    return { error: error.message };
   }
 }
 
@@ -282,6 +287,10 @@ function buildNext(repo, roleOverride) {
   const action = deriveNextAllowedAction(activeRun.record);
   const role = roleOverride || activeRun.record.workerRole || workerScope.record?.workerId || null;
   const runtime = routedRuntime(repo, activeRun.record, roleOverride || activeRun.record.workerRole);
+  if (runtime?.error) {
+    blockers.push(`model routing: ${runtime.error}`);
+    base.status = "blocked";
+  }
   base.active_state = {
     lane: activeRun.record.lane,
     workflow: activeRun.record.workflowId,
@@ -294,10 +303,13 @@ function buildNext(repo, roleOverride) {
     phase: activeRun.record.activePhase,
     story: activeRun.record.activeStory,
     role,
-    runtime: runtime ? {
+    runtime: runtime?.error ? { error: runtime.error } : runtime ? {
       policy_role: runtime.role,
       provider: runtime.provider,
       model: runtime.model,
+      model_source: runtime.modelSource || "class",
+      ...(runtime.floor ? { review_floor: runtime.floor } : {}),
+      ...(runtime.exemption ? { exemption: runtime.exemption } : {}),
       reasoning_effort: runtime.reasoningEffort,
     } : null,
     last_passed_gate: activeRun.record.lastPassedGate || null,

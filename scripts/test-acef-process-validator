@@ -2143,18 +2143,54 @@ try {
     cwd: partialHook,
     tool_input: { task_name: "patch-assurance", model: "claude-opus-5-5", reasoning_effort: "high", prompt: "Assure the patch" },
   }, "allow");
-  providerRun.routingRoleModels = { "patch-assurance": "host-review-model" };
-  fs.writeFileSync(path.join(partialHook, "docs", "ai", "ACEF_ACTIVE_RUN.json"), JSON.stringify(providerRun, null, 2));
-  expectHookDecision("run per-role override rejects the policy per-role model", {
+  const writeProviderRun = () => fs.writeFileSync(path.join(partialHook, "docs", "ai", "ACEF_ACTIVE_RUN.json"), JSON.stringify(providerRun, null, 2));
+  const dispatch = (task, model) => ({
     tool_name: "Agent",
     cwd: partialHook,
-    tool_input: { task_name: "patch-assurance", model: "claude-opus-5-5", reasoning_effort: "high", prompt: "Assure the patch" },
-  }, "deny", {}, ["model=host-review-model", "reasoning_effort=high"]);
-  expectHookDecision("run per-role override accepts its model", {
-    tool_name: "Agent",
+    tool_input: { task_name: task, model, reasoning_effort: task === "code-review" ? "medium" : "high", prompt: "Run the role" },
+  });
+  // Review floor: a run override below the policy model is denied at dispatch; an owner exemption allows it.
+  providerRun.routingRoleModels = { "patch-assurance": "claude-sonnet-5-5" };
+  writeProviderRun();
+  expectHookDecision("run override below the review floor is denied", dispatch("patch-assurance", "claude-sonnet-5-5"),
+    "deny", {}, ["below the review floor claude-opus-5-5", "--routing-role-model-exemption"]);
+  providerRun.routingRoleModelExemptions = { "patch-assurance": "owner: Sonnet assurance for this run" };
+  writeProviderRun();
+  expectHookDecision("exempted run override is accepted", dispatch("patch-assurance", "claude-sonnet-5-5"), "allow");
+  expectHookDecision("exempted run override still rejects a different model", dispatch("patch-assurance", "claude-opus-5-5"),
+    "deny", {}, ["model=claude-sonnet-5-5"]);
+  delete providerRun.routingRoleModelExemptions;
+  // Upgrade of a review role is accepted and becomes the only allowed model.
+  providerRun.workerRole = "code-review";
+  providerRun.routingRoleModels = { "code-review": "claude-opus-5-5" };
+  writeProviderRun();
+  expectHookDecision("run override upgrades Code Review", dispatch("code-review", "claude-opus-5-5"), "allow");
+  expectHookDecision("upgraded Code Review rejects the class model", dispatch("code-review", "claude-sonnet-5-5"),
+    "deny", {}, ["model=claude-opus-5-5"]);
+  // An unranked model on a review role is denied.
+  providerRun.routingRoleModels = { "code-review": "claude-mystery-9" };
+  writeProviderRun();
+  expectHookDecision("unranked review model is denied", dispatch("code-review", "claude-mystery-9"),
+    "deny", {}, ["not in provider anthropic modelRank"]);
+  // A persisted alias key fails loudly instead of leaving Code Review on the policy model.
+  providerRun.routingRoleModels = { reviewer: "claude-opus-5-5" };
+  writeProviderRun();
+  expectHookDecision("persisted alias role key is denied", dispatch("code-review", "claude-sonnet-5-5"),
+    "deny", {}, ["unknown role reviewer"]);
+  // Shared id grammar: a slash/colon model id the policy accepts is read back from a shell dispatch.
+  providerRun.workerRole = "development";
+  providerRun.routingRoleModels = { development: "anthropic/claude-opus-5-5:1" };
+  writeProviderRun();
+  expectHookDecision("shell dispatch reads a slash/colon model id", {
+    tool_name: "Bash",
     cwd: partialHook,
-    tool_input: { task_name: "patch-assurance", model: "host-review-model", reasoning_effort: "high", prompt: "Assure the patch" },
+    tool_input: { command: "claude agent run standard-developer --model anthropic/claude-opus-5-5:1 --effort high" },
   }, "allow");
+  expectHookDecision("shell dispatch with a truncated id is denied", {
+    tool_name: "Bash",
+    cwd: partialHook,
+    tool_input: { command: "claude agent run standard-developer --model anthropic --effort high" },
+  }, "deny", {}, ["model=anthropic/claude-opus-5-5:1"]);
   delete providerRun.routingRoleModels;
   delete providerRun.workerRole;
   delete providerRun.routingProvider;

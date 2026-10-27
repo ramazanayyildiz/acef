@@ -6,7 +6,15 @@ const path = require("node:path");
 
 const EXECUTION_CLASSES = new Set(["orchestration", "semantic-standard", "semantic-critical"]);
 const REASONING_TIERS = new Set(["low", "medium", "high", "xhigh", "max"]);
-const SAFE_MODEL_ID = /^[A-Za-z0-9._:/-]+$/;
+// The one model id grammar. Schemas, the active-run parser and the hard-wall shell parser use MODEL_ID_SOURCE
+// (test-acef-model-routing asserts they match).
+const MODEL_ID_SOURCE = "[A-Za-z0-9._:/-]+";
+const SAFE_MODEL_ID = new RegExp(`^${MODEL_ID_SOURCE}$`);
+// Bumped when consumers need a newer library (2: roleModels, run overrides, review floors). Consumers check it
+// through acef-routing-selection.js so a host-kept older copy fails loudly instead of dropping routing.
+const ROUTING_LIBRARY_VERSION = 2;
+// Owner decision 2026-10-27 (Ram): review roles never run below the policy's model without a recorded exemption.
+const REVIEW_ROLES = Object.freeze(["code-review", "patch-assurance", "process-judge", "epic-process-judge"]);
 const ROLE_ALIASES = {
   "coordinator": "conductor",
   "orchestrator": "conductor",
@@ -72,9 +80,85 @@ function validateModelRoutingPolicy(record) {
   }
   for (const [providerId, provider] of Object.entries(record.providers)) {
     validateRoleModels(provider?.roleModels, record.roles, `provider ${providerId} roleModels`);
+    validateModelRank(provider?.modelRank, `provider ${providerId} modelRank`);
+    validateExemptions(provider?.roleModelExemptions, record.roles, `provider ${providerId} roleModelExemptions`);
+    if (provider?.models && typeof provider.models === "object") {
+      for (const [executionClass, model] of Object.entries(provider.models)) {
+        if (typeof model === "string" && model.trim() && !SAFE_MODEL_ID.test(model)) throw new Error(`provider ${providerId} models.${executionClass} is not a valid model id`);
+      }
+    }
+    checkPolicyReviewFloors(record, providerId);
   }
   validateProviderMapping(record, record.activeProvider, "active provider");
   return record;
+}
+
+function floorError(message) {
+  const error = new Error(message);
+  error.code = "ACEF_REVIEW_FLOOR";
+  return error;
+}
+
+function validateModelRank(modelRank, label) {
+  if (modelRank === undefined) return;
+  if (!Array.isArray(modelRank) || !modelRank.length) throw new Error(`${label} must be a non-empty array, weakest first`);
+  const seen = new Set();
+  for (const model of modelRank) {
+    if (typeof model !== "string" || !SAFE_MODEL_ID.test(model)) throw new Error(`${label} has an invalid model id`);
+    if (seen.has(model)) throw new Error(`${label} lists ${model} twice`);
+    seen.add(model);
+  }
+}
+
+// Exemptions (policy roleModelExemptions, run routingRoleModelExemptions): review role -> non-empty owner reason.
+function validateExemptions(exemptions, roles, label) {
+  if (exemptions === undefined) return;
+  if (!exemptions || typeof exemptions !== "object" || Array.isArray(exemptions)) throw new Error(`${label} must be an object`);
+  for (const [role, reason] of Object.entries(exemptions)) {
+    if (!Object.prototype.hasOwnProperty.call(roles, role)) throw new Error(`${label} names unknown role ${role}`);
+    if (!REVIEW_ROLES.includes(role)) throw new Error(`${label} names ${role}, which is not a review role; only ${REVIEW_ROLES.join(", ")} take exemptions`);
+    if (typeof reason !== "string" || !reason.trim()) throw new Error(`${label} for ${role} needs a reason`);
+  }
+}
+
+function rankOf(mapping, model) {
+  return Array.isArray(mapping?.modelRank) ? mapping.modelRank.indexOf(model) : -1;
+}
+
+// Throws unless `model` ranks at or above `floor` in the provider's modelRank. Strength is never guessed from names.
+function requireAtLeast(mapping, providerId, role, model, floor, how) {
+  if (model === floor) return;
+  if (!Array.isArray(mapping?.modelRank)) {
+    throw floorError(`${how} ${role}=${model} on provider ${providerId} cannot be ranked: the provider has no modelRank`);
+  }
+  const modelRank = rankOf(mapping, model);
+  const floorRank = rankOf(mapping, floor);
+  if (modelRank < 0) throw floorError(`${how} ${role}=${model} is not in provider ${providerId} modelRank; review roles accept only ranked models`);
+  if (floorRank < 0) throw floorError(`review floor ${floor} for ${role} is not in provider ${providerId} modelRank`);
+  if (modelRank < floorRank) {
+    throw floorError(`${how} ${role}=${model} is below the review floor ${floor} on provider ${providerId}; a lower model for a review role needs an owner exemption`);
+  }
+}
+
+// Host override check: the policy's own resolved model for each review role must reach that provider's
+// reviewModelFloors (ACEF-owned; update-acef-installation resets it) unless roleModelExemptions names the role.
+// A provider without reviewModelFloors (v1 policies) is not checked.
+function checkPolicyReviewFloors(record, providerId) {
+  const mapping = record.providers[providerId];
+  const floors = mapping?.reviewModelFloors;
+  if (floors === undefined) return;
+  if (!floors || typeof floors !== "object" || Array.isArray(floors)) throw new Error(`provider ${providerId} reviewModelFloors must be an object`);
+  for (const [role, floor] of Object.entries(floors)) {
+    if (!REVIEW_ROLES.includes(role)) throw new Error(`provider ${providerId} reviewModelFloors names ${role}, which is not a review role`);
+    if (typeof floor !== "string" || !SAFE_MODEL_ID.test(floor)) throw new Error(`provider ${providerId} reviewModelFloors.${role} is not a valid model id`);
+    const assignment = record.roles[role];
+    if (!assignment) continue;
+    if (mapping.roleModelExemptions?.[role]) continue;
+    const { model } = selectPolicyModel(mapping, role, assignment.executionClass);
+    if (typeof model !== "string") continue;
+    requireAtLeast(mapping, providerId, role, model, floor,
+      `policy model (set providers.${providerId}.roleModelExemptions.${role} to keep it)`);
+  }
 }
 
 // Per-role model overrides. Keys are canonical role ids present in the policy (aliases are not accepted); a value is
@@ -90,32 +174,54 @@ function validateRoleModels(roleModels, roles, label) {
   }
 }
 
-// A routing selection is a provider id string, null (the policy's activeProvider), or { provider, roleModels } where
-// roleModels is the run's host per-role override (active-run routingRoleModels). Strings keep the old call shape.
+// A routing selection is a provider id string, null (the policy's activeProvider), or
+// { provider, roleModels, exemptions } from runRoutingSelection. Strings keep the old call shape.
 function routingSelection(selection) {
   if (selection === null || selection === undefined || typeof selection === "string") {
-    return { provider: selection || null, roleModels: null };
+    return { provider: selection || null, roleModels: null, exemptions: null };
   }
-  return { provider: selection.provider || null, roleModels: selection.roleModels || null };
+  return { provider: selection.provider || null, roleModels: selection.roleModels || null, exemptions: selection.exemptions || null };
 }
 
-// Every consumer that holds an active run passes this to resolveRoleRuntime / resolveActorRuntime.
+// Every consumer that holds an active run passes this (through acef-routing-selection.js) to the resolvers.
 function runRoutingSelection(activeRun) {
   return {
     provider: activeRun?.routingProvider || null,
     roleModels: activeRun?.routingRoleModels || null,
+    exemptions: activeRun?.routingRoleModelExemptions || null,
   };
+}
+
+// Policy part of the order: providers.<id>.roleModels, then models[executionClass]. null falls through to the class.
+function selectPolicyModel(mapping, canonicalRole, executionClass) {
+  const roleModel = mapping.roleModels?.[canonicalRole];
+  if (typeof roleModel === "string" && roleModel.trim()) return { model: roleModel, modelSource: "role" };
+  return { model: mapping.models?.[executionClass], modelSource: "class" };
 }
 
 // The one place a role's model is chosen. Order: run host override per role (active-run routingRoleModels) -> policy
 // per role (providers.<id>.roleModels) -> policy class mapping (providers.<id>.models[executionClass]). The reasoning
-// tier always comes from the role. A null per-role value falls through to the class mapping.
-function selectRoleModel(mapping, canonicalRole, executionClass, runRoleModels = null) {
+// tier always comes from the role. A run override on a review role must rank at or above the policy's model unless
+// the run records an exemption for that role.
+function selectRoleModel(mapping, canonicalRole, executionClass, runRoleModels = null, exemptions = null, providerId = "") {
+  const policy = selectPolicyModel(mapping, canonicalRole, executionClass);
   const runModel = runRoleModels?.[canonicalRole];
-  if (typeof runModel === "string" && runModel.trim()) return { model: runModel, modelSource: "run-override" };
-  const roleModel = mapping.roleModels?.[canonicalRole];
-  if (typeof roleModel === "string" && roleModel.trim()) return { model: roleModel, modelSource: "role" };
-  return { model: mapping.models?.[executionClass], modelSource: "class" };
+  if (typeof runModel === "string" && runModel.trim()) {
+    const exemption = exemptions?.[canonicalRole] || null;
+    if (REVIEW_ROLES.includes(canonicalRole) && !exemption) {
+      requireAtLeast(mapping, providerId, canonicalRole, runModel, policy.model,
+        "run override (record --routing-role-model-exemption \"<role>: <reason>\" to allow it)");
+    }
+    return { model: runModel, modelSource: "run-override", floor: REVIEW_ROLES.includes(canonicalRole) ? policy.model : null, exemption };
+  }
+  return { ...policy, floor: null, exemption: null };
+}
+
+// Run-level overrides and exemptions must name canonical policy roles; persisted records are checked here, before
+// any resolution, so a stale or hand-edited active run fails loudly instead of silently keeping the policy model.
+function validateRunSelection(policyRecord, selection) {
+  if (selection.roleModels) validateRoleModels(selection.roleModels, policyRecord.roles, "active-run routingRoleModels");
+  if (selection.exemptions) validateExemptions(selection.exemptions, policyRecord.roles, "active-run routingRoleModelExemptions");
 }
 
 // Every role must resolve under the named provider; the active provider is checked at load time and a run-selected
@@ -152,11 +258,13 @@ function resolveRoleRuntime(policyRecord, role, selection = null) {
   const canonicalRole = ROLE_ALIASES[normalized] || normalized;
   const assignment = policyRecord.roles[canonicalRole];
   if (!assignment) throw new Error(`model routing policy has no assignment for role ${canonicalRole}`);
-  const { provider: providerId, roleModels: runRoleModels } = routingSelection(selection);
+  const normalizedSelection = routingSelection(selection);
+  validateRunSelection(policyRecord, normalizedSelection);
+  const { provider: providerId, roleModels: runRoleModels, exemptions } = normalizedSelection;
   const provider = providerId || policyRecord.activeProvider;
   const mapping = policyRecord.providers[provider];
   if (!mapping) throw new Error(`model routing policy has no provider mapping for ${provider}`);
-  const { model, modelSource } = selectRoleModel(mapping, canonicalRole, assignment.executionClass, runRoleModels);
+  const { model, modelSource, floor, exemption } = selectRoleModel(mapping, canonicalRole, assignment.executionClass, runRoleModels, exemptions, provider);
   const reasoningEffort = mapping.reasoning?.[assignment.reasoningTier];
   if (!model || !REASONING_TIERS.has(reasoningEffort)) throw new Error(`provider ${provider} cannot resolve role ${canonicalRole}`);
   return {
@@ -165,6 +273,8 @@ function resolveRoleRuntime(policyRecord, role, selection = null) {
     reasoningTier: assignment.reasoningTier,
     model,
     modelSource,
+    ...(floor ? { floor } : {}),
+    ...(exemption ? { exemption } : {}),
     reasoningEffort,
     sessionPolicy: assignment.sessionPolicy,
     evidence: assignment.evidence,
@@ -177,7 +287,20 @@ function resolveActorRuntime(policyRecord, role, phase = "", selection = null) {
   return { role: canonicalRole, ...resolveRoleRuntime(policyRecord, canonicalRole, selection) };
 }
 
+// Checks every run override and exemption against the policy (used by acef-state when it records them).
+function validateRunRouting(policyRecord, activeRun) {
+  const selection = runRoutingSelection(activeRun);
+  validateRunSelection(policyRecord, selection);
+  for (const role of Object.keys(selection.roleModels || {})) resolveRoleRuntime(policyRecord, role, selection);
+  for (const role of Object.keys(selection.exemptions || {})) {
+    if (!selection.roleModels?.[role]) throw new Error(`active-run exemption for ${role} has no --routing-role-model for that role`);
+  }
+}
+
 module.exports = {
+  MODEL_ID_SOURCE,
+  REVIEW_ROLES,
+  ROUTING_LIBRARY_VERSION,
   canonicalRoutingRole,
   loadModelRoutingPolicy,
   resolveActorRuntime,
@@ -185,5 +308,6 @@ module.exports = {
   resolveRoleRuntime,
   runRoutingSelection,
   validateModelRoutingPolicy,
+  validateRunRouting,
   validateRoleModels,
 };

@@ -1,3 +1,5 @@
+// Same grammar as scripts/lib/acef-model-routing.js MODEL_ID_SOURCE (test-acef-model-routing asserts it).
+const SAFE_RUN_MODEL_ID = /^[A-Za-z0-9._:/-]+$/;
 const fs = require("node:fs");
 const path = require("node:path");
 const {
@@ -200,10 +202,18 @@ function validateActiveRunRecord(record) {
       const entries = record.routingRoleModels && typeof record.routingRoleModels === "object" && !Array.isArray(record.routingRoleModels)
         ? Object.entries(record.routingRoleModels) : null;
       if (!entries?.length || entries.some(([role, model]) => !/^[a-z0-9-]+$/.test(role)
-        || typeof model !== "string" || !/^[A-Za-z0-9._:/-]+$/.test(model))) {
+        || typeof model !== "string" || !SAFE_RUN_MODEL_ID.test(model))) {
         throw new Error("active run routingRoleModels must map role ids to safe model ids");
       }
     }
+    if (record.routingRoleModelExemptions !== undefined) {
+      const entries = record.routingRoleModelExemptions && typeof record.routingRoleModelExemptions === "object"
+        && !Array.isArray(record.routingRoleModelExemptions) ? Object.entries(record.routingRoleModelExemptions) : null;
+      if (!entries?.length || entries.some(([role, reason]) => !/^[a-z0-9-]+$/.test(role) || typeof reason !== "string" || !reason.trim())) {
+        throw new Error("active run routingRoleModelExemptions must map role ids to non-empty reasons");
+      }
+    }
+    // Key syntax only here; role keys are checked against the canonical policy roles by the routing resolver.
     if (record.lightweightStateContract !== undefined) {
       requireEnum(record, "lightweightStateContract", ["lightweight-state-v1"], "active run");
       if (!["quick-fix", "lightweight"].includes(record.workflowId)) {

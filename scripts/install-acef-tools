@@ -125,7 +125,22 @@ function mergeModelRoutingPolicy(targetRepo) {
   if (!fs.existsSync(source)) return "";
   const target = rel(".acef", "model-routing-policy.json");
   const baseline = installedSourceBaseline(targetRepo, repoRoot, "tools", rel("method", "model-routing-policy-v1.json"));
-  mergeHostJson(targetRepo, target, fs.readFileSync(source), validateModelRoutingPolicy, baseline);
+  mergeHostJson(targetRepo, target, fs.readFileSync(source), validateModelRoutingPolicy, baseline, {
+    // reviewModelFloors is ACEF-owned (owner decision 2026-10-27): host edits are reset to the shipped floors.
+    finalize(merged, shipped) {
+      const reset = [];
+      for (const [providerId, mapping] of Object.entries(shipped.providers || {})) {
+        if (!mapping?.reviewModelFloors || !merged.providers?.[providerId]) continue;
+        if (JSON.stringify(merged.providers[providerId].reviewModelFloors) !== JSON.stringify(mapping.reviewModelFloors)) {
+          merged.providers[providerId].reviewModelFloors = mapping.reviewModelFloors;
+          reset.push(`providers.${providerId}.reviewModelFloors`);
+        }
+      }
+      return reset;
+    },
+    // A review role below its floor without roleModelExemptions stops the update instead of being kept quietly.
+    fatal: (error) => error.code === "ACEF_REVIEW_FLOOR",
+  });
   return target;
 }
 

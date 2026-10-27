@@ -159,6 +159,15 @@ try {
   const perRoleActor = validatorRun("actor-separation");
   assert.equal(perRoleActor.status, 0, `actor-separation rejected the run per-role model:\n${perRoleActor.stdout}${perRoleActor.stderr}`);
   fs.writeFileSync(developerActorPath, `${JSON.stringify(developerActor, null, 2)}\n`);
+  // A review-role run override outside the provider modelRank (a downgrade path) fails actor-separation loudly.
+  fs.writeFileSync(activeRunPath, `${JSON.stringify({ ...JSON.parse(activeRunBytes), routingRoleModels: { "code-review": "gpt-6.1-terra" } }, null, 2)}\n`);
+  const reviewerActorPath = path.join(repo, "docs", "ai", "actors", "reviewer-1.json");
+  const reviewerActor = JSON.parse(fs.readFileSync(reviewerActorPath, "utf8"));
+  fs.writeFileSync(reviewerActorPath, `${JSON.stringify({ ...reviewerActor, model: "gpt-6.1-terra" }, null, 2)}\n`);
+  const unrankedReviewer = validatorRun("actor-separation");
+  assert.notEqual(unrankedReviewer.status, 0, "actor-separation accepted an unranked review model");
+  assert.match(`${unrankedReviewer.stdout}${unrankedReviewer.stderr}`, /gpt-6\.1-terra is not in provider openai modelRank/);
+  fs.writeFileSync(reviewerActorPath, `${JSON.stringify(reviewerActor, null, 2)}\n`);
   fs.writeFileSync(activeRunPath, activeRunBytes);
 
   lifecycle.quickFix.completedAt = "2026-08-06T10:31:00.000Z";

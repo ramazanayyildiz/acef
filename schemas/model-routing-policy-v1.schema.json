@@ -38,9 +38,9 @@
             "additionalProperties": false,
             "required": ["orchestration", "semantic-standard", "semantic-critical"],
             "properties": {
-              "orchestration": { "type": "string", "minLength": 1 },
-              "semantic-standard": { "type": "string", "minLength": 1 },
-              "semantic-critical": { "type": "string", "minLength": 1 }
+              "orchestration": { "type": "string", "minLength": 1, "pattern": "^[A-Za-z0-9._:/-]+$" },
+              "semantic-standard": { "type": "string", "minLength": 1, "pattern": "^[A-Za-z0-9._:/-]+$" },
+              "semantic-critical": { "type": "string", "minLength": 1, "pattern": "^[A-Za-z0-9._:/-]+$" }
             }
           },
           "roleModels": {
@@ -53,6 +53,25 @@
                 { "type": "null" }
               ]
             }
+          },
+          "modelRank": {
+            "description": "Models ordered weakest first. The only source of model strength for review-role floors.",
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": { "type": "string", "pattern": "^[A-Za-z0-9._:/-]+$" }
+          },
+          "reviewModelFloors": {
+            "description": "ACEF-owned minimum model per review role (code-review, patch-assurance, process-judge, epic-process-judge); update-acef-installation resets host edits.",
+            "type": "object",
+            "propertyNames": { "enum": ["code-review", "patch-assurance", "process-judge", "epic-process-judge"] },
+            "additionalProperties": { "type": "string", "pattern": "^[A-Za-z0-9._:/-]+$" }
+          },
+          "roleModelExemptions": {
+            "description": "Host owner exemption per review role: a reason that allows that role's policy model below its floor.",
+            "type": "object",
+            "propertyNames": { "enum": ["code-review", "patch-assurance", "process-judge", "epic-process-judge"] },
+            "additionalProperties": { "type": "string", "minLength": 1 }
           },
           "reasoning": {
             "type": "object",

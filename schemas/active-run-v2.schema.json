@@ -25,6 +25,13 @@
       "propertyNames": { "pattern": "^[a-z0-9-]+$" },
       "additionalProperties": { "type": "string", "minLength": 1, "pattern": "^[A-Za-z0-9._:/-]+$" }
     },
+    "routingRoleModelExemptions": {
+      "description": "Owner exemption per review role: allows that role's run override below the policy model. Recorded with --routing-role-model-exemption.",
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": { "enum": ["code-review", "patch-assurance", "process-judge", "epic-process-judge"] },
+      "additionalProperties": { "type": "string", "minLength": 1 }
+    },
     "redOwnershipContract": {
       "type": "string",
       "enum": ["integrated-developer-v1", "independent-test-author-v1"]

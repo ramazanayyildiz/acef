@@ -36,11 +36,28 @@ Cost note: review roles only. Hosts that run admitted roles on anthropic see Pat
 Sonnet to Opus after `update-acef-installation`; no other role changes. OpenAI/Codex is unchanged: `gpt-6.1-sol` for
 every role, effort by the role tier, and no `roleModels` by default.
 
+**No downgrade of review roles** (owner decision 2026-10-27). For `code-review`, `patch-assurance`, `process-judge`
+and `epic-process-judge`, an override may only pick the policy's model or a stronger one. Strength comes only from
+the provider's `modelRank` (weakest first: anthropic `claude-sonnet-5-5` < `claude-opus-5-5`; openai `gpt-6.1-sol`),
+never from model names, and a review-role model missing from `modelRank` is rejected.
+- Run override: at or above the policy's resolved model, or the run records
+  `--routing-role-model-exemption "<role>: <reason>"` (stored as `routingRoleModelExemptions`, shown by `acef-next`;
+  `"<role>:"` clears it). `acef-state` refuses the write; the hard-wall and the validator refuse the dispatch.
+- Host override (`.acef/model-routing-policy.json`): at or above `reviewModelFloors`, or the provider lists
+  `roleModelExemptions.<role>` with a reason. `reviewModelFloors` is ACEF-owned: `update-acef-installation` resets host
+  edits to it, and stops with an error (host file untouched) when a review role is below its floor without an
+  exemption. A `null` or lower review-role model therefore needs an exemption.
+- `development`, `atdd` and `conductor` stay freely overridable, also with models outside `modelRank`.
+
 A host changes a role permanently in its `.acef/model-routing-policy.json` (for example
-`"roleModels": { "development": "claude-opus-5-5" }`, or `"patch-assurance": null` to return that role to Sonnet), or
-for one run with `--routing-role-model`. Role keys must be canonical policy roles (`code-review`, not `reviewer`);
-an unknown key fails validation. `update-acef-installation` merges the policy three-way, so a host's own per-role
-values, including `null`, survive updates, and new ACEF per-role defaults the host never named are added.
+`"roleModels": { "development": "claude-opus-5-5" }`), or for one run with `--routing-role-model`. Role keys must be
+canonical policy roles (`code-review`, not `reviewer`); an unknown key fails validation, also when it is already
+stored on an active run. Model ids share one grammar (`MODEL_ID_SOURCE`: letters, digits, `.`, `_`, `-`, `:`, `/`),
+which the hard-wall also uses to read `--model` from shell dispatches. `update-acef-installation` merges the policy
+three-way, so a host's own per-role values and exemptions survive updates, and new ACEF per-role defaults the host
+never named are added. Consumers reach the routing library through `scripts/lib/acef-routing-selection.js`: if a host
+kept an older library that cannot honor per-role routing in play, they fail with an error naming the library, never
+fall back silently.
 
 ## Which model
 

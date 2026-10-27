@@ -32,7 +32,15 @@ const { validateDurableStoryClosePackage } = require("./lib/acef-story-close");
 const { riskRequiresGuarded, workflowSelectionFailures } = require("./lib/acef-execution-policy");
 const { buildAssuranceRequirements } = require("./lib/acef-assurance-requirements");
 const { staticReuseInputFingerprint } = require("./lib/acef-evidence-reuse-contract");
-const { loadModelRoutingPolicy, resolveActorRuntime, resolveRoleRuntime, runRoutingSelection, validateProviderMapping, validateRoleModels } = require("./lib/acef-model-routing");
+const routingLibrary = require("./lib/acef-model-routing");
+const { loadModelRoutingPolicy, resolveActorRuntime, resolveRoleRuntime, validateProviderMapping } = routingLibrary;
+const { requireRunRoutingSupport, routingSelectionFor } = require("./lib/acef-routing-selection");
+
+// Policy record plus the run's routing selection (per-role overrides and exemptions), through the compatibility gate.
+function runRouting(repo, activeRun) {
+  const record = loadModelRoutingPolicy(repo).record;
+  return { record, selection: routingSelectionFor(record, activeRun) };
+}
 const { globTreeDigest, unquotedTreePath } = require("./lib/acef-scoped-tree");
 const { installationFreshnessFailures, readInstallationManifest } = require("./lib/acef-installation");
 const {
@@ -101,7 +109,7 @@ The existing direct record is the compact compatibility context. Do not inspect 
   console.log(`ACEF typed-state writer
 
 Usage:
-  acef-state active-run --repo <path> --run-id <id> --objective-id <id> --objective-scope <stable-parent-scope> --workflow-id quick-fix|lightweight|full-bmad [--objective-defect <id>...] [--replan-cause new-root-cause|scope-error|evidence-invalid] [options] [--routing-provider <provider-id>] [--routing-role-model <role>=<model>...] [--goal-reset]
+  acef-state active-run --repo <path> --run-id <id> --objective-id <id> --objective-scope <stable-parent-scope> --workflow-id quick-fix|lightweight|full-bmad [--objective-defect <id>...] [--replan-cause new-root-cause|scope-error|evidence-invalid] [options] [--routing-provider <provider-id>] [--routing-role-model <role>=<model>...] [--routing-role-model-exemption "<role>: <reason>"...] [--goal-reset]
   acef-state objective-control-budget --repo <path> --objective-id <id> --run-id <authentic-terminal-id> --decision-id <id> --eligible-run-id <next-id> --additional-seconds <1..3600> --expires-at <ISO-date-within-2hours> --authority-ref <docs/ai/record.md> --reason <explicit-scope>
   acef-state objective-qa --repo <path> --objective-id <id> --status running|complete
   acef-state objective-defect --repo <path> --objective-id <id> --id <id> --source review|manual-qa|broad-suite --defect-class <class> --summary <text> --discovered-in-run <id> [--defect-status <status> --batch-key <key> --root-cause-key <key>]
@@ -109,11 +117,14 @@ Usage:
   acef-state objective-replan --repo <path> --objective-id <id> --run-id <id> --event-id <id> --cause new-root-cause|scope-error|evidence-invalid
   acef-state objective-close --repo <path> --objective-id <id> --run-id <active-terminal-run-id> --completion-evidence <id> [--run-disposition '<run-id>|<resolved-or-superseded>|<reason>'...]
   Same-run active-run updates keep assuranceProfile/rationale/approval, riskTriggers, fullLedgerAccess, maxLines,
-  routingProvider, routingRoleModels and goalCoverage unless a flag changes them; goal flags merge field-by-field (--goal-reset replaces).
+  routingProvider, routingRoleModels, routingRoleModelExemptions and goalCoverage unless a flag changes them; goal flags merge field-by-field (--goal-reset replaces).
   On lightweight-state-v1 runs, --goal-status PASS needs --last-passed-gate naming a typed PASS gate that passes gate-verdict.
   --routing-provider selects a provider mapped in the model routing policy (default: the policy's activeProvider).
   --routing-role-model <role>=<model> sets this run's model for one policy role (repeatable; merges by role on same-run
   updates; <role>= clears it). It wins over the policy's roleModels and class mapping; effort still follows the role.
+  Review roles (code-review, patch-assurance, process-judge, epic-process-judge) accept only a model at or above the
+  policy's model in the provider modelRank, unless --routing-role-model-exemption "<role>: <reason>" records an owner
+  exemption ("<role>:" clears it). Development, ATDD and the Conductor are free.
   acef-state migrate-active-run --repo <path> --workflow-id quick-fix|lightweight|full-bmad [--assurance baseline|guarded] [--assurance-rationale <text>] [--assurance-approval <approval-id>]
   acef-state recover-active-run --repo <path> --red-commit <sha> --product-commit <sha> --red-artifact <path> --reason <text> -- <exact-focused-command>
   acef-state recovery-review --repo <path> --actor <canonical-id> --session-id <id> --verdict PASS|REPLAN [--finding SEVERITY:id:reason]...
@@ -161,9 +172,21 @@ function mergedRoutingRoleModels(opts, previous) {
   return Object.keys(merged).length ? merged : undefined;
 }
 
+// Owner exemptions for review-role run overrides: "<role>: <reason>" sets, "<role>:" clears.
+function mergedRoutingRoleModelExemptions(opts, previous) {
+  const merged = { ...(previous || {}) };
+  for (const entry of opts.routingRoleModelExemption || []) {
+    const match = /^([a-z0-9-]+):\s*(.*)$/.exec(entry);
+    if (!match) throw new Error(`--routing-role-model-exemption expects "<role>: <reason>", got ${entry}`);
+    if (match[2].trim()) merged[match[1]] = match[2].trim();
+    else delete merged[match[1]];
+  }
+  return Object.keys(merged).length ? merged : undefined;
+}
+
 function parseArgs(argv) {
   const [command, ...rest] = argv;
-  const opts = { command, repo: process.cwd(), allow: [], allowCommand: [], satisfies: [], evidence: [], failureEvidence: [], surface: [], surfaceEvidence: [], binding: [], bindingEvidence: [], riskTrigger: [], clarifyingQuestion: [], inferredAnswer: [], unresolvedQuestion: [], requiredSurface: [], coveredSurface: [], goalEvidence: [], goalMissing: [], acceptance: [], changedPath: [], verificationCommand: [], verificationExitCode: [], unresolvedRisk: [], unresolvedFinding: [], finding: [], findingId: [], findingSeverity: [], findingReason: [], promotionReason: [], expectedStory: [], expectedTest: [], testPath: [], fixturePath: [], objectiveDefect: [], runDisposition: [], routingRoleModel: [], commandArgv: [] };
+  const opts = { command, repo: process.cwd(), allow: [], allowCommand: [], satisfies: [], evidence: [], failureEvidence: [], surface: [], surfaceEvidence: [], binding: [], bindingEvidence: [], riskTrigger: [], clarifyingQuestion: [], inferredAnswer: [], unresolvedQuestion: [], requiredSurface: [], coveredSurface: [], goalEvidence: [], goalMissing: [], acceptance: [], changedPath: [], verificationCommand: [], verificationExitCode: [], unresolvedRisk: [], unresolvedFinding: [], finding: [], findingId: [], findingSeverity: [], findingReason: [], promotionReason: [], expectedStory: [], expectedTest: [], testPath: [], fixturePath: [], objectiveDefect: [], runDisposition: [], routingRoleModel: [], routingRoleModelExemption: [], commandArgv: [] };
   for (let index = 0; index < rest.length; index += 1) {
     const arg = rest[index];
     if (arg === "--help" || arg === "-h") {
@@ -183,7 +206,7 @@ function parseArgs(argv) {
     const value = rest[index + 1];
     if (value === undefined || value.startsWith("--")) throw new Error(`Missing value for ${arg}`);
     index += 1;
-    if (["allow", "allowCommand", "satisfies", "evidence", "failureEvidence", "surface", "surfaceEvidence", "binding", "bindingEvidence", "riskTrigger", "clarifyingQuestion", "inferredAnswer", "unresolvedQuestion", "requiredSurface", "coveredSurface", "goalEvidence", "goalMissing", "acceptance", "changedPath", "verificationCommand", "verificationExitCode", "unresolvedRisk", "unresolvedFinding", "finding", "findingId", "findingSeverity", "findingReason", "promotionReason", "expectedStory", "expectedTest", "testPath", "fixturePath", "objectiveDefect", "runDisposition", "routingRoleModel"].includes(key)) opts[key].push(value);
+    if (["allow", "allowCommand", "satisfies", "evidence", "failureEvidence", "surface", "surfaceEvidence", "binding", "bindingEvidence", "riskTrigger", "clarifyingQuestion", "inferredAnswer", "unresolvedQuestion", "requiredSurface", "coveredSurface", "goalEvidence", "goalMissing", "acceptance", "changedPath", "verificationCommand", "verificationExitCode", "unresolvedRisk", "unresolvedFinding", "finding", "findingId", "findingSeverity", "findingReason", "promotionReason", "expectedStory", "expectedTest", "testPath", "fixturePath", "objectiveDefect", "runDisposition", "routingRoleModel", "routingRoleModelExemption"].includes(key)) opts[key].push(value);
     else opts[key] = value;
   }
   opts.repo = path.resolve(opts.repo);
@@ -770,9 +793,12 @@ function writeActiveRun(opts) {
     validateProviderMapping(policy, routingProvider);
   }
   const routingRoleModels = mergedRoutingRoleModels(opts, sameRun ? previous.routingRoleModels : undefined);
-  if (routingRoleModels) {
-    const policy = loadModelRoutingPolicy(opts.repo).record;
-    validateRoleModels(routingRoleModels, policy.roles, "--routing-role-model");
+  const routingRoleModelExemptions = mergedRoutingRoleModelExemptions(opts, sameRun ? previous.routingRoleModelExemptions : undefined);
+  if (routingRoleModels || routingRoleModelExemptions) {
+    const runFields = { routingProvider, routingRoleModels, routingRoleModelExemptions };
+    requireRunRoutingSupport(runFields);
+    // Canonical role keys, model grammar, and the review floor (a lower review model needs an exemption).
+    routingLibrary.validateRunRouting(loadModelRoutingPolicy(opts.repo).record, runFields);
   }
   const scopeUnit = opts.scopeUnit || (opts.epic ? "epic" : "story");
   const expectedStories = opts.expectedStory.length ? [...new Set(opts.expectedStory)] : (sameRun ? previous.expectedStories : undefined);
@@ -852,6 +878,7 @@ function writeActiveRun(opts) {
     assuranceApprovalId,
     ...(routingProvider ? { routingProvider } : {}),
     ...(routingRoleModels ? { routingRoleModels } : {}),
+    ...(routingRoleModelExemptions ? { routingRoleModelExemptions } : {}),
     track: opts.track === "guarded" ? null : (opts.track || null),
     status: opts.status,
     ...(opts.terminalDisposition ? { terminalDisposition: opts.terminalDisposition } : {}),
@@ -1473,7 +1500,8 @@ function writeRecoveryReview(opts) {
     createdAt: now,
   };
   atomicJson(decisionPath, decision, { validate: parseRecoveryReviewDecision });
-  const runtime = resolveRoleRuntime(loadModelRoutingPolicy(opts.repo).record, "process-judge", runRoutingSelection(activeRun));
+  const judgeRouting = runRouting(opts.repo, activeRun);
+  const runtime = resolveRoleRuntime(judgeRouting.record, "process-judge", judgeRouting.selection);
   const actor = {
     actorInstanceId: actorId,
     runId: activeRun.runId,
@@ -1628,7 +1656,8 @@ function writeActor(opts) {
     throw new Error("four-actor-v3 Developer actor requires --session-id for repair continuity");
   }
   if (activeRun?.status === "active" && activeRun.modelRoutingContract === "admitted-role-routing-v1") {
-    const routing = resolveActorRuntime(loadModelRoutingPolicy(opts.repo).record, opts.role, opts.phase, runRoutingSelection(activeRun));
+    const actorRouting = runRouting(opts.repo, activeRun);
+    const routing = resolveActorRuntime(actorRouting.record, opts.role, opts.phase, actorRouting.selection);
     if (opts.model !== routing.model || opts.effort !== routing.reasoningEffort) {
       throw new Error(`${activeRun.workflowId} ${routing.role} actor must bind calibrated runtime ${routing.model}/${routing.reasoningEffort}; inherited or unspecified runtimes are not allowed`);
     }
@@ -1643,7 +1672,8 @@ function writeActor(opts) {
               : actorPhase === "processjudge" && activeRun.scopeUnit === "epic" ? "epic-process-judge"
               : actorPhase === "processjudge" ? "process-judge" : null;
     if (!routingRole) throw new Error(`capsule-supervisor-v1 cannot route semantic actor phase ${opts.phase}`);
-    const routing = resolveRoleRuntime(loadModelRoutingPolicy(opts.repo).record, routingRole, runRoutingSelection(activeRun));
+    const capsuleRouting = runRouting(opts.repo, activeRun);
+    const routing = resolveRoleRuntime(capsuleRouting.record, routingRole, capsuleRouting.selection);
     if (opts.model !== routing.model || opts.effort !== routing.reasoningEffort) {
       throw new Error(`capsule-supervisor-v1 ${routingRole} actor must bind calibrated runtime ${routing.model}/${routing.reasoningEffort}`);
     }
@@ -3548,7 +3578,8 @@ function writeReviewCapsule(opts) {
   });
   const totalBytes = Buffer.byteLength(contextContent) + Buffer.byteLength(diffContent);
   if (totalBytes > 400000) throw new Error(`review-capsule exceeds 400000-byte bounded context limit (${totalBytes})`);
-  const reviewRuntime = resolveRoleRuntime(loadModelRoutingPolicy(opts.repo).record, opts.role, runRoutingSelection(activeRun));
+  const reviewRouting = runRouting(opts.repo, activeRun);
+  const reviewRuntime = resolveRoleRuntime(reviewRouting.record, opts.role, reviewRouting.selection);
   const reviewPolicy = opts.role === "code-review"
     ? ["Judge correctness, security, acceptance conformance, and scope.", "Consume the hash-bound runner proof; do not rerun it unless reporting a named evidence conflict.", "Do not edit files or consume the other reviewer conclusion.", "Use targeted follow-up reads only for a named uncertainty."]
     : ["Judge final-tree patch integrity, test quality, discovery proof, and runner evidence.", "Consume the hash-bound runner proof; rerun only when a named evidence conflict requires adjudication.", "Do not edit files or consume the Code Review conclusion.", "Use targeted follow-up reads only for a named uncertainty."];

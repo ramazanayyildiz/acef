@@ -69,7 +69,8 @@ original contract. Native work is outside this policy because installation is no
 different mapped provider records it once with `active-run --routing-provider <id>`; the effort it binds is a claim the
 launcher has to honor when opening the session. A run can change one role's model with
 `active-run --routing-role-model <role>=<model>`; the policy's per-role `roleModels` and class mapping apply otherwise
-(`method/MODEL_CHOICE.md`).
+(`method/MODEL_CHOICE.md`). Review roles accept only the policy model or a stronger one (`modelRank`) unless the run
+records `--routing-role-model-exemption "<role>: <reason>"`.
 Slice lane exception: Slice lane work is outside this policy; its reviewer model comes from `REVIEW_MODEL` / `slice-method.json` via
 `scripts/slice/codex-review.sh`.
 

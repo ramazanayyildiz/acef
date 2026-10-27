@@ -15,7 +15,8 @@ const {
   parseAtddCorrection,
   parseWorkerScope,
 } = require("./lib/acef-state-parser");
-const { loadModelRoutingPolicy, resolveRoleRuntime, runRoutingSelection } = require("./lib/acef-model-routing");
+const { loadModelRoutingPolicy, resolveRoleRuntime } = require("./lib/acef-model-routing");
+const { routingSelectionFor } = require("./lib/acef-routing-selection");
 const { validateDurableStoryClosePackage } = require("./lib/acef-story-close");
 const { installationFreshnessFailures } = require("./lib/acef-installation");
 const { objectiveFailures } = require("./lib/acef-objective-supervisor");
@@ -211,7 +212,7 @@ function build(repo) {
     throw new Error("supervisor requires an active full-bmad/four-actor-v3/capsule-supervisor run");
   }
   const routingPolicy = loadModelRoutingPolicy(repo);
-  const selection = runRoutingSelection(run);
+  const selection = routingSelectionFor(routingPolicy.record, run);
   const runtime = {
     atdd: resolveRoleRuntime(routingPolicy.record, "atdd", selection),
     development: resolveRoleRuntime(routingPolicy.record, "development", selection),

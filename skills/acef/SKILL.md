@@ -80,7 +80,9 @@ binding. Existing in-flight runs keep their original contract. Native work is un
 provider (for example `anthropic`), record it once at admission with `acef-state active-run --routing-provider <id>`;
 the effort shown is a recorded claim, so open the actor session at exactly that effort. On anthropic, Patch Assurance
 and both Judges resolve to Opus and the other roles to Sonnet; change one role for a run with
-`--routing-role-model <role>=<model>`. Always pass the model `acef-next` prints, not one you pick.
+`--routing-role-model <role>=<model>`. Review roles never go below the policy model without
+`--routing-role-model-exemption "<role>: <reason>"` from the owner. Always pass the model `acef-next` prints, not one
+you pick.
 
 New `quick-fix` runs use `quickFixContract: single-review-v1`: Developer, one independent Code Reviewer, and
 deterministic closeout. The Developer owns focused RED→GREEN; a separate ATDD context is forbidden. New Standard runs

@@ -442,9 +442,11 @@ function mergeMissingKeys(host, source) {
  * Host-local JSON configuration (for example .acef/model-routing-policy.json): written when missing; otherwise merged
  * three-way (see mergeHostConfig) so host overrides survive, untouched ACEF values follow ACEF, and new keys are added.
  * baseline is the ACEF copy the host file was installed from, or null when it is unknown. validate(record) must throw
- * for an unusable result; the host file is then left untouched and reported.
+ * for an unusable result; the host file is then left untouched and reported, or, when options.fatal(error) is true,
+ * the update stops with that error. options.finalize(merged, source) may reset ACEF-owned keys and returns the key
+ * paths it changed; those count as changes to write.
  */
-function mergeHostJson(targetRepo, relTarget, sourceBytes, validate = null, baseline = null) {
+function mergeHostJson(targetRepo, relTarget, sourceBytes, validate = null, baseline = null, options = {}) {
   const target = path.join(targetRepo, relTarget);
   const empty = { added: [], upgraded: [], overrides: [] };
   if (!fs.existsSync(target)) {
@@ -465,10 +467,16 @@ function mergeHostJson(targetRepo, relTarget, sourceBytes, validate = null, base
     return { status: "kept", ...empty };
   }
   const { result: merged, report } = mergeHostConfig(host, source, isPlainObject(baseline) ? baseline : null);
+  report.reset = options.finalize ? options.finalize(merged, source) || [] : [];
   if (validate) {
     try {
       validate(merged);
     } catch (error) {
+      if (options.fatal && options.fatal(error)) {
+        const fatal = new Error(`update stopped: ${relTarget} ${error.message}; the host file was left as it is`);
+        fatal.code = error.code;
+        throw fatal;
+      }
       console.log(`kept host-modified ${relTarget} (merged copy invalid, host file left as it is: ${error.message})`);
       return { status: "kept", ...empty };
     }
@@ -477,12 +485,13 @@ function mergeHostJson(targetRepo, relTarget, sourceBytes, validate = null, base
   if (report.overrides.length) console.log(`kept host overrides ${relTarget}: ${report.overrides.join(", ")}`);
   if (report.upgraded.length) console.log(`upgraded untouched ACEF values ${relTarget}: ${report.upgraded.join(", ")}`);
   if (report.added.length) console.log(`added new keys ${relTarget}: ${report.added.join(", ")}`);
-  if (!report.added.length && !report.upgraded.length) {
+  if (report.reset.length) console.log(`reset ACEF-owned values ${relTarget}: ${report.reset.join(", ")}`);
+  if (!report.added.length && !report.upgraded.length && !report.reset.length) {
     console.log(`kept host values ${relTarget} (nothing to upgrade or add; ${basis})`);
     return { status: "unchanged", ...report };
   }
   fs.writeFileSync(target, `${JSON.stringify(merged, null, 2)}\n`);
-  console.log(`merged ${relTarget} (${basis}): ${report.overrides.length} host override(s) kept, ${report.upgraded.length} untouched value(s) upgraded, ${report.added.length} new key(s) added`);
+  console.log(`merged ${relTarget} (${basis}): ${report.overrides.length} host override(s) kept, ${report.upgraded.length} untouched value(s) upgraded, ${report.added.length} new key(s) added${report.reset.length ? `, ${report.reset.length} ACEF-owned value(s) reset` : ""}`);
   return { status: "merged", ...report };
 }
 

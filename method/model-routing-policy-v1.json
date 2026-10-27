@@ -54,6 +54,15 @@
         "semantic-standard": "gpt-6.1-sol",
         "semantic-critical": "gpt-6.1-sol"
       },
+      "modelRank": [
+        "gpt-6.1-sol"
+      ],
+      "reviewModelFloors": {
+        "code-review": "gpt-6.1-sol",
+        "patch-assurance": "gpt-6.1-sol",
+        "process-judge": "gpt-6.1-sol",
+        "epic-process-judge": "gpt-6.1-sol"
+      },
       "reasoning": {
         "low": "low",
         "medium": "medium",
@@ -61,7 +70,7 @@
         "xhigh": "xhigh",
         "max": "max"
       },
-      "note": "Codex keeps one model (sol) and varies reasoning effort by role; gpt-6.1-terra is for browser tours only and has no role here (method/MODEL_CHOICE.md). The 6.1 remap is not recalibrated."
+      "note": "Codex keeps one model (sol) and varies reasoning effort by role; gpt-6.1-terra is for browser tours only and has no role here (method/MODEL_CHOICE.md). The 6.1 remap is not recalibrated. modelRank and reviewModelFloors keep review roles on sol unless an owner exemption is recorded."
     },
     "anthropic": {
       "models": {
@@ -74,6 +83,16 @@
         "process-judge": "claude-opus-5-5",
         "epic-process-judge": "claude-opus-5-5"
       },
+      "modelRank": [
+        "claude-sonnet-5-5",
+        "claude-opus-5-5"
+      ],
+      "reviewModelFloors": {
+        "code-review": "claude-sonnet-5-5",
+        "patch-assurance": "claude-opus-5-5",
+        "process-judge": "claude-opus-5-5",
+        "epic-process-judge": "claude-opus-5-5"
+      },
       "reasoning": {
         "low": "low",
         "medium": "medium",
@@ -81,7 +100,7 @@
         "xhigh": "high",
         "max": "max"
       },
-      "note": "Sonnet for every class (owner decision 2026-10-27, option A: no silent cost increase for development). roleModels then puts Patch Assurance, the Process Judge and the Epic Process Judge on Opus (owner decision 2026-10-27, cost note: review roles only); Development, ATDD, the Conductor and Code Review stay Sonnet through their class. A host changes one role with providers.anthropic.roleModels in its policy copy (null returns that role to its class mapping) or for one run with active-run --routing-role-model <role>=<model>. Resolution: run override per role, then policy roleModels, then models[executionClass]; effort always comes from the role's reasoningTier. Effort is a recorded claim; the launcher must open the session at that effort. Select with active-run --routing-provider anthropic or a repo override activeProvider."
+      "note": "Sonnet for every class (owner decision 2026-10-27, option A: no silent cost increase for development). roleModels then puts Patch Assurance, the Process Judge and the Epic Process Judge on Opus (owner decision 2026-10-27, cost note: review roles only); Development, ATDD, the Conductor and Code Review stay Sonnet through their class. Resolution: run override per role, then policy roleModels, then models[executionClass]; effort always comes from the role's reasoningTier. Review roles never go below reviewModelFloors (ACEF-owned; update-acef-installation resets it) or, for a run override, below the policy's model; strength comes only from modelRank (weakest first), and a review-role model missing from modelRank is rejected. A lower or null review-role model needs roleModelExemptions.<role> (host policy) or active-run --routing-role-model-exemption \"<role>: <reason>\" (run). Development, ATDD and the Conductor are freely overridable. Effort is a recorded claim; the launcher must open the session at that effort. Select with active-run --routing-provider anthropic or a repo override activeProvider."
     }
   }
 }

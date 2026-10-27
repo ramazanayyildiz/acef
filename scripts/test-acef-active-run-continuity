@@ -158,4 +158,90 @@ const base = (runId) => ["active-run", "--run-id", runId, "--workflow-id", "ligh
   assert.equal(back.status, 0, `${back.stdout}${back.stderr}`);
   console.log("per-role run override ok");
 }
+
+// ---------- review floors: no downgrade of review roles without an owner exemption ----------
+const nextTool = path.join(sourceRoot, "scripts", "acef-next");
+const nextJson = (repo, args = []) => {
+  const result = cp.spawnSync(process.execPath, [nextTool, "--repo", repo, "--format", "json", ...args], { cwd: repo, encoding: "utf8" });
+  return JSON.parse(result.stdout);
+};
+{
+  const repo = initRepo();
+  const reviewRun = (...extra) => run(repo, [...base("RUN-f"), "--phase", "code-review", "--worker-role", "patch-assurance",
+    "--routing-provider", "anthropic", ...extra]);
+  const down = reviewRun("--routing-role-model", "patch-assurance=claude-sonnet-5-5");
+  assert.equal(down.status, 1, "a review-role downgrade was recorded without an exemption");
+  assert.match(down.stderr, /below the review floor claude-opus-5-5/);
+  const unknown = reviewRun("--routing-role-model", "code-review=claude-mystery-9");
+  assert.equal(unknown.status, 1, "an unranked review model was recorded");
+  assert.match(unknown.stderr, /not in provider anthropic modelRank/);
+  const devFree = reviewRun("--routing-role-model", "development=claude-mystery-9");
+  assert.equal(devFree.status, 0, `development must stay freely overridable: ${devFree.stderr}`);
+  const up = reviewRun("--routing-role-model", "code-review=claude-opus-5-5");
+  assert.equal(up.status, 0, `${up.stdout}${up.stderr}`);
+  assert.deepEqual(json(repo, "docs/ai/ACEF_ACTIVE_RUN.json").routingRoleModels, { development: "claude-mystery-9", "code-review": "claude-opus-5-5" });
+  const badExemption = reviewRun("--routing-role-model-exemption", "development: cheaper");
+  assert.equal(badExemption.status, 1);
+  assert.match(badExemption.stderr, /not a review role/);
+  const exempt = reviewRun("--routing-role-model", "patch-assurance=claude-sonnet-5-5",
+    "--routing-role-model-exemption", "patch-assurance: owner Ram 2026-10-27 cost trial");
+  assert.equal(exempt.status, 0, `${exempt.stdout}${exempt.stderr}`);
+  const record = json(repo, "docs/ai/ACEF_ACTIVE_RUN.json");
+  assert.deepEqual(record.routingRoleModelExemptions, { "patch-assurance": "owner Ram 2026-10-27 cost trial" }, "exemption must be stored on the run");
+  const status = nextJson(repo).active_state.runtime;
+  assert.deepEqual([status.model, status.model_source, status.review_floor, status.exemption],
+    ["claude-sonnet-5-5", "run-override", "claude-opus-5-5", "owner Ram 2026-10-27 cost trial"], "acef-next shows the exemption");
+  const clearExemption = reviewRun("--routing-role-model-exemption", "patch-assurance:");
+  assert.equal(clearExemption.status, 1, "clearing the exemption while the downgrade stays must fail");
+  assert.match(clearExemption.stderr, /below the review floor/);
+  // A persisted alias key (hand-edited run) blocks acef-next instead of silently keeping the policy model.
+  write(repo, "docs/ai/ACEF_ACTIVE_RUN.json", { ...record, workerRole: "code-review", routingRoleModels: { reviewer: "claude-opus-5-5" } });
+  const blocked = nextJson(repo);
+  assert.match(blocked.active_state.runtime.error, /unknown role reviewer/);
+  assert.ok(blocked.blockers.some((entry) => /model routing: .*unknown role reviewer/.test(entry)), "acef-next must block");
+  assert.equal(blocked.status, "blocked");
+  console.log("review floors ok");
+}
+
+// ---------- an older routing library kept by the host fails loudly ----------
+{
+  const repo = initRepo();
+  // An installed copy of the tools, with the routing library replaced by a pre-roleModels stand-in.
+  const bin = path.join(repo, ".acef", "bin");
+  fs.mkdirSync(path.join(bin, "lib"), { recursive: true });
+  for (const file of fs.readdirSync(path.join(sourceRoot, "scripts", "lib"))) {
+    fs.copyFileSync(path.join(sourceRoot, "scripts", "lib", file), path.join(bin, "lib", file));
+  }
+  for (const tool of ["acef-state", "acef-next", "acef-process-validator"]) fs.copyFileSync(path.join(sourceRoot, "scripts", tool), path.join(bin, `${tool}.cjs`));
+  write(repo, ".acef/model-routing-policy.json", fs.readFileSync(path.join(sourceRoot, "method", "model-routing-policy-v1.json"), "utf8"));
+  fs.writeFileSync(path.join(bin, "lib", "acef-model-routing.js"), [
+    "\"use strict\";",
+    "// stand-in for a host-kept library from before per-role models",
+    `const current = require(${JSON.stringify(path.join(sourceRoot, "scripts", "lib", "acef-model-routing.js"))});`,
+    "const { runRoutingSelection, ROUTING_LIBRARY_VERSION, MODEL_ID_SOURCE, REVIEW_ROLES, validateRunRouting, ...older } = current;",
+    "module.exports = older;",
+    "",
+  ].join("\n"));
+  const oldState = (args) => cp.spawnSync(process.execPath, [path.join(bin, "acef-state.cjs"), ...args, "--repo", repo], { cwd: repo, encoding: "utf8" });
+  const oldNext = () => JSON.parse(cp.spawnSync(process.execPath, [path.join(bin, "acef-next.cjs"), "--repo", repo, "--format", "json"], { cwd: repo, encoding: "utf8" }).stdout);
+  const actorArgs = (id, model) => ["actor", "--id", id, "--story", "Story cont", "--phase", "development", "--role", "developer",
+    "--client", "claude-code", "--model", model, "--effort", "high", "--context-profile", "worker"];
+  // openai with nothing per-role: the older library still resolves.
+  assert.equal(oldState([...base("RUN-o"), "--phase", "development"]).status, 0);
+  assert.equal(oldNext().active_state.runtime.model, "gpt-6.1-sol");
+  assert.equal(oldState(actorArgs("dev-openai", "gpt-6.1-sol")).status, 0);
+  // A per-role run override cannot be recorded with the older library.
+  const override = oldState([...base("RUN-o"), "--phase", "development", "--routing-role-model", "development=claude-opus-5-5"]);
+  assert.equal(override.status, 1);
+  assert.match(override.stderr, /predates per-role models/);
+  // anthropic: the policy names per-role models, so actor binding and acef-next fail loudly.
+  assert.equal(oldState([...base("RUN-o"), "--phase", "development", "--routing-provider", "anthropic"]).status, 0);
+  const actor = oldState(actorArgs("dev-anthropic", "claude-sonnet-5-5"));
+  assert.equal(actor.status, 1, "an older library dropped per-role routing silently");
+  assert.match(actor.stderr, /predates per-role models .*update-acef-installation/);
+  const next = oldNext();
+  assert.match(next.active_state.runtime.error, /predates per-role models/);
+  assert.ok(next.blockers.some((entry) => /model routing: .*predates per-role models/.test(entry)));
+  console.log("older routing library ok");
+}
 console.log("acef active-run continuity tests passed");

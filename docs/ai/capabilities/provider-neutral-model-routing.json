@@ -1,6 +1,6 @@
 {
   "capabilityId": "provider-neutral-model-routing",
-  "requestedIntent": "Select model and reasoning effort by ACEF role while allowing equivalent runtimes from additional LLM providers to be mapped without changing lifecycle semantics. A provider may also name a model per role (roleModels) over its class mapping, and a run may override one role's model (active-run routingRoleModels); one shared resolver applies run override, then policy roleModels, then the class mapping.",
+  "requestedIntent": "Select model and reasoning effort by ACEF role while allowing equivalent runtimes from additional LLM providers to be mapped without changing lifecycle semantics. A provider may also name a model per role (roleModels) over its class mapping, and a run may override one role's model (active-run routingRoleModels); one shared resolver applies run override, then policy roleModels, then the class mapping. Review roles never go below the policy model (modelRank, ACEF-owned reviewModelFloors) without a recorded owner exemption, and consumers fail loudly when a host kept an older routing library.",
   "status": "enforced",
   "requiredLayers": ["docs", "schema", "cli", "hook", "validator", "tests", "installer"],
   "implementedLayers": {
@@ -25,7 +25,10 @@
       "scripts/acef-next#routedRuntime",
       "scripts/acef-state#writeActor",
       "scripts/acef-state#writeReviewCapsule",
-      "scripts/acef-state#mergedRoutingRoleModels"
+      "scripts/acef-state#mergedRoutingRoleModels",
+      "scripts/acef-state#mergedRoutingRoleModelExemptions",
+      "scripts/lib/acef-routing-selection.js#routingSelectionFor",
+      "scripts/lib/acef-model-routing.js#checkPolicyReviewFloors"
     ],
     "hook": [
       "claude-plugins/acef-bmad-guard/hooks/acef-bmad-hard-wall.mjs#admittedModelRoutingRestricted"
@@ -49,6 +52,7 @@
     ],
     "installer": [
       "scripts/install-acef-tools#copyModelRoutingPolicy",
+      "scripts/install-acef-tools#mergeModelRoutingPolicy",
       "scripts/install-acef-tools#defaultModelRoutingContract",
       "scripts/test-install-acef-tools"
     ]
@@ -58,6 +62,7 @@
     "Pre-dispatch enforcement is versioned as admitted-role-routing-v1 on new Fix and Standard runs; existing in-flight runs retain their original contract. Native work remains outside ACEF model routing, while Full capsule-supervisor dispatch keeps its existing compiled enforcement.",
     "V327-CAL-001 qualifies medium only for Code Review on one held-out authorization defect. It does not lower ATDD, Development, Patch Assurance, or Process Judge floors.",
     "V3.28 exercised the complete role-routed matrix across four cycle-0 story PASS gates, typed Epic PASS, hard-budget PASS, and a zero-finding high-effort blind product PASS. Its immutable process row still failed on a repaired outer-scorer false negative, so the capability remains enforced rather than proven.",
+    "A whole-file repo override (docs/ai/ACEF_MODEL_ROUTING_POLICY.json) without reviewModelFloors is not floor-checked at the policy level, and the installer does not merge it; run overrides on review roles there still need a modelRank.",
     "V3.27 also exposed that the external blind Judge inherited the conductor runtime. The successor harness now resolves it from the high terminal epic-process-judge profile, quarantines abandoned launch roots, and produced a valid high-effort FAIL judgment; no invalid medium judgment was persisted."
   ],
   "evidence": [
