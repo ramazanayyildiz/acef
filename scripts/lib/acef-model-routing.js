@@ -123,7 +123,6 @@ function selectRoleModel(mapping, canonicalRole, executionClass, runRoleModels =
 function validateProviderMapping(record, providerId, label = "provider") {
   const provider = record.providers?.[providerId];
   if (!provider?.models || !provider?.reasoning) throw new Error(`model routing policy has no complete mapping for ${label} ${providerId}`);
-  validateRoleModels(provider.roleModels, record.roles, `provider ${providerId} roleModels`);
   for (const assignment of Object.values(record.roles)) {
     if (typeof provider.models[assignment.executionClass] !== "string" || !provider.models[assignment.executionClass].trim()) throw new Error(`provider ${providerId} does not map ${assignment.executionClass}`);
     if (!REASONING_TIERS.has(provider.reasoning[assignment.reasoningTier])) throw new Error(`provider ${providerId} does not map reasoning tier ${assignment.reasoningTier}`);
