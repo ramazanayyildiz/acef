@@ -315,22 +315,34 @@ function createOwnedFileWriter(targetRepo, sourceRoot, componentName) {
     return "written";
   }
 
+  // Removes a file ACEF installed earlier and no longer ships, only when the host copy is still ACEF's; otherwise it is
+  // kept and reported like any other host-modified file.
+  function removeOwned(relTarget, opts = {}) {
+    const rel = relTarget.split(path.sep).join("/");
+    const target = path.join(targetRepo, rel);
+    if (!fs.existsSync(target)) return "absent";
+    const base = baseline(rel, opts);
+    if (base.hash && sha256(fs.readFileSync(target)) === base.hash) {
+      fs.rmSync(target);
+      return "removed";
+    }
+    kept.push({ path: rel, reason: base.hash ? "host-modified, no longer shipped by ACEF" : `no longer shipped by ACEF; ${base.reason}` });
+    if (base.hash) files[rel] = base.hash;
+    return "kept";
+  }
+
   function removeStale(prefix, keepRelPaths) {
     if (!recordedHashes) return;
     const keep = new Set(keepRelPaths);
-    for (const [rel, hash] of Object.entries(recordedHashes)) {
-      if (!rel.startsWith(prefix) || keep.has(rel)) continue;
-      const target = path.join(targetRepo, rel);
-      if (!fs.existsSync(target)) continue;
-      if (sha256(fs.readFileSync(target)) === hash) fs.rmSync(target);
-      else kept.push({ path: rel, reason: "host-modified, no longer shipped by ACEF" });
+    for (const rel of Object.keys(recordedHashes)) {
+      if (rel.startsWith(prefix) && !keep.has(rel)) removeOwned(rel);
     }
   }
 
   function finish(label = componentName) {
     for (const item of kept) {
-      console.log(item.reason === "host-modified"
-        ? `kept host-modified ${item.path}`
+      console.log(item.reason.startsWith("host-modified")
+        ? `kept host-modified ${item.path}${item.reason === "host-modified" ? "" : ` (${item.reason.slice("host-modified, ".length)})`}`
         : `kept host copy ${item.path} (${item.reason}; compare with ACEF by hand)`);
     }
     if (kept.length) console.log(`${label}: kept ${kept.length} host file(s); the ACEF version was not written for them`);
@@ -338,69 +350,108 @@ function createOwnedFileWriter(targetRepo, sourceRoot, componentName) {
     return { files: sorted, kept };
   }
 
-  return { targetRepo, write, removeStale, finish };
+  return { targetRepo, write, removeOwned, removeStale, finish };
 }
 
 function isPlainObject(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
-// Host values win; only keys the host copy lacks are added from the ACEF copy. Arrays and scalars are host-owned.
-function mergeMissingKeys(host, source, prefix = "", added = []) {
+const sameJson = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+
+// Three-way merge of host JSON configuration against the ACEF copy it was installed from (baseline) and the ACEF copy
+// now shipped (source). A key the host lacks is added. A leaf (scalar or array) equal to the baseline is untouched by
+// the host and takes the new ACEF value; a leaf that differs from the baseline is a host override and stays. Without a
+// baseline every existing value counts as a host value. Keys only the host has are kept.
+function mergeHostConfig(host, source, baseline = null, prefix = "", report = { added: [], upgraded: [], overrides: [] }) {
   const result = { ...host };
   for (const [key, value] of Object.entries(source)) {
     const keyPath = prefix ? `${prefix}.${key}` : key;
+    const base = isPlainObject(baseline) && key in baseline ? baseline[key] : undefined;
     if (!(key in host)) {
       result[key] = value;
-      added.push(keyPath);
+      report.added.push(keyPath);
     } else if (isPlainObject(host[key]) && isPlainObject(value)) {
-      result[key] = mergeMissingKeys(host[key], value, keyPath, added);
+      result[key] = mergeHostConfig(host[key], value, isPlainObject(base) ? base : null, keyPath, report).result;
+    } else if (!sameJson(host[key], value)) {
+      if (baseline && base !== undefined && sameJson(host[key], base)) {
+        result[key] = value;
+        report.upgraded.push(keyPath);
+      } else {
+        report.overrides.push(keyPath);
+      }
     }
   }
-  return result;
+  return { result, report };
+}
+
+// Kept for callers that only add missing keys (no baseline).
+function mergeMissingKeys(host, source) {
+  return mergeHostConfig(host, source, null).result;
 }
 
 /**
  * Host-local JSON configuration (for example .acef/model-routing-policy.json): written when missing; otherwise merged
- * so host values survive and only new keys are added. validate(record) must throw for an unusable result; the host
- * file is then left untouched and reported.
+ * three-way (see mergeHostConfig) so host overrides survive, untouched ACEF values follow ACEF, and new keys are added.
+ * baseline is the ACEF copy the host file was installed from, or null when it is unknown. validate(record) must throw
+ * for an unusable result; the host file is then left untouched and reported.
  */
-function mergeHostJson(targetRepo, relTarget, sourceBytes, validate = null) {
+function mergeHostJson(targetRepo, relTarget, sourceBytes, validate = null, baseline = null) {
   const target = path.join(targetRepo, relTarget);
+  const empty = { added: [], upgraded: [], overrides: [] };
   if (!fs.existsSync(target)) {
     fs.mkdirSync(path.dirname(target), { recursive: true });
     fs.writeFileSync(target, sourceBytes);
-    return { status: "written", added: [] };
+    return { status: "written", ...empty };
   }
   let host;
   try {
     host = JSON.parse(fs.readFileSync(target, "utf8"));
   } catch (error) {
     console.log(`kept host-modified ${relTarget} (not valid JSON, not merged: ${error.message})`);
-    return { status: "kept", added: [] };
+    return { status: "kept", ...empty };
   }
   const source = JSON.parse(Buffer.isBuffer(sourceBytes) ? sourceBytes.toString("utf8") : sourceBytes);
   if (!isPlainObject(host) || !isPlainObject(source)) {
     console.log(`kept host-modified ${relTarget} (not a JSON object, not merged)`);
-    return { status: "kept", added: [] };
+    return { status: "kept", ...empty };
   }
-  const added = [];
-  const merged = mergeMissingKeys(host, source, "", added);
+  const { result: merged, report } = mergeHostConfig(host, source, isPlainObject(baseline) ? baseline : null);
   if (validate) {
     try {
       validate(merged);
     } catch (error) {
       console.log(`kept host-modified ${relTarget} (merged copy invalid, host file left as it is: ${error.message})`);
-      return { status: "kept", added: [] };
+      return { status: "kept", ...empty };
     }
   }
-  if (!added.length) {
-    console.log(`kept host values ${relTarget} (no new keys from ACEF)`);
-    return { status: "unchanged", added };
+  const basis = baseline ? "against the ACEF copy it was installed from" : "no ACEF baseline, every existing value counts as host";
+  if (report.overrides.length) console.log(`kept host overrides ${relTarget}: ${report.overrides.join(", ")}`);
+  if (report.upgraded.length) console.log(`upgraded untouched ACEF values ${relTarget}: ${report.upgraded.join(", ")}`);
+  if (report.added.length) console.log(`added new keys ${relTarget}: ${report.added.join(", ")}`);
+  if (!report.added.length && !report.upgraded.length) {
+    console.log(`kept host values ${relTarget} (nothing to upgrade or add; ${basis})`);
+    return { status: "unchanged", ...report };
   }
   fs.writeFileSync(target, `${JSON.stringify(merged, null, 2)}\n`);
-  console.log(`merged ${relTarget}: kept host values, added ${added.length} new key(s): ${added.join(", ")}`);
-  return { status: "merged", added };
+  console.log(`merged ${relTarget} (${basis}): ${report.overrides.length} host override(s) kept, ${report.upgraded.length} untouched value(s) upgraded, ${report.added.length} new key(s) added`);
+  return { status: "merged", ...report };
+}
+
+// The ACEF policy a host file was installed from, when that install came from this ACEF line of history. An install
+// from a commit outside it (a host fork) has no baseline: its values are the host's choices and are all kept.
+function installedSourceBaseline(targetRepo, sourceRoot, componentName, sourceRel) {
+  const manifest = readCommittedManifest(targetRepo) || {};
+  const commit = manifest.components?.[componentName]?.sourceCommit || manifest.acefVersion?.sourceCommit;
+  if (!commit || !gitHasCommit(sourceRoot, commit)) return null;
+  if (runGit(sourceRoot, ["merge-base", "--is-ancestor", commit, "HEAD"]) === null) return null;
+  const bytes = gitShowBytes(sourceRoot, commit, sourceRel);
+  if (!bytes) return null;
+  try {
+    return JSON.parse(bytes.toString("utf8"));
+  } catch {
+    return null;
+  }
 }
 
 // Portable declaration: the owning Git root is discovered, never stored as an absolute path.
@@ -413,6 +464,8 @@ function writeCanonicalRootMarker(targetRepo) {
 
 module.exports = {
   createOwnedFileWriter,
+  installedSourceBaseline,
+  mergeHostConfig,
   mergeHostJson,
   mergeMissingKeys,
   localMetadataPath,

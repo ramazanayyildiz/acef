@@ -78,9 +78,10 @@ try {
   const after = JSON.parse(read(repo, POLICY));
   assert.equal(after.providers.openai.models.orchestration, "host-chosen-model");
   assert.equal(after.policyId, "host-policy");
+  assert.match(merged, /kept host overrides \.acef\/model-routing-policy\.json: policyId, providers\.openai\.models\.orchestration/);
   if (removed) {
     assert.ok(after.providers[removed], `new key providers.${removed} is added`);
-    assert.match(merged, new RegExp(`merged \\.acef/model-routing-policy\\.json: kept host values, added 1 new key\\(s\\): providers\\.${removed}`));
+    assert.match(merged, new RegExp(`added new keys \\.acef/model-routing-policy\\.json: providers\\.${removed}`));
   }
   // an unusable merge leaves the host file untouched
   write(repo, POLICY, "{\"schema\": \"acef.model-routing-policy.v1\", \"roles\": \"broken\"}\n");
@@ -136,6 +137,76 @@ try {
   const forkOut = update(forked);
   assert.doesNotMatch(forkOut, /kept[^\n]*acef-bmad-hard-wall\.mjs/, "an unmodified fork copy is replaced");
   assert.equal(read(forked, HOOK), source(forkHook));
+
+  // 7. Policy three-way merge across an ACEF upgrade: a value the host never touched follows ACEF, a host override
+  //    stays, both are reported. An install made from a commit outside this ACEF history (a fork) has no baseline, so
+  //    all of its values count as host choices.
+  const acef = fs.mkdtempSync(path.join(os.tmpdir(), "acef-host-files-src-"));
+  dirs.push(acef);
+  cp.execFileSync("git", ["clone", "-q", "--shared", root, acef]);
+  for (const dir of ["scripts", "schemas", "method", "workflows", "skills", "claude-plugins", "opencode-plugins", "docs/experiments/context-retrieval"]) {
+    fs.rmSync(path.join(acef, dir), { recursive: true, force: true });
+    fs.cpSync(path.join(root, dir), path.join(acef, dir), { recursive: true });
+  }
+  const acefGit = (...args) => cp.execFileSync("git", ["-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", ...args], { cwd: acef, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
+  const policyRel = "method/model-routing-policy-v1.json";
+  const setPolicy = (mutate) => {
+    const value = JSON.parse(fs.readFileSync(path.join(acef, policyRel), "utf8"));
+    mutate(value);
+    fs.writeFileSync(path.join(acef, policyRel), `${JSON.stringify(value, null, 2)}\n`);
+  };
+  const updateFrom = (repoDir) => cp.execFileSync(process.execPath, [path.join(acef, "scripts", "update-acef-installation"), "--repo", repoDir], { cwd: acef, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+  setPolicy((value) => { value.providers.openai.models.orchestration = "old-orchestration"; value.providers.openai.models["semantic-critical"] = "old-critical"; });
+  acefGit("add", "-A"); acefGit("commit", "-qm", "ACEF v1 policy");
+  const base = acefGit("rev-parse", "HEAD");
+  const upgraded = fs.mkdtempSync(path.join(os.tmpdir(), "acef-host-files-"));
+  dirs.push(upgraded);
+  cp.execFileSync("git", ["init", "-q", upgraded]);
+  updateFrom(upgraded);
+  const hostPolicy = JSON.parse(read(upgraded, POLICY));
+  hostPolicy.providers.openai.models["semantic-critical"] = "host-critical";
+  write(upgraded, POLICY, `${JSON.stringify(hostPolicy, null, 2)}\n`);
+  // a fork install: same ACEF v1 plus a fork-only policy commit on a side branch
+  acefGit("checkout", "-q", "-b", "fork");
+  setPolicy((value) => { value.providers.openai.models.orchestration = "fork-orchestration"; });
+  acefGit("commit", "-qam", "fork policy");
+  const forkInstall = fs.mkdtempSync(path.join(os.tmpdir(), "acef-host-files-"));
+  dirs.push(forkInstall);
+  cp.execFileSync("git", ["init", "-q", forkInstall]);
+  updateFrom(forkInstall);
+  acefGit("checkout", "-q", base);
+  acefGit("checkout", "-q", "-b", "next");
+  setPolicy((value) => { value.providers.openai.models.orchestration = "new-orchestration"; value.providers.openai.models["semantic-critical"] = "new-critical"; });
+  acefGit("commit", "-qam", "ACEF v2 policy");
+  const upgradeOut = updateFrom(upgraded);
+  const upgradedPolicy = JSON.parse(read(upgraded, POLICY)).providers.openai.models;
+  assert.equal(upgradedPolicy.orchestration, "new-orchestration", "an untouched old ACEF value is upgraded");
+  assert.equal(upgradedPolicy["semantic-critical"], "host-critical", "a host-changed value is kept");
+  assert.match(upgradeOut, /kept host overrides \.acef\/model-routing-policy\.json: providers\.openai\.models\.semantic-critical/);
+  assert.match(upgradeOut, /upgraded untouched ACEF values \.acef\/model-routing-policy\.json: providers\.openai\.models\.orchestration/);
+  const forkOut2 = updateFrom(forkInstall);
+  assert.equal(JSON.parse(read(forkInstall, POLICY)).providers.openai.models.orchestration, "fork-orchestration", "fork values are host choices");
+  assert.match(forkOut2, /no ACEF baseline/);
+
+  // 8. A stale .cjs next to a Python tool is removed only when it is still ACEF's copy.
+  const pyTool = fs.readdirSync(path.join(root, "scripts")).find((name) => !name.startsWith("test-")
+    && fs.statSync(path.join(root, "scripts", name)).isFile() && fs.readFileSync(path.join(root, "scripts", name), "utf8").startsWith("#!/usr/bin/env python3")
+    && fs.existsSync(path.join(repo, ".acef", "bin", name)));
+  assert.ok(pyTool, "a Python tool is installed");
+  const staleRel = `.acef/bin/${pyTool}.cjs`;
+  const staleRecord = record(repo);
+  write(repo, staleRel, source(`scripts/${pyTool}`));
+  staleRecord.components.tools.files[staleRel] = sha(source(`scripts/${pyTool}`)); // an older install wrote it
+  saveRecord(repo, staleRecord);
+  update(repo);
+  assert.ok(!fs.existsSync(path.join(repo, staleRel)), "an unmodified stale .cjs is removed");
+  write(repo, staleRel, "// host wrapper\n");
+  const hostStale = record(repo);
+  hostStale.components.tools.files[staleRel] = sha(source(`scripts/${pyTool}`));
+  saveRecord(repo, hostStale);
+  assert.match(update(repo), new RegExp(`kept host-modified \\.acef/bin/${pyTool}\\.cjs \\(no longer shipped by ACEF\\)`));
+  assert.equal(read(repo, staleRel), "// host wrapper\n", "a host-modified stale .cjs is kept");
+  assert.match(update(repo), new RegExp(`kept host-modified \\.acef/bin/${pyTool}\\.cjs`), "and still kept on the next update");
 
   console.log("acef host file preservation tests passed");
 } finally {

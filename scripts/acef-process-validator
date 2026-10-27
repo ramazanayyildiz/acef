@@ -36,7 +36,7 @@ const { pendingTransactionPath } = require("./lib/acef-state-transaction");
 const { collectRunAttempts } = require("./lib/acef-invocation-ledger");
 const { loadModelRoutingPolicy, resolveActorRuntime } = require("./lib/acef-model-routing");
 const { productReviewFailures } = require("./lib/acef-product-review");
-const { globTreeDigest } = require("./lib/acef-scoped-tree");
+const { globTreeDigest, unquotedTreePath } = require("./lib/acef-scoped-tree");
 const { recoveredStoryCloseBindingFailures } = require("./lib/acef-story-close");
 const {
   buildAssuranceRequirements,
@@ -412,7 +412,8 @@ function applicationTreeDigest(repoRoot, commit = "HEAD", scopePaths = null) {
       stdio: ["ignore", "pipe", "ignore"],
     });
     const entries = output.split(/\r?\n/).filter(Boolean).filter((line) => {
-      const filePath = line.slice(line.indexOf("\t") + 1);
+      // Filter on the unquoted path (non-ASCII names are quoted); the hashed line text stays git's default output.
+      const filePath = unquotedTreePath(line);
       return !stateControlPath(filePath);
     });
     return sha256(entries.join("\n"));

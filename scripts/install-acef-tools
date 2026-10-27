@@ -4,6 +4,7 @@ const path = require("node:path");
 const {
   createOwnedFileWriter,
   installedRuntimeDigest,
+  installedSourceBaseline,
   mergeHostJson,
   sourceRuntimeDigest,
   writeInstallationManifest,
@@ -78,7 +79,8 @@ function copyTool(name, writer) {
   const content = fs.readFileSync(source);
   if (content.toString("utf8").startsWith("#!/usr/bin/env python3")) {
     // Python tools (acef-note, acef-version-check) are copied as they are; there is no Node wrapper.
-    fs.rmSync(path.join(writer.targetRepo, `${target}.cjs`), { force: true });
+    // Older installs wrapped every tool in node; that .cjs is removed only when it is still ACEF's copy.
+    writer.removeOwned(`${target}.cjs`, { sourceRel: rel("scripts", name) });
     writer.write(target, content, { mode: 0o755, sourceRel: rel("scripts", name) });
     return target;
   }
@@ -114,12 +116,14 @@ function copySingle(sourceRel, targetRel, writer) {
   return targetRel;
 }
 
-// Host-local model choices survive an update: host values are kept and only new keys are added.
+// Host-local model choices survive an update: values the host changed stay, values still equal to the ACEF copy they
+// were installed from follow the new ACEF copy, and new keys are added.
 function mergeModelRoutingPolicy(targetRepo) {
   const source = path.join(repoRoot, "method", "model-routing-policy-v1.json");
   if (!fs.existsSync(source)) return "";
   const target = rel(".acef", "model-routing-policy.json");
-  mergeHostJson(targetRepo, target, fs.readFileSync(source), validateModelRoutingPolicy);
+  const baseline = installedSourceBaseline(targetRepo, repoRoot, "tools", rel("method", "model-routing-policy-v1.json"));
+  mergeHostJson(targetRepo, target, fs.readFileSync(source), validateModelRoutingPolicy, baseline);
   return target;
 }
 

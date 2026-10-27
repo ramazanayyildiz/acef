@@ -33,7 +33,7 @@ const { riskRequiresGuarded, workflowSelectionFailures } = require("./lib/acef-e
 const { buildAssuranceRequirements } = require("./lib/acef-assurance-requirements");
 const { staticReuseInputFingerprint } = require("./lib/acef-evidence-reuse-contract");
 const { loadModelRoutingPolicy, resolveActorRuntime, resolveRoleRuntime, validateProviderMapping } = require("./lib/acef-model-routing");
-const { globTreeDigest } = require("./lib/acef-scoped-tree");
+const { globTreeDigest, unquotedTreePath } = require("./lib/acef-scoped-tree");
 const { installationFreshnessFailures, readInstallationManifest } = require("./lib/acef-installation");
 const {
   attemptPath,
@@ -2677,7 +2677,8 @@ function applicationTreeDigest(repo, commit = "HEAD", scopePaths = null) {
   }
   const output = runGit(repo, ["ls-tree", "-r", "--full-tree", commit]);
   const applicationEntries = output.split(/\r?\n/).filter(Boolean).filter((line) => {
-    const filePath = line.slice(line.indexOf("\t") + 1);
+    // Filter on the unquoted path (non-ASCII names are quoted); the hashed line text stays git's default output.
+    const filePath = unquotedTreePath(line);
     return !isControlPath(filePath);
   });
   return sha256(applicationEntries.join("\n"));

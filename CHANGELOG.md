@@ -36,10 +36,21 @@ have removed three gates its own ACEF fork carries and upstream lacked, and over
   print `kept host-modified <path>`. Records without hashes compare against the file at the recorded install commit,
   read from the recorded ACEF checkout (the updater passes it on as `ACEF_PREVIOUS_SOURCE_PATH`) or this one; with no
   baseline the host copy is kept and reported. Skills are written file by file (no more `rm -rf` of the skill folder).
-  `.acef/model-routing-policy.json` is merged: host values are kept, only new keys are added, and an invalid merge
-  leaves the host file untouched. The Slice kit no longer records a kept host copy's hash as ACEF-installed.
+  `.acef/model-routing-policy.json` is merged three-way against the ACEF policy it was installed from (read at the
+  recorded install commit when that commit is in this ACEF checkout's history): a value the host never changed follows
+  the new ACEF value, a value the host changed stays, new keys are added, and both lists are printed. An install from
+  a commit outside this history (a host fork) has no baseline, so all its values count as host choices. An invalid
+  merge leaves the host file untouched. The `.cjs` wrapper that older installs put next to a Python tool is removed
+  only when it is still ACEF's copy, otherwise kept and reported. The Slice kit no longer records a kept host copy's
+  hash as ACEF-installed.
+- **Non-ASCII paths in the scoped identity** (review finding on this PR): glob scopes list files with
+  `git ls-tree -z`, because git quotes non-ASCII names by default and `app/**` missed e.g. `app/İşlem.php`, so a
+  change to it kept the old digest. The hashed text is unchanged for ASCII paths, so their existing digests stay
+  valid; scopes containing non-ASCII files get a new digest once. The full-tree identity filters control records on
+  the unquoted path (its hashed text is unchanged).
 - Tests: `scripts/test-acef-product-review`, `scripts/test-acef-product-review-accounting`,
-  `scripts/test-acef-canonical-root` (ported), `scripts/test-acef-host-file-preservation` (new).
+  `scripts/test-acef-canonical-root` (ported), `scripts/test-acef-host-file-preservation` (new; policy upgrade vs
+  host override, fork install, stale `.cjs`), non-ASCII scope cases in `scripts/test-acef-product-review`.
 
 ## Unreleased — Changelog rule and feedback-log capability record (2026-10-27)
 

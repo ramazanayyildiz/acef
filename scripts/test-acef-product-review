@@ -10,6 +10,7 @@ const crypto = require("node:crypto");
 const { productReviewFailures, REQUIRED, CONDITIONAL } = require("./lib/acef-product-review");
 const { applicationTreeDigest, evaluateProcessChecks, gateDeciderIntegrityFailures } = require("./acef-process-validator");
 const { parseLightweightRun } = require("./lib/acef-state-parser");
+const { globTreeDigest, unquotedTreePath } = require("./lib/acef-scoped-tree");
 const repo = fs.mkdtempSync(path.join(os.tmpdir(), "acef-product-review-"));
 const hash = (bytes) => crypto.createHash("sha256").update(bytes).digest("hex");
 function write(file, value) { fs.mkdirSync(path.dirname(path.join(repo, file)), { recursive: true }); fs.writeFileSync(path.join(repo, file), typeof value === "string" ? value : JSON.stringify(value)); }
@@ -25,6 +26,18 @@ try {
   assert.notEqual(rootDriftTree, initialGlobTree, "globstar must match zero directories");
   write("app/Nested/Child.php", "two"); git("add", "app"); git("commit", "-qm", "nested drift");
   assert.notEqual(applicationTreeDigest(repo, "HEAD", ["app/**/*.php"]), rootDriftTree, "globstar must match nested directories");
+  // Non-ASCII names: git quotes them by default (core.quotePath); the scope must still see their changes.
+  write("app/İşlem.php", "one"); git("add", "app"); git("commit", "-qm", "non-ascii fixture");
+  const beforeNonAscii = applicationTreeDigest(repo, "HEAD", ["app/**"]);
+  assert.equal(globTreeDigest(repo, "HEAD", ["app/**"]), beforeNonAscii, "validator and acef-state share the glob digest");
+  write("app/İşlem.php", "two"); git("add", "app"); git("commit", "-qm", "non-ascii drift");
+  assert.notEqual(applicationTreeDigest(repo, "HEAD", ["app/**"]), beforeNonAscii, "a changed non-ASCII file must change the scoped identity");
+  assert.notEqual(applicationTreeDigest(repo, "HEAD", ["app/**/*.php"]), applicationTreeDigest(repo, "HEAD~1", ["app/**/*.php"]), "non-ASCII file under a typed globstar");
+  // Full-tree identity ignores control records even when their names are quoted.
+  const fullBefore = applicationTreeDigest(repo, "HEAD");
+  write("docs/ai/runs/Çalışma.md", "control"); git("add", "docs"); git("commit", "-qm", "non-ascii control record");
+  assert.equal(applicationTreeDigest(repo, "HEAD"), fullBefore, "a non-ASCII control path is still a control path");
+  assert.equal(unquotedTreePath("100644 blob abc\t\"app/\\304\\260\\305\\237lem.php\""), "app/İşlem.php");
   const tree = (ref) => applicationTreeDigest(repo, ref, ["app/**"]);
   const actor = { runId: "P01", createdAt: "2026-10-01T00:00:00Z" };
   const actorFields = { ...actor, story: "P01", client: "codex", inputCommit: commit, inputTree: git("rev-parse", "HEAD^{tree}"), allowedContextProfile: "scoped", producedArtifactHash: null, producedArtifactPath: null };
