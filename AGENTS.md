@@ -133,7 +133,8 @@ Before you start a subagent or a Codex run, pick its model and effort from `meth
 (money, tenancy, permission, data loss, migrations, locks) on Opus / gpt-6.1-sol high, standard on Sonnet / sol medium,
 mechanical on Sonnet / sol low, light on Haiku, browser tours on gpt-6.1-terra, trivial lookups from the shell with no
 agent. A project's recorded decision wins over this default. Run long tests in the background with a completion
-notification instead of waking agents to poll. BMAD roles follow `method/model-routing-policy-v1.json`.
+notification instead of waking agents to poll. Actors admitted through ACEF routing (Full roles, Fix/Standard under
+`admitted-role-routing-v1`) follow `method/model-routing-policy-v1.json` instead; the policy wins there.
 
 ## Core Rule
 

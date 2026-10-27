@@ -4,9 +4,12 @@ One rule for every agent, Claude or Codex, in every host, whenever it starts a s
 Owner decision 2026-10-27 (Ram). Why: one host's coordinator ran almost every agent on Opus, mechanical work included,
 and used up the usage limit; long-waiting agents with 300–600k context kept waking up to poll queued test runs.
 
-The BMAD/full-lane roles opened by ACEF's launcher are bound by `method/model-routing-policy-v1.json` (installed as
-`.acef/model-routing-policy.json`); its mapping follows this table. Everything else (ordinary Claude Code subagents,
-Codex runs, tours) follows this page.
+**Where this page applies.** Every actor admitted through ACEF routing follows the policy file
+`method/model-routing-policy-v1.json` (installed as `.acef/model-routing-policy.json`, host overrides kept): Full
+capsule-supervisor roles and the Fix/Standard dispatches of runs bound to `admitted-role-routing-v1`. There the policy
+wins and the hard-wall rejects any other model or effort; for example a Standard developer must run at sol/high even
+though this table would say medium. The table and the effort rules below govern the free choices: ordinary Claude
+Code subagents, Codex runs and tours that ACEF routing does not admit.
 
 ## Which model
 
@@ -45,8 +48,9 @@ change. A 2,000-line rename is low; a 10-line lock-order change is high.
 - **low**: mechanical work, formatting, summaries, ACEF updates.
 - **medium** (default): normal development and most reviews. Evidence: ACEF V327-CAL-001 blind judge, review at medium
   30/30 against high 28/30. More effort is not automatically better; it can add noise and latency.
-- **high**: writing money/permission/data code; the final review before a merge when nothing reviews after it; judging
-  whether a test can really fail.
+- **high**: writing money/permission/data code; the final review of critical-class code (money, permission, data) or
+  of deep reasoning (concurrency, invariants, design) when nothing reviews after it; judging whether a test can really
+  fail. Being the last review does not raise effort on its own: a routine light slice's only review stays medium.
 - **xhigh / max**: never by default. Only for a stuck problem (the same error twice) or a hard design question such as
   lock order.
 

@@ -11,14 +11,16 @@ or evidence contract. Do not use it to claim implementation status; link to the 
 
 Why: model choice lived in three places that disagreed (the owner's global rule, project decisions, and
 `method/model-routing-policy-v1.json`, which still named gpt-5.6-sol, mapped every anthropic class to Sonnet and bound
-only BMAD roles). One host's coordinator ran almost every agent on Opus, mechanical work included, and used up the
+only ACEF-admitted roles). One host's coordinator ran almost every agent on Opus, mechanical work included, and used up the
 usage limit; long-waiting agents (300–600k context) kept waking up to poll queued test runs. Owner decision
 2026-10-27 (Ram), with the effort section approved the same day.
 - **Rule** `method/MODEL_CHOICE.md`: work-class table (critical → Opus / gpt-6.1-sol high; standard → Sonnet / sol
   medium; mechanical → Sonnet / sol low, pending the owner's confirmation; light → Haiku / sol low; browser tours →
   gpt-6.1-terra; trivial lookups from the shell, no agent; Astra only when the owner names it). Effort section (four
   questions, levels, one-level escalation, "don't pay twice", where effort is set in Codex and Claude Code). A
-  project's recorded decision wins. Waiting rules: background jobs with a completion notification, hand off before a
+  project's recorded decision wins. Scope: actors admitted through ACEF routing (Full roles, Fix/Standard under
+  `admitted-role-routing-v1`) follow the policy file, which wins there; the table governs free choices. A final review
+  goes to high only for critical-class code or deep reasoning, not for being last. Waiting rules: background jobs with a completion notification, hand off before a
   long wait or past ~300k context, no watcher model. Logging with `acef-note`.
 - **Routing policy** `method/model-routing-policy-v1.json`: openai classes → `gpt-6.1-sol` (not recalibrated; the
   code-review evidence string says so); anthropic `semantic-critical` → `claude-opus-5-5`, standard and orchestration
