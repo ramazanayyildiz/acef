@@ -11,6 +11,14 @@ wins and the hard-wall rejects any other model or effort; for example a Standard
 though this table would say medium. The table and the effort rules below govern the free choices: ordinary Claude
 Code subagents, Codex runs and tours that ACEF routing does not admit.
 
+**Why the policy and the table differ on Claude.** For free choices the table puts critical work on Opus. The policy's
+anthropic mapping keeps every class on Sonnet (owner decision 2026-10-27), so hosts that run admitted roles on
+anthropic see no silent cost increase. This is not a contradiction: the two govern different actors. The policy has
+only three classes and cannot put development on Sonnet and review on Opus: Code Review is `semantic-standard`, while
+Patch Assurance and both Judges share `semantic-critical` with Development. Overriding `semantic-critical` to Opus
+therefore moves Development to Opus too. A host that wants an Opus review of admitted work records and dispatches it
+outside the policy file, through its own process.
+
 ## Which model
 
 Pick the class from the work, not from the size of the diff.
@@ -19,7 +27,7 @@ Pick the class from the work, not from the size of the diff.
 |---|---|---|---|
 | critical | money, tenancy, permission, data loss, migrations, concurrency/locks: development AND review of that code; deciding whether a test can really fail | Opus | gpt-6.1-sol, high |
 | standard | normal feature development, light-slice review, design checks | Sonnet. Development of critical code may also stay on Sonnet when an Opus review follows. | gpt-6.1-sol, medium (the standard review setting) |
-| mechanical | renames, test-only fixture changes, ACEF adoption/update PRs, conflict resolution in merge prep, cleanup | Sonnet | gpt-6.1-sol, low (default pending Ram's confirmation) |
+| mechanical | renames, test-only fixture changes, ACEF adoption/update PRs, conflict resolution in merge prep, cleanup | Sonnet | gpt-6.1-sol, low (owner decision 2026-10-27) |
 | light | summarising long logs or junit, sorting failures against a known list, formatting reports/handoff/PR text, translation | Haiku | gpt-6.1-sol, low |
 | browser tours / exploratory UI | user-goal and exploration tours | — | gpt-6.1-terra |
 | trivial lookup | PR state, file lists | the coordinator itself from the shell, no agent | — |
@@ -72,10 +80,11 @@ defaults are corrected from data.
 
 ## A project's own decision wins
 
-A project's recorded decision (HANDOFF, AGENTS.md, agent memory) wins over this default. Example of a valid override:
-B2Press runs Claude developer subagents on Sonnet and reviews on Opus, including for critical slices; the Opus review
-is the critical-class step there. A host override of the routing policy goes in its `.acef/model-routing-policy.json`
-(kept across ACEF updates).
+A project's recorded decision (HANDOFF, AGENTS.md, agent memory) wins over this table for free choices. Example of a
+valid override: B2Press runs Claude developer subagents on Sonnet and reviews on Opus, including for critical slices;
+the Opus review is the critical-class step there, and B2Press dispatches it through its own process, not through the
+routing policy. For admitted roles a host can change models in its `.acef/model-routing-policy.json` (kept across ACEF
+updates), within the three-class limit described above.
 
 ## Waiting
 
@@ -89,4 +98,5 @@ is the critical-class step there. A host override of the routing policy goes in 
 
 When a task clearly ran on a higher class or effort than it needed, or used up the limit, log it:
 `acef-note add <project> --tags sizing,method --what "model choice: ..." --fix "..." --cost <time or tokens>`
-(`method/FEEDBACK_LOOP.md`; the tag list is closed, so start the text with "model choice:" to make it searchable).
+(`method/FEEDBACK_LOOP.md`). The tag list is closed and has no model tag, so start the text with "model choice:" to
+make it searchable.

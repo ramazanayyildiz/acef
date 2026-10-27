@@ -15,23 +15,27 @@ only ACEF-admitted roles). One host's coordinator ran almost every agent on Opus
 usage limit; long-waiting agents (300–600k context) kept waking up to poll queued test runs. Owner decision
 2026-10-27 (Ram), with the effort section approved the same day.
 - **Rule** `method/MODEL_CHOICE.md`: work-class table (critical → Opus / gpt-6.1-sol high; standard → Sonnet / sol
-  medium; mechanical → Sonnet / sol low, pending the owner's confirmation; light → Haiku / sol low; browser tours →
+  medium; mechanical → Sonnet / sol low, owner decision 2026-10-27; light → Haiku / sol low; browser tours →
   gpt-6.1-terra; trivial lookups from the shell, no agent; Astra only when the owner names it). Effort section (four
   questions, levels, one-level escalation, "don't pay twice", where effort is set in Codex and Claude Code). A
-  project's recorded decision wins. Scope: actors admitted through ACEF routing (Full roles, Fix/Standard under
+  project's recorded decision wins for free choices. Scope: actors admitted through ACEF routing (Full roles, Fix/Standard under
   `admitted-role-routing-v1`) follow the policy file, which wins there; the table governs free choices. A final review
-  goes to high only for critical-class code or deep reasoning, not for being last. Waiting rules: background jobs with a completion notification, hand off before a
-  long wait or past ~300k context, no watcher model. Logging with `acef-note`.
+  goes to high only for critical-class code or deep reasoning, not for being last. Waiting rules: background jobs
+  with a completion notification, hand off before a long wait or past ~300k context, no watcher model. Logging with
+  `acef-note --tags sizing,method` and a "model choice:" prefix (no new tag: `acef-note` seeds `tags.txt` only when a
+  store has none, so a new default would not reach the existing central store).
 - **Routing policy** `method/model-routing-policy-v1.json`: openai classes → `gpt-6.1-sol` (not recalibrated; the
-  code-review evidence string says so); anthropic `semantic-critical` → `claude-opus-5-5`, standard and orchestration
-  stay `claude-sonnet-5-5`; `policyId` → `model-choice-2026-10-27`; a top-level `note` points to MODEL_CHOICE.md. No
+  code-review evidence string says so); anthropic stays Sonnet for every class (owner decision 2026-10-27, option A:
+  no silent cost increase for hosts running admitted roles on anthropic), and the provider note explains why: three
+  classes cannot put development on Sonnet and review on Opus, because Patch Assurance and both Judges share
+  `semantic-critical` with Development; a host that wants an Opus review records it in its own process or dispatch.
+  MODEL_CHOICE.md says plainly that its Claude column (critical → Opus) governs free choices only; `policyId` → `model-choice-2026-10-27`; a top-level `note` points to MODEL_CHOICE.md. No
   new execution classes: `scripts/lib/acef-model-routing.js`, the schema and the BMAD hard-wall resolve exactly three,
   and no BMAD role is mechanical or light. Roles, tiers and session policies are unchanged.
 - **Schema** `schemas/model-routing-policy-v1.schema.json`: optional `note` at top level and per provider (the anthropic
   provider already carried a `note` the schema did not allow; nothing validated the file against the schema).
 - **Hosts**: on `update-acef-installation` an untouched `.acef/model-routing-policy.json` follows the new values
-  (three-way merge); a host that runs BMAD with `--routing-provider anthropic` moves ATDD, Development, Patch Assurance
-  and the Judges from Sonnet to Opus unless it records an override. `install-acef-slice-kit` now also snapshots
+  (three-way merge): openai roles move to gpt-6.1-sol; anthropic roles are unchanged. `install-acef-slice-kit` now also snapshots
   `MODEL_CHOICE.md` into the templates folder.
 - **Templates**: intake card and review brief carry `Model: <sınıf> → <model> (MODEL_CHOICE.md) · Effort: <…>`; the
   dev report and the review header record the model and effort used. `method/WEEKLY_RETRO.md` compares review rounds
@@ -39,7 +43,7 @@ usage limit; long-waiting agents (300–600k context) kept waking up to poll que
 - **Tests**: `scripts/test-acef-model-routing` pins the new mapping and the note; `test-install-acef-tools`,
   `test-acef-install-profiles` and `scripts/slice/selfcheck.sh` (+ its self-test) follow. Tests that resolve runtimes
   from the live policy (`test-acef-next`, `-capsule-supervisor`, `-capsule-supervisor-v2`, `-quick-fix-single-review`, `-process-validator`,
-  `-active-run-continuity`) now expect gpt-6.1-sol, and Opus for anthropic development. Historical experiment
+  `-active-run-continuity`) now expect gpt-6.1-sol; anthropic expectations are unchanged. Historical experiment
   manifests and `scripts/lib/acef-execution-assurance-experiment.js` keep gpt-5.6-sol (they bind V3.27–V3.29 runs).
   Capability record `docs/ai/capabilities/model-choice.json` (wired, not enforced for ordinary subagents).
 

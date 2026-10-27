@@ -117,7 +117,7 @@ const base = (runId) => ["active-run", "--run-id", runId, "--workflow-id", "ligh
   const openai = run(repo, actorArgs("gpt-6.1-sol", "high"));
   assert.equal(openai.status, 1, "openai runtime accepted on an anthropic-routed run");
   assert.match(openai.stderr, /must bind calibrated runtime claude-/);
-  const claude = run(repo, actorArgs("claude-opus-5-5", "high"));
+  const claude = run(repo, actorArgs("claude-sonnet-5-5", "high"));
   assert.equal(claude.status, 0, `${claude.stdout}${claude.stderr}`);
 
   const defaultRepo = initRepo();

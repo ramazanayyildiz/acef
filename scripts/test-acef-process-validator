@@ -2124,11 +2124,11 @@ try {
     tool_name: "Agent",
     cwd: partialHook,
     tool_input: { task_name: "standard-developer", model: "gpt-6.1-sol", reasoning_effort: "high", prompt: "Implement the bounded change" },
-  }, "deny", {}, ["model=claude-opus-5-5", "reasoning_effort=high"]);
+  }, "deny", {}, ["model=claude-sonnet-5-5", "reasoning_effort=high"]);
   expectHookDecision("run-selected provider accepts its calibrated runtime", {
     tool_name: "Agent",
     cwd: partialHook,
-    tool_input: { task_name: "standard-developer", model: "claude-opus-5-5", reasoning_effort: "high", prompt: "Implement the bounded change" },
+    tool_input: { task_name: "standard-developer", model: "claude-sonnet-5-5", reasoning_effort: "high", prompt: "Implement the bounded change" },
   }, "allow");
   delete providerRun.routingProvider;
   fs.writeFileSync(path.join(partialHook, "docs", "ai", "ACEF_ACTIVE_RUN.json"), JSON.stringify(providerRun, null, 2));
