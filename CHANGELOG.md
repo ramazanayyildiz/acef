@@ -127,7 +127,7 @@ retro with at most five proposals).
 - **Method:** `method/FEEDBACK_LOOP.md` "Detection loop" and the retro in "Weekly cycle"; `method/WEEKLY_RETRO.md`
   tells the coordinator how to write the judgment parts. `templates/slice/closing-note.md` gets
   `Dedektör: <path | yok — reason>` for investigation slices (checked by `scripts/slice/selfcheck.sh`).
-- Tests: `scripts/test-acef-detect` (121 checks: each detector fires on a fixture and stays silent on a control, the
+- Tests: `scripts/test-acef-detect` (141 checks: each detector fires on a fixture and stays silent on a control, the
   alert lifecycle, losses, skips, host detectors, working hours), `scripts/test-acef-retro` (45 checks).
 - Capability record `docs/ai/capabilities/waste-detection.json` (status `wired`).
 - **Review r1 fixes (independent review, REVISE, seven P2s; each with a regression test that fails on the earlier
@@ -153,6 +153,22 @@ retro with at most five proposals).
   "not merged" (`merge-base --is-ancestor` exit 1); exit 128 or a failure keeps the alert open with a note.
   `stuck_agent` clears a run only on an observed finish or observed progress, and a repeat only on a produced result
   or differing attempt endings; a missing start stamp or missing attempt logs keep the alert open.
+- **Review r4 — read contract (structural):** every source read returns data or raises `SourceError`
+  (`scripts/detectors/_lib.py`); a detector that hit one (raised, or recorded with `ctx.mark_error` / `ctx.guard`)
+  prints `SOURCE_ERROR <source>` and resolves no alert in that poll (they print `UNSEEN`); a missing or unparseable
+  field is unknown (`_lib.field`), never success. Changed places: `_lib.git` (non-zero exit, OSError, timeout →
+  error; questions use `git_rc`), `is_git_repo`, `main_ref`, `history` (empty window is data), `worktrees`,
+  `processes` (failed or empty `ps` → error), `read_jsonl` (missing file → error, bad lines → unknown), `read_text`,
+  `read_stamp`, `Item` (scandir, stamps, status, result), `done_marker`, `glob_paths` (missing or unreadable base →
+  error), `items`, `find_item`; `stuck_agent` (`rc`/`cmd`/`err` required, attempt logs unreadable → error, guards per
+  source); `forgotten_session` (guards for git, slot log, runs, process table, worktrees; take rows need host, slot
+  and owner; leftover parent must be readable; ancestry exit 128 → error); `machine` (rows need event, host, slot,
+  owner); `waiting_work` (a missing or unreadable verdict no longer clears; configured queue missing → error; dev
+  reports guarded); `inactive_improvement` (guards per source; checked glob for store rules; configured changelog
+  missing → error); `size_ratio` (`is_git_repo`, no skip on an empty history); runner (`SOURCE_ERROR` lines,
+  `UNSEEN` instead of resolves, `--quiet` shows them, alert log read with `read_alert_events_checked`). Tests: a
+  generic injection poll with every source failing at once (each detector reports `SOURCE_ERROR`, nothing resolves),
+  single failures (`ps` exit 1, a failed `git worktree list`), `rc` missing / null / empty, a corrupt alert-log line.
 - **`install-acef-tools`** installs `acef-detect`, `acef-retro` and `scripts/detectors/` into `.acef/bin/` (host
   detectors stay in `.acef/detectors/`); `scripts/test-install-acef-tools` runs the installed `acef-detect --list`.
 

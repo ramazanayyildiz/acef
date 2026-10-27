@@ -90,6 +90,7 @@ try:
     git("init", "-q", "-b", "main")
     put(HOST / "CHANGELOG.md", "# log\n- Activation: immediate\n")
     put(HOST / "README.md", "host\n")
+    put(HOST / "docs/slices/README.md", "work files\n")   # the configured slices_dir exists
     git("add", "-A")
     git("commit", "-q", "-m", "init", minutes_ago=3 * 24 * 60)
     # merged work: WORK-3 (accepted, then merged) and WORK-12 (merged, worktree left behind)
@@ -578,14 +579,116 @@ try:
     broken.write_text(json.dumps({"project": "fw2", "sources": {"main_ref": "refs/heads/no-such-branch"},
                                   "thresholds": {"forgotten_session": {"merged_worktrees": True}}}))
     rc, o = run("--only", "forgotten_session", config=broken, env=ENV_R, now=NOW + dt.timedelta(minutes=1))
-    check("git ancestry error (exit 128) is UNSEEN, not CLEARED",
-          w2 and f"CLEARED {w2}" not in o and f"UNSEEN {w2} " in o and "gave no answer (exit 128)" in o, o)
+    check("git error (exit 128) is a SOURCE_ERROR and the alert is UNSEEN, not CLEARED",
+          w2 and f"CLEARED {w2}" not in o and f"UNSEEN {w2} " in o and "SOURCE_ERROR forgotten_session git:" in o
+          and "exit 128" in o, o)
     wt12 = TMP / "wt-work-12"
     put(wt12 / "more.txt", "more")
     git("add", "-A", cwd=wt12)
     git("commit", "-q", "-m", "WORK-12 more", cwd=wt12)
     rc, o = run("--only", "forgotten_session", config=fw2, env=ENV_R, now=NOW + dt.timedelta(minutes=2))
     check("git's definite 'not merged' (exit 1) clears it", f"CLEARED {w2} " in o, o)
+
+    # ------------------------------------------------------------ review r4: generic failing-source injection
+    # Every detector polls once with all sources working (alerts open), then once with every source failing at the
+    # same time: git broken (GIT_DIR), ps and git not on PATH, logs, run and review directories, the queue, the
+    # changelog, the slices directory and the store's rules unreadable. No alert may resolve; each detector says
+    # SOURCE_ERROR.
+    put(STORE_R / "rules/R-9.md", "Incidents: x-9\nActivation: after the next release\nStatus: shipped\n")
+    inj = TMP / "inj.json"
+    inj.write_text(json.dumps({**cfg["detectors"], "project": "inj"}))
+    put(HOST / "slots5.jsonl", "".join(json.dumps(r) + "\n" for r in [
+        {"ts": iso(ago(60)), "event": "take", "host": "r2", "slot": "s1", "project": "projA", "owner": "o1"},
+        {"ts": iso(ago(40)), "event": "wait", "project": "projB", "owner": "o2", "hosts": ["r2"]}]))
+    injd = json.loads(inj.read_text())
+    injd["sources"]["slot_events"] = "slots5.jsonl"
+    inj.write_text(json.dumps(injd))
+    holder2 = subprocess.Popen(["/bin/sh", "-c", "sleep 60; exit 0", str(HOST / "runs/run-f")])
+    try:
+        rc, o1 = run("--only", "stuck_agent,waiting_work,machine,review_loop,forgotten_session,inactive_improvement,size_ratio", config=inj, env=ENV_R)
+    finally:
+        holder2.kill()
+        holder2.wait()
+    before = [e for e in events_of("inj") if e["event"] == "open"]
+    dets = {"stuck_agent", "waiting_work", "machine", "review_loop", "forgotten_session", "inactive_improvement",
+            "size_ratio"}
+    check("injection baseline: every detector has an open alert", {e["detector"] for e in before} >= dets,
+          f"{sorted({e['detector'] for e in before})}\n{o1}")
+    locked_paths = [HOST / "runs", HOST / "reviews", HOST / "dev", HOST / "slots5.jsonl", HOST / "cmd.jsonl",
+                    HOST / "queue.md", HOST / "CHANGELOG.md", HOST / "docs/slices", STORE_R / "rules"]
+    modes = {p_: p_.stat().st_mode for p_ in locked_paths}
+    try:
+        for p_ in locked_paths:
+            os.chmod(p_, 0)
+        bad_env = {**ENV_R, "GIT_DIR": str(TMP / "no-such-git-dir"), "PATH": str(TMP / "no-such-bin")}
+        rc, o2 = run("--only", "stuck_agent,waiting_work,machine,review_loop,forgotten_session,inactive_improvement,size_ratio", config=inj, env=bad_env, now=NOW + dt.timedelta(minutes=1))
+    finally:
+        for p_, m in modes.items():
+            os.chmod(p_, m)
+    after = events_of("inj")
+    check("injection: the failing poll exits 0", rc == 0, o2)
+    for det in sorted(dets):
+        check(f"injection: {det} reports SOURCE_ERROR", f"SOURCE_ERROR {det} " in o2, o2)
+    check("injection: no alert resolves while sources fail",
+          "CLEARED" not in o2 and not [e for e in after if e["event"] == "resolve"], o2)
+    check("injection: open alerts print UNSEEN (source error)", "(source error this poll" in o2, o2)
+    check("injection: --quiet still shows SOURCE_ERROR lines", "SOURCE_ERROR" in run(
+        "--quiet", "--only", "forgotten_session", config=inj, env=bad_env, now=NOW + dt.timedelta(minutes=2))[1])
+    # single failures that used to read as "nothing there": ps exits 1; git fails only for `worktree list`
+    git("checkout", "-q", "-b", "slice/work-40")
+    put(HOST / "work-40.txt", "w40")
+    git("add", "-A")
+    git("commit", "-q", "-m", "WORK-40 change", minutes_ago=180)
+    git("checkout", "-q", "main")
+    git("merge", "-q", "--no-ff", "slice/work-40", "-m", "Merge slice/work-40: WORK-40 (light)", minutes_ago=120)
+    git("worktree", "add", "-q", str(TMP / "wt-work-40"), "slice/work-40")
+    fake = TMP / "fakebin"
+    fake.mkdir()
+    (fake / "ps").write_text("#!/bin/sh\nexit 1\n")
+    (fake / "git").write_text(f"#!/bin/sh\nfor a in \"$@\"; do [ \"$a\" = worktree ] && exit 1; done\n"
+                              f"exec {shutil.which('git')} \"$@\"\n")
+    os.chmod(fake / "ps", 0o755)
+    os.chmod(fake / "git", 0o755)
+    inj2 = det_cfg("inj2", {"agent_runs": "runs/*"})
+    holder3 = subprocess.Popen(["/bin/sh", "-c", "sleep 60; exit 0", str(HOST / "runs/run-f")])
+    try:
+        rc, o = run("--only", "forgotten_session", config=inj2, env=ENV_R)
+    finally:
+        holder3.kill()
+        holder3.wait()
+    pid_ = alert_id(o, "forgotten_session", "run-f:process")
+    wid40 = alert_id(o, "forgotten_session", "worktree:wt-work-40")
+    check("single-failure baseline: process and worktree alerts open", bool(pid_ and wid40), o)
+    rc, o = run("--only", "forgotten_session", config=inj2, now=NOW + dt.timedelta(minutes=1),
+                env={**ENV_R, "PATH": f"{fake}:{os.environ.get('PATH', '')}"})
+    check("ps exit 1 is a SOURCE_ERROR; the process alert does not resolve",
+          "SOURCE_ERROR forgotten_session process table" in o and f"CLEARED {pid_}" not in o, o)
+    check("a failed worktree listing is a SOURCE_ERROR; the worktree alert does not resolve",
+          "SOURCE_ERROR forgotten_session git" in o and f"CLEARED {wid40}" not in o, o)
+    rc, o = run("--only", "forgotten_session", config=inj2, env=ENV_R, now=NOW + dt.timedelta(minutes=2))
+    check("with ps working again, the gone process clears (positive observation)", f"CLEARED {pid_} " in o, o)
+
+    # a missing, null or empty rc is unknown, never success
+    for variant, extra in (("missing", {}), ("null", {"rc": None}), ("empty", {"rc": ""})):
+        logf_ = HOST / f"cmd-rc-{variant}.jsonl"
+        put(logf_, "".join(json.dumps({"ts": iso(ago(m)), "cmd": "make k", "rc": 1, "err": "e", "tree": "t"}) + "\n"
+                           for m in (30, 20, 10)))
+        cf = det_cfg(f"rc{variant}", {"command_log": logf_.name})
+        rc, o = run("--only", "stuck_agent", config=cf, env=ENV_R)
+        kid = alert_id(o, "stuck_agent", "cmd:make k")
+        with open(logf_, "a") as fh:
+            fh.write(json.dumps({"ts": iso(ago(5)), "cmd": "make k", "err": "", "tree": "t2", **extra}) + "\n")
+        rc, o = run("--only", "stuck_agent", config=cf, env=ENV_R, now=NOW + dt.timedelta(minutes=1))
+        check(f"rc {variant}: unknown, SOURCE_ERROR, alert stays (not CLEARED)",
+              kid and f"CLEARED {kid}" not in o and "SOURCE_ERROR stuck_agent command_log" in o
+              and (f"UNSEEN {kid} " in o or f"ALERT {kid} OPEN" in o), o)
+
+    # an unreadable line in the alert log itself: nothing resolves until it is repaired
+    with open(STORE_R / "alerts/inj.jsonl", "a") as fh:
+        fh.write("{not json\n")
+    rc, o3 = run("--only", "stuck_agent,waiting_work,machine,review_loop,forgotten_session,inactive_improvement,size_ratio", config=inj, env=ENV_R, now=NOW + dt.timedelta(minutes=3))
+    check("injection: a corrupt alert-log line blocks every resolve",
+          "SOURCE_ERROR alert log: 1 unreadable line" in o3 and "CLEARED" not in o3, o3)
 finally:
     subprocess.run(["git", "worktree", "prune"], cwd=HOST, capture_output=True)
     shutil.rmtree(TMP, ignore_errors=True)

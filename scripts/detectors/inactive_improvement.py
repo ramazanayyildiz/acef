@@ -23,10 +23,7 @@ DATE = re.compile(r"\b(\d{4}-\d{2}-\d{2})\b")
 
 
 def scan(path, label, today, grace, out, status_ok=True, scanned_labels=None):
-    try:
-        text = path.read_text(errors="replace")
-    except OSError:
-        return
+    text = _lib.read_text(path, "activation lines")   # unreadable -> SourceError, never "no lines"
     if scanned_labels is not None:
         scanned_labels.add(label)
     for match in LINE.finditer(text):
@@ -56,27 +53,39 @@ def detect(ctx):
     today = ctx.now.astimezone().date()
     out, scanned, labels = [], 0, set()
     rules_dir = ctx.store / "rules"
-    for rule in sorted(rules_dir.glob("R-*.md")) if rules_dir.is_dir() else []:
-        status = re.search(r"(?m)^Status:\s*(\S+)", rule.read_text(errors="replace"))
-        scan(rule, rule.stem, today, s["grace_days"], out,
-             status_ok=not status or status.group(1) not in ("retained", "retired", "narrowed"), scanned_labels=labels)
-        scanned += 1
+    with ctx.guard("store rules"):
+        # Path.glob on an unreadable directory silently yields nothing: use the checked glob
+        for rule in sorted(map(_lib.Path, _lib.glob_paths(ctx, str(rules_dir / "R-*.md"), "store rules"))) \
+                if rules_dir.is_dir() else []:
+            status = re.search(r"(?m)^Status:\s*(\S+)", _lib.read_text(rule, "store rules"))
+            scan(rule, rule.stem, today, s["grace_days"], out,
+                 status_ok=not status or status.group(1) not in ("retained", "retired", "narrowed"),
+                 scanned_labels=labels)
+            scanned += 1
     changelogs = ctx.sources.get("changelogs")
     if changelogs is None:
         changelogs = ["CHANGELOG.md"] if (ctx.repo / "CHANGELOG.md").exists() else []
-    for raw in changelogs if isinstance(changelogs, list) else [changelogs]:
-        path = ctx.path(raw)
-        if path.exists():
+    with ctx.guard("changelogs"):
+        for raw in changelogs if isinstance(changelogs, list) else [changelogs]:
+            path = ctx.path(raw)
+            if not path.exists():
+                raise _lib.SourceError("changelogs", f"{path} is missing")
             scan(path, path.name, today, s["grace_days"], out, scanned_labels=labels)
             scanned += 1
     slices_dir = ctx.sources.get("slices_dir")
-    if slices_dir and ctx.path(slices_dir).is_dir():
+    if slices_dir:
         cutoff = (ctx.now - dt.timedelta(days=s["notes_days"])).timestamp()
-        for path in ctx.path(slices_dir).glob("*.md"):
-            if path.stat().st_mtime >= cutoff:
-                scan(path, path.stem, today, s["grace_days"], out, scanned_labels=labels)
-                scanned += 1
-    if not scanned:
+        with ctx.guard("slices_dir"):
+            for raw in _lib.glob_paths(ctx, f"{slices_dir}/*.md", "slices_dir"):
+                path = _lib.Path(raw)
+                try:
+                    recent = path.stat().st_mtime >= cutoff
+                except OSError as exc:
+                    raise _lib.SourceError("slices_dir", f"{path}: {exc.__class__.__name__}")
+                if recent:
+                    scan(path, path.stem, today, s["grace_days"], out, scanned_labels=labels)
+                    scanned += 1
+    if not scanned and not ctx.source_errors:
         raise ctx.Skip("no source: store rules, changelogs, slices_dir")
     firing = {f["subject"] for f in out}
     for subject in ctx.open_subjects - firing:

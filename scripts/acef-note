@@ -423,17 +423,27 @@ def alert_files(base: Path, project: str = ""):
             yield path.stem, path
 
 
-def read_alert_events(path: Path) -> list:
-    events = []
+def read_alert_events_checked(path: Path):
+    """(events, unreadable line count). A missing file is an empty log (no alerts yet)."""
+    events, bad = [], 0
     if path.exists():
-        for line in path.read_text(errors="replace").splitlines():
+        for line in path.read_text().splitlines():
+            if not line.strip():
+                continue
             try:
                 event = json.loads(line)
             except ValueError:
+                bad += 1
                 continue
             if isinstance(event, dict) and "event" in event and "ts" in event:
                 events.append(event)
-    return events
+            else:
+                bad += 1
+    return events, bad
+
+
+def read_alert_events(path: Path) -> list:
+    return read_alert_events_checked(path)[0]
 
 
 def alert_lock(base: Path, project: str):

@@ -17,7 +17,17 @@ DEFAULTS = {"confirm_polls": 2, "hog_min": 30, "window_h": 24, "capacity": {}}
 def detect(ctx):
     s = ctx.settings
     log = ctx.source("slot_events")
-    rows = _lib.read_jsonl(ctx.path(log), ctx.now - _lib.dt.timedelta(hours=s["window_h"]))
+    src = "slot_events"
+    rows = []
+    for row in _lib.read_jsonl(ctx, src, ctx.path(log), ctx.now - _lib.dt.timedelta(hours=s["window_h"])):
+        event = _lib.field(ctx, src, row, "event")
+        if event is None:
+            continue
+        need = {"take": ("host", "slot", "owner"), "release": ("host", "slot"), "wait": ("owner",),
+                "cancel": ("owner",)}.get(event, ())
+        if any(_lib.field(ctx, src, row, k) is None for k in need):
+            continue   # unknown row: recorded (no alert resolves this poll), not judged
+        rows.append(row)
     held, waiting, slots_seen, served = {}, {}, {}, {}
     released, relieved = {}, {}   # host -> times of a release / of a waiter for it being served or cancelling
     for row in sorted(rows, key=lambda r: r["_ts"]):

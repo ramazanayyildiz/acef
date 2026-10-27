@@ -21,11 +21,9 @@ CLASS_NAMES = {"TAM": "TAM", "FULL": "TAM", "HAFİF": "HAFIF", "HAFIF": "HAFIF",
 
 def detect(ctx):
     s = ctx.settings
-    if not _lib.git(ctx, "rev-parse", "--git-dir").strip():
+    if not _lib.is_git_repo(ctx):   # no .git at all; an unreadable one raises SourceError
         raise ctx.Skip("no source: git repository")
-    hist = _lib.history(ctx, s["expected_window_days"] + 30)
-    if not hist["available"]:
-        raise ctx.Skip(f"no source: history of {_lib.main_ref(ctx)}")
+    hist = _lib.history(ctx, s["expected_window_days"] + 30)   # raises when git log fails
     closed = _lib.closed_work(ctx, s["expected_window_days"])
     slices_dir = ctx.sources.get("slices_dir") or ""
     out, unknown, open_ids, merged_ids = [], [], set(), set()
@@ -53,7 +51,7 @@ def detect(ctx):
         cls = "unknown"
         spec = _lib.Path(path) / slices_dir / f"{work_id}.md" if slices_dir else None
         if spec and spec.exists():
-            found = re.search(s["class_regex"], spec.read_text(errors="replace")[:20000])
+            found = re.search(s["class_regex"], _lib.read_text(spec, "slices_dir")[:20000])
             if found:
                 cls = CLASS_NAMES.get(found.group(1).upper(), "unknown")
         if cls == "unknown":

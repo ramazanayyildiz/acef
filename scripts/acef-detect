@@ -32,6 +32,7 @@ import os
 import re
 import time
 import traceback
+from contextlib import contextmanager
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -132,6 +133,19 @@ class Ctx:
         self.cleared = set()        # subjects positively observed as fine this poll
         self.open_subjects = set()  # subjects of this detector's alerts that are not resolved
         self.open_since = {}        # subject -> when its alert (re)opened
+        self.source_errors = []     # "<source>: <detail>" for every source that failed this poll
+
+    def mark_error(self, source: str, detail: str = ""):
+        """A source failed or a field was unknown: findings still count, but no alert of this detector resolves."""
+        self.source_errors.append(f"{source}: {detail}" if detail else source)
+
+    @contextmanager
+    def guard(self, source: str):
+        """Run one source's part of a detector; a SourceError there is recorded and the other sources go on."""
+        try:
+            yield
+        except _lib.SourceError as exc:
+            self.mark_error(exc.source if exc.source else source, str(exc).split(": ", 1)[-1])
 
     def clear(self, subject: str):
         """Report a positive observation that `subject` is fine now. Only this resolves an alert: a subject that is
@@ -205,6 +219,9 @@ def run(args) -> int:
         except Skip as exc:
             lines.append(f"SKIP {name} ({exc})")
             continue
+        except _lib.SourceError as exc:   # uncaught: the whole detector saw nothing this poll
+            ctx.mark_error(exc.source, str(exc).split(": ", 1)[-1])
+            findings = []
         except Exception as exc:  # noqa: BLE001
             lines.append(f"ERROR {name}: {exc.__class__.__name__}: {exc}")
             if os.environ.get("ACEF_DETECT_DEBUG"):
@@ -234,7 +251,7 @@ def run(args) -> int:
     print(f"acef-detect {project} {note.iso(now)}{' (dry run, nothing written)' if args.dry_run else ''}: "
           f"{opened} new/reopened alert(s), {elapsed} ms")
     for line in lines:
-        if args.quiet and not re.match(r"^(ALERT \S+ (NEW|REOPEN|OVERDUE)|ERROR)", line):
+        if args.quiet and not re.match(r"^(ALERT \S+ (NEW|REOPEN|OVERDUE)|ERROR|SOURCE_ERROR)", line):
             continue
         print(line)
     return 3 if crashed else 0
@@ -250,7 +267,10 @@ def read_state(path: Path) -> dict:
 def apply(args, cfg, base, project, now, results, saved, lines) -> int:
     """Turn findings into alert events against the current log (the caller holds the alert lock unless dry run)."""
     write = not args.dry_run
-    states = note.alert_states(note.read_alert_events(base / "alerts" / f"{project}.jsonl"), now)
+    events, bad = note.read_alert_events_checked(base / "alerts" / f"{project}.jsonl")
+    if bad:   # an unreadable line could be an ack or a reopen: resolve nothing until the log is repaired
+        lines.append(f"SOURCE_ERROR alert log: {bad} unreadable line(s) in alerts/{project}.jsonl; no alert resolves")
+    states = note.alert_states(events, now)
     by_key = {}
     for a in states.values():
         by_key.setdefault(a["key"], a)   # first alert for a key is the one recurrences reopen
@@ -313,10 +333,16 @@ def apply(args, cfg, base, project, now, results, saved, lines) -> int:
                 lines.append(f"ALERT {alert_id} NEW [{name}] {subject} — {f['summary']} "
                              f"(owner {owner}, ack by {ack_by}{', log ' + note_id if note_id else ''})")
             opened += 1
-        # only a positive observation resolves: a subject that is merely missing keeps its alert
+        for err in ctx.source_errors:
+            lines.append(f"SOURCE_ERROR {name} {err}")
+        blocked = bool(ctx.source_errors) or bool(bad)
+        # only a positive observation resolves, and never in a poll where one of the detector's sources failed
         for a in list(states.values()):
             if a["detector"] == name and a["status"] != "resolved" and a["key"] not in seen:
-                if a["subject"] in ctx.cleared:
+                if blocked:
+                    lines.append(f"UNSEEN {a['id']} [{name}] {a['subject']} (source error this poll; stays "
+                                 f"{a['status']})")
+                elif a["subject"] in ctx.cleared:
                     append({"event": "resolve", "id": a["id"],
                             "evidence": f"cleared at poll {note.iso(now)}: {name} observed it fine"})
                     lines.append(f"CLEARED {a['id']} [{name}] {a['subject']}")

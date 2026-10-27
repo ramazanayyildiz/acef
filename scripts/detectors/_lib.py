@@ -6,6 +6,11 @@ Neutral shapes a host maps its files onto (all settings live in the host config,
                The item name carries the work id and round (id_regex).
   main history one `git log <main_ref>` over a window: merges into main name the work id; the merged branch's first
                commit is the start (git timestamps, not self-reported minutes).
+
+Read contract (review r4): every read of a source returns data or raises SourceError; nothing here turns a failed
+read into an empty list, an empty string or a success. A detector that hits a SourceError (raised, or recorded with
+ctx.mark_error / ctx.guard) resolves no alert in that poll; acef-detect prints SOURCE_ERROR and UNSEEN. A missing or
+unparseable field is unknown: the caller records it with ctx.mark_error and does not judge that row.
 """
 import datetime as dt
 import glob
@@ -44,15 +49,43 @@ def resolve(repo: Path, raw) -> Path:
     return path if path.is_absolute() else repo / path
 
 
+class SourceError(Exception):
+    """A configured source could not be read, or gave no definite answer."""
+
+    def __init__(self, source: str, detail: str = ""):
+        super().__init__(f"{source}: {detail}" if detail else source)
+        self.source = source
+
+
+def git_rc(ctx, *args, timeout: int = 10) -> int:
+    """Exit code of a git question (for example merge-base --is-ancestor). OSError or a timeout is a SourceError."""
+    try:
+        return subprocess.run(["git", "-C", str(ctx.repo), *args], capture_output=True, timeout=timeout).returncode
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise SourceError("git", f"{' '.join(args[:2])}: {exc.__class__.__name__}")
+
+
 def git(ctx, *args, timeout: int = 10) -> str:
+    """stdout of a git command that must succeed; a non-zero exit, OSError or timeout is a SourceError."""
     key = ("git",) + args
     if key not in ctx.cache:
         try:
             out = subprocess.run(["git", "-C", str(ctx.repo), *args], capture_output=True, text=True, timeout=timeout)
-            ctx.cache[key] = out.stdout if out.returncode == 0 else ""
-        except (OSError, subprocess.TimeoutExpired):
-            ctx.cache[key] = ""
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            raise SourceError("git", f"{' '.join(args[:2])}: {exc.__class__.__name__}")
+        if out.returncode != 0:
+            first = (out.stderr.strip().splitlines() or [""])[0][:120]
+            raise SourceError("git", f"{' '.join(args[:2])} exit {out.returncode}: {first}")
+        ctx.cache[key] = out.stdout
     return ctx.cache[key]
+
+
+def is_git_repo(ctx) -> bool:
+    """False when the host has no .git at all; a .git that git cannot read is a SourceError, not "no repository"."""
+    if not (ctx.repo / ".git").exists():
+        return False
+    git(ctx, "rev-parse", "--git-dir")
+    return True
 
 
 def ts(value: float) -> dt.datetime:
@@ -63,14 +96,23 @@ def mtime(path: Path) -> dt.datetime:
     return ts(path.stat().st_mtime)
 
 
-def read_stamp(path: Path) -> dt.datetime:
-    """A stamp file holds an ISO time (date -u +%FT%TZ); otherwise its modification time is the stamp."""
+def read_text(path: Path, source: str) -> str:
     try:
-        raw = path.read_text(errors="replace").strip().splitlines()[0][:40]
+        return path.read_text(errors="replace")
+    except OSError as exc:
+        raise SourceError(source, f"{path}: {exc.__class__.__name__}")
+
+
+def read_stamp(path: Path, source: str = "run stamp") -> dt.datetime:
+    """A stamp file holds an ISO time (date -u +%FT%TZ). The file's existence is the evidence (started, finished);
+    when its text is not a time, the time is when the file was written (its mtime). An unreadable file is an error."""
+    text = read_text(path, source).strip()
+    try:
+        raw = text.splitlines()[0][:40]
         raw = raw[:-1] + "+00:00" if raw.endswith("Z") else raw
         value = dt.datetime.fromisoformat(raw)
         return (value if value.tzinfo else value.astimezone()).astimezone(UTC)
-    except (IndexError, ValueError, OSError):
+    except (IndexError, ValueError):
         return mtime(path)
 
 
@@ -88,7 +130,16 @@ def specs(ctx, key: str, required: bool = True) -> list:
 
 
 class Item:
-    def __init__(self, path: Path, spec: dict):
+    """One run directory or file. Reading it raises SourceError (never a partial item)."""
+
+    def __init__(self, path: Path, spec: dict, source: str = "runs"):
+        try:
+            self._load(path, spec, source)
+        except OSError as exc:
+            raise SourceError(source, f"{path}: {exc.__class__.__name__}")
+
+    def _load(self, path: Path, spec: dict, source: str):
+        self.source = source
         self.path, self.spec, self.name = path, spec, path.name if path.is_dir() else path.stem
         match = re.match(spec["id_regex"], self.name)
         groups = match.groupdict() if match else {}
@@ -100,10 +151,11 @@ class Item:
             entries = [e for e in os.scandir(path) if e.is_file(follow_symlinks=False)]
             self.last = max([ts(e.stat().st_mtime) for e in entries] + [mtime(path)])
             started = path / spec["started_file"]
-            self.started = read_stamp(started) if spec["started_file"] and started.exists() else None
-            self.finished = next((read_stamp(path / f) for f in spec["finished_files"] if (path / f).exists()), None)
+            self.started = read_stamp(started, source) if spec["started_file"] and started.exists() else None
+            self.finished = next((read_stamp(path / f, source) for f in spec["finished_files"] if (path / f).exists()),
+                                 None)
             status = path / spec["status_file"] if spec["status_file"] else None
-            self.status = status.read_text(errors="replace").strip() if status and status.exists() else ""
+            self.status = read_text(status, source).strip() if status and status.exists() else ""
             self.attempts = sorted(glob.glob(str(path / spec["attempt_glob"]))) if spec["attempt_glob"] else []
         else:
             self.last = self.started = self.finished = mtime(path)
@@ -122,10 +174,8 @@ class Item:
         if self._result is None:
             target = self.path / self.spec["result_file"] if self.is_dir and self.spec["result_file"] else (
                 None if self.is_dir else self.path)
-            try:
-                self._result = target.read_text(errors="replace") if target and target.exists() else ""
-            except OSError:
-                self._result = ""
+            # no result file yet is data ("no result"); a result file that cannot be read is an error
+            self._result = read_text(target, self.source) if target and target.exists() else ""
         return self._result
 
     @property
@@ -141,14 +191,23 @@ class Item:
         return self.finished or self.last
 
 
-def done_marker(path: Path, spec: dict) -> bool:
+def done_marker(path: Path, spec: dict, source: str) -> bool:
     if any((path / f).exists() for f in spec["finished_files"]):
         return True
     status = path / spec["status_file"] if spec["status_file"] else None
-    try:
-        return bool(status and status.exists() and status.read_text(errors="replace").strip() in spec["done_status"])
-    except OSError:
-        return False
+    return bool(status and status.exists() and read_text(status, source).strip() in spec["done_status"])
+
+
+def glob_paths(ctx, pattern: str, source: str) -> list:
+    """Paths of a configured glob. The directory the glob starts in must exist and be readable: a missing or
+    unreadable base is a SourceError, not an empty source."""
+    full = str(resolve(ctx.repo, pattern))
+    base = Path(full)
+    while glob.has_magic(str(base)) and base != base.parent:
+        base = base.parent
+    if not base.exists() or (base.is_dir() and not os.access(base, os.R_OK | os.X_OK)):
+        raise SourceError(source, f"{base} is missing or unreadable")
+    return glob.glob(full)
 
 
 def items(ctx, key: str, max_age_h: float, required: bool = True) -> list:
@@ -160,24 +219,24 @@ def items(ctx, key: str, max_age_h: float, required: bool = True) -> list:
         if cache_key not in ctx.cache:
             cutoff = ctx.now - dt.timedelta(hours=max_age_h)
             found = []
-            for raw in glob.glob(str(resolve(ctx.repo, spec["glob"]))):
+            for raw in glob_paths(ctx, spec["glob"], key):
                 path = Path(raw)
-                try:
-                    if spec["exclude_regex"] and re.search(spec["exclude_regex"], path.name):
-                        continue
-                    if mtime(path) < cutoff:
-                        # A directory's mtime moves when a file is created in it, not when a log is appended to.
-                        # An old directory is skipped cheaply only when it is marked done; otherwise its files decide.
-                        if not path.is_dir() or done_marker(path, spec):
-                            continue
-                        item = Item(path, spec)
-                        if item.last < cutoff:
-                            continue
-                        found.append(item)
-                        continue
-                    found.append(Item(path, spec))
-                except OSError:
+                if spec["exclude_regex"] and re.search(spec["exclude_regex"], path.name):
                     continue
+                try:
+                    old = mtime(path) < cutoff
+                except OSError as exc:
+                    raise SourceError(key, f"{path}: {exc.__class__.__name__}")
+                if old:
+                    # A directory's mtime moves when a file is created in it, not when a log is appended to.
+                    # An old directory is skipped cheaply only when it is marked done; otherwise its files decide.
+                    if not path.is_dir() or done_marker(path, spec, key):
+                        continue
+                    item = Item(path, spec, key)
+                    if item.last >= cutoff:
+                        found.append(item)
+                    continue
+                found.append(Item(path, spec, key))
             ctx.cache[cache_key] = found
         out.extend(ctx.cache[cache_key])
     return out
@@ -186,14 +245,11 @@ def items(ctx, key: str, max_age_h: float, required: bool = True) -> list:
 def find_item(ctx, key: str, name: str):
     """Look one run item up by name across a source's globs, whatever its age (for an open alert's subject)."""
     for spec in specs(ctx, key, required=False):
-        for raw in glob.glob(str(resolve(ctx.repo, spec["glob"]))):
+        for raw in glob_paths(ctx, spec["glob"], key):
             path = Path(raw)
             if (path.name if path.is_dir() else path.stem) == name:
-                try:
-                    return Item(path, spec)
-                except OSError:
-                    return None
-    return None
+                return Item(path, spec, key)
+    return None   # looked and not there: the subject is gone (the caller decides; never a recovery by itself)
 
 
 def rounds_by_id(review_items: list) -> dict:
@@ -209,7 +265,10 @@ def main_ref(ctx) -> str:
     ref = ctx.sources.get("main_ref")
     if ref:
         return ref
-    return "origin/main" if git(ctx, "rev-parse", "--verify", "-q", "origin/main").strip() else "HEAD"
+    rc = git_rc(ctx, "rev-parse", "--verify", "-q", "origin/main")
+    if rc not in (0, 1):
+        raise SourceError("git", f"rev-parse origin/main exit {rc}")
+    return "origin/main" if rc == 0 else "HEAD"
 
 
 def history(ctx, days: int) -> dict:
@@ -231,7 +290,8 @@ def history(ctx, days: int) -> dict:
         chain.append(cur)
         parents = commits[cur][0]
         cur = parents[0] if parents else ""
-    hist = {"commits": commits, "chain": chain, "chain_set": set(chain), "available": bool(out.strip())}
+    # git log succeeded: an empty window is data (no commits), not a failure
+    hist = {"commits": commits, "chain": chain, "chain_set": set(chain), "available": True}
     ctx.cache[key] = hist
     return hist
 
@@ -293,6 +353,7 @@ def mentions(ctx, work_id: str, days: int) -> list:
 
 
 def worktrees(ctx) -> list:
+    """git worktree list; a failed listing is a SourceError (an empty list would look like every worktree is gone)."""
     out, cur = [], {}
     for line in git(ctx, "worktree", "list", "--porcelain").splitlines() + [""]:
         if not line.strip():
@@ -308,11 +369,15 @@ def worktrees(ctx) -> list:
 
 
 def processes(ctx) -> list:
+    """The process table; a failed or timed-out ps is a SourceError (an empty table would clear process alerts)."""
     if "ps" not in ctx.cache:
         try:
-            out = subprocess.run(["ps", "-Ao", "pid=,command="], capture_output=True, text=True, timeout=5).stdout
-        except (OSError, subprocess.TimeoutExpired):
-            out = ""
+            proc = subprocess.run(["ps", "-Ao", "pid=,command="], capture_output=True, text=True, timeout=5)
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            raise SourceError("process table", exc.__class__.__name__)
+        if proc.returncode != 0 or not proc.stdout.strip():
+            raise SourceError("process table", f"ps exit {proc.returncode}")
+        out = proc.stdout
         rows = []
         for line in out.splitlines():
             parts = line.strip().split(None, 1)
@@ -322,19 +387,38 @@ def processes(ctx) -> list:
     return ctx.cache["ps"]
 
 
-def read_jsonl(path: Path, since: dt.datetime = None) -> list:
-    rows = []
+def read_jsonl(ctx, source: str, path: Path, since: dt.datetime = None) -> list:
+    """Rows of a configured JSONL log. A missing or unreadable file is a SourceError. A line that does not parse, or
+    has no valid ts, is unknown: it is recorded with ctx.mark_error (no alert resolves this poll) and skipped."""
     if not path.exists():
-        return rows
-    for line in path.read_text(errors="replace").splitlines():
+        raise SourceError(source, f"{path} is missing")
+    rows, bad = [], 0
+    for line in read_text(path, source).splitlines():
+        if not line.strip():
+            continue
         try:
             row = json.loads(line)
             row["_ts"] = read_iso(row["ts"])
-        except (ValueError, KeyError, TypeError):
+        except (ValueError, KeyError, TypeError, AttributeError):
+            bad += 1
             continue
         if since is None or row["_ts"] >= since:
             rows.append(row)
+    if bad:
+        ctx.mark_error(source, f"{bad} unreadable line(s) in {path}")
     return rows
+
+
+def field(ctx, source: str, row: dict, key: str, kind=str):
+    """A required field of a log row, or None after recording it as unknown (never a default such as 0 or "")."""
+    value = row.get(key)
+    try:
+        if value is None or (isinstance(value, str) and not value.strip()):
+            raise ValueError
+        return int(value) if kind is int else kind(value)
+    except (ValueError, TypeError):
+        ctx.mark_error(source, f"row at {row.get('ts', '?')} has no valid {key!r}")
+        return None
 
 
 def read_iso(raw: str) -> dt.datetime:

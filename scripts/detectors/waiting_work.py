@@ -30,8 +30,9 @@ def detect(ctx):
             continue   # reviews of things that never merge (plans, retros) are not waiting work
         latest = items[-1]
         if latest.verdict != "ACCEPT":
-            ctx.clear(work_id)   # seen back in review: no longer accepted-and-waiting
-            ctx.clear(f"{work_id}:queue")
+            if latest.verdict == "REVISE":   # seen back in review; an unreadable or missing verdict is unknown
+                ctx.clear(work_id)
+                ctx.clear(f"{work_id}:queue")
             continue
         merges = [m for m in _lib.mentions(ctx, work_id, s["median_days"] + 1) if m >= latest.when]
         if merges:
@@ -46,9 +47,12 @@ def detect(ctx):
         median, how = s["merge_fallback_min"], f"fallback ({len(delays)} accept-to-merge sample(s), need {_lib.MIN_SAMPLES})"
     limit = s["accepted_factor"] * median
     queue_path = ctx.source("merge_queue", required=False)
-    queue = ctx.path(queue_path).read_text(errors="replace").upper() if queue_path and ctx.path(queue_path).exists() else None
-    if queue_path and queue is None:
-        ctx.note(f"merge_queue {queue_path} not found; the queue rule did not run")
+    queue = None
+    if queue_path:
+        with ctx.guard("merge_queue"):   # a configured queue that is missing or unreadable is a source error
+            if not ctx.path(queue_path).exists():
+                raise _lib.SourceError("merge_queue", f"{ctx.path(queue_path)} is missing")
+            queue = _lib.read_text(ctx.path(queue_path), "merge_queue").upper()
     out = []
     for work_id, latest in accepted:
         age = _lib.minutes(latest.when, ctx.now)
@@ -65,6 +69,21 @@ def detect(ctx):
                             "summary": f"accepted {age} min ago, not merged, and not named in the merge queue"})
             else:
                 ctx.clear(f"{work_id}:queue")
+    with ctx.guard("dev_reports"):
+        check_dev_reports(ctx, s, rounds, out)
+    for subject in ctx.open_subjects:   # aged out of the window: only a merge naming the id counts as cleared
+        work_id = subject.split(":", 1)[0]
+        if _lib.mentions(ctx, work_id, s["median_days"] + 1):
+            ctx.clear(subject)
+    seen, unique = set(), []
+    for f in out:
+        if f["subject"] not in seen:
+            seen.add(f["subject"])
+            unique.append(f)
+    return unique
+
+
+def check_dev_reports(ctx, s, rounds, out):
     on_main = None
     for item in _lib.items(ctx, "dev_reports", s["window_days"] * 24, required=False):
         match = re.match(s["dev_report_regex"], item.path.stem)
@@ -85,13 +104,3 @@ def detect(ctx):
                         "summary": f"developer report {age // 60} h old, no review started after it"})
         else:
             ctx.clear(f"{work_id}:review")
-    for subject in ctx.open_subjects:   # aged out of the window: only a merge naming the id counts as cleared
-        work_id = subject.split(":", 1)[0]
-        if _lib.mentions(ctx, work_id, s["median_days"] + 1):
-            ctx.clear(subject)
-    seen, unique = set(), []
-    for f in out:
-        if f["subject"] not in seen:
-            seen.add(f["subject"])
-            unique.append(f)
-    return unique
