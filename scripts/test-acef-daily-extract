@@ -222,6 +222,26 @@ def build():
                "Exit code: 3\n" + "x" * 2000 + " keybodytail abc def\n-----END RSA PRIVATE KEY-----"},
               typ="response_item")]
     jl(CODEX / "2026" / "10" / "20" / "rollout-2026-10-20T01-00-00-old-1.jsonl", old)
+    # review r2 fixtures: a token cut by the tail boundary, quoted passwords with spaces, a top-level exit_code,
+    # and the same short owner message twice in one shape
+    tok = "sk-proj-A1b2C3d4E5f6G7h8Zq9TAILFRAGMENTxx8Lm3Np5Rs7Tv9"
+    r2 = [{"timestamp": ts(17, 0), "type": "session_meta", "payload": {
+              "id": "r2-1", "cwd": "/nonexistent-acef-fixture/r2codex/.worktrees/w", "originator": "codex_cli_rs"}},
+          ev(ts(17, 1), {"type": "user_message", "message": "status"}),
+          ev("2026-10-26T17:01:05.000Z", {"type": "user_message", "message": "status"}),
+          ev(ts(17, 2), {"type": "user_message",
+                         "message": 'config {"password":"pwfirst pwsecond pwthird"} and pwd=\'pwalpha pwbeta\''}),
+          ev(ts(17, 3), {"type": "function_call", "name": "shell", "call_id": "d1", "arguments": json.dumps(
+              {"command": ["bash", "-lc", 'curl -d \'{\\"api_key\\":\\"kfirst ksecond\\"}\' http://x']})},
+             typ="response_item"),
+          ev(ts(17, 4), {"type": "function_call_output", "call_id": "d1", "output": json.dumps(
+              {"output": "boom", "exit_code": 2})}, typ="response_item"),
+          ev(ts(17, 5), {"type": "function_call", "name": "shell", "call_id": "d2", "arguments": json.dumps(
+              {"command": ["bash", "-lc", "cat build.log"]})}, typ="response_item"),
+          ev(ts(17, 6), {"type": "function_call_output", "call_id": "d2", "output": json.dumps(
+              {"output": "build failed\n" + tok + " " + "y" * 369, "metadata": {"exit_code": 3}})},
+             typ="response_item")]
+    jl(CODEX / "2026" / "10" / "26" / "rollout-2026-10-26T17-00-00-r2-1.jsonl", r2)
     # P2-6: a subagent in the window whose parent went idle before it (parent file not scanned)
     pp = CLAUDE / "-nonexistent-acef-fixture-parentproj"
     pid = "22222222-3333-4444-5555-666666666666"
@@ -260,7 +280,7 @@ try:
     idx = json.loads((out / "extract.json").read_text())
     md = (out / "demo.md").read_text()
     alltext = "".join(f.read_text() for f in out.iterdir())
-    demo = [s for s in idx["sessions"] if s["project"] not in ("oldcodex", "parentproj")]
+    demo = [s for s in idx["sessions"] if s["project"] not in ("oldcodex", "parentproj", "r2codex")]
     kinds = sorted(s["kind"] for s in demo)
     check("session types (manager-driven pane is agent time)",
           kinds == ["codex-exec", "codex-exec", "codex-tui-agent", "main", "subagent"], kinds)
@@ -280,6 +300,19 @@ try:
           any(f["tool"] == "exec" for f in oldc[0]["fails"]) and
           [x["result"] for x in oldc[0]["tests"]] == ["unclassified"], oldc)
     check("P2 resumed Codex session from an older date folder is found", oldc and "/2026/10/20/" in oldc[0]["path"])
+    r2s = [s for s in idx["sessions"] if s["project"] == "r2codex"]
+    check("P1 r2: a token cut by the tail boundary leaves no fragment", r2s and
+          any("cat build.log" in f["cmd"] for f in r2s[0]["fails"]) and
+          not any("TAILFRAGMENT" in v or "Np5Rs7Tv9" in v for v in written.values()),
+          [k for k, v in written.items() if "TAILFRAGMENT" in v])
+    check("P1 r2: quoted passwords with spaces are redacted whole (JSON, single quotes, escaped JSON)",
+          r2s and not any(w in v for v in written.values() for w in ("pwsecond", "pwthird", "pwbeta", "ksecond")),
+          [w for v in written.values() for w in ("pwsecond", "pwthird", "pwbeta", "ksecond") if w in v])
+    check("P2 r2: a top-level exit_code counts as a failure", r2s and
+          any("curl" in f["cmd"] and "exit 2" in f["err"] for f in r2s[0]["fails"]), r2s and r2s[0]["fails"])
+    check("P2 r2: two identical messages in the same shape both count; the item/event twin counts once",
+          r2s and [h["kind"] for h in r2s[0]["human"]][:2] == ["status", "status"] and len(oldc[0]["human"]) == 2,
+          r2s and r2s[0]["human"])
     kid = [s for s in idx["sessions"] if s["kind"] == "subagent" and "c1c2c3c4c5" in s["path"]]
     check("P2 child of a parent idle before the window keeps the parent's project",
           len(kid) == 1 and kid[0]["project"] == "parentproj", kid and kid[0]["project"])

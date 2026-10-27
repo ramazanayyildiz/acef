@@ -51,9 +51,21 @@ landed in; Manager-driven Codex panes counted as 99 owner hours; machine inciden
     mtime prefilter and event timestamps decide.
   - P2: the parent map uses every scanned main session, in the window or not, and reads the first cwd of a parent file
     that was not scanned, so a child of an idle parent keeps the parent's project.
-- Tests: 37 checks on synthetic fixtures (git repo, mem-guard log, store, Manager pane, default window, and one
-  regression per review finding; the seven new checks fail on the previous commit). Runtime on the pilot day: 14 s
-  (parse 5 s, git/gh 3 s) for 3.75 GB.
+- **Review r2 (Codex, PR #27: 2 P1, 2 P2):**
+  - P1, structural: text is shortened only through `clip(x, n)` (redact the whole text, then truncate) and
+    `tail_clip(x, n)` (the tail of the redacted text). Every slice whose result can be written now runs on redacted
+    text: failure tails (`out[-400:]` kept the last 30 characters of an `sk-proj-` token), test summary tails, MCP
+    error text, bounded commands and input summaries, git subjects, mem-guard and store lines. Slices used only for
+    matching (verdict word, relay prefix, flag text, intent context) are never written. Outputs are redacted whole
+    only when they can be written (failures, tests, commits, Codex review launches); others are dropped unread.
+  - P1: the password rule consumes the whole quoted value (double, single and escaped double quotes; JSON and
+    key=value), and covers `authorization` (`{"password":"a b c"}` kept "b c").
+  - P2: a top-level `exit_code` in a function_call_output counts, as well as `metadata.exit_code`.
+  - P2: owner messages are deduplicated only as the same event in two shapes (item and event, identical full text,
+    within 10 s, paired once); two messages of the same shape always count.
+- Tests: 41 checks on synthetic fixtures; the four r2 checks and the seven r1 checks each fail on the commit before
+  their fix. Runtime on the pilot day: about 22 s (parse 12 s under load, git/gh 5 s) for 3.77 GB. A scan of the
+  real pilot-day output finds no email, key block, sk-/gh-/xox/AKIA/AIza token, JWT, bearer token or password value.
 
 ## Unreleased — Daily session review: stage-1 extractor (pilot) (2026-10-27)
 

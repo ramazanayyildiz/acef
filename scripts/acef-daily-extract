@@ -146,9 +146,11 @@ REDACTIONS = [
     (re.compile(r"\bAIza[0-9A-Za-z_-]{30,}"), "<redacted-token>"),
     (re.compile(r"\beyJ[\w-]{8,}\.[\w-]{8,}\.[\w-]{4,}"), "<redacted-jwt>"),
     (re.compile(r"\b(Bearer|Basic|token)\s+[A-Za-z0-9._~+/=-]{12,}", re.I), r"\1 <redacted>"),
-    (re.compile(r"(?i)\b([\w-]*(password|passwd|pwd|secret|token|api[_-]?key|apikey|access[_-]?key|private[_-]?key|"
-                r"client[_-]?secret|auth[_-]?key|credentials?)[\w-]*)(\"?'?\s*[:=]\s*[\"']?)([^\s\"',;}&]+)"),
-     r"\1\3<redacted>"),
+    (re.compile(r"(?i)\b([\w-]*(?:password|passwd|pwd|secret|token|api[_-]?key|apikey|access[_-]?key|"
+                r"private[_-]?key|client[_-]?secret|auth[_-]?key|authorization|credentials?)[\w-]*)"
+                r"((?:\\?[\"'])?\s*[:=]\s*)"
+                r"(\\\"(?:(?!\\\").)*\\\"|\"(?:[^\"\\]|\\.)*\"|'(?:[^'\\]|\\.)*'|[^\s\"',;}&]+)"),
+     r"\1\2<redacted>"),
     (re.compile(r"(\bmysql\w*\b[^\n]*?\s)-p(?=\S)\S+"), r"\1-p<redacted>"),
 ]
 LONG_TOKEN = re.compile(r"(?<![\w/-])[A-Za-z0-9_\-]{40,}")
@@ -203,13 +205,16 @@ def hhmm(t):
     return dt.datetime.fromtimestamp(t).strftime("%H:%M") if t else "?"
 
 
-def short(s, n):
-    """Redact first, then collapse and truncate: a cut must never split a secret out of its pattern (a PEM block
-    loses its END marker). Only a bounded head is redacted, so huge outputs stay cheap; an unterminated key block in
-    that head is redacted to its end."""
-    s = redact((s or "")[: max(n * 8, 4000)])
-    s = re.sub(r"\s+", " ", s).strip()
+def clip(s, n):
+    """The only way text is shortened for output: redact the whole text, then collapse and truncate. A cut must never
+    split a secret out of its pattern (a PEM block losing its END marker, a token losing its prefix)."""
+    s = re.sub(r"\s+", " ", redact(s or "")).strip()
     return s if len(s) <= n else s[: n - 1] + "…"
+
+
+def tail_clip(s, n):
+    """The last n characters of the redacted text (never a raw tail that starts inside a secret)."""
+    return redact(s or "")[-n:]
 
 
 def text_of(content):
@@ -233,7 +238,7 @@ def norm_key(s):
     s = re.sub(r"[0-9a-f]{7,}", "#", s or "")
     s = re.sub(r"\d+", "N", s)
     s = re.sub(r"/[\w./-]+", "/P", s)
-    return short(s, 110)
+    return clip(s, 110)
 
 
 def intervals(ts):
@@ -287,7 +292,7 @@ def human_msg(t, ln, raw, after_claim=False):
         elif weak and after_claim and len(own) <= 160:
             hits, cue = sorted(weak), "short reply after a claim"
         knd = "correction?" if hits else "other"
-    return {"t": t, "line": ln, "text": short(txt, MSG_CHARS), "hits": hits, "cue": cue, "kind": knd,
+    return {"t": t, "line": ln, "text": clip(txt, MSG_CHARS), "hits": hits, "cue": cue, "kind": knd,
             "after_claim": after_claim}
 
 
@@ -307,7 +312,7 @@ def commit_event(cmd, out, is_err):
         kind = "push"
     else:
         return None
-    return {"cmd": short(cmd, CMD_CHARS), "sha": shas[:3], "ok": True, "merge": kind == "merge", "kind": kind}
+    return {"cmd": clip(cmd, CMD_CHARS), "sha": shas[:3], "ok": True, "merge": kind == "merge", "kind": kind}
 
 
 def test_outcome(cmd, out, is_error, context=""):
@@ -315,9 +320,9 @@ def test_outcome(cmd, out, is_error, context=""):
     unclassified (red, intent not shown; includes chained commands whose output also passes) | background | unknown."""
     o = out or ""
     line = ""
-    m = list(TEST_LINE_RE.finditer(o[-6000:]))
+    m = list(TEST_LINE_RE.finditer(tail_clip(o, 6000)))
     if m:
-        line = short(m[-1].group(0), 140)
+        line = clip(m[-1].group(0), 140)
     red = TEST_FAIL_RE.search(o) or (is_error and line)
     if red:
         if INTENT_RE.search(cmd) or RED_WORD_RE.search(cmd) or INTENT_RE.search(context or "") or \
@@ -341,7 +346,7 @@ def add_cmd_signals(s, t, ln, cmd, out, is_err, context=""):
         if res == "unknown":
             s.test_like += 1
         else:
-            s.tests.append({"t": t, "line": ln, "cmd": short(cmd, CMD_CHARS), "result": res, "summary": summ})
+            s.tests.append({"t": t, "line": ln, "cmd": clip(cmd, CMD_CHARS), "result": res, "summary": summ})
     ev = commit_event(cmd, out, is_err)
     if ev:
         ev.update(t=t, line=ln)
@@ -462,16 +467,17 @@ def parse_claude(path, since, until, kind):
                     name, inp = c.get("name") or "", c.get("input") or {}
                     cmd = inp.get("command") or inp.get("cmd") or ""
                     if not isinstance(cmd, str):
-                        cmd = json.dumps(cmd)[:300]
+                        cmd = redact(json.dumps(cmd))[:300]
                     if inp.get("run_in_background"):
                         cmd += "  [run_in_background]"
                     # only what the result needs: tool name, a bounded command, a short input summary
-                    pending[c.get("id")] = (name, cmd[:4000], t, ln, json.dumps(inp)[:300] if not cmd else "")
+                    pending[c.get("id")] = (name, redact(cmd)[:4000], t, ln,
+                                            redact(json.dumps(inp))[:300] if not cmd else "")
                     if not win:
                         continue
                     if name in ("Agent", "Task"):
                         s.agents.append({"t": t, "line": ln, "type": inp.get("subagent_type") or "",
-                                         "model": inp.get("model") or "", "desc": short(inp.get("description"), 70)})
+                                         "model": inp.get("model") or "", "desc": clip(inp.get("description"), 70)})
                     elif name == "Monitor":
                         s.waits["monitor_calls"] += 1
                     if name == "Bash" and cmd:
@@ -497,11 +503,17 @@ def parse_claude(path, since, until, kind):
                     if not out.strip():
                         out = text_of(c.get("content"))
                     is_err = bool(c.get("is_error"))
+                    if is_err or (name == "Bash" and cmd and (TEST_RE.search(cmd) or COMMIT_RE.search(cmd) or
+                                                              (REVIEW_RE.search(cmd) and "codex" in cmd))):
+                        # only these outputs are ever written; each is redacted whole before any slice
+                        out = redact(out)
+                    else:
+                        out = ""            # never written, never sliced
                     if is_err:
                         benign = name == "Bash" and BENIGN_EXIT1.search(cmd or "") and "Exit code 1" in out[:40]
                         if not benign:
-                            s.fails.append({"t": t, "line": ln, "tool": name, "cmd": short(cmd, CMD_CHARS) or
-                                            short(inp, CMD_CHARS), "err": short(out, ERR_CHARS)})
+                            s.fails.append({"t": t, "line": ln, "tool": name, "cmd": clip(cmd, CMD_CHARS) or
+                                            clip(inp, CMD_CHARS), "err": clip(out, ERR_CHARS)})
                     if name == "Bash" and cmd:
                         add_cmd_signals(s, t, ln, cmd, out, is_err, last_text)
                         if REVIEW_RE.search(cmd) and re.search(r"\bcodex\b", cmd):
@@ -534,7 +546,7 @@ def parse_claude(path, since, until, kind):
                 continue
             if kind == "subagent":
                 if not meta["first_prompt"]:
-                    meta["first_prompt"] = short(txt, 200)
+                    meta["first_prompt"] = clip(txt, 200)
                 continue
             if src not in HUMAN_SOURCES:
                 continue
@@ -543,7 +555,7 @@ def parse_claude(path, since, until, kind):
             if txt.startswith("<") or not txt:
                 continue
             if not meta["first_prompt"]:
-                meta["first_prompt"] = short(txt, 200)
+                meta["first_prompt"] = clip(txt, 200)
             after = last_event == "claim"
             last_event, last_text = "owner", ""
             if not win:
@@ -566,8 +578,8 @@ def _fc_output(o):
     o = o if isinstance(o, str) else json.dumps(o)
     try:
         j = json.loads(o)
-        if isinstance(j, dict) and ("output" in j or "metadata" in j):
-            code = (j.get("metadata") or {}).get("exit_code")
+        if isinstance(j, dict) and ("output" in j or "metadata" in j or "exit_code" in j):
+            code = j["exit_code"] if j.get("exit_code") is not None else (j.get("metadata") or {}).get("exit_code")
             return str(j.get("output") or ""), code
     except ValueError:
         pass
@@ -580,9 +592,9 @@ def codex_item(typ, pt, p, fc_pending, s, t, win):
     agent_message and response_item function_call + function_call_output (shell) mapped onto UserMessage,
     AgentMessage and CommandExecution. Agent tools (sleep, wait_agent) count as waits."""
     if typ == "event_msg" and pt == "item_completed":
-        return p.get("item") or {}
+        return dict(p.get("item") or {}, _shape="item")
     if typ == "event_msg" and pt == "user_message":
-        return {"type": "UserMessage", "content": p.get("message") or ""}
+        return {"type": "UserMessage", "content": p.get("message") or "", "_shape": "event"}
     if (typ == "event_msg" and pt == "agent_message") or (typ == "response_item" and pt == "agent_message"):
         return {"type": "AgentMessage", "content": p.get("message") or p.get("content") or ""}
     if typ == "response_item" and pt == "message" and p.get("role") == "assistant":
@@ -598,7 +610,7 @@ def codex_item(typ, pt, p, fc_pending, s, t, win):
             cmd = args.get("command") or args.get("cmd") or ""
             if isinstance(cmd, list):
                 cmd = cmd[-1] if len(cmd) >= 3 and cmd[1] in ("-lc", "-c") else " ".join(map(str, cmd))
-            fc_pending[p.get("call_id")] = (str(cmd)[:4000], args.get("workdir") or args.get("cwd") or "")
+            fc_pending[p.get("call_id")] = (redact(str(cmd))[:4000], args.get("workdir") or args.get("cwd") or "")
         elif win and name == "sleep":
             s.waits["sleep_s"] += (args.get("duration_ms") or 0) / 1000.0
             s.waits["sleep_calls"] += 1
@@ -625,7 +637,7 @@ def parse_codex(path, since, until, kind_unused=None):
     prev_out = 0
     last_event, last_text = "", ""
     fc_pending = {}         # function_call id -> (bounded command, workdir); dropped when its output arrives
-    recent_users = {}       # the same owner message can arrive as an item and as an event: count it once
+    recent_users = []       # one owner message can arrive as an item AND as an event: those two count once
     with open(path, "r", encoding="utf-8", errors="replace") as fh:
         for ln, line in enumerate(fh, 1):
             meta["lines"] += 1
@@ -698,19 +710,26 @@ def parse_codex(path, since, until, kind_unused=None):
                 txt = strip_pasted(raw)
                 if not txt:
                     continue
-                key = txt[:200]
-                if key in recent_users and abs(t - recent_users[key]) < 10:
+                # a duplicate is the same event in the other shape (identical full text, within 10 s, not yet
+                # paired); two messages of the same shape always count, even with the same text
+                shape = it.get("_shape", "item")
+                recent_users[:] = [e for e in recent_users if abs(t - e[1]) < 60]
+                twin = next((e for e in recent_users if e[0] != shape and e[2] == raw and not e[3]
+                             and abs(t - e[1]) < 10), None)
+                if twin:
+                    twin[3] = True
                     continue
-                recent_users[key] = t
+                recent_users.append([shape, t, raw, False])
                 after = last_event == "claim"
                 last_event, last_text = "owner", ""
                 if RELAY_RE.search(txt[:120]):
                     meta["relayed_seen"] = True
                 if first_user:
                     first_user = False
-                    meta["first_prompt"] = short(txt, 200)
-                    meta["is_review"] = bool(REVIEW_RE.search(txt[:4000]))
-                    meta["slice_ids"] = list(dict.fromkeys(SLICE_RE.findall(txt[:4000])))[:3]
+                    meta["first_prompt"] = clip(txt, 200)
+                    head = redact(txt)[:4000]
+                    meta["is_review"] = bool(REVIEW_RE.search(head))
+                    meta["slice_ids"] = list(dict.fromkeys(SLICE_RE.findall(head)))[:3]
                     if meta["originator"] == "codex_exec":
                         continue
                 if not win or meta["originator"] == "codex_exec" or txt.startswith("<"):
@@ -727,12 +746,15 @@ def parse_codex(path, since, until, kind_unused=None):
                 cwd = (it.get("cwd") or "").replace("file://", "")
                 if cwd:
                     meta["cmd_cwds"][cwd] += 1
-                out = it.get("aggregated_output") or ""
+                cmd = redact(cmd)
                 code = it.get("exit_code")
                 is_err = code not in (0, None)
+                # only failed, test and commit outputs are ever written; each is redacted whole before any slice
+                out = redact(it.get("aggregated_output") or "") if is_err or TEST_RE.search(cmd) or \
+                    COMMIT_RE.search(cmd) else ""
                 if is_err and not (code == 1 and BENIGN_EXIT1.search(cmd)):
-                    s.fails.append({"t": t, "line": ln, "tool": "exec", "cmd": short(cmd, CMD_CHARS),
-                                    "err": short(f"exit {code}: " + out[-400:], ERR_CHARS)})
+                    s.fails.append({"t": t, "line": ln, "tool": "exec", "cmd": clip(cmd, CMD_CHARS),
+                                    "err": clip(f"exit {code}: " + tail_clip(out, 400), ERR_CHARS)})
                 for m in SLEEP_RE.finditer(cmd):
                     s.waits["sleep_s"] += float(m.group(1))
                     s.waits["sleep_calls"] += 1
@@ -740,7 +762,7 @@ def parse_codex(path, since, until, kind_unused=None):
             elif itype == "McpToolCall" and it.get("status") == "failed":
                 err = it.get("error")
                 s.fails.append({"t": t, "line": ln, "tool": f"mcp:{it.get('server')}/{it.get('tool')}", "cmd": "",
-                                "err": short(json.dumps(err)[:400] if err else "failed", ERR_CHARS)})
+                                "err": clip(json.dumps(err) if err else "failed", ERR_CHARS)})
             elif itype == "Extension" and it.get("kind") == "clock.sleep":
                 s.waits["sleep_s"] += (it.get("durationMs") or 0) / 1000.0
                 s.waits["sleep_calls"] += 1
@@ -773,7 +795,7 @@ def finish(s, meta):
         gaps.append({"from": a[1], "to": b[0], "min": round((b[0] - a[1]) / 60)})
     s.waits["idle_gaps"] = sorted(gaps, key=lambda g: -g["min"])[:5]
     out = {
-        "path": meta["path"], "tool": meta["tool"], "kind": meta["kind"], "title": short(meta["title"], 90),
+        "path": meta["path"], "tool": meta["tool"], "kind": meta["kind"], "title": clip(meta["title"], 90),
         "branch": meta["branch"], "start": min(s.ts_all), "end": max(s.ts_all), "win_start": min(s.ts_win),
         "win_end": max(s.ts_win), "active_min": round(sum(b - a for a, b in iv) / 60 + len(iv) * 1),
         "blocks": len(iv), "models": dict(meta["models"].most_common(3)), "effort": dict(meta["effort"].most_common(3)),
@@ -802,7 +824,7 @@ def work(job):
             r = parse_claude(path, since, until, kind)
         return r
     except Exception as e:  # noqa: BLE001 - every failure is reported, never skipped
-        return {"path": path, "unreadable": f"{type(e).__name__}: {short(str(e), 160)}"}
+        return {"path": path, "unreadable": f"{type(e).__name__}: {clip(str(e), 160)}"}
 
 
 # ---------------------------------------------------------------- discovery
@@ -951,12 +973,13 @@ def finished_in(root, since, until, use_gh):
             if len(parts) != 4 or parts[0] in seen:
                 continue
             h, ct, parents, subj = parts
+            subj = redact(subj)
             seen.add(h)
             pr = re.search(r"(?:pull request #|\(#)(\d+)", subj)
             if len(parents.split()) > 1 or pr or subj.startswith("Merge "):
                 out["items"].append({"t": float(ct), "sha": h, "ref": rf, "pr": int(pr.group(1)) if pr else None,
                                      "slices": list(dict.fromkeys(SLICE_RE.findall(subj)))[:3],
-                                     "subject": short(subj, 110), "sync": bool(re.search(
+                                     "subject": clip(subj, 110), "sync": bool(re.search(
                                          r"Merge (remote-tracking )?branch '?(origin/)?(main|master|develop\w*)'? into|"
                                          r"Merge origin/(main|master|develop\w*)", subj))})
             else:
@@ -970,9 +993,9 @@ def finished_in(root, since, until, use_gh):
             if r.returncode == 0:
                 prs = [x for x in json.loads(r.stdout or "[]") if since <= (parse_ts(x.get("mergedAt")) or 0) < until]
                 out["gh"] = [{"pr": x["number"], "base": x.get("baseRefName"), "t": parse_ts(x["mergedAt"]),
-                              "title": short(x.get("title"), 100)} for x in prs]
+                              "title": clip(x.get("title"), 100)} for x in prs]
             else:
-                out["gh_error"] = short(r.stderr or "gh failed", 120)
+                out["gh_error"] = clip(r.stderr or "gh failed", 120)
         except (OSError, subprocess.SubprocessError, ValueError) as e:
             out["gh_error"] = f"{type(e).__name__}"
     _finished_cache[root] = out
@@ -987,7 +1010,7 @@ def read_memguard(path, since, until):
     try:
         with open(path, encoding="utf-8", errors="replace") as fh:
             for line in fh:
-                m = MEMGUARD_RE.match(line.strip())
+                m = MEMGUARD_RE.match(redact(line.strip()))
                 if not m:
                     continue
                 t = dt.datetime.strptime(m.group(1), "%Y-%m-%d %H:%M:%S").timestamp()
@@ -997,7 +1020,7 @@ def read_memguard(path, since, until):
                 g = lambda k: (re.search(k + r"=(\S+)", rest) or [None, ""])[1]  # noqa: E731
                 size = re.search(r"\(([^)]*)\)", rest)
                 events.append({"t": t, "action": m.group(2), "project": g("project"), "cwd": g("cwd"),
-                               "size": size.group(1) if size else "", "cmd": short(rest.split("cmd=", 1)[-1], 90)
+                               "size": size.group(1) if size else "", "cmd": clip(rest.split("cmd=", 1)[-1], 90)
                                if "cmd=" in rest else ""})
     except OSError as e:
         err = f"{path}: {e.strerror}"
@@ -1016,10 +1039,11 @@ def read_store(store, since, until):
         for line in f.read_text(encoding="utf-8", errors="replace").splitlines():
             m = STORE_LINE_RE.match(line)
             if m and d0 <= m.group(2) <= d1:
+                m = STORE_LINE_RE.match(redact(line)) or m
                 rest = [x.strip() for x in m.group(5).split(" | ")]
                 out.append({"store_project": f.stem, "id": m.group(1), "date": m.group(2), "tags": m.group(3).strip(),
-                            "cost": m.group(4).strip(), "what": short(rest[0], 220),
-                            "ref": short(rest[-1], 120) if len(rest) > 2 else ""})
+                            "cost": m.group(4).strip(), "what": clip(rest[0], 220),
+                            "ref": clip(rest[-1], 120) if len(rest) > 2 else ""})
     return out
 
 
@@ -1150,7 +1174,7 @@ def build_digest(project, rows, unread, window_txt, budget_chars, repeat_min, ex
         tag = "[agent-driven pane] " if r["kind"] == "codex-tui-agent" else ""
         srows.append(
             f"| {sid(r)} | {hhmm(r['win_start'])}-{hhmm(r['win_end'])} | {r['active_min']} | "
-            f"{tag}{short(r['title'] or r['first_prompt'], 70)} | {','.join(r['models'])[:30]} | "
+            f"{tag}{clip(r['title'] or r['first_prompt'], 70)} | {','.join(r['models'])[:30]} | "
             f"{len(r['human'])}/{sum(1 for h in r['human'] if h['kind'] == 'correction?')}/"
             f"{sum(1 for h in r['human'] if h['kind'] == 'status')} | {len(r['fails'])} | {len(kids)} | "
             f"{fmt_k(r['ctx_max'])} | {len(r['compactions'])} | {', '.join(r.get('repos', []))[:60]} |")
@@ -1193,7 +1217,7 @@ def build_digest(project, rows, unread, window_txt, budget_chars, repeat_min, ex
     for r, f in allf:
         groups[(f["tool"], norm_key(f["cmd"]) or norm_key(f["err"][:80]))].append((r, f))
     rep = sorted([g for g in groups.values() if len(g) >= repeat_min], key=lambda g: -len(g))
-    ritems = [f"- x{len(g)} {g[0][1]['tool']}: `{g[0][1]['cmd'] or '-'}` → {short(g[-1][1]['err'], 160)} "
+    ritems = [f"- x{len(g)} {g[0][1]['tool']}: `{g[0][1]['cmd'] or '-'}` → {clip(g[-1][1]['err'], 160)} "
               f"(refs {', '.join(sorted({ref(r, f['line']) for r, f in g[:4]}))})" for g in rep]
     sections.append((2, f"Repeated failures (same tool + normalised command >= {repeat_min})", [], ritems))
     # test runs
@@ -1206,7 +1230,7 @@ def build_digest(project, rows, unread, window_txt, budget_chars, repeat_min, ex
                         f"{c['unclassified']}, background {c['background']}; last {hhmm(last['t'])} "
                         f"{last['result'].upper()} {last['summary'][:90]}")
     sections.append((0, "Test runs per session", [], tsum))
-    titems = [f"- {ref(r, x['line'])} {hhmm(x['t'])} {x['result'].upper()} `{short(x['cmd'], 100)}`"
+    titems = [f"- {ref(r, x['line'])} {hhmm(x['t'])} {x['result'].upper()} `{clip(x['cmd'], 100)}`"
               + (f" → {x['summary']}" if x["summary"] else "")
               for r, x in dedupe_tests(tests)]
     sections.append((4, "Unclassified red test runs (intent not shown in the transcript; may still be intended)", [],
@@ -1217,7 +1241,7 @@ def build_digest(project, rows, unread, window_txt, budget_chars, repeat_min, ex
         if r["reviews"]:
             vs = " → ".join(v["verdict"] or "?" for v in r["reviews"])
             vitems.append(f"- {ref(r)} {hhmm(r['win_start'])} {r['kind']} {','.join(r['effort']) or ''} rounds "
-                          f"{len(r['reviews'])}: {vs} | {short(r['first_prompt'], 110)}")
+                          f"{len(r['reviews'])}: {vs} | {clip(r['first_prompt'], 110)}")
     chains = collections.defaultdict(list)
     for r in rows:
         if r["reviews"] and r.get("slice_ids"):
@@ -1243,7 +1267,7 @@ def build_digest(project, rows, unread, window_txt, budget_chars, repeat_min, ex
         for x in cs:
             m = MSG_RE.search(x["cmd"])
             if m and x.get("kind") in ("merge", "commit"):
-                msgs.append(short(m.group(1), 70))
+                msgs.append(clip(m.group(1), 70))
         msgs = list(dict.fromkeys(msgs))
         citems.append(f"- {ref(r)} {hhmm(cs[0]['t'])}-{hhmm(cs[-1]['t'])} commits {kc['commit']}, merges {kc['merge']}, "
                       f"pushes {kc['push']}; shas {','.join(sh for x in cs for sh in x['sha'])[:90]}; messages: "
@@ -1271,14 +1295,14 @@ def build_digest(project, rows, unread, window_txt, budget_chars, repeat_min, ex
     # subagents and codex exec
     aitems = [f"- {sid(r)} parent {('C:' + Path(r['path']).parent.parent.name[:8])} {hhmm(r['win_start'])} "
               f"{r['active_min']}m {','.join(r['models'])[:24]} fails {len(r['fails'])} ctx {fmt_k(r['ctx_max'])} | "
-              f"{short(r['title'] or r['first_prompt'], 100)}" for r in subs]
+              f"{clip(r['title'] or r['first_prompt'], 100)}" for r in subs]
     sections.append((6, "Subagents", [], aitems))
     eitems = [f"- {sid(r)} {hhmm(r['win_start'])} {r['active_min']}m {','.join(r['models'])} "
               f"{','.join(r['effort'])} {'review' if r['is_review'] else 'task'} fails {len(r['fails'])} tests "
-              f"{len(r['tests'])} | {short(r['first_prompt'], 100)}" for r in cx_exec]
+              f"{len(r['tests'])} | {clip(r['first_prompt'], 100)}" for r in cx_exec]
     sections.append((6, "Codex exec sessions", [], eitems))
     # single failures
-    singles = [f"- {ref(r, f['line'])} {hhmm(f['t'])} {f['tool']}: `{short(f['cmd'], 90) or '-'}` → {short(f['err'], 120)}"
+    singles = [f"- {ref(r, f['line'])} {hhmm(f['t'])} {f['tool']}: `{clip(f['cmd'], 90) or '-'}` → {clip(f['err'], 120)}"
                for g in groups.values() if len(g) < repeat_min for r, f in g]
     sections.append((7, "Other tool failures", [], singles))
     tail = []
