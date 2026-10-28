@@ -1,0 +1,73 @@
+#!/usr/bin/env python3
+"""test-acef-session-rotation: the SessionStart rotation hook on synthetic transcripts (no real session, no real
+notification: a stub notifier records its calls)."""
+import json
+import os
+import subprocess
+import sys
+import tempfile
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+
+HERE = Path(__file__).resolve().parent
+TOOL = HERE / "acef-session-rotation"
+TMP = Path(tempfile.mkdtemp(prefix="acef-session-rotation-test-"))
+CALLS = TMP / "calls.txt"
+STUB = TMP / "notifier"
+STUB.write_text(f"#!/bin/sh\necho \"$*\" >> '{CALLS}'\n")
+STUB.chmod(0o755)
+ENV = dict(os.environ, ACEF_ROTATION_STATE=str(TMP / "state"), ACEF_ROTATION_NOTIFIER=str(STUB))
+fails = 0
+
+
+def check(name, cond, detail=""):
+    global fails
+    print(("ok   " if cond else "FAIL ") + name + ("" if cond else f"\n     {str(detail)[:400]}"))
+    fails += 0 if cond else 1
+
+
+def transcript(name, compactions, age_h, decoy=False):
+    t0 = datetime.now(timezone.utc) - timedelta(hours=age_h)
+    rows = [{"type": "user", "timestamp": t0.isoformat(), "message": {"content": "start"}}]
+    for i in range(compactions):
+        rows.append({"type": "system", "subtype": "compact_boundary", "timestamp": t0.isoformat()})
+    if decoy:   # the words inside a tool result are not a compaction
+        rows.append({"type": "user", "timestamp": t0.isoformat(),
+                     "message": {"content": [{"type": "tool_result", "content": 'x "subtype":"compact_boundary" y'}]}})
+    p = TMP / f"{name}.jsonl"
+    p.write_text("\n".join(json.dumps(r) for r in rows) + "\n{broken line\n")
+    return p
+
+
+def run(path, sid="s1", source="compact"):
+    return subprocess.run([sys.executable, "-I", str(TOOL)], input=json.dumps(
+        {"session_id": sid, "transcript_path": str(path), "source": source, "cwd": "/x/demo"}),
+        capture_output=True, text=True, env=ENV)
+
+
+def calls():
+    return CALLS.read_text().splitlines() if CALLS.exists() else []
+
+
+p = run(transcript("young", 2, 2, decoy=True))
+check("below both limits: silent, exit 0, no notification", p.returncode == 0 and p.stdout == "" and not calls(),
+      p.stdout)
+p = run(transcript("three", 3, 2), sid="s3")
+check("3 compactions: note in context", p.returncode == 0 and "rotation due (3 compactions" in p.stdout, p.stdout)
+check("3 compactions: one notification", len(calls()) == 1 and "demo: 3 compactions" in calls()[0], calls())
+run(TMP / "three.jsonl", sid="s3")
+check("same count again: note repeats, no second notification", len(calls()) == 1, calls())
+p = run(transcript("three", 4, 2), sid="s3")
+check("a new compaction: notify again", len(calls()) == 2 and "4 compactions" in p.stdout, calls())
+p = run(transcript("old", 0, 30), sid="s4", source="resume")
+check("open 30 h with no compaction: due", "0 compactions, open 30 h" in p.stdout and len(calls()) == 3, p.stdout)
+p = run(TMP / "missing.jsonl", sid="s5")
+check("missing transcript: silent, exit 0", p.returncode == 0 and p.stdout == "", p.stdout)
+p = subprocess.run([sys.executable, "-I", str(TOOL)], input="not json", capture_output=True, text=True, env=ENV)
+check("bad input: silent, exit 0", p.returncode == 0 and p.stdout == "" and p.stderr == "", p.stderr)
+p = run(transcript("evil", 3, 2), sid="../../etc/x")
+check("session id cannot escape the state dir", not (TMP / "etc").exists() and
+      all(f.parent == TMP / "state" for f in (TMP / "state").iterdir()), list((TMP / "state").iterdir()))
+
+print(f"test-acef-session-rotation: {9 - fails} passed, {fails} failed")
+sys.exit(1 if fails else 0)

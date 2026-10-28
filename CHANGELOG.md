@@ -7,6 +7,22 @@ proven, or installed.
 Update this file in the same PR whenever ACEF itself gains or changes a flow, gate, validator, hook, skill, installer behavior, workflow,
 or evidence contract. Do not use it to claim implementation status; link to the capability record for that.
 
+## Unreleased — Session rotation: long-running sessions hand over after 3 compactions or 24 hours (2026-10-28)
+
+Why: Ram (2026-10-28) keeps the B2Press coordinator in one session; on that day it had 19 compactions and had been open
+313 hours. Each compaction drops detail that was said only in chat, and every turn re-reads the whole context. Ram
+asked for a rule that he does not have to remember.
+- **Rule** (`method/MODEL_CHOICE.md`, Waiting): a long-running session moves to a new one after its 3rd compaction or
+  24 hours open, whichever comes first, after writing the project's handoff note.
+- **Hook** `scripts/acef-session-rotation` (Claude Code SessionStart, matcher `resume|compact`): counts compactions over
+  the whole transcript (parsed rows, not text matches) and the age from the first timestamp; when due, it prints the
+  handoff instruction into the session and sends one macOS notification per new compaction count (state in
+  `~/.local/state/acef-rotation`). Silent otherwise; always exit 0; 0.4 s on a 225 MB transcript.
+- **Daily review:** `acef-daily-extract` records `compactions_total` per session (also before the window) and adds a
+  "Rotation due (long-running sessions)" section and a count in Totals.
+- Tests: `scripts/test-acef-session-rotation` (9), `scripts/test-acef-daily-extract` (52).
+- Limit: Codex sessions have no hook here; only the daily review catches them.
+
 ## v3.0.0-beta.9 — Daily session review: stage 1 ready for the daily run (2026-10-27)
 
 Why: Ram approved the daily review after the pilot (2026-10-27). It runs every day at 09:00 as a Codex automation:
