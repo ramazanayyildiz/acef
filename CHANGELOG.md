@@ -7,7 +7,7 @@ proven, or installed.
 Update this file in the same PR whenever ACEF itself gains or changes a flow, gate, validator, hook, skill, installer behavior, workflow,
 or evidence contract. Do not use it to claim implementation status; link to the capability record for that.
 
-## Unreleased — Session rotation: long-running sessions hand over after 3 compactions or 24 hours (2026-10-28)
+## v3.0.0-beta.10 — Session rotation: long-running sessions hand over after 3 compactions or 24 hours (2026-10-28)
 
 Why: Ram (2026-10-28) keeps the B2Press coordinator in one session; on that day it had 19 compactions and had been open
 313 hours. Each compaction drops detail that was said only in chat, and every turn re-reads the whole context. Ram
