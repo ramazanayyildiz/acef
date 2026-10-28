@@ -419,8 +419,13 @@ ROTATE_COMPACTIONS = 3   # method/MODEL_CHOICE.md, Waiting: hand a long-running 
 ROTATE_HOURS = 24        # ... or after it has been open this long
 
 
-def rotation_due(r):
-    return (r.get("compactions_total") or 0) >= ROTATE_COMPACTIONS or (r["end"] - r["start"]) >= ROTATE_HOURS * 3600
+def open_hours(r, now):
+    """Hours from the session's first event to the report cutoff (idle time after the last event counts)."""
+    return (max(now, r["end"]) - r["start"]) / 3600
+
+
+def rotation_due(r, now):
+    return (r.get("compactions_total") or 0) >= ROTATE_COMPACTIONS or open_hours(r, now) >= ROTATE_HOURS
 
 
 def write_out(path, data):
@@ -1378,7 +1383,8 @@ def build_digest(project, rows, unread, window_txt, budget_chars, repeat_min, ex
     big_ctx = [r for r in rows if (r["ctx_max"] or 0) >= 300_000 or any((c.get("pre") or 0) >= 300_000
                                                                          for c in r["compactions"])]
     cost = sum(r["cost_usd"] or 0 for r in rows if r["tool"] == "claude" and r["kind"] == "main")
-    rotate = [r for r in mains + cx_tui if rotation_due(r)]
+    now = (extra or {}).get("until") or max([r["end"] for r in rows] or [0])
+    rotate = [r for r in mains + cx_tui if rotation_due(r, now)]
     head = [
         f"# Daily digest: {project}",
         "",
@@ -1442,7 +1448,7 @@ def build_digest(project, rows, unread, window_txt, budget_chars, repeat_min, ex
         f"- Rule: after {ROTATE_COMPACTIONS} compactions or {ROTATE_HOURS} h open, write the handoff note and continue "
         "in a new session. Counts cover the whole session, not only the window."],
         [f"- {sid(r)} {clip(r['title'] or r['first_prompt'], 70)}: {r.get('compactions_total', 0)} compactions, "
-         f"open {round((r['end'] - r['start']) / 3600)} h" for r in rotate]))
+         f"open {round(open_hours(r, now))} h" for r in rotate]))
     # human messages: corrections first, then other, then status
     order = {"correction?": 0, "other": 1, "status": 2, "relayed": 3}
     hitems = [f"- {ref(r, h['line'])} {hhmm(h['t'])} [{h['kind']}{(': ' + ','.join(h['hits'])) if h['hits'] else ''}"
@@ -1762,7 +1768,7 @@ def main():
         unr = [u for u in unreadable if u["project"] == p]
         text, trimmed = build_digest(p, prs, unr, window_txt, a.budget_tokens * 4, a.repeat_min, extra={
             "finished": finished_by.get(p, []), "memguard": mem_by.get(p, []), "store": notes_by.get(p, []),
-            "store_project": to_store[p], "tags": tags})
+            "store_project": to_store[p], "tags": tags, "until": until})
         text = redact(text)
         # a file name is output too: from the redacted project name, with a hash when redaction changed it
         rp = redact(p)
