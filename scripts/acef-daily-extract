@@ -415,6 +415,19 @@ def redact_obj(o):
     return o
 
 
+ROTATE_COMPACTIONS = 3   # method/MODEL_CHOICE.md, Waiting: hand a long-running session over after this many
+ROTATE_HOURS = 24        # ... or after it has been open this long
+
+
+def open_hours(r, now):
+    """Hours from the session's first event to the report cutoff (idle time after the last event counts)."""
+    return (max(now, r["end"]) - r["start"]) / 3600
+
+
+def rotation_due(r, now):
+    return (r.get("compactions_total") or 0) >= ROTATE_COMPACTIONS or open_hours(r, now) >= ROTATE_HOURS
+
+
 def write_out(path, data):
     """Every file the tool writes goes through one last sanitize pass: JSON objects (keys and values) and text."""
     text = json.dumps(redact_obj(data), ensure_ascii=False, separators=(",", ":")) if not isinstance(data, str) \
@@ -602,6 +615,7 @@ class Sig:
         self.waits = {"sleep_s": 0, "sleep_calls": 0, "monitor_calls": 0, "notifications": 0, "long_turns": [],
                       "idle_gaps": []}
         self.compactions = []    # {t, pre, post, trigger}
+        self.compactions_total = 0  # whole session, also before the window (rotation check)
         self.continuations = 0
         self.api_errors = 0
         self.agents = []         # Agent tool calls in this session {t, type, model, desc}
@@ -663,6 +677,8 @@ def parse_claude(path, since, until, kind):
             msg = d.get("message") if isinstance(d.get("message"), dict) else {}
             if typ == "system":
                 st = d.get("subtype")
+                if st == "compact_boundary":
+                    s.compactions_total += 1
                 if not win:
                     continue
                 if st == "compact_boundary":
@@ -900,6 +916,7 @@ def parse_codex(path, since, until, kind_unused=None):
                     meta["cwds"][p["cwd"]] += 1
                 continue
             if typ == "compacted":
+                s.compactions_total += 1
                 if s.inwin(t):
                     s.compactions.append({"t": t, "line": ln, "pre": None, "post": None, "trigger": "codex"})
                 continue
@@ -1040,6 +1057,7 @@ def finish(s, meta):
         "ctx_max": meta["ctx_max"], "ctx_window": meta.get("ctx_window"), "lines": meta["lines"],
         "bad_lines": meta["bad_lines"], "human": s.human, "interrupts": s.interrupts, "fails": s.fails,
         "tests": s.tests, "commits": s.commits, "waits": s.waits, "compactions": s.compactions,
+        "compactions_total": s.compactions_total,
         "continuations": s.continuations, "api_errors": s.api_errors, "agents": s.agents, "reviews": s.reviews,
         "prs": list({(x["pr"], x["repo"]): x for x in s.prs}.values()), "test_like_no_outcome": s.test_like,
         "cd_dirs": dict(s.cd_dirs.most_common(8)),
@@ -1365,6 +1383,8 @@ def build_digest(project, rows, unread, window_txt, budget_chars, repeat_min, ex
     big_ctx = [r for r in rows if (r["ctx_max"] or 0) >= 300_000 or any((c.get("pre") or 0) >= 300_000
                                                                          for c in r["compactions"])]
     cost = sum(r["cost_usd"] or 0 for r in rows if r["tool"] == "claude" and r["kind"] == "main")
+    now = (extra or {}).get("until") or max([r["end"] for r in rows] or [0])
+    rotate = [r for r in mains + cx_tui if rotation_due(r, now)]
     head = [
         f"# Daily digest: {project}",
         "",
@@ -1399,7 +1419,7 @@ def build_digest(project, rows, unread, window_txt, budget_chars, repeat_min, ex
         f"{sum(r['waits']['sleep_calls'] for r in rows)} calls; Monitor {sum(r['waits']['monitor_calls'] for r in rows)}; "
         f"task notifications {sum(r['waits']['notifications'] for r in rows)}",
         f"- hand-offs: {len(comp)} compactions, {sum(r['continuations'] for r in rows)} continuation messages; "
-        f"sessions with context >= 300k: {len(big_ctx)}",
+        f"sessions with context >= 300k: {len(big_ctx)}; rotation due: {len(rotate)}",
         f"- Claude main-session cost (cost-state, whole session, may span days): ${cost:.0f}",
     ]
     if unread:
@@ -1423,6 +1443,12 @@ def build_digest(project, rows, unread, window_txt, budget_chars, repeat_min, ex
     sections.append((0, "Sessions (main, codex tui, agent-driven codex panes)",
                      ["| ref | window | act min | title / first prompt | model | msgs/corr?/status | fails | subagents | "
                       "ctx max | compact | repos touched (cd) |", "|---|---|---|---|---|---|---|---|---|---|---|"], srows))
+    # long-running sessions past the rotation point (method/MODEL_CHOICE.md, Waiting), always kept
+    sections.append((0, "Rotation due (long-running sessions)", [
+        f"- Rule: after {ROTATE_COMPACTIONS} compactions or {ROTATE_HOURS} h open, write the handoff note and continue "
+        "in a new session. Counts cover the whole session, not only the window."],
+        [f"- {sid(r)} {clip(r['title'] or r['first_prompt'], 70)}: {r.get('compactions_total', 0)} compactions, "
+         f"open {round(open_hours(r, now))} h" for r in rotate]))
     # human messages: corrections first, then other, then status
     order = {"correction?": 0, "other": 1, "status": 2, "relayed": 3}
     hitems = [f"- {ref(r, h['line'])} {hhmm(h['t'])} [{h['kind']}{(': ' + ','.join(h['hits'])) if h['hits'] else ''}"
@@ -1742,7 +1768,7 @@ def main():
         unr = [u for u in unreadable if u["project"] == p]
         text, trimmed = build_digest(p, prs, unr, window_txt, a.budget_tokens * 4, a.repeat_min, extra={
             "finished": finished_by.get(p, []), "memguard": mem_by.get(p, []), "store": notes_by.get(p, []),
-            "store_project": to_store[p], "tags": tags})
+            "store_project": to_store[p], "tags": tags, "until": until})
         text = redact(text)
         # a file name is output too: from the redacted project name, with a hash when redaction changed it
         rp = redact(p)

@@ -9,14 +9,17 @@
   ],
   "implementedLayers": {
     "docs": [
+      "CHANGELOG.md#Unreleased — Session rotation: long-running sessions hand over after 3 compactions or 24 hours (2026-10-28)",
       "CHANGELOG.md#Unreleased — Daily session review: stage 1 ready for the daily run (2026-10-27)",
       "CHANGELOG.md#Unreleased — Daily session review: stage-1 extractor (pilot) (2026-10-27)"
     ],
     "cli": [
-      "scripts/acef-daily-extract"
+      "scripts/acef-daily-extract",
+      "scripts/acef-session-rotation"
     ],
     "tests": [
       "scripts/test-acef-daily-extract",
+      "scripts/test-acef-session-rotation",
       ".github/workflows/validate.yml"
     ]
   },
@@ -28,7 +31,8 @@
     "Finished evidence reads local refs only (no fetch), so it is as fresh as each repo's last fetch; gh is optional.",
     "Test intent is read from the command and the agent's preceding words; red runs without stated intent stay unclassified.",
     "Codex exec sessions are not linked to the Claude session that started them; Claude subagents are linked by folder.",
-    "Proposed acef-note lines are never executed by the tool; the coordinator runs them after the owner's OK."
+    "Proposed acef-note lines are never executed by the tool; the coordinator runs them after the owner's OK.",
+    "Session rotation (3 compactions or 24 h): the hook covers Claude Code sessions only; Codex sessions are caught by the daily review's 'Rotation due' section the next morning."
   ],
   "evidence": [
     {
@@ -40,6 +44,11 @@
       "layer": "cli",
       "ref": "~/CODE/acef-feedback/daily/2026-10-27/",
       "note": "2026-10-27: pilot day after the final review round, 615 files, 3.8 GB, 531 sessions in about 20 s under load; 0 unreadable; scan of the written output finds no email, key block, known token prefix, JWT, secret-context value, URL credential or -p database password."
+    },
+    {
+      "layer": "tests",
+      "ref": "scripts/test-acef-session-rotation",
+      "note": "2026-10-28: 9 checks on synthetic transcripts with a stub notifier (limits, one notification per new count, age-only trigger, decoy text, missing and bad input, state path); test-acef-daily-extract 52 incl. whole-session compaction count and the Rotation due section. Probe on the B2Press coordinator transcript (225 MB): due, 19 compactions, open 313 h, 0.37 s."
     }
   ],
   "createdAt": "2026-10-27"

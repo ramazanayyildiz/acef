@@ -138,6 +138,12 @@ def build():
                    "prompt": "x"}}]})
     comp = base(ts(12, 0), "system")
     comp.update(subtype="compact_boundary", compactMetadata={"trigger": "auto", "preTokens": 400000, "postTokens": 20000})
+    early = []                                                   # two compactions before the window: rotation counts them
+    for hh in (10, 11):
+        e = base(ts(hh, 0, 25), "system")
+        e.update(subtype="compact_boundary", compactMetadata={"trigger": "auto", "preTokens": 300000, "postTokens": 9000})
+        early.append(e)
+    main[1:1] = early
     main += [agent, comp, {"type": "ai-title", "aiTitle": "Login fix", "sessionId": sid}]
     jl(proj / f"{sid}.jsonl", main, raw=['{"type":"api-request-blob","hash":"h","message":{"content":"BLOBMARKER"}}'])
     sub = [user(ts(11, 1), "You are a test runner. Run the login tests.", source=None),
@@ -522,6 +528,13 @@ try:
     check("session types (manager-driven pane is agent time)",
           kinds == ["codex-exec", "codex-exec", "codex-tui-agent", "main", "subagent"], kinds)
     check("verdict at the head of the message", "REQUEST_CHANGES" in md, md)
+    main_r = next(s for s in idx["sessions"] if s["kind"] == "main" and s["project"] == "demo")
+    rot = md.split("## Rotation due (long-running sessions)", 1)[-1].split("\n## ", 1)[0]
+    check("rotation: whole-session compactions counted, window count unchanged",
+          main_r["compactions_total"] == 3 and len(main_r["compactions"]) == 1, main_r.get("compactions_total"))
+    check("rotation: listed, subagents not; age runs to the report cutoff (39 h), not the last event (27 h)",
+          main_r["ref"] in rot and "3 compactions" in rot and "open 39 h" in rot and "S:" not in rot
+          and "rotation due: 1" in md, rot)
     check("project from removed worktree path, subagent inherits", {s["project"] for s in demo} == {"demo"},
           [s["project"] for s in idx["sessions"]])
     # ---- review r1 regressions

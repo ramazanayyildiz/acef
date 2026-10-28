@@ -135,6 +135,12 @@ same split (see per-role models above), and a host changes any single role in it
 - Before a long wait (over ~30 min), or once an agent's context passes ~300k tokens, hand off: write a short state
   note, end the agent, and start a fresh one from the note when the result arrives.
 - Do not start a "watcher" model to wait.
+- A long-running session (a coordinator, a main session) moves to a new session after its 3rd compaction or 24 hours
+  open, whichever comes first. Before it ends, it writes the project's handoff note (HANDOFF.md or the file the project
+  names) with the live state, open items and any decision that exists only in chat; the new session starts from that
+  note. Each compaction drops detail and every turn re-reads the whole context. No one has to remember this: the
+  Claude Code hook `scripts/acef-session-rotation` tells the session and the owner, and the daily review lists the
+  sessions past the point under "Rotation due".
 
 ## Log it
 
