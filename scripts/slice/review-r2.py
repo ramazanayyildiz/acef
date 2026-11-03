@@ -44,7 +44,9 @@ FACT_REASONS = {"personal_data": ["personal-data"], "permissions": ["permissions
 DEFAULT_RATIO = 0.5
 NEAR = 10            # lines around a cited line that still count as "at the cited line"
 HUNK_SHOW = 80       # hunk lines printed per hunk
-FENCE = re.compile(r"^[ \t]*(```|~~~)")
+FENCE = re.compile(r"^[ \t]*(```|~~~)")         # what codex-review.sh's verdict reader toggles on (show_hunk)
+FENCE_OPEN = re.compile(r"^ {0,3}(`{3,}|~{3,})(.*)$")
+REASON_TOKEN = re.compile(r"(" + "|".join(map(re.escape, REASONS)) + r")(?=$|[\s:;,.(])")
 SCOPE_LINE = re.compile(r"^Review scope:[ \t]*(\S*)[ \t]*(?:[—–-][ \t]*(.*?))?[ \t]*$")
 SESSION_LINE = re.compile(r"^Reviewer session:[ \t]*(\S*)[ \t]*(?:[—–-][ \t]*(.*?))?[ \t]*$")
 GATE_SUMMARY = re.compile(r"GATE (PASS|FAIL|INCOMPLETE) [0-9a-f]{7,}(\+dirty)? (light|full) ")
@@ -66,15 +68,73 @@ def read(path):
 
 
 def outside_fences(text):
-    """(line number, line) for every line outside fenced code blocks."""
-    fence, out = False, []
+    """(line number, line) for every line outside fenced code blocks. CommonMark rule: a fence opens with 3+ backticks
+    or tildes (indent <= 3); only the same character, at least as long, with nothing after it, closes it; an unclosed
+    fence runs to the end. metrics.py repeats this function."""
+    marker, out = None, []
     for n, line in enumerate(text.splitlines(), 1):
-        if FENCE.match(line):
-            fence = not fence
-            continue
-        if not fence:
+        m = FENCE_OPEN.match(line)
+        if marker is None:
+            if m and not (m.group(1)[0] == "`" and "`" in m.group(2)):
+                marker = m.group(1)
+                continue
             out.append((n, line))
+        elif m and m.group(1)[0] == marker[0] and len(m.group(1)) >= len(marker) and not m.group(2).strip():
+            marker = None
     return out
+
+
+def real(text):
+    """A written reason: not empty, not a <placeholder>, at least one letter or digit (a lone dash is not one)."""
+    return bool(text) and not text.startswith("<") and re.search(r"\w", text) is not None
+
+
+def scope_fields(text):
+    """Scope and session of a round-2+ report: ("narrow" | "full:<reason>" | "eksik", "same" | "fresh" | "missing",
+    [failures]). Lines inside fenced code do not count; two different scope (or session) lines conflict.
+    metrics.py r2_scope() repeats the scope half; scripts/slice/tests/test-review-r2.sh checks that both agree."""
+    plain = [t for _n, t in outside_fences(text)]
+    fails, scope, session = [], "eksik", "missing"
+    scopes = [m for m in (SCOPE_LINE.match(t) for t in plain) if m]
+    if not scopes:
+        fails.append("R2_SCOPE_MISSING no 'Review scope: narrow|full — <reason>' line")
+    else:
+        value, why = scopes[0].group(1), (scopes[0].group(2) or "").strip()
+        if value == "narrow":
+            if real(why):
+                scope = "narrow"
+            else:
+                fails.append("R2_SCOPE_NO_REASON 'Review scope: narrow' without a written reason after '—'")
+        elif value == "full":
+            reason = REASON_TOKEN.match(why)
+            if reason:
+                scope = "full:" + reason.group(1)
+            else:
+                fails.append(f"R2_FULL_NO_REASON 'Review scope: full' needs one of: {', '.join(REASONS)}"
+                             + (f" (got {why!r})" if why else ""))
+        else:
+            fails.append(f"R2_SCOPE_INVALID 'Review scope: {value}' is not narrow or full")
+        if len({m.group(0).strip() for m in scopes}) > 1:
+            fails.append("R2_SCOPE_CONFLICT more than one different 'Review scope:' line")
+            scope = "eksik"
+    sessions = [m for m in (SESSION_LINE.match(t) for t in plain) if m]
+    if not sessions:
+        fails.append("R2_SESSION_MISSING no 'Reviewer session: same|fresh' line")
+    else:
+        value, why = sessions[0].group(1), (sessions[0].group(2) or "").strip()
+        if value == "same":
+            session = "same"
+        elif value == "fresh":
+            session = "fresh"
+            gone = re.match(r"session gone:\s*(.*)$", why)
+            if not gone or not real(gone.group(1).strip()):
+                fails.append("R2_FRESH_NO_NOTE a fresh reviewer session needs 'session gone: <why>' (the r1 "
+                             "session is reused unless it is gone)")
+        else:
+            fails.append(f"R2_SESSION_INVALID 'Reviewer session: {value}' is not same or fresh")
+        if len({m.group(0).strip() for m in sessions}) > 1:
+            fails.append("R2_SESSION_CONFLICT more than one different 'Reviewer session:' line")
+    return scope, session, fails
 
 
 def git(repo, *args):
@@ -438,7 +498,10 @@ def cmd_brief(args):
             " file:line column (templates/slice/review-brief.md) or [P1]/R1 bullets")
     attach(findings, hunks)
     claimed = {h for f in findings for h in f["hunks"]}
-    docs = [h for h in hunks if is_doc(h["file"]) or is_excluded(h["file"])]
+    # a hunk is classified by both of its paths: a rename from code into docs/tests/excluded paths is still code
+    sides = lambda h: [p for p in (h["a"], h["b"]) if p]
+    hunk_code = lambda h: any(code(p) for p in sides(h))
+    docs = [h for h in hunks if all(is_doc(p) or is_excluded(p) for p in sides(h))]
     unclaimed = [h for h in hunks if h["id"] not in claimed and h not in docs]
 
     scope_files = fix_files
@@ -459,7 +522,7 @@ def cmd_brief(args):
     d = {"scope": scope, "reason": reason, "klass": klass, "race": race, "base": base, "reviewed": reviewed,
          "head": head, "rebased": rebased, "findings": findings, "hunks": hunks, "unclaimed": unclaimed, "docs": docs,
          "pairs": intersections(findings, hunks, unclaimed), "tests": tests, "mapping": mapping, "unmapped": unmapped,
-         "fallback": cfg["test_map_fallback"], "method": method, "code": code,
+         "fallback": cfg["test_map_fallback"], "method": method, "code": code, "hunk_code": hunk_code,
          "scope_code": [f for f in scope_files if code(f)], "fix_lines": fix_lines, "slice_lines": slice_lines,
          "hits": hits}
     body = render_scope(d)
@@ -479,7 +542,7 @@ def cmd_brief(args):
 
 def render_scope(d):
     by_id = {h["id"]: h for h in d["hunks"]}
-    findings, hunks, code = d["findings"], d["hunks"], d["code"]
+    findings, hunks = d["findings"], d["hunks"]
     s7 = lambda x: x[:7]
     claimed = {x for f in findings for x in f["hunks"]}
     o = [f"Düzeltme diff'i: `git diff {s7(d['reviewed'])} {s7(d['head'])}` — {len(hunks)} parça, {d['fix_lines']} kod "
@@ -552,7 +615,7 @@ def render_scope(d):
         o.append("- Yok: düzeltme yalnız belge/kanıt dosyalarını değiştiriyor.")
 
     o += ["", "### Düzeltilen satırlarda mutasyonlar", ""]
-    code_hunks = [h for h in hunks if code(h["file"])]
+    code_hunks = [h for h in hunks if d["hunk_code"](h)]
     if code_hunks:
         rule = ("TAM: yeni/değişen her kural için 3–5 mutasyon, bu satırlarda" if d["klass"] == "TAM"
                 else "davranış değişikliği başına en az bir mutasyon")
@@ -561,7 +624,8 @@ def render_scope(d):
             owners = [f["id"] for f in findings if h["id"] in f["hunks"]] or ["bulgusuz"]
             where = (f"satır {line_ranges(h['added'])}" if h["added"] else
                      f"silinen satırlar (eski {line_ranges(h['deleted'])}): geri koy")
-            o.append(f"- {h['id']} `{h['file']}` {where} ({', '.join(owners)}) → kırmızı olan test: <…>")
+            path = (f"`{h['a']}` → `{h['b']}`" if h["a"] and h["b"] and h["a"] != h["b"] else f"`{h['file']}`")
+            o.append(f"- {h['id']} {path} {where} ({', '.join(owners)}) → kırmızı olan test: <…>")
     else:
         o.append("Uygulanmaz: düzeltme kod satırı değiştirmiyor (yalnız test/belge); gerekçeyi doğrula.")
 
@@ -667,42 +731,10 @@ def suite_patterns(method, profile):
 def check_one(path, pats):
     text = read(path)
     rnd = round_of(path, text)
-    fails, warns = [], []
-    scope = session = "missing"
+    fails, warns, scope, session = [], [], "missing", "missing"
     if rnd >= 2:
-        plain = outside_fences(text)
-        sm = next((SCOPE_LINE.match(t) for _n, t in plain if SCOPE_LINE.match(t)), None)
-        if not sm:
-            fails.append("R2_SCOPE_MISSING no 'Review scope: narrow|full — <reason>' line")
-        else:
-            value, why = sm.group(1), (sm.group(2) or "").strip()
-            if value == "narrow":
-                scope = "narrow"
-                if not why or why.startswith("<"):
-                    fails.append("R2_SCOPE_NO_REASON 'Review scope: narrow' without the reason after '—'")
-            elif value == "full":
-                scope = "full"
-                first = re.match(r"[a-z-]+", why)
-                if not first or first.group(0) not in REASONS:
-                    fails.append(f"R2_FULL_NO_REASON 'Review scope: full' needs one of: {', '.join(REASONS)}"
-                                 + (f" (got {why!r})" if why else ""))
-            else:
-                fails.append(f"R2_SCOPE_INVALID 'Review scope: {value}' is not narrow or full")
-        ss = next((SESSION_LINE.match(t) for _n, t in plain if SESSION_LINE.match(t)), None)
-        if not ss:
-            fails.append("R2_SESSION_MISSING no 'Reviewer session: same|fresh' line")
-        else:
-            value, why = ss.group(1), (ss.group(2) or "").strip()
-            if value == "same":
-                session = "same"
-            elif value == "fresh":
-                session = "fresh"
-                gone = re.match(r"session gone:\s*(\S.*)$", why)
-                if not gone or gone.group(1).startswith("<"):
-                    fails.append("R2_FRESH_NO_NOTE a fresh reviewer session needs 'session gone: <why>' (the r1 "
-                                 "session is reused unless it is gone)")
-            else:
-                fails.append(f"R2_SESSION_INVALID 'Reviewer session: {value}' is not same or fresh")
+        token, session, fails = scope_fields(text)
+        scope = token.split(":")[0] if token != "eksik" else "missing"
     for n, line in enumerate(text.splitlines(), 1):
         for label, pat in pats:
             m = pat.search(line)

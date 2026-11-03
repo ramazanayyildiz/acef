@@ -112,28 +112,38 @@ def verdict_of(text: str) -> str:
 R2_NAME = re.compile(r"review-r(\d+)(?!\d)", re.I)
 R2_SCOPE = re.compile(r"^Review scope:[ \t]*(\S*)[ \t]*(?:[—–-][ \t]*(.*?))?[ \t]*$")
 R2_REASONS = ("personal-data", "tenant", "permissions", "money", "schema", "fix-larger-than-slice", "redesign")
+R2_REASON = re.compile(r"(" + "|".join(map(re.escape, R2_REASONS)) + r")(?=$|[\s:;,.(])")
+R2_FENCE = re.compile(r"^ {0,3}(`{3,}|~{3,})(.*)$")
 
 
 def r2_scope(path: str, text: str) -> str | None:
     """Scope of a round >= 2 report (file name review-r<n>.md): "narrow", "full:<reason>", or "eksik" when the line is
-    missing or invalid. None for round 1. Same rules as review-r2.py check, which is the gate; this only counts."""
+    missing, invalid or contradicted by a second scope line. None for round 1. Same rules as review-r2.py
+    scope_fields() (the gate is `review-r2.py check`; this only counts); test-review-r2.sh checks that they agree.
+    Fences follow CommonMark: only the same character, at least as long, with nothing after it, closes a fence."""
     m = R2_NAME.search(os.path.basename(path))
     if not m or int(m.group(1)) < 2:
         return None
-    fence = False
+    marker, scopes = None, []
     for line in text.splitlines():
-        if re.match(r"^[ \t]*(```|~~~)", line):
-            fence = not fence
-            continue
-        sm = None if fence else R2_SCOPE.match(line)
-        if sm:
-            value, why = sm.group(1), (sm.group(2) or "").strip()
-            reason = re.match(r"[a-z-]+", why)
-            if value == "narrow" and why and not why.startswith("<"):
-                return "narrow"
-            if value == "full" and reason and reason.group(0) in R2_REASONS:
-                return "full:" + reason.group(0)
-            return "eksik"
+        f = R2_FENCE.match(line)
+        if marker is None:
+            if f and not (f.group(1)[0] == "`" and "`" in f.group(2)):
+                marker = f.group(1)
+                continue
+            sm = R2_SCOPE.match(line)
+            if sm:
+                scopes.append(sm)
+        elif f and f.group(1)[0] == marker[0] and len(f.group(1)) >= len(marker) and not f.group(2).strip():
+            marker = None
+    if not scopes or len({s.group(0).strip() for s in scopes}) > 1:
+        return "eksik"
+    value, why = scopes[0].group(1), (scopes[0].group(2) or "").strip()
+    if value == "narrow" and why and not why.startswith("<") and re.search(r"\w", why):
+        return "narrow"
+    reason = R2_REASON.match(why)
+    if value == "full" and reason:
+        return "full:" + reason.group(1)
     return "eksik"
 
 

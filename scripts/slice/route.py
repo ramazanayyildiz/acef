@@ -162,9 +162,11 @@ def affected_tests(cfg, files):
         hit = False
         for pat, sel in entries:
             m = pat.search(f)
-            if m:
+            # a selector that expands to nothing (an optional group that did not match) is no mapping
+            tests_for = [t for t in (expand_groups(m, s) for s in sel) if t.strip()] if m else []
+            if tests_for:
                 hit = True
-                add(f, [expand_groups(m, t) for t in sel])
+                add(f, tests_for)
         if not hit:
             unmapped.append(f)
     for f in unmapped:

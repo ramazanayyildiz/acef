@@ -51,7 +51,18 @@ Security does not loosen, and the one full suite before merge stays.
 - `method/SLICE_LANE.md` step 5, the summary list, the flow, the file list, the adoption `cp` line and "Enforcement
   honesty" point to the generator. The Test budget and integration-run rules are unchanged. The slice kit installs
   `review-r2.py`; schemas carry the new keys.
-- Tests: `scripts/slice/tests/test-review-r2.sh` (84 checks), `scripts/slice/selfcheck.sh`, `scripts/test-acef-install-profiles`.
+- **Review r1 (Codex, 4 × P2) fixed:**
+  - R1: a full reason must be a whole listed token (`money2` is not `money`). A narrow reason or a session-gone note
+    must be written out, not a dash or a placeholder. Two different scope or session lines conflict and FAIL.
+  - R2: fences follow CommonMark (only the same character, at least as long, closes a fence), so fields inside a
+    `~~~` example with inner backtick fences no longer count.
+  - R3: a test selector that expands to nothing (an optional regex group that did not match) is no mapping; the file
+    stays unmapped and gets the fallback set.
+  - R4: hunks are classified by both their old and new path, so a rename from code into docs, tests or excluded paths
+    keeps its code review and mutation.
+  - `metrics.py` uses the same scope rules, and a parity test checks that the two agree. All 12 new checks fail on the
+    r1-reviewed commit `67337a9`.
+- Tests: `scripts/slice/tests/test-review-r2.sh` (100 checks), `scripts/slice/selfcheck.sh`, `scripts/test-acef-install-profiles`.
   Capability record `docs/ai/capabilities/slice-review-r2-scope.json` (`wired`).
 - Limits: nothing in ACEF runs `check` before a merge; a host adds it to its gate commands. `codex-review.sh` still
   starts a fresh `codex exec`, so a Codex r2 in the same session means `codex exec resume <id> -` by hand with the

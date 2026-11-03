@@ -176,6 +176,17 @@ r2 brief --slice docs/slices/DEMO-02.md --review docs/slices/DEMO-02-review.md -
 check "$?" 2 "an invalid routing.test_map pattern is a config error"
 git checkout -q slice-method.json
 
+# ---- R4 (Codex r1): a rename from code into docs keeps its code review and mutation ----
+git checkout -q -b rename "$REVIEWED"
+mkdir -p docs && git mv src/core/other.py docs/other.md && sed -i.bak 's/^other line 5$/other line 5 moved/' docs/other.md && rm -f docs/*.bak
+git add docs/other.md && git commit -qm "move code into docs"
+out=$(r2 brief --slice "$T/DEMO-02.md" --review "$T/DEMO-02-review.md" --reviewed "$REVIEWED" --session s); rc=$?
+check "$rc" 0 "a code-to-docs rename brief"
+has "$out" '`src/core/other.py` → `docs/other.md` satır 5' "a code-to-docs rename keeps its mutation (both paths named)"
+hasnt "$out" "Uygulanmaz: düzeltme kod satırı değiştirmiyor" "a code-to-docs rename is not 'no code changed'"
+has "$out" "- H1 \`docs/other.md\`" "a code-to-docs rename stays in scope as a fix hunk"
+git checkout -q -b r4done "$HEAD1"
+
 # ---- C1 check ----
 cd "$T" || exit 2
 printf '%s\n' "$(cat "$T/brief.md")" > "$T/DEMO-02-review-r2.md"
@@ -199,6 +210,17 @@ out=$(w "$(printf 'Review scope: narrow — default\nReviewer session: fresh —
 out=$(w "$(printf 'Review scope: narrow — default\nReviewer session: same — s1\n\n```\nGATE PASS 1a2b3c4 full pass=5 fail=0 skip=0 900s\n```')"); rc=$?
 check "$rc" 0 "check: a full-suite signal only warns"
 has "$out" "WARN R2_FULL_SUITE line 7: gate summary line (full)" "check warns on a gate summary line inside a review round"
+# R1/R2 (Codex r1): full reason as a whole token, written reasons, fences by marker and length, conflicts
+out=$(w "$(printf 'Review scope: full — money2\nReviewer session: same — s1')"); check "$?" 1 "check: 'money2' is not the reason 'money'"
+out=$(w "$(printf 'Review scope: full — money: refund rounding\nReviewer session: same — s1')"); check "$?" 0 "check: 'money:' with an explanation passes"
+out=$(w "$(printf 'Review scope: full — money (money path rule: src/billing/x.py)\nReviewer session: same — s1')"); check "$?" 0 "check: the generated full line passes"
+out=$(w "$(printf 'Review scope: narrow — —\nReviewer session: same — s1')"); check "$?" 1 "check: a dash is not a narrow reason"
+out=$(w "$(printf 'Review scope: narrow — default\nReviewer session: fresh — session gone: —')"); check "$?" 1 "check: a dash is not a session-gone note"
+out=$(w "$(printf '~~~markdown\n```\nReview scope: narrow — default\nReviewer session: same — s1\n```\n~~~')"); check "$?" 1 "check: fields only inside a tilde fence with inner backtick fences FAIL"
+has "$out" "R2_SCOPE_MISSING" "check: a field inside a fence does not count"
+out=$(w "$(printf 'Review scope: narrow — default\nReviewer session: same — s1\n\n````\n```\nReview scope: full — redesign\n```\n````')"); check "$?" 0 "check: a fenced example with another scope line is ignored"
+out=$(w "$(printf 'Review scope: narrow — default\nReview scope: full — money\nReviewer session: same — s1')"); check "$?" 1 "check: two different scope lines conflict"
+has "$out" "R2_SCOPE_CONFLICT" "check names the conflict"
 printf '{ "stack": "t", "placeholders": { "test_command": "run-all-tests" } }\n' > "$T/profile.json"
 w "$(printf 'Review scope: narrow — default\nReviewer session: same — s1\nRan `run-all-tests --only calc` and then `run-all-tests`')" >/dev/null
 out=$(r2 check --profile "$T/profile.json" "$T/DEMO-02-review-r2.md")
@@ -208,6 +230,39 @@ printf '# DEMO-02 bağımsız inceleme\nKarar: **PASS**\n' > "$T/DEMO-02-review.
 out=$(r2 check "$T/DEMO-02-review.md"); check "$?" 0 "check: round 1 needs no scope or session line"
 has "$out" "round=1 scope=- session=-" "round 1 summary"
 r2 check "$T/missing.md" >/dev/null 2>&1; check "$?" 2 "check: unreadable report is exit 2"
+
+# ---- R1/R2 parity (metrics.py counts what review-r2.py check accepts) and R3 (empty selector) ----
+python3 -I - "$HERE" <<'PY2'
+import importlib.util, os, sys
+here = sys.argv[1]; sys.path.insert(0, here)
+def load(name, file):
+    spec = importlib.util.spec_from_file_location(name, os.path.join(here, file))
+    mod = importlib.util.module_from_spec(spec); spec.loader.exec_module(mod); return mod
+r2, metrics = load("r2", "review-r2.py"), load("metrics", "metrics.py")
+S = "Reviewer session: same — s\n"
+cases = ["Review scope: narrow — default\n", "Review scope: narrow — —\n", "Review scope: narrow\n",
+         "Review scope: full — money2\n", "Review scope: full — money: x\n", "Review scope: full — tenant (list)\n",
+         "Review scope: full\n", "Review scope: wide — x\n", "", "~~~\nReview scope: narrow — x\n~~~\n",
+         "~~~\n```\n```\nReview scope: narrow — x\n~~~\n", "```\nReview scope: narrow — x\n````\n",
+         "~~~\n```\nReview scope: narrow — x\n```\n~~~\n",
+         "Review scope: narrow — a\nReview scope: narrow — b\n", "Review scope: <narrow | full> — <gerekçe>\n"]
+bad = [c for c in cases if r2.scope_fields(c + S)[0] != metrics.r2_scope("X-review-r2.md", c + S)]
+for c in bad: print("parity", repr(c), r2.scope_fields(c + S)[0], metrics.r2_scope("X-review-r2.md", c + S))
+sys.exit(1 if bad else 0)
+PY2
+check "$?" 0 "metrics.py and review-r2.py classify the same scope lines"
+python3 -I - "$HERE" <<'PY3'
+import sys; sys.path.insert(0, sys.argv[1])
+import route
+cfg = route.routing_config(None, None)
+cfg["test_map"] = [{"paths": r"^src/(?:([^/]+)/)?[^/]+\.py$", "tests": ["\\1"]}]
+cfg["test_map_fallback"] = ["tests/"]
+tests, mapping, unmapped = route.affected_tests(cfg, ["src/core.py", "src/core/a.py"])
+ok3 = unmapped == ["src/core.py"] and tests == ["core", "tests/"] and "" not in tests
+if not ok3: print("R3", tests, mapping, unmapped)
+sys.exit(0 if ok3 else 1)
+PY3
+check "$?" 0 "an empty expanded test selector is no mapping: the file is unmapped and adds the fallback"
 
 # ---- M1 metrics ----
 mkdir -p "$T/m" && cd "$T/m" || exit 2
