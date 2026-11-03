@@ -62,7 +62,11 @@ Security does not loosen, and the one full suite before merge stays.
     keeps its code review and mutation.
   - `metrics.py` uses the same scope rules, and a parity test checks that the two agree. All 12 new checks fail on the
     r1-reviewed commit `67337a9`.
-- Tests: `scripts/slice/tests/test-review-r2.sh` (100 checks), `scripts/slice/selfcheck.sh`, `scripts/test-acef-install-profiles`.
+  - The tool's first real run, generating this PR's own r2 brief, exposed a precision defect. A finding cited at a
+    line also took every other hunk in its file, so three findings in one file all shared eight hunks. Now a cited
+    line takes only the hunks near it, and the whole file only when none is near; the other hunks stay in scope as
+    unclaimed.
+- Tests: `scripts/slice/tests/test-review-r2.sh` (103 checks), `scripts/slice/selfcheck.sh`, `scripts/test-acef-install-profiles`.
   Capability record `docs/ai/capabilities/slice-review-r2-scope.json` (`wired`).
 - Limits: nothing in ACEF runs `check` before a merge; a host adds it to its gate commands. `codex-review.sh` still
   starts a fresh `codex exec`, so a Codex r2 in the same session means `codex exec resume <id> -` by hand with the

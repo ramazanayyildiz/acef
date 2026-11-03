@@ -96,6 +96,7 @@ hasnt "$out" "((" "no doubled parentheses"
 has "$out" "### Hiçbir bulgunun adlandırmadığı düzeltme parçaları" "unclaimed hunks section"
 has "$out" "+other line 20 changed" "the unclaimed hunk is shown"
 has "$out" "- R1 × R2 — same hunk" "intersection: two findings fixed in one hunk"
+has "$out" "- H5 \`src/core/other.py\`" "a hunk no finding takes stays in scope (unclaimed)"
 has "$out" "kesişim testi:" "a test is asked at each intersection"
 has "$out" '- `tests/core` ← `src/core/calc.py`' "affected tests from routing.test_map"
 has "$out" '- `tests/core/calc_test.sh` ← `tests/core/calc_test.sh`' "a changed test file is its own test"
@@ -186,6 +187,15 @@ has "$out" '`src/core/other.py` → `docs/other.md` satır 5' "a code-to-docs re
 hasnt "$out" "Uygulanmaz: düzeltme kod satırı değiştirmiyor" "a code-to-docs rename is not 'no code changed'"
 has "$out" "- H1 \`docs/other.md\`" "a code-to-docs rename stays in scope as a fix hunk"
 git checkout -q -b r4done "$HEAD1"
+
+# ---- a cited line takes only the hunks near it; a far hunk in the same file stays in scope as unclaimed ----
+git checkout -q -b precision "$REVIEWED"
+sed -i.bak -e 's/^core line 5$/core line 5 far/' -e 's/^core line 50$/core line 50 near/' src/core/calc.py && rm -f src/core/*.bak
+git commit -qam precision
+out=$(r2 brief --slice "$T/DEMO-02.md" --review "$T/DEMO-02-review.md" --reviewed "$REVIEWED" --session s)
+has "$out" 'Atıf: `src/core/calc.py:50` · Düzeltme: H2 (atıf satırında)' "a finding cited at a line takes only the hunk near it"
+has "$out" '- H1 `src/core/calc.py`' "the far hunk of the same file stays in scope as unclaimed"
+git checkout -q r4done
 
 # ---- C1 check ----
 cd "$T" || exit 2

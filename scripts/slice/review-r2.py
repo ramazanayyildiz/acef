@@ -321,24 +321,28 @@ def attach(findings, hunks):
         if not f["locs"]:
             f["match"] = "dosya:satır atfı yok: bu bulgu için bütün düzeltme diff'i kapsamda"
             continue
-        near, same, missing = [], [], []
+        # a cited line takes the hunks near it; only when none is near does the finding take the whole file's hunks
+        # (hunks no finding takes stay in scope under "Hiçbir bulgunun adlandırmadığı düzeltme parçaları")
+        near, whole, far, missing = [], [], [], []
         for file, start, end in f["locs"]:
             in_file = [h for h in hunks if same_path(file, h["a"]) or same_path(file, h["b"])]
             if not in_file:
                 missing.append(file)
                 continue
             if start is None:
-                same += in_file
+                whole += in_file
                 continue
             hit = [h for h in in_file if h["old"][0] - NEAR <= end and start <= h["old"][0] + max(h["old"][1], 1) - 1 + NEAR]
             near += hit
-            same += [h for h in in_file if h not in hit]
-        f["hunks"] = list(dict.fromkeys(h["id"] for h in near + same))
+            far += [] if hit else in_file
+        f["hunks"] = list(dict.fromkeys(h["id"] for h in near + whole + far))
         notes = []
         if near:
             notes.append("atıf satırında")
-        if same:
-            notes.append("aynı dosya, atıf satırından uzakta" if any(s for _f, s, _e in f["locs"]) else "atıf dosyasında")
+        if far:
+            notes.append("atıf satırında parça yok: dosyanın bütün parçaları")
+        if whole:
+            notes.append("atıf dosyasında")
         if missing:
             notes.append(", ".join(f"`{m}`" for m in missing) + " içinde düzeltme parçası yok: başka yerde düzeltilmiş "
                          "ya da düzeltilmemiş — kontrol et")
