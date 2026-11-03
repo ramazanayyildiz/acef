@@ -137,6 +137,7 @@ backlog -> slice file -> own worktree + port + DB    ->  simplify pass (2b)     
                                          ┌──────────── REVISE <─────────────────────────────┤
                                          v                                                  v PASS
                  fix inside the same allowed list -> targeted re-review (SAME reviewer session, r2) -> closing note
+                 (r2 brief: review-r2.py, narrow by default)
                                                                                          -> merge --no-ff on the owner's
                                                                                             word or written branch policy
                                                                                          -> post-merge: gate + critical set
@@ -187,7 +188,18 @@ backlog -> slice file -> own worktree + port + DB    ->  simplify pass (2b)     
    (`templates/slice/review-r2.md`): only the previous findings plus the fix diff. The reviewer who raised the findings
    checks them with its context intact; it is still never the developer's session. Only when that session is gone
    (context limit, crash) does a new reviewer session read the previous report plus the fix diff, and the r2 header
-   says so.
+   says so (`Reviewer session: fresh — session gone: <why>`).
+   **The r2 brief is generated, not hand-written** (owner decision 2026-11-03): `scripts/slice/review-r2.py brief` fills
+   the template from the r1 report(s), the fix diff and the slice file. It contains each finding with its fix hunk,
+   the places where two fixes meet (a test asked at each), the affected tests (`routing.test_map`; an unmapped code
+   file adds the wider `test_map_fallback`), mutations on the fixed lines, the slice's race tests, and the contract set
+   when its areas are touched. Scope is **narrow** by default. **Full** scope (the whole slice again) needs
+   `--scope full --reason <reason>`, one of `personal-data`, `tenant`, `permissions`, `money`, `schema`,
+   `fix-larger-than-slice`, `redesign`. A fix that hits a risk path rule, or is large relative to the slice
+   (`review.r2_full_ratio`, default 0.5), is refused as narrow (SCOPE_UP). Every round-2+ report carries
+   `Review scope: narrow | full — <reason>`. `review-r2.py check` fails a report without it, `full` without a listed
+   reason, or a fresh session without the note; it warns on a full-suite run inside a review round. Neither scope runs
+   the full suite (Test budget).
    **Round caps** (owner decision 2026-10-25, from host practice): after a second REVISE the coordinator stops
    patching and decides — redesign, split, narrow the scope or simplify; a reviewer's suggested fix is a hypothesis,
    not a specification. From round 3 on, only money, data, permission or flow-breaking findings block; everything else
@@ -274,7 +286,8 @@ Always required, in both classes — the core this lane keeps from ACEF:
    by the reviewer plus one of their own; otherwise the applicability reason above;
 6. real-browser evidence of the new scenario from its real entry point when the slice touches UI; otherwise the
    applicability reason above;
-7. a targeted re-review in the same reviewer session after REVISE;
+7. a targeted re-review in the same reviewer session after REVISE, from the generated brief
+   (`scripts/slice/review-r2.py`), narrow unless a listed reason makes it full;
 8. a closing note with the fixed fields.
 
 ## Parallel lanes
@@ -354,13 +367,17 @@ scripts/slice/standards-check.sh     standards ratchet engine; rules from the st
 scripts/slice/codex-review.sh        read-only review call with a required model (other model family)
 scripts/slice/metrics.py             measurement table from slice/review files and git history (--profile)
 scripts/slice/route.py               route from intake facts ("card") and the diff check against the declared route
-                                     ("check": ROUTE_UP stops, OVER_CEREMONY warns); path rules: stack profile "routing"
+                                     ("check": ROUTE_UP stops, OVER_CEREMONY warns); path rules: stack profile "routing";
+                                     changed files -> affected tests ("routing.test_map", wider fallback when unmapped)
+scripts/slice/review-r2.py           r2 brief from the r1 report, fix diff and slice ("brief": narrow by default, full
+                                     only with a listed reason, SCOPE_UP stops); "check": scope/session lines of a
+                                     round-2+ report (FAIL), full-suite run in a review round (WARN)
 scripts/slice/ui-copy-hints.py       review hint: new visible strings with a profile's "may confuse" terms, long
                                      explanatory lines; warns only, exit 0
 scripts/slice/selfcheck.sh           the lane's own gate: syntax, templates, core + adapter self-tests, metrics
                                      fixture, and a scan that the core names no stack or source project
 scripts/slice/tests/                 gate (incl. placeholders, zero tests), codex-review, standards-check (incl. regex errors),
-                                     schema types, selfcheck self-tests + metrics fixture
+                                     schema types, review-r2 (brief, SCOPE_UP, check), selfcheck self-tests + metrics fixture
 schemas/slice-method.schema.json     project declaration (slice-method.json, incl. "stack_profile")
 schemas/stack-profile.schema.json    stack profile (the four required placeholders)
 schemas/slice-interventions.schema.json  intervention log
@@ -397,7 +414,7 @@ ACEF=/path/to/acef; STACK=$ACEF/stacks/<stack>
 cp -R $ACEF/templates/slice <app>/docs/slices/_templates
 cp $ACEF/docs/slice-lane/examples/slice-method.example.json <app>/slice-method.json   # {{project}}, paths, commands
 cp $STACK/profile.json <app>/scripts/stack-profile.json                              # "stack_profile" points here
-cp $ACEF/scripts/slice/{gate.sh,standards-check.sh,codex-review.sh,metrics.py} <app>/scripts/
+cp $ACEF/scripts/slice/{gate.sh,standards-check.sh,codex-review.sh,metrics.py,route.py,review-r2.py} <app>/scripts/
 cp $STACK/standards/rules.example.json <app>/scripts/standards/rules.json            # + the adapter's other files
 <app>/scripts/standards-check.sh --print-baseline <app> > <app>/scripts/standards/baseline.txt   # merger, clean main
 <app>/scripts/gate.sh <own worktree path>
@@ -411,8 +428,9 @@ lane's own gate: `bash scripts/slice/selfcheck.sh`.
 
 In `method/RULE_ENFORCEMENT_MAP.md` terms: the gate, standards ratchet, and module-boundary ratchet are **machinery**
 inside the application; the independent reviewer is a **shard** (a fresh session with a brief) and the targeted re-review
-continues that shard; the allowed-file list, the "never" list, and the closing note are **documentation-only** until the planned
-closing-note gate exists. No ACEF hook or validator enforces this lane.
+continues that shard; the r2 brief and its scope check are **machinery** the coordinator runs (`review-r2.py`; a host
+can add `review-r2.py check` to its gate commands); the allowed-file list, the "never" list, and the closing note are
+**documentation-only** until the planned closing-note gate exists. No ACEF hook or validator enforces this lane.
 
 ## Planned (v0.2) and open (v0.1.2)
 

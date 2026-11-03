@@ -126,6 +126,17 @@
         "test_paths": { "type": "array", "items": { "type": "string" } },
         "exclude_paths": { "type": "array", "items": { "type": "string" } },
         "risk_paths_mode": { "type": "string", "enum": ["extend", "replace"] },
+        "test_map": {
+          "type": "array",
+          "description": "Changed file -> affected tests (route.py affected_tests); slice-method.json routing.test_map extends it. A selector may use the path regex groups (\\1, \\g<name>).",
+          "items": {
+            "type": "object",
+            "required": ["paths", "tests"],
+            "additionalProperties": false,
+            "properties": { "paths": { "type": "string" }, "tests": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 } } }
+          }
+        },
+        "test_map_fallback": { "type": "array", "items": { "type": "string", "minLength": 1 }, "description": "The wider test set an unmapped code file adds." },
         "risk_paths": {
           "type": "object",
           "additionalProperties": false,

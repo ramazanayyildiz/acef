@@ -79,6 +79,7 @@ Yığına özgü komutlar `{{…}}` yer tutucularıdır; `slice-method.json` →
 - Kapı: `scripts/gate.sh <kendi worktree yolu>`
 - Standart: `{{standards_check}}` · Statik analiz: `{{static_analysis}}` · Sınır: `{{boundary_check}}`
 - Tarayıcı (varsa): `<APP_ORIGIN=http://127.0.0.1:<port> …>`
+- Yarış testleri (kilit/yarış yolu varsa): `<yarış testi seçicisi>` | yok (r2 brief'i `scripts/slice/review-r2.py` buradan okur)
 
 ## Kullanıcı senaryoları (yalnız bu dilimin yeni senaryosu)
 
@@ -110,6 +111,6 @@ Komut/sonuç/log tablosunu buraya kopyalama; kaydın aday, main/merge-base, test
 - Karar: <PASS özeti> (<her zorunlu inceleyicinin güncel karar bağlantısı>, tur <n>) · Tarih: <YYYY-MM-DD>
 - Ürün commit'i: `<sha>` · İncelenen commit: `<sha>` · Merge: `<sha>` (no-ff, sahibin sözüyle / dal politikasıyla)
 - Süreler (dk): geliştirme <n> · inceleme <n> · yeniden inceleme <n> (ölçülmediyse "ölçülmedi")
-- REVISE turu: <n> · Kaçan hata: <yok | B-kimliği, hangi dilimde bulundu>
+- REVISE turu: <n> · Review scope (r2+): <narrow | full — gerekçe | uygulanmaz> · Kaçan hata: <yok | B-kimliği, hangi dilimde bulundu>
 - Etiket adayı: evet | hayır (<neden>)
 - Ertelenen: <B-kimlikleri> · Temizlik: `git worktree list`, geçici dizinler, lane DB

@@ -62,6 +62,7 @@ class Slice:
     revise_field: str = ""
     escaped: str = NV
     escaped_candidates: list = field(default_factory=list)
+    r2_scopes: list = field(default_factory=list)   # per review-r<n>.md (n >= 2): narrow | full:<reason> | eksik
 
 
 def read(p: str, limit: int | None = None) -> str:
@@ -106,6 +107,34 @@ def verdict_of(text: str) -> str:
         return _norm(allm[-1])
     m = VERDICT_KV.search(text)
     return _norm(m.group(1)) if m else "?"
+
+
+R2_NAME = re.compile(r"review-r(\d+)(?!\d)", re.I)
+R2_SCOPE = re.compile(r"^Review scope:[ \t]*(\S*)[ \t]*(?:[—–-][ \t]*(.*?))?[ \t]*$")
+R2_REASONS = ("personal-data", "tenant", "permissions", "money", "schema", "fix-larger-than-slice", "redesign")
+
+
+def r2_scope(path: str, text: str) -> str | None:
+    """Scope of a round >= 2 report (file name review-r<n>.md): "narrow", "full:<reason>", or "eksik" when the line is
+    missing or invalid. None for round 1. Same rules as review-r2.py check, which is the gate; this only counts."""
+    m = R2_NAME.search(os.path.basename(path))
+    if not m or int(m.group(1)) < 2:
+        return None
+    fence = False
+    for line in text.splitlines():
+        if re.match(r"^[ \t]*(```|~~~)", line):
+            fence = not fence
+            continue
+        sm = None if fence else R2_SCOPE.match(line)
+        if sm:
+            value, why = sm.group(1), (sm.group(2) or "").strip()
+            reason = re.match(r"[a-z-]+", why)
+            if value == "narrow" and why and not why.startswith("<"):
+                return "narrow"
+            if value == "full" and reason and reason.group(0) in R2_REASONS:
+                return "full:" + reason.group(0)
+            return "eksik"
+    return "eksik"
 
 
 def git_first_adds(root: str, rel: str) -> dict:
@@ -191,7 +220,11 @@ def collect(slices_dir: str, use_git: bool, backlog: str | None, strip_phase_pre
             stem = f[:-3]
             if stem.startswith(sid + "-review") and re.fullmatch(re.escape(sid) + r"-review(-r\d+|-[a-z0-9-]+)?", stem, re.I):
                 p = os.path.join(d, f)
-                s.reviews.append((f, verdict_of(read(p, 20000)), add_ts(p)))
+                body = read(p, 20000)
+                s.reviews.append((f, verdict_of(body), add_ts(p)))
+                scope = r2_scope(f, body)
+                if scope:
+                    s.r2_scopes.append(scope)
         # reviews under evidence/<ID>/
         ed = os.path.join(ev_root, sid)
         if strip_phase_prefix and not os.path.isdir(ed):  # evidence dir without the phase prefix: P03-X-01 -> X-01
@@ -208,7 +241,11 @@ def collect(slices_dir: str, use_git: bool, backlog: str | None, strip_phase_pre
                     if fn.lower() == "readme.md":
                         continue
                     p = os.path.join(dp, fn)
-                    s.reviews.append((rp, verdict_of(read(p, 20000)), add_ts(p)))
+                    body = read(p, 20000)
+                    s.reviews.append((rp, verdict_of(body), add_ts(p)))
+                    scope = r2_scope(fn, body)
+                    if scope:
+                        s.r2_scopes.append(scope)
         s.reviews.sort(key=review_order)
         # closing note and its fields
         cm = CLOSING.search(text)
@@ -266,7 +303,7 @@ def collect(slices_dir: str, use_git: bool, backlog: str | None, strip_phase_pre
 def render(slices: list, label: str, fmt: str, summary_only: bool) -> str:
     rows = []
     hdr = ["dilim", "Durum satırı", "sınıf", "dev raporu", "inceleme raporu", "REVISE", "ilk karar", "son karar",
-           "geliştirme dk (not|git)", "inceleme dk (not|git)", "kaçan hata"]
+           "geliştirme dk (not|git)", "inceleme dk (not|git)", "kaçan hata", "r2 kapsam"]
     for s in slices:
         verdicts = [v for _p, v, _t in s.reviews]
         rev = s.revise_field or str(sum(1 for v in verdicts if v == "REVISE"))
@@ -277,7 +314,8 @@ def render(slices: list, label: str, fmt: str, summary_only: bool) -> str:
         if esc == NV and s.escaped_candidates:
             esc = "aday: " + ",".join(s.escaped_candidates) + " (" + NV + ")"
         rows.append([s.id, s.status, s.klass, "var" if s.dev_report else "yok", str(len(s.reviews)), rev,
-                     verdicts[0] if verdicts else "-", s.final, s.dev_min, s.review_min, esc])
+                     verdicts[0] if verdicts else "-", s.final, s.dev_min, s.review_min, esc,
+                     ",".join(s.r2_scopes) or "-"])
 
     reviewed = [s for s in slices if s.reviews]
     rounds = sum(len(s.reviews) for s in slices)
@@ -293,6 +331,9 @@ def render(slices: list, label: str, fmt: str, summary_only: bool) -> str:
 
     dmed, dn = med("dev_min")
     rmed, rn = med("review_min")
+    scopes = [x for s in slices for x in s.r2_scopes]
+    fulls = [x.split(":", 1)[1] for x in scopes if x.startswith("full:")]
+    full_reasons = ", ".join(f"{r} {fulls.count(r)}" for r in dict.fromkeys(fulls))
     esc_c = [s.id for s in slices if s.escaped_candidates]
     esc_f = [s for s in slices if s.escaped != NV]
     esc_yes = [s.id for s in esc_f if not re.match(r"(?i)yok|none|0$", s.escaped)]
@@ -302,6 +343,9 @@ def render(slices: list, label: str, fmt: str, summary_only: bool) -> str:
         f"- Dilim: {len(slices)} · dev raporu olan: {sum(1 for s in slices if s.dev_report)} · incelenen: {len(reviewed)} · kapanış notu olan: {sum(1 for s in slices if s.closed)}",
         f"- İnceleme raporu toplamı (tur değil): {rounds} · kararı okunamayan: {unknown} · REVISE kararlı rapor: {revise_total} · en az bir REVISE alan dilim: {with_revise}",
         f"- İlk incelemede PASS: {first_pass}/{first_known} (kararı okunan ilk incelemeler)",
+        f"- r2+ inceleme kapsamı (review-r<n>.md): narrow {scopes.count('narrow')} · full {len(fulls)}"
+        + (f" ({full_reasons})" if fulls else "") + f" · satırı eksik/geçersiz {scopes.count('eksik')}"
+        " (kapı: review-r2.py check)",
         f"- Medyan geliştirme süresi: {dmed} · medyan inceleme süresi: {rmed} (kaynak: kapanış notu alanı varsa o, yoksa git commit damgası vekili — oturum süresi DEĞİL; diğer dilimler {NV})",
         (f"- Kaçan hata: kapanış notunda alanı olan dilim {len(esc_f)}, kaçan hata bildiren {len(esc_yes)}" + (f" ({', '.join(esc_yes)})" if esc_yes else "")
      if esc_f else f"- Kaçan hata: hiçbir kapanış notunda alan yok → {NV}")
