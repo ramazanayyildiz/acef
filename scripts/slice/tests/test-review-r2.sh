@@ -278,6 +278,47 @@ sys.exit(0 if ok3 else 1)
 PY3
 check "$?" 0 "an empty expanded test selector is no mapping: the file is unmapped and adds the fallback"
 
+# ---- Codex r2: four mutations only the reviewer's own probes caught (session conflict, a shorter closing fence in
+#      metrics.py, a backtick in a backtick fence's info string, whole-file attachment) — explicit expected values ----
+py4=$(python3 -I - "$HERE" <<'PY4'
+import importlib.util, os, sys
+here = sys.argv[1]; sys.path.insert(0, here)
+def load(name, file):
+    spec = importlib.util.spec_from_file_location(name, os.path.join(here, file))
+    mod = importlib.util.module_from_spec(spec); spec.loader.exec_module(mod); return mod
+r2, metrics = load("r2", "review-r2.py"), load("metrics", "metrics.py")
+OK = "Review scope: narrow — a\nReviewer session: same — s\n"
+cases = [  # name, report text, failure code check must print (or None), scope both parsers must return
+    ("two different session lines conflict", OK + "Reviewer session: fresh — session gone: crashed\n",
+     "R2_SESSION_CONFLICT", "narrow"),
+    ("a shorter inner fence does not close a longer one (scope line inside stays fenced)",
+     OK + "````text\n```\nReview scope: full — money2\n```\n````\n", None, "narrow"),
+    ("a longer closing fence of the same character closes it", "```text\nReview scope: full — money2\n`````\n" + OK,
+     None, "narrow"),
+    ("a backtick in a backtick fence's info string opens no fence", "```bad`info\n" + OK, None, "narrow"),
+]
+for name, text, code, scope in cases:
+    got_scope, _session, fails = r2.scope_fields(text)
+    got_code = next((f.split()[0] for f in fails), None)
+    good = got_scope == scope and metrics.r2_scope("X-review-r2.md", text) == scope and got_code == code
+    print(f"{int(good)}\tscope parsers: {name}")
+H = [{"id": "H1", "a": "src/a.py", "b": "src/a.py", "old": (1, 1)},
+     {"id": "H2", "a": "src/a.py", "b": "src/a.py", "old": (50, 1)}]
+for name, loc, want, note in [
+        ("a cited line with no hunk near it takes the whole file", ("src/a.py", 100, 100), ["H1", "H2"],
+         "atıf satırında parça yok"),
+        ("a file-only citation takes the whole file", ("src/a.py", None, None), ["H1", "H2"], "atıf dosyasında"),
+        ("a cited line with a hunk near it takes only that hunk", ("src/a.py", 52, 52), ["H2"], "atıf satırında")]:
+    f = [{"locs": [loc]}]
+    r2.attach(f, H)
+    print(f"{int(f[0]['hunks'] == want and f[0]['match'].startswith(note))}\tattach: {name}")
+PY4
+); check "$?" 0 "reviewer-probe cases ran"
+check "$(printf '%s\n' "$py4" | grep -c .)" 7 "reviewer-probe cases: all seven reported"
+while IFS="$(printf '\t')" read -r res name; do check "$res" 1 "$name"; done <<EOF
+$py4
+EOF
+
 # ---- M1 metrics ----
 mkdir -p "$T/m" && cd "$T/m" || exit 2
 printf '# M-01 — x\n\nDurum: KAPANDI\nİnceleme sınıfı: TAM (gerekçe: para)\n' > M-01.md

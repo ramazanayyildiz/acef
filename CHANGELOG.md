@@ -67,7 +67,10 @@ Security does not loosen, and the one full suite before merge stays.
     line takes only the hunks near it, and the whole file only when none is near; the other hunks stay in scope as
     unclaimed. The same run made `check` warn about a full-suite run on its own brief: a quoted hunk contained a gate
     summary string. The full-suite warning now skips the brief's quoted ```` ```diff ```` hunks.
-- Tests: `scripts/slice/tests/test-review-r2.sh` (105 checks), `scripts/slice/selfcheck.sh`, `scripts/test-acef-install-profiles`.
+- Review r2 (Codex, same session): PASS. 23 of 23 mutations on the fixed lines were caught, four of them only by the
+  reviewer's own probes. Those four are now tests: a session-line conflict, a shorter inner fence in `metrics.py`, a
+  backtick in a fence's info string, and whole-file attachment.
+- Tests: `scripts/slice/tests/test-review-r2.sh` (114 checks), `scripts/slice/selfcheck.sh`, `scripts/test-acef-install-profiles`.
   Capability record `docs/ai/capabilities/slice-review-r2-scope.json` (`wired`).
 - Limits: nothing in ACEF runs `check` before a merge; a host adds it to its gate commands. `codex-review.sh` still
   starts a fresh `codex exec`, so a Codex r2 in the same session means `codex exec resume <id> -` by hand with the
