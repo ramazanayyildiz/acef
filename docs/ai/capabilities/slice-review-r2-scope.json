@@ -45,7 +45,7 @@
     "Path rules are a floor: SCOPE_UP fires on route.py risk_paths (code files only); a risky fix outside every path rule is still narrow unless the coordinator passes --scope full with a reason. 'tenant' and 'redesign' have no path rule and are manual reasons only.",
     "The size threshold review.r2_full_ratio defaults to 0.5 of the slice's code lines; it is a starting value, not a measured one.",
     "The affected-tests map (routing.test_map) is empty until a host or stack fills it; every code file is then unmapped and the brief asks for the wider set (test_map_fallback, or the module's suite when no fallback is configured). The stacks/laravel profile ships no test_map.",
-    "Full-suite detection in check is a heuristic (a gate.sh summary line, the stack profile's bare test_command, review.full_suite_patterns) and only warns."
+    "Full-suite detection in check is a heuristic (a gate.sh summary line, the stack profile's bare test_command, review.full_suite_patterns) and only warns; lines inside ```diff fences (the brief's quoted hunks) are skipped."
   ],
   "evidence": [
     {

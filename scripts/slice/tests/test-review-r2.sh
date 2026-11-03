@@ -220,6 +220,10 @@ out=$(w "$(printf 'Review scope: narrow — default\nReviewer session: fresh —
 out=$(w "$(printf 'Review scope: narrow — default\nReviewer session: same — s1\n\n```\nGATE PASS 1a2b3c4 full pass=5 fail=0 skip=0 900s\n```')"); rc=$?
 check "$rc" 0 "check: a full-suite signal only warns"
 has "$out" "WARN R2_FULL_SUITE line 7: gate summary line (full)" "check warns on a gate summary line inside a review round"
+# dogfood: the brief quotes fix hunks as ```diff blocks; a gate summary string inside a quoted hunk is code, not a run
+out=$(w "$(printf 'Review scope: narrow — default\nReviewer session: same — s1\n\n`````diff\n+ printf %%s \x27GATE PASS 1a2b3c4 full pass=5 fail=0 skip=0 900s\x27\n`````')"); rc=$?
+check "$rc" 0 "check: a quoted diff hunk passes"
+has "$out" "warn=0" "check: a gate summary string inside a \`\`\`diff hunk does not warn"
 # R1/R2 (Codex r1): full reason as a whole token, written reasons, fences by marker and length, conflicts
 out=$(w "$(printf 'Review scope: full — money2\nReviewer session: same — s1')"); check "$?" 1 "check: 'money2' is not the reason 'money'"
 out=$(w "$(printf 'Review scope: full — money: refund rounding\nReviewer session: same — s1')"); check "$?" 0 "check: 'money:' with an explanation passes"

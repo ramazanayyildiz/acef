@@ -67,21 +67,28 @@ def read(path):
         die(f"cannot read {path}: {exc.strerror}")
 
 
-def outside_fences(text):
-    """(line number, line) for every line outside fenced code blocks. CommonMark rule: a fence opens with 3+ backticks
-    or tildes (indent <= 3); only the same character, at least as long, with nothing after it, closes it; an unclosed
-    fence runs to the end. metrics.py repeats this function."""
-    marker, out = None, []
+def fenced(text):
+    """(line number, line, info) for every line except the fence lines; info is None outside fenced code blocks, else
+    the opening fence's info string ("" when it has none). CommonMark rule: a fence opens with 3+ backticks or tildes
+    (indent <= 3); only the same character, at least as long, with nothing after it, closes it; an unclosed fence runs
+    to the end. metrics.py repeats the outside-fences part."""
+    marker, info, out = None, None, []
     for n, line in enumerate(text.splitlines(), 1):
         m = FENCE_OPEN.match(line)
         if marker is None:
             if m and not (m.group(1)[0] == "`" and "`" in m.group(2)):
-                marker = m.group(1)
+                marker, info = m.group(1), m.group(2).strip()
                 continue
-            out.append((n, line))
+            out.append((n, line, None))
         elif m and m.group(1)[0] == marker[0] and len(m.group(1)) >= len(marker) and not m.group(2).strip():
-            marker = None
+            marker = info = None
+        else:
+            out.append((n, line, info))
     return out
+
+
+def outside_fences(text):
+    return [(n, line) for n, line, info in fenced(text) if info is None]
 
 
 def real(text):
@@ -739,7 +746,9 @@ def check_one(path, pats):
     if rnd >= 2:
         token, session, fails = scope_fields(text)
         scope = token.split(":")[0] if token != "eksik" else "missing"
-    for n, line in enumerate(text.splitlines(), 1):
+    for n, line, info in fenced(text):
+        if info is not None and info.split()[:1] == ["diff"]:
+            continue    # a quoted hunk (the brief shows the fix as ```diff blocks) is code under review, not a run
         for label, pat in pats:
             m = pat.search(line)
             if m:
