@@ -35,8 +35,8 @@
   "limitations": [
     "tour.py checks the record's structure and bindings; it cannot prove that the exploration was genuine, that the persona was the affected one, or that the applicability judgement was right. The reviewer owns those.",
     "Not enforced: nothing runs tour.py automatically. The coordinator runs it before acceptance and at closeout; a host may add it to its gate commands.",
+    "tour.py's tree check treats routing.docs_paths/exclude_paths and evidence_dir changes as no behaviour change; a host that renders markdown files as UI must narrow docs_paths, or a .md change passes without an impact note.",
     "The trigger (changed user behaviour) is a reviewer judgement; route.py's ui_candidate is a path hint only and 'unknown' does not mean 'no UI impact'.",
-    "Referenced screenshots and browser traces are not checked for existence; only the report file is.",
     "Pilot only: B2Press, next three qualifying slices, reviewed after seven days; no other host has a verified tour environment yet, and mft needs a simulator adapter.",
     "The reviewer's model-family separation for tours is not checked (MODEL_CHOICE names gpt-6.1-terra; switching Codex models is not another family)."
   ],
@@ -50,6 +50,11 @@
       "layer": "tests",
       "ref": "scripts/test-acef-slice-route",
       "note": "2026-11-05: ui_candidate yes with matched paths for a view diff, unknown for a backend diff, host ui_paths extend the stack's."
+    },
+    {
+      "layer": "tests",
+      "ref": "scripts/slice/tests/test-tour.sh",
+      "note": "2026-11-05 review round 1 (Codex Astra REVISE): 91 checks pass; the 35 new cases were committed red first. Eleven mutations (current-round selection, PASS verdict, carry-forward rule, short row, blok enum, impact note bound to HEAD, artifact existence, fence info string, docs/evidence auto-pass, metrics fence parsing, metrics unknown escapes) each turn at least one case red."
     }
   ],
   "createdAt": "2026-11-05"
