@@ -46,4 +46,4 @@ Coverage: complete | incomplete — <ulaşılamayan>
 6. Dış eylem girişimi: `yok | <adım, nerede durdu>`.
 7. **Not reached:** ulaşılamayan adım ya da ekran ve neden (`yok` da yazılır).
 
-**Sonra:** koordinatör worktree'nin `git status`'unu doğrular (yalnız kanıt klasörü), bulguları FIX dilimlerine ve gerekiyorsa profil düzeltmesine çevirir. Rol turları ayrıca sürer.
+**Sonra:** koordinatör worktree'nin `git status`'unu doğrular (yalnız kanıt klasörü). **slice modunda** bulgular dilimin güncel inceleme turuna girer (kod bulgularıyla aynı tur; inceleyici durumunu verir, düzeltme aynı dilimde yeniden denenir); ayrı FIX dilimi yalnız açık bir kapsam kararıyla açılır (sahip ya da koordinatör, dilimde kayıtlı). **outcome modunda** bulgular FIX dilimlerine ve gerekiyorsa profil düzeltmesine çevrilir. Rol turları ayrıca sürer.

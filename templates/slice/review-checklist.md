@@ -77,9 +77,9 @@ Senaryo kanıtı iki parçadır: **6a** betikli senaryo kanıtı (C4, D6, senary
 | # | Madde | Kanıt |
 |---|---|---|
 | G1 | Uygulanabilirlik: kural uygulanıyor mu; uygulanmıyorsa gerekçe onaylandı mı (ortam yokluğu gerekçe değil) | inceleme raporunda `Tour report: <yol>` ya da `Tour exemption: confirmed — <gerekçe>` |
-| G2 | Rapor adaya bağlı: aday/taban sha, yürütücü, ortam/fixture, profil, genişlikler; aday sonra değiştiyse etki notu ya da etkilenen adımın yeniden koşusu | rapor başlığı; `Tour impact: …` |
+| G2 | Rapor adaya bağlı: aday/taban sha, yürütücü, ortam/fixture, profil, genişlikler; aday sonra kodda değiştiyse kontrol edilen HEAD'i anan etki notu ya da etkilenen adımın yeniden koşusu | rapor başlığı; `Tour impact: <HEAD sha> — …` |
 | G3 | Kapsam: bir hedef, bir mutlu-yol-dışı deneme, 1280 ve 390 (web); `Coverage: complete`; "Not reached" okunup değerlendirildi | rapor satırları |
-| G4 | Her tur bulgusunun durumu verildi; blok bulgu açık değil (adım 3b engelleyicileri); para/veri dışı bulgu kendiliğinden backlog değil | `\| Tur bulgusu \| Durum \| Blok \| Çözüm \|` tablosu; `scripts/slice/tour.py check <dilim>` çıktısı |
+| G4 | Her tur bulgusunun durumu verildi; blok bulgu açık değil (adım 3b engelleyicileri); para/veri dışı bulgu kendiliğinden backlog değil | `\| Tur bulgusu \| Durum \| Blok \| Çözüm \|` tablosu (önceki tur yalnız `Tour dispositions: carried forward` ile); kararı yazdıktan sonra `scripts/slice/tour.py check <dilim>` çıktısı |
 
 ## F — Hedef kullanıcı ve ekran dili (kullanıcıya görünen metin ya da ekran değişince)
 

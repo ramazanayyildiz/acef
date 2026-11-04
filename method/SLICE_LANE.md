@@ -199,7 +199,10 @@ backlog -> slice file -> own worktree + port + DB    ->  simplify pass (2b)     
    cannot reach or operate); missing, stale or incomplete required coverage. A credible critical risk still
    `needs_validation` blocks until validated; a stylistic preference is a backlog row. Tour and code-review findings
    go into the same review round; after a fix the repaired behaviour and its neighbouring paths are rechecked, open-ended
-   exploration does not restart. `scripts/slice/tour.py check` runs before acceptance and at closeout; it checks the
+   exploration does not restart. `scripts/slice/tour.py check` runs before acceptance and at closeout. It reads only
+   the current review round (its PASS verdict, report or exemption, dispositions; earlier rounds' dispositions only
+   when carried forward explicitly) and compares the report's candidate with the checked HEAD: a later code change
+   needs an impact note naming that HEAD or a rerun of the affected steps. It checks the
    record's structure and bindings, it cannot prove that the exploration was genuine.
 4. **Independent review** in a separate session (`templates/slice/review-brief.md` +
    `templates/slice/review-checklist.md`). Verify the claims, not the report. Re-apply every developer mutation and add

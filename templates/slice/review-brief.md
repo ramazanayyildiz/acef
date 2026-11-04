@@ -38,7 +38,7 @@ Karar: **PASS | REVISE**
 Tarih: <YYYY-MM-DD> · Aday `<sha>` · Taban `<sha>` · Model: <ad> · Effort: <seviye> · Süre: <dk> · Ortam: <worktree, DB, port>
 ```
 
-Dilim turu satırları (`scripts/slice/tour.py check` okur): `Tour report: <rapor yolu>` ya da `Tour exemption: confirmed — <gerekçe>`; aday tur sonrası değiştiyse `Tour impact: <değişiklik ve turlanan adımları neden etkilemediği>`; bulgu başına tablo `| Tur bulgusu | Durum | Blok | Çözüm |` (`T<n> | confirmed / needs_validation / rejected | evet / hayır | açık / düzeltildi <sha> / backlog <B-kimliği> / —`). Bir blok bulgu `rejected` ya da `düzeltildi <sha>` (yeniden denendi) olmadan PASS verilmez.
+Dilim turu satırları (`scripts/slice/tour.py check` okur; yalnız güncel tur raporu — son `review-r<n>.md` — kabul eder ve onun karar satırı PASS olmalıdır, bu yüzden kontrol karar yazıldıktan sonra koşar): `Tour report: <rapor yolu>` ya da `Tour exemption: confirmed — <gerekçe>`; aday tur sonrası kodda değiştiyse `Tour impact: <kontrol edilen HEAD sha'sı> — <turlanan adımları neden etkilemediği>` (başka sha'yı anan not geçersizdir; yalnız docs/kanıt değişimi not istemez); bulgu başına tablo `| Tur bulgusu | Durum | Blok | Çözüm |` (`T<n> | confirmed / needs_validation / rejected | evet / hayır | açık / düzeltildi <sha> / backlog <B-kimliği> / —`). Bir blok bulgu `rejected` ya da `düzeltildi <sha>` (yeniden denendi) olmadan PASS verilmez. Bozuk satır (boş, `<…>`, bilinmeyen değer) geçersizdir; önceki turun satırına dönülmez.
 
 Raporun sonunda tek satır: `ACEF-gözlem: <yöntemin ya da brifin bu incelemede çıkardığı maliyet, tek cümle | yok>`.
 
