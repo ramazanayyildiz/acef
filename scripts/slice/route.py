@@ -18,6 +18,11 @@ extends them (or replaces them per fact with "risk_paths_mode": "replace"). Size
 or "exclude_paths" (generated evidence); risk rules apply to code, not to "test_paths". Path rules are a floor, not
 proof of safety: a reviewer still answers A7.
 
+UI hint (2026-11-05, method/SLICE_LANE.md step 3b): "check" also prints "ui_candidate": "yes" with the changed code
+files that match "routing.ui_paths" (a stack-neutral default; stacks and hosts extend it), else "unknown". It is a
+hint for the slice tour decision, never a verified fact: the tour is triggered by changed user behaviour, which the
+reviewer confirms; an unmatched diff is "unknown", not "no" (a backend change can alter a visible workflow).
+
 Affected tests (affected_tests(), used by review-r2.py; 2026-11-03): "routing.test_map" is a list of
 {"paths": <regex>, "tests": [<selector>, ...]}; a selector may use the regex groups (\\1, \\g<name>). A changed test
 file is its own test; a code file matched by no entry is "unmapped" and adds "routing.test_map_fallback" (the wider
@@ -45,6 +50,9 @@ DEFAULT_ROUTING = {
     # changed file -> tests (affected_tests); an unmapped code file adds the fallback (wider) set
     "test_map": [],
     "test_map_fallback": [],
+    # changed code files that hint at user-visible UI (ui_candidate); a hint, never a verified fact
+    "ui_paths": [r"(^|/)(views?|templates?|components?|pages?|layouts?|screens?|widgets?)/",
+                 r"\.(vue|svelte|jsx|tsx|html?|twig|hbs|css|scss)$"],
 }
 
 
@@ -72,7 +80,7 @@ def routing_config(config_path, profile_path):
         profile = load_json(profile_file if os.path.isabs(profile_file) else os.path.join(base, profile_file))
         merge(cfg, profile.get("routing", {}))
     merge(cfg, method.get("routing", {}))
-    for key in ("docs_paths", "test_paths", "exclude_paths"):
+    for key in ("docs_paths", "test_paths", "exclude_paths", "ui_paths"):
         for pattern in cfg[key]:
             try:
                 re.compile(pattern)
@@ -111,7 +119,7 @@ def merge(target, source):
                     target["risk_paths"][fact] = list(dict.fromkeys(target["risk_paths"].get(fact, []) + list(patterns)))
                 else:
                     target["risk_paths"][fact] = list(patterns)
-        elif key in ("test_paths", "exclude_paths", "docs_paths", "test_map_fallback") and mode == "extend":
+        elif key in ("test_paths", "exclude_paths", "docs_paths", "test_map_fallback", "ui_paths") and mode == "extend":
             target[key] = list(dict.fromkeys(target.get(key, []) + list(value)))
         elif key == "test_map" and mode == "extend":
             target[key] = target.get(key, []) + list(value)
@@ -261,6 +269,8 @@ def cmd_check(args):
     is_doc, is_test, is_excluded = matcher("docs_paths"), matcher("test_paths"), matcher("exclude_paths")
     counted = [f for f in files if not is_doc(f) and not is_excluded(f)]
     code = [f for f in counted if not is_test(f)]
+    ui_pats = [re.compile(p) for p in cfg["ui_paths"]]
+    ui_hit = [f for f in code if any(p.search(f) for p in ui_pats)]
     facts, evidence = {}, {}
     for fact in FACTS:
         pats = [re.compile(p) for p in cfg["risk_paths"].get(fact, [])]
@@ -281,8 +291,11 @@ def cmd_check(args):
     else:
         verdict, code = "OK", 0
     result = {"kind": "check", "declared": declared, "required": required, "verdict": verdict, "reason": reason,
-              "files": len(files), "counted": len(counted), "evidence": evidence}
+              "files": len(files), "counted": len(counted), "evidence": evidence,
+              "ui_candidate": "yes" if ui_hit else "unknown", "ui_paths": ui_hit[:10]}
     print(json.dumps(result, ensure_ascii=False))
+    print(f"ui_candidate: {result['ui_candidate']}" + (f" ({', '.join(ui_hit[:10])})" if ui_hit else "")
+          + " — hint only; the reviewer confirms user-visible behaviour change (SLICE_LANE step 3b)", file=sys.stderr)
     if verdict == "ROUTE_UP":
         print(f"ROUTE_UP: declared {declared}, the diff needs {required} ({reason}); stop and re-route", file=sys.stderr)
     elif verdict == "OVER_CEREMONY":
