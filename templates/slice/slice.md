@@ -84,6 +84,7 @@ Yığına özgü komutlar `{{…}}` yer tutucularıdır; `slice-method.json` →
 ## Kullanıcı senaryoları (yalnız bu dilimin yeni senaryosu)
 
 Giriş noktası (URL/menü) → eylem → ekranda görülmesi gereken. İnceleyici kullanıcı gibi yürür, 1280 ve 390 px. Dilim UI'a (rota, görünüm/şablon, UI bileşeni) dokunmuyorsa tarayıcı için "uygulanmaz: <neden>" yaz; inceleyici doğrular.
+Tour: <required — <adım 3b'deki hangi davranış değişiyor> | not applicable: <gerekçe>> (`method/SLICE_LANE.md` adım 3b; tetik dosya adı değil kullanıcı davranışı; inceleyici onaylar)
 
 1. <rol> ile <URL> → <eylem> → <beklenen>
 
@@ -112,5 +113,6 @@ Komut/sonuç/log tablosunu buraya kopyalama; kaydın aday, main/merge-base, test
 - Ürün commit'i: `<sha>` · İncelenen commit: `<sha>` · Merge: `<sha>` (no-ff, sahibin sözüyle / dal politikasıyla)
 - Süreler (dk): geliştirme <n> · inceleme <n> · yeniden inceleme <n> (ölçülmediyse "ölçülmedi")
 - REVISE turu: <n> · Review scope (r2+): <narrow | full — gerekçe | uygulanmaz> · Kaçan hata: <yok | B-kimliği, hangi dilimde bulundu>
+- Tour: <tur raporu yolu | not applicable: <onaylı gerekçe>> · Tur-dk: kurulum <n> · tur <n> · triyaj <n>
 - Etiket adayı: evet | hayır (<neden>)
 - Ertelenen: <B-kimlikleri> · Temizlik: `git worktree list`, geçici dizinler, lane DB

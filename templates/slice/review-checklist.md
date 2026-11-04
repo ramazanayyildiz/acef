@@ -2,10 +2,11 @@
 
 `review-brief.md` bu dosyayı zorunlu kılar. Her madde ya kanıtıyla işaretlenir ya da "uygulanmaz: <neden>" yazılır; boş madde = eksik inceleme. Kanıt dosyaları `<evidence>/<SLICE-ID>/review/` altına. Komutlar yığından bağımsızdır: yığına özgü komutlar `{{…}}` yer tutucularıdır ve `slice-method.json` → `stack_profile` doldurur; projeye özgü yollar `<…>`. Bir yığının hazır karşılıkları adaptördedir (`stacks/<yığın>/checklist-commands.md`). Kaynak: 2026-10-19 incelemelerinin gerçekten yakaladıkları (bkz. `SOURCES.md`).
 
-Hangi katman: **A** her dilimde · **B** paket view/lang/config anahtarı değişince · **C** şablon/host hijyeni (UI, rota, config, migration dokunuşunda) · **D** TAM sınıfı (yetki/kiracı/para/durum/göç/güvenlik) · **E** paylaşılan sözleşme değişince · **F** kullanıcıya görünen metin ya da ekran değişince.
+Hangi katman: **A** her dilimde · **B** paket view/lang/config anahtarı değişince · **C** şablon/host hijyeni (UI, rota, config, migration dokunuşunda) · **D** TAM sınıfı (yetki/kiracı/para/durum/göç/güvenlik) · **E** paylaşılan sözleşme değişince · **F** kullanıcıya görünen metin ya da ekran değişince · **G** dilim turu kuralı uygulanınca (`method/SLICE_LANE.md` adım 3b).
 
 Uygulanabilirlik (açık kural):
 - **Tarayıcı / gerçek UI** (C4, D6 ve senaryo yürüyüşü) yalnız dilim UI'a dokunuyorsa: rota, görünüm/şablon ya da UI bileşeni. Dokunmuyorsa "uygulanmaz: rota/görünüm/bileşen yok".
+- **Dilim turu** (G): tetik dosya adı değil değişen kullanıcı davranışı ve risktir (adım 3b). Uygulanmıyorsa `Tour: not applicable: <neden>` ve inceleyici onayı; ortam kurulamadıysa bu muafiyet değil, eksik kapsamdır.
 - **Mutasyon** (A4): kural başına 3–5 mutasyon yalnız TAM'da. HAFİF'te davranış değişikliği başına bir mutasyon; yeni/değişen davranış yoksa "uygulanmaz: <neden>".
 - **Hedefli yeniden inceleme** (REVISE sonrası, `review-r2.md`) AYNI inceleyici oturumunda yapılır, yeni oturumda değil; o oturum kaybolduysa nedeni r2 başlığına yazılır.
 
@@ -68,6 +69,17 @@ Bulgu disiplini `review-brief.md` "TAM eki"ndedir (sınır + ilke + sonuç; `con
 |---|---|---|
 | E1 | Diğer uygulamalarda değişen sözleşmenin (sınıf, arayüz, config anahtarı, rota adı, event) kullanımı — SALT OKUNUR | `git -C <app> grep -n "<sembol>"` her uygulama için → `E1-hosts.txt` (dosya:satır) |
 | E2 | Kırılacak host yerleri için backlog satırı ya da geçiş dilimi | B-kimlikleri |
+
+## G — Dilim turu (adım 3b kuralı uygulanınca; değilse onaylı muafiyet)
+
+Senaryo kanıtı iki parçadır: **6a** betikli senaryo kanıtı (C4, D6, senaryo yürüyüşü; yukarıdaki tarayıcı kuralı) ve **6b** bağımsız, hedefe dayalı tur raporu (`user-goal-tour.md`, `Mode: slice`). 6b gerekiyorsa rapor olmadan PASS yok.
+
+| # | Madde | Kanıt |
+|---|---|---|
+| G1 | Uygulanabilirlik: kural uygulanıyor mu; uygulanmıyorsa gerekçe onaylandı mı (ortam yokluğu gerekçe değil) | inceleme raporunda `Tour report: <yol>` ya da `Tour exemption: confirmed — <gerekçe>` |
+| G2 | Rapor adaya bağlı: aday/taban sha, yürütücü, ortam/fixture, profil, genişlikler; aday sonra değiştiyse etki notu ya da etkilenen adımın yeniden koşusu | rapor başlığı; `Tour impact: …` |
+| G3 | Kapsam: bir hedef, bir mutlu-yol-dışı deneme, 1280 ve 390 (web); `Coverage: complete`; "Not reached" okunup değerlendirildi | rapor satırları |
+| G4 | Her tur bulgusunun durumu verildi; blok bulgu açık değil (adım 3b engelleyicileri); para/veri dışı bulgu kendiliğinden backlog değil | `\| Tur bulgusu \| Durum \| Blok \| Çözüm \|` tablosu; `scripts/slice/tour.py check <dilim>` çıktısı |
 
 ## F — Hedef kullanıcı ve ekran dili (kullanıcıya görünen metin ya da ekran değişince)
 
