@@ -9,3 +9,4 @@ Durum: KAPANDI
 - Süre-inceleme-dk: 25
 - REVISE-turu: 1
 - Kaçan-hata: yok
+- Tour: evidence/DEMO-01/tour/report.md · Tur-dk: kurulum 4 · tur 9 · triyaj 3

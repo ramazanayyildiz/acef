@@ -10,6 +10,7 @@
 #   B  an open blocker fails; a fixed (sha) or rejected blocker passes
 #   C  incomplete coverage, a missing binding line, a web tour without 390 fail
 #   U  usage errors exit 2
+#   M  metrics.py counts the fixture's tour (required, completed, dispositions with the r2 override, minutes)
 set -u
 HERE=$(cd "$(dirname "$0")/.." && pwd -P)    # scripts/slice
 S="$HERE/tour.py"
@@ -163,5 +164,13 @@ tour >/dev/null 2>&1; check "$?" 2 "U1 no command -> 2"
 tour check >/dev/null 2>&1; check "$?" 2 "U2 no file -> 2"
 tour check "$T/nope.md" >/dev/null 2>&1; check "$?" 2 "U3 unreadable file -> 2"
 fresh; tour check "$SL" --bogus x >/dev/null 2>&1; check "$?" 2 "U4 unknown option -> 2"
+
+# ---- M metrics ----
+FX="$HERE/tests/fixtures/slices"
+out=$(python3 -I "$HERE/metrics.py" --no-git "$FX" --label fixture 2>&1); check "$?" 0 "M1 metrics.py on the fixture exits 0"
+has "$out" "Tour alanı olan 1 · gerekli 1 · muaf 0 · tamamlanan (rapor var, Coverage: complete) 1" "M2 required and completed tours"
+has "$out" "bulgu confirmed 1 · needs_validation 0 · rejected/tekrar 1" "M3 dispositions, the r2 round overrides r1"
+has "$out" "kurulum 4/1, tur 9/1, triyaj 3/1" "M4 setup/tour/triage minutes from Tur-dk"
+has "$out" "turlu dilimde sonradan kaçan hata 0" "M5 later escapes counted separately"
 
 echo "test-tour: ok=$ok fail=$bad"; [ "$bad" -eq 0 ]
