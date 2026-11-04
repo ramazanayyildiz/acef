@@ -11,7 +11,7 @@
 #      changes pass with a printed note
 #   D  every finding has a disposition in the current round; earlier rounds count only after "Tour dispositions:
 #      carried forward"; FINDINGS: n matches the table; a replacement report named by the current round passes
-#   B  an open blocker fails; a fixed (sha) or rejected blocker passes; malformed rows (placeholder or unknown blok,
+#   BL an open blocker fails; a fixed (sha) or rejected blocker passes; malformed rows (placeholder or unknown blok,
 #      missing or blank çözüm) fail, and a malformed later row never restores an earlier valid one
 #   E  a screenshot/trace a finding row names must exist
 #   C  incomplete coverage, a missing binding line, a web tour without 390 fail
@@ -171,25 +171,25 @@ r2 "Karar: **PASS**" "Tour report: ${RP%report.md}report-r2.md" "Tour dispositio
 tour check "$SL" >/dev/null 2>&1; check "$?" 0 "D7 a replacement report named by the current round passes (r1 named the old one)"
 fresh; tour check "$SL" --review "$RV" --review "$RV" >/dev/null 2>&1; check "$?" 0 "D8 explicit --review list: the last one is the current round"
 
-# ---- B blockers and row shape ----
+# ---- BL blockers and row shape ----
 fresh; review "| T2 | confirmed | evet | açık |"
-out=$(tour check "$SL" 2>&1); check "$?" 1 "B1 open blocker -> FAIL"; has "$out" "T2 is an unresolved blocker" "B1 names the finding"
+out=$(tour check "$SL" 2>&1); check "$?" 1 "BL1 open blocker -> FAIL"; has "$out" "T2 is an unresolved blocker" "BL1 names the finding"
 fresh; review "| T2 | needs_validation | evet | açık |"
-tour check "$SL" >/dev/null 2>&1; check "$?" 1 "B2 needs_validation blocker stays blocking -> FAIL"
+tour check "$SL" >/dev/null 2>&1; check "$?" 1 "BL2 needs_validation blocker stays blocking -> FAIL"
 fresh; review "| T2 | rejected | evet | — |"
-tour check "$SL" >/dev/null 2>&1; check "$?" 0 "B3 rejected blocker -> PASS"
+tour check "$SL" >/dev/null 2>&1; check "$?" 0 "BL3 rejected blocker -> PASS"
 fresh; review "| T2 | confirmed | evet | düzeltildi |"
-tour check "$SL" >/dev/null 2>&1; check "$?" 1 "B4 'fixed' without a sha is not resolved -> FAIL"
+tour check "$SL" >/dev/null 2>&1; check "$?" 1 "BL4 'fixed' without a sha is not resolved -> FAIL"
 fresh; review "| T2 | confirmed | <yes/no> | açık |"
-out=$(tour check "$SL" 2>&1); check "$?" 1 "B5 placeholder blok -> FAIL"; has "$out" "T2 disposition row malformed" "B5 names the row"
+out=$(tour check "$SL" 2>&1); check "$?" 1 "BL5 placeholder blok -> FAIL"; has "$out" "T2 disposition row malformed" "BL5 names the row"
 fresh; review "| T2 | confirmed | maybe | açık |"
-tour check "$SL" >/dev/null 2>&1; check "$?" 1 "B6 unknown blok value -> FAIL"
+tour check "$SL" >/dev/null 2>&1; check "$?" 1 "BL6 unknown blok value -> FAIL"
 fresh; review "| T2 | confirmed | hayır |  |"
-tour check "$SL" >/dev/null 2>&1; check "$?" 1 "B7 blank çözüm -> FAIL"
+tour check "$SL" >/dev/null 2>&1; check "$?" 1 "BL7 blank çözüm -> FAIL"
 fresh; review "| T2 | confirmed | hayır | <çözüm> |"
-tour check "$SL" >/dev/null 2>&1; check "$?" 1 "B8 placeholder çözüm -> FAIL"
+tour check "$SL" >/dev/null 2>&1; check "$?" 1 "BL8 placeholder çözüm -> FAIL"
 fresh; r2 "Karar: **PASS**" "Tour report: $RP" "Tour dispositions: carried forward from r1" "$TBL" "|---|---|---|---|" "| T2 | confirmed | evet |"
-out=$(tour check "$SL" 2>&1); check "$?" 1 "B9 a malformed later row does not restore the earlier resolved one -> FAIL"; has "$out" "T2 disposition row malformed" "B9 names the row"
+out=$(tour check "$SL" 2>&1); check "$?" 1 "BL9 a malformed later row does not restore the earlier resolved one -> FAIL"; has "$out" "T2 disposition row malformed" "BL9 names the row"
 
 # ---- E referenced evidence ----
 fresh; rm docs/slices/evidence/DEMO-03/tour/t2.png
