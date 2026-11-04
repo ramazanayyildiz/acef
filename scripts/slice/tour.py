@@ -1,29 +1,34 @@
 #!/usr/bin/env python3
 """tour.py — the slice tour record check (owner decision 2026-11-05; method/SLICE_LANE.md step 3b).
 
-  tour.py check <slice.md | closing-note.md> [--review <report.md>]... [--repo <dir>] [--head <ref>]
-                [--config slice-method.json]
-      Run before acceptance (the slice's "Tour:" line says "required — …" and the review names the report) and again
-      at closeout (the closing note's "Tour:" line names the report; pass --head <reviewed sha> once HEAD has moved).
-      The last "Tour:" line outside fenced code counts. Reviews default to <slice>-review.md and <slice>-review-r<n>.md
-      next to the file, in round order; a later round's disposition of a finding overrides an earlier one.
-      FAIL when:
-        - there is no Tour line;
-        - "not applicable: <reason>" has no reason, names an unavailable environment (that is incomplete coverage,
-          never an exemption), or no review says "Tour exemption: confirmed — <reason>";
-        - no report is named, the report is missing or empty, or the slice and the review name different reports;
-        - no review says "Tour report: <path>";
-        - a binding line is missing or a placeholder (Mode, Candidate + Base sha, Executor, Environment, Persona,
-          Viewports, Off-happy-path, Coverage), a web tour lacks 1280 or 390, the coverage is not "complete", or the
-          report has no "Not reached" section;
-        - the report's candidate is not --head (default HEAD) and no review carries "Tour impact: <why unaffected>";
-        - "FINDINGS: n" differs from the T<n> rows; a finding has no disposition (confirmed | needs_validation |
-          rejected) in the reviews' "| T<n> | <disposition> | <blok> | <çözüm> |" rows; a blocking finding
-          (blok evet/yes) is not rejected and not "düzeltildi|fixed <sha>".
-      Exit 0 PASS, 1 FAIL (one "FAIL: <reason>" line each), 2 usage or unreadable file.
+  tour.py check <slice.md | closing-note.md> [--review <report.md>]... [--repo <dir>] [--config slice-method.json]
+      Run before acceptance (the slice's "Tour:" line says "required — …" and the current review names the report)
+      and again at closeout (the closing note's "Tour:" line names the report). The last "Tour:" line outside fenced
+      code counts. Reviews default to <file>-review.md and <file>-review-r<n>.md next to the file, in round order;
+      with --review (needed when the closing note is a separate file) the order given is the round order. The LAST
+      review is the current round; only it can accept:
+        - its verdict lines (Karar:/Verdict:, outside fences) all read exactly PASS;
+        - it says "Tour report: <path>" (the same report the slice names) or "Tour exemption: confirmed — <reason>";
+        - its "| T<n> | <disposition> | <blok> | <çözüm> |" rows give every finding's disposition. Earlier rounds'
+          rows count only when it says "Tour dispositions: carried forward …"; the current row always wins, and a
+          malformed current row never falls back to an earlier one.
+      The checked tree is HEAD of --repo (no override). When HEAD is not the report's candidate, the change since the
+      candidate must touch only docs/evidence paths (route.py routing.docs_paths/exclude_paths, slice-method.json
+      evidence_dir; a note is printed), or a "Tour impact: <HEAD sha> — <why unaffected>" note in the current review or
+      the checked file must name this HEAD (a note naming another sha is obsolete).
+      FAIL also when: there is no Tour line; an exemption has no reason or names an unavailable environment (that is
+      incomplete coverage); the report is missing or empty; a binding line is missing or a placeholder (Mode,
+      Candidate + Base sha, Executor, Environment, Persona, Viewports, Off-happy-path, Coverage); a web tour lacks
+      1280 or 390; coverage is not "complete"; there is no "Not reached" section; "FINDINGS: n" differs from the T<n>
+      rows; a screenshot/trace a finding row names does not exist (report directory first, then the repo); a
+      disposition row is malformed (disposition confirmed | needs_validation | rejected; blok evet | hayır | yes | no;
+      çözüm açık | open | düzeltildi <sha> | fixed <sha> | backlog <id> | —); a blocking finding is neither rejected
+      nor "düzeltildi|fixed <sha>".
+      Exit 0 PASS, 1 FAIL (one "FAIL: <reason>" line each), 2 usage, config or unreadable file.
 
 Limits: this checks the record's structure and bindings. It cannot prove that the exploration was genuine, that the
 persona was the affected one, or that the reviewer's applicability judgement was right; the reviewer owns those.
+A host that renders markdown files as UI narrows routing.docs_paths, or a .md change auto-passes the tree check.
 """
 import json
 import os
@@ -31,17 +36,24 @@ import re
 import subprocess
 import sys
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))  # route.py sits next to this file (ACEF and hosts)
+import route  # noqa: E402
+
 DISPOSITIONS = ("confirmed", "needs_validation", "rejected")
+BLOCK = {"evet": True, "yes": True, "hayır": False, "hayir": False, "no": False}
 BINDINGS = ("Mode", "Candidate", "Executor", "Environment", "Persona", "Viewports", "Off-happy-path", "Coverage")
 FENCE_OPEN = re.compile(r"^ {0,3}(`{3,}|~{3,})(.*)$")
 TOUR_LINE = re.compile(r"^\s*(?:[-*]\s+)?Tour:\s*(.*?)\s*$")
 FIELD = re.compile(r"^\s*(?:[-*]\s+)?([A-Za-z][A-Za-z -]*?):\s*(.*?)\s*$")
+VERDICT_LINE = re.compile(r"^\s*(?:[-*]\s+)?(?:Karar|Verdict)\s*:\s*(.*?)\s*$", re.I)
 SHA = re.compile(r"\b[0-9a-f]{7,40}\b")
 FINDING_ROW = re.compile(r"^\s*\|\s*(T\d+)\s*\|")
-DISP_ROW = re.compile(r"^\s*\|\s*(T\d+)\s*\|\s*([^|]*?)\s*\|\s*([^|]*?)\s*\|\s*([^|]*?)\s*\|")
+ARTIFACT = re.compile(r"[\w./@-]+\.(?:png|jpe?g|webp|gif|svg|har|zip|webm|mp4|trace|json)\b", re.I)
 ENV_REASON = re.compile(r"environment|unavailable|not available|no browser|ortam|kurulamad|erişilemed|çalışmıyor", re.I)
+RESOLUTION = re.compile(r"^(?:(açık|open)\b|(düzeltildi|fixed)\b|backlog\s+\S|[—–-](?:\s|$))", re.I)
 RESOLVED = re.compile(r"^(düzeltildi|fixed)\b.*\b[0-9a-f]{7,40}\b", re.I)
 PLACEHOLDER = re.compile(r"<[^>]*>")
+CARRY = re.compile(r"(?i)^carried forward\b")
 
 
 def die(msg, code=2):
@@ -58,17 +70,19 @@ def read(path):
 
 
 def outside_fences(text):
-    """Lines outside fenced code (CommonMark: only the same character, at least as long, closes a fence)."""
+    """Lines outside fenced code, CommonMark rules (shared with metrics.py; same opener rule as review-r2.py fenced()):
+    a fence opens with 3+ backticks or tildes (indent <= 3) — a backtick fence's info string may not contain a
+    backtick; only the same character, at least as long, with nothing after it, closes it."""
     out, fence = [], None
     for line in text.splitlines():
         m = FENCE_OPEN.match(line)
-        if fence is None and m:
-            fence = m.group(1)
-        elif fence is not None and m and m.group(1)[0] == fence[0] and len(m.group(1)) >= len(fence) \
-                and not m.group(2).strip():
+        if fence is None:
+            if m and not (m.group(1)[0] == "`" and "`" in m.group(2)):
+                fence = m.group(1)
+            else:
+                out.append(line)
+        elif m and m.group(1)[0] == fence[0] and len(m.group(1)) >= len(fence) and not m.group(2).strip():
             fence = None
-        elif fence is None:
-            out.append(line)
     return out
 
 
@@ -85,6 +99,44 @@ def fields(lines):
         if m and m.group(1) not in got:
             got[m.group(1)] = m.group(2)
     return got
+
+
+def disposition_rows(lines):
+    """T<n> -> (disposition, blocking, çözüm) or ("malformed", why, "") for every "| T<n> | … |" row; the last row of
+    an id wins. Shared with metrics.py."""
+    rows = {}
+    for line in lines:
+        if not FINDING_ROW.match(line):
+            continue
+        cells = [c.strip() for c in line.strip().strip("|").split("|")]
+        fid, rest = cells[0], [c.strip("` ").strip() for c in cells[1:]]
+        if len(rest) < 3:
+            rows[fid] = ("malformed", "needs | disposition | blok | çözüm |", "")
+            continue
+        disp, blok, res = rest[0].lower(), rest[1].lower(), rest[2]
+        if disp not in DISPOSITIONS:
+            rows[fid] = ("malformed", f"disposition {rest[0]!r} is not one of {' | '.join(DISPOSITIONS)}", "")
+        elif blok not in BLOCK:
+            rows[fid] = ("malformed", f"blok {rest[1]!r} is not evet | hayır", "")
+        elif not res or PLACEHOLDER.search(res) or not RESOLUTION.match(res):
+            rows[fid] = ("malformed", f"çözüm {res!r} is not açık | düzeltildi <sha> | backlog <id> | —", "")
+        else:
+            rows[fid] = (disp, BLOCK[blok], res)
+    return rows
+
+
+def current_dispositions(review_lines):
+    """Dispositions the current (last) review accepts: its own rows, plus earlier rounds' rows only when it says
+    "Tour dispositions: carried forward …". Shared with metrics.py."""
+    if not review_lines:
+        return {}
+    cur = review_lines[-1]
+    merged = {}
+    if CARRY.match(fields(cur).get("Tour dispositions", "")):
+        for lines in review_lines[:-1]:
+            merged.update(disposition_rows(lines))
+    merged.update(disposition_rows(cur))
+    return merged
 
 
 def path_value(value):
@@ -112,31 +164,68 @@ def resolve(path, bases):
     return os.path.join(bases[0], path)
 
 
-def head_sha(repo, ref):
+def git(repo, *args):
     try:
-        return subprocess.run(["git", "-C", repo, "rev-parse", ref], check=True, capture_output=True,
-                              text=True).stdout.strip()
+        return subprocess.run(["git", "-C", repo, *args], check=True, capture_output=True, text=True).stdout.strip()
     except (OSError, subprocess.CalledProcessError):
         return None
+
+
+def verdict_fails(lines):
+    vals = [m.group(1).replace("*", "").strip().strip("`").strip() for m in map(VERDICT_LINE.match, lines) if m]
+    if not vals:
+        return ["the current review has no verdict line (Karar: **PASS**)"]
+    bad = [v for v in vals if v.upper() not in ("PASS", "REVISE")]
+    if bad:
+        return [f"the current review's verdict is unreadable: {bad[0]!r}"]
+    if len({v.upper() for v in vals}) > 1:
+        return ["the current review's verdict lines disagree"]
+    return [] if vals[0].upper() == "PASS" else [f"the current review's verdict is {vals[0].upper()}, not PASS"]
+
+
+def tree_fails(repo, cand, impact, config, notes):
+    head = git(repo, "rev-parse", "HEAD")
+    if head is None:
+        return [f"cannot resolve HEAD in {repo}"]
+    if head.startswith(cand):
+        return []
+    full = git(repo, "rev-parse", "--verify", cand + "^{commit}")
+    changed = git(repo, "diff", "--name-only", full, head) if full else None
+    if changed is None:
+        return [f"the report's candidate {cand} is not a commit in {repo}"]
+    files = [f for f in changed.splitlines() if f.strip()]
+    cfg = route.routing_config(config, None)
+    is_doc, _is_test, is_excluded = route.path_kinds(cfg)
+    method = route.load_json(config) if config else {}
+    ev = method.get("evidence_dir") if isinstance(method.get("evidence_dir"), str) else None
+    other = [f for f in files if not (is_doc(f) or is_excluded(f) or (ev and f.startswith(ev.rstrip("/") + "/")))]
+    if not other:
+        notes.append(f"candidate {cand[:12]} -> HEAD {head[:12]} changed only docs/evidence paths "
+                     f"({len(files)} file(s), routing.docs_paths/exclude_paths/evidence_dir); no impact note needed")
+        return []
+    named = [n for n in impact if any(len(t) >= 7 and head.startswith(t) for t in SHA.findall(n))]
+    if named:
+        notes.append(f"candidate {cand[:12]} -> HEAD {head[:12]}; impact note: {named[-1]}")
+        return []
+    return [f"stale: the report's candidate {cand[:12]} is not HEAD {head[:12]} ({len(other)} non-docs file(s) "
+            f"changed, e.g. {other[0]}); rerun the affected steps or add a Tour impact: <{head[:12]}> — <why> note"]
 
 
 def check(args):
     target = args["file"]
     fails, notes = [], []
+    own = outside_fences(read(target))
     tour = None
-    for line in outside_fences(read(target)):
+    for line in own:
         m = TOUR_LINE.match(line)
         if m:
             tour = m.group(1)
     review_paths = args["review"] or reviews_for(target)
     rv_lines = [outside_fences(read(p)) for p in review_paths]
-    rv_fields = [fields(lines) for lines in rv_lines]
-
-    def from_reviews(key):
-        return [f[key] for f in rv_fields if key in f and not blank(f[key])]
-
+    cur = fields(rv_lines[-1]) if rv_lines else {}
     if tour is None:
         return finish(target, ["no Tour line (slice or closing note: report path or not applicable: <reason>)"], [], "-")
+    fails += verdict_fails(rv_lines[-1]) if rv_lines else ["no review report found (pass --review)"]
     value = tour.split(" · ")[0].strip()
     na = re.match(r"(?i)^(not applicable|uygulanmaz)\s*:?\s*(.*)$", value)
     if na:
@@ -145,26 +234,27 @@ def check(args):
             fails.append("exemption without a reason")
         elif ENV_REASON.search(reason):
             fails.append("an unavailable environment is incomplete coverage, not an exemption")
-        if not from_reviews("Tour exemption") or not any(re.match(r"(?i)confirmed\b", v)
-                                                         for v in from_reviews("Tour exemption")):
-            fails.append("exemption not confirmed by the reviewer (Tour exemption: confirmed — <reason>)")
+        if not re.match(r"(?i)confirmed\b", cur.get("Tour exemption", "")):
+            fails.append("exemption not confirmed by the current review (Tour exemption: confirmed — <reason>)")
         return finish(target, fails, notes, "exempt")
 
     named = path_value(value)
-    in_review = [path_value(v) for v in from_reviews("Tour report")]
-    in_review = [p for p in in_review if p]
+    in_review = path_value(cur.get("Tour report", "")) if not blank(cur.get("Tour report")) else None
     if not in_review:
-        fails.append("the review does not name the tour report (Tour report: <path>)")
-    report = named or (in_review[0] if in_review else None)
+        fails.append("the current review does not name the tour report (Tour report: <path>)")
+    report = named or in_review
     if not report:
         return finish(target, fails + ["tour required but no report is named"], notes, "-")
-    if named and in_review and any(os.path.normpath(p) != os.path.normpath(named) for p in in_review):
-        fails.append(f"the slice and the review name different reports: {named} vs {', '.join(in_review)}")
-    repo = args.get("repo") or head_root(target)
+    if named and in_review and os.path.normpath(in_review) != os.path.normpath(named):
+        fails.append(f"the slice and the current review name different reports: {named} vs {in_review}")
+    repo = args.get("repo") or git(os.path.dirname(os.path.abspath(target)), "rev-parse", "--show-toplevel") \
+        or os.path.dirname(os.path.abspath(target))
+    config = args.get("config") or (os.path.join(repo, "slice-method.json")
+                                    if os.path.isfile(os.path.join(repo, "slice-method.json")) else None)
     bases = [repo, os.path.dirname(os.path.abspath(target)), os.getcwd()]
-    if args.get("config"):
-        cfg = json.loads(read(args["config"]) or "{}")
-        bases += [os.path.join(os.path.dirname(os.path.abspath(args["config"])), cfg[k])
+    if config:
+        cfg = json.loads(read(config) or "{}")
+        bases += [os.path.join(os.path.dirname(os.path.abspath(config)), cfg[k])
                   for k in ("evidence_dir", "slices_dir") if isinstance(cfg.get(k), str)]
     path = resolve(report, bases)
     if not os.path.isfile(path):
@@ -191,47 +281,33 @@ def check(args):
     if not any(re.match(r"^\s*(#+\s*|\d+\.\s*(\*\*)?|[-*]\s*(\*\*)?)?Not reached", ln) for ln in lines):
         fails.append("no Not reached section")
     if shas:
-        head = head_sha(repo, args.get("head", "HEAD"))
-        if head is None:
-            fails.append(f"cannot resolve {args.get('head', 'HEAD')} in {repo}")
-        elif not head.startswith(shas[0]):
-            if from_reviews("Tour impact"):
-                notes.append(f"candidate moved ({shas[0][:12]} -> {head[:12]}); review impact note: "
-                             f"{from_reviews('Tour impact')[-1]}")
-            else:
-                fails.append(f"stale: the report's candidate {shas[0][:12]} is not {head[:12]}; rerun the affected "
-                             "steps or add a reviewer's Tour impact: note")
+        impact = [n for n in [cur.get("Tour impact", ""), fields(own).get("Tour impact", "")]
+                  + re.findall(r"Tour impact:\s*(.+)$", tour) if not blank(n)]
+        fails += tree_fails(repo, shas[0], impact, config, notes)
     findings = [m.group(1) for m in (FINDING_ROW.match(ln) for ln in lines) if m]
     count = got.get("FINDINGS", "").strip()
     if not re.fullmatch(r"\d+", count):
         fails.append("FINDINGS: <n> line missing")
     elif int(count) != len(findings):
         fails.append(f"FINDINGS: {count} but the findings table has {len(findings)} T<n> rows")
-    disp = {}
-    for rl in rv_lines:  # round order: a later round overrides
-        for ln in rl:
-            m = DISP_ROW.match(ln)
-            if m:
-                disp[m.group(1)] = (m.group(2).lower(), m.group(3).lower(), m.group(4))
+    rdir = os.path.dirname(os.path.abspath(path))
+    for ln in lines:
+        m = FINDING_ROW.match(ln)
+        for art in ARTIFACT.findall(ln) if m else []:
+            if not os.path.exists(resolve(art, [rdir, repo])):
+                fails.append(f"{m.group(1)} evidence missing: {art}")
+    disp = current_dispositions(rv_lines)
     for fid in dict.fromkeys(findings):
         if fid not in disp:
-            fails.append(f"{fid} has no disposition in the review")
+            fails.append(f"{fid} has no disposition in the current review round (earlier rounds count only after "
+                         "'Tour dispositions: carried forward')")
             continue
         d, blocking, resolution = disp[fid]
-        if d not in DISPOSITIONS:
-            fails.append(f"{fid} disposition {d!r} is not one of {' | '.join(DISPOSITIONS)}")
-        elif re.match(r"(evet|yes)\b", blocking) and d != "rejected" and not RESOLVED.match(resolution.strip("` ")):
-            fails.append(f"{fid} is an unresolved blocker ({d}, {resolution or 'no resolution'})")
+        if d == "malformed":
+            fails.append(f"{fid} disposition row malformed: {blocking}")
+        elif blocking and d != "rejected" and not RESOLVED.match(resolution):
+            fails.append(f"{fid} is an unresolved blocker ({d}, {resolution})")
     return finish(target, fails, notes, report)
-
-
-def head_root(target):
-    d = os.path.dirname(os.path.abspath(target))
-    try:
-        return subprocess.run(["git", "-C", d, "rev-parse", "--show-toplevel"], check=True, capture_output=True,
-                              text=True).stdout.strip()
-    except (OSError, subprocess.CalledProcessError):
-        return d
 
 
 def finish(target, fails, notes, report):
@@ -254,7 +330,7 @@ def parse(argv):
         a = rest[i]
         if a.startswith("--"):
             key = a[2:]
-            if key not in ("review", "repo", "head", "config") or i + 1 >= len(rest):
+            if key not in ("review", "repo", "config") or i + 1 >= len(rest):
                 die(f"unknown option or missing value: {a}")
             if key == "review":
                 args["review"].append(rest[i + 1])
@@ -267,7 +343,7 @@ def parse(argv):
             args["file"] = a
             i += 1
     if "file" not in args:
-        die("usage: tour.py check <slice.md | closing-note.md> [--review f]... [--repo d] [--head ref] [--config f]")
+        die("usage: tour.py check <slice.md | closing-note.md> [--review f]... [--repo d] [--config f]")
     return args
 
 
