@@ -7,6 +7,51 @@ proven, or installed.
 Update this file in the same PR whenever ACEF itself gains or changes a flow, gate, validator, hook, skill, installer behavior, workflow,
 or evidence contract. Do not use it to claim implementation status; link to the capability record for that.
 
+## Unreleased — Slice tours: human-like browser coverage per slice (2026-11-05)
+
+Why: Ram asked on 2026-11-05 whether the ACEF flow has human-like browser tests. The method has three browser levels,
+but per slice only scripted runs happen; the human-like exploration tour fires only at phase/group close, and only
+B2Press has ever run one. Ram wanted that coverage earlier and asked for a Codex Astra consult before implementing
+("codex astraya da danış, sonra da uygulayın"). Astra answered ADOPT-WITH-CHANGES: trigger on changed user behaviour
+and risk, not file names; bound the tour; bind its report to acceptance with a small check; keep the phase-close
+tour. This entry implements Astra's amendment table (consult: `/Volumes/devwork/ramos-work/acef-slice-tour-2026-11-05/`).
+- **Method** (`method/SLICE_LANE.md`): new step 3b **Slice tour**, run beside the review by an agent that is neither the
+  developer nor the code reviewer. Required when a TAM slice changes a reachable user workflow, or any slice changes
+  navigation, task completion, validation/recovery, permissions as presented to users, persistence feedback,
+  responsive interaction, or decision-relevant copy. Mechanical UI changes keep scripted evidence plus a
+  reviewer-confirmed exemption; an unavailable environment is never "not applicable". Shape: one persona, one goal from
+  the real entry point, one off-happy-path attempt, 1280 and 390; 5–10 minutes, stop at 15 and report incomplete
+  coverage. Findings carry `confirmed | needs_validation | rejected`; blockers are named (security/privacy/permission,
+  data loss, wrong money, a failed acceptance item or goal, missing/stale/incomplete required coverage); tour and code
+  findings share one review round and repairs are rechecked, not re-explored. "Always required" item 6 splits into 6a
+  (scripted) and 6b (tour report before PASS). Step 5 gains one sentence: an unmet committed acceptance item never
+  becomes PASS silently; scope changes need the owner's explicit agreement. Step 8: slice tours feed, never replace,
+  the phase-close exploration tour.
+- **Templates:** `user-goal-tour.md` gains `Mode: slice | outcome` and fixed binding lines (`FINDINGS`, `Candidate` +
+  `Base`, `Executor`, `Environment`, `Persona`, `Viewports`, `Off-happy-path`, `Coverage`) plus a `T<n>` findings table
+  and "Not reached" (no new `slice-tour.md`; the `GÖREV:` first line stays). `review-brief.md` step 7a and
+  `review-checklist.md` section G: the reviewer confirms applicability, binding, coverage and every finding's
+  disposition before the verdict, with `Tour report:` / `Tour exemption: confirmed` / `Tour impact:` lines and a
+  `| Tur bulgusu | Durum | Blok | Çözüm |` table; no automatic backlog for non-money findings. `closing-note.md` and
+  `slice.md` gain a `Tour:` line with `Tur-dk:` minutes (closing note ≤12 lines). `exploration-tour.md` says the
+  phase/group tour stays mandatory.
+- **`scripts/slice/tour.py check`** (new): validates the tour record before acceptance and at closeout — applicability
+  or confirmed exemption, report present and non-empty, bindings, candidate sha = HEAD (or `--head`) unless the review
+  has a `Tour impact:` note, coverage complete, a disposition per finding, no open blocker, the review names the
+  report. Exit 0/1/2. It checks structure, not genuine exploration. Installed by `install-acef-slice-kit`.
+- **`scripts/slice/route.py check`** prints `ui_candidate: yes | unknown` with the matched paths from
+  `routing.ui_paths` (stack-neutral default; the laravel adapter adds its view paths; hosts extend). A hint, never a
+  verified fact; unmatched means unknown.
+- **`scripts/slice/metrics.py`** adds a tour summary line: required/exempt, completed, confirmed / needs_validation /
+  rejected findings, setup/tour/triage minutes, later escapes on toured slices. A finding count is never a quality
+  score; the table row is unchanged.
+- **Pilot** (`docs/slice-lane/adoption.md`): B2Press first (it has the verified browser recipe), next three qualifying
+  slices, review after seven days; other hosts join after launch, synthetic accounts, isolated data and external-effect
+  suppression are verified; mft needs a simulator adapter.
+- Tests: `scripts/slice/tests/test-tour.sh` (56 checks incl. not-applicable, good report, missing report, stale sha,
+  finding without disposition, open blocker, incomplete coverage, metrics), `scripts/test-acef-slice-route`
+  (ui_candidate). Capability: `docs/ai/capabilities/slice-tour.json`.
+
 ## v3.0.0-beta.11 — Round-2 review: a generated brief, narrow by default (2026-11-03)
 
 Why: `method/SLICE_LANE.md` already said that a round 2 is a targeted re-review in the same reviewer session and that

@@ -1,0 +1,56 @@
+{
+  "capabilityId": "slice-tour",
+  "requestedIntent": "Owner request 2026-11-05 (Ram): human-like browser coverage per slice instead of only at phase/group close, after a Codex Astra consult (VERDICT: ADOPT-WITH-CHANGES). The tour is triggered by changed user behaviour and risk, bounded (one persona, one goal, one off-happy-path attempt, 1280/390, 5-10 minutes), its findings get dispositions before the verdict, and a small check binds the report to acceptance.",
+  "status": "wired",
+  "requiredLayers": [
+    "docs",
+    "cli",
+    "tests"
+  ],
+  "implementedLayers": {
+    "docs": [
+      "CHANGELOG.md#Unreleased — Slice tours: human-like browser coverage per slice (2026-11-05)",
+      "method/SLICE_LANE.md",
+      "templates/slice/user-goal-tour.md",
+      "templates/slice/review-brief.md",
+      "templates/slice/review-checklist.md",
+      "templates/slice/closing-note.md",
+      "templates/slice/slice.md",
+      "templates/slice/exploration-tour.md",
+      "docs/slice-lane/adoption.md#Slice tour pilot (2026-11-05)"
+    ],
+    "cli": [
+      "scripts/slice/tour.py",
+      "scripts/slice/route.py",
+      "scripts/slice/metrics.py",
+      "scripts/install-acef-slice-kit"
+    ],
+    "tests": [
+      "scripts/slice/tests/test-tour.sh",
+      "scripts/test-acef-slice-route",
+      "scripts/test-acef-install-profiles",
+      "scripts/slice/selfcheck.sh"
+    ]
+  },
+  "limitations": [
+    "tour.py checks the record's structure and bindings; it cannot prove that the exploration was genuine, that the persona was the affected one, or that the applicability judgement was right. The reviewer owns those.",
+    "Not enforced: nothing runs tour.py automatically. The coordinator runs it before acceptance and at closeout; a host may add it to its gate commands.",
+    "The trigger (changed user behaviour) is a reviewer judgement; route.py's ui_candidate is a path hint only and 'unknown' does not mean 'no UI impact'.",
+    "Referenced screenshots and browser traces are not checked for existence; only the report file is.",
+    "Pilot only: B2Press, next three qualifying slices, reviewed after seven days; no other host has a verified tour environment yet, and mft needs a simulator adapter.",
+    "The reviewer's model-family separation for tours is not checked (MODEL_CHOICE names gpt-6.1-terra; switching Codex models is not another family)."
+  ],
+  "evidence": [
+    {
+      "layer": "tests",
+      "ref": "scripts/slice/tests/test-tour.sh",
+      "note": "2026-11-05: 56 checks pass; red first (47 failing before tour.py existed). Five mutations of tour.py (environment exemption, fence handling, blocker rule, stale sha, coverage) each turn at least one case red."
+    },
+    {
+      "layer": "tests",
+      "ref": "scripts/test-acef-slice-route",
+      "note": "2026-11-05: ui_candidate yes with matched paths for a view diff, unknown for a backend diff, host ui_paths extend the stack's."
+    }
+  ],
+  "createdAt": "2026-11-05"
+}

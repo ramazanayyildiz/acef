@@ -105,6 +105,12 @@ need templates/slice/review-checklist.md '## F —' 'Hedef kullanıcı burada as
 need templates/slice/user-profiles.md '## Profil: <ad' '### Kim' '### Geldiği iş' '### Bildikleri' '### Kullandığı kelimeler' '### Kafa karıştırabilecek terimler' '### Cihaz ve bağlam' '### İhtiyaçları' 'Son gerçek kullanımla karşılaştırma:' 'Profil yetki rolü değildir' 'yasak listesi DEĞİLDİR'
 need templates/slice/user-goal-tour.md 'GÖREV: TAMAMLANDI' 'gerçek kullanıcı testi DEĞİLDİR' 'Gerçek dış eylem yok' 'Verilmeyenler:' 'Görevi bitirmek dış eylem izni vermez' '390×844'
 need templates/slice/exploration-tour.md 'user-goal-tour.md'
+# Slice tours (owner decision 2026-11-05, method/SLICE_LANE.md step 3b): behaviour trigger, mode, record fields
+need method/SLICE_LANE.md '3b. **Slice tour**' 'not file names' 'scripts/slice/tour.py check' 'never "not applicable"'
+need templates/slice/user-goal-tour.md 'Mode: slice | outcome' 'FINDINGS: <n>' 'Coverage: complete | incomplete' 'Not reached'
+need templates/slice/closing-note.md 'Tour:' 'Tur-dk:'
+need templates/slice/review-brief.md 'Tour report: <rapor yolu>' 'Tour exemption: confirmed'
+need templates/slice/review-checklist.md '## G — Dilim turu'
 need schemas/slice-method.schema.json '"user_profiles"'
 need method/PRODUCT_LANGUAGE.md 'need to know or do something now' 'raw agent notes' 'not real user testing'
 need method/TEST_PIPELINE.md 'Every status assertion on a user-visible runtime path should be paired with a content or negative assertion' 'UI-visible claims cannot close on non-UI evidence alone' 'Adding text to a screen so that a test can find it is a defect'
