@@ -83,6 +83,11 @@ need templates/slice/review-brief.md '<SLICE-ID>' 'review-checklist.md' 'iddiala
 need docs/slice-lane/SOURCES.md 'LICENSES/security-audit-MIT.txt' '/Users/ramazanayyildiz/CODE/Ram/live-learning' 'Adoption status at import'
 need templates/slice/review-checklist.md '## A —' '## B —' '## C —' '## D —' '## E —' 'scrollWidth <= 390' 'yalnız dilim UI'"'"'a dokunuyorsa' 'AYNI inceleyici oturumunda'
 need templates/slice/review-r2.md '<SLICE-ID>' 'Aynı inceleyici oturumu' 'git diff <önceki-sha> <yeni-sha>'
+# Round-2 scope (owner decision 2026-11-03): generated brief, narrow by default, fixed scope/session lines
+need templates/slice/review-r2.md 'Review scope: <narrow | full> — <gerekçe>' 'Reviewer session: <same' '## Kapsam' 'scripts/slice/review-r2.py brief' 'Hiçbir inceleme turunda tam takım koşmaz'
+need method/SLICE_LANE.md 'scripts/slice/review-r2.py brief' 'Reviewers do not run the full suite' 'the integration run is the only full run'
+need templates/slice/closing-note.md 'Review scope:'
+need templates/slice/slice.md 'Yarış testleri' 'Review scope (r2+)'
 need templates/slice/closing-note.md 'Süre-geliştirme-dk:' 'Süre-inceleme-dk:' 'REVISE-turu:' 'Kaçan-hata:' 'Etiket adayı:'
 need templates/slice/invariants-skeleton.md '**Kural**' '**Kaynak**' '**Nasıl sınanır**' '**Sabitleyen testler**' 'I<n>'
 need templates/slice/locks.md '<SLICE-ID>'
@@ -133,7 +138,7 @@ for t in scripts/slice/tests/test-*.sh; do [ -f "$t" ] && run_test "$t"; done
 
 out=$(python3 -I scripts/slice/metrics.py --no-git scripts/slice/tests/fixtures/slices --backlog scripts/slice/tests/fixtures/slices/backlog.md --label fixture 2>&1); rc=$?
 [ "$rc" -eq 0 ] && pass "metrics.py fixture exit 0" || fail "metrics.py fixture exit $rc"
-printf '%s\n' "$out" | grep -q '^| DEMO-01 | KAPANDI | TAM | var | 2 | 1 | REVISE | PASS | 40 (not) | 25 (not) | yok |$' && pass "metrics.py DEMO-01 row" || fail "metrics.py DEMO-01 row"
+printf '%s\n' "$out" | grep -q '^| DEMO-01 | KAPANDI | TAM | var | 2 | 1 | REVISE | PASS | 40 (not) | 25 (not) | yok | narrow |$' && pass "metrics.py DEMO-01 row" || fail "metrics.py DEMO-01 row"
 printf '%s\n' "$out" | grep -q '^| P01-DEMO-02 | .* | 2 | 1 | PASS | REVISE (son inceleme) |' && pass "metrics.py evidence reviews + prompt skipped" || fail "metrics.py evidence reviews"
 printf '%s\n' "$out" | grep -q 'aday: B1' && pass "metrics.py escaped candidate" || fail "metrics.py escaped candidate"
 

@@ -61,7 +61,17 @@
       "state-transitions",
       "migrations",
       "security"
-    ]
+    ],
+    "r2_full_ratio": 0.5
+  },
+  "routing": {
+    "test_map": [
+      {
+        "paths": "^<modules dir>/([^/]+)/",
+        "tests": ["<tests dir>/\\1"]
+      }
+    ],
+    "test_map_fallback": ["<wider test selector: the touched module's suite>"]
   },
   "lanes": {
     "max_dev_lanes": 5,

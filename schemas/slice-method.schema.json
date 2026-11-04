@@ -70,7 +70,9 @@
         "tam_reviewer": { "type": "string", "description": "TAM sınıfı inceleyici (farklı model ailesi tercih edilir)." },
         "hafif_reviewer": { "type": "string" },
         "codex_model": { "type": "string" },
-        "tam_domains": { "type": "array", "items": { "type": "string" } }
+        "tam_domains": { "type": "array", "items": { "type": "string" } },
+        "r2_full_ratio": { "type": "number", "minimum": 0, "description": "review-r2.py: a fix whose code lines reach this share of the slice's code lines (slice base..r1-reviewed) cannot get a narrow r2 (SCOPE_UP, reason fix-larger-than-slice). Default 0.5." },
+        "full_suite_patterns": { "type": "array", "items": { "type": "string" }, "description": "review-r2.py check: Python regular expressions that show a full-suite run in a review report (WARN). The gate summary line and the stack profile's bare test_command are built in." }
       }
     },
     "lanes": {
@@ -96,6 +98,17 @@
         "test_paths": { "type": "array", "items": { "type": "string" } },
         "exclude_paths": { "type": "array", "items": { "type": "string" } },
         "risk_paths_mode": { "type": "string", "enum": ["extend", "replace"] },
+        "test_map": {
+          "type": "array",
+          "description": "Changed file -> affected tests (route.py affected_tests, used by review-r2.py). A selector may use the path regex groups (\\1, \\g<name>). A changed test file is its own test; a code file no entry matches is unmapped and adds test_map_fallback (run more, never less).",
+          "items": {
+            "type": "object",
+            "required": ["paths", "tests"],
+            "additionalProperties": false,
+            "properties": { "paths": { "type": "string" }, "tests": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 } } }
+          }
+        },
+        "test_map_fallback": { "type": "array", "items": { "type": "string", "minLength": 1 }, "description": "The wider test set an unmapped code file adds (for example the touched module's suite)." },
         "risk_paths": {
           "type": "object",
           "additionalProperties": false,
@@ -112,6 +125,11 @@
       "type": "array",
       "items": { "type": "string" },
       "description": "Cross-cutting tests every slice touching their area runs on its final head instead of a full suite per round (method/SLICE_LANE.md, Test budget)."
+    },
+    "contract_paths": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Path regexes of the contract set's areas. review-r2.py lists contract_tests when a fix touches them; without contract_paths every code change counts as touching them."
     },
     "hosts": {
       "type": "array",

@@ -7,6 +7,76 @@ proven, or installed.
 Update this file in the same PR whenever ACEF itself gains or changes a flow, gate, validator, hook, skill, installer behavior, workflow,
 or evidence contract. Do not use it to claim implementation status; link to the capability record for that.
 
+## v3.0.0-beta.11 — Round-2 review: a generated brief, narrow by default (2026-11-03)
+
+Why: `method/SLICE_LANE.md` already said that a round 2 is a targeted re-review in the same reviewer session and that
+reviewers never run the full suite, but nothing made agents follow it. Pilaner: one round 2 took about 6.5 hours; the
+coordinator hand-wrote the r2 brief ("re-check everything, re-run all tests") for a fresh reviewer who had never seen
+the work. Foundation: the full suite (about 3.5 hours) ran before review and again after the fixes. CRM on 2026-11-03:
+round-2 reviews opened in fresh panes, and a small change got the full TAM ceremony (ACEF note unusualspace-crm-189).
+On the shared Mac up to 10 test runs were queued at once and the load reached 158; the Codex tool timeouts of ACEF note
+b2press-246 came from that load. Pilaner fixed this locally; Ram approved the host-agnostic version on 2026-11-03.
+Security does not loosen, and the one full suite before merge stays.
+- **Generator** `scripts/slice/review-r2.py brief` fills `templates/slice/review-r2.md` from the r1 report(s), the fix
+  diff (r1-reviewed head → fix head) and the slice file:
+  - every previous finding with its fix hunk; a finding without file:line widens to the whole fix diff;
+  - fix hunks that no finding names, which are also in scope;
+  - **"Düzeltmelerin kesiştiği yerler"** (where these fixes meet): pairs of fixes sharing a hunk, a function (git's hunk
+    context) or a file, with a test asked at each intersection (ACEF note foundation-80: the intersection of two fix
+    items had no test);
+  - the affected tests, mutations on the fixed lines, the slice's race tests (new `Yarış testleri:` line in
+    `templates/slice/slice.md`), and the contract set when the fix touches its areas (new `contract_paths`; without
+    it, any code change counts);
+  - the target: the same reviewer session (`--session <id>`). A fresh session needs `--session-gone "<why>"`, and the
+    brief says so.
+- **Narrow by default; full only with a reason.** `--scope full --reason <reason>`, where the reason is one of
+  `personal-data`, `tenant`, `permissions`, `money`, `schema`, `fix-larger-than-slice`, `redesign` (the risk facts of
+  `route.py` plus Ram's two size and redesign cases). A fix whose code files hit a `route.py` risk path rule, or whose
+  code lines reach `review.r2_full_ratio` (default 0.5) of the slice's, is refused as narrow: **SCOPE_UP**, exit 1, the
+  same convention as `route.py`'s ROUTE_UP. Test-only fixes stay narrow. Full scope re-reviews the whole slice and
+  still runs no full suite.
+- **Affected tests by script.** `route.py` gains `routing.test_map` (path regex → test selectors, with regex groups)
+  and `routing.test_map_fallback`. A changed test is its own test; an unmapped code file adds the wider fallback set,
+  never fewer tests. This is the first part of the "affected-tests script" that beta.4 left pending.
+- **Report fields.** Round-2+ reports start with `Review scope: narrow | full — <reason>` and
+  `Reviewer session: same — <id> | fresh — session gone: <why>`; the closing note and the slice's closing section get
+  a `Review scope` field. The r2 template's regression step no longer runs `gate.sh`, whose example test command is the
+  unfiltered full suite. It runs the affected tests, race tests, contract set and static analysis / standards on the
+  touched files.
+- **Check.** `review-r2.py check <report>...` FAILs (exit 1) when a round-2+ report has no scope line, a `full` scope
+  without a listed reason, no session line, or a fresh session without the "session gone" note. It WARNs (exit 0)
+  when any round's report shows a full-suite run: a `gate.sh` summary line, the stack profile's bare
+  `test_command`, or `review.full_suite_patterns`. `metrics.py` adds an `r2 kapsam` column and a summary line
+  (narrow / full by reason / missing) and still never fails.
+- `method/SLICE_LANE.md` step 5, the summary list, the flow, the file list, the adoption `cp` line and "Enforcement
+  honesty" point to the generator. The Test budget and integration-run rules are unchanged. The slice kit installs
+  `review-r2.py`; schemas carry the new keys.
+- **Review r1 (Codex, 4 × P2) fixed:**
+  - R1: a full reason must be a whole listed token (`money2` is not `money`). A narrow reason or a session-gone note
+    must be written out, not a dash or a placeholder. Two different scope or session lines conflict and FAIL.
+  - R2: fences follow CommonMark (only the same character, at least as long, closes a fence), so fields inside a
+    `~~~` example with inner backtick fences no longer count.
+  - R3: a test selector that expands to nothing (an optional regex group that did not match) is no mapping; the file
+    stays unmapped and gets the fallback set.
+  - R4: hunks are classified by both their old and new path, so a rename from code into docs, tests or excluded paths
+    keeps its code review and mutation.
+  - `metrics.py` uses the same scope rules, and a parity test checks that the two agree. All 12 new checks fail on the
+    r1-reviewed commit `67337a9`.
+  - The tool's first real run, generating this PR's own r2 brief, exposed a precision defect. A finding cited at a
+    line also took every other hunk in its file, so three findings in one file all shared eight hunks. Now a cited
+    line takes only the hunks near it, and the whole file only when none is near; the other hunks stay in scope as
+    unclaimed. The same run made `check` warn about a full-suite run on its own brief: a quoted hunk contained a gate
+    summary string. The full-suite warning now skips the brief's quoted ```` ```diff ```` hunks.
+- Review r2 (Codex, same session): PASS. 23 of 23 mutations on the fixed lines were caught, four of them only by the
+  reviewer's own probes. Those four are now tests: a session-line conflict, a shorter inner fence in `metrics.py`, a
+  backtick in a fence's info string, and whole-file attachment.
+- Tests: `scripts/slice/tests/test-review-r2.sh` (114 checks), `scripts/slice/selfcheck.sh`, `scripts/test-acef-install-profiles`.
+  Capability record `docs/ai/capabilities/slice-review-r2-scope.json` (`wired`).
+- Limits: nothing in ACEF runs `check` before a merge; a host adds it to its gate commands. `codex-review.sh` still
+  starts a fresh `codex exec`, so a Codex r2 in the same session means `codex exec resume <id> -` by hand with the
+  generated brief. Path rules are a floor, and `tenant`/`redesign` are manual reasons. The 0.5 ratio is a starting
+  value, not a measured one.
+
 ## v3.0.0-beta.10 — Session rotation: long-running sessions hand over after 3 compactions or 24 hours (2026-10-28)
 
 Why: Ram (2026-10-28) keeps the B2Press coordinator in one session; on that day it had 19 compactions and had been open

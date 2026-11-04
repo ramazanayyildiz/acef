@@ -17,6 +17,11 @@ Path rules ("routing.risk_paths", regular expressions per fact) come from the st
 extends them (or replaces them per fact with "risk_paths_mode": "replace"). Size counts only files that are not docs
 or "exclude_paths" (generated evidence); risk rules apply to code, not to "test_paths". Path rules are a floor, not
 proof of safety: a reviewer still answers A7.
+
+Affected tests (affected_tests(), used by review-r2.py; 2026-11-03): "routing.test_map" is a list of
+{"paths": <regex>, "tests": [<selector>, ...]}; a selector may use the regex groups (\\1, \\g<name>). A changed test
+file is its own test; a code file matched by no entry is "unmapped" and adds "routing.test_map_fallback" (the wider
+set), never fewer tests. Both lists extend the stack's in "extend" mode.
 """
 import json
 import os
@@ -37,6 +42,9 @@ DEFAULT_ROUTING = {
     "risk_paths": {},
     # "extend" (default): host patterns add to the stack's; "replace": host patterns replace them per fact
     "risk_paths_mode": "extend",
+    # changed file -> tests (affected_tests); an unmapped code file adds the fallback (wider) set
+    "test_map": [],
+    "test_map_fallback": [],
 }
 
 
@@ -78,6 +86,17 @@ def routing_config(config_path, profile_path):
                 re.compile(pattern)
             except re.error as exc:
                 die(f"bad pattern for {fact}: {pattern} ({exc})")
+    for entry in cfg["test_map"]:
+        tests = entry.get("tests") if isinstance(entry, dict) else None
+        if not isinstance(entry.get("paths") if isinstance(entry, dict) else None, str) or not isinstance(tests, list) \
+                or not tests or not all(isinstance(t, str) and t for t in tests):
+            die(f"routing.test_map entries need \"paths\" (regex) and a non-empty \"tests\" list: {entry!r}")
+        try:
+            re.compile(entry["paths"])
+        except re.error as exc:
+            die(f"bad pattern in routing.test_map: {entry['paths']} ({exc})")
+    if not all(isinstance(t, str) and t for t in cfg["test_map_fallback"]):
+        die("routing.test_map_fallback must be a list of non-empty strings")
     return cfg
 
 
@@ -92,10 +111,67 @@ def merge(target, source):
                     target["risk_paths"][fact] = list(dict.fromkeys(target["risk_paths"].get(fact, []) + list(patterns)))
                 else:
                     target["risk_paths"][fact] = list(patterns)
-        elif key in ("test_paths", "exclude_paths", "docs_paths") and mode == "extend":
+        elif key in ("test_paths", "exclude_paths", "docs_paths", "test_map_fallback") and mode == "extend":
             target[key] = list(dict.fromkeys(target.get(key, []) + list(value)))
+        elif key == "test_map" and mode == "extend":
+            target[key] = target.get(key, []) + list(value)
         else:
             target[key] = value
+
+
+def path_kinds(cfg):
+    """(is_doc, is_test, is_excluded) predicates from the routing config."""
+    def matcher(key):
+        pats = [re.compile(p) for p in cfg[key]]
+        return lambda f: any(p.search(f) for p in pats)
+    return matcher("docs_paths"), matcher("test_paths"), matcher("exclude_paths")
+
+
+def expand_groups(m, selector):
+    """Only \\<n> and \\g<name> are expanded; every other backslash stays literal (namespaced test selectors)."""
+    def group(g):
+        try:
+            return m.group(int(g.group(1)) if g.group(1) else g.group(2)) or ""
+        except IndexError:
+            die(f"routing.test_map selector {selector!r} names a group its pattern lacks: {g.group(0)}")
+    return re.sub(r"\\(\d+)|\\g<(\w+)>", group, selector)
+
+
+def affected_tests(cfg, files):
+    """Changed files -> (tests, mapping, unmapped). A test file is its own test; docs and excluded paths need none;
+    a code file matched by no routing.test_map entry is unmapped and adds routing.test_map_fallback (run more, never
+    less). mapping: file -> tests it added. Order: first appearance."""
+    is_doc, is_test, is_excluded = path_kinds(cfg)
+    entries = [(re.compile(e["paths"]), e["tests"]) for e in cfg["test_map"]]
+    tests, mapping, unmapped = [], {}, []
+
+    def add(file, sel):
+        mapping.setdefault(file, [])
+        for t in sel:
+            if t not in mapping[file]:
+                mapping[file].append(t)
+            if t not in tests:
+                tests.append(t)
+
+    for f in files:
+        if is_doc(f) or is_excluded(f):
+            continue
+        if is_test(f):
+            add(f, [f])
+            continue
+        hit = False
+        for pat, sel in entries:
+            m = pat.search(f)
+            # a selector that expands to nothing (an optional group that did not match) is no mapping
+            tests_for = [t for t in (expand_groups(m, s) for s in sel) if t.strip()] if m else []
+            if tests_for:
+                hit = True
+                add(f, tests_for)
+        if not hit:
+            unmapped.append(f)
+    for f in unmapped:
+        add(f, cfg["test_map_fallback"])
+    return tests, mapping, unmapped
 
 
 def decide(facts, files, reversible, single_surface, native_max):
