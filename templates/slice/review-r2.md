@@ -31,4 +31,6 @@ Güncel main `<sha>` / merge-base `<sha>`; test/standart/config, bağımlılık,
 
 - <yok | yeni bulgu: önem, bloklayıcı mı, öneri>
 
+Dilim turu varsa (`method/SLICE_LANE.md` adım 3b; `scripts/slice/tour.py check` yalnız bu güncel turu okur): `Tour report: <rapor yolu>` ya da `Tour exemption: confirmed — <gerekçe>` bu turda yeniden yazılır; yalnız değişen bulgular tabloya girecekse `Tour dispositions: carried forward from r<n-1>` satırı önceki turun satırlarını taşır (bu satır yoksa her bulgu bu turun tablosunda olmalıdır): `| Tur bulgusu | Durum | Blok | Çözüm |`.
+
 ## Özet (≤4 satır)

@@ -134,6 +134,8 @@ backlog -> slice file -> own worktree + port + DB    ->  simplify pass (2b)     
 (numbered acceptance,    red test first, stays in the    (git status empty; the        (TAM: other model family,
  allowed files + usage   allowed list, writes the dev    dev report is not evidence)   mutations, real browser
  scan, review class)     report, never declares PASS                                   1280/390, checklist A–E)
+                                                         slice tour (3b, when the     -> tour report + dispositions
+                                                         behaviour rule applies)          before the verdict
                                          ┌──────────── REVISE <─────────────────────────────┤
                                          v                                                  v PASS
                  fix inside the same allowed list -> targeted re-review (SAME reviewer session, r2) -> closing note
@@ -177,10 +179,36 @@ backlog -> slice file -> own worktree + port + DB    ->  simplify pass (2b)     
    `.gitignore` does not cover as dirty (only its own log dir is exempt). It never reports PASS when no command ran or
    when a command's output says zero tests ran (unless that command has `"allow_empty": true`), and a control field
    given as a string (`"false"`) is a usage error (exit 2).
+3b. **Slice tour** (owner decision 2026-11-05, after a Codex consult: adopt with changes). A goal-led browser tour of
+   the candidate by an agent that is neither the developer nor the code reviewer (`templates/slice/user-goal-tour.md`,
+   `Mode: slice`), run beside the review; its report is a review input. **Trigger: changed user behaviour and risk,
+   not file names.** Required when a TAM slice changes a reachable user workflow, or any slice changes navigation, task
+   completion, validation/recovery, permissions as presented to users, persistence feedback or responsive
+   interaction, or copy that materially affects the user's decision. A mechanical UI change keeps its scripted browser
+   evidence (6a) and a reviewer-confirmed exemption; an unavailable environment is never "not applicable", it is
+   incomplete coverage. `route.py check` prints `ui_candidate: yes | unknown` with the matched paths as a hint; the
+   reviewer confirms the user-visible impact (a backend change can alter a visible workflow).
+   **Shape:** one affected persona, one goal from the real entry point, one relevant off-happy-path attempt, 1280 and
+   390 for web; target 5–10 minutes, stop at 15 and report the coverage as incomplete. TAM adds only the personas and
+   adverse cases the change implicates, not the phase-close matrix. A slice that is part of an unfinished outcome
+   tours the reachable changed segment and lists the rest under "Not reached"; the whole outcome still gets its own
+   outcome tour.
+   **Findings** carry `confirmed | needs_validation | rejected` (a duplicate is `rejected`); `FINDINGS: n` is a count,
+   not a verdict. **Blocking:** a confirmed security, privacy or permission violation, data loss or corruption, a wrong
+   money effect; a reproducible failure of a numbered acceptance item or the agreed goal (including a control the user
+   cannot reach or operate); missing, stale or incomplete required coverage. A credible critical risk still
+   `needs_validation` blocks until validated; a stylistic preference is a backlog row. Tour and code-review findings
+   go into the same review round; after a fix the repaired behaviour and its neighbouring paths are rechecked, open-ended
+   exploration does not restart. `scripts/slice/tour.py check` runs before acceptance and at closeout. It reads only
+   the current review round (its PASS verdict, report or exemption, dispositions; earlier rounds' dispositions only
+   when carried forward explicitly) and compares the report's candidate with the checked HEAD: a later code change
+   needs an impact note naming that HEAD or a rerun of the affected steps. It checks the
+   record's structure and bindings, it cannot prove that the exploration was genuine.
 4. **Independent review** in a separate session (`templates/slice/review-brief.md` +
    `templates/slice/review-checklist.md`). Verify the claims, not the report. Re-apply every developer mutation and add
    at least one own mutation when mutations apply (see "Review classes"). When a package view/lang/config key changes, scan the hosts for includes
-   (checklist B1).
+   (checklist B1). Before the verdict the reviewer confirms the tour's applicability (or its exemption), the report's
+   binding to the candidate, the coverage reached and the disposition of every tour finding (3b).
    Verdict: PASS | REVISE — every verdict line outside fenced code reads exactly one of them, and they agree;
    `scripts/slice/codex-review.sh` reads anything else ("NOT PASS", the unfilled "PASS | REVISE", disagreeing lines)
    as a tool error, never a pass.
@@ -203,19 +231,22 @@ backlog -> slice file -> own worktree + port + DB    ->  simplify pass (2b)     
    **Round caps** (owner decision 2026-10-25, from host practice): after a second REVISE the coordinator stops
    patching and decides — redesign, split, narrow the scope or simplify; a reviewer's suggested fix is a hypothesis,
    not a specification. From round 3 on, only money, data, permission or flow-breaking findings block; everything else
-   becomes a backlog row.
+   becomes a backlog row. An unmet committed acceptance item never becomes PASS silently, in any round: it is fixed, or
+   the owner explicitly agrees the scope change (split, narrow) and the slice records it.
 6. **Closing note** (`templates/slice/closing-note.md`): verdict, commits, durations, REVISE rounds, escaped defect,
-   explicit tag-candidate judgement, deferred backlog IDs, cleanup. `scripts/slice/metrics.py` reads these fields.
+   explicit tag-candidate judgement, tour (report or reviewer-confirmed exemption), deferred backlog IDs, cleanup. `scripts/slice/metrics.py` reads these fields.
 7. **Merge** with `git merge --no-ff`: into `main` only on the owner's word; into owner-approved work branches after
    PASS and a green post-merge run. Post-merge: `gate.sh`, `{{standards_check}}`, affected tests, the project's
    critical set (`slice-method.json` → `critical_postmerge`). The full suite runs only for shared-infrastructure
    changes and at phase/group close.
 8. **Phase/group close**: exploration tour (`templates/slice/exploration-tour.md`) by another model family, as a user,
    personas × 1280/390 (a group that touches no UI records a reasoned browser N/A). A group with an open blocking finding is not closed.
+   Slice tours (3b) supply prior evidence and known findings to this tour; they do not replace it.
 
 ## Evidence validity and reuse
 
-These are method and template rules (`documented-only`); no script validates the bindings or grants reuse.
+These are method and template rules (`documented-only`); no script validates the bindings or grants reuse. The one
+exception is the slice tour report: `scripts/slice/tour.py check` validates its bindings (3b).
 
 - **One record per execution.** Keep the command, expected/actual result, exit status, test count when applicable,
   and raw-log link in one canonical entry in the existing report or evidence directory. Identify its executor/role,
@@ -268,6 +299,8 @@ Applicability (both classes):
 
 - **Browser / real-UI check** only when the slice touches UI: a route, a view/template, or a UI component. Otherwise it
   is `not applicable: no route/view/component touched`.
+- **Slice tour** when the changed-behaviour rule of step 3b applies, whatever files changed. Otherwise
+  `Tour: not applicable: <reason>`, confirmed by the reviewer; an unavailable environment is never a reason.
 - **Mutations:** 3–5 per new or changed rule only for TAM. HAFİF: one mutation per behaviour change; no new or changed
   behaviour means `not applicable: <reason>`.
 - **Re-review** after REVISE runs in the same reviewer session (step 5), not a new one.
@@ -284,8 +317,9 @@ Always required, in both classes — the core this lane keeps from ACEF:
 4. an independent reviewer in a separate session (never the developer's);
 5. mutations — TAM 3–5 per new or changed rule, HAFİF one per behaviour change — each with an evidence file, re-applied
    by the reviewer plus one of their own; otherwise the applicability reason above;
-6. real-browser evidence of the new scenario from its real entry point when the slice touches UI; otherwise the
-   applicability reason above;
+6. 6a: real-browser (scripted) evidence of the new scenario from its real entry point when the slice touches UI;
+   6b: an independent, goal-led slice tour report before PASS when the step 3b rule applies; otherwise the
+   applicability reasons above;
 7. a targeted re-review in the same reviewer session after REVISE, from the generated brief
    (`scripts/slice/review-r2.py`), narrow unless a listed reason makes it full;
 8. a closing note with the fixed fields.
@@ -372,12 +406,16 @@ scripts/slice/route.py               route from intake facts ("card") and the di
 scripts/slice/review-r2.py           r2 brief from the r1 report, fix diff and slice ("brief": narrow by default, full
                                      only with a listed reason, SCOPE_UP stops); "check": scope/session lines of a
                                      round-2+ report (FAIL), full-suite run in a review round (WARN)
+scripts/slice/tour.py                slice tour record check ("check"): applicability or confirmed exemption, report
+                                     present and bound to the candidate, persona/viewports/coverage, a disposition per
+                                     finding, no open blocker, the review names the report; structure, not exploration
 scripts/slice/ui-copy-hints.py       review hint: new visible strings with a profile's "may confuse" terms, long
                                      explanatory lines; warns only, exit 0
 scripts/slice/selfcheck.sh           the lane's own gate: syntax, templates, core + adapter self-tests, metrics
                                      fixture, and a scan that the core names no stack or source project
 scripts/slice/tests/                 gate (incl. placeholders, zero tests), codex-review, standards-check (incl. regex errors),
-                                     schema types, review-r2 (brief, SCOPE_UP, check), selfcheck self-tests + metrics fixture
+                                     schema types, review-r2 (brief, SCOPE_UP, check), tour (check), selfcheck self-tests +
+                                     metrics fixture
 schemas/slice-method.schema.json     project declaration (slice-method.json, incl. "stack_profile")
 schemas/stack-profile.schema.json    stack profile (the four required placeholders)
 schemas/slice-interventions.schema.json  intervention log
@@ -414,7 +452,7 @@ ACEF=/path/to/acef; STACK=$ACEF/stacks/<stack>
 cp -R $ACEF/templates/slice <app>/docs/slices/_templates
 cp $ACEF/docs/slice-lane/examples/slice-method.example.json <app>/slice-method.json   # {{project}}, paths, commands
 cp $STACK/profile.json <app>/scripts/stack-profile.json                              # "stack_profile" points here
-cp $ACEF/scripts/slice/{gate.sh,standards-check.sh,codex-review.sh,metrics.py,route.py,review-r2.py} <app>/scripts/
+cp $ACEF/scripts/slice/{gate.sh,standards-check.sh,codex-review.sh,metrics.py,route.py,review-r2.py,tour.py} <app>/scripts/
 cp $STACK/standards/rules.example.json <app>/scripts/standards/rules.json            # + the adapter's other files
 <app>/scripts/standards-check.sh --print-baseline <app> > <app>/scripts/standards/baseline.txt   # merger, clean main
 <app>/scripts/gate.sh <own worktree path>
@@ -429,7 +467,8 @@ lane's own gate: `bash scripts/slice/selfcheck.sh`.
 In `method/RULE_ENFORCEMENT_MAP.md` terms: the gate, standards ratchet, and module-boundary ratchet are **machinery**
 inside the application; the independent reviewer is a **shard** (a fresh session with a brief) and the targeted re-review
 continues that shard; the r2 brief and its scope check are **machinery** the coordinator runs (`review-r2.py`; a host
-can add `review-r2.py check` to its gate commands); the allowed-file list, the "never" list, and the closing note are
+can add `review-r2.py check` to its gate commands); so is the slice tour record check (`tour.py check`, before
+acceptance and at closeout; it checks structure, not genuine exploration); the allowed-file list, the "never" list, and the closing note are
 **documentation-only** until the planned closing-note gate exists. No ACEF hook or validator enforces this lane.
 
 ## Planned (v0.2) and open (v0.1.2)

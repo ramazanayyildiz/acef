@@ -10,4 +10,5 @@ Grubun hiçbir dilimi UI'a (rota, görünüm/şablon, UI bileşeni) dokunmuyorsa
 - **Kapsam:** personalar <yönetici, üye, yetkisiz kullanıcı, devre dışı kullanıcı, başka kiracı>; grubun uçtan uca görevleri; mutlu yol dışı (geri, çift tık, boş gönderim, uzun metin, yenileme); 1280×800 ve 390×844; her adımda ekran görüntüsüne bakıp sonraki adıma kendisi karar verir.
 - **Çıktı:** `report.md`, ilk satır `FINDINGS: <n>`; tablo `id | önem | persona | genişlik | yer | adımlar | beklenen | gerçek | ekran görüntüsü`; ayrıca "Worked well" ve "Not reached".
 - **Kullanıcı hedefi turu ayrıdır:** bir profilin gerçek işini bitirip bitiremediğini, kod ve çözüm adımı verilmeden ölçen tur `user-goal-tour.md`'dedir. Bu rol turu olduğu gibi sürer; biri diğerinin yerini tutmaz.
+- **Dilim turları yerini tutmaz:** faz/grup keşif turu zorunlu kalır; dilim turları (`user-goal-tour.md`, `Mode: slice`) ona önceki kanıt ve bilinen bulgu olarak girer.
 - **Sonra:** koordinatör worktree'nin `git status`'unu doğrular (yalnız kanıt klasörü), raporu ve görüntüleri alır, bulguları FIX dilimlerine çevirir.

@@ -16,7 +16,7 @@ function usage() {
   console.log(`Usage: scripts/install-acef-slice-kit --repo <path> [--stack <name>] [--templates-dir <dir>] [--scripts-dir <dir>]
 
 Defaults: --templates-dir docs/slices/_templates  --scripts-dir scripts
-Installs: templates/slice/*, method/SLICE_LANE.md, method/PRODUCT_LANGUAGE.md and method/MODEL_CHOICE.md snapshots, scripts/slice/{gate.sh,standards-check.sh,codex-review.sh,metrics.py,route.py,review-r2.py,ui-copy-hints.py};
+Installs: templates/slice/*, method/SLICE_LANE.md, method/PRODUCT_LANGUAGE.md and method/MODEL_CHOICE.md snapshots, scripts/slice/{gate.sh,standards-check.sh,codex-review.sh,metrics.py,route.py,review-r2.py,tour.py,ui-copy-hints.py};
 with --stack also stacks/<stack>/profile.json (as scripts/stack-profile.json) and the slice-method example, only when missing.`);
 }
 
@@ -59,7 +59,7 @@ function plan(opts, previous) {
       content: Buffer.from(`<!-- ACEF method snapshot from acef@${sourceShortCommit || "unknown"} (${sourceCommit || "unknown"}). Do not edit; update with scripts/update-acef-installation. -->\n\n${method}`),
     });
   }
-  for (const name of ["gate.sh", "standards-check.sh", "codex-review.sh", "metrics.py", "route.py", "review-r2.py", "ui-copy-hints.py"]) {
+  for (const name of ["gate.sh", "standards-check.sh", "codex-review.sh", "metrics.py", "route.py", "review-r2.py", "tour.py", "ui-copy-hints.py"]) {
     owned.push({ to: `${scriptsDir}/${name}`, content: fs.readFileSync(path.join(sourceRoot, "scripts", "slice", name)), mode: 0o755 });
   }
   const hostOnce = [];

@@ -125,6 +125,11 @@
         "docs_paths": { "type": "array", "items": { "type": "string" } },
         "test_paths": { "type": "array", "items": { "type": "string" } },
         "exclude_paths": { "type": "array", "items": { "type": "string" } },
+        "ui_paths": {
+          "type": "array",
+          "description": "Changed code files that hint at user-visible UI (route.py ui_candidate: yes | unknown). A hint for the slice tour decision, never a verified fact; extends the stack default.",
+          "items": { "type": "string" }
+        },
         "risk_paths_mode": { "type": "string", "enum": ["extend", "replace"] },
         "test_map": {
           "type": "array",

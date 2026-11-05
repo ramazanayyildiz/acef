@@ -72,10 +72,16 @@ const check = (head, declared) => py(["check", "--repo", repo, "--base", "main",
 r = check("docs", "native"); assert.equal(r.status, 0); assert.equal(JSON.parse(r.stdout).verdict, "OK");
 r = check("docs", "TAM"); assert.equal(r.status, 0); assert.equal(JSON.parse(r.stdout).verdict, "OVER_CEREMONY");
 r = check("view", "native"); assert.equal(r.status, 0); assert.equal(JSON.parse(r.stdout).required, "native");
+// ui_candidate is a hint (SLICE_LANE step 3b): matched UI paths -> "yes" with the paths; unmatched -> "unknown", never "no"
+assert.equal(JSON.parse(r.stdout).ui_candidate, "yes");
+assert.deepEqual(JSON.parse(r.stdout).ui_paths, ["resources/css/a.css", "resources/views/x.blade.php"]);
+assert.match(r.stderr, /ui_candidate: yes .*hint only/);
 r = check("migration", "HAFIF"); assert.equal(r.status, 1, "a migration declared HAFIF must stop");
 assert.equal(JSON.parse(r.stdout).verdict, "ROUTE_UP");
 assert.deepEqual(Object.keys(JSON.parse(r.stdout).evidence), ["schema"]);
 r = check("pay", "native"); assert.equal(r.status, 1); assert.equal(JSON.parse(r.stdout).required, "TAM");
+assert.equal(JSON.parse(r.stdout).ui_candidate, "unknown", "a backend file is unknown, not 'no UI'");
+assert.deepEqual(JSON.parse(r.stdout).ui_paths, []);
 r = check("wide", "native"); assert.equal(r.status, 1); assert.equal(JSON.parse(r.stdout).required, "HAFIF");
 r = check("wide", "HAFIF"); assert.equal(r.status, 0);
 r = check("lookalike", "native"); assert.equal(r.status, 0, "Observation/Delegate/Author are not risk paths");
@@ -92,6 +98,9 @@ const withHost = (head) => py(["check", "--repo", repo, "--base", "main", "--hea
 assert.equal(withHost("pay").status, 1, "extend keeps the stack's payment pattern");
 fs.writeFileSync(path.join(repo, "slice-method.json"), JSON.stringify({ routing: { risk_paths_mode: "replace", risk_paths: { money: ["(^|/)Ledgerish/"] } } }));
 assert.equal(withHost("pay").status, 0, "replace drops the stack's payment pattern for that fact");
+fs.writeFileSync(path.join(repo, "slice-method.json"), JSON.stringify({ routing: { ui_paths: ["(^|/)Services/"] } }));
+assert.equal(JSON.parse(withHost("pay").stdout).ui_candidate, "yes", "host ui_paths extend the stack's");
+assert.equal(JSON.parse(withHost("view").stdout).ui_candidate, "yes", "extend keeps the stack's ui_paths");
 fs.rmSync(path.join(repo, "slice-method.json"));
 // a failed log write is an operational error (2), never ROUTE_UP (1); the verdict is still printed
 const blocker = path.join(tmp, "blocker"); fs.writeFileSync(blocker, "x");

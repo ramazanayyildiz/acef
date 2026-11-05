@@ -47,6 +47,18 @@ In an application: copy the core files (steps 1–3 of "Benimseme" above), then 
 `<app>/scripts/stack-profile.json` and the adapter files listed in the adapter's `README.md` / `profile.json`
 → `files`.
 
+## Slice tour pilot (2026-11-05)
+
+Slice tours (`method/SLICE_LANE.md` step 3b) start as a pilot on one host: the one whose stack profile already has a
+verified headless-browser launch recipe. Run them on its next three qualifying slices (HAFİF and TAM if both occur),
+with the code review and the tour independent and reconciled before the verdict. Measure setup failures, coverage
+completion, confirmed defects the scripted evidence missed, false or duplicate findings, cost (setup, tour and triage
+minutes; tokens) and merge delay (`scripts/slice/metrics.py` prints the tour line). Review after seven days; fewer than
+three qualifying slices is an insufficient sample, not a success. Another host joins only after its launch recipe,
+synthetic accounts, isolated data and suppression of external effects (mail, SMS, payments) are verified. A mobile host
+needs a simulator adapter with native interaction evidence (`Viewports: native: <simulator>`); browser CDP ports and web
+viewport sizes are not prerequisites there.
+
 ## Laravel profile
 
 Reference adapter: `stacks/laravel/` (profile with PHPUnit, PHPStan, `check-module-boundaries.php`, Laravel standards

@@ -23,6 +23,14 @@ source; otherwise the cell says "doğrulanmadı". Time columns are git add-times
 added (dev), dev report added -> last review added (review). They include waiting and batching, and are "doğrulanmadı"
 when the two files landed in the same commit or the order is reversed. Closing-note fields "Süre-geliştirme-dk",
 "Süre-inceleme-dk", "REVISE-turu", "Kaçan-hata" (templates/closing-note.md) override the proxies when present.
+
+Slice tours (2026-11-05, method/SLICE_LANE.md step 3b), from the closing note's "Tour:" line, the report and the
+reviews, parsed outside fenced code with tour.py's rules (tour.outside_fences, tour.current_dispositions: the current
+round's rows, earlier rounds only when carried forward): required vs exempt tours, completed tours (report found,
+"Coverage: complete"), confirmed / needs_validation / rejected (duplicates are rejected) findings and malformed rows,
+setup/tour/triage minutes when "Tur-dk:" gives them (total/n measured), and toured slices reporting a later escape
+over the slices whose Kaçan-hata was measured (unknown ones counted apart; nothing measured = doğrulanmadı).
+A finding count is never a quality score.
 """
 from __future__ import annotations
 
@@ -33,6 +41,9 @@ import statistics
 import subprocess
 import sys
 from dataclasses import dataclass, field
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))  # tour.py sits next to this file (ACEF and hosts)
+import tour  # noqa: E402  (shared fence-aware parsing of tour reports and disposition rows)
 
 NV = "doğrulanmadı"
 SUFFIX = re.compile(r"-(dev-report|review(-r\d+)?|review-[a-z0-9-]+|report)$", re.I)
@@ -45,6 +56,7 @@ FIELD = lambda name: re.compile(rf"^\s*[-*]?\s*{name}\s*:\s*(.+)$", re.I | re.M)
 STATUS = re.compile(r"^\s*(?:Durum|Status)\s*:\s*\**([A-ZÇĞİÖŞÜa-zçğıöşü-]+)", re.M)
 CLASS = re.compile(r"(?:İnceleme sınıfı|Derinlik|Review class|Sınıf)\s*:?\s*\**\s*(TAM|HAFİF|HAFIF|tam|hafif|Full|Light)", re.I)
 ESCAPE_WORDS = re.compile(r"kaçırd|kaçan|kaçak|escaped|missed", re.I)
+TOUR_MIN = re.compile(r"(kurulum|tur|triyaj)\s+(\d+)\b", re.I)
 
 
 @dataclass
@@ -63,6 +75,10 @@ class Slice:
     escaped: str = NV
     escaped_candidates: list = field(default_factory=list)
     r2_scopes: list = field(default_factory=list)   # per review-r<n>.md (n >= 2): narrow | full:<reason> | eksik
+    tour: str = ""                                   # closing note: "" | exempt | required
+    tour_done: bool = False                          # report found and "Coverage: complete"
+    tour_disp: dict = field(default_factory=dict)    # T<n> -> disposition (last review round wins)
+    tour_min: dict = field(default_factory=dict)     # kurulum | tur | triyaj -> minutes
 
 
 def read(p: str, limit: int | None = None) -> str:
@@ -274,6 +290,9 @@ def collect(slices_dir: str, use_git: bool, backlog: str | None, strip_phase_pre
             mm = FIELD("Kaçan-hata").search(tail)
             if mm:
                 s.escaped = mm.group(1).strip()
+            mm = FIELD("Tour").search(tail)
+            if mm:
+                tour_fields(s, mm.group(1), d, root)
         if s.final == NV and s.reviews:
             last = [v for _p, v, _t in s.reviews if v != "?"]
             s.final = (last[-1] + " (son inceleme)") if last else NV
@@ -308,6 +327,50 @@ def collect(slices_dir: str, use_git: bool, backlog: str | None, strip_phase_pre
                 if full_hit or short_hit:
                     s.escaped_candidates.append(bid)
     return out
+
+
+def tour_fields(s: Slice, value: str, d: str, root: str | None) -> None:
+    head, _sep, rest = value.partition("Tur-dk:")
+    s.tour_min = {k.lower(): int(v) for k, v in TOUR_MIN.findall(rest)}
+    head = head.split(" · ")[0].strip().strip("`").strip()
+    if re.match(r"(?i)(not applicable|uygulanmaz)", head):
+        s.tour = "exempt"
+        return
+    s.tour = "required"
+    for base in [d, root or "", os.getcwd()] + [os.path.dirname(d), os.path.dirname(os.path.dirname(d))]:
+        p = os.path.join(base, head) if base else head
+        if head and os.path.isfile(p):
+            cov = tour.fields(tour.outside_fences(read(p, 20000))).get("Coverage", "")
+            s.tour_done = bool(re.match(r"(?i)complete\b", cov))
+            break
+    rows = tour.current_dispositions([tour.outside_fences(read(os.path.join(d, rp), 20000)) for rp, _v, _t in s.reviews])
+    s.tour_disp = {fid: row[0] for fid, row in rows.items()}
+
+
+def tour_line(slices: list) -> str:
+    with_field = [s for s in slices if s.tour]
+    if not with_field:
+        return f"- Dilim turu: hiçbir kapanış notunda Tour alanı yok → {NV}"
+    req = [s for s in with_field if s.tour == "required"]
+    disp = [v for s in req for v in s.tour_disp.values()]
+    mins = []
+    for k in ("kurulum", "tur", "triyaj"):
+        vals = [s.tour_min[k] for s in req if k in s.tour_min]
+        mins.append(f"{k} {sum(vals)}/{len(vals)}" if vals else f"{k} {NV}")
+    measured = [s for s in req if s.escaped != NV]
+    esc = [s.id for s in measured if not re.match(r"(?i)yok|none|0$", s.escaped)]
+    unknown = len(req) - len(measured)
+    if measured:
+        esc_txt = f"{len(esc)}/{len(measured)} ölçülen" + (f" ({', '.join(esc)})" if esc else "") + f" (bilinmeyen {unknown})"
+    else:
+        esc_txt = f"{NV} (ölçülen 0, bilinmeyen {unknown})"
+    return (f"- Dilim turu: Tour alanı olan {len(with_field)} · gerekli {len(req)} · muaf {len(with_field) - len(req)}"
+            f" · tamamlanan (rapor var, Coverage: complete) {sum(1 for s in req if s.tour_done)}"
+            f" · bulgu confirmed {disp.count('confirmed')} · needs_validation {disp.count('needs_validation')}"
+            f" · rejected/tekrar {disp.count('rejected')}"
+            + (f" · geçersiz satır {disp.count('malformed')}" if "malformed" in disp else "")
+            + f" · dk toplam/n: {', '.join(mins)} · sonradan kaçan hata bildiren turlu dilim {esc_txt}"
+            " (bulgu sayısı kalite ölçüsü değildir)")
 
 
 def render(slices: list, label: str, fmt: str, summary_only: bool) -> str:
@@ -360,6 +423,7 @@ def render(slices: list, label: str, fmt: str, summary_only: bool) -> str:
         (f"- Kaçan hata: kapanış notunda alanı olan dilim {len(esc_f)}, kaçan hata bildiren {len(esc_yes)}" + (f" ({', '.join(esc_yes)})" if esc_yes else "")
      if esc_f else f"- Kaçan hata: hiçbir kapanış notunda alan yok → {NV}")
     + f"; backlog adayı olan dilim: {len(esc_c)}" + (f" ({', '.join(esc_c)})" if esc_c else "") + " (aday = insan teyidi gerekir)",
+        tour_line(slices),
     ]
     if summary_only:
         return "\n".join(lines) + "\n"
