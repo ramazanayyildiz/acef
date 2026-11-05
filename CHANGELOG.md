@@ -7,7 +7,7 @@ proven, or installed.
 Update this file in the same PR whenever ACEF itself gains or changes a flow, gate, validator, hook, skill, installer behavior, workflow,
 or evidence contract. Do not use it to claim implementation status; link to the capability record for that.
 
-## Unreleased — Slice tours: human-like browser coverage per slice (2026-11-05)
+## v3.0.0-beta.12 — Slice tours: human-like browser coverage per slice (2026-11-05)
 
 Why: Ram asked on 2026-11-05 whether the ACEF flow has human-like browser tests. The method has three browser levels,
 but per slice only scripted runs happen; the human-like exploration tour fires only at phase/group close, and only
