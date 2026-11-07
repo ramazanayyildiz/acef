@@ -120,6 +120,34 @@ r2 brief --slice docs/slices/DEMO-02.md --review docs/slices/DEMO-02-review.md -
 check "$?" 0 "--out writes the brief"
 [ -s "$T/brief.md" ] && check 1 1 "brief file is not empty" || check 0 1 "brief file is not empty"
 
+# ---- R-6 round caps ----
+B="--slice docs/slices/DEMO-02.md --review docs/slices/DEMO-02-review.md --reviewed $REVIEWED --session s"
+r2 brief $B --round 3 >/dev/null 2>&1; check "$?" 2 "R-6: round 3 without a re-ruling refused"
+r2 brief $B --round 3 --re-ruling "keep patching — again" --blocking "R1 money-loss" >/dev/null 2>&1
+check "$?" 2 "R-6: 'keep patching' is not a re-ruling"
+r2 brief $B --round 3 --re-ruling "split — R3 moved to DEMO-03" >/dev/null 2>&1
+check "$?" 2 "R-6: round 3 without a blocking tag refused"
+r2 brief $B --round 3 --re-ruling "split — R3 moved to DEMO-03" --blocking "R1 style" >/dev/null 2>&1
+check "$?" 2 "R-6: a blocking finding outside money/data/permission refused"
+out=$(r2 brief $B --round 3 --re-ruling "split — R3 moved to DEMO-03" --blocking "R1 money-loss"); rc=$?
+check "$rc" 0 "R-6: round 3 with a re-ruling and a money-loss blocker"
+has "$out" "Re-ruling: split — R3 moved to DEMO-03" "R-6: the brief records the re-ruling"
+has "$out" "Blocking: R1 money-loss" "R-6: the brief records the blocking tag"
+r2 brief $B --round 4 --re-ruling "narrow — K4 only" --blocking "R1 data-loss" >/dev/null 2>&1
+check "$?" 2 "R-6: round 4 without the owner's word refused"
+r2 brief $B --round 4 --re-ruling "narrow — K4 only" --blocking "R1 data-loss" --owner-word "2026-11-08 — go on" --out "$T/DEMO-02-review-r4.md" >/dev/null
+check "$?" 0 "R-6: round 4 with the owner's word"
+r2 brief $B --re-ruling "split — x" >/dev/null 2>&1; check "$?" 2 "R-6: cap flags refused in round 2"
+sed -e 's/^Karar: \*\*PASS | REVISE\*\*$/Karar: **PASS**/' "$T/DEMO-02-review-r4.md" > "$T/DEMO-02-review-r4b.md"
+mv "$T/DEMO-02-review-r4b.md" "$T/DEMO-02-review-r4.md"
+r2 check "$T/DEMO-02-review-r4.md" >/dev/null; check "$?" 0 "R-6: check passes a round-4 report with the cap lines"
+grep -v '^Owner word:' "$T/DEMO-02-review-r4.md" > "$T/x" && mkdir -p "$T/r6" && mv "$T/x" "$T/r6/DEMO-02-review-r4.md"
+out=$(r2 check "$T/r6/DEMO-02-review-r4.md"); check "$?" 1 "R-6: check fails a round-4 report without the owner's word"
+has "$out" "R4_NO_OWNER_WORD" "R-6: check names the missing owner word"
+grep -v '^Re-ruling:' "$T/r6/DEMO-02-review-r4.md" | sed 's/review-r4/review-r3/' > "$T/r6/DEMO-02-review-r3.md"
+out=$(r2 check "$T/r6/DEMO-02-review-r3.md"); check "$?" 1 "R-6: check fails a round-3 report without a re-ruling"
+has "$out" "R3_NO_RERULING" "R-6: check names the missing re-ruling"
+
 # ---- B2 flags ----
 r2 brief --slice docs/slices/DEMO-02.md --review docs/slices/DEMO-02-review.md --reviewed "$REVIEWED" >/dev/null 2>&1
 check "$?" 2 "no --session and no --session-gone refused"

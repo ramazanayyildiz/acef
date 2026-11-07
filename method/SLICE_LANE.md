@@ -230,10 +230,13 @@ backlog -> slice file -> own worktree + port + DB    ->  simplify pass (2b)     
    `Review scope: narrow | full — <reason>`. `review-r2.py check` fails a report without it, `full` without a listed
    reason, or a fresh session without the note; it warns on a full-suite run inside a review round. Neither scope runs
    the full suite (Test budget).
-   **Round caps** (owner decision 2026-10-25, from host practice): after a second REVISE the coordinator stops
-   patching and decides — redesign, split, narrow the scope or simplify; a reviewer's suggested fix is a hypothesis,
-   not a specification. From round 3 on, only money, data, permission or flow-breaking findings block; everything else
-   becomes a backlog row. An unmet committed acceptance item never becomes PASS silently, in any round: it is fixed, or
+   **Round caps** (owner decisions 2026-10-25 and 2026-11-08, R-6): after a second REVISE the coordinator stops
+   patching and re-rules — redesign, split or narrow; "keep patching" is not a ruling, and a reviewer's suggested fix is
+   a hypothesis, not a specification. `review-r2.py brief` refuses a round-3 brief unless it records that re-ruling
+   (`--re-ruling`) and tags the blocking finding money-loss, data-loss or permission-break (`--blocking`); everything
+   else becomes a backlog row. Round 4 and later also need the owner's word (`--owner-word`). `review-r2.py check`
+   fails a round-3+ report without these lines. Code that stays switched off until the owner enables it (dormant) is
+   held to the HAFİF bar; its findings go to the backlog. An unmet committed acceptance item never becomes PASS silently, in any round: it is fixed, or
    the owner explicitly agrees the scope change (split, narrow) and the slice records it.
 6. **Closing note** (`templates/slice/closing-note.md`): verdict, commits, durations, REVISE rounds, escaped defect,
    explicit tag-candidate judgement, tour (report or reviewer-confirmed exemption), deferred backlog IDs, cleanup. `scripts/slice/metrics.py` reads these fields.
