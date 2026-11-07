@@ -58,6 +58,10 @@ decision, not a judgement call:
 1. **Intake card** (`templates/slice/intake-card.md`): before any work the agent records six facts — expected files
    and directories; money; permissions/tenant; personal data; schema/migration/lock or race path; reversibility.
    Facts only, no recommendation.
+   **Claim before dispatch (R-4, 2026-11-08):** the coordinator marks the work item in the host's one shared place
+   (for example a merge-queue or plan row) and runs `route.py card <card> --work-id <ID>`, which stops with
+   CLAIMED when a branch or worktree already carries the id; an open PR (`gh pr list --search <ID>`) stops it too. A
+   second session that finds a claim asks the owner instead of starting.
 2. **Route** from the facts with the routing table, not from the task name. Any risk fact → TAM; no risk fact and a
    small, single-surface, reversible change → **native** (no slice, no ACEF state, focused verification only);
    otherwise HAFİF. The decision is one visible line before work starts — `Yol: native | HAFİF | TAM — <reason>` —

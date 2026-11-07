@@ -116,5 +116,19 @@ const lines = fs.readFileSync(logFile, "utf8").trim().split("\n").map((l) => JSO
 assert.equal(lines.length, 11, "every check is logged");
 assert.ok(lines.every((l) => l.at && l.verdict));
 
+// R-4: claim before dispatch — a branch or worktree carrying the work id stops the card with CLAIMED (exit 1)
+r = py(["card", card(base), "--work-id", "SL-7", "--repo", repo], tmp);
+assert.equal(r.status, 0, "no branch or worktree carries SL-7: " + r.stderr);
+git(repo, "branch", "slice/sl-7-fix", "main");
+r = py(["card", card(base), "--work-id", "SL-7", "--repo", repo], tmp);
+assert.equal(r.status, 1, "a branch carrying the id is a claim");
+assert.match(r.stderr, /CLAIMED: SL-7 already has slice\/sl-7-fix/);
+r = py(["card", card(base), "--work-id", "SL-70", "--repo", repo], tmp);
+assert.equal(r.status, 0, "SL-7 is not a claim on SL-70: " + r.stderr);
+git(repo, "worktree", "add", "-q", path.join(tmp, "wt-SL-71"), "-b", "other", "main");
+r = py(["card", card(base), "--work-id", "SL-71", "--repo", repo], tmp);
+assert.equal(r.status, 1, "a worktree carrying the id is a claim");
+git(repo, "worktree", "remove", "--force", path.join(tmp, "wt-SL-71"));
+
 fs.rmSync(tmp, { recursive: true, force: true });
 console.log("test-acef-slice-route: OK");

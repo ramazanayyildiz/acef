@@ -39,6 +39,13 @@ kayıtlı kararı varsayılanı geçer.
 
 `Model: <sınıf> → <model> (MODEL_CHOICE.md) · Effort: <low | medium | high>` (geliştirici ve inceleyici için ayrı satır)
 
+**Sahiplik (koordinatör, geliştirme başlamadan önce; R-4):** iş, hostun tek ortak yerinde (ör. merge-queue ya da plan
+satırı) bu koordinatör adına işaretlenir. `route.py card <kart> --work-id <iş kimliği>` aynı kimliği taşıyan
+dal ya da worktree bulursa CLAIMED ile durur; `gh pr list --search <iş kimliği>` açık PR gösterirse de durulur. İkinci
+oturum başlamaz, sahibe sorar.
+
+`Sahiplik: <ortak yer + satır> · <koordinatör adı> · dal/PR denetimi temiz`
+
 **Karar satırı (işe başlamadan önce, sahip görebilsin):**
 
 `Yol: native | HAFİF | TAM — <gerçeklere dayanan tek cümle>`
