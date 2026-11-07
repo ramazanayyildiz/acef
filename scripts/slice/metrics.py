@@ -31,6 +31,10 @@ round's rows, earlier rounds only when carried forward): required vs exempt tour
 setup/tour/triage minutes when "Tur-dk:" gives them (total/n measured), and toured slices reporting a later escape
 over the slices whose Kaçan-hata was measured (unknown ones counted apart; nothing measured = doğrulanmadı).
 A finding count is never a quality score.
+
+Evidence ceiling (R-7, 2026-11-08): per slice, the docs+evidence : code line ratio of the newest first-parent merge
+whose subject names its id (git diff --numstat <merge>^1 <merge>; route.py's docs/test/exclude path rules plus the
+slices dir; tests count for neither side). No merge found = doğrulanmadı. The detector evidence_ratio alerts above 3:1.
 """
 from __future__ import annotations
 
@@ -44,6 +48,7 @@ from dataclasses import dataclass, field
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))  # tour.py sits next to this file (ACEF and hosts)
 import tour  # noqa: E402  (shared fence-aware parsing of tour reports and disposition rows)
+import route  # noqa: E402  (docs / test / exclude path rules for the evidence ratio)
 
 NV = "doğrulanmadı"
 SUFFIX = re.compile(r"-(dev-report|review(-r\d+)?|review-[a-z0-9-]+|report)$", re.I)
@@ -79,6 +84,7 @@ class Slice:
     tour_done: bool = False                          # report found and "Coverage: complete"
     tour_disp: dict = field(default_factory=dict)    # T<n> -> disposition (last review round wins)
     tour_min: dict = field(default_factory=dict)     # kurulum | tur | triyaj -> minutes
+    ratio: tuple = ()                                # (docs+evidence lines, code lines) of its merge (R-7)
 
 
 def read(p: str, limit: int | None = None) -> str:
@@ -215,7 +221,42 @@ def load_profile_metrics(path: str | None) -> dict:
     return m if isinstance(m, dict) else {}
 
 
-def collect(slices_dir: str, use_git: bool, backlog: str | None, strip_phase_prefix: bool = False) -> list:
+def merge_ratios(root: str, rel: str, slices: list, profile: str | None) -> None:
+    """R-7: (docs+evidence, code) lines of the newest first-parent merge naming each slice id; tests excluded."""
+    def git(*args):
+        return subprocess.run(["git", "-C", root, *args], capture_output=True, text=True, check=True,
+                              stdin=subprocess.DEVNULL).stdout
+    try:
+        merges = [l.split("\t", 1) for l in git("log", "--first-parent", "--merges", "--format=%H%x09%s").splitlines()]
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return
+    is_doc, is_test, is_excluded = route.path_kinds(route.routing_config(None, profile))
+    for s in slices:
+        rx = re.compile(rf"(?<![A-Za-z0-9-]){re.escape(s.id)}(?![A-Za-z0-9])", re.I)
+        sha = next((m[0] for m in merges if len(m) == 2 and rx.search(m[1])), None)
+        if not sha:
+            continue
+        doc = code = 0
+        for line in git("diff", "--numstat", "--no-renames", f"{sha}^1", sha).splitlines():
+            a, d, path = (line.split("\t", 2) + ["", ""])[:3]
+            if not (a.isdigit() and d.isdigit()) or is_test(path):
+                continue
+            if is_doc(path) or is_excluded(path) or path.startswith(rel.rstrip("/") + "/"):
+                doc += int(a) + int(d)
+            else:
+                code += int(a) + int(d)
+        s.ratio = (doc, code)
+
+
+def ratio_cell(s) -> str:
+    if not s.ratio:
+        return NV
+    doc, code = s.ratio
+    return f"{doc}:{code}" + (f" ({doc / code:.1f})" if code else "")
+
+
+def collect(slices_dir: str, use_git: bool, backlog: str | None, strip_phase_prefix: bool = False,
+            profile: str | None = None) -> list:
     d = os.path.abspath(slices_dir)
     names = sorted(f for f in os.listdir(d) if f.endswith(".md"))
     # A slice id is upper-case with at least one hyphen (ADMIN-01, P04-ASSIGN-01, PAY-REVOLUT, BOOT-FIX-02);
@@ -306,6 +347,8 @@ def collect(slices_dir: str, use_git: bool, backlog: str | None, strip_phase_pre
             if s.review_min == NV:
                 s.review_min = minutes(t_dev, max(r_ts) if r_ts else None)
         out.append(s)
+    if root:
+        merge_ratios(root, rel, out, profile)
 
     if backlog:
         bl = read(backlog)
@@ -373,10 +416,21 @@ def tour_line(slices: list) -> str:
             " (bulgu sayısı kalite ölçüsü değildir)")
 
 
+def ratio_line(slices: list) -> str:
+    known = [s for s in slices if s.ratio and s.ratio[1]]
+    if not known:
+        return f"- Belge+kanıt : kod satırı (merge başına, testler hariç): {NV} (adını taşıyan merge bulunamadı)"
+    vals = [s.ratio[0] / s.ratio[1] for s in known]
+    over = [s.id for s in known if s.ratio[0] > 3 * s.ratio[1]]
+    return (f"- Belge+kanıt : kod satırı (merge başına, testler hariç): ölçülen {len(known)} · medyan "
+            f"{statistics.median(vals):.1f}:1 · 3:1 üstü {len(over)}" + (f" ({', '.join(over)})" if over else "")
+            + " (R-7 tavanı; dedektör evidence_ratio)")
+
+
 def render(slices: list, label: str, fmt: str, summary_only: bool) -> str:
     rows = []
     hdr = ["dilim", "Durum satırı", "sınıf", "dev raporu", "inceleme raporu", "REVISE", "ilk karar", "son karar",
-           "geliştirme dk (not|git)", "inceleme dk (not|git)", "kaçan hata", "r2 kapsam"]
+           "geliştirme dk (not|git)", "inceleme dk (not|git)", "kaçan hata", "r2 kapsam", "belge:kod (merge)"]
     for s in slices:
         verdicts = [v for _p, v, _t in s.reviews]
         rev = s.revise_field or str(sum(1 for v in verdicts if v == "REVISE"))
@@ -388,7 +442,7 @@ def render(slices: list, label: str, fmt: str, summary_only: bool) -> str:
             esc = "aday: " + ",".join(s.escaped_candidates) + " (" + NV + ")"
         rows.append([s.id, s.status, s.klass, "var" if s.dev_report else "yok", str(len(s.reviews)), rev,
                      verdicts[0] if verdicts else "-", s.final, s.dev_min, s.review_min, esc,
-                     ",".join(s.r2_scopes) or "-"])
+                     ",".join(s.r2_scopes) or "-", ratio_cell(s)])
 
     reviewed = [s for s in slices if s.reviews]
     rounds = sum(len(s.reviews) for s in slices)
@@ -424,6 +478,7 @@ def render(slices: list, label: str, fmt: str, summary_only: bool) -> str:
      if esc_f else f"- Kaçan hata: hiçbir kapanış notunda alan yok → {NV}")
     + f"; backlog adayı olan dilim: {len(esc_c)}" + (f" ({', '.join(esc_c)})" if esc_c else "") + " (aday = insan teyidi gerekir)",
         tour_line(slices),
+        ratio_line(slices),
     ]
     if summary_only:
         return "\n".join(lines) + "\n"
@@ -462,7 +517,7 @@ def main(argv=None) -> int:
     if not isinstance(strip, bool):  # ACEF-FIX-03: the string "false" is truthy; never guess
         print(f"stack profile metrics.evidence_dir_strip_phase_prefix must be a JSON boolean, got {type(strip).__name__} {strip!r}", file=sys.stderr)
         return 2
-    sl = collect(a.slices_dir, not a.no_git, a.backlog, strip)
+    sl = collect(a.slices_dir, not a.no_git, a.backlog, strip, a.profile)
     sys.stdout.write(render(sl, a.label or os.path.abspath(a.slices_dir), a.format, a.summary_only))
     return 0
 

@@ -65,7 +65,10 @@ decision, not a judgement call:
 3. **The route sets the ceremony.** Reviewer count, test scope (docs-only checks / affected tests and neighbours /
    full suite at checkpoints), required evidence files and documents are derived from the route through
    `method/control-dosing.json`, not chosen per task. A lighter route must reach the test runner too: a docs-only
-   closing never runs the application suite.
+   closing never runs the application suite. **Evidence ceiling (R-7, 2026-11-08):** `sliceEvidence` there lists the
+   files each route needs and no others; a later review round writes only its `review-r<n>.md` and puts its re-runs and
+   mutations in a `## Delta r<n>` section of it. `metrics.py` reports docs+evidence : code lines per merge (tests
+   excluded); the `evidence_ratio` detector alerts above 3:1.
 4. **The diff confirms the route.** Before merge the actual diff is classified with the same facts (the A7 triage
    questions of `templates/slice/review-checklist.md`). A diff that needs a heavier route than declared stops and is
    re-routed; a heavy route on a trivial diff is reported as over-ceremony. Every route decision and correction is

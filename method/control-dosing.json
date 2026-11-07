@@ -416,5 +416,30 @@
       "description": "Guarded assurance strengthens the selected workflow without duplicating its lifecycle or adding extra Quick Fix review actors."
     }
   },
+  "sliceEvidence": {
+    "rule": "R-7 (owner decision 2026-11-08): each slice route needs the evidence files below and no others. A later review round writes only its <ID>-review-r<n>.md (required by review-r2.py, tour.py and metrics.py); its re-runs, mutations and screenshots go into a '## Delta r<n>' section of that file, never into new evidence files. metrics.py reports docs+evidence : code lines per merge; the evidence_ratio detector alerts above 3:1 (tests excluded).",
+    "native": [],
+    "HAFIF": [
+      "<ID>.md (slice: intake card, Yol line, closing note)",
+      "<ID>-dev-report.md",
+      "<ID>-review.md (one per required reviewer and round)",
+      "A1-rerun.txt",
+      "A2-allowed.txt",
+      "A3-red-first.txt",
+      "A7-triage.txt",
+      "review/mutations/M<n>.txt (one per behaviour change, or a written not-applicable reason)",
+      "checklist B, C, E, F, G row files only when that section applies (UI screenshots C4-*.png, tour report)"
+    ],
+    "TAM": [
+      "every HAFIF file",
+      "review/mutations/M<n>.txt (3-5 per new or changed rule)",
+      "D1-trace.md",
+      "D3-copies.txt",
+      "D7-paths.txt",
+      "D8-exposure.txt",
+      "<ID>-review-<reviewer>.md for the second, other-family reviewer when required (money, migration)"
+    ],
+    "others": "none"
+  },
   "notes": "Execution workflow determines base controls; guarded assurance adds the former guarded safety contract orthogonally and never duplicates review phases. Repo Native creates no ACEF run."
 }

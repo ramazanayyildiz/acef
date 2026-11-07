@@ -362,9 +362,20 @@ printf '# M-02 — x\n\nDurum: KAPANDI\n' > M-02.md
 printf '# M-02 r1\nKarar: **REVISE**\n' > M-02-review.md
 printf '# M-02 r2\n\nKarar: **PASS**\n' > M-02-review-r2.md
 out=$(python3 -I "$HERE/metrics.py" --no-git "$T/m")
-printf '%s\n' "$out" | grep -q '^| M-01 | .* | full:money |$' && check 1 1 "metrics: r2 scope column full:money" || check 0 1 "metrics: r2 scope column full:money"
-printf '%s\n' "$out" | grep -q '^| M-02 | .* | eksik |$' && check 1 1 "metrics: r2 without the scope line is 'eksik'" || check 0 1 "metrics: r2 without the scope line is 'eksik'"
+printf '%s\n' "$out" | grep -q '^| M-01 | .* | full:money | doğrulanmadı |$' && check 1 1 "metrics: r2 scope column full:money" || check 0 1 "metrics: r2 scope column full:money"
+printf '%s\n' "$out" | grep -q '^| M-02 | .* | eksik | doğrulanmadı |$' && check 1 1 "metrics: r2 without the scope line is 'eksik'" || check 0 1 "metrics: r2 without the scope line is 'eksik'"
 has "$out" "narrow 0 · full 1 (money 1) · satırı eksik/geçersiz 1" "metrics: r2 scope summary line"
+# R-7: docs+evidence : code lines of the merge that names the slice (tests excluded)
+G="$T/mg"; mkdir -p "$G/docs/slices" "$G/src" "$G/tests" && cd "$G" && git init -q -b main && git config user.email t@t && git config user.name t
+echo base > README.md && git add . && git commit -qm base && git checkout -qb slice/x-01
+{ printf '# X-01 — x\n\nDurum: KAPANDI\n'; seq 1 40; } > docs/slices/X-01.md
+printf '# X-02 — y\n\nDurum: AÇIK\n' > docs/slices/X-02.md
+seq 1 10 > src/a.py && seq 1 100 > tests/a_test.py && git add . && git commit -qm x
+git checkout -q main && git merge -q --no-ff slice/x-01 -m "Merge slice/x-01: X-01 (light)"
+out=$(python3 -I "$HERE/metrics.py" docs/slices); cd "$R"
+printf '%s\n' "$out" | grep -q '^| X-01 | .* | 46:10 (4.6) |$' && check 1 1 "R-7 metrics: docs:code per merge, tests excluded" || check 0 1 "R-7 metrics: docs:code per merge, tests excluded"
+printf '%s\n' "$out" | grep -q '^| X-02 | .* | doğrulanmadı |$' && check 1 1 "R-7 metrics: no merge names the slice -> doğrulanmadı" || check 0 1 "R-7 metrics: no merge names the slice -> doğrulanmadı"
+has "$out" "ölçülen 1 · medyan 4.6:1 · 3:1 üstü 1 (X-01)" "R-7 metrics: summary counts merges above 3:1"
 
 # ---- one reason list: review-r2.py, metrics.py and the template agree ----
 python3 -I - "$HERE" <<'PY'
