@@ -93,6 +93,7 @@ Tour: <required — <adım 3b'deki hangi davranış değişiyor> | not applicabl
 - Giriş kartı: `<bağlantı>` · **Yol: native | HAFİF | TAM — <tek cümle gerekçe>** (gerçeklerden, iş adından değil)
 - Şekil bütçesi: dosya başına en fazla ~<n> satır; en fazla <n> yeni sınıf; önce yeniden kullanılacaklar: <mevcut yardımcı/sınıf listesi>. Aşılıyorsa geliştirici durur, koordinatöre sorar.
 - Boyut: ürün kodu ~<n> satır; paylaşılan bileşen/JS/CSS: var/yok; sıcak dosyalar: <liste/yok>
+- Hız işi ise (yalnız o zaman): önce ölçümü `<son karşılaştırılabilir nightly/tam koşu raporu>`; yeni taban koşusu yalnız ortam ya da test kapsamı değiştiyse: `<ne değişti | yok>` (R-3). "Sonra" ölçümü kalır.
 - **Sınıf: TAM | HAFİF.** TAM = para, yetki/kiracı, durum geçişi, göç, güvenlik ya da sıcak/paylaşılan dosya. HAFİF = test-only, belge, araç, katalog ekranı, çeviri.
 - TAM: ayrı oturum + farklı model ailesi (para ve göçte zorunlu, diğer TAM'da önerilir) + kural başına 3–5 mutasyon + UI'a dokunuyorsa gerçek tarayıcı 1280/390 + `templates/review-checklist.md` A–E.
 - HAFİF: tek bağımsız inceleme; davranış değişikliği başına bir mutasyon, UI'a dokunuyorsa tarayıcı; aksi halde her biri için gerekçeli "uygulanmaz"; checklist A (+ ilgiliyse B/C). Gerekçeler dev raporuna taşınır ve inceleyici doğrular; uygulanabilir kontrol atlanmaz.

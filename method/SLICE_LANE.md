@@ -99,6 +99,10 @@ method, not a per-host habit:
   - the PRs then merge back-to-back in that order, with nothing else merged in between;
   - that single run covers every PR in the batch.
   - If anything else lands on main first, or a PR changes after the run, the run no longer counts: run it again on the new combined head.
+- **Speed work reuses a comparable baseline (R-3, 2026-11-08).** A slice that makes tests or a runner faster links the
+  latest comparable nightly or full-suite report as its "before" measurement (slice "Boyut ve derinlik" line). A new
+  baseline run on the shared runner is allowed only when the environment or the test scope changed, and the slice
+  says which. The "after" measurement stays.
 - **Reviewers do not run the full suite**, in any review round. A review round re-runs focused tests, mutations, the slice's race tests and the contract set; the integration run is the only full run.
 - **Why TAM keeps a pre-merge full run:** a conflict between two merges is caught before money or data code reaches
   main, not the next morning. For HAFİF work, the nightly run catches it.
