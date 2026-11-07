@@ -3,7 +3,7 @@
 
 Usage:
   acef-retro --project <p> | --all [--week YYYY-Www] [--repo <host> [--config <json>]] [--print] [--force]
-  acef-retro --project <p> | --all [--week YYYY-Www] --answer 1=accept --answer "2=reject:<why>" --answer "3=defer:<why>"
+  acef-retro --project <p> | --all [--week YYYY-Www] --answer 1=accept@<owner> --answer "2=reject:<why>" --answer "3=defer:<why>"
 
 Collects the window (an ISO week, default the last 7 days up to now) from the central store (ACEF_FEEDBACK_DIR): log
 entries, alerts opened / reopened / resolved / overdue / unowned, rules past their review date; and from each host repo
@@ -12,7 +12,9 @@ entries, alerts opened / reopened / resolved / overdue / unowned, rules past the
 commit. Writes retros/<YYYY>-W<ww>.md (--all) or retros/<YYYY>-W<ww>-<project>.md with five sections and an owner
 decision table; at most five proposals. Numbers from a fallback or a proxy say so; what was not measured says
 "unknown". An existing retro is never overwritten (owner answers live in it) unless --force.
---answer records the owner's decision by proposal number in the same file.
+--answer records the owner's decision by proposal number in the same file. An accept names its owner, a running
+coordinator's agent name (R-9, 2026-11-08: "1=accept@b2-coord-2335[:<note>]"), never a session description; the note
+cell then reads "owner: <name>", the form the rule file's Activation line and inactive_improvement use.
 """
 import sys
 
@@ -95,6 +97,9 @@ def collect_host(ctx, lo, hi, days):
            "notes": []}
     if ctx is None:
         out["notes"].append("no host repo registered (run acef-detect once, or pass --repo): host numbers unknown")
+        return out
+    if not lib.is_git_repo(ctx):   # a registered folder that is not (or no longer) a repository: unknown, not a crash
+        out["notes"].append(f"{ctx.repo} is not a git repository: host numbers unknown")
         return out
     hist = lib.history(ctx, days + 31)
     if not hist["available"]:
@@ -265,10 +270,16 @@ def acked_line(a: dict, at: dt.datetime) -> str:
 def record_answers(path: Path, answers: list, today: str):
     text = path.read_text()
     for raw in answers:
-        match = re.match(r"^(\d+)=(accept|reject|defer)(?::(.*))?$", raw.strip())
+        match = re.match(r"^(\d+)=(accept|reject|defer)(?:@([\w.-]+))?(?::(.*))?$", raw.strip())
         if not match:
-            sys.exit(f"acef-retro: an answer looks like 2=accept, 3=reject:<why> or 4=defer:<why>, not {raw!r}")
-        n, decision, why = match.group(1), match.group(2), (match.group(3) or "").replace("|", "/").strip()
+            sys.exit(f"acef-retro: an answer looks like 2=accept@<owner>, 3=reject:<why> or 4=defer:<why>, not {raw!r}")
+        n, decision, owner, why = match.groups()
+        why = (why or "").replace("|", "/").strip()
+        if decision == "accept" and (not owner or "session" in owner.lower()):
+            sys.exit(f"acef-retro: {raw!r}: an accept names a running coordinator as owner ({n}=accept@<agent name>, "
+                     "see herdr agent list), not a session description")
+        if owner:
+            why = f"owner: {owner}" + (f" · {why}" if why else "")
         row = re.compile(rf"(?m)^\| {n} \| [^|\n]*\| [^|\n]*\| [^|\n]*\|$")
         if not row.search(text):
             sys.exit(f"acef-retro: proposal {n} has no row in {path}")

@@ -643,13 +643,21 @@ def rounds_by_id(review_items: list) -> dict:
 
 # ---------------------------------------------------------------- main history (one git log)
 def main_ref(ctx) -> str:
+    """sources.main_ref, else origin/main, else the host's default branch (origin/HEAD, e.g. origin/v3; R-9
+    2026-11-08), else HEAD. origin/main comes first: a GitHub default can be a work branch while work merges to main."""
     ref = ctx.sources.get("main_ref")
     if ref:
         return ref
     rc = git_rc(ctx, "rev-parse", "--verify", "-q", "origin/main")
     if rc not in (0, 1):
         raise SourceError("git", f"rev-parse origin/main exit {rc}")
-    return "origin/main" if rc == 0 else "HEAD"
+    if rc == 0:
+        return "origin/main"
+    if git_rc(ctx, "symbolic-ref", "-q", "refs/remotes/origin/HEAD") == 0:
+        head = git(ctx, "symbolic-ref", "-q", "--short", "refs/remotes/origin/HEAD").strip()
+        if head and git_rc(ctx, "rev-parse", "--verify", "-q", head) == 0:
+            return head
+    return "HEAD"
 
 
 def _raw_history(ctx, days: int) -> dict:

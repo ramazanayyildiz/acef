@@ -38,9 +38,12 @@ judgment on top; the owner decides by number. This page is for the coordinator. 
 ## After the owner answers
 
 - The owner answers by number: accept, reject or defer. Record the answers with
-  `acef-retro --project <p> --answer 1=accept --answer "2=reject:<why>" --answer "3=defer:<why>"` (with `--all` for an
-  all-project retro). When every row is answered the file says `Status: decided`.
-- An accepted change gets `rules/R-<n>.md` in the store (Incidents, Cost, Review-by, Activation with an owner and a
-  date, Status) and ships as a normal ACEF or host change with a CHANGELOG entry. `inactive_improvement` raises an
+  `acef-retro --project <p> --answer 1=accept@<owner> --answer "2=reject:<why>" --answer "3=defer:<why>"` (with `--all`
+  for an all-project retro). When every row is answered the file says `Status: decided`.
+- **An accept names its owner at decision time (R-9, 2026-11-08):** a running coordinator's agent name (`herdr agent
+  list`), never a session description ("side session", "JakoMeet session"). `acef-retro` refuses an accept without
+  `@<owner>` and writes `owner: <name>` into the note cell.
+- An accepted change gets `rules/R-<n>.md` in the store (Incidents, Cost, Review-by, Activation with
+  `owner: <name>` and a date, Status) and ships as a normal ACEF or host change with a CHANGELOG entry. `inactive_improvement` raises an
   alert when its activation has no owner or its date passes.
 - A deferred proposal comes back in the next retro only if its evidence repeats.
