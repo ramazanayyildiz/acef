@@ -7,6 +7,32 @@ proven, or installed.
 Update this file in the same PR whenever ACEF itself gains or changes a flow, gate, validator, hook, skill, installer behavior, workflow,
 or evidence contract. Do not use it to claim implementation status; link to the capability record for that.
 
+## v3.0.0-beta.13 — W45 rule changes: route line, round cap, evidence ceiling, retro owner (2026-11-08)
+
+Why: Ram accepted five proposals in the 2026-W45 retro (`acef-feedback/retros/2026-W45.md`) with one constraint above
+all: ACEF must not become more controlling or more complex. Each change extends an existing script or template; no new
+config system or file format.
+- **R-5 (light):** a review brief carries the slice's filled `Yol: native | HAFİF | TAM — <reason>` line.
+  `codex-review.sh` refuses a brief without it; `review-r2.py brief` copies it from the slice and refuses a slice
+  without one. Checklist A8: the route must fit the diff both ways; over-ceremony is reported like under-ceremony. No
+  risk-path list. Only Codex-driven reviews are script-gated; Claude review sessions rely on the template.
+- **R-6:** `review-r2.py brief --round 3+` needs `--re-ruling redesign|split|narrow — <what>` and `--blocking <id>
+  money-loss|data-loss|permission-break`; round 4+ also `--owner-word`. `review-r2.py check` fails a round-3+ report
+  without those lines. SLICE_LANE "Round caps": dormant code is held to the HAFİF bar.
+- **R-7:** `method/control-dosing.json` `sliceEvidence` lists the evidence files per route and "others: none"; a later
+  round writes only its `review-r<n>.md` with a `## Delta r<n>` section (the per-round file stays, since review-r2.py,
+  tour.py and metrics.py key on it). `metrics.py` adds a `belge:kod (merge)` column; new detector `evidence_ratio`
+  raises one alert per host when merges in the last 7 days exceed 3:1 (tests excluded), with the count and the five
+  worst merges (a first dry run: pilanerv2 47 of 63 merges, unusualspace-crm 49 of 50, b2press-rebuild 25).
+- **R-9 (a)(b):** `acef-retro --answer N=accept@<owner>` names a running coordinator (an agent name, never a session
+  description) and writes `owner: <name>`. `_lib.main_ref` reads `origin/main`, then the host's default branch
+  (`origin/HEAD`), then `HEAD`; a registered host folder without `.git` (the real cause of the W45 `exit 128` crash,
+  `mft`) is reported as unknown instead of crashing.
+- **R-3:** speed work links the latest comparable nightly or full-suite report as its "before" measurement (slice
+  template line, SLICE_LANE "Test budget").
+- **R-4:** intake card "Sahiplik" line; `route.py card --work-id <ID>` stops with CLAIMED when a branch or worktree
+  already carries the id.
+
 ## v3.0.0-beta.12 — Slice tours: human-like browser coverage per slice (2026-11-05)
 
 Why: Ram asked on 2026-11-05 whether the ACEF flow has human-like browser tests. The method has three browser levels,
