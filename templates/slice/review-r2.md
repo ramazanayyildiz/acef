@@ -2,6 +2,7 @@
 
 Review scope: <narrow | full> — <gerekçe>
 Reviewer session: <same — <oturum> | fresh — session gone: <neden>>
+Yol: <native | HAFİF | TAM> — <gerekçe> (dilimden; review-r2.py brief kopyalar)
 
 Bu brief `scripts/slice/review-r2.py brief` ile üretilir; elle yazılmış r2 brief'i kullanılmaz (`method/SLICE_LANE.md` adım 5). Aynı inceleyici oturumu (bulguları yazan oturum bağlamıyla devam eder; geliştiricinin oturumu asla değil). O oturum kaybolduysa (bağlam sınırı, çökme) yeni inceleyici oturumu önceki raporu + düzeltme diff'ini okur ve üstteki satır `Reviewer session: fresh — session gone: <neden>` olur. Kapsam varsayılan olarak dar (`narrow`): YALNIZ önceki turun bulguları, düzeltme diff'i ve düzeltmenin dokunduğu yer ("Kapsam" bölümü). Tam kapsam (`full`) yalnız şu gerekçelerden biriyle: `personal-data`, `tenant`, `permissions`, `money`, `schema`, `fix-larger-than-slice`, `redesign`; o zaman bütün dilim yeniden incelenir. İki satırın anahtarı ve değerleri sabit İngilizce sözcüklerdir; `review-r2.py check` ve `metrics.py` okur. Hiçbir inceleme turunda tam takım koşmaz; merge öncesi entegrasyon koşusu tek tam koşudur. Önceki bağımsız temiz kanıt yalnız bağları ve kapsadığı davranış hâlâ geçerliyse yeniden kullanılır (`method/SLICE_LANE.md` "Evidence validity and reuse").
 

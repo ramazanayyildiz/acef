@@ -460,6 +460,9 @@ def cmd_brief(args):
 
     slice_text = read(args["slice"])
     klass, base_in_slice, race = slice_facts(slice_text)
+    yol = route.yol_line(slice_text)
+    if not yol:   # R-5 (2026-11-08): no review brief without the route line
+        die(f"{args['slice']} has no filled 'Yol: native | HAFİF | TAM — <reason>' line: add it from the intake card")
     sid = os.path.splitext(os.path.basename(args["slice"]))[0]
     reviewed = commit_of(repo, args["reviewed"], "--reviewed")
     head = commit_of(repo, args.get("head", "HEAD"), "--head")
@@ -537,7 +540,7 @@ def cmd_brief(args):
          "scope_code": [f for f in scope_files if code(f)], "fix_lines": fix_lines, "slice_lines": slice_lines,
          "hits": hits}
     body = render_scope(d)
-    out = fill(tpl, sid, rnd, scope_line, session_line, reviewed, head, args["review"], body, profile, findings)
+    out = fill(tpl, sid, rnd, scope_line, session_line, reviewed, head, args["review"], body, profile, findings, yol)
     if args.get("out"):
         try:
             with open(args["out"], "w", encoding="utf-8") as fh:
@@ -669,10 +672,11 @@ def render_scope(d):
     return "\n".join(o).rstrip() + "\n"
 
 
-def fill(tpl, sid, rnd, scope_line, session_line, reviewed, head, reviews, body, profile, findings):
+def fill(tpl, sid, rnd, scope_line, session_line, reviewed, head, reviews, body, profile, findings, yol):
     out = tpl.replace("<SLICE-ID>", sid).replace("(r<n>)", f"(r{rnd})")
     out = re.sub(r"^Review scope:.*$", lambda _m: scope_line, out, count=1, flags=re.M)
-    out = re.sub(r"^Reviewer session:.*$", lambda _m: session_line, out, count=1, flags=re.M)
+    out = re.sub(r"^Yol:.*\n", "", out, count=1, flags=re.M)   # an older host template may lack the line
+    out = re.sub(r"^Reviewer session:.*$", lambda _m: session_line + "\n" + yol, out, count=1, flags=re.M)
     out = out.replace("<YYYY-MM-DD>", datetime.date.today().isoformat(), 1)
     names = ", ".join(f"`{os.path.basename(r)}`" for r in reviews)
     out = out.replace(f"Önceki inceleme: `<sha>` (`{sid}-review.md`)", f"Önceki inceleme: `{reviewed[:12]}` ({names})", 1)

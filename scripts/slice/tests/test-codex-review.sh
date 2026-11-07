@@ -23,7 +23,13 @@ cat >/dev/null
 exit "${FAKE_RC:-0}"
 F
 chmod +x "$T/fake-codex"
-printf 'brief\n' > "$T/brief.md"
+printf 'brief\n' > "$T/noroute.md"
+printf 'Yol: native | HAFİF | TAM — <gerekçe>\n' > "$T/unfilled.md"
+for b in noroute unfilled; do
+    REVIEW_MODEL=x CODEX_BIN="$T/fake-codex" "$HERE/codex-review.sh" "$T/$b.md" "$T/out.md" >/dev/null 2>&1
+    check "$?" 2 "R-5: a brief without a filled Yol line is refused ($b)"
+done
+printf -- '- Yol: HAFİF — tooling only\nbrief\n' > "$T/brief.md"
 review() { # <want rc> <label> [FAKE_BODY]  (FAKE_BODY unset = model wrote nothing)
     local want=$1 label=$2
     if [ $# -ge 3 ]; then FAKE_BODY=$3 REVIEW_MODEL=x CODEX_BIN="$T/fake-codex" "$HERE/codex-review.sh" "$T/brief.md" "$T/out.md" >/dev/null 2>&1

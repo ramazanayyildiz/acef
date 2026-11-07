@@ -25,6 +25,7 @@ Kanıt atıfları `method/SLICE_LANE.md` "Evidence validity and reuse" kuralına
 | A5 | Kapı, standart, statik analiz, sınır; geçerli bağımsız A1 kaydını aynı sonuç için tekrar üretme | `scripts/gate.sh <worktree>`, `{{standards_check}}`, `{{static_analysis}}`, `{{boundary_check}}` kanonik kayıtlarına atıf; geçersiz/eksik olan veya açıkça yeniden istenen kontrol yeniden koşulur |
 | A6 | İddiaları doğrula, raporu değil: her "yapıldı/geçti" iddiasını bağımsız değerlendir; zorunlu hedefli kontroller kendi komutunla | iddia → kendi kanıtın veya geçerliliğini doğruladığın bağımsız geniş koşu kaydı; bağlantı tek başına doğrulama değildir |
 | A7 | Güvenlik ön elemesi (HAFİF dahil her dilim): (a) diff bir rota, politika, kapı, middleware, sorgu kapsamı ya da dışa aktarım ekliyor/değiştiriyor mu? (b) kişisel veri, para, token ya da kimlik bilgisi içeren bir alanı okuyor/yazıyor mu? (c) başka bir kiracı ya da rol yeni yola ulaşabilir mi? D satırı cevabı olmadan bir "evet" → dilim TAM'a yeniden sınıflanır, inceleme durur | üç cevap, her biri `dosya:satır` ya da "hayır: <neden>" → `A7-triage.txt` |
+| A8 | Yol gerçek diff'e iki yönde de uyuyor mu? Aşırı töreni (diff için fazla ağır yol, gereksiz kanıt dosyası ya da tur) eksik tören (fazla hafif yol) gibi bulgu olarak raporla | `route.py check --base <taban> --declared <Yol>`: ROUTE_UP ya da OVER_CEREMONY → bulgu; yol kuralı yakalamıyorsa tek cümle gerekçe |
 
 ## B — Paket anahtarı değişti (görünüm, çeviri, config, rota adı)
 

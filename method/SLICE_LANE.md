@@ -205,7 +205,9 @@ backlog -> slice file -> own worktree + port + DB    ->  simplify pass (2b)     
    needs an impact note naming that HEAD or a rerun of the affected steps. It checks the
    record's structure and bindings, it cannot prove that the exploration was genuine.
 4. **Independent review** in a separate session (`templates/slice/review-brief.md` +
-   `templates/slice/review-checklist.md`). Verify the claims, not the report. Re-apply every developer mutation and add
+   `templates/slice/review-checklist.md`). The brief carries the slice's filled `Yol:` line (R-5, 2026-11-08):
+   `codex-review.sh` and `review-r2.py brief` refuse a brief without it, and the reviewer checks the route against the
+   diff both ways (checklist A8: over-ceremony is reported like under-ceremony). Verify the claims, not the report. Re-apply every developer mutation and add
    at least one own mutation when mutations apply (see "Review classes"). When a package view/lang/config key changes, scan the hosts for includes
    (checklist B1). Before the verdict the reviewer confirms the tour's applicability (or its exemption), the report's
    binding to the candidate, the coverage reached and the disposition of every tour finding (3b).

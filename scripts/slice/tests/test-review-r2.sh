@@ -47,6 +47,7 @@ cat > docs/slices/DEMO-02.md <<EOF
 
 Durum: REVISE
 İnceleme sınıfı: HAFİF (gerekçe: hiçbiri)
+- Giriş kartı: card.md · **Yol: HAFİF — no risk fact, 3 file(s)**
 Dal / taban: \`slice/demo-02\` · \`$BASE\`
 
 ## Komutlar
@@ -83,6 +84,11 @@ check "$rc" 0 "narrow brief exit 0"
 has "$out" "# DEMO-02 — hedefli yeniden inceleme (r2)" "title filled with the slice id and round"
 has "$out" "Review scope: narrow — default: the fix's code files hit no" "scope line: narrow with its reason"
 has "$out" "Reviewer session: same — codex-r1-thread" "session line names the r1 reviewer session"
+has "$out" "Yol: HAFİF — no risk fact, 3 file(s)" "R-5: the slice's route line is copied into the brief"
+printf '%s\n' "$out" | grep -c '^Yol:' | grep -qx 1 && check 1 1 "R-5: exactly one route line" || check 0 1 "R-5: exactly one route line"
+grep -v '^- Giriş kartı' docs/slices/DEMO-02.md > "$T/noroute.md"
+r2 brief --slice "$T/noroute.md" --review docs/slices/DEMO-02-review.md --reviewed "$REVIEWED" --session s >/dev/null 2>&1
+check "$?" 2 "R-5: a slice without a filled Yol line gets no brief"
 has "$out" "#### R1 · high · blok: evet" "finding R1 listed"
 has "$out" "+core line 50 fixed" "R1 shows its fix hunk"
 has "$out" "(atıf satırında)" "finding matched at the cited line"

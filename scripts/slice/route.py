@@ -206,6 +206,16 @@ def log(path, entry):
         return False
 
 
+# R-5 (2026-11-08): a review brief carries one filled route line; the "a | b | c" placeholder is not one
+YOL = re.compile(r"Yol:\**\s*(native|HAF[İI]F|TAM)\b\**\s*[—–-]\s*([^\s<*][^*\n]*)")
+
+
+def yol_line(text):
+    """The first filled 'Yol: <route> — <reason>' line, normalised, else None (review-r2.py brief)."""
+    m = YOL.search(text)
+    return f"Yol: {m.group(1).replace('HAFIF', 'HAFİF')} — {m.group(2).strip()}" if m else None
+
+
 YES = re.compile(r"^\s*(evet|yes)\b", re.I)
 NO = re.compile(r"^\s*(hay[ıi]r|no)\b", re.I)
 
