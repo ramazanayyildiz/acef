@@ -47,6 +47,7 @@ cat > docs/slices/DEMO-02.md <<EOF
 
 Durum: REVISE
 İnceleme sınıfı: HAFİF (gerekçe: hiçbiri)
+- Giriş kartı: card.md · **Yol: HAFİF — no risk fact, 3 file(s)**
 Dal / taban: \`slice/demo-02\` · \`$BASE\`
 
 ## Komutlar
@@ -83,6 +84,11 @@ check "$rc" 0 "narrow brief exit 0"
 has "$out" "# DEMO-02 — hedefli yeniden inceleme (r2)" "title filled with the slice id and round"
 has "$out" "Review scope: narrow — default: the fix's code files hit no" "scope line: narrow with its reason"
 has "$out" "Reviewer session: same — codex-r1-thread" "session line names the r1 reviewer session"
+has "$out" "Yol: HAFİF — no risk fact, 3 file(s)" "R-5: the slice's route line is copied into the brief"
+printf '%s\n' "$out" | grep -c '^Yol:' | grep -qx 1 && check 1 1 "R-5: exactly one route line" || check 0 1 "R-5: exactly one route line"
+grep -v '^- Giriş kartı' docs/slices/DEMO-02.md > "$T/noroute.md"
+r2 brief --slice "$T/noroute.md" --review docs/slices/DEMO-02-review.md --reviewed "$REVIEWED" --session s >/dev/null 2>&1
+check "$?" 2 "R-5: a slice without a filled Yol line gets no brief"
 has "$out" "#### R1 · high · blok: evet" "finding R1 listed"
 has "$out" "+core line 50 fixed" "R1 shows its fix hunk"
 has "$out" "(atıf satırında)" "finding matched at the cited line"
@@ -113,6 +119,34 @@ printf '%s\n' "$out" | grep -c '^Review scope:' | grep -qx 1 && check 1 1 "exact
 r2 brief --slice docs/slices/DEMO-02.md --review docs/slices/DEMO-02-review.md --reviewed "$REVIEWED" --session s1 --out "$T/brief.md" >/dev/null
 check "$?" 0 "--out writes the brief"
 [ -s "$T/brief.md" ] && check 1 1 "brief file is not empty" || check 0 1 "brief file is not empty"
+
+# ---- R-6 round caps ----
+B="--slice docs/slices/DEMO-02.md --review docs/slices/DEMO-02-review.md --reviewed $REVIEWED --session s"
+r2 brief $B --round 3 >/dev/null 2>&1; check "$?" 2 "R-6: round 3 without a re-ruling refused"
+r2 brief $B --round 3 --re-ruling "keep patching — again" --blocking "R1 money-loss" >/dev/null 2>&1
+check "$?" 2 "R-6: 'keep patching' is not a re-ruling"
+r2 brief $B --round 3 --re-ruling "split — R3 moved to DEMO-03" >/dev/null 2>&1
+check "$?" 2 "R-6: round 3 without a blocking tag refused"
+r2 brief $B --round 3 --re-ruling "split — R3 moved to DEMO-03" --blocking "R1 style" >/dev/null 2>&1
+check "$?" 2 "R-6: a blocking finding outside money/data/permission refused"
+out=$(r2 brief $B --round 3 --re-ruling "split — R3 moved to DEMO-03" --blocking "R1 money-loss"); rc=$?
+check "$rc" 0 "R-6: round 3 with a re-ruling and a money-loss blocker"
+has "$out" "Re-ruling: split — R3 moved to DEMO-03" "R-6: the brief records the re-ruling"
+has "$out" "Blocking: R1 money-loss" "R-6: the brief records the blocking tag"
+r2 brief $B --round 4 --re-ruling "narrow — K4 only" --blocking "R1 data-loss" >/dev/null 2>&1
+check "$?" 2 "R-6: round 4 without the owner's word refused"
+r2 brief $B --round 4 --re-ruling "narrow — K4 only" --blocking "R1 data-loss" --owner-word "2026-11-08 — go on" --out "$T/DEMO-02-review-r4.md" >/dev/null
+check "$?" 0 "R-6: round 4 with the owner's word"
+r2 brief $B --re-ruling "split — x" >/dev/null 2>&1; check "$?" 2 "R-6: cap flags refused in round 2"
+sed -e 's/^Karar: \*\*PASS | REVISE\*\*$/Karar: **PASS**/' "$T/DEMO-02-review-r4.md" > "$T/DEMO-02-review-r4b.md"
+mv "$T/DEMO-02-review-r4b.md" "$T/DEMO-02-review-r4.md"
+r2 check "$T/DEMO-02-review-r4.md" >/dev/null; check "$?" 0 "R-6: check passes a round-4 report with the cap lines"
+grep -v '^Owner word:' "$T/DEMO-02-review-r4.md" > "$T/x" && mkdir -p "$T/r6" && mv "$T/x" "$T/r6/DEMO-02-review-r4.md"
+out=$(r2 check "$T/r6/DEMO-02-review-r4.md"); check "$?" 1 "R-6: check fails a round-4 report without the owner's word"
+has "$out" "R4_NO_OWNER_WORD" "R-6: check names the missing owner word"
+grep -v '^Re-ruling:' "$T/r6/DEMO-02-review-r4.md" | sed 's/review-r4/review-r3/' > "$T/r6/DEMO-02-review-r3.md"
+out=$(r2 check "$T/r6/DEMO-02-review-r3.md"); check "$?" 1 "R-6: check fails a round-3 report without a re-ruling"
+has "$out" "R3_NO_RERULING" "R-6: check names the missing re-ruling"
 
 # ---- B2 flags ----
 r2 brief --slice docs/slices/DEMO-02.md --review docs/slices/DEMO-02-review.md --reviewed "$REVIEWED" >/dev/null 2>&1
@@ -328,9 +362,20 @@ printf '# M-02 — x\n\nDurum: KAPANDI\n' > M-02.md
 printf '# M-02 r1\nKarar: **REVISE**\n' > M-02-review.md
 printf '# M-02 r2\n\nKarar: **PASS**\n' > M-02-review-r2.md
 out=$(python3 -I "$HERE/metrics.py" --no-git "$T/m")
-printf '%s\n' "$out" | grep -q '^| M-01 | .* | full:money |$' && check 1 1 "metrics: r2 scope column full:money" || check 0 1 "metrics: r2 scope column full:money"
-printf '%s\n' "$out" | grep -q '^| M-02 | .* | eksik |$' && check 1 1 "metrics: r2 without the scope line is 'eksik'" || check 0 1 "metrics: r2 without the scope line is 'eksik'"
+printf '%s\n' "$out" | grep -q '^| M-01 | .* | full:money | doğrulanmadı |$' && check 1 1 "metrics: r2 scope column full:money" || check 0 1 "metrics: r2 scope column full:money"
+printf '%s\n' "$out" | grep -q '^| M-02 | .* | eksik | doğrulanmadı |$' && check 1 1 "metrics: r2 without the scope line is 'eksik'" || check 0 1 "metrics: r2 without the scope line is 'eksik'"
 has "$out" "narrow 0 · full 1 (money 1) · satırı eksik/geçersiz 1" "metrics: r2 scope summary line"
+# R-7: docs+evidence : code lines of the merge that names the slice (tests excluded)
+G="$T/mg"; mkdir -p "$G/docs/slices" "$G/src" "$G/tests" && cd "$G" && git init -q -b main && git config user.email t@t && git config user.name t
+echo base > README.md && git add . && git commit -qm base && git checkout -qb slice/x-01
+{ printf '# X-01 — x\n\nDurum: KAPANDI\n'; seq 1 40; } > docs/slices/X-01.md
+printf '# X-02 — y\n\nDurum: AÇIK\n' > docs/slices/X-02.md
+seq 1 10 > src/a.py && seq 1 100 > tests/a_test.py && git add . && git commit -qm x
+git checkout -q main && git merge -q --no-ff slice/x-01 -m "Merge slice/x-01: X-01 (light)"
+out=$(python3 -I "$HERE/metrics.py" docs/slices); cd "$R"
+printf '%s\n' "$out" | grep -q '^| X-01 | .* | 46:10 (4.6) |$' && check 1 1 "R-7 metrics: docs:code per merge, tests excluded" || check 0 1 "R-7 metrics: docs:code per merge, tests excluded"
+printf '%s\n' "$out" | grep -q '^| X-02 | .* | doğrulanmadı |$' && check 1 1 "R-7 metrics: no merge names the slice -> doğrulanmadı" || check 0 1 "R-7 metrics: no merge names the slice -> doğrulanmadı"
+has "$out" "ölçülen 1 · medyan 4.6:1 · 3:1 üstü 1 (X-01)" "R-7 metrics: summary counts merges above 3:1"
 
 # ---- one reason list: review-r2.py, metrics.py and the template agree ----
 python3 -I - "$HERE" <<'PY'

@@ -18,12 +18,17 @@ method/SLICE_LANE.md step 5).
       permissions, money, schema), or whose code lines reach review.r2_full_ratio (default 0.5) of the slice's code
       lines (slice base..reviewed), cannot be narrow: SCOPE_UP, exit 1, nothing written. The slice base comes from
       the slice's "Dal / taban" line or --slice-base.
+      Round caps (R-6, 2026-11-08): --round 3 or later also needs --re-ruling "<redesign|split|narrow> — <what changed>"
+      (the coordinator's ruling after the second REVISE) and --blocking "<finding id> <money-loss|data-loss|
+      permission-break>"; round 4 or later needs --owner-word "<date — the owner's words>". The brief records them as
+      "Re-ruling:", "Blocking:" and "Owner word:" lines.
       Exit 0 written, 1 SCOPE_UP, 2 usage, config or git error.
 
   review-r2.py check <report.md>... [--config <slice-method.json>] [--profile <stack-profile.json>]
       Round >= 2 (file name "review-r<n>", else "(r<n>)" in the title; otherwise round 1): FAIL without a
       "Review scope: narrow|full — <reason>" line, on "full" without a listed reason, without a
-      "Reviewer session: same|fresh" line, or on "fresh" without "session gone: <why>". Every round: WARN when the
+      "Reviewer session: same|fresh" line, or on "fresh" without "session gone: <why>". Round >= 3: FAIL without the
+      "Re-ruling:" and "Blocking:" lines; round >= 4 also without "Owner word:". Every round: WARN when the
       report shows a full-suite run (a gate.sh summary line, the stack profile's bare test_command,
       review.full_suite_patterns). One line per finding, then per file:
       R2-CHECK PASS|FAIL round=<n> scope=<narrow|full|missing> session=<same|fresh|missing> warn=<n> <file>
@@ -49,9 +54,12 @@ FENCE_OPEN = re.compile(r"^ {0,3}(`{3,}|~{3,})(.*)$")
 REASON_TOKEN = re.compile(r"(" + "|".join(map(re.escape, REASONS)) + r")(?=$|[\s:;,.(])")
 SCOPE_LINE = re.compile(r"^Review scope:[ \t]*(\S*)[ \t]*(?:[—–-][ \t]*(.*?))?[ \t]*$")
 SESSION_LINE = re.compile(r"^Reviewer session:[ \t]*(\S*)[ \t]*(?:[—–-][ \t]*(.*?))?[ \t]*$")
+RERULING = re.compile(r"^Re-ruling:[ \t]*(redesign|split|narrow)[ \t]*[—–-][ \t]*(.*?)[ \t]*$")
+BLOCKING = re.compile(r"^Blocking:[ \t]*([A-Za-z0-9][\w.-]*)[ \t]+(money-loss|data-loss|permission-break)(?=$|[\s:;,.(—–-])")
+OWNER_WORD = re.compile(r"^Owner word:[ \t]*(.*?)[ \t]*$")
 GATE_SUMMARY = re.compile(r"GATE (PASS|FAIL|INCOMPLETE) [0-9a-f]{7,}(\+dirty)? (light|full) ")
 KNOWN = {"slice", "review", "reviewed", "head", "slice-base", "scope", "reason", "round", "session", "session-gone",
-         "repo", "config", "profile", "template", "out"}
+         "repo", "config", "profile", "template", "out", "re-ruling", "blocking", "owner-word"}
 
 
 def die(msg, code=2):
@@ -425,6 +433,22 @@ def line_ranges(nums):
     return ",".join(out)
 
 
+def cap_fails(lines, rnd):
+    """R-6 round caps for round >= 3: the re-ruling after the second REVISE, a money/data/permission blocking finding,
+    and from round 4 the owner's word. Used by brief (on its own lines) and check (on the report)."""
+    fails = []
+    if rnd >= 3:
+        if not any((m := RERULING.match(t)) and real(m.group(2)) for t in lines):
+            fails.append("R3_NO_RERULING round >= 3 needs 'Re-ruling: redesign|split|narrow — <what changed>' "
+                         "(the coordinator's ruling after the second REVISE; 'keep patching' is not one)")
+        if not any(BLOCKING.match(t) for t in lines):
+            fails.append("R3_NO_BLOCKING round >= 3 needs 'Blocking: <finding id> money-loss|data-loss|permission-break'"
+                         "; other findings go to the backlog")
+    if rnd >= 4 and not any((m := OWNER_WORD.match(t)) and real(m.group(1)) for t in lines):
+        fails.append("R4_NO_OWNER_WORD round >= 4 needs 'Owner word: <date — the owner's words>'")
+    return fails
+
+
 def cmd_brief(args):
     for key in ("slice", "reviewed"):
         if not args.get(key):
@@ -444,6 +468,12 @@ def cmd_brief(args):
     rnd = args.get("round", "2")
     if not re.fullmatch(r"[2-9]|[1-9]\d+", rnd):
         die("--round is a number >= 2")
+    caps = [f"{label}: {args[key]}" for key, label in (("re-ruling", "Re-ruling"), ("blocking", "Blocking"),
+                                                        ("owner-word", "Owner word")) if args.get(key)]
+    if int(rnd) < 3 and caps:
+        die("--re-ruling, --blocking and --owner-word go with --round 3 or later")
+    for fail in cap_fails(caps, int(rnd)):
+        die(fail.split(" ", 1)[1] + " (pass --re-ruling / --blocking / --owner-word)")
 
     repo = args.get("repo", ".")
     config = args.get("config") or os.path.join(repo, "slice-method.json")
@@ -460,6 +490,9 @@ def cmd_brief(args):
 
     slice_text = read(args["slice"])
     klass, base_in_slice, race = slice_facts(slice_text)
+    yol = route.yol_line(slice_text)
+    if not yol:   # R-5 (2026-11-08): no review brief without the route line
+        die(f"{args['slice']} has no filled 'Yol: native | HAFİF | TAM — <reason>' line: add it from the intake card")
     sid = os.path.splitext(os.path.basename(args["slice"]))[0]
     reviewed = commit_of(repo, args["reviewed"], "--reviewed")
     head = commit_of(repo, args.get("head", "HEAD"), "--head")
@@ -537,7 +570,8 @@ def cmd_brief(args):
          "scope_code": [f for f in scope_files if code(f)], "fix_lines": fix_lines, "slice_lines": slice_lines,
          "hits": hits}
     body = render_scope(d)
-    out = fill(tpl, sid, rnd, scope_line, session_line, reviewed, head, args["review"], body, profile, findings)
+    out = fill(tpl, sid, rnd, scope_line, session_line, reviewed, head, args["review"], body, profile, findings,
+               "\n".join([yol] + caps))
     if args.get("out"):
         try:
             with open(args["out"], "w", encoding="utf-8") as fh:
@@ -669,10 +703,11 @@ def render_scope(d):
     return "\n".join(o).rstrip() + "\n"
 
 
-def fill(tpl, sid, rnd, scope_line, session_line, reviewed, head, reviews, body, profile, findings):
+def fill(tpl, sid, rnd, scope_line, session_line, reviewed, head, reviews, body, profile, findings, yol):
     out = tpl.replace("<SLICE-ID>", sid).replace("(r<n>)", f"(r{rnd})")
     out = re.sub(r"^Review scope:.*$", lambda _m: scope_line, out, count=1, flags=re.M)
-    out = re.sub(r"^Reviewer session:.*$", lambda _m: session_line, out, count=1, flags=re.M)
+    out = re.sub(r"^Yol:.*\n", "", out, count=1, flags=re.M)   # an older host template may lack the line
+    out = re.sub(r"^Reviewer session:.*$", lambda _m: session_line + "\n" + yol, out, count=1, flags=re.M)
     out = out.replace("<YYYY-MM-DD>", datetime.date.today().isoformat(), 1)
     names = ", ".join(f"`{os.path.basename(r)}`" for r in reviews)
     out = out.replace(f"Önceki inceleme: `<sha>` (`{sid}-review.md`)", f"Önceki inceleme: `{reviewed[:12]}` ({names})", 1)
@@ -746,6 +781,7 @@ def check_one(path, pats):
     if rnd >= 2:
         token, session, fails = scope_fields(text)
         scope = token.split(":")[0] if token != "eksik" else "missing"
+        fails += cap_fails([t for _n, t in outside_fences(text)], rnd)
     for n, line, info in fenced(text):
         if info is not None and info.split()[:1] == ["diff"]:
             continue    # a quoted hunk (the brief shows the fix as ```diff blocks) is code under review, not a run

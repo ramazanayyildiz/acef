@@ -58,6 +58,10 @@ decision, not a judgement call:
 1. **Intake card** (`templates/slice/intake-card.md`): before any work the agent records six facts — expected files
    and directories; money; permissions/tenant; personal data; schema/migration/lock or race path; reversibility.
    Facts only, no recommendation.
+   **Claim before dispatch (R-4, 2026-11-08):** the coordinator marks the work item in the host's one shared place
+   (for example a merge-queue or plan row) and runs `route.py card <card> --work-id <ID>`, which stops with
+   CLAIMED when a branch or worktree already carries the id; an open PR (`gh pr list --search <ID>`) stops it too. A
+   second session that finds a claim asks the owner instead of starting.
 2. **Route** from the facts with the routing table, not from the task name. Any risk fact → TAM; no risk fact and a
    small, single-surface, reversible change → **native** (no slice, no ACEF state, focused verification only);
    otherwise HAFİF. The decision is one visible line before work starts — `Yol: native | HAFİF | TAM — <reason>` —
@@ -65,7 +69,10 @@ decision, not a judgement call:
 3. **The route sets the ceremony.** Reviewer count, test scope (docs-only checks / affected tests and neighbours /
    full suite at checkpoints), required evidence files and documents are derived from the route through
    `method/control-dosing.json`, not chosen per task. A lighter route must reach the test runner too: a docs-only
-   closing never runs the application suite.
+   closing never runs the application suite. **Evidence ceiling (R-7, 2026-11-08):** `sliceEvidence` there lists the
+   files each route needs and no others; a later review round writes only its `review-r<n>.md` and puts its re-runs and
+   mutations in a `## Delta r<n>` section of it. `metrics.py` reports docs+evidence : code lines per merge (tests
+   excluded); the `evidence_ratio` detector alerts above 3:1.
 4. **The diff confirms the route.** Before merge the actual diff is classified with the same facts (the A7 triage
    questions of `templates/slice/review-checklist.md`). A diff that needs a heavier route than declared stops and is
    re-routed; a heavy route on a trivial diff is reported as over-ceremony. Every route decision and correction is
@@ -96,6 +103,10 @@ method, not a per-host habit:
   - the PRs then merge back-to-back in that order, with nothing else merged in between;
   - that single run covers every PR in the batch.
   - If anything else lands on main first, or a PR changes after the run, the run no longer counts: run it again on the new combined head.
+- **Speed work reuses a comparable baseline (R-3, 2026-11-08).** A slice that makes tests or a runner faster links the
+  latest comparable nightly or full-suite report as its "before" measurement (slice "Boyut ve derinlik" line). A new
+  baseline run on the shared runner is allowed only when the environment or the test scope changed, and the slice
+  says which. The "after" measurement stays.
 - **Reviewers do not run the full suite**, in any review round. A review round re-runs focused tests, mutations, the slice's race tests and the contract set; the integration run is the only full run.
 - **Why TAM keeps a pre-merge full run:** a conflict between two merges is caught before money or data code reaches
   main, not the next morning. For HAFİF work, the nightly run catches it.
@@ -205,7 +216,9 @@ backlog -> slice file -> own worktree + port + DB    ->  simplify pass (2b)     
    needs an impact note naming that HEAD or a rerun of the affected steps. It checks the
    record's structure and bindings, it cannot prove that the exploration was genuine.
 4. **Independent review** in a separate session (`templates/slice/review-brief.md` +
-   `templates/slice/review-checklist.md`). Verify the claims, not the report. Re-apply every developer mutation and add
+   `templates/slice/review-checklist.md`). The brief carries the slice's filled `Yol:` line (R-5, 2026-11-08):
+   `codex-review.sh` and `review-r2.py brief` refuse a brief without it, and the reviewer checks the route against the
+   diff both ways (checklist A8: over-ceremony is reported like under-ceremony). Verify the claims, not the report. Re-apply every developer mutation and add
    at least one own mutation when mutations apply (see "Review classes"). When a package view/lang/config key changes, scan the hosts for includes
    (checklist B1). Before the verdict the reviewer confirms the tour's applicability (or its exemption), the report's
    binding to the candidate, the coverage reached and the disposition of every tour finding (3b).
@@ -228,10 +241,13 @@ backlog -> slice file -> own worktree + port + DB    ->  simplify pass (2b)     
    `Review scope: narrow | full — <reason>`. `review-r2.py check` fails a report without it, `full` without a listed
    reason, or a fresh session without the note; it warns on a full-suite run inside a review round. Neither scope runs
    the full suite (Test budget).
-   **Round caps** (owner decision 2026-10-25, from host practice): after a second REVISE the coordinator stops
-   patching and decides — redesign, split, narrow the scope or simplify; a reviewer's suggested fix is a hypothesis,
-   not a specification. From round 3 on, only money, data, permission or flow-breaking findings block; everything else
-   becomes a backlog row. An unmet committed acceptance item never becomes PASS silently, in any round: it is fixed, or
+   **Round caps** (owner decisions 2026-10-25 and 2026-11-08, R-6): after a second REVISE the coordinator stops
+   patching and re-rules — redesign, split or narrow; "keep patching" is not a ruling, and a reviewer's suggested fix is
+   a hypothesis, not a specification. `review-r2.py brief` refuses a round-3 brief unless it records that re-ruling
+   (`--re-ruling`) and tags the blocking finding money-loss, data-loss or permission-break (`--blocking`); everything
+   else becomes a backlog row. Round 4 and later also need the owner's word (`--owner-word`). `review-r2.py check`
+   fails a round-3+ report without these lines. Code that stays switched off until the owner enables it (dormant) is
+   held to the HAFİF bar; its findings go to the backlog. An unmet committed acceptance item never becomes PASS silently, in any round: it is fixed, or
    the owner explicitly agrees the scope change (split, narrow) and the slice records it.
 6. **Closing note** (`templates/slice/closing-note.md`): verdict, commits, durations, REVISE rounds, escaped defect,
    explicit tag-candidate judgement, tour (report or reviewer-confirmed exemption), deferred backlog IDs, cleanup. `scripts/slice/metrics.py` reads these fields.

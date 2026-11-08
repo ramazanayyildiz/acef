@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
 """route.py — size work from facts, not names (owner decision 2026-10-25; method/SLICE_LANE.md "Sizing from the diff").
 
-  route.py card <intake-card.md> [--config slice-method.json] [--log <jsonl>]
+  route.py card <intake-card.md> [--config slice-method.json] [--log <jsonl>] [--work-id <ID> [--repo .]]
       Reads the six facts of templates/slice/intake-card.md and prints the route line:
       "Yol: native | HAFIF | TAM — <reason>". Exit 0.
+      --work-id (R-4, 2026-11-08: claim before dispatch): a local or remote branch, or a worktree, whose name carries
+      the id means another session already took the work: CLAIMED on stderr, exit 1 (stop and ask the owner). Open
+      PRs are checked by the coordinator (gh pr list --search <ID>); the script stays offline.
 
   route.py check --base <ref> --declared native|HAFIF|TAM [--head HEAD] [--repo .] [--config slice-method.json]
                  [--profile <stack-profile.json>] [--log <jsonl>]
@@ -206,6 +209,16 @@ def log(path, entry):
         return False
 
 
+# R-5 (2026-11-08): a review brief carries one filled route line; the "a | b | c" placeholder is not one
+YOL = re.compile(r"Yol:\**\s*(native|HAF[İI]F|TAM)\b\**\s*[—–-]\s*([^\s<*][^*\n]*)")
+
+
+def yol_line(text):
+    """The first filled 'Yol: <route> — <reason>' line, normalised, else None (review-r2.py brief)."""
+    m = YOL.search(text)
+    return f"Yol: {m.group(1).replace('HAFIF', 'HAFİF')} — {m.group(2).strip()}" if m else None
+
+
 YES = re.compile(r"^\s*(evet|yes)\b", re.I)
 NO = re.compile(r"^\s*(hay[ıi]r|no)\b", re.I)
 
@@ -236,14 +249,33 @@ def parse_card(path):
     return facts, int(count.group(0)), yn("G6")
 
 
+def claims(repo, work_id):
+    """Branches (local and remote-tracking) and worktree paths whose name carries the work id, case-insensitively."""
+    rx = re.compile(rf"(?<![A-Za-z0-9]){re.escape(work_id)}(?![0-9])", re.I)
+    try:
+        refs = subprocess.run(["git", "-C", repo, "for-each-ref", "--format=%(refname:short)", "refs/heads",
+                               "refs/remotes"], check=True, capture_output=True, text=True).stdout.split()
+        wts = subprocess.run(["git", "-C", repo, "worktree", "list", "--porcelain"], check=True, capture_output=True,
+                             text=True).stdout.splitlines()
+    except subprocess.CalledProcessError as exc:
+        die(f"git failed while checking claims: {exc.stderr.strip()}")
+    paths = [line.split(" ", 1)[1] for line in wts if line.startswith("worktree ")][1:]   # the main checkout is not a claim
+    return [r for r in refs if rx.search(r)] + [p for p in paths if rx.search(os.path.basename(p))]
+
+
 def cmd_card(args):
     if not args.get("card"):
-        die("usage: route.py card <intake-card.md> [--config f] [--log f]")
+        die("usage: route.py card <intake-card.md> [--config f] [--log f] [--work-id <ID> [--repo .]]")
     cfg = routing_config(args.get("config"), args.get("profile"))
     facts, files, reversible = parse_card(args["card"])
     route, reason = decide(facts, files, reversible, reversible, cfg["native_max_files"])
     print(f"Yol: {route} — {reason}")
     logged = log(args.get("log"), {"kind": "card", "card": args["card"], "route": route, "reason": reason, "facts": facts, "files": files})
+    taken = claims(args.get("repo", "."), args["work-id"]) if args.get("work-id") else []
+    if taken:
+        print(f"CLAIMED: {args['work-id']} already has {', '.join(taken[:5])}; another session took it — stop and ask "
+              "the owner (R-4)", file=sys.stderr)
+        return 1
     return 0 if logged else 2
 
 

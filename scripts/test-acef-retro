@@ -177,11 +177,14 @@ try:
 
     rc, out = tool(RETRO, "--project", "demo", "--repo", str(HOST), "--config", str(cfg))
     check("existing retro is not overwritten", rc == 1 and "exists" in out, out)
-    rc, out = tool(RETRO, "--project", "demo", "--answer", "1=accept", "--answer", "2=reject:too costly")
+    for bad_owner in ("1=accept", "1=accept@side-session"):
+        rc, out = tool(RETRO, "--project", "demo", "--answer", bad_owner)
+        check(f"R-9: an accept without a coordinator owner is refused ({bad_owner})", rc != 0 and "owner" in out, out)
+    rc, out = tool(RETRO, "--project", "demo", "--answer", "1=accept@coord-1", "--answer", "2=reject:too costly")
     text = path.read_text()
-    check("answers recorded by number", f"| 1 | accept |  | {TODAY} |" in text and f"| 2 | reject | too costly | {TODAY} |" in text, text)
+    check("answers recorded by number", f"| 1 | accept | owner: coord-1 | {TODAY} |" in text and f"| 2 | reject | too costly | {TODAY} |" in text, text)
     check("status stays draft while answers are pending", "Status: draft" in text, text)
-    rc, out = tool(RETRO, "--project", "demo", "--answer", "9=accept")
+    rc, out = tool(RETRO, "--project", "demo", "--answer", "9=accept@coord-1")
     check("answer to a missing proposal refused", rc != 0, out)
     rc, out = tool(RETRO, "--project", "demo", "--answer", "1=maybe")
     check("invalid decision refused", rc != 0, out)
@@ -212,6 +215,31 @@ try:
     check("--print writes nothing", not (STORE / "retros" / f"{label}.md").exists())
     rc, out = tool(RETRO, "--all")
     check("--all writes retros/<YYYY>-W<ww>.md", rc == 0 and (STORE / "retros" / f"{label}.md").exists(), out)
+    # R-9 (b): a host whose only branch is v3 (origin/HEAD -> v3, no origin/main); a registered folder without .git
+    rem, seed, clone = TMP / "v3.git", TMP / "v3seed", TMP / "v3clone"
+    git("init", "-q", "--bare", "-b", "v3", str(rem), cwd=TMP)
+    seed.mkdir()
+    git("init", "-q", "-b", "v3", cwd=seed)
+    (seed / "a.py").write_text("a\n")
+    git("add", "-A", cwd=seed)
+    git("commit", "-q", "-m", "init", minutes_ago=600, cwd=seed)
+    git("checkout", "-q", "-b", "slice/v3-1", cwd=seed)
+    (seed / "b.py").write_text("b\n")
+    git("add", "-A", cwd=seed)
+    git("commit", "-q", "-m", "V3-1 change", minutes_ago=120, cwd=seed)
+    git("checkout", "-q", "v3", cwd=seed)
+    git("merge", "-q", "--no-ff", "slice/v3-1", "-m", "Merge slice/v3-1: V3-1 light change", minutes_ago=60, cwd=seed)
+    git("push", "-q", str(rem), "v3", cwd=seed)
+    git("clone", "-q", str(rem), str(clone), cwd=TMP)
+    git("checkout", "-q", "-b", "local-old", "v3~1", cwd=clone)   # HEAD alone would miss the merge on origin/v3
+    rc, out = tool(RETRO, "--project", "vthree", "--repo", str(clone), "--print")
+    check("R-9: a host without origin/main reads its default branch (origin/v3)",
+          rc == 0 and re.search(r"^\| vthree \| 1 \|", out, re.M), out)
+    plain = TMP / "notarepo"
+    plain.mkdir()
+    rc, out = tool(RETRO, "--project", "plain", "--repo", str(plain), "--print")
+    check("R-9: a registered folder that is not a git repository is 'unknown', not a crash",
+          rc == 0 and "is not a git repository: host numbers unknown" in out, out)
 finally:
     subprocess.run(["git", "worktree", "prune"], cwd=HOST, capture_output=True)
     shutil.rmtree(TMP, ignore_errors=True)

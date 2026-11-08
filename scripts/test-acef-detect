@@ -1101,6 +1101,22 @@ try:
     check("stale: each poll records the acked alerts it still saw breaching",
           polls and s_id in (polls[-1].get("breaching") or []) and u_id not in (polls[-1].get("breaching") or []),
           json.dumps(polls[-1:]))
+    # ------------------------------------------------------------ evidence_ratio (R-7): docs+evidence vs code per merge
+    for wid, docs_n, code_n in (("work-60", 400, 10), ("work-61", 20, 30)):
+        git("checkout", "-q", "-b", f"slice/{wid}", "main")
+        put(HOST / f"docs/slices/{wid.upper()}.md", "".join(f"note {i}\n" for i in range(docs_n)))
+        put(HOST / f"src/{wid}.py", "".join(f"x{i} = {i}\n" for i in range(code_n)))
+        put(HOST / f"tests/{wid}_test.py", "".join(f"t{i} = {i}\n" for i in range(500)))   # tests count for neither
+        git("add", f"docs/slices/{wid.upper()}.md", f"src/{wid}.py", f"tests/{wid}_test.py")
+        git("commit", "-q", "-m", f"{wid.upper()} change", minutes_ago=90)
+        git("checkout", "-q", "main")
+        git("merge", "-q", "--no-ff", f"slice/{wid}", "-m", f"Merge slice/{wid}: {wid.upper()} (light)", minutes_ago=60)
+    evr = det_cfg("evr", {})
+    rc, o = run("--only", "evidence_ratio", config=evr, env=ENV_R)
+    check("evidence_ratio fires above 3:1 (400 docs vs 10 code lines), one alert per host",
+          bool(re.search(r"NEW \[evidence_ratio\] ratio .*1 of \d+ merges .*worst: WORK-60 400:10 \(40\.0:1\)", o)), o)
+    check("evidence_ratio leaves out a merge under 3:1, tests excluded", "WORK-61" not in o.split("worst:")[-1], o)
+    check("evidence_ratio leaves a merge without code lines unjudged", "not judged: " in o and "WORK-3" in o, o)
 finally:
     subprocess.run(["git", "worktree", "prune"], cwd=HOST, capture_output=True)
     shutil.rmtree(TMP, ignore_errors=True)

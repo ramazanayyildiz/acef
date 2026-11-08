@@ -78,10 +78,10 @@ need() { # <file> <literal>...
 need templates/slice/slice.md '<SLICE-ID>' '## Standart uyumu' 'Kullanım taraması' '## Boyut ve derinlik' '## İzinli dosyalar' '### Ekler (koordinatör, tarihli)' '## Kabul maddeleri' 'Mutasyonlar' '## Kapanış notu'
 n=$(wc -l <templates/slice/slice.md | tr -d ' '); [ "$n" -le 150 ] && pass "templates/slice/slice.md $n <= 150 lines" || fail "templates/slice/slice.md $n > 150 lines"
 need templates/slice/dev-report.md '<SLICE-ID>' '## Kırmızı-önce kanıtı' '## İnceleme öncesi öz-denetim' '## Mutasyonlar' '## Maliyet' 'Duvar-saati-geliştirme-dk:' 'Duvar-saati-dilim-dk:' 'Token-geliştirici:' 'Token-inceleme:' 'Token-toplam:'
-need templates/slice/review-brief.md '<SLICE-ID>' 'review-checklist.md' 'iddiaları doğrula' '<paket-öneki>' 'TAM eki' 'needs_validation' 'Etiket adayı' 'her kural için 3–5 mutasyon' 'para ve göç dilimlerinde ZORUNLU' 'LICENSES/security-audit-MIT.txt'
+need templates/slice/review-brief.md '<SLICE-ID>' 'review-checklist.md' 'iddiaları doğrula' '<paket-öneki>' 'TAM eki' 'needs_validation' 'Etiket adayı' 'her kural için 3–5 mutasyon' 'para ve göç dilimlerinde ZORUNLU' 'LICENSES/security-audit-MIT.txt' '- Yol: native | HAFİF | TAM — <gerekçe>'
 [ -f LICENSES/security-audit-MIT.txt ] && grep -q 'Copyright (c) 2025-2026 Cloudflare, Inc.' LICENSES/security-audit-MIT.txt && pass "LICENSES/security-audit-MIT.txt present" || fail "LICENSES/security-audit-MIT.txt missing"
 need docs/slice-lane/SOURCES.md 'LICENSES/security-audit-MIT.txt' '/Users/ramazanayyildiz/CODE/Ram/live-learning' 'Adoption status at import'
-need templates/slice/review-checklist.md '## A —' '## B —' '## C —' '## D —' '## E —' 'scrollWidth <= 390' 'yalnız dilim UI'"'"'a dokunuyorsa' 'AYNI inceleyici oturumunda'
+need templates/slice/review-checklist.md '## A —' '## B —' '## C —' '## D —' '## E —' 'scrollWidth <= 390' 'yalnız dilim UI'"'"'a dokunuyorsa' 'AYNI inceleyici oturumunda' '| A8 | Yol gerçek diff'"'"'e iki yönde de uyuyor mu?'
 need templates/slice/review-r2.md '<SLICE-ID>' 'Aynı inceleyici oturumu' 'git diff <önceki-sha> <yeni-sha>'
 # Round-2 scope (owner decision 2026-11-03): generated brief, narrow by default, fixed scope/session lines
 need templates/slice/review-r2.md 'Review scope: <narrow | full> — <gerekçe>' 'Reviewer session: <same' '## Kapsam' 'scripts/slice/review-r2.py brief' 'Hiçbir inceleme turunda tam takım koşmaz'
@@ -146,7 +146,7 @@ for t in scripts/slice/tests/test-*.sh; do [ -f "$t" ] && run_test "$t"; done
 
 out=$(python3 -I scripts/slice/metrics.py --no-git scripts/slice/tests/fixtures/slices --backlog scripts/slice/tests/fixtures/slices/backlog.md --label fixture 2>&1); rc=$?
 [ "$rc" -eq 0 ] && pass "metrics.py fixture exit 0" || fail "metrics.py fixture exit $rc"
-printf '%s\n' "$out" | grep -q '^| DEMO-01 | KAPANDI | TAM | var | 2 | 1 | REVISE | PASS | 40 (not) | 25 (not) | yok | narrow |$' && pass "metrics.py DEMO-01 row" || fail "metrics.py DEMO-01 row"
+printf '%s\n' "$out" | grep -q '^| DEMO-01 | KAPANDI | TAM | var | 2 | 1 | REVISE | PASS | 40 (not) | 25 (not) | yok | narrow | doğrulanmadı |$' && pass "metrics.py DEMO-01 row" || fail "metrics.py DEMO-01 row"
 printf '%s\n' "$out" | grep -q '^| P01-DEMO-02 | .* | 2 | 1 | PASS | REVISE (son inceleme) |' && pass "metrics.py evidence reviews + prompt skipped" || fail "metrics.py evidence reviews"
 printf '%s\n' "$out" | grep -q 'aday: B1' && pass "metrics.py escaped candidate" || fail "metrics.py escaped candidate"
 

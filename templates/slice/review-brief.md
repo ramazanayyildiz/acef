@@ -8,7 +8,8 @@ Rol: bağımsız inceleyici. Geliştiriciyle aynı oturum değilsin. **Farklı m
 - Taban `<taban-sha>` · Aday `<aday-sha>` · Yalnız-test commit'i `<test-sha>`
 - Sadeleştirme geçişi (2b): commit `<2b-sha veya "commit yok">` · atlananlar listesi `<bağlantı>` (inceleyici geçişin değiştirdiği diff'i görür; atlanan bir bulgu güvenlik ya da kabul maddesiyle ilgiliyse incelemede ayrıca bakılır)
 - İlk bağımsız temiz koşu: `<kanonik kayıt bağlantısı>` (koordinatör/inceleyici, geliştirici değil); main `<sha>`, merge-base `<sha>`; test/standart/config, bağımlılık, DB/fixture, toolchain ve ilgili ortam bağları `<kayıt/başlık bağlantısı>`
-- Sınıf: TAM | HAFİF · Ortam: kendi worktree `<yol>`, port `<port>`, DB `<lane DB>` (paylaşılan DB ve ana önizleme portu YASAK)
+- Yol: native | HAFİF | TAM — <gerekçe> (dilimdeki satır; doldurulmamış satırla `codex-review.sh` brief'i reddeder; yolun diff'e uyduğunu checklist A8 ile iki yönde de doğrula)
+- Ortam: kendi worktree `<yol>`, port `<port>`, DB `<lane DB>` (paylaşılan DB ve ana önizleme portu YASAK)
 - Model: <sınıf> → <model> (MODEL_CHOICE.md) · Effort: <low | medium | high> (giriş kartından; `method/MODEL_CHOICE.md`)
 - Değişmezler: `<invariants-dosyası>` · Kontrol listesi: `templates/review-checklist.md`
 - Hedef kullanıcı: <profil> · Bu ekranda yapacağı iş: <görev> (giriş kartından; UI'a dokunmuyorsa "UI yok: uygulanmaz"). Profil bölümü: `<user_profiles dosyası>#Profil: <ad>`

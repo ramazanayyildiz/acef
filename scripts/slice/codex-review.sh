@@ -55,6 +55,9 @@ set -- exec --skip-git-repo-check -c "model=\"$MODEL\"" -s read-only
 if [ "$DRY" = 1 ]; then
     printf '%s' "$CODEX"; printf ' %q' "$@" -o; printf ' <fresh-temp-file> -'; printf ' < %q   (then moved to %q)\n' "$BRIEF" "$OUT"; exit 0
 fi
+# R-5 (2026-11-08): no review starts without the slice's filled route line (the unfilled "a | b | c" is not one)
+grep -Eq 'Yol:(\*\*)?[[:space:]]*(native|HAFİF|HAFIF|TAM)(\*\*)?[[:space:]]*(—|–|-)[[:space:]]*[^<[:space:]]' "$BRIEF" \
+    || die2 "brief has no filled route line 'Yol: native | HAFİF | TAM — <reason>' (SLICE_LANE step 4): $BRIEF"
 command -v "$CODEX" >/dev/null 2>&1 || die2 "codex binary not found: $CODEX"
 [ -d "$(dirname "$OUT")" ] || die2 "output directory not found: $(dirname "$OUT")"
 OUTDIR=$(cd "$(dirname "$OUT")" && pwd -P)   # absolute: codex -C <workdir> must not re-anchor a relative -o path
