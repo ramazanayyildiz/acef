@@ -7,6 +7,20 @@ proven, or installed.
 Update this file in the same PR whenever ACEF itself gains or changes a flow, gate, validator, hook, skill, installer behavior, workflow,
 or evidence contract. Do not use it to claim implementation status; link to the capability record for that.
 
+## v3.0.0-beta.14 — stage tour by Codex on every host (2026-11-08)
+
+Why: Ram asked whether every project has Codex walk the product like a person and found that only Unusual Teamwork
+(`human-browser-<n>` before each release) and the CRM (`Tur <n>`, owner rule 2026-11-05) do; B2Press, Pilaner and mft
+run scripted browser suites and Codex code reviews only, CursorPanel's Codex walks are refused by its classifier.
+Owner decision 2026-11-08 ("yes, and it should be in ACEF too").
+- **SLICE_LANE step 3c (method only, no script or gate):** a Codex stage tour of the running product at every stage
+  boundary, before each promotion to main or a release, and at least weekly while a stage is open, on every host.
+  Report per `templates/slice/user-goal-tour.md` (`Mode: outcome`), findings dispositioned like 3b, a blocking finding
+  stops the promotion. When Codex cannot run the walk, a clean-context agent of another model family runs it and the
+  coordinator records why. Scripted suites (6a) stay; they do not replace the tour.
+- No validator change: `tour.py check` still reads slice tours only. Whether the stage tour needs a check of its own is
+  a W46 retro question, after the first rounds show what hosts record.
+
 ## v3.0.0-beta.13 — W45 rule changes: route line, round cap, evidence ceiling, retro owner (2026-11-08)
 
 Why: Ram accepted five proposals in the 2026-W45 retro (`acef-feedback/retros/2026-W45.md`) with one constraint above

@@ -215,6 +215,19 @@ backlog -> slice file -> own worktree + port + DB    ->  simplify pass (2b)     
    when carried forward explicitly) and compares the report's candidate with the checked HEAD: a later code change
    needs an impact note naming that HEAD or a rerun of the affected steps. It checks the
    record's structure and bindings, it cannot prove that the exploration was genuine.
+3c. **Stage tour by Codex** (owner decision 2026-11-08). The slice tour (3b) covers one change; the stage tour covers
+   the running product. Codex (the `browser tours / exploratory UI` row in `method/MODEL_CHOICE.md`) walks the
+   deployed or locally served integration branch like a person: real entry point, the main personas, the goals the
+   stage delivered, one off-happy-path attempt per goal, 1280 and 390 for web; a mobile host walks the same goals on
+   the simulator. **When:** at every stage boundary, before each promotion of the integration branch to main or to a
+   release, and at least once a week while a stage is open. **Applies to every host**, not only the ones that already
+   do it (Unusual Teamwork's `human-browser-<n>` runs before each release; the CRM's `Tur <n>` by the owner's rule of
+   2026-11-05). The tour report follows `templates/slice/user-goal-tour.md` (`Mode: outcome`) and its findings are
+   dispositioned like 3b findings; a blocking finding stops the promotion, not the stage's other slices. When Codex
+   cannot run the walk (a sandbox or classifier refusal, as CursorPanel recorded), the coordinator runs it with a
+   clean-context agent of another model family and records why. Scripted browser suites (6a) do not replace it:
+   they prove what was scripted, the stage tour looks for what nobody scripted.
+
 4. **Independent review** in a separate session (`templates/slice/review-brief.md` +
    `templates/slice/review-checklist.md`). The brief carries the slice's filled `Yol:` line (R-5, 2026-11-08):
    `codex-review.sh` and `review-r2.py brief` refuse a brief without it, and the reviewer checks the route against the
