@@ -1,0 +1,53 @@
+#!/bin/bash
+# test-acef-detect-all — the machine poll over registered hosts, in a throwaway store and a temp LaunchAgents dir
+# (never the real ACEF_FEEDBACK_DIR or ~/Library/LaunchAgents; launchctl is never called: --no-load).
+set -u
+HERE=$(cd "$(dirname "$0")" && pwd -P)
+ALL="$HERE/acef-detect-all"
+TMP=$(mktemp -d)
+trap 'rm -rf "$TMP"' EXIT
+export ACEF_FEEDBACK_DIR="$TMP/store" TZ=UTC GIT_CONFIG_GLOBAL=/dev/null
+ok=0; bad=0
+check() { if eval "$2"; then printf 'ok   %s\n' "$1"; ok=$((ok + 1)); else printf 'FAIL %s\n' "$1"; bad=$((bad + 1)); fi; }
+
+check "no hosts dir: nothing to do, exit 0" '"$ALL" | grep -q "no hosts registered"'
+R="$TMP/apphost"; mkdir -p "$R" "$ACEF_FEEDBACK_DIR/hosts"
+git -C "$R" init -q -b main && git -C "$R" -c user.email=t@t -c user.name=t commit -q --allow-empty -m init
+printf '{"detectors": {"project": "ignored-name"}}' > "$TMP/cfg.json"
+printf '{"repo": "%s", "config": "%s", "last_poll": "2026-01-01T00:00:00Z"}' "$R" "$TMP/cfg.json" > "$ACEF_FEEDBACK_DIR/hosts/eta.json"
+printf '{"repo": "%s/gone", "config": "", "last_poll": "2026-01-01T00:00:00Z"}' "$TMP" > "$ACEF_FEEDBACK_DIR/hosts/theta.json"
+printf 'not json' > "$ACEF_FEEDBACK_DIR/hosts/iota.json"
+
+out=$("$ALL" --dry-run); rc=$?
+check "dry run: a missing repo and a broken registry are skipped, exit 1" '[ $rc -eq 1 ] && echo "$out" | grep -q "== theta: SKIP (repo missing" && echo "$out" | grep -q "== iota: SKIP (unreadable"'
+check "dry run: the good host still polled under its registered name" 'echo "$out" | grep -q "^== eta: exit 0" && echo "$out" | grep -q "acef-detect eta .*dry run"'
+check "dry run writes nothing" '! [ -e "$ACEF_FEEDBACK_DIR/alerts/eta.jsonl" ] && grep -q "2026-01-01" "$ACEF_FEEDBACK_DIR/hosts/eta.json"'
+
+"$ALL" --host eta --log "$TMP/logs/all.log" >/dev/null; rc=$?
+check "--host limits the run; live poll exits 0" '[ $rc -eq 0 ] && ! grep -q theta "$TMP/logs/all.log"'
+check "--log appends the host output" 'grep -q "^== eta: exit 0" "$TMP/logs/all.log"'
+check "live poll keeps the registered name and config" 'python3 -c "import json,sys;d=json.load(open(sys.argv[1]));import os;sys.exit(not(os.path.realpath(d[\"config\"])==os.path.realpath(sys.argv[2]) and d[\"last_poll\"]>\"2026-01-02\"))" "$ACEF_FEEDBACK_DIR/hosts/eta.json" "$TMP/cfg.json" && [ -f "$ACEF_FEEDBACK_DIR/alerts/eta.jsonl" ] && ! [ -e "$ACEF_FEEDBACK_DIR/hosts/ignored-name.json" ]'
+
+exec 9>"$ACEF_FEEDBACK_DIR/hosts/.detect-all.lock"; flock_held=0
+if python3 -c "import fcntl,os;fcntl.flock(9,fcntl.LOCK_EX|fcntl.LOCK_NB)" 2>/dev/null; then flock_held=1; fi
+if [ "$flock_held" -eq 1 ]; then
+  # the lock lives on fd 9 of this shell (python above exited, but flock locks belong to the open file description)
+  check "an overlapping run is skipped" '"$ALL" --host eta | grep -q "another run is still going; skipped"'
+fi
+exec 9>&-
+
+A="$TMP/agents"
+"$ALL" --install-launchd --agents-dir "$A" --label test.acef.detect-all --interval 600 --python /usr/bin/python3 --log "$TMP/l.log" --no-load >/dev/null
+P="$A/test.acef.detect-all.plist"
+check "install writes the plist (no launchctl with --no-load)" '[ -f "$P" ]'
+check "plist: interval, pinned python and PATH, this script, log" 'python3 - "$P" "$ALL" <<EOF
+import plistlib, sys
+d = plistlib.load(open(sys.argv[1], "rb"))
+assert d["StartInterval"] == 600 and d["RunAtLoad"] is True, d
+assert d["ProgramArguments"][:2] == ["/usr/bin/python3", sys.argv[2]], d["ProgramArguments"]
+assert "/usr/bin" in d["EnvironmentVariables"]["PATH"] and d["StandardOutPath"].endswith("l.log")
+EOF'
+"$ALL" --uninstall-launchd --agents-dir "$A" --label test.acef.detect-all --no-load >/dev/null
+check "uninstall removes the plist" '! [ -e "$P" ]'
+echo "acef-detect-all tests: $ok passed, $bad failed"
+[ "$bad" -eq 0 ]

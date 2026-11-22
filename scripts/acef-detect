@@ -2,7 +2,7 @@
 """acef-detect: waste detectors for a 15-minute coordinator loop (method/FEEDBACK_LOOP.md "Detection loop").
 
 Usage:
-  acef-detect --repo <host> [--config <json>] [--quiet] [--dry-run] [--only a,b] [--list] [--timing] [--no-cache]
+  acef-detect --repo <host> [--config <json>] [--project <name>] [--quiet] [--dry-run] [--only a,b] [--list] [--timing] [--no-cache]
 
 Runs every detector in scripts/detectors/*.py (core, files starting with "_" are helpers) and <host>/.acef/detectors/*.py
 (host). Each detector is one small file: a docstring header (Question, Source, Rule, Threshold, Owner, Scope, Kind,
@@ -189,6 +189,8 @@ def run(args) -> int:
         print(f"acef-detect: no such repo {repo}", file=sys.stderr)
         return 2
     cfg = load_config(repo, args.config)
+    if getattr(args, "project", ""):   # acef-detect-all passes the registry name, so a poll never re-registers elsewhere
+        cfg["project"] = re.sub(r"[^a-z0-9-]+", "-", args.project.lower()).strip("-") or cfg["project"]
     project, now = cfg["project"], note.now_utc()
     base = note.ensure_store() if not args.dry_run else note.root()
     alerts_path = base / "alerts" / f"{project}.jsonl"
@@ -480,6 +482,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(prog="acef-detect", description=__doc__.split("\n\n")[0])
     parser.add_argument("--repo", required=True)
     parser.add_argument("--config", default="")
+    parser.add_argument("--project", default="", help="store project name (overrides the config; acef-detect-all)")
     parser.add_argument("--quiet", action="store_true", help="print only new/reopened/overdue alerts and errors")
     parser.add_argument("--dry-run", action="store_true", help="write nothing to the store")
     parser.add_argument("--only", default="", help="comma-separated detector names")

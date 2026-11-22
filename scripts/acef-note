@@ -23,7 +23,10 @@ Usage:
   acef-note version             short stamp v<entries>.<rules-hash>; record it next to "Bilinen tuzaklar"
   acef-note check <stamp> [--tags ..] [--text ..]   exit 0 "unchanged" / exit 1 + only the newer matching entries
   acef-note due                 undigested entries, RETRO DUE, rules past their review date, ALERT OPEN / ALERT OVERDUE /
-                                ALERT ACKED-STALE (acked, still breaching after the recheck time)
+                                ALERT ACKED-STALE (acked, still breaching after the recheck time), DETECT STALE /
+                                UNCONFIGURED / UNREGISTERED (detection-loop coverage: hosts not polled for 2 h, hosts
+                                without a detectors config, log projects with 3+ entries in 14 days and no hosts/ file;
+                                hosts/ignore.txt lists projects that are not hosts)
   acef-note digest [--write]    group undigested entries by tag with repeat counts and cost sums
   acef-note ack <alert-id> --slice <id> [--recheck-hours N] | --defer <YYYY-MM-DD> --reason "<why>" | --resolve "<evidence>"
                                 an ack with --slice is re-asked (ALERT ACKED-STALE) when the detector still sees the
@@ -340,6 +343,8 @@ def cmd_due(args):
         print(f"RETRO DUE: last weekly retro prepared {last.isoformat()}; run: acef-retro --all")
     for name, review in rules_past_review(base, today):
         print(f"RULE REVIEW DUE: {name} (review-by {review})")
+    for line in detect_lines(base, now_utc()):
+        print(line)
     for project, path in alert_files(base):
         try:
             events, bad = read_alert_events_checked(path)
@@ -364,6 +369,58 @@ def cmd_due(args):
             if a["stale"]:
                 print(f"ALERT ACKED-STALE: {stale_line(a, now_utc())}; acef-note ack {a['id']} --slice <id> "
                       f"(again, if still tracked) | --defer <date> --reason \"..\" | --resolve \"<evidence>\"")
+
+
+DETECT_STALE_HOURS = 2       # the machine job (acef-detect-all) polls every 15 min
+ACTIVE_DAYS, ACTIVE_MIN = 14, 3   # a log project with this many entries in this many days is expected to be a host
+
+
+def detect_lines(base: Path, now: dt.datetime):
+    """Detection-loop coverage (owner decision 2026-11-22): registered hosts not polled lately, hosts without a
+    detectors config, and active log projects that never registered. Silent in a store without hosts/ (no loop)."""
+    hosts = base / "hosts"
+    if not hosts.is_dir():
+        return []
+    stale, unconfigured, regs = [], [], set()
+    for path in sorted(hosts.glob("*.json")):
+        regs.add(path.stem)
+        try:
+            data = json.loads(path.read_text())
+            last = parse_ts(data.get("last_poll") or "1970-01-01T00:00:00Z")
+        except (OSError, ValueError, AttributeError):
+            stale.append(f"{path.stem} (registry unreadable)")
+            continue
+        if now - last > dt.timedelta(hours=DETECT_STALE_HOURS):
+            stale.append(f"{path.stem} (last poll {iso(last)})")
+        repo = Path(str(data.get("repo") or "")).expanduser()
+        try:
+            has_block = bool(json.loads((repo / "slice-method.json").read_text()).get("detectors"))
+        except (OSError, ValueError, AttributeError):
+            has_block = False
+        if not data.get("config") and not has_block:
+            unconfigured.append(path.stem)
+    ignore = set()
+    if (hosts / "ignore.txt").exists():
+        ignore = {l.split("#")[0].strip() for l in (hosts / "ignore.txt").read_text().splitlines()} - {""}
+    since = (now - dt.timedelta(days=ACTIVE_DAYS)).date().isoformat()
+    active = []
+    for project, path in all_logs(base):
+        if project in regs or project in ignore:
+            continue
+        n = sum(1 for e in read_log(path)[0] if e["date"] >= since)
+        if n >= ACTIVE_MIN:
+            active.append(f"{project} ({n})")
+    out = []
+    if stale:
+        out.append(f"DETECT STALE: {', '.join(stale)} — no poll for {DETECT_STALE_HOURS} h; is the machine job "
+                   "loaded? (acef-detect-all --install-launchd)")
+    if unconfigured:
+        out.append(f"DETECT UNCONFIGURED: {', '.join(unconfigured)} — no detectors block in slice-method.json and no "
+                   "--config; only the git-based detectors run")
+    if active:
+        out.append(f"DETECT UNREGISTERED: {', '.join(active)} entries in {ACTIVE_DAYS} days, never polled — register "
+                   "with acef-detect --repo <host> once, or list the project in hosts/ignore.txt if it is not a host")
+    return out
 
 
 def stale_line(a: dict, now: dt.datetime) -> str:

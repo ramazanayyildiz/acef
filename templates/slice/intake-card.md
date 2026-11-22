@@ -42,9 +42,27 @@ kayıtlı kararı varsayılanı geçer.
 **Sahiplik (koordinatör, geliştirme başlamadan önce; R-4):** iş, hostun tek ortak yerinde (ör. merge-queue ya da plan
 satırı) bu koordinatör adına işaretlenir. `route.py card <kart> --work-id <iş kimliği>` aynı kimliği taşıyan
 dal ya da worktree bulursa CLAIMED ile durur; `gh pr list --search <iş kimliği>` açık PR gösterirse de durulur. İkinci
-oturum başlamaz, sahibe sorar.
+oturum başlamaz, sahibe sorar. İş ortak bir kimlik aralığı ayırıyorsa (batch numarası, migration satır id'si ve
+benzeri; 2026-11-22) o aralık da aynı yerde sahiplenilir: en büyük kullanılmış değer ayırma anında okunur ve ayrılan
+aralık satıra yazılır; aynı aralığı ayırmış başka bir satır görülürse durulur.
 
-`Sahiplik: <ortak yer + satır> · <koordinatör adı> · dal/PR denetimi temiz`
+`Sahiplik: <ortak yer + satır> · <koordinatör adı> · dal/PR denetimi temiz · Kimlik aralığı: <aralık + okunan en büyük | yok>`
+
+**Değişmez (koordinatör; karar bir değişmez kuruyorsa: "asla", "X varken Y yok", "her çağıran", "son X", kilit
+sırası, tarayıcı ya da koruma kuralı; 2026-11-22):** dev brief'ten önce sınıfın tamamı listelenir: her yazan, oluşturan,
+yol ya da girdi sınıfı bir satır, `dosya:satır` ve onu sabitleyen test ile. `route.py card`, `Değişmez: evet` diyen
+kartı her satırı `dosya:satır` taşıyan bir envanter olmadan reddeder. Tarayıcı ya da koruma kuralında
+(`evet, tarayıcı`) negatif korpus round 1'de commit edilir.
+
+`Değişmez: <evet | evet, tarayıcı | hayır>`
+
+Envanter (yalnız `Değişmez: evet`):
+
+| Yazan / yol / girdi sınıfı | Dosya:satır | Sabitleyen test |
+|---|---|---|
+| <…> | <dosya:satır> | <test ya da "round 1'de yazılır"> |
+
+`Negatif korpus: <yol | uygulanmaz>` (yalnız tarayıcı ya da koruma kuralı)
 
 **Karar satırı (işe başlamadan önce, sahip görebilsin):**
 

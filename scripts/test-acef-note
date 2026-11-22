@@ -65,5 +65,20 @@ printf '{"ts": "2026-10-21T12:00:00Z", "event": "poll", "breaching": ["eps-A1"]}
 check "a new ack starts a new period" '! ACEF_NOW=2026-10-21T12:05:00Z "$NOTE" due | grep -q "ACKED-STALE: eps-A1"'
 printf '{"ts": "2026-10-21T13:30:00Z", "event": "poll", "breaching": ["eps-A1"]}\n' >> "$A"
 check "--recheck-hours 2 re-asks after two hours" 'ACEF_NOW=2026-10-21T13:35:00Z "$NOTE" due | grep -q "ACKED-STALE: eps-A1 .*recheck after 2 h"'
+# detection-loop coverage (2026-11-22): silent without hosts/; stale, unconfigured and unregistered hosts
+check "no hosts dir: no DETECT lines" '! "$NOTE" due | grep -q "^DETECT"'
+H="$ACEF_FEEDBACK_DIR/hosts"; mkdir -p "$H" "$TMP/repo-cfg" "$TMP/repo-bare"
+printf '{"detectors": {"project": "zeta"}}' > "$TMP/repo-cfg/slice-method.json"
+printf '{"repo": "%s", "config": "", "last_poll": "2026-10-21T13:00:00Z"}' "$TMP/repo-cfg" > "$H/zeta.json"
+printf '{"repo": "%s", "config": "", "last_poll": "2026-10-21T10:00:00Z"}' "$TMP/repo-bare" > "$H/alpha.json"
+for i in 1 2 3; do "$NOTE" add omega --tags infra --what "omega $i" >/dev/null; done
+due=$(ACEF_NOW=2026-10-21T13:30:00Z "$NOTE" due)
+check "DETECT STALE names only the host not polled for 2 h" 'echo "$due" | grep -q "^DETECT STALE: alpha (last poll 2026-10-21T10:00:00Z)" && ! echo "$due" | grep -q "STALE:.*zeta"'
+check "DETECT UNCONFIGURED names the host without a detectors block" 'echo "$due" | grep -q "^DETECT UNCONFIGURED: alpha —"'
+due=$("$NOTE" due)
+check "DETECT UNREGISTERED lists an active log project" 'echo "$due" | grep -q "^DETECT UNREGISTERED: .*omega (3)"'
+check "a registered project is not unregistered" '! echo "$due" | grep -q "UNREGISTERED: .*alpha ("'
+printf 'omega  # not a host\n' > "$H/ignore.txt"
+check "hosts/ignore.txt silences a project" '! "$NOTE" due | grep -q "UNREGISTERED: .*omega"'
 echo "acef-note tests: $ok passed, $bad failed"
 [ "$bad" -eq 0 ]

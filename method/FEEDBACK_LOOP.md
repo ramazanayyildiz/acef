@@ -37,8 +37,17 @@ Owner decision 2026-10-27: recurring waste (stuck agents, finished work waiting,
 loops, forgotten sessions, improvements merged but not in effect, open work far past its usual time) went unnoticed
 until the owner asked, and a whole day could be lost. Detection runs **during the day**, not nightly.
 
-- **When:** the coordinator's ~15-minute check runs `.acef/bin/acef-detect --repo . --quiet` (installed by
-  `install-acef-tools`, or `scripts/acef-detect` from the ACEF checkout;
+- **When:** the machine polls every registered host every 15 minutes, all day (owner decision 2026-11-22: the
+  loop must not depend on a living coordinator; it had not polled any host for 11 days). `scripts/acef-detect-all
+  --install-launchd` installs a launchd job (label `com.acef.detect-all`, log `~/Library/Logs/acef-detect-all.log`)
+  that runs `acef-detect --repo <repo> --project <name> [--config <config>] --quiet` for each `hosts/<name>.json` in
+  the store; one failing host never stops the others, and the detectors apply working hours themselves. A host
+  registers by running `acef-detect --repo <host>` once. `acef-note due` prints `DETECT STALE` (a host not polled for
+  2 h), `DETECT UNCONFIGURED` (no `detectors` block and no `--config`: only the git-based detectors run) and
+  `DETECT UNREGISTERED` (a log project with 3+ entries in 14 days and no registration; `hosts/ignore.txt` lists
+  projects that are not hosts). The coordinator's own ~15-minute check may still run
+  `.acef/bin/acef-detect --repo . --quiet` (installed by `install-acef-tools`, or `scripts/acef-detect` from the
+  ACEF checkout; polls share one lock per project, so two pollers never open the same alert twice;
   target under 5 s, no tests, no network, a few git calls and stat-only scans). It prints only new, reopened,
   overdue and stale-acked alerts; without `--quiet` it also prints `OK`, `SKIP <name> (no source: …)`, `WATCH` and
   `INFO` lines. Every run ends with a timing line (`acef-detect 1.8 s (git 5 call(s) …, index … hit(s))`), also under
