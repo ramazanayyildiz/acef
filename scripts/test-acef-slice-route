@@ -130,5 +130,47 @@ r = py(["card", card(base), "--work-id", "SL-71", "--repo", repo], tmp);
 assert.equal(r.status, 1, "a worktree carrying the id is a claim");
 git(repo, "worktree", "remove", "--force", path.join(tmp, "wt-SL-71"));
 
+// Invariant cards (2026-11-22): "Değişmez: evet" needs an Envanter table, every row with a file:line
+function invCard(extra) {
+  const file = card(base);
+  fs.appendFileSync(file, "\n" + extra + "\n");
+  return file;
+}
+const head = "Envanter (yalnız `Değişmez: evet`):\n\n| Yazan / yol / girdi sınıfı | Dosya:satır | Sabitleyen test |\n|---|---|---|\n";
+const tpl = "`Değişmez: <evet | evet, tarayıcı | hayır>`\n\n" + head + "| <…> | <dosya:satır> | <test> |\n";
+const logInv = path.join(tmp, "inv.jsonl");
+r = py(["card", invCard(tpl), "--log", logInv], tmp);
+assert.equal(r.status, 2, "an unfilled flag is refused");
+assert.match(r.stderr, /not filled/);
+assert.equal(r.stdout, "", "refused before the route line");
+assert.ok(!fs.existsSync(logInv), "refused before the decision log");
+r = py(["card", invCard("`Değişmez: hayır`\n\n" + head + "| <…> | <dosya:satır> | <test> |")], tmp);
+assert.equal(r.status, 0, "hayır needs no inventory: " + r.stderr);
+r = py(["card", invCard("`Değişmez: evet`\n\n" + head + "| <…> | <dosya:satır> | <test> |")], tmp);
+assert.equal(r.status, 2, "placeholders are not an inventory");
+assert.match(r.stderr, /needs the Envanter table/);
+r = py(["card", invCard("`Değişmez: evet`\n\n" + head + "| upload job | app/Jobs/Upload.php:42 | UploadTest |\n| sync path | TBD | - |")], tmp);
+assert.equal(r.status, 2, "a row without file:line is refused");
+assert.match(r.stderr, /row without a file:line: \| sync path/);
+r = py(["card", invCard("`Değişmez: evet`\n\n" + head + "| upload job | app/Jobs/Upload.php:42 | UploadTest |\n| api | src/api.ts:7 | api.test.ts |")], tmp);
+assert.equal(r.status, 0, "a filled inventory passes: " + r.stderr);
+assert.match(r.stdout, /^Yol: /);
+const scan = "`Değişmez: evet, tarayıcı`\n\n" + head + "| raw sql | lib/scan.py:12 | test_scan |\n";
+r = py(["card", invCard(scan + "\n`Negatif korpus: <yol | uygulanmaz>`")], tmp);
+assert.equal(r.status, 2, "a scanner rule needs its negative corpus");
+assert.match(r.stderr, /Negatif korpus/);
+r = py(["card", invCard(scan + "\n`Negatif korpus: uygulanmaz`")], tmp);
+assert.equal(r.status, 2, "'uygulanmaz' is not a corpus for a scanner rule");
+r = py(["card", invCard(scan + "\n`Negatif korpus: tests/fixtures/scan-negative/`")], tmp);
+assert.equal(r.status, 0, "scanner rule with corpus passes: " + r.stderr);
+// the shipped template, with its six facts filled, is refused until the coordinator fills the flag
+const shipped = fs.readFileSync(path.join(root, "templates", "slice", "intake-card.md"), "utf8")
+  .replace(/^\| (G[1-6]) \|([^|]*)\|[^|]*\|/gm, (_, g, label) => `| ${g} |${label}| ${g === "G1" ? "2" : "hayır"} |`);
+const shippedFile = path.join(tmp, "shipped-card.md");
+fs.writeFileSync(shippedFile, shipped);
+r = py(["card", shippedFile], tmp);
+assert.equal(r.status, 2, "the template's own placeholder flag is not filled");
+assert.match(r.stderr, /not filled/);
+
 fs.rmSync(tmp, { recursive: true, force: true });
 console.log("test-acef-slice-route: OK");

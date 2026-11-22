@@ -7,6 +7,9 @@
       --work-id (R-4, 2026-11-08: claim before dispatch): a local or remote branch, or a worktree, whose name carries
       the id means another session already took the work: CLAIMED on stderr, exit 1 (stop and ask the owner). Open
       PRs are checked by the coordinator (gh pr list --search <ID>); the script stays offline.
+      Invariant cards (2026-11-22): a card whose "Değişmez:" line says evet must carry the Envanter table, every row
+      with a file:line; "evet, tarayıcı" (scanner/guard rule) also needs "Negatif korpus: <path>". Otherwise exit 2
+      before the route line is printed or logged. A placeholder or empty flag is refused; no flag line is not checked.
 
   route.py check --base <ref> --declared native|HAFIF|TAM [--head HEAD] [--repo .] [--config slice-method.json]
                  [--profile <stack-profile.json>] [--log <jsonl>]
@@ -249,6 +252,51 @@ def parse_card(path):
     return facts, int(count.group(0)), yn("G6")
 
 
+# Invariant cards (owner decision 2026-11-22, digest 2026-W47 item 2): a card flagged "Değişmez: evet" lists every
+# writer, path or input class with its file:line before the dev brief; a scanner/guard rule ("evet, tarayıcı") also
+# names its negative corpus, committed in round 1. A card without the line is not checked (older cards).
+FLAG = re.compile(r"^\W*De[gğ]i[sş]mez:\**\s*(.*)$", re.I | re.M)
+CORPUS = re.compile(r"^\W*Negatif korpus:\**\s*(.*)$", re.I | re.M)
+FILE_LINE = re.compile(r"[\w./-]+\.[A-Za-z0-9]+:\d+")
+PLACEHOLDER = re.compile(r"<[^>]*>")
+
+
+def invariant_problems(text):
+    """'' when the card is fine, else why it is refused."""
+    m = FLAG.search(text)
+    if not m:
+        return ""
+    value = PLACEHOLDER.sub("", m.group(1)).strip(" `*")
+    if NO.match(value):
+        return ""
+    if not YES.match(value):
+        return "the 'Değişmez:' line is not filled: write 'evet', 'evet, tarayıcı' or 'hayır'"
+    rows, inside = [], False
+    for line in text.splitlines():
+        if re.match(r"^\W*Envanter\b", line, re.I):
+            inside = True
+            continue
+        if inside and line.startswith("|"):
+            if re.match(r"^\|[\s:|-]+\|?\s*$", line) or re.search(r"Dosya:satır|file:line", line, re.I):
+                continue   # separator or header
+            rows.append(line)
+        elif inside and rows and not line.strip().startswith("|"):
+            break
+    filled = [r for r in rows if FILE_LINE.search(PLACEHOLDER.sub("", r))]
+    if not filled:
+        return ("'Değişmez: evet' needs the Envanter table: one row per writer, path or input class, each with its "
+                "file:line (placeholders do not count)")
+    unfilled = [r for r in rows if r not in filled]
+    if unfilled:
+        return f"Envanter row without a file:line: {unfilled[0].strip()[:100]}"
+    if re.search(r"taray[ıi]c[ıi]|scanner|guard|koruma", value, re.I):
+        c = CORPUS.search(text)
+        corpus = PLACEHOLDER.sub("", c.group(1)).strip(" `*") if c else ""
+        if not corpus or re.match(r"(uygulanmaz|yok|n/?a)\b", corpus, re.I):
+            return "a scanner/guard invariant needs 'Negatif korpus: <path>' (committed in round 1)"
+    return ""
+
+
 def claims(repo, work_id):
     """Branches (local and remote-tracking) and worktree paths whose name carries the work id, case-insensitively."""
     rx = re.compile(rf"(?<![A-Za-z0-9]){re.escape(work_id)}(?![0-9])", re.I)
@@ -268,6 +316,10 @@ def cmd_card(args):
         die("usage: route.py card <intake-card.md> [--config f] [--log f] [--work-id <ID> [--repo .]]")
     cfg = routing_config(args.get("config"), args.get("profile"))
     facts, files, reversible = parse_card(args["card"])
+    with open(args["card"], encoding="utf-8") as fh:
+        problem = invariant_problems(fh.read())
+    if problem:
+        die(f"invariant card refused: {problem}")
     route, reason = decide(facts, files, reversible, reversible, cfg["native_max_files"])
     print(f"Yol: {route} — {reason}")
     logged = log(args.get("log"), {"kind": "card", "card": args["card"], "route": route, "reason": reason, "facts": facts, "files": files})

@@ -61,7 +61,15 @@ decision, not a judgement call:
    **Claim before dispatch (R-4, 2026-11-08):** the coordinator marks the work item in the host's one shared place
    (for example a merge-queue or plan row) and runs `route.py card <card> --work-id <ID>`, which stops with
    CLAIMED when a branch or worktree already carries the id; an open PR (`gh pr list --search <ID>`) stops it too. A
-   second session that finds a claim asks the owner instead of starting.
+   second session that finds a claim asks the owner instead of starting. Work that allocates a shared id range
+   (batch numbers, migration row ids; 2026-11-22) claims the range in the same place: the highest used value is read
+   at allocation time and the range is written on the claim row; a row already holding the range stops the work.
+   **Invariant inventory (2026-11-22):** when the ruling states an invariant ("never", "no X while Y", "every
+   caller", "last X", a lock order, a scanner or guard rule), the coordinator sets `Değişmez: evet` on the card and
+   lists the whole class before the dev brief: one row per writer, creator, path or input class, each with its
+   `file:line` and the test that pins it. `route.py card` refuses a `Değişmez: evet` card without that inventory.
+   A scanner or guard rule (`evet, tarayıcı`) names its negative corpus, committed in round 1. Rounds that each found
+   "the next path" were the costliest review pattern; R-6 caps them, this prevents them.
 2. **Route** from the facts with the routing table, not from the task name. Any risk fact → TAM; no risk fact and a
    small, single-surface, reversible change → **native** (no slice, no ACEF state, focused verification only);
    otherwise HAFİF. The decision is one visible line before work starts — `Yol: native | HAFİF | TAM — <reason>` —
@@ -106,7 +114,10 @@ method, not a per-host habit:
 - **Speed work reuses a comparable baseline (R-3, 2026-11-08).** A slice that makes tests or a runner faster links the
   latest comparable nightly or full-suite report as its "before" measurement (slice "Boyut ve derinlik" line). A new
   baseline run on the shared runner is allowed only when the environment or the test scope changed, and the slice
-  says which. The "after" measurement stays.
+  says which. The "after" measurement stays. Comparable means the same host class and load band, read as the median
+  of the report's runs. A baseline the design requires (for example parity runs) is carried into the dev brief as a
+  named exception, so a "no full run" brief does not drop it (2026-11-22). The slice records
+  `Baseline: <report link> | new run: <reason>`.
 - **Reviewers do not run the full suite**, in any review round. A review round re-runs focused tests, mutations, the slice's race tests and the contract set; the integration run is the only full run.
 - **Why TAM keeps a pre-merge full run:** a conflict between two merges is caught before money or data code reaches
   main, not the next morning. For HAFİF work, the nightly run catches it.

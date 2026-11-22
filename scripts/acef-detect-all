@@ -1,0 +1,181 @@
+#!/usr/bin/env python3
+"""acef-detect-all: one detection poll for every host registered in the store (method/FEEDBACK_LOOP.md
+"Detection loop"; owner decision 2026-11-22: the poll runs from the machine, not only from a living coordinator).
+
+Usage:
+  acef-detect-all [--dry-run] [--host p1,p2] [--timeout SEC] [--log FILE]
+  acef-detect-all --install-launchd [--interval 900] [--label L] [--agents-dir DIR] [--python PATH] [--log FILE]
+                  [--no-load]
+  acef-detect-all --uninstall-launchd [--label L] [--agents-dir DIR] [--no-load]
+
+The registry is ACEF_FEEDBACK_DIR/hosts/<project>.json ({"repo", "config", "last_poll"}), written by every
+non-dry-run `acef-detect` poll: a host registers by running `acef-detect --repo <host>` once. For each host this
+script runs `acef-detect --repo <repo> --project <name> [--config <config>] --quiet` with the same interpreter, one
+host after another; the registered name and config are always passed back, so the poll keeps both. A missing
+repository, a failing or timed-out host never stops the others; each host prints one header line and acef-detect's
+own output.
+Detectors apply the host's working hours themselves, so the job runs all day.
+
+Overlapping runs are skipped (a lock in the store). --log appends there instead of stdout and keeps the file under
+2 MB (one .1 rotation). --install-launchd writes <agents-dir>/<label>.plist (default ~/Library/LaunchAgents,
+label com.acef.detect-all, every 900 s, PATH pinned, this script's own path) and loads it with launchctl unless
+--no-load. acef-note due reports hosts not polled for 2 h (DETECT STALE), hosts without a detectors config
+(DETECT UNCONFIGURED) and active log projects with no registration (DETECT UNREGISTERED).
+
+Exit 0 every host ran (alerts or not), 1 a host failed or was skipped, 2 usage error.
+"""
+import argparse
+import fcntl
+import json
+import os
+import plistlib
+import shutil
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+HERE = Path(__file__).resolve().parent
+DETECT = HERE / "acef-detect"
+LABEL = "com.acef.detect-all"
+LOG_MAX = 2 * 1024 * 1024
+PATH = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+
+
+def store() -> Path:
+    return Path(os.environ.get("ACEF_FEEDBACK_DIR", str(Path.home() / "CODE" / "acef-feedback"))).expanduser()
+
+
+def registered(base: Path):
+    hosts = base / "hosts"
+    for path in sorted(hosts.glob("*.json")) if hosts.is_dir() else []:
+        try:
+            data = json.loads(path.read_text())
+        except (OSError, ValueError) as exc:
+            yield path.stem, None, f"unreadable registry file: {exc.__class__.__name__}"
+            continue
+        yield path.stem, data, ""
+
+
+def poll(args, out) -> int:
+    base = store()
+    only = {h.strip() for h in (args.host or "").split(",") if h.strip()}
+    failed = 0
+    lock_path = base / "hosts" / ".detect-all.lock"
+    if not (base / "hosts").is_dir():
+        print(f"acef-detect-all: no hosts registered in {base}/hosts", file=out)
+        return 0
+    with open(lock_path, "w") as lock:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            print(f"acef-detect-all {time.strftime('%FT%T')}: another run is still going; skipped", file=out)
+            return 0
+        print(f"acef-detect-all {time.strftime('%FT%T')}{' (dry run)' if args.dry_run else ''}", file=out, flush=True)
+        for project, data, error in registered(base):
+            if only and project not in only:
+                continue
+            if error:
+                print(f"== {project}: SKIP ({error})", file=out)
+                failed += 1
+                continue
+            repo = Path(str(data.get("repo") or "")).expanduser()
+            config = str(data.get("config") or "")
+            if not data.get("repo") or not repo.is_dir():
+                print(f"== {project}: SKIP (repo missing: {repo})", file=out)
+                failed += 1
+                continue
+            cmd = [sys.executable, str(DETECT), "--repo", str(repo), "--project", project, "--quiet"]
+            if config:
+                cmd += ["--config", config]
+            if args.dry_run:
+                cmd.append("--dry-run")
+            t0 = time.monotonic()
+            try:
+                res = subprocess.run(cmd, capture_output=True, text=True, timeout=args.timeout,
+                                     env=dict(os.environ, PATH=os.environ.get("PATH") or PATH))
+                rc, text = res.returncode, (res.stdout + res.stderr).rstrip()
+            except subprocess.TimeoutExpired:
+                rc, text = 124, f"timed out after {args.timeout} s"
+            print(f"== {project}: exit {rc}, {time.monotonic() - t0:.1f} s", file=out)
+            if text:
+                print(text, file=out)
+            out.flush()
+            failed += rc != 0
+    return 1 if failed else 0
+
+
+def open_log(path: str):
+    log = Path(path).expanduser()
+    log.parent.mkdir(parents=True, exist_ok=True)
+    if log.exists() and log.stat().st_size > LOG_MAX:
+        os.replace(log, log.with_name(log.name + ".1"))
+    return open(log, "a")
+
+
+def launchctl(*argv):
+    return subprocess.run(["launchctl", *argv], capture_output=True, text=True)
+
+
+def install(args) -> int:
+    agents = Path(args.agents_dir).expanduser()
+    agents.mkdir(parents=True, exist_ok=True)
+    plist = agents / f"{args.label}.plist"
+    python = args.python or shutil.which("python3", path=PATH) or sys.executable
+    log = str(Path(args.log or "~/Library/Logs/acef-detect-all.log").expanduser())
+    env = {"PATH": PATH, "HOME": str(Path.home())}
+    if os.environ.get("ACEF_FEEDBACK_DIR"):
+        env["ACEF_FEEDBACK_DIR"] = str(store())
+    body = {"Label": args.label, "ProgramArguments": [python, str(Path(__file__).resolve()), "--log", log],
+            "StartInterval": args.interval, "RunAtLoad": True, "EnvironmentVariables": env,
+            "StandardOutPath": log, "StandardErrorPath": log, "ProcessType": "Background", "LowPriorityIO": True}
+    plist.write_bytes(plistlib.dumps(body))
+    print(f"wrote {plist} (every {args.interval} s, {python})")
+    if args.no_load:
+        return 0
+    domain = f"gui/{os.getuid()}"
+    launchctl("bootout", f"{domain}/{args.label}")
+    res = launchctl("bootstrap", domain, str(plist))
+    if res.returncode:
+        print(f"launchctl bootstrap failed: {res.stderr.strip()}", file=sys.stderr)
+        return 1
+    print(f"loaded {domain}/{args.label}; log {log}")
+    return 0
+
+
+def uninstall(args) -> int:
+    plist = Path(args.agents_dir).expanduser() / f"{args.label}.plist"
+    if not args.no_load:
+        launchctl("bootout", f"gui/{os.getuid()}/{args.label}")
+    if plist.exists():
+        plist.unlink()
+        print(f"removed {plist}")
+    return 0
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(add_help=True, description=__doc__.splitlines()[0])
+    ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--host", default="")
+    ap.add_argument("--timeout", type=int, default=120)
+    ap.add_argument("--log", default="")
+    ap.add_argument("--install-launchd", action="store_true")
+    ap.add_argument("--uninstall-launchd", action="store_true")
+    ap.add_argument("--interval", type=int, default=900)
+    ap.add_argument("--label", default=LABEL)
+    ap.add_argument("--agents-dir", default="~/Library/LaunchAgents")
+    ap.add_argument("--python", default="")
+    ap.add_argument("--no-load", action="store_true")
+    args = ap.parse_args()
+    if args.install_launchd:
+        return install(args)
+    if args.uninstall_launchd:
+        return uninstall(args)
+    if args.log:
+        with open_log(args.log) as out:
+            return poll(args, out)
+    return poll(args, sys.stdout)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

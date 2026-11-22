@@ -7,6 +7,27 @@ proven, or installed.
 Update this file in the same PR whenever ACEF itself gains or changes a flow, gate, validator, hook, skill, installer behavior, workflow,
 or evidence contract. Do not use it to claim implementation status; link to the capability record for that.
 
+## v3.0.0-beta.15 — W47 owner decisions: machine detection poll, invariant inventory, R-3/R-4 review (2026-11-22)
+
+Why: the 2026-W47 digest (`acef-feedback/digests/2026-W47.md`) found the detection loop had not polled any host since
+2026-11-11 (finished work sat unseen for up to 19 h), and "each round found the next path" cost about 28 h in 14 days.
+Ram accepted proposals 1–2 and the R-3/R-4 review on 2026-11-22. Proposal 3 (testq time limit and INTERRUPTED marks)
+is host tooling and ships outside this repo.
+- **Machine detection poll:** new `scripts/acef-detect-all` polls every host in the store's `hosts/*.json` (passes the
+  registered name and config back; a failing or missing host never stops the others; overlapping runs skip; `--log`
+  with one rotation). `--install-launchd` writes and loads a launchd job (`com.acef.detect-all`, every 900 s, pinned
+  interpreter and PATH). `acef-detect --project <name>` keeps a poll under its registry name. `acef-note due` adds
+  `DETECT STALE` (no poll for 2 h), `DETECT UNCONFIGURED` (no detectors config) and `DETECT UNREGISTERED` (log project
+  with 3+ entries in 14 days and no registration; `hosts/ignore.txt` opts a project out). FEEDBACK_LOOP "When:".
+- **Invariant inventory:** intake card `Değişmez: evet | evet, tarayıcı | hayır` with an `Envanter` table (writer, path
+  or input class · `file:line` · pinning test) and `Negatif korpus:` for scanner/guard rules. `route.py card` refuses
+  (exit 2, before the route line and the decision log) a `Değişmez: evet` card whose inventory is missing, holds only
+  placeholders or has a row without `file:line`; an unfilled flag is refused; cards without the line are not checked.
+- **R-3 narrowed:** comparable = same host class and load band, median of the report's runs; a design-required
+  baseline is a named exception in the dev brief; the slice records `Baseline: <link> | new run: <reason>`.
+- **R-4 extended:** work that allocates a shared id range (batch numbers, migration row ids) claims the range on the
+  same claim row, reading the highest used value at allocation time (intake card `Sahiplik` line).
+
 ## v3.0.0-beta.14 — stage tour by Codex on every host (2026-11-08)
 
 Why: Ram asked whether every project has Codex walk the product like a person and found that only Unusual Teamwork
