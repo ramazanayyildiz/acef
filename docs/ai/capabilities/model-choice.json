@@ -20,7 +20,10 @@
     "artifact": [
       "templates/slice/intake-card.md",
       "templates/slice/review-brief.md",
-      "templates/slice/dev-report.md"
+      "templates/slice/dev-report.md",
+      "scripts/acef-model",
+      "scripts/acef-model-id-scan",
+      "scripts/acef-version-check"
     ],
     "schema": [
       "schemas/model-routing-policy-v1.schema.json",
@@ -28,7 +31,8 @@
     ],
     "installer": [
       "scripts/install-acef-slice-kit",
-      "scripts/install-acef-tools#copyModelRoutingPolicy"
+      "scripts/install-acef-tools#copyModelRoutingPolicy",
+      "scripts/install-acef-tools#tools"
     ],
     "tests": [
       "scripts/test-acef-model-routing",
@@ -42,9 +46,11 @@
   "limitations": [
     "Wired, not enforced: nothing stops an ordinary Claude Code subagent or Codex run from using a higher class or effort than the table gives. Only actors admitted through ACEF routing (Full roles, Fix/Standard dispatches under admitted-role-routing-v1) are checked by the hard-wall hook, and they follow the routing policy, not the table.",
     "Claude Code subagent effort comes from the agent definition frontmatter; ACEF ships no agent definitions per class, so the Claude effort levels apply only where a host defines them.",
-    "The gpt-6.1-sol mapping is carried over from the V327-CAL-001 calibration of gpt-5.6-sol without recalibration.",
+    "The Sol mapping (the latest Sol in the policy's families map) is carried over from the V327-CAL-001 calibration of an earlier Sol without recalibration.",
     "Admitted roles on anthropic follow per-role models: development, ATDD, the Conductor and Code Review resolve to Sonnet through their class; Patch Assurance and both Judges resolve to Opus through roleModels (owner decision 2026-10-27; cost note: review roles only). A host changes a role in its policy copy or per run with acef-state active-run --routing-role-model; review roles never go below the ACEF-owned floors (method/model-review-floors-v1.json) without a recorded owner exemption.",
-    "Effect not measured: no host has recorded model and effort per report yet, so the weekly retro has no effort comparison."
+    "Effect not measured: no host has recorded model and effort per report yet, so the weekly retro has no effort comparison.",
+    "The newer-model check reads only the local Codex model cache, so it covers Codex families (Sol, Astra, Terra); Claude ids are updated by hand in the policy. acef-version-check reports a newer version; Ram decides the map change.",
+    "acef-model-id-scan runs on ACEF through selfcheck and test-acef-model-routing; host coordinators run it themselves (--root <host>) until their scripts move to the resolver."
   ],
   "evidence": [
     {
@@ -56,6 +62,16 @@
       "layer": "tests",
       "ref": "scripts/test-acef-model-routing",
       "note": "2026-10-27 roleModels: anthropic development, atdd, conductor and code-review resolve to claude-sonnet-5-5 (class); patch-assurance, process-judge and epic-process-judge resolve to claude-opus-5-5 (roleModels); openai stays gpt-6.1-sol for every role."
+    },
+    {
+      "layer": "tests",
+      "ref": "scripts/test-acef-model-routing",
+      "note": "2026-11-28 model families: providers.<id>.families is the one place exact ids live; openai class models equal families.sol; acef-model resolves families and roles (empty stdout on failure, family fall-through past a whole-file override); acef-version-check reports newer cache versions from a fixture cache without changing its exit code; acef-model-id-scan finds literal ids outside the policy and ACEF has none."
+    },
+    {
+      "layer": "installer",
+      "ref": "scripts/test-install-acef-tools",
+      "note": "2026-11-28: install-acef-tools installs .acef/bin/acef-model; the installed copy prints families.sol and the review role's model and effort from the installed policy."
     }
   ],
   "createdAt": "2026-10-27"

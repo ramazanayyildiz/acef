@@ -125,10 +125,18 @@ try {
   if (!fs.existsSync(controlDosingManifest)) throw new Error("control-dosing manifest was not installed");
   if (!fs.existsSync(modelRoutingManifest) || !fs.existsSync(modelRoutingSchema)) throw new Error("model routing policy/schema was not installed");
   const installedRouting = JSON.parse(fs.readFileSync(modelRoutingManifest, "utf8"));
+  const sourceSol = JSON.parse(fs.readFileSync(path.join(repoRoot, "method", "model-routing-policy-v1.json"), "utf8")).providers.openai.families.sol;
   if (installedRouting.schema !== "acef.model-routing-policy.v1"
     || installedRouting.roles?.["code-review"]?.reasoningTier !== "medium"
-    || installedRouting.providers?.openai?.models?.["semantic-standard"] !== "gpt-6.1-sol") {
+    || installedRouting.providers?.openai?.models?.["semantic-standard"] !== sourceSol
+    || installedRouting.providers?.openai?.families?.sol !== sourceSol) {
     throw new Error("installed model routing policy lost calibrated provider-neutral role mapping");
+  }
+  // The installed resolver prints the host's policy ids (owner decision 2026-11-28: scripts never write a literal id).
+  const installedModel = (args) => String(run(path.join(tmp, ".acef", "bin", "acef-model"), ["--repo", tmp, ...args])).trim();
+  if (installedModel(["sol"]) !== sourceSol || installedModel(["review"]) !== sourceSol
+    || installedModel(["--effort", "review"]) !== "medium") {
+    throw new Error("installed acef-model did not resolve the family and the review role from the installed policy");
   }
   const installedDosing = JSON.parse(fs.readFileSync(controlDosingManifest, "utf8"));
   if (installedDosing.schema !== "acef.control-dosing.v2") {

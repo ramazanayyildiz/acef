@@ -67,7 +67,8 @@ Added in v3.0.0-beta.4 to beta.7 on the owner's decision; details in `CHANGELOG.
   writes observations as one-line entries; coordinators read at most five at intake, review brief and before shared
   infrastructure changes; `acef-note version`/`check` skip the log when nothing changed.
 - **Version check** (`scripts/acef-version-check --repo <host>`): at session start a host learns it is behind and which
-  CHANGELOG sections to read. Every framework PR adds a CHANGELOG entry (AGENTS.md "Changelog"); bundles are tagged.
+  CHANGELOG sections to read, and whether the local Codex model cache has a newer version of a model family than
+  ACEF's map. Every framework PR adds a CHANGELOG entry (AGENTS.md "Changelog"); bundles are tagged.
 - **Updates keep host changes**: the installers replace a file only if the host never changed it, and merge the model
   routing policy three-way.
 - **Waste detection during the day** (`scripts/acef-detect`, `scripts/detectors/`): stuck agents, waiting work, idle or
@@ -80,7 +81,9 @@ Added in v3.0.0-beta.4 to beta.7 on the owner's decision; details in `CHANGELOG.
   users; user-goal tours are a pre-check, not real user testing. Pilot on one screen before rollout
   (`docs/slice-lane/product-language-pilot.md`).
 - **Model choice** (`method/MODEL_CHOICE.md`): one class table (critical, standard, mechanical, light, browser tour,
-  trivial lookup) for Claude and Codex agents, effort levels, and waiting rules; a project's own decision wins.
+  trivial lookup) for Claude and Codex agents, effort levels, and waiting rules; a project's own decision wins. Docs
+  name model families ("latest Sol, medium"); the exact ids live only in the routing policy's `families` map and
+  scripts print them with `scripts/acef-model <family|role>`.
 
 ## Core idea
 

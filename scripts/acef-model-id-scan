@@ -1,0 +1,119 @@
+#!/usr/bin/env python3
+"""acef-model-id-scan [--root <repo>] [--list-allowed]: literal model ids outside the routing policy.
+
+Owner decision 2026-11-28 (Ram): exact model ids live in one place, the routing policy's families map
+(method/model-routing-policy-v1.json; installed as .acef/model-routing-policy.json). Prose names the family
+("latest Sol, medium", "latest Opus") and scripts print the id with acef-model. This scan lists every other literal
+id in the repo's tracked and untracked-but-not-ignored files, so a pinned id is found before it goes stale.
+
+Not scanned (each with its reason; --list-allowed prints them):
+  policy    the routing policy files and the review floors (modelRank ranks exact ids; ranking does not choose)
+  history   CHANGELOG.md from its first released heading down, experiment and evidence records, capability
+            records, provenance notes, archives
+  fixtures  tests and test fixtures, and the experiment harness that replays its recorded calibration model
+Exit 0 nothing found; 1 found (one "path:line: id" line each); 2 usage.
+"""
+import fnmatch
+import re
+import subprocess
+import sys
+from pathlib import Path
+
+# A model id: gpt-<version>[-<family>] or claude-<family>-<version> / claude-<version>-<family>. It is found at the end
+# of a sentence ("... gpt-X.Y-sol."), behind a provider prefix ("openai/...") and before a dated suffix ("...-2026-11-01");
+# only a letter, digit or "_" right before it ("chatgpt-...") or a letter or digit right after it stops a match.
+MODEL_ID = re.compile(r"(?<![A-Za-z0-9_])(?:gpt-\d+(?:\.\d+)*(?:-[a-z]+)?|claude-(?:[a-z]+-\d+(?:-\d+)*|\d+(?:-\d+)*-[a-z]+))(?![A-Za-z0-9])")
+
+ALLOWED = [
+    ("method/model-routing-policy-v1.json", "policy: the one place ACEF writes exact ids"),
+    (".acef/*", "policy: the installed ACEF runtime and policy copies (owned by ACEF)"),
+    ("docs/ai/ACEF_MODEL_ROUTING_POLICY.json", "policy: a host's whole-file routing policy override"),
+    ("method/model-review-floors-v1.json", "policy: review floors rank exact ids; ranking does not choose a model"),
+    ("CHANGELOG.md", "history: dated entries (only the preamble and the '## Unreleased' sections above the first released heading are scanned)"),
+    ("docs/experiments/*", "history: experiment manifests and evidence records"),
+    ("docs/ai/capabilities/*", "history: capability records with dated evidence about measured runs"),
+    ("docs/ai/evidence/*", "history: evidence records"),
+    ("docs/slice-lane/SOURCES.md", "history: provenance of the source projects"),
+    ("archive/*", "history: archived material"),
+    ("scripts/acef-execution-assurance-experiment", "fixtures: experiment harness bound to its recorded calibration model"),
+    ("scripts/lib/acef-execution-assurance-experiment.js", "fixtures: experiment harness bound to its recorded calibration model"),
+    ("scripts/test-*", "fixtures: tests"),
+    ("scripts/smoke-*", "fixtures: smoke tests"),
+    ("scripts/fixtures/*", "fixtures: test fixtures"),
+    ("scripts/slice/tests/*", "fixtures: test fixtures"),
+    ("stacks/*/tests/*", "fixtures: stack adapter tests"),
+    ("tests/*", "fixtures: test fixtures"),
+]
+
+
+def allowed_reason(path: str) -> str:
+    for pattern, reason in ALLOWED:
+        if path == pattern or fnmatch.fnmatchcase(path, pattern):
+            return reason
+    return ""
+
+
+def repo_files(root: Path) -> list:
+    result = subprocess.run(["git", "-C", str(root), "ls-files", "-z", "--cached", "--others", "--exclude-standard"],
+                            capture_output=True)
+    if result.returncode == 0:
+        return sorted({name for name in result.stdout.decode("utf-8", "replace").split("\0") if name})
+    skip = {".git", "node_modules", "vendor", "__pycache__"}
+    return sorted(str(p.relative_to(root)) for p in root.rglob("*")
+                  if p.is_file() and not skip.intersection(p.relative_to(root).parts))
+
+
+def scanned_lines(path: str, text: str):
+    """(line number, line) pairs to scan. CHANGELOG.md keeps only its preamble and the '## Unreleased' sections above
+    the first released heading; everything from that heading down is history (an old bare '## Unreleased' too)."""
+    in_history = False
+    for number, line in enumerate(text.splitlines(), 1):
+        if path == "CHANGELOG.md" and line.startswith("## ") and not line.startswith("## Unreleased"):
+            in_history = True
+        if not in_history:
+            yield number, line
+
+
+def scan(root: Path) -> list:
+    findings = []
+    for path in repo_files(root):
+        if allowed_reason(path) and path != "CHANGELOG.md":
+            continue
+        file = root / path
+        try:
+            data = file.read_bytes()
+        except OSError:
+            continue
+        if b"\0" in data[:4096]:
+            continue
+        text = data.decode("utf-8", "replace")
+        for number, line in scanned_lines(path, text):
+            for match in MODEL_ID.finditer(line):
+                findings.append(f"{path}:{number}: {match.group(0)}")
+    return findings
+
+
+def main():
+    args = sys.argv[1:]
+    root = Path.cwd()
+    if args[:1] == ["--list-allowed"] and len(args) == 1:
+        for pattern, reason in ALLOWED:
+            print(f"{pattern}\t{reason}")
+        return 0
+    if len(args) == 2 and args[0] == "--root":
+        root = Path(args[1]).expanduser().resolve()
+    elif args:
+        print(__doc__.strip())
+        return 2
+    findings = scan(root)
+    for finding in findings:
+        print(finding)
+    if findings:
+        print(f"{len(findings)} literal model id(s) outside the routing policy: name the family in prose "
+              f"(\"latest Sol, medium\") and use acef-model in scripts (method/MODEL_CHOICE.md)", file=sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -7,6 +7,7 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
+const SOL = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "method", "model-routing-policy-v1.json"), "utf8")).providers.openai.families.sol; // current Sol (owner decision 2026-11-28)
 const cp = require("node:child_process");
 
 const sourceRoot = path.resolve(__dirname, "..");
@@ -114,7 +115,7 @@ const base = (runId) => ["active-run", "--run-id", runId, "--workflow-id", "ligh
 
   const actorArgs = (model, effort) => ["actor", "--id", `dev-${model}`, "--story", "Story cont", "--phase", "development", "--role", "developer",
     "--client", "claude-code", "--model", model, "--effort", effort, "--context-profile", "worker"];
-  const openai = run(repo, actorArgs("gpt-6.1-sol", "high"));
+  const openai = run(repo, actorArgs(SOL, "high"));
   assert.equal(openai.status, 1, "openai runtime accepted on an anthropic-routed run");
   assert.match(openai.stderr, /must bind calibrated runtime claude-/);
   const claude = run(repo, actorArgs("claude-sonnet-5-5", "high"));
@@ -124,7 +125,7 @@ const base = (runId) => ["active-run", "--run-id", runId, "--workflow-id", "ligh
   const plain = run(defaultRepo, [...base("RUN-d"), "--phase", "development"]);
   assert.equal(plain.status, 0, `${plain.stdout}${plain.stderr}`);
   assert.equal(json(defaultRepo, "docs/ai/ACEF_ACTIVE_RUN.json").routingProvider, undefined, "default run must not record a provider");
-  const stillOpenai = run(defaultRepo, actorArgs("gpt-6.1-sol", "high"));
+  const stillOpenai = run(defaultRepo, actorArgs(SOL, "high"));
   assert.equal(stillOpenai.status, 0, `${stillOpenai.stdout}${stillOpenai.stderr}`);
   console.log("WP-11 routing provider ok");
 }
@@ -224,8 +225,8 @@ const nextJson = (repo, args = []) => {
     "--client", "claude-code", "--model", model, "--effort", "high", "--context-profile", "worker"];
   // openai with nothing per-role: the older library still resolves.
   assert.equal(oldState([...base("RUN-o"), "--phase", "development"]).status, 0);
-  assert.equal(oldNext().active_state.runtime.model, "gpt-6.1-sol");
-  assert.equal(oldState(actorArgs("dev-openai", "gpt-6.1-sol")).status, 0);
+  assert.equal(oldNext().active_state.runtime.model, SOL);
+  assert.equal(oldState(actorArgs("dev-openai", SOL)).status, 0);
   // A per-role run override cannot be recorded with the older library.
   const override = oldState([...base("RUN-o"), "--phase", "development", "--routing-role-model", "development=claude-opus-5-5"]);
   assert.equal(override.status, 1);

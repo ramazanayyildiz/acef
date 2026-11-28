@@ -6,6 +6,7 @@ const cp = require("node:child_process");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
+const SOL = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "method", "model-routing-policy-v1.json"), "utf8")).providers.openai.families.sol; // current Sol (owner decision 2026-11-28)
 
 const root = path.resolve(__dirname, "..");
 const state = path.join(root, "scripts", "acef-state");
@@ -125,7 +126,7 @@ try {
     "actor", "--repo", tmp, "--id", firstDispatch.action.actorInstanceId,
     "--story", "Shared Story", "--phase", "development", "--role", "developer",
     "--client", "codex", "--session-id", `/root/${firstDispatch.action.actorInstanceId}`,
-    "--context-profile", "development", "--model", "gpt-6.1-sol", "--effort", "high",
+    "--context-profile", "development", "--model", SOL, "--effort", "high",
   ]);
 
   activeRun("RUN-two", "atdd");
@@ -145,7 +146,7 @@ try {
     "actor", "--repo", tmp, "--id", secondDispatch.action.actorInstanceId,
     "--story", "Shared Story", "--phase", "development", "--role", "developer",
     "--client", "codex", "--session-id", `/root/${secondDispatch.action.actorInstanceId}`,
-    "--context-profile", "development", "--model", "gpt-6.1-sol", "--effort", "high",
+    "--context-profile", "development", "--model", SOL, "--effort", "high",
   ]);
 
   workerScope(secondDispatch.action.actorInstanceId, "atdd");

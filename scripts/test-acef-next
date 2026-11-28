@@ -2,6 +2,7 @@
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
+const SOL = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "method", "model-routing-policy-v1.json"), "utf8")).providers.openai.families.sol; // current Sol (owner decision 2026-11-28)
 const cp = require("node:child_process");
 
 const repoRoot = path.resolve(__dirname, "..");
@@ -106,7 +107,7 @@ try {
   if (readyJson.status !== "ready") throw new Error(`acef-next was not ready:\n${ready}`);
   if (readyJson.active_state.next_allowed_action !== "implement_to_green") throw new Error("acef-next did not derive dev action");
   if (readyJson.active_state.story !== "Story 2.2") throw new Error("acef-next lost active story");
-  if (readyJson.active_state.runtime?.model !== "gpt-6.1-sol"
+  if (readyJson.active_state.runtime?.model !== SOL
     || readyJson.active_state.runtime?.reasoning_effort !== "high"
     || readyJson.active_state.runtime?.policy_role !== "development") {
     throw new Error("acef-next did not expose the required Standard Developer runtime");
