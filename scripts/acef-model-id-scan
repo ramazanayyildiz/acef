@@ -19,8 +19,10 @@ import subprocess
 import sys
 from pathlib import Path
 
-# A model id: gpt-<version>[-<family>] or claude-<family>-<version> / claude-<version>-<family>.
-MODEL_ID = re.compile(r"(?<![A-Za-z0-9._/-])(?:gpt-\d+(?:\.\d+)*(?:-[a-z]+)?|claude-(?:[a-z]+-\d+(?:-\d+)*|\d+(?:-\d+)*-[a-z]+))(?![A-Za-z0-9.-])")
+# A model id: gpt-<version>[-<family>] or claude-<family>-<version> / claude-<version>-<family>. It is found at the end
+# of a sentence ("... gpt-X.Y-sol."), behind a provider prefix ("openai/...") and before a dated suffix ("...-2026-11-01");
+# only a letter, digit or "_" right before it ("chatgpt-...") or a letter or digit right after it stops a match.
+MODEL_ID = re.compile(r"(?<![A-Za-z0-9_])(?:gpt-\d+(?:\.\d+)*(?:-[a-z]+)?|claude-(?:[a-z]+-\d+(?:-\d+)*|\d+(?:-\d+)*-[a-z]+))(?![A-Za-z0-9])")
 
 ALLOWED = [
     ("method/model-routing-policy-v1.json", "policy: the one place ACEF writes exact ids"),

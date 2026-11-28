@@ -33,7 +33,8 @@ def acef_checkout() -> Path:
 
 ACEF = acef_checkout()
 POLICY = "method/model-routing-policy-v1.json"
-# <prefix>-<version>-<family>, e.g. gpt-6.2-sol. Slugs without a version (gpt-reserve, codex-auto-review) never match.
+# <prefix>-<version>-<family> (Codex slugs such as gpt-<major.minor>-sol). Slugs without a version (gpt-reserve,
+# codex-auto-review) never match.
 FAMILY_ID = re.compile(r"^([a-z]+)-(\d+(?:\.\d+)*)-([a-z]+)$")
 
 

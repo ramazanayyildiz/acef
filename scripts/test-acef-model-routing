@@ -471,13 +471,14 @@ const assert = require("node:assert/strict");
     write("method/model-routing-policy-v1.json", '{"sol": "gpt-6.2-sol"}\n');
     write("method/model-review-floors-v1.json", '["gpt-6.1-sol", "claude-opus-5-5"]\n');
     write("method/GUIDE.md", "Run reviews on latest Sol.\nRun reviews on gpt-6.2-sol, high.\nAstra (gpt-6-astra) only when named.\n");
-    write("scripts/review.sh", 'codex exec -m "$(acef-model sol)"\ncodex exec -m claude-sonnet-5-5 x\nREVIEW_MODEL=gpt-5 run\n');
+    write("scripts/review.sh", 'codex exec -m "$(acef-model sol)"\ncodex exec -m claude-sonnet-5-5 x\nREVIEW_MODEL=gpt-5 run\n'
+      + "Use gpt-6.2-sol.\nAsk claude-opus-5-5.\ncodex exec -m openai/gpt-6.2-sol\npinned gpt-6.2-sol-2026-11-01 here\n");
     write("CHANGELOG.md", "# Changelog\n\n## Unreleased — new (2026-11-28)\n- moved to gpt-7-sol\n\n## v3.0.0-beta.1 — old\n- used gpt-6.1-sol\n\n## Unreleased\n- older gpt-5.6-sol\n");
     write("docs/experiments/run/manifest.json", '{"model": "gpt-5.6-sol"}\n');
     write("scripts/test-thing", "model gpt-6.1-sol\n");
     write("scripts/fixtures/a.json", '"gpt-6.1-sol"\n');
     write("docs/ai/capabilities/x.json", '"gpt-5.6-sol"\n');
-    write("README.md", "No ids here: gpt-reserve, codex-auto-review, my-gpt-6.1-sol-notes.\n");
+    write("README.md", "No ids here: gpt-reserve, codex-auto-review, chatgpt-6.1-sol, claude-code, gpt-x.\n");
     let result = cp.spawnSync("python3", ["-I", scan, "--root", work], { encoding: "utf8" });
     assert.equal(result.status, 1, result.stderr);
     assert.deepEqual(result.stdout.trim().split("\n"), [
@@ -486,6 +487,10 @@ const assert = require("node:assert/strict");
       "method/GUIDE.md:3: gpt-6-astra",
       "scripts/review.sh:2: claude-sonnet-5-5",
       "scripts/review.sh:3: gpt-5",
+      "scripts/review.sh:4: gpt-6.2-sol",
+      "scripts/review.sh:5: claude-opus-5-5",
+      "scripts/review.sh:6: gpt-6.2-sol",
+      "scripts/review.sh:7: gpt-6.2-sol",
     ]);
     assert.match(result.stderr, /literal model id\(s\) outside the routing policy/);
     for (const rel of ["CHANGELOG.md", "method/GUIDE.md", "scripts/review.sh"]) fs.rmSync(path.join(work, rel));
