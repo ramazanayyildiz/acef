@@ -43,6 +43,12 @@
               "semantic-critical": { "type": "string", "minLength": 1, "pattern": "^[A-Za-z0-9._:/-]+$" }
             }
           },
+          "families": {
+            "description": "Optional model family -> exact model id (for example sol, opus). The one place ACEF writes exact ids; scripts/acef-model prints them. A family name is unique across providers and is not a role name or alias.",
+            "type": "object",
+            "propertyNames": { "pattern": "^[a-z][a-z0-9-]*$" },
+            "additionalProperties": { "type": "string", "minLength": 1, "pattern": "^[A-Za-z0-9._:/-]+$" }
+          },
           "roleModels": {
             "description": "Optional per-role model over the class mapping. Keys are role ids from roles; null uses the class mapping. The reasoning tier still comes from the role.",
             "type": "object",

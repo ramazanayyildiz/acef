@@ -130,11 +130,19 @@ CHANGELOG heading names the bundle once it is tagged.
 ## Model choice
 
 Before you start a subagent or a Codex run, pick its model and effort from `method/MODEL_CHOICE.md`: critical work
-(money, tenancy, permission, data loss, migrations, locks) on Opus / gpt-6.1-sol high, standard on Sonnet / sol medium,
-mechanical on Sonnet / sol low, light on Haiku, browser tours on gpt-6.1-terra, trivial lookups from the shell with no
-agent. A project's recorded decision wins over this default. Run long tests in the background with a completion
-notification instead of waking agents to poll. Actors admitted through ACEF routing (Full roles, Fix/Standard under
-`admitted-role-routing-v1`) follow `method/model-routing-policy-v1.json` instead; the policy wins there.
+(money, tenancy, permission, data loss, migrations, locks) on latest Opus / latest Sol, high, standard on Sonnet /
+latest Sol, medium, mechanical on Sonnet / latest Sol, low, light on Haiku, browser tours on latest Terra, trivial
+lookups from the shell with no agent. A project's recorded decision wins over this default. Run long tests in the
+background with a completion notification instead of waking agents to poll. Actors admitted through ACEF routing (Full
+roles, Fix/Standard under `admitted-role-routing-v1`) follow `method/model-routing-policy-v1.json` instead; the policy
+wins there.
+
+Name model families, never versions, in docs, prompts, briefs and reports. The exact model id lives only in the
+routing policy's `families` map (owner decision 2026-11-28). Never pass a literal model id to `codex exec -m` (or
+`-c model=...`, `REVIEW_MODEL`, `--model`): use the resolver, `codex exec -m "$(acef-model sol)"` or
+`"$(acef-model --provider openai review)"` (`scripts/acef-model`, installed as `.acef/bin/acef-model`).
+`scripts/acef-model-id-scan` lists literal ids outside the policy, and `acef-version-check` says when the Codex model
+cache has a newer version of a family than the map.
 
 ## Core Rule
 

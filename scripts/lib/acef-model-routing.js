@@ -11,8 +11,10 @@ const REASONING_TIERS = new Set(["low", "medium", "high", "xhigh", "max"]);
 const MODEL_ID_SOURCE = "[A-Za-z0-9._:/-]+";
 const SAFE_MODEL_ID = new RegExp(`^${MODEL_ID_SOURCE}$`);
 // Bumped when consumers need a newer library (2: roleModels and run overrides; 3: ACEF-owned review floors checked at
-// resolve time). Consumers check it through acef-routing-selection.js so a host-kept older copy fails loudly.
-const ROUTING_LIBRARY_VERSION = 3;
+// resolve time; 4: model families and resolveModelName for scripts/acef-model). Consumers check it through
+// acef-routing-selection.js so a host-kept older copy fails loudly.
+const ROUTING_LIBRARY_VERSION = 4;
+const FAMILY_NAME = /^[a-z][a-z0-9-]*$/;
 // Owner decision 2026-10-27 (Ram): review roles never run below the ACEF floor or the policy model without a recorded
 // exemption. Floors and ranks come from the ACEF-owned floors file, never from the host policy.
 const { REVIEW_ROLES, checkPolicyFloor, floorError, loadReviewFloors, rankShortfall } = require("./acef-review-floors");
@@ -83,6 +85,7 @@ function validateModelRoutingPolicy(record) {
   for (const key of FLOOR_KEYS) {
     if (key in record) throw new Error(`model routing policy ${key} is not allowed: review floors belong in the ACEF-owned method/model-review-floors-v1.json, never in a routing policy`);
   }
+  validateFamilies(record);
   for (const [providerId, provider] of Object.entries(record.providers)) {
     validateRoleModels(provider?.roleModels, record.roles, `provider ${providerId} roleModels`);
     for (const moved of FLOOR_KEYS) {
@@ -108,6 +111,56 @@ function validateExemptions(exemptions, roles, label) {
     if (!REVIEW_ROLES.includes(role)) throw new Error(`${label} names ${role}, which is not a review role; only ${REVIEW_ROLES.join(", ")} take exemptions`);
     if (typeof reason !== "string" || !reason.trim()) throw new Error(`${label} for ${role} needs a reason`);
   }
+}
+
+// Model families (owner decision 2026-11-28): providers.<id>.families maps a family name (sol, opus, ...) to the exact
+// model id. It is the one place ACEF writes exact ids; prose names the family. A family name is unique across
+// providers and is never a role name or alias, so `acef-model <name>` has one meaning.
+function validateFamilies(record) {
+  const seen = new Map();
+  for (const [providerId, provider] of Object.entries(record.providers)) {
+    const families = provider?.families;
+    if (families === undefined) continue;
+    const label = `provider ${providerId} families`;
+    if (!families || typeof families !== "object" || Array.isArray(families)) throw new Error(`${label} must be an object`);
+    for (const [family, model] of Object.entries(families)) {
+      if (!FAMILY_NAME.test(family)) throw new Error(`${label} has an invalid family name ${family}`);
+      if (typeof model !== "string" || !SAFE_MODEL_ID.test(model)) throw new Error(`${label}.${family} is not a valid model id`);
+      if (Object.prototype.hasOwnProperty.call(record.roles, family) || Object.prototype.hasOwnProperty.call(ROLE_ALIASES, family)) {
+        throw new Error(`${label}.${family} collides with a role name; pick another family name`);
+      }
+      if (seen.has(family)) throw new Error(`${label}.${family} is also a family of provider ${seen.get(family)}`);
+      seen.set(family, providerId);
+    }
+  }
+}
+
+// What `acef-model <name>` prints: a family's exact id, or a role's resolved model and effort (resolveRoleRuntime,
+// policy only: no active-run overrides). options.provider limits families to that provider and picks the provider a
+// role resolves under; without it a role uses the policy's activeProvider. options.familiesOnly skips roles (acef-model
+// uses it to look a family up in a later policy file when a whole-file host override has no families map).
+function resolveModelName(policyRecord, name, options = {}) {
+  const wanted = String(name || "").trim().toLowerCase();
+  if (!wanted) throw new Error("name a role (for example review) or a model family (for example sol)");
+  const providerId = options.provider || null;
+  if (providerId && !policyRecord.providers?.[providerId]) throw new Error(`model routing policy has no provider ${providerId}`);
+  for (const [id, provider] of Object.entries(policyRecord.providers || {})) {
+    if (providerId && id !== providerId) continue;
+    const model = provider?.families?.[wanted];
+    if (typeof model === "string") return { kind: "family", name: wanted, provider: id, model };
+  }
+  const role = ROLE_ALIASES[normalizedRole(wanted)] || normalizedRole(wanted);
+  if (!options.familiesOnly && policyRecord.roles?.[role]) {
+    const runtime = resolveRoleRuntime(policyRecord, role, providerId, options.reviewFloors ? { reviewFloors: options.reviewFloors } : {});
+    return { kind: "role", name: role, provider: runtime.provider, model: runtime.model, reasoningEffort: runtime.reasoningEffort };
+  }
+  const known = Object.entries(policyRecord.providers || {})
+    .filter(([id]) => !providerId || id === providerId)
+    .flatMap(([, provider]) => Object.keys(provider?.families || {}));
+  const error = new Error(`${wanted} is neither a policy role nor a model family${providerId ? ` of provider ${providerId}` : ""}`
+    + ` (families: ${known.join(", ") || "none in this policy; run update-acef-installation"}; roles: ${Object.keys(policyRecord.roles || {}).join(", ")})`);
+  error.code = "ACEF_MODEL_NAME_UNKNOWN";
+  throw error;
 }
 
 // Keys a routing policy file may never carry (review of 7bc3bad): floors are not serializable through a policy.
@@ -279,7 +332,9 @@ module.exports = {
   ROUTING_LIBRARY_VERSION,
   canonicalRoutingRole,
   loadModelRoutingPolicy,
+  policyCandidates,
   resolveActorRuntime,
+  resolveModelName,
   validateProviderMapping,
   resolveRoleRuntime,
   runRoutingSelection,

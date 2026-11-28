@@ -1,11 +1,13 @@
 {
   "schema": "acef.model-review-floors.v1",
-  "note": "ACEF-owned (owner decision 2026-10-27, Ram): review roles never run below these floors without an owner exemption. update-acef-installation installs this file as .acef/model-review-floors.json and resets host edits; a host adds exemptions only, in providers.<id>.roleModelExemptions of its routing policy. modelRank lists models weakest first and is the only source of model strength; ranking a model does not choose it (gpt-6-astra is still used only when Ram names it; gpt-6.1-terra is a browser-tour model and stays unranked).",
+  "note": "ACEF-owned (owner decision 2026-10-27, Ram): review roles never run below these floors without an owner exemption. update-acef-installation installs this file as .acef/model-review-floors.json and resets host edits; a host adds exemptions only, in providers.<id>.roleModelExemptions of its routing policy. modelRank lists models weakest first and is the only source of model strength; ranking a model does not choose it (Astra is still used only when Ram names it; Terra is a browser-tour model and stays unranked). openai ranks every Sol below every Astra and each family by version; that order is a convention, not a measurement. The floors name the oldest accepted model of a family, so a newer version of that family ranked above it is accepted without moving the floor (owner decision 2026-11-28: the floors keep their meaning, Sol).",
   "providers": {
     "openai": {
       "modelRank": [
         "gpt-6.1-sol",
-        "gpt-6-astra"
+        "gpt-6.2-sol",
+        "gpt-6-astra",
+        "gpt-6.2-astra"
       ],
       "reviewModelFloors": {
         "code-review": "gpt-6.1-sol",

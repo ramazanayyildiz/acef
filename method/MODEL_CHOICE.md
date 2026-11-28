@@ -7,7 +7,7 @@ and used up the usage limit; long-waiting agents with 300–600k context kept wa
 **Where this page applies.** Every actor admitted through ACEF routing follows the policy file
 `method/model-routing-policy-v1.json` (installed as `.acef/model-routing-policy.json`, host overrides kept): Full
 capsule-supervisor roles and the Fix/Standard dispatches of runs bound to `admitted-role-routing-v1`. There the policy
-wins and the hard-wall rejects any other model or effort; for example a Standard developer must run at sol/high even
+wins and the hard-wall rejects any other model or effort; for example a Standard developer must run at latest Sol, high, even
 though this table would say medium. The table and the effort rules below govern the free choices: ordinary Claude
 Code subagents, Codex runs and tours that ACEF routing does not admit.
 
@@ -26,22 +26,24 @@ Effort always comes from the role's `reasoningTier`, whichever step picked the m
 
 | Role | Claude model | Source |
 |---|---|---|
-| conductor, atdd, development | `claude-sonnet-5-5` | class |
-| code-review | `claude-sonnet-5-5` | class |
-| patch-assurance, process-judge, epic-process-judge | `claude-opus-5-5` | `roleModels` |
+| conductor, atdd, development | latest Sonnet | class |
+| code-review | latest Sonnet | class |
+| patch-assurance, process-judge, epic-process-judge | latest Opus | `roleModels` |
 
 Development stays on Sonnet unless a host overrides it. This matches the table below: critical development may stay
 on Sonnet when an Opus review follows, and Patch Assurance and the Judges are that review.
 Cost note: review roles only. Hosts that run admitted roles on anthropic see Patch Assurance and both Judges move from
-Sonnet to Opus after `update-acef-installation`; no other role changes. OpenAI/Codex is unchanged: `gpt-6.1-sol` for
+Sonnet to Opus after `update-acef-installation`; no other role changes. OpenAI/Codex is unchanged: the latest Sol for
 every role, effort by the role tier, and no `roleModels` by default.
 
 **No downgrade of review roles** (owner decision 2026-10-27). For `code-review`, `patch-assurance`, `process-judge`
 and `epic-process-judge` the model never goes below the ACEF floor. Floors and model strength come only from the
 ACEF-owned `method/model-review-floors-v1.json` (installed as `.acef/model-review-floors.json`, reset on every update,
-loaded apart from any host policy). Its `modelRank` lists models weakest first: anthropic `claude-sonnet-5-5` <
-`claude-opus-5-5`; openai `gpt-6.1-sol` < `gpt-6-astra` (ranking Astra does not choose it: Astra is still used only
-when Ram names it); `gpt-6.1-terra` is unranked. A review-role model missing from `modelRank` is rejected.
+loaded apart from any host policy). Its `modelRank` lists models weakest first: anthropic Sonnet < Opus; openai every
+Sol version < every Astra version, each family by version (ranking Astra does not choose it: Astra is still used only
+when Ram names it); Terra is unranked. A floor names the oldest accepted version of its family, so a newer version
+ranked above it passes without moving the floor (owner decision 2026-11-28). A review-role model missing from
+`modelRank` is rejected.
 - Host policy, whichever file wins (`docs/ai/ACEF_MODEL_ROUTING_POLICY.json` or `.acef/model-routing-policy.json`): each
   review role at or above its floor, or the provider lists `roleModelExemptions.<role>` with a reason. A host can add
   exemptions; it cannot remove or lower floors. Checked when a role resolves, and by `update-acef-installation` before
@@ -51,8 +53,8 @@ when Ram names it); `gpt-6.1-terra` is unranked. A review-role model missing fro
   `"<role>:"` clears it). `acef-state` refuses the write; the hard-wall and the validator refuse the dispatch.
 - `development`, `atdd` and `conductor` stay freely overridable, also with unranked models.
 
-A host changes a role permanently in its `.acef/model-routing-policy.json` (for example
-`"roleModels": { "development": "claude-opus-5-5" }`), or for one run with `--routing-role-model`. Role keys must be
+A host changes a role permanently in its `.acef/model-routing-policy.json` (for example `roleModels.development` set to
+the Opus id that `acef-model opus` prints), or for one run with `--routing-role-model`. Role keys must be
 canonical policy roles (`code-review`, not `reviewer`); an unknown key fails validation, also when it is already
 stored on an active run. Model ids share one grammar (`MODEL_ID_SOURCE`: letters, digits, `.`, `_`, `-`, `:`, `/`),
 which the hard-wall also uses to read `--model` from shell dispatches. `update-acef-installation` merges the policy
@@ -67,18 +69,33 @@ Pick the class from the work, not from the size of the diff.
 
 | Class | Examples | Claude | Codex |
 |---|---|---|---|
-| critical | money, tenancy, permission, data loss, migrations, concurrency/locks: development AND review of that code; deciding whether a test can really fail | Opus | gpt-6.1-sol, high |
-| standard | normal feature development, light-slice review, design checks | Sonnet. Development of critical code may also stay on Sonnet when an Opus review follows. | gpt-6.1-sol, medium (the standard review setting) |
-| mechanical | renames, test-only fixture changes, ACEF adoption/update PRs, conflict resolution in merge prep, cleanup | Sonnet | gpt-6.1-sol, low (owner decision 2026-10-27) |
-| light | summarising long logs or junit, sorting failures against a known list, formatting reports/handoff/PR text, translation | Haiku | gpt-6.1-sol, low |
-| browser tours / exploratory UI | user-goal and exploration tours | — | gpt-6.1-terra |
+| critical | money, tenancy, permission, data loss, migrations, concurrency/locks: development AND review of that code; deciding whether a test can really fail | latest Opus | latest Sol, high |
+| standard | normal feature development, light-slice review, design checks | latest Sonnet. Development of critical code may also stay on Sonnet when an Opus review follows. | latest Sol, medium (the standard review setting) |
+| mechanical | renames, test-only fixture changes, ACEF adoption/update PRs, conflict resolution in merge prep, cleanup | latest Sonnet | latest Sol, low (owner decision 2026-10-27) |
+| light | summarising long logs or junit, sorting failures against a known list, formatting reports/handoff/PR text, translation | Haiku | latest Sol, low |
+| browser tours / exploratory UI | user-goal and exploration tours | — | latest Terra |
 | trivial lookup | PR state, file lists | the coordinator itself from the shell, no agent | — |
 
 - Cleanup that deletes data, databases or worktrees is never Haiku: Sonnet or the coordinator itself.
-- Codex keeps one model (sol) and varies effort. Only terra is a different model, and only for browser work.
-- Astra (gpt-6-astra) only when Ram names it.
-- Model ids: Opus = `claude-opus-5-5`, Sonnet = `claude-sonnet-5-5`, Haiku = the current Haiku id of the host's Claude
-  Code. Update this page and the policy when a model generation changes.
+- Codex keeps one model family (Sol, its latest version) and varies effort. Only Terra is a different model, and only
+  for browser work.
+- Astra only when Ram names it.
+
+**Model ids live in one place** (owner decision 2026-11-28, Ram). The exact id of each family is written only in
+`providers.<id>.families` of `method/model-routing-policy-v1.json` (installed as `.acef/model-routing-policy.json`).
+This page, prompts, briefs, reports and scripts name the family ("latest Sol, medium", "latest Opus"); Haiku is the
+Haiku of the host's Claude Code. Print an id with `acef-model <family|role>` (`scripts/acef-model`, installed as
+`.acef/bin/acef-model`; `--effort` prints a role's effort, `--provider` picks the provider).
+- **Never pass a literal model id** to `codex exec -m` (or `-c model=...`, `REVIEW_MODEL`, `--model`); use the resolver:
+  `codex exec -m "$(acef-model sol)" -c model_reasoning_effort=medium`, or for a role
+  `codex exec -m "$(acef-model --provider openai review)" -c model_reasoning_effort="$(acef-model --provider openai --effort review)"`.
+  Claude Code subagents take the family alias (`opus`, `sonnet`, `haiku`).
+- **When a newer model ships**, `acef-version-check` (run by every coordinator at session start) prints
+  `newer <family> model available: <id> (ACEF map says <id>)` from the local Codex model cache. Ram decides; the change
+  is one edit of the policy (`families` and the class models that equal `families.sol`) plus the new id in
+  `modelRank` of `method/model-review-floors-v1.json`.
+- `scripts/acef-model-id-scan [--root <repo>]` lists literal model ids outside the policy (history, records and test
+  fixtures excepted; `--list-allowed` prints the exceptions); `scripts/slice/selfcheck.sh` runs it on ACEF.
 
 ## Effort
 

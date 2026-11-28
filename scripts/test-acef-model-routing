@@ -15,15 +15,18 @@ const {
   MODEL_ID_SOURCE,
   REVIEW_ROLES,
 } = require("./lib/acef-model-routing");
-const { formatViolations, loadReviewFloors, policyFloorViolations, validateReviewFloors } = require("./lib/acef-review-floors");
+const { formatViolations, loadReviewFloors, policyFloorViolations, rankShortfall, validateReviewFloors } = require("./lib/acef-review-floors");
 
 const repoRoot = path.resolve(__dirname, "..");
 const loaded = loadModelRoutingPolicy(repoRoot);
+// The current ids come from the policy's families map (owner decision 2026-11-28), never from a literal in this test.
+const FAMILIES = loaded.record.providers.openai.families;
+const SOL = FAMILIES.sol;
 const codeReview = resolveRoleRuntime(loaded.record, "code-review");
 const patchAssurance = resolveRoleRuntime(loaded.record, "patch-assurance");
 const conductor = resolveRoleRuntime(loaded.record, "conductor");
 
-if (codeReview.model !== "gpt-6.1-sol" || codeReview.reasoningEffort !== "medium"
+if (codeReview.model !== SOL || codeReview.reasoningEffort !== "medium"
   || codeReview.executionClass !== "semantic-standard") {
   throw new Error("calibrated Code Review route was not resolved");
 }
@@ -39,7 +42,7 @@ if (canonicalRoutingRole("developer", "development") !== "development"
   throw new Error("actor role aliases do not resolve to calibrated policy roles");
 }
 const standardDeveloper = resolveActorRuntime(loaded.record, "developer", "development");
-if (standardDeveloper.model !== "gpt-6.1-sol" || standardDeveloper.reasoningEffort !== "high") {
+if (standardDeveloper.model !== SOL || standardDeveloper.reasoningEffort !== "high") {
   throw new Error("Standard/Fix Developer route was not resolved");
 }
 
@@ -110,7 +113,7 @@ const assert = require("node:assert/strict");
   assert.equal(loaded.record.providers.openai.roleModels, undefined, "openai must not ship a roleModels default");
   for (const role of Object.keys(expected)) {
     const runtime = resolveRoleRuntime(loaded.record, role, "openai");
-    assert.equal(runtime.model, "gpt-6.1-sol");
+    assert.equal(runtime.model, SOL);
     assert.equal(runtime.modelSource, "class");
   }
 }
@@ -133,7 +136,7 @@ const assert = require("node:assert/strict");
   assert.deepEqual(runRoutingSelection({ routingProvider: "anthropic", routingRoleModels: { atdd: "x" }, routingRoleModelExemptions: { "code-review": "r" } }),
     { provider: "anthropic", roleModels: { atdd: "x" }, exemptions: { "code-review": "r" } });
   assert.deepEqual(runRoutingSelection({}), { provider: null, roleModels: null, exemptions: null });
-  assert.equal(resolveRoleRuntime(loaded.record, "patch-assurance", runRoutingSelection({})).model, "gpt-6.1-sol");
+  assert.equal(resolveRoleRuntime(loaded.record, "patch-assurance", runRoutingSelection({})).model, SOL);
   // A host policy copy that names a role wins over ACEF's per-role default (it is the loaded policy).
   const host = structuredClone(loaded.record);
   host.providers.anthropic.roleModels.development = "claude-opus-5-5";
@@ -148,14 +151,23 @@ const assert = require("node:assert/strict");
   const floorsFile = loadReviewFloors();
   assert.equal(path.relative(repoRoot, floorsFile.path), path.join("method", "model-review-floors-v1.json"));
   const floors = floorsFile.record;
-  assert.deepEqual(floors.providers.openai.modelRank, ["gpt-6.1-sol", "gpt-6-astra"], "astra ranks above sol; terra stays unranked");
+  // openai: the mapped Sol and Astra are ranked, every Sol below every Astra, Terra unranked (owner decision 2026-11-28).
+  const openaiRank = floors.providers.openai.modelRank;
+  assert.ok(openaiRank.includes(FAMILIES.sol) && openaiRank.includes(FAMILIES.astra), "the mapped Sol and Astra are ranked");
+  assert.ok(!openaiRank.includes(FAMILIES.terra), "terra stays unranked");
+  const lastSol = Math.max(...openaiRank.map((model, index) => (/-sol$/.test(model) ? index : -1)));
+  assert.ok(lastSol >= 0 && lastSol < openaiRank.findIndex((model) => /-astra$/.test(model)), "every Sol ranks below every Astra");
   assert.deepEqual(floors.providers.anthropic.modelRank, ["claude-sonnet-5-5", "claude-opus-5-5"]);
-  // The shipped floors equal the shipped resolved model per review role, so the two cannot drift.
+  // The shipped resolved model per review role meets its shipped floor, and the openai floors stay on Sol (a floor names
+  // the oldest accepted version of its family; a newer version ranked above it passes without moving the floor).
   for (const providerId of Object.keys(floors.providers)) {
     for (const role of REVIEW_ROLES) {
-      assert.equal(floors.providers[providerId].reviewModelFloors[role], resolveRoleRuntime(loaded.record, role, providerId).model, `${providerId} ${role} floor`);
+      const floor = floors.providers[providerId].reviewModelFloors[role];
+      assert.equal(rankShortfall(floors, providerId, resolveRoleRuntime(loaded.record, role, providerId).model, floor), null, `${providerId} ${role} meets its floor`);
     }
   }
+  assert.equal(floors.providers.anthropic.reviewModelFloors["patch-assurance"], resolveRoleRuntime(loaded.record, "patch-assurance", "anthropic").model);
+  for (const role of REVIEW_ROLES) assert.match(floors.providers.openai.reviewModelFloors[role], /-sol$/, `openai ${role} floor stays on Sol`);
   // Floors and ranks no longer live in a routing policy.
   const misplaced = structuredClone(loaded.record);
   misplaced.providers.openai.modelRank = ["gpt-6.1-sol"];
@@ -175,7 +187,12 @@ const assert = require("node:assert/strict");
   assert.throws(() => resolveRoleRuntime(loaded.record, "code-review", run({}, { "code-review": " " })), /needs a reason/);
   // openai: astra is an upgrade over sol for Code Review; terra is unranked
   assert.equal(resolveRoleRuntime(loaded.record, "code-review", { provider: "openai", roleModels: { "code-review": "gpt-6-astra" } }).model, "gpt-6-astra");
-  assert.throws(() => resolveRoleRuntime(loaded.record, "code-review", { provider: "openai", roleModels: { "code-review": "gpt-6.1-terra" } }), /not in the ACEF modelRank for openai/);
+  assert.throws(() => resolveRoleRuntime(loaded.record, "code-review", { provider: "openai", roleModels: { "code-review": FAMILIES.terra } }), /not in the ACEF modelRank for openai/);
+  // a run override back to an older Sol is below the policy's latest Sol, so it needs an exemption
+  const olderSol = openaiRank[openaiRank.indexOf(SOL) - 1];
+  if (olderSol && /-sol$/.test(olderSol)) {
+    assert.throws(() => resolveRoleRuntime(loaded.record, "code-review", { provider: "openai", roleModels: { "code-review": olderSol } }), /below the review floor/);
+  }
   // persisted run keys are checked against canonical roles before resolving
   assert.throws(() => resolveRoleRuntime(loaded.record, "code-review", run({ reviewer: "claude-opus-5-5" })), /active-run routingRoleModels names unknown role reviewer/);
   assert.throws(() => validateRunRouting(loaded.record, { routingProvider: "anthropic", routingRoleModels: { reviewer: "claude-opus-5-5" } }), /unknown role reviewer/);
@@ -320,6 +337,169 @@ const assert = require("node:assert/strict");
   const providerProps = schema.properties.providers.additionalProperties.properties;
   assert.ok(providerProps.roleModels, "schema must declare providers.*.roleModels");
   assert.equal(schema.$id, "https://acef.local/schemas/model-routing-policy-v1.schema.json", "pure addition keeps the v1 id");
+}
+
+{
+  // Model families (owner decision 2026-11-28): the policy's families map is the one place exact ids live.
+  const { resolveModelName } = require("./lib/acef-model-routing");
+  assert.deepEqual(Object.keys(FAMILIES), ["sol", "astra", "terra"]);
+  assert.deepEqual(Object.keys(loaded.record.providers.anthropic.families), ["opus", "sonnet"]);
+  for (const model of Object.values(loaded.record.providers.openai.models)) assert.equal(model, SOL, "every openai class model is families.sol");
+  assert.equal(loaded.record.providers.anthropic.families.opus, loaded.record.providers.anthropic.roleModels["patch-assurance"]);
+  assert.equal(loaded.record.providers.anthropic.families.sonnet, loaded.record.providers.anthropic.models["semantic-standard"]);
+  const schema = JSON.parse(fs.readFileSync(path.join(repoRoot, "schemas", "model-routing-policy-v1.schema.json"), "utf8"));
+  assert.equal(schema.properties.providers.additionalProperties.properties.families.additionalProperties.pattern, `^${MODEL_ID_SOURCE}$`);
+  for (const [mutate, pattern] of [
+    [(p) => { p.providers.openai.families.review = "x"; }, /collides with a role name/],
+    [(p) => { p.providers.openai.families["code-review"] = "x"; }, /collides with a role name/],
+    [(p) => { p.providers.anthropic.families.sol = "x"; }, /also a family of provider openai/],
+    [(p) => { p.providers.openai.families.sol = "bad id"; }, /not a valid model id/],
+    [(p) => { p.providers.openai.families.Sol = "x"; }, /invalid family name/],
+    [(p) => { p.providers.openai.families = ["x"]; }, /must be an object/],
+  ]) {
+    const bad = structuredClone(loaded.record);
+    mutate(bad);
+    assert.throws(() => validateModelRoutingPolicy(bad), pattern);
+  }
+  const noFamilies = structuredClone(loaded.record);
+  for (const provider of Object.values(noFamilies.providers)) delete provider.families;
+  validateModelRoutingPolicy(noFamilies);
+  // resolveModelName: families first (unique), then roles through resolveRoleRuntime.
+  assert.deepEqual(resolveModelName(loaded.record, "sol"), { kind: "family", name: "sol", provider: "openai", model: SOL });
+  assert.equal(resolveModelName(loaded.record, "Opus").model, loaded.record.providers.anthropic.families.opus);
+  assert.deepEqual(resolveModelName(loaded.record, "review"), { kind: "role", name: "code-review", provider: "openai", model: SOL, reasoningEffort: "medium" });
+  assert.equal(resolveModelName(loaded.record, "review", { provider: "anthropic" }).model, loaded.record.providers.anthropic.families.sonnet);
+  assert.equal(resolveModelName(loaded.record, "patch-assurance", { provider: "anthropic" }).model, loaded.record.providers.anthropic.families.opus);
+  assert.throws(() => resolveModelName(loaded.record, "opus", { provider: "openai" }), (error) => error.code === "ACEF_MODEL_NAME_UNKNOWN");
+  assert.throws(() => resolveModelName(loaded.record, "review", { familiesOnly: true }), (error) => error.code === "ACEF_MODEL_NAME_UNKNOWN");
+  assert.throws(() => resolveModelName(noFamilies, "sol"), /none in this policy; run update-acef-installation/);
+  assert.throws(() => resolveModelName(loaded.record, "sol", { provider: "nope" }), /no provider nope/);
+  // A host copy installed before families: the three-way update adds families and moves untouched class models to the
+  // new Sol, while a host-pinned class model stays.
+  const { mergeHostConfig } = require("./lib/acef-installation");
+  const before = structuredClone(noFamilies);
+  for (const executionClass of Object.keys(before.providers.openai.models)) before.providers.openai.models[executionClass] = "gpt-older-sol";
+  const hostCopy = structuredClone(before);
+  hostCopy.providers.openai.models["semantic-critical"] = "gpt-host-pinned";
+  const merged = mergeHostConfig(hostCopy, loaded.record, before).result;
+  assert.deepEqual(merged.providers.openai.families, FAMILIES, "update adds the families map");
+  assert.equal(merged.providers.openai.models["semantic-standard"], SOL, "untouched class model follows ACEF");
+  assert.equal(merged.providers.openai.models["semantic-critical"], "gpt-host-pinned", "host-pinned class model stays");
+}
+{
+  // scripts/acef-model: stdout carries only the answer; failures print nothing on stdout.
+  const cp = require("node:child_process");
+  const os = require("node:os");
+  const cli = path.join(repoRoot, "scripts", "acef-model");
+  const call = (args) => cp.spawnSync(process.execPath, [cli, ...args], { encoding: "utf8" });
+  const ok = (args) => { const result = call(args); assert.equal(result.status, 0, result.stderr); return result.stdout; };
+  assert.equal(ok(["--repo", repoRoot, "sol"]), `${SOL}\n`);
+  assert.equal(ok(["--repo", repoRoot, "review"]), `${SOL}\n`);
+  assert.equal(ok(["--repo", repoRoot, "--effort", "review"]), "medium\n");
+  assert.equal(ok(["--repo", repoRoot, "--provider", "anthropic", "epic-judge"]), `${loaded.record.providers.anthropic.families.opus}\n`);
+  for (const [args, status] of [[["--repo", repoRoot, "luna"], 1], [["--repo", repoRoot, "--effort", "sol"], 1], [["--repo", repoRoot, "--provider", "openai", "opus"], 1], [[], 2], [["--bogus", "sol"], 2]]) {
+    const result = call(args);
+    assert.equal(result.status, status, `acef-model ${args.join(" ")}`);
+    assert.equal(result.stdout, "", `acef-model ${args.join(" ")} printed nothing on stdout`);
+  }
+  // A whole-file host override without families: roles use the override, families fall through to the next policy.
+  const host = fs.mkdtempSync(path.join(os.tmpdir(), "acef-model-cli-"));
+  try {
+    const override = JSON.parse(fs.readFileSync(path.join(repoRoot, "method", "model-routing-policy-v1.json"), "utf8"));
+    for (const provider of Object.values(override.providers)) delete provider.families;
+    override.providers.openai.models["semantic-standard"] = "gpt-host-review";
+    override.providers.openai.roleModelExemptions = { "code-review": "test: host review model" };
+    fs.mkdirSync(path.join(host, "docs", "ai"), { recursive: true });
+    fs.writeFileSync(path.join(host, "docs", "ai", "ACEF_MODEL_ROUTING_POLICY.json"), JSON.stringify(override));
+    assert.equal(ok(["--repo", host, "review"]), "gpt-host-review\n");
+    assert.equal(ok(["--repo", host, "sol"]), `${SOL}\n`, "family falls through to the ACEF source policy");
+  } finally {
+    fs.rmSync(host, { recursive: true, force: true });
+  }
+}
+{
+  // acef-version-check: newer family versions in a fixture Codex model cache (never the real ~/.codex one).
+  const cp = require("node:child_process");
+  const os = require("node:os");
+  const work = fs.mkdtempSync(path.join(os.tmpdir(), "acef-version-models-"));
+  try {
+    const source = path.join(work, "acef");
+    fs.mkdirSync(path.join(source, "method"), { recursive: true });
+    fs.writeFileSync(path.join(source, "method", "FEEDBACK_LOOP.md"), "# fixture\n");
+    const policy = JSON.parse(fs.readFileSync(path.join(repoRoot, "method", "model-routing-policy-v1.json"), "utf8"));
+    policy.providers.openai.families = { sol: "gpt-6.1-sol", astra: "gpt-6.9-astra", terra: "gpt-6.1-terra" };
+    fs.writeFileSync(path.join(source, "method", "model-routing-policy-v1.json"), JSON.stringify(policy));
+    const codexHome = path.join(work, "codex");
+    fs.mkdirSync(codexHome);
+    const check = () => cp.spawnSync("python3", ["-I", path.join(repoRoot, "scripts", "acef-version-check"), "--repo", path.join(work, "nohost")],
+      { encoding: "utf8", env: { ...process.env, ACEF_SOURCE: source, CODEX_HOME: codexHome } });
+    const writeCache = (value) => fs.writeFileSync(path.join(codexHome, "models_cache.json"), typeof value === "string" ? value : JSON.stringify(value));
+    const slugs = ["gpt-6.2-sol", "gpt-6.1-sol", "gpt-6.10-astra", "gpt-6.1-terra", "gpt-5.6-terra", "gpt-reserve", "codex-auto-review", "gpt-7-luna"];
+    writeCache({ fetched_at: "fixture", models: slugs.map((slug) => ({ slug })) });
+    let result = check();
+    assert.equal(result.status, 2, "exit code keeps its meaning (no installation record)");
+    assert.deepEqual(result.stdout.split("\n").filter((line) => line.startsWith("newer ")), [
+      "newer sol model available: gpt-6.2-sol (ACEF map says gpt-6.1-sol)",
+      "newer astra model available: gpt-6.10-astra (ACEF map says gpt-6.9-astra)",
+    ], "6.10 ranks above 6.9; terra current; luna is not in the map; unversioned slugs ignored");
+    writeCache(slugs.map((slug) => ({ slug })));
+    assert.match(check().stdout, /newer sol model available: gpt-6\.2-sol/, "a bare list cache is read too");
+    writeCache({ models: [{ slug: "gpt-6.1-sol" }, { slug: "gpt-6.9-astra" }] });
+    result = check();
+    assert.equal(result.status, 2);
+    assert.doesNotMatch(result.stdout, /newer /, "nothing newer, nothing printed");
+    writeCache("{not json");
+    result = check();
+    assert.equal(result.status, 2);
+    assert.doesNotMatch(result.stdout + result.stderr, /newer |Traceback/, "an unreadable cache is skipped silently");
+    fs.rmSync(path.join(codexHome, "models_cache.json"));
+    result = check();
+    assert.equal(result.status, 2);
+    assert.doesNotMatch(result.stdout + result.stderr, /newer |Traceback/, "a missing cache is not an error");
+  } finally {
+    fs.rmSync(work, { recursive: true, force: true });
+  }
+}
+{
+  // acef-model-id-scan: literal ids outside the policy are listed; history, records and fixtures are excepted.
+  const cp = require("node:child_process");
+  const os = require("node:os");
+  const scan = path.join(repoRoot, "scripts", "acef-model-id-scan");
+  const work = fs.mkdtempSync(path.join(os.tmpdir(), "acef-model-id-scan-"));
+  try {
+    const write = (rel, text) => { fs.mkdirSync(path.dirname(path.join(work, rel)), { recursive: true }); fs.writeFileSync(path.join(work, rel), text); };
+    write("method/model-routing-policy-v1.json", '{"sol": "gpt-6.2-sol"}\n');
+    write("method/model-review-floors-v1.json", '["gpt-6.1-sol", "claude-opus-5-5"]\n');
+    write("method/GUIDE.md", "Run reviews on latest Sol.\nRun reviews on gpt-6.2-sol, high.\nAstra (gpt-6-astra) only when named.\n");
+    write("scripts/review.sh", 'codex exec -m "$(acef-model sol)"\ncodex exec -m claude-sonnet-5-5 x\nREVIEW_MODEL=gpt-5 run\n');
+    write("CHANGELOG.md", "# Changelog\n\n## Unreleased — new (2026-11-28)\n- moved to gpt-7-sol\n\n## v3.0.0-beta.1 — old\n- used gpt-6.1-sol\n\n## Unreleased\n- older gpt-5.6-sol\n");
+    write("docs/experiments/run/manifest.json", '{"model": "gpt-5.6-sol"}\n');
+    write("scripts/test-thing", "model gpt-6.1-sol\n");
+    write("scripts/fixtures/a.json", '"gpt-6.1-sol"\n');
+    write("docs/ai/capabilities/x.json", '"gpt-5.6-sol"\n');
+    write("README.md", "No ids here: gpt-reserve, codex-auto-review, my-gpt-6.1-sol-notes.\n");
+    let result = cp.spawnSync("python3", ["-I", scan, "--root", work], { encoding: "utf8" });
+    assert.equal(result.status, 1, result.stderr);
+    assert.deepEqual(result.stdout.trim().split("\n"), [
+      "CHANGELOG.md:4: gpt-7-sol",
+      "method/GUIDE.md:2: gpt-6.2-sol",
+      "method/GUIDE.md:3: gpt-6-astra",
+      "scripts/review.sh:2: claude-sonnet-5-5",
+      "scripts/review.sh:3: gpt-5",
+    ]);
+    assert.match(result.stderr, /literal model id\(s\) outside the routing policy/);
+    for (const rel of ["CHANGELOG.md", "method/GUIDE.md", "scripts/review.sh"]) fs.rmSync(path.join(work, rel));
+    result = cp.spawnSync("python3", ["-I", scan, "--root", work], { encoding: "utf8" });
+    assert.equal(result.status, 0, result.stdout);
+    assert.equal(result.stdout, "");
+    // ACEF itself carries no literal id outside the policy (selfcheck runs the same scan).
+    result = cp.spawnSync("python3", ["-I", scan, "--root", repoRoot], { encoding: "utf8" });
+    assert.equal(result.status, 0, `literal model ids in ACEF:\n${result.stdout}`);
+    const allowed = cp.spawnSync("python3", ["-I", scan, "--list-allowed"], { encoding: "utf8" });
+    assert.match(allowed.stdout, /^method\/model-routing-policy-v1\.json\tpolicy: /m);
+  } finally {
+    fs.rmSync(work, { recursive: true, force: true });
+  }
 }
 
 if (!/^[a-f0-9]{64}$/.test(loaded.sha256)

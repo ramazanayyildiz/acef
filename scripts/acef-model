@@ -1,0 +1,103 @@
+#!/usr/bin/env node
+"use strict";
+
+// acef-model [--repo <path>] [--provider <id>] [--effort] <role|family>
+//
+// Prints the exact model id for a model family (sol, astra, terra, opus, sonnet) or for a policy role (review,
+// code-review, development, ...) from the routing policy, so prose, scripts and agents never write a literal model id
+// (owner decision 2026-11-28, method/MODEL_CHOICE.md). Example: codex exec -m "$(acef-model --provider openai review)".
+//
+//   family  providers.<id>.families.<family> of the effective policy; when a whole-file host override
+//           (docs/ai/ACEF_MODEL_ROUTING_POLICY.json) has no families map, the next policy file is asked
+//           (.acef/model-routing-policy.json, then the ACEF source policy).
+//   role    resolveRoleRuntime on the effective policy: roleModels, then the class mapping, review floors checked.
+//           Active-run overrides (--routing-role-model) are not applied: admitted actors take their runtime from
+//           acef-next, not from this command.
+//   --provider <id>  the provider a role resolves under and the only provider searched for a family; without it a
+//                    role uses the policy's activeProvider. A Codex call should pass --provider openai or name a family.
+//   --effort         print the role's reasoning effort instead of the model (roles only).
+//   --repo <path>    the repo whose policy wins (default: the git top level of the current directory, else it).
+// Stdout carries only the answer, so $(acef-model ...) is safe. Exit 0 printed; 1 cannot resolve; 2 usage.
+
+const fs = require("node:fs");
+const path = require("node:path");
+const { execFileSync } = require("node:child_process");
+
+const LIBRARY = path.join(__dirname, "lib", "acef-model-routing.js");
+const NEEDED_LIBRARY_VERSION = 4;
+
+function usage(message) {
+  if (message) process.stderr.write(`acef-model: ${message}\n`);
+  process.stderr.write("usage: acef-model [--repo <path>] [--provider <id>] [--effort] <role|family>\n");
+  process.exit(2);
+}
+
+function fail(message) {
+  process.stderr.write(`acef-model: ${message}\n`);
+  process.exit(1);
+}
+
+function parseArgs(argv) {
+  const opts = { repo: "", provider: "", effort: false, name: "" };
+  for (let index = 0; index < argv.length; index += 1) {
+    const arg = argv[index];
+    if (arg === "--repo") opts.repo = argv[++index] || usage("--repo needs a path");
+    else if (arg === "--provider") opts.provider = argv[++index] || usage("--provider needs an id");
+    else if (arg === "--effort") opts.effort = true;
+    else if (arg === "-h" || arg === "--help") usage();
+    else if (arg.startsWith("-")) usage(`unknown option ${arg}`);
+    else if (!opts.name) opts.name = arg;
+    else usage(`unexpected argument ${arg}`);
+  }
+  if (!opts.name) usage("name a role or a model family");
+  return opts;
+}
+
+function defaultRepo() {
+  try {
+    return execFileSync("git", ["rev-parse", "--show-toplevel"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim() || process.cwd();
+  } catch {
+    return process.cwd();
+  }
+}
+
+function main() {
+  const opts = parseArgs(process.argv.slice(2));
+  const routing = require(LIBRARY);
+  if (typeof routing.resolveModelName !== "function" || Number(routing.ROUTING_LIBRARY_VERSION || 0) < NEEDED_LIBRARY_VERSION) {
+    fail(`installed routing library ${LIBRARY} predates model families (needs ROUTING_LIBRARY_VERSION ${NEEDED_LIBRARY_VERSION}); restore the ACEF copy and run update-acef-installation`);
+  }
+  const repo = path.resolve(opts.repo || defaultRepo());
+  const options = opts.provider ? { provider: opts.provider } : {};
+  let answer;
+  try {
+    const loaded = routing.loadModelRoutingPolicy(repo);
+    try {
+      answer = routing.resolveModelName(loaded.record, opts.name, options);
+    } catch (error) {
+      if (error.code !== "ACEF_MODEL_NAME_UNKNOWN") throw error;
+      // A whole-file override may predate families: ask the later policy files for the family only.
+      for (const candidate of routing.policyCandidates(repo)) {
+        if (path.resolve(candidate) === path.resolve(loaded.path) || !fs.existsSync(candidate)) continue;
+        const record = routing.validateModelRoutingPolicy(JSON.parse(fs.readFileSync(candidate, "utf8")));
+        try {
+          answer = routing.resolveModelName(record, opts.name, { ...options, familiesOnly: true });
+          break;
+        } catch (inner) {
+          if (inner.code !== "ACEF_MODEL_NAME_UNKNOWN") throw inner;
+        }
+      }
+      if (!answer) throw error;
+    }
+  } catch (error) {
+    fail(error.message);
+  }
+  if (opts.effort) {
+    if (answer.kind !== "role") fail(`${answer.name} is a model family and has no effort; name a role, or take the effort from method/MODEL_CHOICE.md`);
+    process.stdout.write(`${answer.reasoningEffort}\n`);
+    return;
+  }
+  process.stdout.write(`${answer.model}\n`);
+}
+
+main();

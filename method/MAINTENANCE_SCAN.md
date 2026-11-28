@@ -2,7 +2,7 @@
 
 Status: pilot, 2026-10-25. This is a scan contract, not a new lifecycle or lane. It becomes a lane only after measured
 runs show value beyond the Slice lane's 2b pass and independent reviews. Sources: proposals from the JakoMeet/CRM,
-B2Press and Foundation sessions, reviewed by Claude Fable and Codex (gpt-6-astra).
+B2Press and Foundation sessions, reviewed by Claude Fable and Codex (Astra).
 
 ## Why
 

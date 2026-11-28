@@ -7,6 +7,12 @@ script lives in (its origin/main when available, else HEAD). Cheap enough for se
   exit 1  "ACEF behind by N commits" + the CHANGELOG headings added since the installed commit; read those, then
           update with scripts/update-acef-installation --repo <path> through the host's own process
   exit 2  no installation record, or the recorded commit is unknown to this checkout
+Then, on every exit except a usage error, one line per model family for which the local Codex model cache
+($CODEX_HOME/models_cache.json, default ~/.codex) lists a newer version than ACEF's routing policy map
+(providers.<id>.families of method/model-routing-policy-v1.json at the same ref):
+  newer <family> model available: <id> (ACEF map says <id>)
+Those lines are a notice for Ram, who decides the map change; they never change the exit code, and a missing or
+unreadable cache prints nothing (owner decision 2026-11-28).
 """
 import json
 import os
@@ -26,10 +32,17 @@ def acef_checkout() -> Path:
 
 
 ACEF = acef_checkout()
+POLICY = "method/model-routing-policy-v1.json"
+# <prefix>-<version>-<family>, e.g. gpt-6.2-sol. Slugs without a version (gpt-reserve, codex-auto-review) never match.
+FAMILY_ID = re.compile(r"^([a-z]+)-(\d+(?:\.\d+)*)-([a-z]+)$")
 
 
 def git(*args) -> str:
     return subprocess.run(["git", "-C", str(ACEF), *args], capture_output=True, text=True).stdout.strip()
+
+
+def target_ref() -> str:
+    return "origin/main" if git("rev-parse", "--verify", "-q", "origin/main") else "HEAD"
 
 
 def recorded_commit(record: dict) -> str:
@@ -38,25 +51,70 @@ def recorded_commit(record: dict) -> str:
     return match.group(1) if match else ""
 
 
-def main():
-    args = sys.argv[1:]
-    if len(args) != 2 or args[0] not in ("--repo", "--target"):
-        print(__doc__.strip())
-        sys.exit(2)
-    record_path = Path(args[1]).expanduser() / "docs" / "ai" / "ACEF_INSTALLATION.json"
+def version_key(text: str) -> tuple:
+    parts = [int(part) for part in text.split(".")]
+    while len(parts) > 1 and parts[-1] == 0:
+        parts.pop()
+    return tuple(parts)
+
+
+def policy_families(target: str) -> dict:
+    """{family: id} from ACEF's policy at the compared ref, else the working file; {} when unavailable."""
+    text = git("show", f"{target}:{POLICY}")
+    if not text and (ACEF / POLICY).exists():
+        text = (ACEF / POLICY).read_text()
+    record = json.loads(text) if text else {}
+    families = {}
+    for provider in (record.get("providers") or {}).values():
+        if isinstance(provider, dict) and isinstance(provider.get("families"), dict):
+            families.update({name: model for name, model in provider["families"].items() if isinstance(model, str)})
+    return families
+
+
+def cache_slugs() -> list:
+    cache = Path(os.environ.get("CODEX_HOME") or Path.home() / ".codex").expanduser() / "models_cache.json"
+    if not cache.exists():
+        return []
+    data = json.loads(cache.read_text())
+    models = data.get("models") if isinstance(data, dict) else data
+    return [entry["slug"] for entry in models or [] if isinstance(entry, dict) and isinstance(entry.get("slug"), str)]
+
+
+def newer_model_lines(target: str) -> list:
+    try:
+        families = policy_families(target)
+        slugs = cache_slugs() if families else []
+    except Exception:  # a notice only: never fail or change the exit code over the model check
+        return []
+    lines = []
+    for family, current in families.items():
+        mapped = FAMILY_ID.match(current)
+        if not mapped or mapped.group(3) != family:
+            continue
+        best, best_key = None, version_key(mapped.group(2))
+        for slug in slugs:
+            found = FAMILY_ID.match(slug)
+            if found and found.group(1) == mapped.group(1) and found.group(3) == family and version_key(found.group(2)) > best_key:
+                best, best_key = slug, version_key(found.group(2))
+        if best:
+            lines.append(f"newer {family} model available: {best} (ACEF map says {current})")
+    return lines
+
+
+def installation_status(repo: str, target: str) -> int:
+    record_path = Path(repo).expanduser() / "docs" / "ai" / "ACEF_INSTALLATION.json"
     if not record_path.exists():
         print(f"no ACEF installation record at {record_path}")
-        sys.exit(2)
+        return 2
     installed = recorded_commit(json.loads(record_path.read_text()))
-    target = "origin/main" if git("rev-parse", "--verify", "-q", "origin/main") else "HEAD"
     head = git("rev-parse", "--short=9", target)
     if not installed or not git("rev-parse", "--verify", "-q", installed + "^{commit}"):
         print(f"installed commit {installed or '?'} is unknown to the ACEF checkout {ACEF} ({target} {head})")
-        sys.exit(2)
+        return 2
     behind = int(git("rev-list", "--count", f"{installed}..{target}") or 0)
     if behind == 0:
         print(f"ACEF current {head}")
-        sys.exit(0)
+        return 0
     print(f"ACEF behind by {behind} commits (installed {installed[:9]}, {target} {head})")
     # New sections = headings whose title (text after the bundle prefix) was not in the installed CHANGELOG, so a
     # renamed bundle heading ("Unreleased —" -> "v3.0.0-beta.4 —") is not reported again.
@@ -72,7 +130,19 @@ def main():
         if title not in before:
             print("  " + heading)
     print("read: CHANGELOG.md sections above; update: scripts/update-acef-installation --repo <path>")
-    sys.exit(1)
+    return 1
+
+
+def main():
+    args = sys.argv[1:]
+    if len(args) != 2 or args[0] not in ("--repo", "--target"):
+        print(__doc__.strip())
+        sys.exit(2)
+    target = target_ref()
+    code = installation_status(args[1], target)
+    for line in newer_model_lines(target):
+        print(line)
+    sys.exit(code)
 
 
 if __name__ == "__main__":

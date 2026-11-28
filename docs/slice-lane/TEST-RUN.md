@@ -7,7 +7,8 @@ section. Never run any of this against the owner's preview DB or port.
 **Prerequisites.** (1) A lane test DB whose name contains `testing` (`lanes.db_pattern`), migrated from the base
 worktree. (2) The test runner pointed at that DB through its own config variable, set per worktree. (3) Private package
 credentials as a one-shot environment variable for the install command only, never written to a file or the repo.
-(4) The `codex` CLI logged in; `REVIEW_MODEL=<review-model>` (or `review.codex_model` in `slice-method.json`).
+(4) The `codex` CLI logged in; `REVIEW_MODEL=<review-model>` (or `review.codex_model` in `slice-method.json`), printed
+by `acef-model sol` rather than written as a literal id (`method/MODEL_CHOICE.md`).
 
 | # | Step | Output that proves it |
 |---|---|---|
@@ -43,5 +44,5 @@ closing-note fields; the cost fields are read by hand for now (a parser is a lat
 export DB_DATABASE=<project>_testing_l1 PHPUNIT_CONFIG=phpunit.lane.xml    # lane DB; test runner config
 COMPOSER_AUTH='{"github-oauth":{"github.com":"<token>"}}' composer install  # one shot, not exported
 composer acef:gate      # the host defines this script as: scripts/gate.sh <this worktree> (the adapter ships none)
-REVIEW_MODEL=gpt-6-astra scripts/codex-review.sh docs/slices/evidence/<ID>/brief.md docs/slices/<ID>-review.md
+REVIEW_MODEL="$(acef-model sol)" scripts/codex-review.sh docs/slices/evidence/<ID>/brief.md docs/slices/<ID>-review.md
 ```

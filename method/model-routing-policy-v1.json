@@ -1,7 +1,7 @@
 {
   "schema": "acef.model-routing-policy.v1",
-  "policyId": "role-models-2026-10-27",
-  "note": "Binds every actor admitted through ACEF routing (Full capsule-supervisor roles and Fix/Standard dispatches under admitted-role-routing-v1); here the policy wins over method/MODEL_CHOICE.md. Free choices (ordinary Claude Code subagents, Codex runs and tours that ACEF routing does not admit) follow method/MODEL_CHOICE.md. Mechanical, light and browser-tour work has no role here. A provider may name a model per role (roleModels) over its class mapping; see method/MODEL_CHOICE.md.",
+  "policyId": "role-models-2026-11-28",
+  "note": "Binds every actor admitted through ACEF routing (Full capsule-supervisor roles and Fix/Standard dispatches under admitted-role-routing-v1); here the policy wins over method/MODEL_CHOICE.md. Free choices (ordinary Claude Code subagents, Codex runs and tours that ACEF routing does not admit) follow method/MODEL_CHOICE.md. Mechanical, light and browser-tour work has no role here. A provider may name a model per role (roleModels) over its class mapping; see method/MODEL_CHOICE.md. providers.<id>.families is the one place ACEF writes exact model ids for the model families (Sol, Astra, Terra, Opus, Sonnet); prose and scripts name the family or the role and print the id with scripts/acef-model (owner decision 2026-11-28).",
   "activeProvider": "openai",
   "roles": {
     "conductor": {
@@ -26,7 +26,7 @@
       "executionClass": "semantic-standard",
       "reasoningTier": "medium",
       "sessionPolicy": "fresh-per-reviewed-tree",
-      "evidence": "V327-CAL-001 blind Judge: medium 30/30, high 28/30, both found held-out HIGH; measured on gpt-5.6-sol, carried to gpt-6.1-sol without recalibration"
+      "evidence": "V327-CAL-001 blind Judge: medium 30/30, high 28/30, both found held-out HIGH; measured on gpt-5.6-sol, carried to later Sol versions without recalibration"
     },
     "patch-assurance": {
       "executionClass": "semantic-critical",
@@ -50,9 +50,14 @@
   "providers": {
     "openai": {
       "models": {
-        "orchestration": "gpt-6.1-sol",
-        "semantic-standard": "gpt-6.1-sol",
-        "semantic-critical": "gpt-6.1-sol"
+        "orchestration": "gpt-6.2-sol",
+        "semantic-standard": "gpt-6.2-sol",
+        "semantic-critical": "gpt-6.2-sol"
+      },
+      "families": {
+        "sol": "gpt-6.2-sol",
+        "astra": "gpt-6.2-astra",
+        "terra": "gpt-6.1-terra"
       },
       "reasoning": {
         "low": "low",
@@ -61,13 +66,17 @@
         "xhigh": "xhigh",
         "max": "max"
       },
-      "note": "Codex keeps one model (sol) and varies reasoning effort by role; gpt-6.1-terra is for browser tours only and has no role here (method/MODEL_CHOICE.md). The 6.1 remap is not recalibrated. Review roles never go below the ACEF review floors (method/model-review-floors-v1.json) without an owner exemption."
+      "note": "Codex keeps one model (the latest Sol, families.sol) and varies reasoning effort by role; Terra is for browser tours only and Astra only when Ram names it, so neither has a role here (method/MODEL_CHOICE.md). Each class model equals families.sol; moving Sol to a newer version is not recalibrated. Review roles never go below the ACEF review floors (method/model-review-floors-v1.json) without an owner exemption."
     },
     "anthropic": {
       "models": {
         "orchestration": "claude-sonnet-5-5",
         "semantic-standard": "claude-sonnet-5-5",
         "semantic-critical": "claude-sonnet-5-5"
+      },
+      "families": {
+        "opus": "claude-opus-5-5",
+        "sonnet": "claude-sonnet-5-5"
       },
       "roleModels": {
         "patch-assurance": "claude-opus-5-5",

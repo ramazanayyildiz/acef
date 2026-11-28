@@ -7,6 +7,43 @@ proven, or installed.
 Update this file in the same PR whenever ACEF itself gains or changes a flow, gate, validator, hook, skill, installer behavior, workflow,
 or evidence contract. Do not use it to claim implementation status; link to the capability record for that.
 
+## Unreleased — Model families: exact model ids in one place, newer-model notice (2026-11-28)
+
+Why: ACEF and the projects pinned exact model versions in docs, scripts and rules; Codex moved on to a newer Sol and
+Astra while ACEF still named the older ones, and nothing said so. Owner decision 2026-11-28 (Ram): prose names model
+families ("latest Sol, medium", "latest Opus"), the exact id is written only in ACEF's routing policy, and the
+"newer model exists" check runs inside `acef-version-check` (no launchd or weekly job).
+- **Families map:** `providers.<id>.families` in `method/model-routing-policy-v1.json` is the one place ACEF writes
+  exact ids (Sol, Astra, Terra; Opus, Sonnet). The openai map moves Sol and Astra to the newest versions in the Codex
+  model cache; Terra and the Claude ids are unchanged; every openai class model equals `families.sol`; `policyId`
+  `role-models-2026-11-28`. Astra stays "only when Ram names it", Terra "only for browser passes". Schema and validator
+  accept `families` (a name is unique across providers and never a role name or alias); `ROUTING_LIBRARY_VERSION` 4.
+- **Floors keep their meaning (Sol):** `method/model-review-floors-v1.json` ranks the new Sol and Astra (every Sol below
+  every Astra, each family by version; a convention, not a measurement). The floors stay on the older Sol, so the newer
+  one passes. Effect on hosts after `update-acef-installation`: admitted openai roles resolve to the new Sol unless the
+  host pinned its own class models; a stored active-run review override on the older Sol is now below the policy model
+  and needs `--routing-role-model-exemption`.
+- **Resolver:** `scripts/acef-model [--repo <path>] [--provider <id>] [--effort] <role|family>` (installed as
+  `.acef/bin/acef-model`) prints the exact id or a role's effort; scripts call `codex exec -m "$(acef-model sol)"`.
+  Roles go through `resolveRoleRuntime` on the effective policy (no active-run overrides); a family missing from a
+  whole-file `docs/ai/ACEF_MODEL_ROUTING_POLICY.json` falls through to the next policy file. Stdout is empty on failure.
+- **Newer-model notice:** `acef-version-check` prints `newer <family> model available: <id> (ACEF map says <id>)` when
+  `$CODEX_HOME/models_cache.json` (default `~/.codex`) lists a newer version of a family than ACEF's map at the
+  compared ref. Exit codes keep their meaning; a missing or unreadable cache prints nothing.
+- **Literal-id scan:** `scripts/acef-model-id-scan [--root <repo>]` lists literal model ids outside the policy; the
+  floors, history (CHANGELOG below its first released heading, experiment, evidence and capability records,
+  provenance, archive), test fixtures and the V327 experiment harness are excepted (`--list-allowed`).
+  `scripts/slice/selfcheck.sh` runs it on ACEF (a lane copy without the script skips it and says so).
+- **Rule and prose:** `method/MODEL_CHOICE.md` and `AGENTS.md` name families and add the rule "never pass a literal
+  model id to `codex exec -m` (or `-c model=...`, `REVIEW_MODEL`, `--model`); use `acef-model`". README,
+  MAINTENANCE_SCAN and TEST-RUN follow; the Laravel `slice-method.example.json` `codex_model` becomes the
+  `<review-model>` placeholder of the core example.
+- **Tests:** tests derive the current Sol from the policy instead of a literal; `test-acef-model-routing` covers
+  families, the resolver CLI, the cache comparison (fixture cache, never the real one) and the scan;
+  `test-install-acef-tools` checks the installed `acef-model`. Capability record: `docs/ai/capabilities/model-choice.json`.
+- **Open:** B2Press and CRM scripts move to the resolver in their own PRs. `scripts/slice/codex-review.sh` still takes
+  a literal `REVIEW_MODEL` / `review.codex_model`; call it as `REVIEW_MODEL="$(acef-model sol)" codex-review.sh ...`.
+
 ## v3.0.0-beta.15 — W47 owner decisions: machine detection poll, invariant inventory, R-3/R-4 review (2026-11-22)
 
 Why: the 2026-W47 digest (`acef-feedback/digests/2026-W47.md`) found the detection loop had not polled any host since

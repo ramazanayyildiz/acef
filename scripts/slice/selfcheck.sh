@@ -135,7 +135,14 @@ need templates/slice/closing-note.md 'ACEF-gözlem:'
 need templates/slice/closing-note.md 'Dedektör:'
 need templates/slice/dev-report.md 'ACEF-gözlem:'
 # Model choice (owner decision 2026-10-27, method/MODEL_CHOICE.md): one class table for Claude and Codex, effort, waiting
-need method/MODEL_CHOICE.md '| critical |' '| mechanical |' '| light |' 'gpt-6.1-terra' '## Effort' '## Waiting' 'acef-note add'
+need method/MODEL_CHOICE.md '| critical |' '| mechanical |' '| light |' 'latest Terra' '## Effort' '## Waiting' 'acef-note add'
+need method/MODEL_CHOICE.md 'Model ids live in one place' 'Never pass a literal model id' 'acef-model' 'acef-model-id-scan'
+# Model ids (owner decision 2026-11-28): exact ids only in the routing policy's families map; history, records and
+# test fixtures are excepted by the scan itself (scripts/acef-model-id-scan --list-allowed). A lane copy without the
+# scan script skips it and says so (scripts/test-acef-model-routing also runs the scan on ACEF).
+if [ ! -f scripts/acef-model-id-scan ]; then printf 'skip model-id scan (scripts/acef-model-id-scan not in this copy)\n'
+elif mid_out=$(python3 -I scripts/acef-model-id-scan --root "$ROOT" 2>&1); then pass "model-id scan (no literal model id outside the routing policy)"
+else fail "model-id scan: literal model ids outside the routing policy"; printf '%s\n' "$mid_out" | sed 's/^/    /'; fi
 need method/MODEL_CHOICE.md 'roleModels' '--routing-role-model' 'Cost note: review roles only'
 need templates/slice/intake-card.md 'Model: <sınıf> → <model> (MODEL_CHOICE.md)' 'Effort:'
 need templates/slice/review-brief.md 'Model: <sınıf> → <model> (MODEL_CHOICE.md)' 'Effort:'
